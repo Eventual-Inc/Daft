@@ -13,7 +13,13 @@ FROM debian:buster
 
 RUN apt-get update && \
     apt-get install ca-certificates -y && \
-    apt-get install vim -y
+    apt-get install vim -y && \
+    apt-get install curl -y
+
+RUN curl -L -o nerdctl-0.19.0-linux-amd64.tar.gz https://github.com/containerd/nerdctl/releases/download/v0.19.0/nerdctl-0.19.0-linux-amd64.tar.gz && \
+    tar -xvf nerdctl-0.19.0-linux-amd64.tar.gz && \
+    mv nerdctl /usr/bin/nerdctl
+
 
 WORKDIR /app
 COPY --from=build /app/entrypoint /app/entrypoint

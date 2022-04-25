@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: runtime
+spec:
+  containers:
+  - name: runtime
+    image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/runtime:0.0.1-dev2
+    securityContext:
+      privileged: true
+    command:
+      - /app/entrypoint
+    volumeMounts:
+    - mountPath: /var/lib/containerd
+      name: containerd-var-lib
+    - mountPath: /run/containerd
+      name: containerd-run
+      subPath: containerd
+    ports:
+    - containerPort: 8080
+  volumes:
+  - name: containerd-var-lib
+    hostPath:
+      path: /var/lib/containerd
+      type: Directory
+  - name: containerd-run
+    hostPath:
+      path: /run
+      type: Directory
