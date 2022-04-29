@@ -1,4 +1,4 @@
-module eventual.com/daft
+module github.com/Eventual-Inc/Daft
 
 go 1.18
 

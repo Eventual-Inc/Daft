@@ -17,6 +17,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	defer listener.Close()
 
 	c, err := listener.Accept()

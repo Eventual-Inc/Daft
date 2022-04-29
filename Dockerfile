@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1.4
+
+###############################################################################
+# Build Image #
+
+FROM golang:1.18-buster AS build
+
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /app
+ENV CGO_ENABLED=0
+COPY go.* /app/
+RUN --mount=type=cache,target=/go/pkg/mod \ 
+    go mod download
+
+COPY . .
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+   GOOS=${TARGETOS} GOARCH=${TARGETARCH} make all -f build.makefile
+
+###############################################################################
+# Runtime Image #
+
+FROM debian:buster as runtime
+
+RUN apt-get update && \
+    apt-get install ca-certificates -y && \
+    apt-get install vim -y && \
+    apt-get install curl -y && \
+    apt-get install netcat -y && \
+    apt-get install zip -y && \
+    apt-get install unzip -y
+
+RUN apt-get install less -y && \
+    apt-get install groff -y
+
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && \
+    ./aws/install
+
+RUN curl -L -o nerdctl-0.19.0-linux-amd64.tar.gz https://github.com/containerd/nerdctl/releases/download/v0.19.0/nerdctl-0.19.0-linux-amd64.tar.gz && \
+    tar -xvf nerdctl-0.19.0-linux-amd64.tar.gz && \
+    mv nerdctl /usr/bin/nerdctl
+
+WORKDIR /app
+COPY --from=build /app/bin/runtime /app/runtime
+ENTRYPOINT /app/bin/runtime
+
+###############################################################################
+# Reader Image #
+
+FROM debian:buster as reader
+
+WORKDIR /app
+COPY --from=build /app/bin/reader /app/bin/reader
+ENTRYPOINT /app/bin/reader

@@ -64,6 +64,7 @@ func GetResolver(ctx context.Context, token string) (remotes.Resolver, error) {
 	return docker.NewResolver(options), nil
 }
 
+
 // Code that will launch a reader container using the host's containerd client
 func launchReader(id int, localImagesPath string) {
 	sockAddr := fmt.Sprintf(SockAddr, id)
