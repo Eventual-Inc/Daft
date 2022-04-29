@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-   GOOS=${TARGETOS} GOARCH=${TARGETARCH} make all -f build.makefile
+   GOOS=${TARGETOS} GOARCH=${TARGETARCH} make all -f build.makefile -j $(nproc)
 
 ###############################################################################
 # Runtime Image #
