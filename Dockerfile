@@ -1,9 +1,26 @@
 # syntax=docker/dockerfile:1.4
 
+
+###############################################################################
+# Flatbuffer Image #
+FROM debian:bullseye as flatc
+
+RUN apt-get update && \
+    apt-get install -y curl zip unzip 
+
+RUN curl https://github.com/google/flatbuffers/releases/download/v2.0.0/Linux.flatc.binary.clang++-9.zip -L -o /tmp/flatc.zip \
+    && unzip /tmp/flatc.zip -d /usr/local/bin \
+    && chmod +x /usr/local/bin/flatc \
+    && rm /tmp/flatc.zip
+
+COPY ./fbs /fbs
+CMD flatc --go --grpc -o /codegen/go /fbs/*.fbs
+
+
 ###############################################################################
 # Build Image #
 
-FROM golang:1.18-buster AS build
+FROM golang:1.18-bullseye AS build
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -22,7 +39,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 ###############################################################################
 # Runtime Image #
 
-FROM debian:buster as runtime
+FROM debian:bullseye as runtime
 
 RUN apt-get update && \
     apt-get install ca-certificates -y && \
@@ -30,9 +47,8 @@ RUN apt-get update && \
     apt-get install curl -y && \
     apt-get install netcat -y && \
     apt-get install zip -y && \
-    apt-get install unzip -y
-
-RUN apt-get install less -y && \
+    apt-get install unzip -y && \
+    apt-get install less -y && \
     apt-get install groff -y
 
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
@@ -50,7 +66,7 @@ ENTRYPOINT /app/bin/runtime
 ###############################################################################
 # Reader Image #
 
-FROM debian:buster as reader
+FROM debian:bullseye as reader
 
 WORKDIR /app
 COPY --from=build /app/bin/reader /app/bin/reader
