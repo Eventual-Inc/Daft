@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: debugger
+spec:
+  containers:
+  - name: runtime
+    image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/runtime:0.0.1-dev18
+    command:
+      - sleep
+      - '3600'
+    volumeMounts:
+    - mountPath: /run/eventual
+      name: eventual-data-sockets
+  volumes:
+  - name: eventual-data-sockets
+    hostPath:
+      path: /run/eventual
+      type: DirectoryOrCreate

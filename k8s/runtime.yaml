@@ -5,7 +5,7 @@ metadata:
 spec:
   containers:
   - name: runtime
-    image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/runtime:0.0.1-dev2
+    image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/runtime:0.0.1-dev34
     securityContext:
       privileged: true
     command:
@@ -16,6 +16,8 @@ spec:
     - mountPath: /run/containerd
       name: containerd-run
       subPath: containerd
+    - mountPath: /run/eventual
+      name: eventual-data-sockets
     ports:
     - containerPort: 8080
   volumes:
@@ -27,3 +29,7 @@ spec:
     hostPath:
       path: /run
       type: Directory
+  - name: eventual-data-sockets
+    hostPath:
+      path: /run/eventual
+      type: DirectoryOrCreate
