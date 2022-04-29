@@ -12,9 +12,9 @@ RUN curl https://github.com/google/flatbuffers/releases/download/v2.0.0/Linux.fl
     && unzip /tmp/flatc.zip -d /usr/local/bin \
     && chmod +x /usr/local/bin/flatc \
     && rm /tmp/flatc.zip
-
 COPY ./fbs /fbs
-CMD flatc --go --grpc -o /codegen/go /fbs/*.fbs
+ARG UID
+CMD flatc --go --grpc -o /codegen/go /fbs/*.fbs && chown -R ${UID}:${UID} /codegen/
 
 
 ###############################################################################
