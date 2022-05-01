@@ -5,11 +5,11 @@ metadata:
 spec:
   containers:
   - name: runtime
-    image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/runtime:0.0.1-dev34
+    image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/runtime:0.0.1-dev35
     securityContext:
       privileged: true
     command:
-      - /app/entrypoint
+      - /app/runtime
     volumeMounts:
     - mountPath: /var/lib/containerd
       name: containerd-var-lib

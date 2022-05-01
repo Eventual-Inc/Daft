@@ -61,7 +61,7 @@ RUN curl -L -o nerdctl-0.19.0-linux-amd64.tar.gz https://github.com/containerd/n
 
 WORKDIR /app
 COPY --from=build /app/bin/runtime /app/runtime
-ENTRYPOINT /app/bin/runtime
+ENTRYPOINT /app/runtime
 
 ###############################################################################
 # Reader Image #

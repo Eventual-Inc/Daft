@@ -20,7 +20,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/array"
@@ -37,12 +36,13 @@ import (
 	"github.com/containerd/containerd/oci"
 	"github.com/gorilla/mux"
 	"github.com/opencontainers/runtime-spec/specs-go"
+
+	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
 )
 
 const ContainerFolderTemplate = "/run/eventual/container-%d"
 const SockAddr = ContainerFolderTemplate + "/data.sock"
-const TestImagesZipS3Bucket = "eventual-data-test-bucket"
-const TestImagesZipS3Key = "test-rickroll/rickroll-images.zip"
+const TestImagesZipS3Path = "s3://eventual-data-test-bucket/test-rickroll/rickroll-images.zip"
 
 func GetResolver(ctx context.Context, token string) (remotes.Resolver, error) {
 	i := strings.IndexByte(token, ':')
@@ -63,7 +63,6 @@ func GetResolver(ctx context.Context, token string) (remotes.Resolver, error) {
 	options.Hosts = dockerconfig.ConfigureHosts(ctx, hostOptions)
 	return docker.NewResolver(options), nil
 }
-
 
 // Code that will launch a reader container using the host's containerd client
 func launchReader(id int, localImagesPath string) {
@@ -296,7 +295,8 @@ func unzipFile(f *zip.File, destination string) error {
 	return nil
 }
 
-func DownloadS3File(s3Bucket string, s3Key string) (string, error) {
+func DownloadS3File(s3Path string) (string, error) {
+	ctx := context.Background()
 	file, err := os.Create("/tmp/images.zip")
 	if err != nil {
 		return "", err
@@ -304,20 +304,14 @@ func DownloadS3File(s3Bucket string, s3Key string) (string, error) {
 
 	defer file.Close()
 
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
 	if err != nil {
 		return "", err
 	}
-	client := s3.NewFromConfig(cfg)
 
-	output, err := client.GetObject(context.TODO(), &s3.GetObjectInput{
-		Bucket: &s3Bucket,
-		Key:    &s3Key,
-	})
-	if err != nil {
-		return "", err
-	}
-	_, err = io.Copy(file, output.Body)
+	objstore := objectstorage.NewAwsS3ObjectStore(ctx, cfg)
+	_, err = objstore.DownloadObject(ctx, s3Path, file)
+
 	if err != nil {
 		return "", err
 	}
@@ -327,7 +321,7 @@ func DownloadS3File(s3Bucket string, s3Key string) (string, error) {
 
 func main() {
 	// Download and unzip test images
-	localImagesZipPath, err := DownloadS3File(TestImagesZipS3Bucket, TestImagesZipS3Key)
+	localImagesZipPath, err := DownloadS3File(TestImagesZipS3Path)
 	if err != nil {
 		log.Fatal(err)
 	}
