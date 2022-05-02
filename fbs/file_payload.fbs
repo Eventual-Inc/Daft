@@ -2,4 +2,5 @@ namespace Daft;
 
 table File {
     data:[ubyte] (required);
+    name2:string;
 }

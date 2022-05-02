@@ -304,6 +304,7 @@ func DownloadS3File(s3Path string) (string, error) {
 func main() {
 	// Download and unzip test images
 	localImagesZipPath, err := DownloadS3File(TestImagesZipS3Path)
+	log.Print("done downloading images from s3")
 	if err != nil {
 		log.Fatal(err)
 	}

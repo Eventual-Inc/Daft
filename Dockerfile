@@ -1,10 +1,9 @@
 # syntax=docker/dockerfile:1.4
 
-
 ###############################################################################
-# Flatbuffer Image #
-FROM debian:bullseye as flatc
+# Build Image #
 
+FROM golang:1.18-bullseye AS build
 RUN apt-get update && \
     apt-get install -y curl zip unzip 
 
@@ -12,15 +11,6 @@ RUN curl https://github.com/google/flatbuffers/releases/download/v2.0.0/Linux.fl
     && unzip /tmp/flatc.zip -d /usr/local/bin \
     && chmod +x /usr/local/bin/flatc \
     && rm /tmp/flatc.zip
-COPY ./fbs /fbs
-ARG UID
-CMD flatc --go --grpc -o /codegen/go /fbs/*.fbs && chown -R ${UID}:${UID} /codegen/
-
-
-###############################################################################
-# Build Image #
-
-FROM golang:1.18-bullseye AS build
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -30,6 +20,9 @@ ENV CGO_ENABLED=0
 COPY go.* /app/
 RUN --mount=type=cache,target=/go/pkg/mod \ 
     go mod download
+
+COPY ./fbs /fbs
+RUN flatc --go --grpc -o ./codegen/go /fbs/*.fbs
 
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \

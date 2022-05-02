@@ -1,6 +1,6 @@
 DOCKER ?= docker
 
-IMAGES=runtime reader flatc
+IMAGES=runtime reader
 
 
 define BUILD_IMAGE
@@ -11,7 +11,13 @@ ${IMAGES}:
 	@echo $@
 	$(call BUILD_IMAGE)
 
-gen-fbs: flatc
-	$(DOCKER) run --rm -e UID=`id -u` -v `pwd`/codegen:/codegen:rw flatc:latest
+start-local-cluster:
+	@kubectl cluster-info --context kind-kind || /bin/bash scripts/kind-with-registry.sh
 
-.PHONY: ${IMAGES}
+stop-local-cluster:
+	/bin/bash scripts/teardown-kind-with-registry.sh
+
+local-dev: start-local-cluster
+	tilt up --stream=true
+
+.PHONY: ${IMAGES} start-local-cluster local-dev

@@ -5,7 +5,7 @@ metadata:
 spec:
   containers:
   - name: runtime
-    image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/runtime:0.0.1-dev40
+    image: localhost:5000/runtime:v1
     securityContext:
       privileged: true
     command:
@@ -23,7 +23,18 @@ spec:
     env:
     - name: READER_IMAGE_URL
       value: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/reader:0.0.1-dev7
-
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: aws
+          key: aws_access_key_id
+          optional: true 
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: aws
+          key: aws_secret_access_key
+          optional: true 
   volumes:
   - name: containerd-var-lib
     hostPath:
