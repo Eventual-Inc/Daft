@@ -23,13 +23,12 @@ import (
 	"github.com/apache/arrow/go/arrow/ipc"
 	"github.com/apache/arrow/go/arrow/memory"
 
-	"github.com/containerd/containerd/remotes"
+	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/remotes/docker"
 	dockerconfig "github.com/containerd/containerd/remotes/docker/config"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
-	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
 	"github.com/gorilla/mux"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -41,8 +40,18 @@ import (
 const ContainerFolderTemplate = "/run/eventual/container-%d"
 const SockAddr = ContainerFolderTemplate + "/data.sock"
 const TestImagesZipS3Path = "s3://eventual-data-test-bucket/test-rickroll/rickroll-images.zip"
+const ImageURL = "941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/reader:0.0.1-dev3"
 
-func GetResolver(ctx context.Context, user string, secret string) (remotes.Resolver, error) {
+func pullImage(ctx context.Context, client *containerd.Client) (containerd.Image, error) {
+	// Get a username and secret from ECR
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
+	authenticator := registryauth.NewECRRegistryAuthenticator(context.TODO(), cfg)
+	user, secret, err := authenticator.GetUserAndSecret(context.TODO())
+	if err != nil {
+		return nil, err
+	}
+
+	// Get a Resolver using the username and secret
 	options := docker.ResolverOptions{
 		Tracker: docker.NewInMemoryTracker(),
 	}
@@ -52,8 +61,17 @@ func GetResolver(ctx context.Context, user string, secret string) (remotes.Resol
 		// Only one host
 		return user, secret, nil
 	}
-	options.Hosts = dockerconfig.ConfigureHosts(ctx, hostOptions)
-	return docker.NewResolver(options), nil
+	options.Hosts = dockerconfig.ConfigureHosts(context.TODO(), hostOptions)
+	resolver := docker.NewResolver(options)
+
+	// Pull image with resolver
+	image, err := client.Pull(
+		ctx,
+		ImageURL,
+		containerd.WithResolver(resolver),
+		containerd.WithPullUnpack,
+	)
+	return image, err
 }
 
 // Code that will launch a reader container using the host's containerd client
@@ -68,6 +86,7 @@ func launchReader(id int, localImagesPath string) {
 	start := time.Now()
 
 	// Create a containerd client
+	ctx := namespaces.WithNamespace(context.Background(), "reader")
 	client, err := containerd.New("/run/containerd/containerd.sock")
 	defer client.Close()
 	if err != nil {
@@ -78,19 +97,7 @@ func launchReader(id int, localImagesPath string) {
 	start = time.Now()
 
 	// Pull image
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
-	authenticator := registryauth.NewECRRegistryAuthenticator(context.TODO(), cfg)
-	user, secret, err := authenticator.GetUserAndSecret(context.TODO())
-	if err != nil {
-		log.Fatal(err)
-	}
-	resolver, err := GetResolver(context.TODO(), user, secret)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ctx := namespaces.WithNamespace(context.Background(), "reader")
-	image, err := client.Pull(ctx, "941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/reader:0.0.1-dev3", containerd.WithResolver(resolver), containerd.WithPullUnpack)
+	image, err := pullImage(ctx, client)
 	if err != nil {
 		log.Fatal(err)
 	}
