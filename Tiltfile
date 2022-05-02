@@ -45,7 +45,7 @@ deploy_aws_secret()
 #
 #   More info: https://docs.tilt.dev/api.html#api.docker_build
 #
-IMAGES = ['flatc', 'runtime', 'reader']
+IMAGES = ['runtime', 'reader']
 update_settings(suppress_unused_image_warnings=["localhost:5000/reader"])
 for image in IMAGES:
     docker_build('localhost:5000/{}'.format(image),

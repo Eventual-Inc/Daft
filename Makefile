@@ -2,6 +2,7 @@ DOCKER ?= docker
 
 IMAGES=runtime reader
 
+K8S_CLUSTER_NAME="kind-${USER}-kind"
 
 define BUILD_IMAGE
 BUILDKIT_PROGRESS=plain DOCKER_BUILDKIT=1 $(DOCKER) build . -t $@:latest --target $@
@@ -12,7 +13,7 @@ ${IMAGES}:
 	$(call BUILD_IMAGE)
 
 start-local-cluster:
-	@kubectl cluster-info --context kind-kind || /bin/bash scripts/kind-with-registry.sh
+	@kubectl cluster-info --context ${K8S_CLUSTER_NAME} || /bin/bash scripts/kind-with-registry.sh
 
 stop-local-cluster:
 	/bin/bash scripts/teardown-kind-with-registry.sh

@@ -20,7 +20,7 @@
 set -o errexit
 
 # desired cluster name; default is "kind"
-KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-kind}"
+KIND_CLUSTER_NAME=${USER}-"${KIND_CLUSTER_NAME:-kind}"
 KIND_CLUSTER_OPTS="--name ${KIND_CLUSTER_NAME}"
 
 if [ -n "${KIND_CLUSTER_IMAGE}" ]; then
