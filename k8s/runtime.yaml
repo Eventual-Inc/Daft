@@ -5,7 +5,7 @@ metadata:
 spec:
   containers:
   - name: runtime
-    image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/runtime:0.0.1-dev37
+    image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/runtime:0.0.1-dev40
     securityContext:
       privileged: true
     command:
@@ -20,6 +20,10 @@ spec:
       name: eventual-data-sockets
     ports:
     - containerPort: 8080
+    env:
+    - name: READER_IMAGE_URL
+      value: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/reader:0.0.1-dev7
+
   volumes:
   - name: containerd-var-lib
     hostPath:

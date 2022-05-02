@@ -1,0 +1,5 @@
+namespace Daft;
+
+table File {
+    data:[ubyte] (required);
+}

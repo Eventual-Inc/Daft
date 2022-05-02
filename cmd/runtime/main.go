@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,12 +17,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/config"
+	flatbuffers "github.com/google/flatbuffers/go"
 
-	"github.com/apache/arrow/go/arrow"
-	"github.com/apache/arrow/go/arrow/array"
-	"github.com/apache/arrow/go/arrow/ipc"
-	"github.com/apache/arrow/go/arrow/memory"
+	"github.com/aws/aws-sdk-go-v2/config"
 
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/remotes/docker"
@@ -33,6 +31,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/opencontainers/runtime-spec/specs-go"
 
+	fbs "github.com/Eventual-Inc/Daft/codegen/go/Daft"
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
 	"github.com/Eventual-Inc/Daft/pkg/registryauth"
 )
@@ -40,9 +39,10 @@ import (
 const ContainerFolderTemplate = "/run/eventual/container-%d"
 const SockAddr = ContainerFolderTemplate + "/data.sock"
 const TestImagesZipS3Path = "s3://eventual-data-test-bucket/test-rickroll/rickroll-images.zip"
-const ImageURL = "941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/reader:0.0.1-dev3"
 
 func pullImage(ctx context.Context, client *containerd.Client) (containerd.Image, error) {
+	ImageURL := os.Getenv("READER_IMAGE_URL")
+
 	// Get a username and secret from ECR
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
 	authenticator := registryauth.NewECRRegistryAuthenticator(context.TODO(), cfg)
@@ -175,32 +175,20 @@ func launchReader(id int, localImagesPath string) {
 			log.Fatal(err)
 		}
 
+		log.Printf("Hash of file: %x", md5.Sum(data))
+
+		start = time.Now()
+		builder := flatbuffers.NewBuilder(len(data)) // figure out better initial sizing
+		filedata := builder.CreateByteVector(data)
+		fbs.FileStart(builder)
+		fbs.FileAddData(builder, filedata)
+		fileRecord := fbs.FileEnd(builder)
+		builder.FinishSizePrefixed(fileRecord)
+		log.Printf("%d Time to build Flatbuffer record: %v", i, time.Since(start))
 		start = time.Now()
 
-		pool := memory.NewGoAllocator()
-		schema := arrow.NewSchema(
-			[]arrow.Field{
-				{Name: "file", Type: arrow.BinaryTypes.Binary},
-			},
-			nil,
-		)
-		b := array.NewRecordBuilder(pool, schema)
-		defer b.Release()
-		log.Printf("%d Arrow builder initializations: %v", i, time.Since(start))
-		start = time.Now()
-
-		b.Field(0).(*array.BinaryBuilder).AppendValues([][]byte{data}, nil)
-		rec1 := b.NewRecord()
-		defer rec1.Release()
-		log.Printf("%d Arrow builder appends: %v", i, time.Since(start))
-		start = time.Now()
-
-		writer := ipc.NewWriter(c, ipc.WithSchema(schema))
-		if err := writer.Write(rec1); err != nil {
-			log.Printf("Failed to write arrow recordbatch to socket, breaking: %v", err)
-			break
-		}
-		log.Printf("%d Time to write Arrow record to UDS: %v", i, time.Since(start))
+		_, err = c.Write(builder.FinishedBytes())
+		log.Printf("%d Time to write Flatbuffer record to UDS: %v", i, time.Since(start))
 	}
 
 	start = time.Now()
