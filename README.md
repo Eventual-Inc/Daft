@@ -6,6 +6,10 @@ Data Functions (DaFt)
 - Build runtime image `make runtime`
 - Build reader image `make reader`
 
+## Local Development
+- start tilt + kind cluster: `make local-dev`
+- kill local cluster: `make stop-local-cluster`
+
 ## Develop on Kubernetes
 - Tag your Docker images: `docker tag runtime:latest 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/runtime:<YOUR_LABEL>`
 - Push your Docker images to the remote registry: `docker push 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/runtime:<YOUR_LABEL>`
