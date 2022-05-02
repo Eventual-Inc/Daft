@@ -71,4 +71,4 @@ ENTRYPOINT /app/bin/reader
 FROM scratch as cli
 
 WORKDIR /
-COPY --from=build /app/bin/cli /cli
+COPY --from=build /app/bin/cli /daft

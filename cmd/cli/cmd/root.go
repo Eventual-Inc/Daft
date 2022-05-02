@@ -1,5 +1,5 @@
 /*
-Copyright © 2022 NAME HERE <EMAIL ADDRESS>
+Copyright © 2022 Jay Chia jay@eventualcomputing.com
 
 */
 package cmd
@@ -10,21 +10,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-
-
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "cli",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Use:   "daft",
+	Short: "Data Functions as a Service",
+	Long: `Daft is a platform for developing and executing Data Functions.
+	
+You can use Daft to quickly build and test functions developed locally on your machine on data that
+resides locally or in cloud storage. When you are ready, deploy these functions to run on massive amounts
+of data in the cloud and let Daft do the heavy infrastructure lifting for you.
+`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -36,16 +31,6 @@ func Execute() {
 	}
 }
 
-func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.cli.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-}
+func init() {}
 
 
