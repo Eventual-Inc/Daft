@@ -12,6 +12,10 @@ ${IMAGES}:
 	@echo $@
 	$(call BUILD_IMAGE)
 
+cli:
+	BUILDKIT_PROGRESS=plain DOCKER_BUILDKIT=1 $(DOCKER) build . -t cli-builder:latest --target cli --output build
+
+
 start-local-cluster:
 	@kubectl cluster-info --context ${K8S_CLUSTER_NAME} || /bin/bash scripts/kind-with-registry.sh
 

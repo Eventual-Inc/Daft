@@ -64,3 +64,11 @@ FROM debian:bullseye as reader
 WORKDIR /app
 COPY --from=build /app/bin/reader /app/bin/reader
 ENTRYPOINT /app/bin/reader
+
+###############################################################################
+# CLI Exporting Image #
+
+FROM scratch as cli
+
+WORKDIR /
+COPY --from=build /app/bin/cli /cli
