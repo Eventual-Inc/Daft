@@ -3,9 +3,7 @@ package main
 import (
 	"archive/zip"
 	"context"
-	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -19,7 +17,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ecr"
 
 	"github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/array"
@@ -38,19 +35,14 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
+	"github.com/Eventual-Inc/Daft/pkg/registryauth"
 )
 
 const ContainerFolderTemplate = "/run/eventual/container-%d"
 const SockAddr = ContainerFolderTemplate + "/data.sock"
 const TestImagesZipS3Path = "s3://eventual-data-test-bucket/test-rickroll/rickroll-images.zip"
 
-func GetResolver(ctx context.Context, token string) (remotes.Resolver, error) {
-	i := strings.IndexByte(token, ':')
-	if i <= 0 {
-		return nil, errors.New("Unable to find `:` character in supplied token")
-	}
-	secret := token[i+1:]
-	username := token[0:i]
+func GetResolver(ctx context.Context, user string, secret string) (remotes.Resolver, error) {
 	options := docker.ResolverOptions{
 		Tracker: docker.NewInMemoryTracker(),
 	}
@@ -58,7 +50,7 @@ func GetResolver(ctx context.Context, token string) (remotes.Resolver, error) {
 	hostOptions.Credentials = func(host string) (string, string, error) {
 		// If host doesn't match...
 		// Only one host
-		return username, secret, nil
+		return user, secret, nil
 	}
 	options.Hosts = dockerconfig.ConfigureHosts(ctx, hostOptions)
 	return docker.NewResolver(options), nil
@@ -87,17 +79,12 @@ func launchReader(id int, localImagesPath string) {
 
 	// Pull image
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
+	authenticator := registryauth.NewECRRegistryAuthenticator(context.TODO(), cfg)
+	user, secret, err := authenticator.GetUserAndSecret(context.TODO())
 	if err != nil {
 		log.Fatal(err)
 	}
-	ecrClient := ecr.NewFromConfig(cfg)
-	authTokenOutput, err := ecrClient.GetAuthorizationToken(context.Background(), &ecr.GetAuthorizationTokenInput{})
-	token := *authTokenOutput.AuthorizationData[0].AuthorizationToken
-	decoded, err := base64.StdEncoding.DecodeString(token)
-	if err != nil {
-		log.Fatal(err)
-	}
-	resolver, err := GetResolver(context.Background(), string(decoded))
+	resolver, err := GetResolver(context.TODO(), user, secret)
 	if err != nil {
 		log.Fatal(err)
 	}
