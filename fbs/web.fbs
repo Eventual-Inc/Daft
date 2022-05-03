@@ -1,0 +1,13 @@
+namespace DaftWeb;
+ 
+table InvocationRequest {
+  function_id: string;
+}
+
+table InvocationResponse {
+  function_id: string;
+}
+ 
+rpc_service Web {
+  Invoke(InvocationRequest): InvocationResponse;
+}

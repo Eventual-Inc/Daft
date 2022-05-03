@@ -54,7 +54,7 @@ local_resource(
     deps="./fbs",
 )
 
-IMAGES = ['daftlet', 'reader']
+IMAGES = ['daftlet', 'reader', 'web']
 update_settings(suppress_unused_image_warnings=["localhost:5000/reader"])
 for image in IMAGES:
     docker_build('localhost:5000/{}'.format(image),
@@ -72,7 +72,7 @@ for image in IMAGES:
 #
 
 k8s_yaml(['k8s/daftlet.yaml'])
-
+k8s_yaml(['k8s/daft_web.yaml'])
 
 # Customize a Kubernetes resource
 #   By default, Kubernetes resource names are automatically assigned
