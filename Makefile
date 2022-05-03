@@ -31,14 +31,14 @@ ${IMAGES}:
 gen-fbs:
 	flatc --go --grpc -o ./codegen/go ./fbs/*.fbs
 
+gen-openapi-web-client: OPENAPI_YAML_PATH=api/web_service/openapi.yaml
+gen-openapi-web-client: OPENAPI_GENERATOR=go
 gen-openapi-web-client:
-	OPENAPI_YAML_PATH=api/web_service/openapi.yaml
-	OPENAPI_GENERATOR=go
 	$(call GEN_OPENAPI_STUBS)
 
+gen-openapi-web-service: OPENAPI_YAML_PATH=api/web_service/openapi.yaml
+gen-openapi-web-service: OPENAPI_GENERATOR=go-server
 gen-openapi-web-service:
-	OPENAPI_YAML_PATH=api/web_service/openapi.yaml
-	OPENAPI_GENERATOR=go-server
 	$(call GEN_OPENAPI_STUBS)
 
 dist:
