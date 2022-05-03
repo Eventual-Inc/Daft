@@ -40,15 +40,11 @@ const TestImagesZipS3Path = "s3://eventual-data-test-bucket/test-rickroll/rickro
 
 
 
-
-// func pullImageURI(ctx context.Context, client *containerd.Client) (containerd.Image, error) {
-// }
-
 func pullImage(ctx context.Context, client *containerd.Client) (containerd.Image, error) {
 	ImageURL := os.Getenv("READER_IMAGE_URL")
 
 	// Get a username and secret from ECR
-	resolver, err := image.BuildECRResolver(ctx)
+	resolver, err := image.ResolverFactory(ctx, ImageURL)
 
 	// Pull image with resolver
 	image, err := client.Pull(

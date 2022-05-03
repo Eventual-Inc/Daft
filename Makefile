@@ -1,6 +1,6 @@
 DOCKER ?= docker
 
-IMAGES=runtime reader
+IMAGES=daftlet reader
 
 K8S_CLUSTER_NAME="kind-${USER}-kind"
 

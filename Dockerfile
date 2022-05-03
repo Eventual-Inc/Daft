@@ -21,7 +21,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 ###############################################################################
 # Runtime Image #
 
-FROM debian:bullseye as runtime
+FROM debian:bullseye as daftlet
 
 RUN apt-get update && \
     apt-get install ca-certificates -y && \
@@ -42,8 +42,8 @@ RUN curl -L -o nerdctl-0.19.0-linux-amd64.tar.gz https://github.com/containerd/n
     mv nerdctl /usr/bin/nerdctl
 
 WORKDIR /app
-COPY --from=build /app/bin/runtime /app/runtime
-ENTRYPOINT /app/runtime
+COPY --from=build /app/bin/daftlet /app/daftlet
+ENTRYPOINT /app/daftlet
 
 ###############################################################################
 # Reader Image #
@@ -61,3 +61,4 @@ FROM scratch as dist
 
 WORKDIR /
 COPY --from=build /app/bin /dist
+

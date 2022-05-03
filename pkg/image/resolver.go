@@ -2,14 +2,25 @@ package image
 
 import (
 	"context"
+	"strings"
+	"errors"
+
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
 	dockerconfig "github.com/containerd/containerd/remotes/docker/config"
 )
 
+func ResolverFactory(ctx context.Context, uri string) (remotes.Resolver, error) {
+	if strings.Contains(uri, ".ecr.") {
+		return buildECRResolver(ctx)
+	} else {
+		return nil, errors.New("No resolver found for: " + uri)
+	}
+}
 
-func BuildECRResolver(ctx context.Context) (remotes.Resolver, error) {
+
+func buildECRResolver(ctx context.Context) (remotes.Resolver, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
 	authenticator := NewECRRegistryAuthenticator(context.TODO(), cfg)
 	user, secret, err := authenticator.GetUserAndSecret(context.TODO())

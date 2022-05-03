@@ -54,7 +54,7 @@ local_resource(
     deps="./fbs",
 )
 
-IMAGES = ['runtime', 'reader']
+IMAGES = ['daftlet', 'reader']
 update_settings(suppress_unused_image_warnings=["localhost:5000/reader"])
 for image in IMAGES:
     docker_build('localhost:5000/{}'.format(image),
@@ -71,7 +71,7 @@ for image in IMAGES:
 #   More info: https://docs.tilt.dev/api.html#api.k8s_yaml
 #
 
-k8s_yaml(['k8s/runtime.yaml'])
+k8s_yaml(['k8s/daftlet.yaml'])
 
 
 # Customize a Kubernetes resource
