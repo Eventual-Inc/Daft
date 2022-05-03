@@ -1,4 +1,4 @@
-package registryauth
+package image
 
 import (
 	"context"

@@ -2,15 +2,7 @@
 
 ###############################################################################
 # Build Image #
-
 FROM golang:1.18-bullseye AS build
-RUN apt-get update && \
-    apt-get install -y curl zip unzip 
-
-RUN curl https://github.com/google/flatbuffers/releases/download/v2.0.0/Linux.flatc.binary.clang++-9.zip -L -o /tmp/flatc.zip \
-    && unzip /tmp/flatc.zip -d /usr/local/bin \
-    && chmod +x /usr/local/bin/flatc \
-    && rm /tmp/flatc.zip
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -20,9 +12,6 @@ ENV CGO_ENABLED=0
 COPY go.* /app/
 RUN --mount=type=cache,target=/go/pkg/mod \ 
     go mod download
-
-COPY ./fbs /fbs
-RUN flatc --go --grpc -o ./codegen/go /fbs/*.fbs
 
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
@@ -68,7 +57,7 @@ ENTRYPOINT /app/bin/reader
 ###############################################################################
 # CLI Exporting Image #
 
-FROM scratch as cli
+FROM scratch as dist
 
 WORKDIR /
-COPY --from=build /app/bin/cli /cli
+COPY --from=build /app/bin /dist

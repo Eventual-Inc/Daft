@@ -12,6 +12,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/opencontainers/runtime-spec v1.0.3-0.20220311020903-6969a0a09ab1
 	github.com/spf13/cobra v1.4.0
+	google.golang.org/grpc v1.45.0
 )
 
 require (
@@ -62,7 +63,6 @@ require (
 	golang.org/x/sys v0.0.0-20220405210540-1e041c57c461 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/genproto v0.0.0-20220126215142-9970aeb2e350 // indirect
-	google.golang.org/grpc v1.45.0 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gotest.tools/v3 v3.1.0 // indirect
 )

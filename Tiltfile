@@ -45,18 +45,23 @@ deploy_aws_secret()
 #
 #   More info: https://docs.tilt.dev/api.html#api.docker_build
 #
+
+local_resource(
+    name="generate-flatbuffers",
+    cmd="make gen-fbs",
+    deps="./fbs",
+)
+
 IMAGES = ['runtime', 'reader']
 update_settings(suppress_unused_image_warnings=["localhost:5000/reader"])
 for image in IMAGES:
     docker_build('localhost:5000/{}'.format(image),
                 context='.',
                 dockerfile='Dockerfile',
-                target='{}'.format(image)
+                target='{}'.format(image),
+                ignore=['./dist', 'fbs']
     )
 
-
-
-    
 # Apply Kubernetes manifests
 #   Tilt will build & push any necessary images, re-deploying your
 #   resources as they change.

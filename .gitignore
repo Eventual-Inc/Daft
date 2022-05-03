@@ -16,4 +16,4 @@
 codegen/
 
 # Build outputs
-build/
+dist/

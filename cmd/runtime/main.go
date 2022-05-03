@@ -22,8 +22,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 
 	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/containerd/remotes/docker"
-	dockerconfig "github.com/containerd/containerd/remotes/docker/config"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -32,37 +30,25 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 
 	fbs "github.com/Eventual-Inc/Daft/codegen/go/Daft"
+	"github.com/Eventual-Inc/Daft/pkg/image"
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
-	"github.com/Eventual-Inc/Daft/pkg/registryauth"
 )
 
 const ContainerFolderTemplate = "/run/eventual/container-%d"
 const SockAddr = ContainerFolderTemplate + "/data.sock"
 const TestImagesZipS3Path = "s3://eventual-data-test-bucket/test-rickroll/rickroll-images.zip"
 
+
+
+
+// func pullImageURI(ctx context.Context, client *containerd.Client) (containerd.Image, error) {
+// }
+
 func pullImage(ctx context.Context, client *containerd.Client) (containerd.Image, error) {
 	ImageURL := os.Getenv("READER_IMAGE_URL")
 
 	// Get a username and secret from ECR
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
-	authenticator := registryauth.NewECRRegistryAuthenticator(context.TODO(), cfg)
-	user, secret, err := authenticator.GetUserAndSecret(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
-	// Get a Resolver using the username and secret
-	options := docker.ResolverOptions{
-		Tracker: docker.NewInMemoryTracker(),
-	}
-	hostOptions := dockerconfig.HostOptions{}
-	hostOptions.Credentials = func(host string) (string, string, error) {
-		// If host doesn't match...
-		// Only one host
-		return user, secret, nil
-	}
-	options.Hosts = dockerconfig.ConfigureHosts(context.TODO(), hostOptions)
-	resolver := docker.NewResolver(options)
+	resolver, err := image.BuildECRResolver(ctx)
 
 	// Pull image with resolver
 	image, err := client.Pull(
@@ -301,10 +287,12 @@ func DownloadS3File(s3Path string) (string, error) {
 	return file.Name(), nil
 }
 
+
 func main() {
 	// Download and unzip test images
 	localImagesZipPath, err := DownloadS3File(TestImagesZipS3Path)
 	log.Print("done downloading images from s3")
+
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -313,6 +301,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	launchReader(0, localImagesDirPath)
+
 
 	r := mux.NewRouter()
 	r.HandleFunc("/launch-reader", func(w http.ResponseWriter, req *http.Request) {

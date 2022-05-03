@@ -1,0 +1,22 @@
+namespace Daft;
+
+table ImagePullRequest {
+    uri:string;
+}
+
+table ImagePullResult {
+    success:bool;
+}
+
+table LaunchContainerRequest {
+    image_uri:string;
+}
+
+table LaunchContainerResult {
+    success:bool;
+}
+ 
+rpc_service Runtime {
+    PullImage(ImagePullRequest):ImagePullResult;
+    LaunchContainer(LaunchContainerRequest):LaunchContainerResult;
+}
