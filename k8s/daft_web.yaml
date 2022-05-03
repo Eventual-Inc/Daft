@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: daft-web-singlepod
+  labels:
+    app.kubernetes.io/name: daft-web
+spec:
+  containers:
+  - name: grpc-web-service
+    image: localhost:5000/web:0.0.1-dev0
+    ports:
+      - containerPort: 8080
+        name: grpc-web-svc
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: daft-web
+spec:
+  type: NodePort  # Might want a LoadBalancer when in production
+  selector:
+    app.kubernetes.io/name: daft-web
+  ports:
+    - name: grpc-web-service-port
+      protocol: TCP
+      port: 8080
+      targetPort: grpc-web-svc
+      nodePort: 30000
