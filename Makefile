@@ -17,6 +17,13 @@ ${IMAGES}:
 gen-fbs:
 	flatc --go --grpc -o ./codegen/go ./fbs/*.fbs
 
+gen-web-service-openapi:
+	@mkdir -p codegen/openapi/go
+	@docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate \
+		-i /local/api/web_service/openapi.yaml \
+		-g go \
+		-o /local/codegen/openapi/go
+
 dist:
 	BUILDKIT_PROGRESS=plain DOCKER_BUILDKIT=1 $(DOCKER) build . -t $@:latest --target $@ --output .
 
