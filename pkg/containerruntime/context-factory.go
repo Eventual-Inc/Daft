@@ -14,14 +14,17 @@ const (
 )
 
 type ContainerRuntimeContext interface {
-	PullImage(context.Context, string) (string, error)
+	PullImage(ctx context.Context, uri string) (string, error)
+	EvictImage(ctx context.Context, uri string) (string, error)
 	ContainsImage(ctx context.Context, uri string) bool
 	CreateContainer(ctx context.Context, uri string) (string, error)
+	StartContainer(ctx context.Context, containerName string) (string, error)
+	StopContainer(ctx context.Context, containerName string) (string, error)
+	DeleteContainer(ctx context.Context, containerName string) (string, error)
 	Close()
 	// containerStatus(string) ContainerStatus
 }
 
-
-func NewContainerRuntimeContext() ContainerRuntimeContext {
-	return NewContainerdContext("test")
+func NewContainerRuntimeContext(socketPath string, hostPathPrefix string) ContainerRuntimeContext {
+	return NewContainerdContext(socketPath, hostPathPrefix)
 }

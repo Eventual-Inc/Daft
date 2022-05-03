@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"syscall"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -25,13 +26,13 @@ type containerData struct {
 }
 
 type ContainerdContext struct {
-	client        *containerd.Client
-	numContainers uint64
-	imagePool     map[string]containerd.Image
-	containerPool map[string]containerData
+	client         *containerd.Client
+	hostPathPrefix string
+	imagePool      map[string]containerd.Image
+	containerPool  map[string]containerData
 }
 
-func NewContainerdContext(socketPath string) *ContainerdContext {
+func NewContainerdContext(socketPath string, hostPathPrefix string) *ContainerdContext {
 	defer timing.Timeit("NewContainerdContext", socketPath)()
 
 	cdc := new(ContainerdContext)
@@ -40,6 +41,7 @@ func NewContainerdContext(socketPath string) *ContainerdContext {
 	if err != nil {
 		logrus.Fatal(err)
 	}
+	cdc.hostPathPrefix = hostPathPrefix
 	cdc.imagePool = make(map[string]containerd.Image)
 	cdc.containerPool = make(map[string]containerData)
 	return cdc
@@ -78,6 +80,15 @@ func (c *ContainerdContext) PullImage(ctx context.Context, uri string) (string, 
 	return uri, err
 }
 
+func (c *ContainerdContext) EvictImage(ctx context.Context, uri string) (string, error) {
+	if !c.ContainsImage(ctx, uri) {
+		return uri, nil
+	}
+
+	delete(c.imagePool, uri)
+	return uri, nil
+}
+
 func (c *ContainerdContext) ContainsImage(ctx context.Context, uri string) bool {
 	_, ok := c.imagePool[uri]
 	return ok
@@ -93,10 +104,8 @@ func (c *ContainerdContext) CreateContainer(ctx context.Context, uri string) (st
 		logrus.Debugf("image in cache for: %s", uri)
 	}
 
-	c.numContainers = c.numContainers + 100
-
 	container_image, _ := c.imagePool[uri]
-	mntSourceDir := fmt.Sprintf("/run/eventual/container-%d", c.numContainers)
+	mntSourceDir := fmt.Sprintf("%s-%s", c.hostPathPrefix, containerName)
 	os.MkdirAll(mntSourceDir, os.ModePerm) // should probably set permissions correctly
 
 	logrus.Debugf("building container for: %s with name: %s", uri, containerName)
@@ -134,11 +143,7 @@ func (c *ContainerdContext) CreateContainer(ctx context.Context, uri string) (st
 		logrus.Fatal(err)
 	}
 
-	logrus.Debugf("started task %s as pid: %d", task.ID(), task.Pid())
-
-	if err := task.Start(ctx); err != nil {
-		logrus.Fatal(err)
-	}
+	logrus.Debugf("created task %s as pid: %d", task.ID(), task.Pid())
 
 	c.containerPool[containerName] = containerData{
 		containerName: containerName,
@@ -147,8 +152,64 @@ func (c *ContainerdContext) CreateContainer(ctx context.Context, uri string) (st
 		task:          task,
 	}
 
-	return uri, nil
+	return containerName, nil
 
+}
+
+func (c *ContainerdContext) StartContainer(ctx context.Context, containerName string) (string, error) {
+	defer timing.Timeit("StartContainer", containerName)()
+	cd, ok := c.containerPool[containerName]
+	if !ok {
+		return "", errors.New("container does not exist in container context")
+	}
+
+	if err := cd.task.Start(ctx); err != nil {
+		logrus.Fatal(err)
+		return "", err
+	}
+
+	return containerName, nil
+}
+
+func (c *ContainerdContext) StopContainer(ctx context.Context, containerName string) (string, error) {
+	defer timing.Timeit("StopContainer", containerName)()
+	cd, ok := c.containerPool[containerName]
+	if !ok {
+		return "", errors.New("container does not exist in container context")
+	}
+
+	if err := cd.task.Kill(ctx, syscall.SIGTERM); err != nil {
+		logrus.Fatal(err)
+		return "", err
+	}
+	status, err := cd.task.Wait(ctx)
+
+	if err != nil {
+		logrus.Fatal(err)
+		return "", err
+	}
+	<-status
+	return containerName, nil
+}
+
+func (c *ContainerdContext) DeleteContainer(ctx context.Context, containerName string) (string, error) {
+	defer timing.Timeit("DeleteContainer", containerName)()
+	cd, ok := c.containerPool[containerName]
+	if !ok {
+		return "", errors.New("container does not exist in container context")
+	}
+
+	if _, err := cd.task.Delete(ctx); err != nil {
+		logrus.Fatal(err)
+		return "", err
+	}
+
+	if err := cd.container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
+		logrus.Fatal(err)
+		return "", err
+	}
+	delete(c.containerPool, containerName)
+	return containerName, nil
 }
 
 func (c *ContainerdContext) Close() {

@@ -20,7 +20,7 @@
 set -o errexit
 
 # desired cluster name; default is "kind"
-KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-kind}"
+KIND_CLUSTER_NAME=${USER}"-${KIND_CLUSTER_NAME:-kind}"
 
 kind_version=$(kind version)
 kind_network='kind'
