@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	openapi "github.com/Eventual-Inc/Daft/codegen/openapi/go"
+	openapi "github.com/Eventual-Inc/Daft/codegen/openapi/gen-openapi-web-client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
