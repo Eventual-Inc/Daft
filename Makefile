@@ -6,6 +6,10 @@ K8S_CLUSTER_NAME="kind-${USER}-kind"
 
 TILT_PORT ?= 10350
 
+define BUILD_IMAGE
+BUILDKIT_PROGRESS=plain DOCKER_BUILDKIT=1 $(DOCKER) build . -t $@:latest --target $@
+endef
+
 ${IMAGES}:
 	@echo $@
 	$(call BUILD_IMAGE)
