@@ -6,7 +6,7 @@ info:
 paths:
   /invocations:
     post:
-      summary: 'Invoke a function'  
+      summary: Invoke a function
       operationId: post-invocations
       responses:
         '201':
@@ -38,3 +38,13 @@ paths:
                     bar: 123
         description: ''
     parameters: []
+components:
+  schemas: {}
+  securitySchemes:
+    daft-auth-token:
+      type: http
+      scheme: bearer
+      description: API token for authentication
+servers:
+  - url: 'http://localhost:8888'
+    description: Localhost for testing

@@ -23,6 +23,8 @@ gen-web-service-openapi:
 		-i /local/api/web_service/openapi.yaml \
 		-g go \
 		-o /local/codegen/openapi/go
+	@rm codegen/openapi/go/go.mod
+	@rm codegen/openapi/go/go.sum
 
 dist:
 	BUILDKIT_PROGRESS=plain DOCKER_BUILDKIT=1 $(DOCKER) build . -t $@:latest --target $@ --output .
