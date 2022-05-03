@@ -37,6 +37,9 @@ case "${kind_version}" in
     ;;
 esac
 
+web_service_host_port="${KIND_DAFT_WEB_HOST_PORT:-30000}"
+echo "Daft web service port: ${web_service_host_port}"
+
 # create registry container unless it already exists
 running="$(docker inspect -f '{{.State.Running}}' "${reg_name}" 2>/dev/null || true)"
 if [ "${running}" != 'true' ]; then
@@ -52,6 +55,7 @@ fi
 echo "Registry Host: ${reg_host}"
 
 # create a cluster with the local registry enabled in containerd
+# also map port 30000 on the worker node to the specified `web_service_host_port` to expose the daft web service
 cat <<EOF | kind create cluster ${KIND_CLUSTER_OPTS} --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -60,7 +64,7 @@ nodes:
 - role: worker
   extraPortMappings:
   - containerPort: 30000
-    hostPort: 30000
+    hostPort: ${web_service_host_port}
     listenAddress: "0.0.0.0" # Optional, defaults to "0.0.0.0"
     protocol: tcp # Optional, defaults to tcp
 containerdConfigPatches:

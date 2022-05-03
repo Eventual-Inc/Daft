@@ -5,6 +5,7 @@ IMAGES=daftlet reader sleepy web
 K8S_CLUSTER_NAME="kind-${USER}-kind"
 
 TILT_PORT ?= 10350
+KIND_DAFT_WEB_HOST_PORT ?= 30000
 
 define BUILD_IMAGE
 BUILDKIT_PROGRESS=plain DOCKER_BUILDKIT=1 $(DOCKER) build . -t $@:latest --target $@
@@ -21,7 +22,7 @@ dist:
 	BUILDKIT_PROGRESS=plain DOCKER_BUILDKIT=1 $(DOCKER) build . -t $@:latest --target $@ --output .
 
 start-local-cluster:
-	@kubectl cluster-info --context ${K8S_CLUSTER_NAME} || /bin/bash scripts/kind-with-registry.sh
+	@kubectl cluster-info --context ${K8S_CLUSTER_NAME} || KIND_DAFT_WEB_HOST_PORT=${KIND_DAFT_WEB_HOST_PORT} /bin/bash scripts/kind-with-registry.sh
 
 stop-local-cluster:
 	/bin/bash scripts/teardown-kind-with-registry.sh

@@ -12,7 +12,7 @@ Data Functions (DaFt)
 - Generate web client Golang stubs  `make gen-openapi-web-client`
 
 ## Local Development
-- start tilt + kind cluster: `make local-dev`
+- start tilt + kind cluster: `make local-dev KIND_DAFT_WEB_HOST_PORT=30000` (choose a local port to expose the daft web grpc service on)
 - kill local cluster: `make stop-local-cluster`
 
 ## Develop on Kubernetes
