@@ -1,6 +1,6 @@
 DOCKER ?= docker
 
-IMAGES=daftlet reader sleepy
+IMAGES=daftlet reader sleepy web
 
 K8S_CLUSTER_NAME="kind-${USER}-kind"
 

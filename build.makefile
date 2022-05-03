@@ -1,6 +1,6 @@
 GO ?= go
 
-COMMANDS=reader daftlet cli
+COMMANDS=reader daftlet cli web
 BINARIES=$(addprefix bin/,$(COMMANDS))
 
 

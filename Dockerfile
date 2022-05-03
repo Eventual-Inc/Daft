@@ -60,5 +60,19 @@ FROM scratch as dist
 WORKDIR /
 COPY --from=build /app/bin /dist
 
+###############################################################################
+# Sleep Image #
+
 FROM debian:bullseye as sleepy
 CMD bash -c "sleep 3 && echo done"
+
+###############################################################################
+# Web Service Image #
+
+FROM debian:bullseye as web
+
+WORKDIR /app
+COPY --from=build /app/bin/web /app/bin/web
+EXPOSE 8080
+ENTRYPOINT /app/bin/web
+

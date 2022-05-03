@@ -1,0 +1,79 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "This is a server for the Daft frontend and CLI",
+        "title": "Daft Web API",
+        "termsOfService": "https://www.eventualcomputing.com/terms",
+        "contact": {
+            "name": "API Support",
+            "url": "https://www.eventualcomputing.com/support",
+            "email": "support@eventualcomputing.com"
+        },
+        "version": "0.1"
+    },
+    "host": "localhost:888",
+    "basePath": "/api/v1",
+    "paths": {
+        "/invocations": {
+            "post": {
+                "description": "Invokes a function (creating an Invocation) using a set of inputs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "invocations"
+                ],
+                "summary": "Create a function invocation",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.CreateInvocationSuccess"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.HTTPError"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "errors.HTTPError": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer",
+                    "example": 400
+                },
+                "message": {
+                    "type": "string",
+                    "example": "status bad request"
+                }
+            }
+        },
+        "model.CreateInvocationSuccess": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "format": "int64",
+                    "example": "1"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

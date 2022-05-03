@@ -1,0 +1,54 @@
+basePath: /api/v1
+definitions:
+  errors.HTTPError:
+    properties:
+      code:
+        example: 400
+        type: integer
+      message:
+        example: status bad request
+        type: string
+    type: object
+  model.CreateInvocationSuccess:
+    properties:
+      id:
+        example: "1"
+        format: int64
+        type: string
+    type: object
+host: localhost:888
+info:
+  contact:
+    email: support@eventualcomputing.com
+    name: API Support
+    url: https://www.eventualcomputing.com/support
+  description: This is a server for the Daft frontend and CLI
+  termsOfService: https://www.eventualcomputing.com/terms
+  title: Daft Web API
+  version: "0.1"
+paths:
+  /invocations:
+    post:
+      consumes:
+      - application/json
+      description: Invokes a function (creating an Invocation) using a set of inputs
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.CreateInvocationSuccess'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.HTTPError'
+      summary: Create a function invocation
+      tags:
+      - invocations
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
