@@ -37,7 +37,15 @@ case "${kind_version}" in
     ;;
 esac
 
-web_service_host_port="${KIND_DAFT_WEB_HOST_PORT:-30000}"
+# Retrieve the port for the Daft CLI from its config file
+daft_config_file=${HOME}/.daft.yaml
+if [ -f "$daft_config_file" ]; then
+  web_service_host_port=$(cat ${HOME}/.daft.yaml | grep ENDPOINT | awk '{ print $2 }' | tr -d '"' | awk -F':' '{ print $2 }')
+fi
+if [ -z "$web_service_host_port" ]; then
+  web_service_host_port=30000
+  echo "Could not find Daft CLI config file at ${daft_config_file}, defaulting to port ${web_service_host_port}"
+fi
 echo "Daft web service port: ${web_service_host_port}"
 
 # create registry container unless it already exists

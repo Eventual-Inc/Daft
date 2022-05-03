@@ -8,11 +8,9 @@ Data Functions (DaFt)
 
 ## Code Generation
 - Generate flatbuffer Golang code  `make gen-fbs`
-- Generate web server Golang stubs  `make gen-openapi-web-service`
-- Generate web client Golang stubs  `make gen-openapi-web-client`
 
 ## Local Development
-- start tilt + kind cluster: `make local-dev KIND_DAFT_WEB_HOST_PORT=30000` (choose a local port to expose the daft web grpc service on)
+- start tilt + kind cluster: `make local-dev`
 - kill local cluster: `make stop-local-cluster`
 
 ## Develop on Kubernetes
