@@ -14,6 +14,8 @@
 #   More info: https://docs.tilt.dev/api.html#api.warn
 
 
+SRC_CODE_DIRS = ['cmd', 'codegen', 'pkg', 'build.makefile', 'go.mod', 'go.sum']
+
 print("""
 -----------------------------------------------------------------
 ✨ Hello Tilt! This appears in the (Tiltfile) pane whenever Tilt
@@ -59,7 +61,7 @@ for image in IMAGES:
                 context='.',
                 dockerfile='Dockerfile',
                 target='{}'.format(image),
-                ignore=['./dist', 'fbs']
+                only=SRC_CODE_DIRS
     )
 
 # Apply Kubernetes manifests
