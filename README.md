@@ -6,6 +6,11 @@ Data Functions (DaFt)
 - Build runtime image `make runtime`
 - Build reader image `make reader`
 
+## Code Generation
+- Generate flatbuffer Golang code  `make gen-fbs`
+- Generate web server Golang stubs  `make gen-openapi-web-service`
+- Generate web client Golang stubs  `make gen-openapi-web-client`
+
 ## Local Development
 - start tilt + kind cluster: `make local-dev`
 - kill local cluster: `make stop-local-cluster`
