@@ -2,30 +2,38 @@ package containerruntime
 
 import (
 	"context"
-	"fmt"
 	"errors"
+	"fmt"
 	"os"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/oci"
+	"github.com/google/uuid"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
 
-
 	"github.com/Eventual-Inc/Daft/pkg/image"
+	"github.com/Eventual-Inc/Daft/pkg/logging/timing"
 )
 
-type ContainerdContext struct {
-	client *containerd.Client
-	numContainers uint64
-	imagePool map[string]containerd.Image
+type containerData struct {
+	containerName string
+	imageName     string
+	container     containerd.Container
+	task          containerd.Task
 }
 
+type ContainerdContext struct {
+	client        *containerd.Client
+	numContainers uint64
+	imagePool     map[string]containerd.Image
+	containerPool map[string]containerData
+}
 
 func NewContainerdContext(socketPath string) *ContainerdContext {
+	defer timing.Timeit("NewContainerdContext", socketPath)()
+
 	cdc := new(ContainerdContext)
 	client, err := containerd.New("/run/containerd/containerd.sock")
 	cdc.client = client
@@ -33,20 +41,21 @@ func NewContainerdContext(socketPath string) *ContainerdContext {
 		logrus.Fatal(err)
 	}
 	cdc.imagePool = make(map[string]containerd.Image)
+	cdc.containerPool = make(map[string]containerData)
 	return cdc
 }
 
 func (c *ContainerdContext) PullImage(ctx context.Context, uri string) (string, error) {
+	defer timing.Timeit("PullImage", uri)()
 	if c.ContainsImage(ctx, uri) {
 		return uri, nil
 	}
-	
+
 	resolver, err := image.ResolverFactory(ctx, uri)
 	if err != nil {
 		logrus.Fatal(err)
 		return "", err
 	}
-	logrus.Debugf("pulling image: %s", uri)
 
 	image, err := c.client.Pull(
 		ctx,
@@ -54,15 +63,14 @@ func (c *ContainerdContext) PullImage(ctx context.Context, uri string) (string, 
 		containerd.WithResolver(resolver),
 		containerd.WithPullUnpack,
 	)
-	logrus.Debugf("done pulling image: %s", image.Name())
 	unpacked, err := image.IsUnpacked(ctx, "overlayfs")
 
 	if !unpacked {
-		 err = image.Unpack(ctx, "overlayfs")
-		 if err != nil {
+		err = image.Unpack(ctx, "overlayfs")
+		if err != nil {
 			logrus.Fatal(err)
 			return "", err
-		}	
+		}
 	}
 
 	c.imagePool[uri] = image
@@ -75,14 +83,15 @@ func (c *ContainerdContext) ContainsImage(ctx context.Context, uri string) bool 
 	return ok
 }
 
-
 func (c *ContainerdContext) CreateContainer(ctx context.Context, uri string) (string, error) {
+	containerName := uuid.New().String()
+
+	defer timing.Timeit("CreateContainer", containerName)()
 	if !c.ContainsImage(ctx, uri) {
 		return "", errors.New("image does not exist in container context")
 	} else {
 		logrus.Debugf("image in cache for: %s", uri)
 	}
-	
 
 	c.numContainers = c.numContainers + 100
 
@@ -90,9 +99,7 @@ func (c *ContainerdContext) CreateContainer(ctx context.Context, uri string) (st
 	mntSourceDir := fmt.Sprintf("/run/eventual/container-%d", c.numContainers)
 	os.MkdirAll(mntSourceDir, os.ModePerm) // should probably set permissions correctly
 
-	containerName := uuid.New().String()
 	logrus.Debugf("building container for: %s with name: %s", uri, containerName)
-
 
 	container, err := c.client.NewContainer(
 		ctx,
@@ -116,45 +123,31 @@ func (c *ContainerdContext) CreateContainer(ctx context.Context, uri string) (st
 		logrus.Fatal(err)
 		return "", err
 	}
+
 	logrus.Debugf("done building container for: %s -> %s", uri, container.ID())
 
 	logrus.Debugf("building task for: %s", container.ID())
-	start := time.Now()
 
 	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
-	exitStatusC, err := task.Wait(ctx)
-	
-	logrus.Debugf("done building Task for: %s -> %s", container.ID(), task.ID())
-
-
 
 	if err != nil {
-		logrus.Fatal(err, exitStatusC)
+		logrus.Fatal(err)
 	}
-	logrus.Print(task.Pid())
 
+	logrus.Debugf("started task %s as pid: %d", task.ID(), task.Pid())
 
 	if err := task.Start(ctx); err != nil {
 		logrus.Fatal(err)
 	}
 
-	exitStatusC, err = task.Wait(ctx)
-	logrus.Debugf("Time to wait for task: %v", time.Since(start))
+	c.containerPool[containerName] = containerData{
+		containerName: containerName,
+		imageName:     uri,
+		container:     container,
+		task:          task,
+	}
 
-	logrus.Print("waited")
-	// task, err = container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
-	// exitStatusC, err = task.Wait(ctx)
-	// if err := task.Start(ctx); err != nil {
-	// 	logrus.Fatal(err)
-	// }
-	// exitStatusC, err = task.Wait(ctx)
-	// if err := task.Start(ctx); err != nil {
-	// 	logrus.Fatal(err)
-	// }
-
-
-	return "", nil
-
+	return uri, nil
 
 }
 
