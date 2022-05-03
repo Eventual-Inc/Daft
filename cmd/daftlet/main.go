@@ -31,6 +31,8 @@ import (
 
 	fbs "github.com/Eventual-Inc/Daft/codegen/go/Daft"
 	"github.com/Eventual-Inc/Daft/pkg/image"
+	"github.com/Eventual-Inc/Daft/pkg/containerruntime"
+
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
 )
 
@@ -42,7 +44,6 @@ const TestImagesZipS3Path = "s3://eventual-data-test-bucket/test-rickroll/rickro
 
 func pullImage(ctx context.Context, client *containerd.Client) (containerd.Image, error) {
 	ImageURL := os.Getenv("READER_IMAGE_URL")
-
 	// Get a username and secret from ECR
 	resolver, err := image.ResolverFactory(ctx, ImageURL)
 
@@ -69,6 +70,19 @@ func launchReader(id int, localImagesPath string) {
 
 	// Create a containerd client
 	ctx := namespaces.WithNamespace(context.Background(), "reader")
+
+	ImageURL := os.Getenv("READER_IMAGE_URL")
+
+	
+	ImageURL = "941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/reader:0"
+
+	thing := containerruntime.NewContainerRuntimeContext()
+	thing.PullImage(ctx, ImageURL)
+	thing.CreateContainer(ctx, ImageURL)
+
+	return
+
+
 	client, err := containerd.New("/run/containerd/containerd.sock")
 	defer client.Close()
 	if err != nil {

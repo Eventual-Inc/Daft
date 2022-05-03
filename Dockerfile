@@ -60,3 +60,5 @@ FROM scratch as dist
 WORKDIR /
 COPY --from=build /app/bin /dist
 
+FROM debian:bullseye as sleepy
+CMD bash -c "sleep 3 && echo done"
