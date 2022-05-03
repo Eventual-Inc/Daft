@@ -1,0 +1,40 @@
+openapi: 3.0.0
+info:
+  title: Daft Web API
+  version: '1.0'
+  description: ''
+paths:
+  /invocations:
+    post:
+      summary: 'Invoke a function'  
+      operationId: post-invocations
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+      description: 'Create a new Data Function invocation, which is a single call of the function with a set of inputs'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                functionId:
+                  type: string
+                inputs:
+                  type: object
+            examples:
+              example-1:
+                value:
+                  functionId: my-func
+                  inputs:
+                    foo: 's3://somebucket/somepath.jpeg'
+                    bar: 123
+        description: ''
+    parameters: []

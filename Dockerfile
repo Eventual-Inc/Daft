@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.4
-
 ###############################################################################
 # Build Image #
 FROM golang:1.18-bullseye AS build
