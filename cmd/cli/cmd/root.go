@@ -5,7 +5,6 @@ Copyright © 2022 Jay Chia jay@eventualcomputing.com
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -57,7 +56,6 @@ func initConfig() {
 
 	viper.AutomaticEnv()
 
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
-	}
+	err := viper.ReadInConfig()
+	cobra.CheckErr(err)
 }
