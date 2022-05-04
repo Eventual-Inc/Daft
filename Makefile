@@ -4,7 +4,18 @@ IMAGES=daftlet reader sleepy web
 
 K8S_CLUSTER_NAME="kind-${USER}-kind"
 
-TILT_PORT ?= 10350
+TILT_PORT :=
+
+ENVFILE := $(strip $(wildcard .env))
+
+# Look for .env file otherwise or .env.example
+ifneq (${ENVFILE}, .env)
+	ENVFILE = .env.example
+endif
+
+# Include variables in .env file
+include ${ENVFILE}
+export $(shell sed 's/=.*//' ${ENVFILE})
 
 define BUILD_IMAGE
 BUILDKIT_PROGRESS=plain DOCKER_BUILDKIT=1 $(DOCKER) build . -t $@:latest --target $@
