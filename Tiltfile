@@ -80,10 +80,12 @@ def get_daft_web_port():
     HOME = os.environ["HOME"]
     daft_config_path = HOME + "/.daft.yaml"
     port = 30000
-    daft_cli_config = str(read_file(daft_config_path, "DAFT_WEB_ENDPOINT: 30000")).splitlines()
-    for line in daft_cli_config:
-        if line.startswith("DAFT_WEB_ENDPOINT: "):
-            port = int(line.replace("DAFT_WEB_ENDPOINT: ", "").strip('"').split(":")[1])
+    daft_cli_config = read_yaml(daft_config_path, default={})
+    if "DAFT_WEB_ENDPOINT" in daft_cli_config:
+        endpoint = daft_cli_config["DAFT_WEB_ENDPOINT"]
+        port_pos = endpoint.find(":")
+        if port_pos >= 0:
+            port = int(endpoint[port_pos+1:])
     return port
 
 k8s_resource(workload='daft-web-singlepod', port_forwards=port_forward(get_daft_web_port(), container_port=8080))
