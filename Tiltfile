@@ -74,6 +74,20 @@ for image in IMAGES:
 k8s_yaml(['k8s/daftlet.yaml'])
 k8s_yaml(['k8s/daft_web.yaml'])
 
+def get_daft_web_port():
+    """Retrieve the port for the Daft Web gRPC endpoint from the Daft CLI config file
+    """
+    HOME = os.environ["HOME"]
+    daft_config_path = HOME + "/.daft.yaml"
+    port = 30000
+    daft_cli_config = str(read_file(daft_config_path, "DAFT_WEB_ENDPOINT: 30000")).splitlines()
+    for line in daft_cli_config:
+        if line.startswith("DAFT_WEB_ENDPOINT: "):
+            port = int(line.replace("DAFT_WEB_ENDPOINT: ", "").strip('"').split(":")[1])
+    return port
+
+k8s_resource(workload='daft-web-singlepod', port_forwards=port_forward(get_daft_web_port(), container_port=8080))
+
 # Customize a Kubernetes resource
 #   By default, Kubernetes resource names are automatically assigned
 #   based on objects in the YAML manifests, e.g. Deployment name.

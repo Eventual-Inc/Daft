@@ -11,20 +11,3 @@ spec:
     ports:
       - containerPort: 8080
         name: grpc-web-svc
-
----
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: daft-web
-spec:
-  type: NodePort  # Might want a LoadBalancer when in production
-  selector:
-    app.kubernetes.io/name: daft-web
-  ports:
-    - name: grpc-web-service-port
-      protocol: TCP
-      port: 8080
-      targetPort: grpc-web-svc
-      nodePort: 30000

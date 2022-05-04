@@ -37,17 +37,6 @@ case "${kind_version}" in
     ;;
 esac
 
-# Retrieve the port for the Daft CLI from its config file
-daft_config_file=${HOME}/.daft.yaml
-if [ -f "$daft_config_file" ]; then
-  web_service_host_port=$(cat ${HOME}/.daft.yaml | grep ENDPOINT | awk '{ print $2 }' | tr -d '"' | awk -F':' '{ print $2 }')
-fi
-if [ -z "$web_service_host_port" ]; then
-  web_service_host_port=30000
-  echo "Could not find Daft CLI config file at ${daft_config_file}, defaulting to port ${web_service_host_port}"
-fi
-echo "Daft web service port: ${web_service_host_port}"
-
 # create registry container unless it already exists
 running="$(docker inspect -f '{{.State.Running}}' "${reg_name}" 2>/dev/null || true)"
 if [ "${running}" != 'true' ]; then
@@ -67,14 +56,6 @@ echo "Registry Host: ${reg_host}"
 cat <<EOF | kind create cluster ${KIND_CLUSTER_OPTS} --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-- role: worker
-  extraPortMappings:
-  - containerPort: 30000
-    hostPort: ${web_service_host_port}
-    listenAddress: "0.0.0.0" # Optional, defaults to "0.0.0.0"
-    protocol: tcp # Optional, defaults to tcp
 containerdConfigPatches:
 - |-
   [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:${reg_port}"]
