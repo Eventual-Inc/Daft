@@ -14,7 +14,29 @@
 #   More info: https://docs.tilt.dev/api.html#api.warn
 
 
-SRC_CODE_DIRS = ['cmd', 'codegen', 'pkg', 'build.makefile', 'go.mod', 'go.sum']
+SRC_CODE_DIRS = ['cmd', 'codegen', 'pkg', 'build.makefile', 'go.mod', 'go.sum', '.env', '.env.example']
+AWS_KEY_ID_NAME="AWS_ACCESS_KEY_ID"
+AWS_ACCESS_KEY_NAME="AWS_SECRET_ACCESS_KEY"
+DAFT_WEB_ENDPOINT_PORT="DAFT_WEB_ENDPOINT_PORT"
+IMAGE_REGISTRY="IMAGE_REGISTRY"
+
+load('ext://dotenv', 'dotenv')
+
+def load_env():
+    # Look for .env file otherwise use .env.example file for variables
+    if os.path.exists(".env"):
+        dotenv(fn=".env")
+    elif os.path.exists(".env.example"):
+        dotenv(fn=".env.example")
+    else:
+        fail("Could not find '.env' or '.env.example' file in local dir")
+
+load_env()
+
+def get_var(name):
+    if name not in os.environ:
+        fail("could not find {}".format(name))
+    return os.environ[name]
 
 print("""
 -----------------------------------------------------------------
@@ -28,13 +50,17 @@ warn('ℹ️ Open {tiltfile_path} in your favorite editor to get started.'.forma
 load('ext://secret', 'secret_from_dict')
 
 def deploy_aws_secret():
-    HOME = os.environ['HOME']
-    aws_sec = str(read_file(HOME + "/.aws/credentials")).splitlines()
-    aws_secrets = {}
-    for sec_clause in aws_sec:
-        if "=" in sec_clause:
-            key, value = sec_clause.split("=")
-            aws_secrets[key.strip()] = value.strip()
+    aws_id = get_var(AWS_KEY_ID_NAME)
+    aws_key = get_var(AWS_ACCESS_KEY_NAME)
+
+    if aws_id == "" or aws_key == "":
+        fail("aws creds not populated in .env or .env.example")
+
+    aws_secrets = {
+        AWS_KEY_ID_NAME: aws_id,
+        AWS_ACCESS_KEY_NAME: aws_key
+    }
+
     aws_secret_yaml = secret_from_dict("aws", inputs=aws_secrets)
     k8s_yaml(aws_secret_yaml)
 
@@ -53,11 +79,11 @@ local_resource(
     cmd="make gen-fbs",
     deps="./fbs",
 )
-
+registry=get_var(IMAGE_REGISTRY).strip().strip('"')
 IMAGES = ['daftlet', 'reader', 'web']
-update_settings(suppress_unused_image_warnings=["localhost:5000/reader"])
+update_settings(suppress_unused_image_warnings=["{}/reader".format(registry)])
 for image in IMAGES:
-    docker_build('localhost:5000/{}'.format(image),
+    docker_build('{}/{}'.format(registry, image),
                 context='.',
                 dockerfile='Dockerfile',
                 target='{}'.format(image),
@@ -74,21 +100,7 @@ for image in IMAGES:
 k8s_yaml(['k8s/daftlet.yaml'])
 k8s_yaml(['k8s/daft_web.yaml'])
 
-def get_daft_web_port():
-    """Retrieve the port for the Daft Web gRPC endpoint from the Daft CLI config file
-    """
-    HOME = os.environ["HOME"]
-    daft_config_path = HOME + "/.daft.yaml"
-    port = 30000
-    daft_cli_config = read_yaml(daft_config_path, default={})
-    if "DAFT_WEB_ENDPOINT" in daft_cli_config:
-        endpoint = daft_cli_config["DAFT_WEB_ENDPOINT"]
-        port_pos = endpoint.find(":")
-        if port_pos >= 0:
-            port = int(endpoint[port_pos+1:])
-    return port
-
-k8s_resource(workload='daft-web-singlepod', port_forwards=port_forward(get_daft_web_port(), container_port=8080))
+k8s_resource(workload='daft-web-singlepod', port_forwards=port_forward(int(get_var(DAFT_WEB_ENDPOINT_PORT)), container_port=8080))
 
 # Customize a Kubernetes resource
 #   By default, Kubernetes resource names are automatically assigned

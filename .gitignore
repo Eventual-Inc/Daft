@@ -17,3 +17,4 @@ codegen/
 
 # Build outputs
 dist/
+.env
