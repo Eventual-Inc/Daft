@@ -152,7 +152,7 @@ func (manifest *IngestManifest) buildDatasourceTypeConfig() error {
 	result, err := SelectPrompt(
 		"Data format",
 		"Choose how your data is laid out.",
-		[]*selectPromptData{&IndividualBinaryFilesSelector, &CommaSeparatedValuesFilesSelector, &DatabaseTableSelector},
+		[]*selectPromptData{&CommaSeparatedValuesFilesSelector, &IndividualBinaryFilesSelector, &DatabaseTableSelector},
 	)
 
 	if err != nil {
@@ -185,7 +185,7 @@ func (manifest *IngestManifest) buildDatasourceLocationConfig() error {
 		result, err := SelectPrompt(
 			"CSV Files Location",
 			"Specify where to find your files, and the appropriate credentials to access them.",
-			[]*selectPromptData{&LocalDirectorySelector, &AWSS3Selector},
+			[]*selectPromptData{&AWSS3Selector, &LocalDirectorySelector},
 		)
 		if err != nil {
 			return err
