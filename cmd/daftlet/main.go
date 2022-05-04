@@ -16,11 +16,9 @@ import (
 
 	"github.com/containerd/containerd/namespaces"
 
-	"github.com/containerd/containerd"
 	"github.com/gorilla/mux"
 
 	"github.com/Eventual-Inc/Daft/pkg/containerruntime"
-	"github.com/Eventual-Inc/Daft/pkg/image"
 
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
 )
@@ -28,22 +26,6 @@ import (
 const ContainerHostPath = "/run/eventual/container/"
 const TestImagesZipS3Path = "s3://eventual-data-test-bucket/test-rickroll/rickroll-images.zip"
 const ContainerdSocket = "/run/containerd/containerd.sock"
-
-func pullImage(ctx context.Context, client *containerd.Client) (containerd.Image, error) {
-	ImageURL := os.Getenv("READER_IMAGE_URL")
-	// Get a username and secret from ECR
-	resolver, err := image.ResolverFactory(ctx, ImageURL)
-
-	// Pull image with resolver
-	image, err := client.Pull(
-		ctx,
-		ImageURL,
-		containerd.WithResolver(resolver),
-		containerd.WithPullUnpack,
-	)
-
-	return image, err
-}
 
 // Code that will launch a reader container using the host's containerd client
 func launchReader(id int, localImagesPath string) {
