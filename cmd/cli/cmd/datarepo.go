@@ -54,8 +54,13 @@ var (
 	}
 )
 
+type ManifestConfig interface {
+	yaml.Marshaler
+	Kind() string
+}
+
 type CSVFilesTypeConfig struct {
-	Delimiter string
+	Delimiter rune
 }
 
 func NewCSVFilesTypeConfigFromPrompts() (*CSVFilesTypeConfig, error) {
@@ -68,19 +73,23 @@ func NewCSVFilesTypeConfigFromPrompts() (*CSVFilesTypeConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	config.Delimiter = result.Value
+	config.Delimiter = []rune(result.Value)[0]
 	return &config, nil
 }
 
 func (config *CSVFilesTypeConfig) MarshalYAML() (interface{}, error) {
 	type s struct {
 		Kind      string
-		Delimiter string
+		Delimiter rune
 	}
 	return s{
 		Kind:      CommaSeparatedValuesFilesSelector.Value,
 		Delimiter: config.Delimiter,
 	}, nil
+}
+
+func (config *CSVFilesTypeConfig) Kind() string {
+	return CommaSeparatedValuesFilesSelector.Value
 }
 
 type AWSS3LocationConfig struct {
@@ -102,6 +111,10 @@ func (config *AWSS3LocationConfig) MarshalYAML() (interface{}, error) {
 		Prefix: config.Prefix,
 		Region: config.Region,
 	}, nil
+}
+
+func (config *AWSS3LocationConfig) Kind() string {
+	return AWSS3Selector.Value
 }
 
 func NewAWSS3LocationConfigFromPrompts() (*AWSS3LocationConfig, error) {
@@ -141,10 +154,10 @@ func NewAWSS3LocationConfigFromPrompts() (*AWSS3LocationConfig, error) {
 
 type IngestManifest struct {
 	selectedDatasourceType      *selectPromptData
-	DatasourceTypeConfiguration interface{} `yaml:"datasourceType"`
+	DatasourceTypeConfiguration ManifestConfig `yaml:"datasourceType"`
 
 	selectedDatasourceLocation      *selectPromptData
-	DatasourceLocationConfiguration interface{} `yaml:"datasourceLocation"`
+	DatasourceLocationConfiguration ManifestConfig `yaml:"datasourceLocation"`
 }
 
 // Builds the configuration for the DatasourceType
@@ -204,7 +217,7 @@ func (manifest *IngestManifest) buildDatasourceLocationConfig() error {
 	}
 }
 
-func buildDatasourceLocationConfigForSelectedLocation(location *selectPromptData) (interface{}, error) {
+func buildDatasourceLocationConfigForSelectedLocation(location *selectPromptData) (ManifestConfig, error) {
 	switch location {
 	case &LocalDirectorySelector:
 		return nil, errors.New("local directories not yet supported")
@@ -241,6 +254,20 @@ func (manifest *IngestManifest) confirmDatasourceConfigs() error {
 	return nil
 }
 
+func (manifest *IngestManifest) buildDatarepoSchema() error {
+	sampler, err := SamplerFactory(manifest.DatasourceTypeConfiguration, manifest.DatasourceLocationConfiguration)
+	if err != nil {
+		return err
+	}
+	samples, err := sampler.Sample()
+	if err != nil {
+		return err
+	}
+	// TODO(jchia): Go through samples and come up with best effort schema detected
+	fmt.Println(samples)
+	return nil
+}
+
 var datarepoCmd = &cobra.Command{
 	Use:   "datarepo",
 	Short: "Commands related to Data Repositories",
@@ -268,6 +295,9 @@ modify and confirm the schema manually before creating the repo and ingesting da
 		cobra.CheckErr(err)
 
 		err = manifest.confirmDatasourceConfigs()
+		cobra.CheckErr(err)
+
+		err = manifest.buildDatarepoSchema()
 		cobra.CheckErr(err)
 	},
 }

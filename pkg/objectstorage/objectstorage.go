@@ -11,9 +11,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
+type DownloadObjectOption = func(*s3.GetObjectInput)
+
+func WithDownloadRange(start int, end int) DownloadObjectOption {
+	f := func(in *s3.GetObjectInput) {
+		r := fmt.Sprintf("bytes=%d-%d", start, end)
+		in.Range = &r
+	}
+	return f
+}
+
 // ObjectStore is the interface for reading and writing to an external object storage service such as AWS S3
 type ObjectStore interface {
-	DownloadObject(ctx context.Context, path string, dst io.Writer) (n int64, err error)
+	DownloadObject(ctx context.Context, path string, dst io.Writer, opts ...DownloadObjectOption) (n int64, err error)
+	ListObjects(ctx context.Context, path string) ([]string, error)
 }
 
 // AWS S3 Implementation of ObjectStore
@@ -40,17 +51,45 @@ func NewAwsS3ObjectStore(ctx context.Context, cfg aws.Config) ObjectStore {
 	return &awsS3ObjectStore{s3Client: s3.NewFromConfig(cfg)}
 }
 
-func (store *awsS3ObjectStore) DownloadObject(ctx context.Context, path string, dst io.Writer) (n int64, err error) {
+func (store *awsS3ObjectStore) DownloadObject(ctx context.Context, path string, dst io.Writer, opts ...DownloadObjectOption) (n int64, err error) {
 	s3Bucket, s3Key, err := splitS3Path(path)
 	if err != nil {
 		return 0, err
 	}
-	getObjectOutput, err := store.s3Client.GetObject(ctx, &s3.GetObjectInput{
+	in := s3.GetObjectInput{
 		Bucket: &s3Bucket,
 		Key:    &s3Key,
-	})
+	}
+	for _, opt := range opts {
+		opt(&in)
+	}
+	getObjectOutput, err := store.s3Client.GetObject(ctx, &in)
 	if err != nil {
 		return 0, err
 	}
 	return io.Copy(dst, getObjectOutput.Body)
+}
+
+func (store *awsS3ObjectStore) ListObjects(ctx context.Context, path string) ([]string, error) {
+	s3Bucket, s3Key, err := splitS3Path(path)
+	if err != nil {
+		return nil, err
+	}
+	listObjectOutput, err := store.s3Client.ListObjectsV2(
+		ctx,
+		// TODO(jchia): Need to handle pagination here with LastKey, otherwise this
+		// defaults to returning a maximum of 1,000 keys only
+		&s3.ListObjectsV2Input{
+			Bucket: &s3Bucket,
+			Prefix: &s3Key,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	objectPaths := []string{}
+	for _, objMetadata := range listObjectOutput.Contents {
+		objectPaths = append(objectPaths, fmt.Sprintf("s3://%s/%s", s3Bucket, *objMetadata.Key))
+	}
+	return objectPaths, nil
 }
