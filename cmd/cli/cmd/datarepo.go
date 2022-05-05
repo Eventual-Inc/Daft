@@ -3,10 +3,13 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+
+	"github.com/Eventual-Inc/Daft/pkg/schema"
 )
 
 func init() {
@@ -59,8 +62,14 @@ type ManifestConfig interface {
 	Kind() string
 }
 
+type DatasourceTypeConfiguration interface {
+	ManifestConfig
+	SchemaHints() []schema.SchemaField
+}
+
 type CSVFilesTypeConfig struct {
 	Delimiter rune
+	Headers   []string
 }
 
 func NewCSVFilesTypeConfigFromPrompts() (*CSVFilesTypeConfig, error) {
@@ -74,6 +83,16 @@ func NewCSVFilesTypeConfigFromPrompts() (*CSVFilesTypeConfig, error) {
 		return nil, err
 	}
 	config.Delimiter = []rune(result.Value)[0]
+
+	headerPrompt := promptui.Prompt{
+		Label: "Headers as comma-separated values (optional - inferred if not provided)",
+	}
+	headerResult, err := headerPrompt.Run()
+	if err != nil {
+		return nil, err
+	}
+	headers := strings.Split(headerResult, ",")
+	config.Headers = headers
 	return &config, nil
 }
 
@@ -81,15 +100,26 @@ func (config *CSVFilesTypeConfig) MarshalYAML() (interface{}, error) {
 	type s struct {
 		Kind      string
 		Delimiter rune
+		Headers   []string
 	}
 	return s{
 		Kind:      CommaSeparatedValuesFilesSelector.Value,
 		Delimiter: config.Delimiter,
+		Headers:   config.Headers,
 	}, nil
 }
 
 func (config *CSVFilesTypeConfig) Kind() string {
 	return CommaSeparatedValuesFilesSelector.Value
+}
+
+func (config *CSVFilesTypeConfig) SchemaHints() []schema.SchemaField {
+	var fields []schema.SchemaField
+	for _, header := range config.Headers {
+		field := schema.NewStringField(header, "CSV header provided by user")
+		fields = append(fields, &field)
+	}
+	return fields
 }
 
 type AWSS3LocationConfig struct {
@@ -153,11 +183,11 @@ func NewAWSS3LocationConfigFromPrompts() (*AWSS3LocationConfig, error) {
 }
 
 type IngestManifest struct {
-	selectedDatasourceType      *selectPromptData
-	DatasourceTypeConfiguration ManifestConfig `yaml:"datasourceType"`
+	selectedDatasourceType *selectPromptData
+	DatasourceTypeConfig   DatasourceTypeConfiguration `yaml:"datasourceType"`
 
-	selectedDatasourceLocation      *selectPromptData
-	DatasourceLocationConfiguration ManifestConfig `yaml:"datasourceLocation"`
+	selectedDatasourceLocation *selectPromptData
+	DatasourceLocationConfig   ManifestConfig `yaml:"datasourceLocation"`
 }
 
 // Builds the configuration for the DatasourceType
@@ -180,7 +210,7 @@ func (manifest *IngestManifest) buildDatasourceTypeConfig() error {
 			return err
 		}
 		manifest.selectedDatasourceType = result
-		manifest.DatasourceTypeConfiguration = config
+		manifest.DatasourceTypeConfig = config
 		return nil
 	case DatabaseTableSelector.Value:
 		return errors.New("database tables not yet supported")
@@ -208,7 +238,7 @@ func (manifest *IngestManifest) buildDatasourceLocationConfig() error {
 			return err
 		}
 		manifest.selectedDatasourceLocation = result
-		manifest.DatasourceLocationConfiguration = config
+		manifest.DatasourceLocationConfig = config
 		return nil
 	case DatabaseTableSelector.Value:
 		return errors.New("database tables not yet supported")
@@ -255,7 +285,7 @@ func (manifest *IngestManifest) confirmDatasourceConfigs() error {
 }
 
 func (manifest *IngestManifest) buildDatarepoSchema() error {
-	sampler, err := SamplerFactory(manifest.DatasourceTypeConfiguration, manifest.DatasourceLocationConfiguration)
+	sampler, err := SamplerFactory(manifest.DatasourceTypeConfig, manifest.DatasourceLocationConfig)
 	if err != nil {
 		return err
 	}
@@ -263,6 +293,7 @@ func (manifest *IngestManifest) buildDatarepoSchema() error {
 	if err != nil {
 		return err
 	}
+
 	// TODO(jchia): Go through samples and come up with best effort schema detected
 	fmt.Println(samples)
 	return nil
