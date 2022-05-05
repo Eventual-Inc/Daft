@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -117,7 +118,7 @@ func (config *CSVFilesTypeConfig) SchemaHints() []schema.SchemaField {
 	var fields []schema.SchemaField
 	for _, header := range config.Headers {
 		field := schema.NewStringField(header, "CSV header provided by user")
-		fields = append(fields, &field)
+		fields = append(fields, field)
 	}
 	return fields
 }
@@ -282,7 +283,39 @@ func (manifest *IngestManifest) buildDatarepoSchema() error {
 	}
 
 	// TODO(jchia): Go through samples and come up with best effort schema detected
-	fmt.Println(samples)
+	var schemaFields []schema.SchemaField
+	for _, sampleResult := range samples {
+		schemaFields = append(schemaFields, sampleResult.InferredSchema)
+	}
+	detectedSchema := schema.NewRecordField("schema", "", schemaFields)
+	jsonSchema, err := json.MarshalIndent(detectedSchema, "", "    ")
+	if err != nil {
+		return err
+	}
+	finalizedSchemaStr, err := EditorPrompt(string(jsonSchema), "json")
+	if err != nil {
+		return err
+	}
+	recordField := schema.SchemaField{}
+	err = json.Unmarshal([]byte(finalizedSchemaStr), &recordField)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Final Schema:")
+	fmt.Println(finalizedSchemaStr)
+	prompt := promptui.Prompt{
+		Label:     "Confirm finalized schema",
+		IsConfirm: true,
+	}
+	confirmSchema, err := prompt.Run()
+	if err != nil {
+		return err
+	}
+	if confirmSchema != "y" {
+		return errors.New("aborted finalizing schema")
+	}
+
 	return nil
 }
 

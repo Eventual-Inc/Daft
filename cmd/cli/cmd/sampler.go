@@ -59,7 +59,7 @@ func (sampler *CSVSampler) Sample() (map[string]SampleResult, error) {
 				return samples, fmt.Errorf("found CSV file with %d columns, expecting: %d", len(record), len(sampler.schemaHints))
 			}
 			for i, schemaHint := range sampler.schemaHints {
-				if foundHeader := record[i]; foundHeader != schemaHint.Name() {
+				if foundHeader := record[i]; foundHeader != schemaHint.Name {
 					isHeaderRow = false
 				}
 			}
@@ -71,7 +71,7 @@ func (sampler *CSVSampler) Sample() (map[string]SampleResult, error) {
 		if isHeaderRow && len(detectedSchema) == 0 {
 			for _, columnName := range record {
 				newField := schema.NewStringField(columnName, "Detected column from CSV")
-				detectedSchema = append(detectedSchema, &newField)
+				detectedSchema = append(detectedSchema, newField)
 			}
 		}
 
@@ -84,10 +84,10 @@ func (sampler *CSVSampler) Sample() (map[string]SampleResult, error) {
 		}
 
 		for i, field := range detectedSchema {
-			currentSample := samples[field.Name()]
+			currentSample := samples[field.Name]
 			currentSample.InferredSchema = field
 			currentSample.sampledDataRows = append(currentSample.sampledDataRows, []byte(record[i]))
-			samples[field.Name()] = currentSample
+			samples[field.Name] = currentSample
 		}
 	}
 	return samples, nil
