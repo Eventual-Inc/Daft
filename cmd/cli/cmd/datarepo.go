@@ -125,7 +125,6 @@ func (config *CSVFilesTypeConfig) SchemaHints() []schema.SchemaField {
 type AWSS3LocationConfig struct {
 	Bucket string
 	Prefix string
-	Region string
 }
 
 func (config *AWSS3LocationConfig) MarshalYAML() (interface{}, error) {
@@ -133,13 +132,11 @@ func (config *AWSS3LocationConfig) MarshalYAML() (interface{}, error) {
 		Kind   string
 		Bucket string
 		Prefix string
-		Region string
 	}
 	return s{
 		Kind:   CommaSeparatedValuesFilesSelector.Value,
 		Bucket: config.Bucket,
 		Prefix: config.Prefix,
-		Region: config.Region,
 	}, nil
 }
 
@@ -168,16 +165,6 @@ func NewAWSS3LocationConfigFromPrompts() (*AWSS3LocationConfig, error) {
 			return nil, err
 		}
 		config.Prefix = result
-	}
-	{
-		prompt := promptui.Prompt{
-			Label: "AWS S3 Region",
-		}
-		result, err := prompt.Run()
-		if err != nil {
-			return nil, err
-		}
-		config.Region = result
 	}
 	return &config, nil
 }
