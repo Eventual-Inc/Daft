@@ -278,6 +278,10 @@ func (manifest *IngestManifest) buildDatarepoSchema() error {
 	if err != nil {
 		return err
 	}
+	tablePreview, err := PreviewSamples(samples)
+	if err != nil {
+		return err
+	}
 
 	var schemaFields []schema.SchemaField
 	for _, sampleResult := range samples {
@@ -288,7 +292,7 @@ func (manifest *IngestManifest) buildDatarepoSchema() error {
 	if err != nil {
 		return err
 	}
-	finalizedSchemaStr, err := EditorPrompt(SchemaEditorTutorialBlurb+string(yamlSchema), "yaml")
+	finalizedSchemaStr, err := EditorPrompt(SchemaEditorTutorialBlurb+tablePreview+string(yamlSchema), "yaml")
 	if err != nil {
 		return err
 	}
