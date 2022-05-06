@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -19,7 +18,7 @@ func init() {
 }
 
 var SchemaEditorTutorialBlurb = `
-# Daft schemas are Avro-compatible schemas written in JSON.
+# Daft schemas are Avro-compatible schemas written in YAML.
 # Fields can be things such as strings, ints and records (which contain sub-fields)
 # Additionally, the custom "daft_type" tag on fields adds more semantic meaning, enabling
 # Daft to do things such as treating a string field as a URL.
@@ -309,22 +308,21 @@ func (manifest *IngestManifest) buildDatarepoSchema() error {
 		return err
 	}
 
-	// TODO(jchia): Go through samples and come up with best effort schema detected
 	var schemaFields []schema.SchemaField
 	for _, sampleResult := range samples {
 		schemaFields = append(schemaFields, sampleResult.InferredSchema)
 	}
 	detectedSchema := schema.NewRecordField("schema", "", schemaFields)
-	jsonSchema, err := json.MarshalIndent(detectedSchema, "", "    ")
+	yamlSchema, err := yaml.Marshal(detectedSchema)
 	if err != nil {
 		return err
 	}
-	finalizedSchemaStr, err := EditorPrompt(string(jsonSchema), "json")
+	finalizedSchemaStr, err := EditorPrompt(SchemaEditorTutorialBlurb+string(yamlSchema), "yaml")
 	if err != nil {
 		return err
 	}
 	recordField := schema.SchemaField{}
-	err = json.Unmarshal([]byte(finalizedSchemaStr), &recordField)
+	err = yaml.Unmarshal([]byte(finalizedSchemaStr), &recordField)
 	if err != nil {
 		return err
 	}

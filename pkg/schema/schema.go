@@ -27,11 +27,11 @@ var (
 )
 
 type SchemaField struct {
-	Name     string        `json:"name"`
-	Doc      string        `json:"doc"`
-	Type     string        `json:"type"`
-	DaftType string        `json:"daft_type"`
-	Fields   []SchemaField `json:"fields,omitempty"`
+	Name     string        `yaml:"name"`
+	Doc      string        `yaml:"doc"`
+	Type     string        `yaml:"type"`
+	DaftType string        `yaml:"daft_type"`
+	Fields   []SchemaField `yaml:"fields,omitempty"`
 }
 
 func NewStringField(name string, doc string) SchemaField {
