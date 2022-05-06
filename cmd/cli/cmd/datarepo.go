@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/Eventual-Inc/Daft/pkg/ingest"
+	"github.com/Eventual-Inc/Daft/pkg/ingest/sampler"
 	"github.com/Eventual-Inc/Daft/pkg/schema"
 )
 
@@ -38,39 +40,39 @@ var SchemaEditorTutorialBlurb = `
 var (
 	IndividualBinaryFilesSelector = selectPromptData{
 		Name:        "Files (WIP)",
-		Value:       "individual_binary_files",
+		Value:       ingest.DataformatIDIndividualFiles,
 		Description: "Individual files on disk or in object storage.",
 	}
 	CommaSeparatedValuesFilesSelector = selectPromptData{
 		Name:        "CSV Files",
-		Value:       "csv_files",
+		Value:       ingest.DataformatIDCSVFiles,
 		Description: "Comma-separated value files on disk or in object storage. Other delimiters such as tabs are also supported.",
 	}
 	DatabaseTableSelector = selectPromptData{
 		Name:        "Database Table (WIP)",
-		Value:       "database_table",
+		Value:       ingest.DataformatIDDatabaseTable,
 		Description: "A database table from databases such as PostgreSQL, Snowflake or BigQuery.",
 	}
 
 	LocalDirectorySelector = selectPromptData{
 		Name:        "Local Directory (WIP)",
-		Value:       "local_dir",
+		Value:       ingest.DatasourceIDLocalDirectory,
 		Description: "A directory on your current machine's local filesystem.",
 	}
 	AWSS3Selector = selectPromptData{
 		Name:        "AWS S3",
-		Value:       "aws_s3",
+		Value:       ingest.DatasourceIDAWSS3,
 		Description: "An AWS S3 Bucket and prefix, indicating a collection of AWS S3 objects.",
 	}
 
 	CommasSelector = selectPromptData{
 		Name:        "Commas: ,",
-		Value:       ",",
+		Value:       ingest.CSVDelimiterCommas,
 		Description: "The most common type of delimiter in CSV files.",
 	}
 	TabsSelector = selectPromptData{
 		Name:        "Tabs: \\t",
-		Value:       "\t",
+		Value:       ingest.CSVDelimiterTabs,
 		Description: "Values in each column are separated by a tab.",
 	}
 )
@@ -90,22 +92,16 @@ var csvDelimiterSelectors = []selectPromptData{
 	TabsSelector,
 }
 
-type ManifestConfig interface {
-	yaml.Marshaler
-	Kind() string
+type IngestManifest struct {
+	selectedDatasourceType selectPromptData
+	DatasourceTypeConfig   ingest.ManifestConfig `yaml:"datasourceType"`
+
+	selectedDatasourceLocation selectPromptData
+	DatasourceLocationConfig   ingest.ManifestConfig `yaml:"datasourceLocation"`
 }
 
-type DatasourceTypeConfiguration interface {
-	ManifestConfig
-}
-
-type CSVFilesTypeConfig struct {
-	Delimiter rune
-	Header    bool
-}
-
-func NewCSVFilesTypeConfigFromPrompts() (*CSVFilesTypeConfig, error) {
-	config := CSVFilesTypeConfig{}
+func NewCSVFilesTypeConfigFromPrompts() (*ingest.CSVFilesTypeConfig, error) {
+	config := ingest.CSVFilesTypeConfig{}
 	result, err := SelectPrompt(
 		"Delimiter",
 		"Columns in each file are delimited by this character",
@@ -114,7 +110,7 @@ func NewCSVFilesTypeConfigFromPrompts() (*CSVFilesTypeConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	config.Delimiter = []rune(result.Value)[0]
+	config.Delimiter = result.Value
 	headerResult, err := BoolPrompt("CSV files contain header row")
 	if err != nil {
 		return nil, err
@@ -123,45 +119,8 @@ func NewCSVFilesTypeConfigFromPrompts() (*CSVFilesTypeConfig, error) {
 	return &config, nil
 }
 
-func (config *CSVFilesTypeConfig) MarshalYAML() (interface{}, error) {
-	type s struct {
-		Kind      string
-		Delimiter rune
-	}
-	return s{
-		Kind:      CommaSeparatedValuesFilesSelector.Value,
-		Delimiter: config.Delimiter,
-	}, nil
-}
-
-func (config *CSVFilesTypeConfig) Kind() string {
-	return CommaSeparatedValuesFilesSelector.Value
-}
-
-type AWSS3LocationConfig struct {
-	Bucket string
-	Prefix string
-}
-
-func (config *AWSS3LocationConfig) MarshalYAML() (interface{}, error) {
-	type s struct {
-		Kind   string
-		Bucket string
-		Prefix string
-	}
-	return s{
-		Kind:   CommaSeparatedValuesFilesSelector.Value,
-		Bucket: config.Bucket,
-		Prefix: config.Prefix,
-	}, nil
-}
-
-func (config *AWSS3LocationConfig) Kind() string {
-	return AWSS3Selector.Value
-}
-
-func NewAWSS3LocationConfigFromPrompts() (*AWSS3LocationConfig, error) {
-	config := AWSS3LocationConfig{}
+func NewAWSS3LocationConfigFromPrompts() (*ingest.AWSS3LocationConfig, error) {
+	config := ingest.AWSS3LocationConfig{}
 	{
 		result, err := TextPrompt("AWS S3 Bucket")
 		if err != nil {
@@ -177,14 +136,6 @@ func NewAWSS3LocationConfigFromPrompts() (*AWSS3LocationConfig, error) {
 		config.Prefix = result
 	}
 	return &config, nil
-}
-
-type IngestManifest struct {
-	selectedDatasourceType selectPromptData
-	DatasourceTypeConfig   DatasourceTypeConfiguration `yaml:"datasourceType"`
-
-	selectedDatasourceLocation selectPromptData
-	DatasourceLocationConfig   ManifestConfig `yaml:"datasourceLocation"`
 }
 
 // Builds the configuration for the DatasourceType
@@ -236,7 +187,7 @@ func (manifest *IngestManifest) buildDatasourceLocationConfig() error {
 	return nil
 }
 
-func buildDatasourceLocationConfigForSelectedLocation(location selectPromptData) (ManifestConfig, error) {
+func buildDatasourceLocationConfigForSelectedLocation(location selectPromptData) (ingest.ManifestConfig, error) {
 	switch location {
 	case LocalDirectorySelector:
 		return nil, errors.New("local directories not yet supported")
@@ -270,7 +221,7 @@ func (manifest *IngestManifest) confirmDatasourceConfigs() error {
 }
 
 func (manifest *IngestManifest) buildDatarepoSchema() error {
-	sampler, err := SamplerFactory(manifest.DatasourceTypeConfig, manifest.DatasourceLocationConfig)
+	sampler, err := sampler.SamplerFactory(manifest.DatasourceTypeConfig, manifest.DatasourceLocationConfig)
 	if err != nil {
 		return err
 	}

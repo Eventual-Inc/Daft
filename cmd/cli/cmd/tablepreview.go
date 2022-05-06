@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Eventual-Inc/Daft/pkg/ingest/sampler"
 	"github.com/Eventual-Inc/Daft/pkg/schema"
 )
 
@@ -24,15 +25,15 @@ func transpose(slice [][]string) [][]string {
 	return result
 }
 
-func PreviewSamples(samples map[string]SampleResult) (string, error) {
+func PreviewSamples(samples map[string]sampler.SampleResult) (string, error) {
 	var headers []string
 	columns := make([][]string, len(samples))
 	colIdx := 0
 	for header, sampleResult := range samples {
-		columns[colIdx] = make([]string, len(sampleResult.sampledDataRows))
+		columns[colIdx] = make([]string, len(sampleResult.SampledDataRows))
 		headers = append(headers, header)
 		schemaType := sampleResult.InferredSchema.Type
-		for rowIdx, cell := range sampleResult.sampledDataRows {
+		for rowIdx, cell := range sampleResult.SampledDataRows {
 			var val string
 			switch schemaType {
 			case string(schema.StringAvroType):

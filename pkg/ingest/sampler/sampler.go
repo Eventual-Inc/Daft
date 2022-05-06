@@ -1,4 +1,4 @@
-package cmd
+package sampler
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Eventual-Inc/Daft/pkg/ingest"
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
 	"github.com/Eventual-Inc/Daft/pkg/schema"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -26,7 +27,7 @@ type CSVSampler struct {
 
 type SampleResult struct {
 	InferredSchema  schema.SchemaField
-	sampledDataRows [][]byte
+	SampledDataRows [][]byte
 }
 
 func (sampler *CSVSampler) Sample() (map[string]SampleResult, error) {
@@ -91,16 +92,16 @@ func (sampler *CSVSampler) Sample() (map[string]SampleResult, error) {
 		for i, field := range detectedSchema {
 			currentSample := samples[field.Name]
 			currentSample.InferredSchema = field
-			currentSample.sampledDataRows = append(currentSample.sampledDataRows, []byte(record[i]))
+			currentSample.SampledDataRows = append(currentSample.SampledDataRows, []byte(record[i]))
 			samples[field.Name] = currentSample
 		}
 	}
 	return samples, nil
 }
 
-func objectStoreFactory(locationConfig ManifestConfig) (objectstorage.ObjectStore, error) {
+func objectStoreFactory(locationConfig ingest.ManifestConfig) (objectstorage.ObjectStore, error) {
 	switch locationConfig.Kind() {
-	case AWSS3Selector.Value:
+	case ingest.DatasourceIDAWSS3:
 		ctx := context.TODO()
 		awsConfig, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
 		if err != nil {
@@ -112,20 +113,20 @@ func objectStoreFactory(locationConfig ManifestConfig) (objectstorage.ObjectStor
 	}
 }
 
-func getFullDirPath(locationConfig ManifestConfig) (string, error) {
+func getFullDirPath(locationConfig ingest.ManifestConfig) (string, error) {
 	switch locationConfig.Kind() {
-	case AWSS3Selector.Value:
-		config := locationConfig.(*AWSS3LocationConfig)
+	case ingest.DatasourceIDAWSS3:
+		config := locationConfig.(*ingest.AWSS3LocationConfig)
 		return fmt.Sprintf("s3://%s/%s", config.Bucket, config.Prefix), nil
 	default:
 		return "", fmt.Errorf("object store for %s not implemented", locationConfig.Kind())
 	}
 }
 
-func SamplerFactory(typeConfig ManifestConfig, locationConfig ManifestConfig) (Sampler, error) {
+func SamplerFactory(typeConfig ingest.ManifestConfig, locationConfig ingest.ManifestConfig) (Sampler, error) {
 	switch typeConfig.Kind() {
-	case CommaSeparatedValuesFilesSelector.Value:
-		config := typeConfig.(*CSVFilesTypeConfig)
+	case ingest.DataformatIDCSVFiles:
+		config := typeConfig.(*ingest.CSVFilesTypeConfig)
 		objectStore, err := objectStoreFactory(locationConfig)
 		if err != nil {
 			return nil, err
@@ -137,7 +138,7 @@ func SamplerFactory(typeConfig ManifestConfig, locationConfig ManifestConfig) (S
 		sampler := &CSVSampler{
 			objectStore: objectStore,
 			fullDirPath: fullDirPath,
-			delimiter:   config.Delimiter,
+			delimiter:   ingest.DelimiterMap[config.Delimiter],
 			hasHeaders:  config.Header,
 		}
 		return sampler, nil
