@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/manifoldco/promptui"
 )
@@ -13,6 +14,31 @@ type selectPromptData struct {
 	Name        string
 	Value       string
 	Description string
+}
+
+// Starts a prompt for textual responses
+func TextPrompt(label string) (string, error) {
+	prompt := promptui.Prompt{
+		Label: label,
+	}
+	return prompt.Run()
+}
+
+// Starts a prompt for boolean responses
+func BoolPrompt(label string) (bool, error) {
+	prompt := promptui.Prompt{
+		Label: fmt.Sprintf("%s [y/N]", label),
+	}
+	result, err := prompt.Run()
+	if err != nil {
+		return false, err
+	}
+	if strings.ToLower(result) == "y" {
+		return true, nil
+	} else if strings.ToLower(result) == "n" {
+		return false, nil
+	}
+	return false, fmt.Errorf("received unexpected input (expected y or N): %s", result)
 }
 
 // Starts the default editor for users to interactively edit a template string
@@ -45,6 +71,7 @@ func EditorPrompt(template string, fileext string) (string, error) {
 	return string(data), nil
 }
 
+// Starts a prompt for selecting a single choice from a list of items
 func SelectPrompt(label string, help string, items []selectPromptData) (selectPromptData, error) {
 	templates := &promptui.SelectTemplates{
 		Label:    fmt.Sprintf(`{{ "%s" | faint }}`, help),

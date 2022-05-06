@@ -3,9 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"strings"
 
-	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
@@ -99,12 +97,11 @@ type ManifestConfig interface {
 
 type DatasourceTypeConfiguration interface {
 	ManifestConfig
-	SchemaHints() []schema.SchemaField
 }
 
 type CSVFilesTypeConfig struct {
 	Delimiter rune
-	Headers   []string
+	Header    bool
 }
 
 func NewCSVFilesTypeConfigFromPrompts() (*CSVFilesTypeConfig, error) {
@@ -118,16 +115,11 @@ func NewCSVFilesTypeConfigFromPrompts() (*CSVFilesTypeConfig, error) {
 		return nil, err
 	}
 	config.Delimiter = []rune(result.Value)[0]
-
-	headerPrompt := promptui.Prompt{
-		Label: "Headers as comma-separated values (optional - inferred if not provided)",
-	}
-	headerResult, err := headerPrompt.Run()
+	headerResult, err := BoolPrompt("CSV files contain header row")
 	if err != nil {
 		return nil, err
 	}
-	headers := strings.Split(headerResult, ",")
-	config.Headers = headers
+	config.Header = headerResult
 	return &config, nil
 }
 
@@ -135,26 +127,15 @@ func (config *CSVFilesTypeConfig) MarshalYAML() (interface{}, error) {
 	type s struct {
 		Kind      string
 		Delimiter rune
-		Headers   []string
 	}
 	return s{
 		Kind:      CommaSeparatedValuesFilesSelector.Value,
 		Delimiter: config.Delimiter,
-		Headers:   config.Headers,
 	}, nil
 }
 
 func (config *CSVFilesTypeConfig) Kind() string {
 	return CommaSeparatedValuesFilesSelector.Value
-}
-
-func (config *CSVFilesTypeConfig) SchemaHints() []schema.SchemaField {
-	var fields []schema.SchemaField
-	for _, header := range config.Headers {
-		field := schema.NewStringField(header, "CSV header provided by user")
-		fields = append(fields, field)
-	}
-	return fields
 }
 
 type AWSS3LocationConfig struct {
@@ -182,20 +163,14 @@ func (config *AWSS3LocationConfig) Kind() string {
 func NewAWSS3LocationConfigFromPrompts() (*AWSS3LocationConfig, error) {
 	config := AWSS3LocationConfig{}
 	{
-		prompt := promptui.Prompt{
-			Label: "AWS S3 Bucket",
-		}
-		result, err := prompt.Run()
+		result, err := TextPrompt("AWS S3 Bucket")
 		if err != nil {
 			return nil, err
 		}
 		config.Bucket = result
 	}
 	{
-		prompt := promptui.Prompt{
-			Label: "AWS S3 Prefix",
-		}
-		result, err := prompt.Run()
+		result, err := TextPrompt("AWS S3 Prefix")
 		if err != nil {
 			return nil, err
 		}
@@ -284,15 +259,11 @@ func (manifest *IngestManifest) confirmDatasourceConfigs() error {
 	fmt.Println("Data Source Configurations:")
 	fmt.Println("")
 	fmt.Println(string(y))
-	prompt := promptui.Prompt{
-		Label:     "Confirm and detect schema?",
-		IsConfirm: true,
-	}
-	result, err := prompt.Run()
+	result, err := BoolPrompt("Confirm and detect schema")
 	if err != nil {
 		return err
 	}
-	if result != "y" {
+	if !result {
 		return errors.New("user cancelled data source configurations")
 	}
 	return nil
@@ -329,15 +300,11 @@ func (manifest *IngestManifest) buildDatarepoSchema() error {
 
 	fmt.Println("Final Schema:")
 	fmt.Println(finalizedSchemaStr)
-	prompt := promptui.Prompt{
-		Label:     "Confirm finalized schema",
-		IsConfirm: true,
-	}
-	confirmSchema, err := prompt.Run()
+	confirmSchema, err := BoolPrompt("Confirm finalized schema")
 	if err != nil {
 		return err
 	}
-	if confirmSchema != "y" {
+	if !confirmSchema {
 		return errors.New("aborted finalizing schema")
 	}
 

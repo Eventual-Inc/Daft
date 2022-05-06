@@ -21,7 +21,7 @@ type CSVSampler struct {
 	objectStore objectstorage.ObjectStore
 	delimiter   rune
 	fullDirPath string
-	schemaHints []schema.SchemaField
+	hasHeaders  bool
 }
 
 type SampleResult struct {
@@ -36,7 +36,13 @@ func (sampler *CSVSampler) Sample() (map[string]SampleResult, error) {
 		return nil, err
 	}
 	samples := map[string]SampleResult{}
-	for _, objPath := range objectPaths {
+
+	// Track headers from the first file we find. If all files have the same set of headers,
+	// we assume that these are the right set of headers. Otherwise, we pre-populate the schema
+	// with N_COLs generically named StringSchemas.
+	var detectedSchema []schema.SchemaField
+
+	for i, objPath := range objectPaths {
 		// Skip files that are not CSV or TSV
 		if !strings.HasSuffix(objPath, ".csv") && !strings.HasSuffix(objPath, ".tsv") {
 			logrus.Debug(fmt.Sprintf("Skipping non-CSV file: %s", objPath))
@@ -48,39 +54,32 @@ func (sampler *CSVSampler) Sample() (map[string]SampleResult, error) {
 		reader := csv.NewReader(bytes.NewReader(buf.Bytes()))
 		reader.Comma = sampler.delimiter
 
-		// Use schema hints (if provided) to check if first row is a header row, or should be treated as a data row
-		isHeaderRow := true
+		// Parse or generate headers using first file found
 		record, err := reader.Read()
 		if err != nil {
 			return samples, fmt.Errorf("unable to read header from CSV file: %w", err)
 		}
-		if len(sampler.schemaHints) > 0 {
-			if len(record) != len(sampler.schemaHints) {
-				return samples, fmt.Errorf("found CSV file with %d columns, expecting: %d", len(record), len(sampler.schemaHints))
+		if i == 0 && sampler.hasHeaders {
+			for _, fieldName := range record {
+				detectedSchema = append(detectedSchema, schema.NewStringField(fieldName, "Detected from file"))
 			}
-			for i, schemaHint := range sampler.schemaHints {
-				if foundHeader := record[i]; foundHeader != schemaHint.Name {
-					isHeaderRow = false
-				}
-			}
-		}
-
-		// If no schema hint is provided, we detect all header fields as strings
-		// TODO(jchia): We can be smarter about detection here with regexes
-		detectedSchema := sampler.schemaHints
-		if isHeaderRow && len(detectedSchema) == 0 {
-			for _, columnName := range record {
-				newField := schema.NewStringField(columnName, "Detected column from CSV")
-				detectedSchema = append(detectedSchema, newField)
+		} else if i == 0 {
+			for i := 0; i < len(record); i++ {
+				detectedSchema = append(detectedSchema, schema.NewStringField(fmt.Sprintf("col_%d", i), ""))
 			}
 		}
 
-		// Grab the next row as the data row if the first row is a header row
-		if isHeaderRow {
+		// If headers specified, get next row which is the first data row
+		if sampler.hasHeaders {
 			record, err = reader.Read()
 			if err != nil {
-				return samples, fmt.Errorf("unable to read first record from CSV file: %w", err)
+				return nil, fmt.Errorf("unable to read first data row from CSV file: %w", err)
 			}
+		}
+
+		// If number of columns don't match the schema, throw an error
+		if len(record) != len(detectedSchema) {
+			return samples, fmt.Errorf("received %d number of columns but expected: %d", len(record), len(detectedSchema))
 		}
 
 		for i, field := range detectedSchema {
@@ -133,7 +132,7 @@ func SamplerFactory(typeConfig ManifestConfig, locationConfig ManifestConfig) (S
 			objectStore: objectStore,
 			fullDirPath: fullDirPath,
 			delimiter:   config.Delimiter,
-			schemaHints: config.SchemaHints(),
+			hasHeaders:  config.Header,
 		}
 		return sampler, nil
 	default:
