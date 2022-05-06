@@ -1,32 +1,37 @@
 package schema
 
-type TypeEnum string
+type AvroTypeEnum string
+type DaftTypeEnum string
 
 var (
-	NullAvroType   TypeEnum = "null"
-	BoolAvroType   TypeEnum = "boolean"
-	IntAvroType    TypeEnum = "int"
-	LongAvroType   TypeEnum = "long"
-	FloatAvroType  TypeEnum = "float"
-	DoubleAvroType TypeEnum = "double"
-	BytesAvroType  TypeEnum = "bytes"
-	StringAvroType TypeEnum = "string"
+	// Avro types that are used to write avro-compatible schemas
+	// EnumAvroType AvroTypeEnum = "enum"
+	// ArrayAvroType AvroTypeEnum = "array"
+	// MapAvroType AvroTypeEnum = "map"
+	// FixedAvroType AvroTypeEnum = "fixed"
+	// UnionAvroType  AvroTypeEnum = "union"
+	NullAvroType   AvroTypeEnum = "null"
+	BoolAvroType   AvroTypeEnum = "boolean"
+	IntAvroType    AvroTypeEnum = "int"
+	LongAvroType   AvroTypeEnum = "long"
+	FloatAvroType  AvroTypeEnum = "float"
+	DoubleAvroType AvroTypeEnum = "double"
+	BytesAvroType  AvroTypeEnum = "bytes"
+	StringAvroType AvroTypeEnum = "string"
+	RecordAvroType AvroTypeEnum = "record"
 
-	RecordAvroType TypeEnum = "record"
-	// These complex types are not used by Daft at the moment
-	//
-	// EnumAvroType TypeEnum = "enum"
-	// ArrayAvroType TypeEnum = "array"
-	// MapAvroType TypeEnum = "map"
-	// FixedAvroType TypeEnum = "fixed"
-	// UnionAvroType  TypeEnum = "union"
+	// Daft types that provide Daft applications an extra layer of
+	// semantic information about the type of data in each column
+	// e.g. string->date, string->url etc
+	URLDaftType DaftTypeEnum = "string/url"
 )
 
 type SchemaField struct {
-	Name   string        `json:"name"`
-	Doc    string        `json:"doc"`
-	Type   string        `json:"type"`
-	Fields []SchemaField `json:"fields,omitempty"`
+	Name     string        `json:"name"`
+	Doc      string        `json:"doc"`
+	Type     string        `json:"type"`
+	DaftType string        `json:"daft_type"`
+	Fields   []SchemaField `json:"fields,omitempty"`
 }
 
 func NewStringField(name string, doc string) SchemaField {

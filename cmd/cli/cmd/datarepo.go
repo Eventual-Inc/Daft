@@ -18,6 +18,26 @@ func init() {
 	datarepoCmd.AddCommand(ingestCmd)
 }
 
+var SchemaEditorTutorialBlurb = `
+# Daft schemas are Avro-compatible schemas written in JSON.
+# Fields can be things such as strings, ints and records (which contain sub-fields)
+# Additionally, the custom "daft_type" tag on fields adds more semantic meaning, enabling
+# Daft to do things such as treating a string field as a URL.
+#
+# This editor lets you make manual modifications to your field types to help Daft ingest your data.
+#
+# Daft types and what they mean:
+# 
+#     "string/url": Treats strings as URLs (pointers to other resources, by default a file)
+#                   For example a URL to an image "https://www.google.com/image.jpeg" or a URL 
+#                   to a PDF stored in AWS S3 "s3://bucket/foo.pdf"
+#
+# More information about Avro fields can be found here:
+# https://avro.apache.org/docs/current/spec.html
+
+
+`
+
 var (
 	IndividualBinaryFilesSelector = selectPromptData{
 		Name:        "Files (WIP)",
@@ -58,6 +78,21 @@ var (
 	}
 )
 
+var locationSelectors = []selectPromptData{
+	AWSS3Selector,
+	LocalDirectorySelector,
+}
+
+var allowedSelectors = map[string][]selectPromptData{
+	AWSS3Selector.Value:          {CommaSeparatedValuesFilesSelector, IndividualBinaryFilesSelector},
+	LocalDirectorySelector.Value: {CommaSeparatedValuesFilesSelector, IndividualBinaryFilesSelector},
+}
+
+var csvDelimiterSelectors = []selectPromptData{
+	CommasSelector,
+	TabsSelector,
+}
+
 type ManifestConfig interface {
 	yaml.Marshaler
 	Kind() string
@@ -78,7 +113,7 @@ func NewCSVFilesTypeConfigFromPrompts() (*CSVFilesTypeConfig, error) {
 	result, err := SelectPrompt(
 		"Delimiter",
 		"Columns in each file are delimited by this character",
-		[]*selectPromptData{&CommasSelector, &TabsSelector},
+		csvDelimiterSelectors,
 	)
 	if err != nil {
 		return nil, err
@@ -171,19 +206,20 @@ func NewAWSS3LocationConfigFromPrompts() (*AWSS3LocationConfig, error) {
 }
 
 type IngestManifest struct {
-	selectedDatasourceType *selectPromptData
+	selectedDatasourceType selectPromptData
 	DatasourceTypeConfig   DatasourceTypeConfiguration `yaml:"datasourceType"`
 
-	selectedDatasourceLocation *selectPromptData
+	selectedDatasourceLocation selectPromptData
 	DatasourceLocationConfig   ManifestConfig `yaml:"datasourceLocation"`
 }
 
 // Builds the configuration for the DatasourceType
 func (manifest *IngestManifest) buildDatasourceTypeConfig() error {
+	selectors := allowedSelectors[manifest.selectedDatasourceLocation.Value]
 	result, err := SelectPrompt(
 		"Data format",
 		"Choose how your data is laid out.",
-		[]*selectPromptData{&CommaSeparatedValuesFilesSelector, &IndividualBinaryFilesSelector, &DatabaseTableSelector},
+		selectors,
 	)
 
 	if err != nil {
@@ -209,37 +245,28 @@ func (manifest *IngestManifest) buildDatasourceTypeConfig() error {
 
 // Builds the configuration for the DatasourceLocation
 func (manifest *IngestManifest) buildDatasourceLocationConfig() error {
-	switch manifest.selectedDatasourceType.Value {
-	case IndividualBinaryFilesSelector.Value:
-		return errors.New("individual binary files not yet supported")
-	case CommaSeparatedValuesFilesSelector.Value:
-		result, err := SelectPrompt(
-			"CSV Files Location",
-			"Specify where to find your files, and the appropriate credentials to access them.",
-			[]*selectPromptData{&AWSS3Selector, &LocalDirectorySelector},
-		)
-		if err != nil {
-			return err
-		}
-		config, err := buildDatasourceLocationConfigForSelectedLocation(result)
-		if err != nil {
-			return err
-		}
-		manifest.selectedDatasourceLocation = result
-		manifest.DatasourceLocationConfig = config
-		return nil
-	case DatabaseTableSelector.Value:
-		return errors.New("database tables not yet supported")
-	default:
-		return fmt.Errorf("datasource type %s not supported", manifest.selectedDatasourceType.Value)
+	result, err := SelectPrompt(
+		"Data Source",
+		"Specify the source for importing data from.",
+		locationSelectors,
+	)
+	if err != nil {
+		return err
 	}
+	config, err := buildDatasourceLocationConfigForSelectedLocation(result)
+	if err != nil {
+		return err
+	}
+	manifest.selectedDatasourceLocation = result
+	manifest.DatasourceLocationConfig = config
+	return nil
 }
 
-func buildDatasourceLocationConfigForSelectedLocation(location *selectPromptData) (ManifestConfig, error) {
+func buildDatasourceLocationConfigForSelectedLocation(location selectPromptData) (ManifestConfig, error) {
 	switch location {
-	case &LocalDirectorySelector:
+	case LocalDirectorySelector:
 		return nil, errors.New("local directories not yet supported")
-	case &AWSS3Selector:
+	case AWSS3Selector:
 		config, err := NewAWSS3LocationConfigFromPrompts()
 		if err != nil {
 			return nil, err
@@ -339,10 +366,10 @@ modify and confirm the schema manually before creating the repo and ingesting da
 		fmt.Println("")
 		var manifest IngestManifest
 
-		err := manifest.buildDatasourceTypeConfig()
+		err := manifest.buildDatasourceLocationConfig()
 		cobra.CheckErr(err)
 
-		err = manifest.buildDatasourceLocationConfig()
+		err = manifest.buildDatasourceTypeConfig()
 		cobra.CheckErr(err)
 
 		err = manifest.confirmDatasourceConfigs()

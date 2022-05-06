@@ -45,7 +45,7 @@ func EditorPrompt(template string, fileext string) (string, error) {
 	return string(data), nil
 }
 
-func SelectPrompt(label string, help string, items []*selectPromptData) (*selectPromptData, error) {
+func SelectPrompt(label string, help string, items []selectPromptData) (selectPromptData, error) {
 	templates := &promptui.SelectTemplates{
 		Label:    fmt.Sprintf(`{{ "%s" | faint }}`, help),
 		Active:   "> {{ .Name }} ({{ .Value | red }})",
@@ -62,7 +62,7 @@ func SelectPrompt(label string, help string, items []*selectPromptData) (*select
 	}
 	i, _, err := prompt.Run()
 	if err != nil {
-		return nil, err
+		return selectPromptData{}, err
 	}
 	return items[i], nil
 }
