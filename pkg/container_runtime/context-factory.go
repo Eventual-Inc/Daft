@@ -1,4 +1,4 @@
-package containerruntime
+package container_runtime
 
 import (
 	"context"

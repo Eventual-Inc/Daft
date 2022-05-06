@@ -27,13 +27,13 @@ spec:
       valueFrom:
         secretKeyRef:
           name: aws
-          key: aws_access_key_id
+          key: AWS_ACCESS_KEY_ID
           optional: true 
     - name: AWS_SECRET_ACCESS_KEY
       valueFrom:
         secretKeyRef:
           name: aws
-          key: aws_secret_access_key
+          key: AWS_SECRET_ACCESS_KEY
           optional: true 
   volumes:
   - name: containerd-var-lib

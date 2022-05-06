@@ -18,7 +18,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/Eventual-Inc/Daft/pkg/containerruntime"
+	"github.com/Eventual-Inc/Daft/pkg/container_runtime"
 
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
 )
@@ -34,7 +34,7 @@ func launchReader(id int, localImagesPath string) {
 
 	ImageURL := "941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/reader:0"
 
-	thing := containerruntime.NewContainerRuntimeContext(ContainerdSocket, ContainerHostPath)
+	thing := container_runtime.NewContainerRuntimeContext(ContainerdSocket, ContainerHostPath)
 	thing.PullImage(ctx, ImageURL)
 	containerName, _ := thing.CreateContainer(ctx, ImageURL)
 	thing.StartContainer(ctx, containerName)
