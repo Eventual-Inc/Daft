@@ -7,9 +7,9 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 	"github.com/Eventual-Inc/Daft/pkg/ingest"
 	"github.com/Eventual-Inc/Daft/pkg/ingest/sampler"
-	"github.com/Eventual-Inc/Daft/pkg/schema"
 )
 
 func init() {

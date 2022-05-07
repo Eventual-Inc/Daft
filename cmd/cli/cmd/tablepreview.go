@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 	"github.com/Eventual-Inc/Daft/pkg/ingest/sampler"
-	"github.com/Eventual-Inc/Daft/pkg/schema"
 )
 
 const MaxCharPerCol = 16

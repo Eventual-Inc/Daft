@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 	"github.com/Eventual-Inc/Daft/pkg/ingest"
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
-	"github.com/Eventual-Inc/Daft/pkg/schema"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/sirupsen/logrus"
 )
