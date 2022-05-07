@@ -94,14 +94,14 @@ var csvDelimiterSelectors = []selectPromptData{
 
 type IngestManifest struct {
 	selectedDatasourceType selectPromptData
-	DatasourceTypeConfig   ingest.ManifestConfig `yaml:"datasourceType"`
+	DatasourceFormatConfig ingest.ManifestConfig `yaml:"datasourceType"`
 
 	selectedDatasourceLocation selectPromptData
 	DatasourceLocationConfig   ingest.ManifestConfig `yaml:"datasourceLocation"`
 }
 
-func NewCSVFilesTypeConfigFromPrompts() (*ingest.CSVFilesTypeConfig, error) {
-	config := ingest.CSVFilesTypeConfig{}
+func NewCSVFilesFormatConfigFromPrompts() (*ingest.CSVFilesFormatConfig, error) {
+	config := ingest.CSVFilesFormatConfig{}
 	result, err := SelectPrompt(
 		"Delimiter",
 		"Columns in each file are delimited by this character",
@@ -139,7 +139,7 @@ func NewAWSS3LocationConfigFromPrompts() (*ingest.AWSS3LocationConfig, error) {
 }
 
 // Builds the configuration for the DatasourceType
-func (manifest *IngestManifest) buildDatasourceTypeConfig() error {
+func (manifest *IngestManifest) buildDatasourceFormatConfig() error {
 	selectors := allowedSelectors[manifest.selectedDatasourceLocation.Value]
 	result, err := SelectPrompt(
 		"Data format",
@@ -154,12 +154,12 @@ func (manifest *IngestManifest) buildDatasourceTypeConfig() error {
 	case IndividualBinaryFilesSelector.Value:
 		return errors.New("individual binary files not yet supported")
 	case CommaSeparatedValuesFilesSelector.Value:
-		config, err := NewCSVFilesTypeConfigFromPrompts()
+		config, err := NewCSVFilesFormatConfigFromPrompts()
 		if err != nil {
 			return err
 		}
 		manifest.selectedDatasourceType = result
-		manifest.DatasourceTypeConfig = config
+		manifest.DatasourceFormatConfig = config
 		return nil
 	case DatabaseTableSelector.Value:
 		return errors.New("database tables not yet supported")
@@ -221,7 +221,7 @@ func (manifest *IngestManifest) confirmDatasourceConfigs() error {
 }
 
 func (manifest *IngestManifest) buildDatarepoSchema() error {
-	sampler, err := sampler.SamplerFactory(manifest.DatasourceTypeConfig, manifest.DatasourceLocationConfig)
+	sampler, err := sampler.SamplerFactory(manifest.DatasourceFormatConfig, manifest.DatasourceLocationConfig)
 	if err != nil {
 		return err
 	}
@@ -289,7 +289,7 @@ modify and confirm the schema manually before creating the repo and ingesting da
 		err := manifest.buildDatasourceLocationConfig()
 		cobra.CheckErr(err)
 
-		err = manifest.buildDatasourceTypeConfig()
+		err = manifest.buildDatasourceFormatConfig()
 		cobra.CheckErr(err)
 
 		err = manifest.confirmDatasourceConfigs()

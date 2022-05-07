@@ -30,12 +30,12 @@ type ManifestConfig interface {
 // Configs for Data Formats
 // ------------------------
 
-type CSVFilesTypeConfig struct {
+type CSVFilesFormatConfig struct {
 	Delimiter string
 	Header    bool
 }
 
-func (config *CSVFilesTypeConfig) MarshalYAML() (interface{}, error) {
+func (config *CSVFilesFormatConfig) MarshalYAML() (interface{}, error) {
 	type s struct {
 		Kind      string
 		Delimiter string
@@ -46,7 +46,7 @@ func (config *CSVFilesTypeConfig) MarshalYAML() (interface{}, error) {
 	}, nil
 }
 
-func (config *CSVFilesTypeConfig) Kind() string {
+func (config *CSVFilesFormatConfig) Kind() string {
 	return DataformatIDCSVFiles
 }
 

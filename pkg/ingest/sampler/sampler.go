@@ -123,10 +123,10 @@ func getFullDirPath(locationConfig ingest.ManifestConfig) (string, error) {
 	}
 }
 
-func SamplerFactory(typeConfig ingest.ManifestConfig, locationConfig ingest.ManifestConfig) (Sampler, error) {
-	switch typeConfig.Kind() {
+func SamplerFactory(FormatConfig ingest.ManifestConfig, locationConfig ingest.ManifestConfig) (Sampler, error) {
+	switch FormatConfig.Kind() {
 	case ingest.DataformatIDCSVFiles:
-		config := typeConfig.(*ingest.CSVFilesTypeConfig)
+		config := FormatConfig.(*ingest.CSVFilesFormatConfig)
 		objectStore, err := objectStoreFactory(locationConfig)
 		if err != nil {
 			return nil, err
@@ -143,6 +143,6 @@ func SamplerFactory(typeConfig ingest.ManifestConfig, locationConfig ingest.Mani
 		}
 		return sampler, nil
 	default:
-		return nil, fmt.Errorf("sampler for %s not implemented", typeConfig.Kind())
+		return nil, fmt.Errorf("sampler for %s not implemented", FormatConfig.Kind())
 	}
 }
