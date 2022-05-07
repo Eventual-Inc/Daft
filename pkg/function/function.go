@@ -6,7 +6,8 @@ import (
 
 type FunctionID string
 
-type FunctionDefinition struct{}
+type FunctionDefinition struct {
+}
 
 type Operand struct {
 	object.ObjectRef

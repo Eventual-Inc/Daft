@@ -13,14 +13,18 @@ const (
 	dead
 )
 
+type ContainerImageURI = string
+
+type ContainerID = string
+
 type ContainerRuntimeContext interface {
-	PullImage(ctx context.Context, uri string) (string, error)
-	EvictImage(ctx context.Context, uri string) (string, error)
-	ContainsImage(ctx context.Context, uri string) bool
-	CreateContainer(ctx context.Context, uri string) (string, error)
-	StartContainer(ctx context.Context, containerName string) (string, error)
-	StopContainer(ctx context.Context, containerName string) (string, error)
-	DeleteContainer(ctx context.Context, containerName string) (string, error)
+	PullImage(ctx context.Context, uri ContainerImageURI) (bool, error)
+	EvictImage(ctx context.Context, uri ContainerImageURI) (bool, error)
+	ContainsImage(ctx context.Context, uri ContainerImageURI) bool
+	CreateContainer(ctx context.Context, uri ContainerImageURI) (ContainerID, error)
+	StartContainer(ctx context.Context, containerID ContainerID) (bool, error)
+	StopContainer(ctx context.Context, containerID ContainerID) (bool, error)
+	DeleteContainer(ctx context.Context, containerID ContainerID) (bool, error)
 	Close()
 	// containerStatus(string) ContainerStatus
 }

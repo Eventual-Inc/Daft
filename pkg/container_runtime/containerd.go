@@ -19,16 +19,16 @@ import (
 )
 
 type containerData struct {
-	containerName string
-	imageName     string
-	container     containerd.Container
-	task          containerd.Task
+	containerId string
+	imageName   string
+	container   containerd.Container
+	task        containerd.Task
 }
 
 type ContainerdContext struct {
 	client         *containerd.Client
 	hostPathPrefix string
-	imagePool      map[string]containerd.Image
+	imagePool      map[ContainerImageURI]containerd.Image
 	containerPool  map[string]containerData
 }
 
@@ -42,21 +42,21 @@ func NewContainerdContext(socketPath string, hostPathPrefix string) *ContainerdC
 		logrus.Fatal(err)
 	}
 	cdc.hostPathPrefix = hostPathPrefix
-	cdc.imagePool = make(map[string]containerd.Image)
+	cdc.imagePool = make(map[ContainerImageURI]containerd.Image)
 	cdc.containerPool = make(map[string]containerData)
 	return cdc
 }
 
-func (c *ContainerdContext) PullImage(ctx context.Context, uri string) (string, error) {
+func (c *ContainerdContext) PullImage(ctx context.Context, uri ContainerImageURI) (bool, error) {
 	defer timing.Timeit("PullImage", uri)()
 	if c.ContainsImage(ctx, uri) {
-		return uri, nil
+		return true, nil
 	}
 
 	resolver, err := image.ResolverFactory(ctx, uri)
 	if err != nil {
-		logrus.Fatal(err)
-		return "", err
+		logrus.Error(err)
+		return false, err
 	}
 
 	image, err := c.client.Pull(
@@ -70,34 +70,34 @@ func (c *ContainerdContext) PullImage(ctx context.Context, uri string) (string, 
 	if !unpacked {
 		err = image.Unpack(ctx, "overlayfs")
 		if err != nil {
-			logrus.Fatal(err)
-			return "", err
+			logrus.Error(err)
+			return false, err
 		}
 	}
 
 	c.imagePool[uri] = image
 
-	return uri, err
+	return true, err
 }
 
-func (c *ContainerdContext) EvictImage(ctx context.Context, uri string) (string, error) {
+func (c *ContainerdContext) EvictImage(ctx context.Context, uri ContainerImageURI) (bool, error) {
 	if !c.ContainsImage(ctx, uri) {
-		return uri, nil
+		return false, nil
 	}
 
 	delete(c.imagePool, uri)
-	return uri, nil
+	return true, nil
 }
 
-func (c *ContainerdContext) ContainsImage(ctx context.Context, uri string) bool {
+func (c *ContainerdContext) ContainsImage(ctx context.Context, uri ContainerImageURI) bool {
 	_, ok := c.imagePool[uri]
 	return ok
 }
 
-func (c *ContainerdContext) CreateContainer(ctx context.Context, uri string) (string, error) {
-	containerName := uuid.New().String()
+func (c *ContainerdContext) CreateContainer(ctx context.Context, uri ContainerImageURI) (ContainerID, error) {
+	containerId := uuid.New().String()
 
-	defer timing.Timeit("CreateContainer", containerName)()
+	defer timing.Timeit("CreateContainer", containerId)()
 	if !c.ContainsImage(ctx, uri) {
 		return "", errors.New("image does not exist in container context")
 	} else {
@@ -105,16 +105,16 @@ func (c *ContainerdContext) CreateContainer(ctx context.Context, uri string) (st
 	}
 
 	container_image, _ := c.imagePool[uri]
-	mntSourceDir := fmt.Sprintf("%s-%s", c.hostPathPrefix, containerName)
+	mntSourceDir := fmt.Sprintf("%s-%s", c.hostPathPrefix, containerId)
 	os.MkdirAll(mntSourceDir, os.ModePerm) // should probably set permissions correctly
 
-	logrus.Debugf("building container for: %s with name: %s", uri, containerName)
+	logrus.Debugf("building container for: %s with name: %s", uri, containerId)
 
 	container, err := c.client.NewContainer(
 		ctx,
-		containerName,
+		containerId,
 		containerd.WithImage(container_image),
-		containerd.WithNewSnapshot(fmt.Sprintf("%s-snapshot", containerName), container_image),
+		containerd.WithNewSnapshot(fmt.Sprintf("%s-snapshot", containerId), container_image),
 		containerd.WithNewSpec(
 			oci.WithImageConfig(container_image),
 			oci.WithMounts([]specs.Mount{
@@ -129,7 +129,7 @@ func (c *ContainerdContext) CreateContainer(ctx context.Context, uri string) (st
 	)
 
 	if err != nil {
-		logrus.Fatal(err)
+		logrus.Error(err)
 		return "", err
 	}
 
@@ -140,76 +140,77 @@ func (c *ContainerdContext) CreateContainer(ctx context.Context, uri string) (st
 	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
 
 	if err != nil {
-		logrus.Fatal(err)
+		logrus.Error(err)
+		return "", err
 	}
 
 	logrus.Debugf("created task %s as pid: %d", task.ID(), task.Pid())
 
-	c.containerPool[containerName] = containerData{
-		containerName: containerName,
-		imageName:     uri,
-		container:     container,
-		task:          task,
+	c.containerPool[containerId] = containerData{
+		containerId: containerId,
+		imageName:   uri,
+		container:   container,
+		task:        task,
 	}
 
-	return containerName, nil
+	return containerId, nil
 
 }
 
-func (c *ContainerdContext) StartContainer(ctx context.Context, containerName string) (string, error) {
-	defer timing.Timeit("StartContainer", containerName)()
-	cd, ok := c.containerPool[containerName]
+func (c *ContainerdContext) StartContainer(ctx context.Context, containerId ContainerID) (bool, error) {
+	defer timing.Timeit("StartContainer", containerId)()
+	cd, ok := c.containerPool[containerId]
 	if !ok {
-		return "", errors.New("container does not exist in container context")
+		return false, errors.New("container does not exist in container context")
 	}
 
 	if err := cd.task.Start(ctx); err != nil {
-		logrus.Fatal(err)
-		return "", err
+		logrus.Error(err)
+		return false, err
 	}
 
-	return containerName, nil
+	return true, nil
 }
 
-func (c *ContainerdContext) StopContainer(ctx context.Context, containerName string) (string, error) {
-	defer timing.Timeit("StopContainer", containerName)()
-	cd, ok := c.containerPool[containerName]
+func (c *ContainerdContext) StopContainer(ctx context.Context, containerId ContainerID) (bool, error) {
+	defer timing.Timeit("StopContainer", containerId)()
+	cd, ok := c.containerPool[containerId]
 	if !ok {
-		return "", errors.New("container does not exist in container context")
+		return false, errors.New("container does not exist in container context")
 	}
 
 	if err := cd.task.Kill(ctx, syscall.SIGTERM); err != nil {
-		logrus.Fatal(err)
-		return "", err
+		logrus.Error(err)
+		return false, err
 	}
 	status, err := cd.task.Wait(ctx)
 
 	if err != nil {
-		logrus.Fatal(err)
-		return "", err
+		logrus.Error(err)
+		return false, err
 	}
 	<-status
-	return containerName, nil
+	return true, nil
 }
 
-func (c *ContainerdContext) DeleteContainer(ctx context.Context, containerName string) (string, error) {
-	defer timing.Timeit("DeleteContainer", containerName)()
-	cd, ok := c.containerPool[containerName]
+func (c *ContainerdContext) DeleteContainer(ctx context.Context, containerId ContainerID) (bool, error) {
+	defer timing.Timeit("DeleteContainer", containerId)()
+	cd, ok := c.containerPool[containerId]
 	if !ok {
-		return "", errors.New("container does not exist in container context")
+		return false, errors.New("container does not exist in container context")
 	}
 
 	if _, err := cd.task.Delete(ctx); err != nil {
 		logrus.Fatal(err)
-		return "", err
+		return false, err
 	}
 
 	if err := cd.container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
 		logrus.Fatal(err)
-		return "", err
+		return false, err
 	}
-	delete(c.containerPool, containerName)
-	return containerName, nil
+	delete(c.containerPool, containerId)
+	return true, nil
 }
 
 func (c *ContainerdContext) Close() {
