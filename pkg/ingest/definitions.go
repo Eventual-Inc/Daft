@@ -41,7 +41,7 @@ func (config *CSVFilesFormatConfig) MarshalYAML() (interface{}, error) {
 		Delimiter string
 	}
 	return s{
-		Kind:      CSVDelimiterCommas,
+		Kind:      DataformatIDCSVFiles,
 		Delimiter: config.Delimiter,
 	}, nil
 }

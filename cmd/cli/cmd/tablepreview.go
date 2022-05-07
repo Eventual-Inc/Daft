@@ -36,7 +36,7 @@ func PreviewSamples(samples map[string]sampler.SampleResult) (string, error) {
 		for rowIdx, cell := range sampleResult.SampledDataRows {
 			var val string
 			switch schemaType {
-			case string(schema.StringAvroType):
+			case schema.StringType:
 				val = string(cell)
 			default:
 				return "", fmt.Errorf("previewing %s not implemented", schemaType)

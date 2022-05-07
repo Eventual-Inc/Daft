@@ -17,22 +17,14 @@ func init() {
 	datarepoCmd.AddCommand(ingestCmd)
 }
 
-var SchemaEditorTutorialBlurb = `
-# Daft schemas are Avro-compatible schemas written in YAML.
-# Fields can be things such as strings, ints and records (which contain sub-fields)
-# Additionally, the custom "daft_type" tag on fields adds more semantic meaning, enabling
-# Daft to do things such as treating a string field as a URL.
-#
-# This editor lets you make manual modifications to your field types to help Daft ingest your data.
+var SchemaEditorTutorialBlurb = `# This editor lets you make manual modifications to your field types to help Daft ingest your data.
 #
 # Daft types and what they mean:
-# 
-#     "string/url": Treats strings as URLs (pointers to other resources, by default a file)
-#                   For example a URL to an image "https://www.google.com/image.jpeg" or a URL 
-#                   to a PDF stored in AWS S3 "s3://bucket/foo.pdf"
 #
-# More information about Avro fields can be found here:
-# https://avro.apache.org/docs/current/spec.html
+#     "string": A simple string
+#     "uri/s3": A URL to S3 that starts with s3://...
+#     "uri/http": A URL to a HTTP resource that can be retrieved with a GET request
+#
 
 
 `
@@ -238,7 +230,7 @@ func (manifest *IngestManifest) buildDatarepoSchema() error {
 	for _, sampleResult := range samples {
 		schemaFields = append(schemaFields, sampleResult.InferredSchema)
 	}
-	detectedSchema := schema.NewRecordField("schema", "", schemaFields)
+	detectedSchema := schema.Schema{Fields: schemaFields}
 	yamlSchema, err := yaml.Marshal(detectedSchema)
 	if err != nil {
 		return err
