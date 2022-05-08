@@ -1,7 +1,6 @@
 package sampler
 
 import (
-	"bytes"
 	"context"
 	"encoding/csv"
 	"fmt"
@@ -14,8 +13,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// A Sampler retrieves data, when provided with a Datasource and Data format
 type Sampler interface {
-	Sample() (map[string]SampleResult, error)
+	Sample(opts ...SamplingOpt) (map[string]SampleResult, error)
 }
 
 type CSVSampler struct {
@@ -31,11 +31,34 @@ type SampleResult struct {
 }
 
 type SamplingOptions struct {
+	// Number of rows to sample, or 0 to sample all data
+	numRows int
+
+	// Schema to use, or nil if not provided and need to detect
+	schemaFields []schema.SchemaField
 }
 
-type SamplingOption = func(*SamplingOptions)
+type SamplingOpt = func(*SamplingOptions)
 
-func (sampler *CSVSampler) Sample() (map[string]SampleResult, error) {
+func WithSampleAll() SamplingOpt {
+	return func(opt *SamplingOptions) {
+		opt.numRows = 0
+	}
+}
+
+func WithSchema(schemaFields []schema.SchemaField) SamplingOpt {
+	return func(opt *SamplingOptions) {
+		opt.schemaFields = schemaFields
+	}
+}
+
+func (sampler *CSVSampler) Sample(opts ...SamplingOpt) (map[string]SampleResult, error) {
+	// Default to sampling 10 rows of data
+	samplingOptions := SamplingOptions{numRows: 10}
+	for _, opt := range opts {
+		opt(&samplingOptions)
+	}
+
 	ctx := context.TODO()
 	objectPaths, err := sampler.objectStore.ListObjects(ctx, sampler.fullDirPath)
 	if err != nil {
@@ -43,10 +66,20 @@ func (sampler *CSVSampler) Sample() (map[string]SampleResult, error) {
 	}
 	samples := map[string]SampleResult{}
 
-	// Track headers from the first file we find. If all files have the same set of headers,
-	// we assume that these are the right set of headers. Otherwise, we pre-populate the schema
-	// with N_COLs generically named StringSchemas.
+	// Use schema if provided as an opt, otherwise default to detecting it from the 0th CSV file
 	var detectedSchema []schema.SchemaField
+	if len(samplingOptions.schemaFields) > 0 {
+		detectedSchema = samplingOptions.schemaFields
+	}
+
+	// If sampling N number of rows, we limit the downloads to just the top 100KB * (N/num_files) amount of bytes
+	var downloadOptions []objectstorage.DownloadObjectOption
+	if samplingOptions.numRows != 0 {
+		numRowsPerFile := samplingOptions.numRows / len(objectPaths)
+		sizePerRow := 100000
+		sizePerFile := sizePerRow * numRowsPerFile
+		downloadOptions = append(downloadOptions, objectstorage.WithDownloadRange(0, sizePerFile))
+	}
 
 	for i, objPath := range objectPaths {
 		// Skip files that are not CSV or TSV
@@ -54,10 +87,11 @@ func (sampler *CSVSampler) Sample() (map[string]SampleResult, error) {
 			logrus.Debug(fmt.Sprintf("Skipping non-CSV file: %s", objPath))
 			continue
 		}
-		buf := bytes.Buffer{}
-		// TODO(jaychia): Hardcoded to retrieve 100kb of data at the moment, but could be better
-		sampler.objectStore.DownloadObject(ctx, objPath, &buf, objectstorage.WithDownloadRange(0, 100000))
-		reader := csv.NewReader(bytes.NewReader(buf.Bytes()))
+		objBody, err := sampler.objectStore.DownloadObject(ctx, objPath, downloadOptions...)
+		if err != nil {
+			return samples, fmt.Errorf("unable to download object from AWS S3: %w", err)
+		}
+		reader := csv.NewReader(objBody)
 		reader.Comma = sampler.delimiter
 
 		// Parse or generate headers using first file found
@@ -65,24 +99,17 @@ func (sampler *CSVSampler) Sample() (map[string]SampleResult, error) {
 		if err != nil {
 			return samples, fmt.Errorf("unable to read header from CSV file: %w", err)
 		}
-		if i == 0 && sampler.hasHeaders {
-			for _, fieldName := range record {
+		if i == 0 && len(detectedSchema) == 0 {
+			for i, cell := range record {
+				fieldName := fmt.Sprintf("col_%d", i)
+				if sampler.hasHeaders {
+					fieldName = cell
+				}
 				detectedSchema = append(detectedSchema, schema.NewPrimitiveField(
 					fieldName,
 					"",
 					schema.StringType,
 				))
-			}
-		} else if i == 0 {
-			for i := 0; i < len(record); i++ {
-				detectedSchema = append(
-					detectedSchema,
-					schema.NewPrimitiveField(
-						fmt.Sprintf("col_%d", i),
-						"",
-						schema.StringType,
-					),
-				)
 			}
 		}
 

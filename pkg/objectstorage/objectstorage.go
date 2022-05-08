@@ -2,7 +2,6 @@ package objectstorage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -23,7 +22,7 @@ func WithDownloadRange(start int, end int) DownloadObjectOption {
 
 // ObjectStore is the interface for reading and writing to an external object storage service such as AWS S3
 type ObjectStore interface {
-	DownloadObject(ctx context.Context, path string, dst io.Writer, opts ...DownloadObjectOption) (n int64, err error)
+	DownloadObject(ctx context.Context, path string, opts ...DownloadObjectOption) (io.Reader, error)
 	ListObjects(ctx context.Context, path string) ([]string, error)
 }
 
@@ -34,11 +33,11 @@ type ObjectStore interface {
 
 func splitS3Path(path string) (bucket string, key string, err error) {
 	if !strings.HasPrefix(path, "s3://") {
-		return "", "", errors.New(fmt.Sprintf("Path does not contain s3:// protocol prefix: %s", path))
+		return "", "", fmt.Errorf("path does not contain s3:// protocol prefix: %s", path)
 	}
 	bucket, key, found := strings.Cut(path[5:], "/")
 	if !found {
-		return "", "", errors.New(fmt.Sprintf("Error occurred when retrieving bucket and key from: %s", path))
+		return "", "", fmt.Errorf("error occurred when retrieving bucket and key from: %s", path)
 	}
 	return bucket, key, nil
 }
@@ -51,10 +50,10 @@ func NewAwsS3ObjectStore(ctx context.Context, cfg aws.Config) ObjectStore {
 	return &awsS3ObjectStore{s3Client: s3.NewFromConfig(cfg)}
 }
 
-func (store *awsS3ObjectStore) DownloadObject(ctx context.Context, path string, dst io.Writer, opts ...DownloadObjectOption) (n int64, err error) {
+func (store *awsS3ObjectStore) DownloadObject(ctx context.Context, path string, opts ...DownloadObjectOption) (io.Reader, error) {
 	s3Bucket, s3Key, err := splitS3Path(path)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	in := s3.GetObjectInput{
 		Bucket: &s3Bucket,
@@ -65,9 +64,9 @@ func (store *awsS3ObjectStore) DownloadObject(ctx context.Context, path string, 
 	}
 	getObjectOutput, err := store.s3Client.GetObject(ctx, &in)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return io.Copy(dst, getObjectOutput.Body)
+	return getObjectOutput.Body, nil
 }
 
 func (store *awsS3ObjectStore) ListObjects(ctx context.Context, path string) ([]string, error) {

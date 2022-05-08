@@ -182,11 +182,13 @@ func DownloadS3File(s3Path string) (string, error) {
 	}
 
 	objstore := objectstorage.NewAwsS3ObjectStore(ctx, cfg)
-	_, err = objstore.DownloadObject(ctx, s3Path, file)
+	reader, err := objstore.DownloadObject(ctx, s3Path)
 
 	if err != nil {
 		return "", err
 	}
+
+	io.Copy(file, reader)
 
 	return file.Name(), nil
 }
