@@ -1,4 +1,4 @@
-package ingest
+package datarepo
 
 import "gopkg.in/yaml.v2"
 

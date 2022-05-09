@@ -7,8 +7,9 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/Eventual-Inc/Daft/pkg/datarepo"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/ingest"
-	"github.com/Eventual-Inc/Daft/pkg/datarepo/ingest/sample"
+	"github.com/Eventual-Inc/Daft/pkg/datarepo/sample"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 )
 
@@ -32,39 +33,39 @@ var SchemaEditorTutorialBlurb = `# This editor lets you make manual modification
 var (
 	IndividualBinaryFilesSelector = selectPromptData{
 		Name:        "Files (WIP)",
-		Value:       ingest.DataformatIDIndividualFiles,
+		Value:       datarepo.DataformatIDIndividualFiles,
 		Description: "Individual files on disk or in object storage.",
 	}
 	CommaSeparatedValuesFilesSelector = selectPromptData{
 		Name:        "CSV Files",
-		Value:       ingest.DataformatIDCSVFiles,
+		Value:       datarepo.DataformatIDCSVFiles,
 		Description: "Comma-separated value files on disk or in object storage. Other delimiters such as tabs are also supported.",
 	}
 	DatabaseTableSelector = selectPromptData{
 		Name:        "Database Table (WIP)",
-		Value:       ingest.DataformatIDDatabaseTable,
+		Value:       datarepo.DataformatIDDatabaseTable,
 		Description: "A database table from databases such as PostgreSQL, Snowflake or BigQuery.",
 	}
 
 	LocalDirectorySelector = selectPromptData{
 		Name:        "Local Directory (WIP)",
-		Value:       ingest.DatasourceIDLocalDirectory,
+		Value:       datarepo.DatasourceIDLocalDirectory,
 		Description: "A directory on your current machine's local filesystem.",
 	}
 	AWSS3Selector = selectPromptData{
 		Name:        "AWS S3",
-		Value:       ingest.DatasourceIDAWSS3,
+		Value:       datarepo.DatasourceIDAWSS3,
 		Description: "An AWS S3 Bucket and prefix, indicating a collection of AWS S3 objects.",
 	}
 
 	CommasSelector = selectPromptData{
 		Name:        "Commas: ,",
-		Value:       ingest.CSVDelimiterCommas,
+		Value:       datarepo.CSVDelimiterCommas,
 		Description: "The most common type of delimiter in CSV files.",
 	}
 	TabsSelector = selectPromptData{
 		Name:        "Tabs: \\t",
-		Value:       ingest.CSVDelimiterTabs,
+		Value:       datarepo.CSVDelimiterTabs,
 		Description: "Values in each column are separated by a tab.",
 	}
 )
@@ -86,14 +87,14 @@ var csvDelimiterSelectors = []selectPromptData{
 
 type IngestManifest struct {
 	selectedDatasourceType selectPromptData
-	DatasourceFormatConfig ingest.ManifestConfig `yaml:"datasourceType"`
+	DatasourceFormatConfig datarepo.ManifestConfig `yaml:"datasourceType"`
 
 	selectedDatasourceLocation selectPromptData
-	DatasourceLocationConfig   ingest.ManifestConfig `yaml:"datasourceLocation"`
+	DatasourceLocationConfig   datarepo.ManifestConfig `yaml:"datasourceLocation"`
 }
 
-func NewCSVFilesFormatConfigFromPrompts() (*ingest.CSVFilesFormatConfig, error) {
-	config := ingest.CSVFilesFormatConfig{}
+func NewCSVFilesFormatConfigFromPrompts() (*datarepo.CSVFilesFormatConfig, error) {
+	config := datarepo.CSVFilesFormatConfig{}
 	result, err := SelectPrompt(
 		"Delimiter",
 		"Columns in each file are delimited by this character",
@@ -111,8 +112,8 @@ func NewCSVFilesFormatConfigFromPrompts() (*ingest.CSVFilesFormatConfig, error) 
 	return &config, nil
 }
 
-func NewAWSS3LocationConfigFromPrompts() (*ingest.AWSS3LocationConfig, error) {
-	config := ingest.AWSS3LocationConfig{}
+func NewAWSS3LocationConfigFromPrompts() (*datarepo.AWSS3LocationConfig, error) {
+	config := datarepo.AWSS3LocationConfig{}
 	{
 		result, err := TextPrompt("AWS S3 Bucket")
 		if err != nil {
@@ -179,7 +180,7 @@ func (manifest *IngestManifest) buildDatasourceLocationConfig() error {
 	return nil
 }
 
-func buildDatasourceLocationConfigForSelectedLocation(location selectPromptData) (ingest.ManifestConfig, error) {
+func buildDatasourceLocationConfigForSelectedLocation(location selectPromptData) (datarepo.ManifestConfig, error) {
 	switch location {
 	case LocalDirectorySelector:
 		return nil, errors.New("local directories not yet supported")
@@ -284,5 +285,11 @@ modify and confirm the schema manually before creating the repo and ingesting da
 
 		err = manifest.buildDatarepoSchema()
 		cobra.CheckErr(err)
+
+		ingestor, err := ingest.NewLocalIngestor(manifest.DatasourceFormatConfig, manifest.DatasourceLocationConfig)
+		cobra.CheckErr(err)
+		jobId, err := ingestor.Ingest()
+		cobra.CheckErr(err)
+		fmt.Printf("Ingest job started: %s\n", jobId)
 	},
 }

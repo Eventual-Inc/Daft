@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Eventual-Inc/Daft/pkg/datarepo/ingest"
+	"github.com/Eventual-Inc/Daft/pkg/datarepo"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -164,9 +164,9 @@ func (sampler *CSVSampler) SampleRows(outputChannel chan map[string][]byte, opts
 	return nil
 }
 
-func objectStoreFactory(locationConfig ingest.ManifestConfig) (objectstorage.ObjectStore, error) {
+func objectStoreFactory(locationConfig datarepo.ManifestConfig) (objectstorage.ObjectStore, error) {
 	switch locationConfig.Kind() {
-	case ingest.DatasourceIDAWSS3:
+	case datarepo.DatasourceIDAWSS3:
 		ctx := context.TODO()
 		awsConfig, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
 		if err != nil {
@@ -178,20 +178,20 @@ func objectStoreFactory(locationConfig ingest.ManifestConfig) (objectstorage.Obj
 	}
 }
 
-func getFullDirPath(locationConfig ingest.ManifestConfig) (string, error) {
+func getFullDirPath(locationConfig datarepo.ManifestConfig) (string, error) {
 	switch locationConfig.Kind() {
-	case ingest.DatasourceIDAWSS3:
-		config := locationConfig.(*ingest.AWSS3LocationConfig)
+	case datarepo.DatasourceIDAWSS3:
+		config := locationConfig.(*datarepo.AWSS3LocationConfig)
 		return fmt.Sprintf("s3://%s/%s", config.Bucket, config.Prefix), nil
 	default:
 		return "", fmt.Errorf("object store for %s not implemented", locationConfig.Kind())
 	}
 }
 
-func SamplerFactory(formatConfig ingest.ManifestConfig, locationConfig ingest.ManifestConfig) (Sampler, error) {
+func SamplerFactory(formatConfig datarepo.ManifestConfig, locationConfig datarepo.ManifestConfig) (Sampler, error) {
 	switch formatConfig.Kind() {
-	case ingest.DataformatIDCSVFiles:
-		config := formatConfig.(*ingest.CSVFilesFormatConfig)
+	case datarepo.DataformatIDCSVFiles:
+		config := formatConfig.(*datarepo.CSVFilesFormatConfig)
 		objectStore, err := objectStoreFactory(locationConfig)
 		if err != nil {
 			return nil, err
@@ -203,7 +203,7 @@ func SamplerFactory(formatConfig ingest.ManifestConfig, locationConfig ingest.Ma
 		sampler := &CSVSampler{
 			objectStore: objectStore,
 			fullDirPath: fullDirPath,
-			delimiter:   ingest.DelimiterMap[config.Delimiter],
+			delimiter:   datarepo.DelimiterMap[config.Delimiter],
 			hasHeaders:  config.Header,
 		}
 		return sampler, nil

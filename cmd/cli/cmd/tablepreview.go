@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Eventual-Inc/Daft/pkg/datarepo/ingest/sample"
+	"github.com/Eventual-Inc/Daft/pkg/datarepo/sample"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 	"github.com/sirupsen/logrus"
 )
