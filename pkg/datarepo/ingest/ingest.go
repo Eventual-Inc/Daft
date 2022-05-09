@@ -76,8 +76,7 @@ func (ingestor *LocalIngestor) Ingest(ctx context.Context) (IngestJobID, error) 
 	go func() {
 		err := ingestor.sampler.SampleRows(
 			rowChannel,
-			// TODO(jaychia): Re-enable when we want to actually sample the entire dataset
-			// sample.WithSampleAll(),
+			sample.WithSampleAll(),
 			sample.WithSchema(sampledSchema),
 		)
 		if err != nil {

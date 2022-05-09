@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/Eventual-Inc/Daft/pkg/datarepo"
@@ -120,8 +121,9 @@ func (sampler *CSVSampler) SampleRows(outputChannel chan [][]byte, opts ...Sampl
 
 	// If sampling N number of rows, we limit the downloads to just the top 100KB * (N/num_files) amount of bytes
 	var downloadOptions []objectstorage.DownloadObjectOption
+	numRowsPerFile := 0
 	if samplingOptions.numRows != 0 {
-		numRowsPerFile := samplingOptions.numRows / len(objectPaths)
+		numRowsPerFile = samplingOptions.numRows / len(objectPaths)
 		sizePerRow := 100000
 		sizePerFile := sizePerRow * numRowsPerFile
 		downloadOptions = append(downloadOptions, objectstorage.WithDownloadRange(0, sizePerFile))
@@ -133,6 +135,8 @@ func (sampler *CSVSampler) SampleRows(outputChannel chan [][]byte, opts ...Sampl
 			logrus.Debug(fmt.Sprintf("Skipping non-CSV file: %s", objPath))
 			continue
 		}
+
+		// Download object and start reading with a CSV Reader
 		objBody, err := sampler.objectStore.DownloadObject(ctx, objPath, downloadOptions...)
 		if err != nil {
 			return fmt.Errorf("unable to download object from AWS S3: %w", err)
@@ -140,25 +144,29 @@ func (sampler *CSVSampler) SampleRows(outputChannel chan [][]byte, opts ...Sampl
 		reader := csv.NewReader(objBody)
 		reader.Comma = sampler.delimiter
 
-		// Parse or generate headers using first file found
-		record, err := reader.Read()
+		// Skip first row if hasHeaders
 		if sampler.hasHeaders {
-			record, err = reader.Read()
-		}
-		if err != nil {
-			return fmt.Errorf("unable to read row from CSV file: %w", err)
-		}
-
-		// If number of columns don't match the schema, throw an error
-		if len(record) != len(detectedSchema.Fields) {
-			return fmt.Errorf("received %d number of columns but expected: %d", len(record), len(detectedSchema.Fields))
+			_, err := reader.Read()
+			if err != nil {
+				return err
+			}
 		}
 
-		var row [][]byte
-		for i, _ := range detectedSchema.Fields {
-			row = append(row, []byte(record[i]))
+		for i := 0; i < numRowsPerFile || numRowsPerFile == 0; i++ {
+			record, err := reader.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			var row [][]byte
+			for i, _ := range detectedSchema.Fields {
+				row = append(row, []byte(record[i]))
+			}
+			outputChannel <- row
 		}
-		outputChannel <- row
+
 	}
 	return nil
 }
