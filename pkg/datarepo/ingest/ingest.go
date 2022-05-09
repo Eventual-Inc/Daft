@@ -1,37 +1,23 @@
 package ingest
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 
 	"github.com/Eventual-Inc/Daft/pkg/datarepo"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
-	"github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/array"
-	"github.com/apache/arrow/go/arrow/ipc"
 	"github.com/apache/arrow/go/arrow/memory"
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
-var DaftFieldTypeToArrowType = map[string]arrow.DataType{
-	schema.StringType: arrow.BinaryTypes.String,
-}
-
-func AppendToArrowBuilder(arrowBuilder *array.RecordBuilder, fieldIdx int, daftType schema.TypeEnum, val []byte) error {
-	switch daftType {
-	case schema.StringType:
-		arrowBuilder.Field(fieldIdx).(*array.StringBuilder).Append(string(val))
-	default:
-		return fmt.Errorf("unable to map type %s to an Arrow builder", daftType)
-	}
-	return nil
-}
+// TODO(jaychia): This is currently hardcoded, but could instead be dynamically sampled
+const RowsPerPartfile = 1000000
 
 type IngestJobID = string
 
+// Interface for sampling data from a configured Datasource and ingesting it as a new Datarepo
 type DatarepoIngestor interface {
 	// Ingests the configured Datasource as a Datarepo, returning a Job ID and errors
 	Ingest(ctx context.Context) (IngestJobID, error)
@@ -41,32 +27,17 @@ type DatarepoIngestor interface {
 type LocalIngestor struct {
 	datarepoName    string
 	datarepoVersion string
-	datarepoConfig  datarepo.DatarepoConfig
 	datarepoSchema  schema.Schema
+	datarepoClient  datarepo.StorageClient
 	sampler         Sampler
 	store           objectstorage.ObjectStore
 }
 
-func (ingestor *LocalIngestor) uploadData(ctx context.Context, arrowBuilder *array.RecordBuilder) error {
-	rec := arrowBuilder.NewRecord()
-	defer rec.Release()
-	defer arrowBuilder.Release()
-
-	partId := uuid.New().String()
-	path := ingestor.datarepoConfig.GetPartfilePath(ingestor.datarepoName, ingestor.datarepoVersion, partId)
-
-	buf := bytes.Buffer{}
-	writer := ipc.NewWriter(&buf, ipc.WithSchema(rec.Schema()))
-	err := writer.Write(rec)
-	if err != nil {
-		return err
-	}
-
-	err = ingestor.store.UploadObject(ctx, path, &buf)
-	return err
-}
-
 func (ingestor *LocalIngestor) Ingest(ctx context.Context) (IngestJobID, error) {
+	// Write schema
+	ingestor.datarepoClient.WriteSchema(ctx, ingestor.datarepoName, ingestor.datarepoVersion, ingestor.datarepoSchema)
+
+	// Construct a channel of Rows and start sampling all data into this channel
 	rowChannel := make(chan [][]byte)
 	go func() {
 		err := ingestor.sampler.SampleRows(
@@ -81,38 +52,54 @@ func (ingestor *LocalIngestor) Ingest(ctx context.Context) (IngestJobID, error) 
 		close(rowChannel)
 	}()
 
-	var arrowFields []arrow.Field
-	for _, field := range ingestor.datarepoSchema.Fields {
-		arrowFields = append(arrowFields, arrow.Field{Name: field.Name, Type: DaftFieldTypeToArrowType[field.Type]})
-	}
-	arrowSchema := arrow.NewSchema(arrowFields, nil)
-	pool := memory.NewGoAllocator()
-
+	// Create a new arrow batch every 1,000,000 records
 	// TODO(jaychia): We could instead do a new batch every 100MB
-	// Create a new arrow batch every 100,000 records
-	rowCount := 0
+	arrowSchema := ingestor.datarepoSchema.ArrowSchema()
+	pool := memory.NewGoAllocator()
 	arrowBuilder := array.NewRecordBuilder(pool, arrowSchema)
+	rowCount := 0
 	for row := range rowChannel {
 		for i, cell := range row {
-			AppendToArrowBuilder(arrowBuilder, i, ingestor.datarepoSchema.Fields[i].Type, cell)
+			fieldType := ingestor.datarepoSchema.Fields[i].Type
+			switch fieldType {
+			case schema.StringType:
+				arrowBuilder.Field(i).(*array.StringBuilder).Append(string(cell))
+			default:
+				return "", fmt.Errorf("unable to map type %s to an Arrow builder", fieldType)
+			}
 		}
-		if rowCount%100000 == 99999 {
-			ingestor.uploadData(ctx, arrowBuilder)
-			pool = memory.NewGoAllocator()
+		// Upload data if RowsPerPartfile threshold reached
+		if rowCount%RowsPerPartfile == (RowsPerPartfile - 1) {
+			rec := arrowBuilder.NewRecord()
+			_, err := ingestor.datarepoClient.WritePartfile(ctx, ingestor.datarepoName, ingestor.datarepoVersion, &rec)
+			rec.Release()
+			arrowBuilder.Release()
+			if err != nil {
+				return "", err
+			}
 			arrowBuilder = array.NewRecordBuilder(pool, arrowSchema)
 		}
 		rowCount++
 	}
-	if rowCount%100000 != 99999 {
-		ingestor.uploadData(ctx, arrowBuilder)
+
+	// Upload remainder of data
+	if rowCount%RowsPerPartfile != (RowsPerPartfile - 1) {
+		rec := arrowBuilder.NewRecord()
+		_, err := ingestor.datarepoClient.WritePartfile(ctx, ingestor.datarepoName, ingestor.datarepoVersion, &rec)
+		rec.Release()
+		arrowBuilder.Release()
+		if err != nil {
+			return "", err
+		}
 	}
-	return "nil - datarepo ingestion complete", nil
+
+	return "datarepo ingestion was performed locally", nil
 }
 
 func NewLocalIngestor(
 	datarepoName string,
 	datarepoVersion string,
-	datarepoConfig datarepo.DatarepoConfig,
+	datarepoClient datarepo.StorageClient,
 	formatConfig datarepo.ManifestConfig,
 	locationConfig datarepo.ManifestConfig,
 	datarepoSchema schema.Schema,
@@ -128,7 +115,7 @@ func NewLocalIngestor(
 	return &LocalIngestor{
 		datarepoName:    datarepoName,
 		datarepoVersion: datarepoVersion,
-		datarepoConfig:  datarepoConfig,
+		datarepoClient:  datarepoClient,
 		datarepoSchema:  datarepoSchema,
 		sampler:         dataSampler,
 		store:           objectStore,

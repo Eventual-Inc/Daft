@@ -305,12 +305,17 @@ modify and confirm the schema manually before creating the repo and ingesting da
 		err = manifest.buildDatarepoSchema(cmd.Context())
 		cobra.CheckErr(err)
 
+		objectStore, err := datarepo.ObjectStoreFactory(
+			manifest.DatasourceLocationConfig,
+		)
+		cobra.CheckErr(err)
 		ingestor, err := ingest.NewLocalIngestor(
 			datarepoName,
 			datarepoVersion,
-			&datarepo.S3DatarepoConfig{
-				S3bucket: config.DatarepoS3Bucket,
-				S3prefix: config.DatarepoS3Prefix,
+			&datarepo.S3StorageClient{
+				S3bucket:    config.DatarepoS3Bucket,
+				S3prefix:    config.DatarepoS3Prefix,
+				ObjectStore: objectStore,
 			},
 			manifest.DatasourceFormatConfig,
 			manifest.DatasourceLocationConfig,
