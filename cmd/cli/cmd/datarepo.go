@@ -244,14 +244,18 @@ func (manifest *IngestManifest) buildDatarepoSchema() error {
 	if err != nil {
 		return err
 	}
-	recordField := schema.SchemaField{}
-	err = yaml.Unmarshal([]byte(finalizedSchemaStr), &recordField)
+	finalizedSchema := schema.Schema{}
+	err = yaml.Unmarshal([]byte(finalizedSchemaStr), &finalizedSchema)
 	if err != nil {
 		return err
 	}
 
 	fmt.Println("Final Schema:")
-	fmt.Println(finalizedSchemaStr)
+	finalSchemaDisplay, err := yaml.Marshal(finalizedSchema)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(finalSchemaDisplay))
 	confirmSchema, err := BoolPrompt("Confirm finalized schema")
 	if err != nil {
 		return err
