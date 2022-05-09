@@ -22,6 +22,7 @@ func WithDownloadRange(start int, end int) DownloadObjectOption {
 
 // ObjectStore is the interface for reading and writing to an external object storage service such as AWS S3
 type ObjectStore interface {
+	UploadObject(ctx context.Context, path string, data io.Reader) error
 	DownloadObject(ctx context.Context, path string, opts ...DownloadObjectOption) (io.Reader, error)
 	ListObjects(ctx context.Context, path string) ([]string, error)
 }
@@ -48,6 +49,20 @@ type awsS3ObjectStore struct {
 
 func NewAwsS3ObjectStore(ctx context.Context, cfg aws.Config) ObjectStore {
 	return &awsS3ObjectStore{s3Client: s3.NewFromConfig(cfg)}
+}
+
+func (store *awsS3ObjectStore) UploadObject(ctx context.Context, path string, data io.Reader) error {
+	s3Bucket, s3Key, err := splitS3Path(path)
+	if err != nil {
+		return err
+	}
+	in := s3.PutObjectInput{
+		Bucket: &s3Bucket,
+		Key:    &s3Key,
+		Body:   data,
+	}
+	_, err = store.s3Client.PutObject(ctx, &in)
+	return err
 }
 
 func (store *awsS3ObjectStore) DownloadObject(ctx context.Context, path string, opts ...DownloadObjectOption) (io.Reader, error) {

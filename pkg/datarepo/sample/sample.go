@@ -9,14 +9,13 @@ import (
 	"github.com/Eventual-Inc/Daft/pkg/datarepo"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/sirupsen/logrus"
 )
 
 // A Sampler retrieves data, when provided with a Datasource and Data format
 type Sampler interface {
 	SampleSchema() (schema.Schema, error)
-	SampleRows(outputChannel chan map[string][]byte, opts ...SamplingOpt) error
+	SampleRows(outputChannel chan [][]byte, opts ...SamplingOpt) error
 }
 
 type CSVSampler struct {
@@ -97,7 +96,7 @@ func (sampler *CSVSampler) SampleSchema() (schema.Schema, error) {
 	return sampledSchema, nil
 }
 
-func (sampler *CSVSampler) SampleRows(outputChannel chan map[string][]byte, opts ...SamplingOpt) error {
+func (sampler *CSVSampler) SampleRows(outputChannel chan [][]byte, opts ...SamplingOpt) error {
 	// Default to sampling 10 rows of data
 	samplingOptions := SamplingOptions{numRows: 10}
 	for _, opt := range opts {
@@ -155,27 +154,13 @@ func (sampler *CSVSampler) SampleRows(outputChannel chan map[string][]byte, opts
 			return fmt.Errorf("received %d number of columns but expected: %d", len(record), len(detectedSchema.Fields))
 		}
 
-		row := make(map[string][]byte)
-		for i, field := range detectedSchema.Fields {
-			row[field.Name] = []byte(record[i])
+		var row [][]byte
+		for i, _ := range detectedSchema.Fields {
+			row = append(row, []byte(record[i]))
 		}
 		outputChannel <- row
 	}
 	return nil
-}
-
-func objectStoreFactory(locationConfig datarepo.ManifestConfig) (objectstorage.ObjectStore, error) {
-	switch locationConfig.Kind() {
-	case datarepo.DatasourceIDAWSS3:
-		ctx := context.TODO()
-		awsConfig, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
-		if err != nil {
-			return nil, err
-		}
-		return objectstorage.NewAwsS3ObjectStore(ctx, awsConfig), nil
-	default:
-		return nil, fmt.Errorf("object store for %s not implemented", locationConfig.Kind())
-	}
 }
 
 func getFullDirPath(locationConfig datarepo.ManifestConfig) (string, error) {
@@ -192,7 +177,7 @@ func SamplerFactory(formatConfig datarepo.ManifestConfig, locationConfig datarep
 	switch formatConfig.Kind() {
 	case datarepo.DataformatIDCSVFiles:
 		config := formatConfig.(*datarepo.CSVFilesFormatConfig)
-		objectStore, err := objectStoreFactory(locationConfig)
+		objectStore, err := datarepo.ObjectStoreFactory(locationConfig)
 		if err != nil {
 			return nil, err
 		}

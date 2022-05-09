@@ -18,7 +18,7 @@ func PreviewSamples(sampledSchema schema.Schema, sampler sample.Sampler) (string
 		headers = append(headers, header.Name)
 	}
 
-	rowChannel := make(chan map[string][]byte)
+	rowChannel := make(chan [][]byte)
 
 	go func() {
 		err := sampler.SampleRows(rowChannel, sample.WithSchema(sampledSchema))
@@ -30,8 +30,8 @@ func PreviewSamples(sampledSchema schema.Schema, sampler sample.Sampler) (string
 
 	for row := range rowChannel {
 		var parsedRow []string
-		for _, schemaField := range sampledSchema.Fields {
-			parsedRow = append(parsedRow, string(row[schemaField.Name]))
+		for colIdx, _ := range sampledSchema.Fields {
+			parsedRow = append(parsedRow, string(row[colIdx]))
 		}
 		rows = append(rows, parsedRow)
 	}

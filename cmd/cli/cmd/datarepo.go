@@ -131,6 +131,15 @@ func NewAWSS3LocationConfigFromPrompts() (*datarepo.AWSS3LocationConfig, error) 
 	return &config, nil
 }
 
+func getDatarepoIdentifiers() (string, string, error) {
+	datarepoName, err := TextPrompt("Name of Datarepo")
+	if err != nil {
+		return "", "", err
+	}
+	datarepoVersion, err := TextPrompt("Version of Datarepo")
+	return datarepoName, datarepoVersion, err
+}
+
 // Builds the configuration for the DatasourceType
 func (manifest *IngestManifest) buildDatasourceFormatConfig() error {
 	selectors := allowedSelectors[manifest.selectedDatasourceLocation.Value]
@@ -274,7 +283,10 @@ modify and confirm the schema manually before creating the repo and ingesting da
 		fmt.Println("")
 		var manifest IngestManifest
 
-		err := manifest.buildDatasourceLocationConfig()
+		datarepoName, datarepoVersion, err := getDatarepoIdentifiers()
+		cobra.CheckErr(err)
+
+		err = manifest.buildDatasourceLocationConfig()
 		cobra.CheckErr(err)
 
 		err = manifest.buildDatasourceFormatConfig()
@@ -286,9 +298,18 @@ modify and confirm the schema manually before creating the repo and ingesting da
 		err = manifest.buildDatarepoSchema()
 		cobra.CheckErr(err)
 
-		ingestor, err := ingest.NewLocalIngestor(manifest.DatasourceFormatConfig, manifest.DatasourceLocationConfig)
+		ingestor, err := ingest.NewLocalIngestor(
+			datarepoName,
+			datarepoVersion,
+			&datarepo.S3DatarepoConfig{
+				S3bucket: config.DatarepoS3Bucket,
+				S3prefix: config.DatarepoS3Prefix,
+			},
+			manifest.DatasourceFormatConfig,
+			manifest.DatasourceLocationConfig,
+		)
 		cobra.CheckErr(err)
-		jobId, err := ingestor.Ingest()
+		jobId, err := ingestor.Ingest(cmd.Context())
 		cobra.CheckErr(err)
 		fmt.Printf("Ingest job started: %s\n", jobId)
 	},
