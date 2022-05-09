@@ -4,48 +4,37 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Eventual-Inc/Daft/pkg/datarepo/ingest/sampler"
+	"github.com/Eventual-Inc/Daft/pkg/datarepo/ingest/sample"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
+	"github.com/sirupsen/logrus"
 )
 
 const MaxCharPerCol = 16
 
-func transpose(slice [][]string) [][]string {
-	xl := len(slice[0])
-	yl := len(slice)
-	result := make([][]string, xl)
-	for i := range result {
-		result[i] = make([]string, yl)
-	}
-	for i := 0; i < xl; i++ {
-		for j := 0; j < yl; j++ {
-			result[i][j] = slice[j][i]
-		}
-	}
-	return result
-}
-
-func PreviewSamples(samples map[string]sampler.SampleResult) (string, error) {
+func PreviewSamples(sampledSchema schema.Schema, sampler sample.Sampler) (string, error) {
 	var headers []string
-	columns := make([][]string, len(samples))
-	colIdx := 0
-	for header, sampleResult := range samples {
-		columns[colIdx] = make([]string, len(sampleResult.SampledDataRows))
-		headers = append(headers, header)
-		schemaType := sampleResult.InferredSchema.Type
-		for rowIdx, cell := range sampleResult.SampledDataRows {
-			var val string
-			switch schemaType {
-			case schema.StringType:
-				val = string(cell)
-			default:
-				return "", fmt.Errorf("previewing %s not implemented", schemaType)
-			}
-			columns[colIdx][rowIdx] = val
-		}
-		colIdx++
+	var rows [][]string
+	for _, header := range sampledSchema.Fields {
+		headers = append(headers, header.Name)
 	}
-	rows := transpose(columns)
+
+	rowChannel := make(chan map[string][]byte)
+
+	go func() {
+		err := sampler.SampleRows(rowChannel, sample.WithSchema(sampledSchema))
+		if err != nil {
+			logrus.Error(fmt.Errorf("error while sampling rows: %w", err))
+		}
+		close(rowChannel)
+	}()
+
+	for row := range rowChannel {
+		var parsedRow []string
+		for _, schemaField := range sampledSchema.Fields {
+			parsedRow = append(parsedRow, string(row[schemaField.Name]))
+		}
+		rows = append(rows, parsedRow)
+	}
 	rows = append([][]string{headers}, rows...)
 
 	var stringRows []string

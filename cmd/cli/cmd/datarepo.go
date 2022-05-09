@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/ingest"
-	"github.com/Eventual-Inc/Daft/pkg/datarepo/ingest/sampler"
+	"github.com/Eventual-Inc/Daft/pkg/datarepo/ingest/sample"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 )
 
@@ -213,25 +213,20 @@ func (manifest *IngestManifest) confirmDatasourceConfigs() error {
 }
 
 func (manifest *IngestManifest) buildDatarepoSchema() error {
-	sampler, err := sampler.SamplerFactory(manifest.DatasourceFormatConfig, manifest.DatasourceLocationConfig)
+	sampler, err := sample.SamplerFactory(manifest.DatasourceFormatConfig, manifest.DatasourceLocationConfig)
 	if err != nil {
 		return err
 	}
-	samples, err := sampler.Sample()
+	sampledSchema, err := sampler.SampleSchema()
 	if err != nil {
 		return err
 	}
-	tablePreview, err := PreviewSamples(samples)
+	tablePreview, err := PreviewSamples(sampledSchema, sampler)
 	if err != nil {
 		return err
 	}
 
-	var schemaFields []schema.SchemaField
-	for _, sampleResult := range samples {
-		schemaFields = append(schemaFields, sampleResult.InferredSchema)
-	}
-	detectedSchema := schema.Schema{Fields: schemaFields}
-	yamlSchema, err := yaml.Marshal(detectedSchema)
+	yamlSchema, err := yaml.Marshal(sampledSchema)
 	if err != nil {
 		return err
 	}
