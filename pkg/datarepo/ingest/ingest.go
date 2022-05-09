@@ -71,6 +71,7 @@ func (ingestor *LocalIngestor) Ingest(ctx context.Context) (IngestJobID, error) 
 	rowChannel := make(chan [][]byte)
 	go func() {
 		err := ingestor.sampler.SampleRows(
+			ctx,
 			rowChannel,
 			sample.WithSampleAll(),
 			sample.WithSchema(ingestor.datarepoSchema),

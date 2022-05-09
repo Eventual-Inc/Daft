@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -224,16 +225,16 @@ func (manifest *IngestManifest) confirmDatasourceConfigs() error {
 	return nil
 }
 
-func (manifest *IngestManifest) buildDatarepoSchema() error {
+func (manifest *IngestManifest) buildDatarepoSchema(ctx context.Context) error {
 	sampler, err := sample.SamplerFactory(manifest.DatasourceFormatConfig, manifest.DatasourceLocationConfig)
 	if err != nil {
 		return err
 	}
-	sampledSchema, err := sampler.SampleSchema()
+	sampledSchema, err := sampler.SampleSchema(ctx)
 	if err != nil {
 		return err
 	}
-	tablePreview, err := PreviewSamples(sampledSchema, sampler)
+	tablePreview, err := PreviewSamples(ctx, sampledSchema, sampler)
 	if err != nil {
 		return err
 	}
@@ -302,7 +303,7 @@ modify and confirm the schema manually before creating the repo and ingesting da
 		err = manifest.confirmDatasourceConfigs()
 		cobra.CheckErr(err)
 
-		err = manifest.buildDatarepoSchema()
+		err = manifest.buildDatarepoSchema(cmd.Context())
 		cobra.CheckErr(err)
 
 		ingestor, err := ingest.NewLocalIngestor(

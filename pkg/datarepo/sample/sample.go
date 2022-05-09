@@ -13,12 +13,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// A Sampler retrieves data, when provided with a Datasource and Data format
+// A Sampler retrieves data from a given Datasource
 type Sampler interface {
-	SampleSchema() (schema.Schema, error)
-	SampleRows(outputChannel chan [][]byte, opts ...SamplingOpt) error
+	SampleSchema(ctx context.Context) (schema.Schema, error)
+	SampleRows(ctx context.Context, outputChannel chan [][]byte, opts ...SamplingOpt) error
 }
 
+// Sampler that retrieves data from CSV file(s)
 type CSVSampler struct {
 	objectStore objectstorage.ObjectStore
 	delimiter   rune
@@ -26,12 +27,7 @@ type CSVSampler struct {
 	hasHeaders  bool
 }
 
-type SampleResult struct {
-	InferredSchema schema.Schema
-	Rows           chan map[string][]byte
-}
-
-type SamplingOptions struct {
+type samplingOptions struct {
 	// Number of rows to sample, or 0 to sample all data
 	numRows int
 
@@ -39,72 +35,29 @@ type SamplingOptions struct {
 	schemaFields []schema.SchemaField
 }
 
-type SamplingOpt = func(*SamplingOptions)
+type SamplingOpt = func(*samplingOptions)
 
+// Use this option to sample all rows in the specified datasources
 func WithSampleAll() SamplingOpt {
-	return func(opt *SamplingOptions) {
+	return func(opt *samplingOptions) {
 		opt.numRows = 0
 	}
 }
 
+// Use this option to provide a schema to the Sampler, instead of autodetecting it
 func WithSchema(usingSchema schema.Schema) SamplingOpt {
-	return func(opt *SamplingOptions) {
+	return func(opt *samplingOptions) {
 		opt.schemaFields = usingSchema.Fields
 	}
 }
 
-func (sampler *CSVSampler) SampleSchema() (schema.Schema, error) {
-	ctx := context.TODO()
-	sampledSchema := schema.Schema{}
-	objectPaths, err := sampler.objectStore.ListObjects(ctx, sampler.fullDirPath)
-	if err != nil {
-		return sampledSchema, err
-	}
-
-	for _, objPath := range objectPaths {
-		// Skip files that are not CSV or TSV
-		if !strings.HasSuffix(objPath, ".csv") && !strings.HasSuffix(objPath, ".tsv") {
-			logrus.Debug(fmt.Sprintf("Skipping non-CSV file: %s", objPath))
-			continue
-		}
-
-		// TODO(jaychia): Download up to 100KB, assumes that header wont exceed that size
-		objBody, err := sampler.objectStore.DownloadObject(ctx, objPath, objectstorage.WithDownloadRange(0, 100000))
-		if err != nil {
-			return sampledSchema, fmt.Errorf("unable to download object from AWS S3: %w", err)
-		}
-		reader := csv.NewReader(objBody)
-		reader.Comma = sampler.delimiter
-
-		// Parse or generate headers using first file found
-		record, err := reader.Read()
-		if err != nil {
-			return sampledSchema, fmt.Errorf("unable to read header from CSV file: %w", err)
-		}
-		for i, cell := range record {
-			fieldName := fmt.Sprintf("col_%d", i)
-			if sampler.hasHeaders {
-				fieldName = cell
-			}
-			sampledSchema.Fields = append(sampledSchema.Fields, schema.NewPrimitiveField(
-				fieldName,
-				"",
-				schema.StringType,
-			))
-		}
-		break
-	}
-	return sampledSchema, nil
-}
-
-func (sampler *CSVSampler) SampleRows(outputChannel chan [][]byte, opts ...SamplingOpt) error {
+func (sampler *CSVSampler) SampleRows(ctx context.Context, outputChannel chan [][]byte, opts ...SamplingOpt) error {
 	// Default to sampling 10 rows of data
-	samplingOptions := SamplingOptions{numRows: 10}
+	samplingOptions := samplingOptions{numRows: 10}
 	for _, opt := range opts {
 		opt(&samplingOptions)
 	}
 
-	ctx := context.TODO()
 	objectPaths, err := sampler.objectStore.ListObjects(ctx, sampler.fullDirPath)
 	if err != nil {
 		return err
@@ -113,7 +66,7 @@ func (sampler *CSVSampler) SampleRows(outputChannel chan [][]byte, opts ...Sampl
 	// Use schema if provided as an opt, otherwise detect it first
 	detectedSchema := schema.Schema{Fields: samplingOptions.schemaFields}
 	if len(detectedSchema.Fields) == 0 {
-		detectedSchema, err = sampler.SampleSchema()
+		detectedSchema, err = sampler.SampleSchema(ctx)
 		if err != nil {
 			return err
 		}
@@ -136,6 +89,7 @@ func (sampler *CSVSampler) SampleRows(outputChannel chan [][]byte, opts ...Sampl
 			continue
 		}
 
+		// TODO(jaychia): We can stream this instead for better memory usage of downloading it one chunk
 		// Download object and start reading with a CSV Reader
 		objBody, err := sampler.objectStore.DownloadObject(ctx, objPath, downloadOptions...)
 		if err != nil {
@@ -171,16 +125,61 @@ func (sampler *CSVSampler) SampleRows(outputChannel chan [][]byte, opts ...Sampl
 	return nil
 }
 
+func (sampler *CSVSampler) SampleSchema(ctx context.Context) (schema.Schema, error) {
+	sampledSchema := schema.Schema{}
+	objectPaths, err := sampler.objectStore.ListObjects(ctx, sampler.fullDirPath)
+	if err != nil {
+		return sampledSchema, err
+	}
+
+	for _, objPath := range objectPaths {
+		// Skip files that are not CSV or TSV
+		if !strings.HasSuffix(objPath, ".csv") && !strings.HasSuffix(objPath, ".tsv") {
+			logrus.Debug(fmt.Sprintf("Skipping non-CSV file: %s", objPath))
+			continue
+		}
+
+		// Download 100KB worth of data, assumes that header wont exceed that size
+		// TODO(jaychia): We can download until retrieving a \n instead
+		objBody, err := sampler.objectStore.DownloadObject(ctx, objPath, objectstorage.WithDownloadRange(0, 100000))
+		if err != nil {
+			return sampledSchema, fmt.Errorf("unable to download object from AWS S3: %w", err)
+		}
+		reader := csv.NewReader(objBody)
+		reader.Comma = sampler.delimiter
+
+		// Parse or generate headers using first file found
+		record, err := reader.Read()
+		if err != nil {
+			return sampledSchema, fmt.Errorf("unable to read header from CSV file: %w", err)
+		}
+		for i, cell := range record {
+			fieldName := fmt.Sprintf("col_%d", i)
+			if sampler.hasHeaders {
+				fieldName = cell
+			}
+			sampledSchema.Fields = append(sampledSchema.Fields, schema.NewPrimitiveField(
+				fieldName,
+				"",
+				schema.StringType,
+			))
+		}
+		break
+	}
+	return sampledSchema, nil
+}
+
 func getFullDirPath(locationConfig datarepo.ManifestConfig) (string, error) {
 	switch locationConfig.Kind() {
 	case datarepo.DatasourceIDAWSS3:
 		config := locationConfig.(*datarepo.AWSS3LocationConfig)
 		return fmt.Sprintf("s3://%s/%s", config.Bucket, config.Prefix), nil
 	default:
-		return "", fmt.Errorf("object store for %s not implemented", locationConfig.Kind())
+		return "", fmt.Errorf("getting directory path for %s not implemented", locationConfig.Kind())
 	}
 }
 
+// Creates the appropriate Sampler when provided with format and location configs
 func SamplerFactory(formatConfig datarepo.ManifestConfig, locationConfig datarepo.ManifestConfig) (Sampler, error) {
 	switch formatConfig.Kind() {
 	case datarepo.DataformatIDCSVFiles:

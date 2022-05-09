@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -11,7 +12,8 @@ import (
 
 const MaxCharPerCol = 16
 
-func PreviewSamples(sampledSchema schema.Schema, sampler sample.Sampler) (string, error) {
+// Retrieves data from a Sampler and previews it as a string
+func PreviewSamples(ctx context.Context, sampledSchema schema.Schema, sampler sample.Sampler) (string, error) {
 	var headers []string
 	var rows [][]string
 	for _, header := range sampledSchema.Fields {
@@ -21,7 +23,7 @@ func PreviewSamples(sampledSchema schema.Schema, sampler sample.Sampler) (string
 	rowChannel := make(chan [][]byte)
 
 	go func() {
-		err := sampler.SampleRows(rowChannel, sample.WithSchema(sampledSchema))
+		err := sampler.SampleRows(ctx, rowChannel, sample.WithSchema(sampledSchema))
 		if err != nil {
 			logrus.Error(fmt.Errorf("error while sampling rows: %w", err))
 		}
