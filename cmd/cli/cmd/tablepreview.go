@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Eventual-Inc/Daft/pkg/datarepo/sample"
+	"github.com/Eventual-Inc/Daft/pkg/datarepo/ingest"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 	"github.com/sirupsen/logrus"
 )
@@ -13,7 +13,7 @@ import (
 const MaxCharPerCol = 16
 
 // Retrieves data from a Sampler and previews it as a string
-func PreviewSamples(ctx context.Context, sampledSchema schema.Schema, sampler sample.Sampler) (string, error) {
+func PreviewSamples(ctx context.Context, sampledSchema schema.Schema, sampler ingest.Sampler) (string, error) {
 	var headers []string
 	var rows [][]string
 	for _, header := range sampledSchema.Fields {
@@ -23,7 +23,7 @@ func PreviewSamples(ctx context.Context, sampledSchema schema.Schema, sampler sa
 	rowChannel := make(chan [][]byte)
 
 	go func() {
-		err := sampler.SampleRows(ctx, rowChannel, sample.WithSchema(sampledSchema))
+		err := sampler.SampleRows(ctx, rowChannel, ingest.WithSchema(sampledSchema))
 		if err != nil {
 			logrus.Error(fmt.Errorf("error while sampling rows: %w", err))
 		}

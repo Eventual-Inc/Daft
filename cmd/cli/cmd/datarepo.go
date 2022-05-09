@@ -10,7 +10,6 @@ import (
 
 	"github.com/Eventual-Inc/Daft/pkg/datarepo"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/ingest"
-	"github.com/Eventual-Inc/Daft/pkg/datarepo/sample"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 )
 
@@ -226,7 +225,7 @@ func (manifest *IngestManifest) confirmDatasourceConfigs() error {
 }
 
 func (manifest *IngestManifest) buildDatarepoSchema(ctx context.Context) error {
-	sampler, err := sample.SamplerFactory(manifest.DatasourceFormatConfig, manifest.DatasourceLocationConfig)
+	sampler, err := ingest.SamplerFactory(manifest.DatasourceFormatConfig, manifest.DatasourceLocationConfig)
 	if err != nil {
 		return err
 	}

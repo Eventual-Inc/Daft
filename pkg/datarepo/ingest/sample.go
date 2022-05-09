@@ -1,4 +1,4 @@
-package sample
+package ingest
 
 import (
 	"context"

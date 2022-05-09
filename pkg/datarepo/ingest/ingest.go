@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/Eventual-Inc/Daft/pkg/datarepo"
-	"github.com/Eventual-Inc/Daft/pkg/datarepo/sample"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
 	"github.com/apache/arrow/go/arrow"
@@ -44,7 +43,7 @@ type LocalIngestor struct {
 	datarepoVersion string
 	datarepoConfig  datarepo.DatarepoConfig
 	datarepoSchema  schema.Schema
-	sampler         sample.Sampler
+	sampler         Sampler
 	store           objectstorage.ObjectStore
 }
 
@@ -73,8 +72,8 @@ func (ingestor *LocalIngestor) Ingest(ctx context.Context) (IngestJobID, error) 
 		err := ingestor.sampler.SampleRows(
 			ctx,
 			rowChannel,
-			sample.WithSampleAll(),
-			sample.WithSchema(ingestor.datarepoSchema),
+			WithSampleAll(),
+			WithSchema(ingestor.datarepoSchema),
 		)
 		if err != nil {
 			logrus.Error(fmt.Errorf("error while sampling rows: %w", err))
@@ -118,7 +117,7 @@ func NewLocalIngestor(
 	locationConfig datarepo.ManifestConfig,
 	datarepoSchema schema.Schema,
 ) (DatarepoIngestor, error) {
-	dataSampler, err := sample.SamplerFactory(formatConfig, locationConfig)
+	dataSampler, err := SamplerFactory(formatConfig, locationConfig)
 	if err != nil {
 		return nil, err
 	}
