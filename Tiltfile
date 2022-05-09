@@ -77,7 +77,7 @@ deploy_aws_secret()
 local_resource(
     name="generate-flatbuffers",
     cmd="make gen-fbs",
-    deps="./fbs",
+    deps=["./fbs", "Makefile"],
 )
 registry=get_var(IMAGE_REGISTRY).strip().strip('"')
 IMAGES = ['daftlet', 'reader', 'web']

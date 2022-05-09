@@ -21,12 +21,18 @@ define BUILD_IMAGE
 BUILDKIT_PROGRESS=plain DOCKER_BUILDKIT=1 $(DOCKER) build . -t $@:latest --target $@
 endef
 
+# Recursive wildcard from https://stackoverflow.com/questions/2483182/recursive-wildcards-in-gnu-make/18258352#18258352
+rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
+
+
 ${IMAGES}:
 	@echo $@
 	$(call BUILD_IMAGE)
 
+FLATBUFFERS = $(call rwildcard,./fbs,*.fbs)
+
 gen-fbs:
-	flatc --go --grpc -o ./codegen/go ./fbs/*.fbs
+	rm -rf ./codegen/go && flatc --go --grpc -o ./codegen/go ${FLATBUFFERS}
 
 dist:
 	BUILDKIT_PROGRESS=plain DOCKER_BUILDKIT=1 $(DOCKER) build . -t $@:latest --target $@ --output .

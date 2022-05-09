@@ -1,0 +1,23 @@
+namespace Daft.function;
+
+table RegisterFunctionRequest {
+
+}
+
+table RegisterFunctionResponse {
+    
+}
+
+table InvokeFunctionRequest {
+
+}
+
+table InvokeFunctionResponse {
+
+}
+
+
+rpc_service FunctionRegistry {
+  RegisterFunction(RegisterFunctionRequest): RegisterFunctionResponse;
+  InvokeFunction(InvokeFunctionRequest): InvokeFunctionResponse;
+}

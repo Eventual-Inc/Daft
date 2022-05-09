@@ -1,0 +1,5 @@
+namespace Daft.object;
+
+table ObjectRef {
+    
+}
