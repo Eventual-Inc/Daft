@@ -91,6 +91,8 @@ type IngestManifest struct {
 
 	selectedDatasourceLocation selectPromptData
 	DatasourceLocationConfig   datarepo.ManifestConfig `yaml:"datasourceLocation"`
+
+	Schema schema.Schema `yaml:"schema,omitempty"`
 }
 
 func NewCSVFilesFormatConfigFromPrompts() (*datarepo.CSVFilesFormatConfig, error) {
@@ -249,6 +251,7 @@ func (manifest *IngestManifest) buildDatarepoSchema() error {
 	if err != nil {
 		return err
 	}
+	manifest.Schema = finalizedSchema
 
 	fmt.Println("Final Schema:")
 	finalSchemaDisplay, err := yaml.Marshal(finalizedSchema)
@@ -311,6 +314,7 @@ modify and confirm the schema manually before creating the repo and ingesting da
 			},
 			manifest.DatasourceFormatConfig,
 			manifest.DatasourceLocationConfig,
+			manifest.Schema,
 		)
 		cobra.CheckErr(err)
 		jobId, err := ingestor.Ingest(cmd.Context())

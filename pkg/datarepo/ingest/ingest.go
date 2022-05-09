@@ -43,6 +43,7 @@ type LocalIngestor struct {
 	datarepoName    string
 	datarepoVersion string
 	datarepoConfig  datarepo.DatarepoConfig
+	datarepoSchema  schema.Schema
 	sampler         sample.Sampler
 	store           objectstorage.ObjectStore
 }
@@ -67,17 +68,12 @@ func (ingestor *LocalIngestor) uploadData(ctx context.Context, arrowBuilder *arr
 }
 
 func (ingestor *LocalIngestor) Ingest(ctx context.Context) (IngestJobID, error) {
-	sampledSchema, err := ingestor.sampler.SampleSchema()
-	if err != nil {
-		return "", err
-	}
-
 	rowChannel := make(chan [][]byte)
 	go func() {
 		err := ingestor.sampler.SampleRows(
 			rowChannel,
 			sample.WithSampleAll(),
-			sample.WithSchema(sampledSchema),
+			sample.WithSchema(ingestor.datarepoSchema),
 		)
 		if err != nil {
 			logrus.Error(fmt.Errorf("error while sampling rows: %w", err))
@@ -86,7 +82,7 @@ func (ingestor *LocalIngestor) Ingest(ctx context.Context) (IngestJobID, error) 
 	}()
 
 	var arrowFields []arrow.Field
-	for _, field := range sampledSchema.Fields {
+	for _, field := range ingestor.datarepoSchema.Fields {
 		arrowFields = append(arrowFields, arrow.Field{Name: field.Name, Type: DaftFieldTypeToArrowType[field.Type]})
 	}
 	arrowSchema := arrow.NewSchema(arrowFields, nil)
@@ -98,7 +94,7 @@ func (ingestor *LocalIngestor) Ingest(ctx context.Context) (IngestJobID, error) 
 	arrowBuilder := array.NewRecordBuilder(pool, arrowSchema)
 	for row := range rowChannel {
 		for i, cell := range row {
-			AppendToArrowBuilder(arrowBuilder, i, sampledSchema.Fields[i].Type, cell)
+			AppendToArrowBuilder(arrowBuilder, i, ingestor.datarepoSchema.Fields[i].Type, cell)
 		}
 		if rowCount%100000 == 99999 {
 			ingestor.uploadData(ctx, arrowBuilder)
@@ -113,7 +109,14 @@ func (ingestor *LocalIngestor) Ingest(ctx context.Context) (IngestJobID, error) 
 	return "nil - datarepo ingestion complete", nil
 }
 
-func NewLocalIngestor(datarepoName string, datarepoVersion string, datarepoConfig datarepo.DatarepoConfig, formatConfig datarepo.ManifestConfig, locationConfig datarepo.ManifestConfig) (DatarepoIngestor, error) {
+func NewLocalIngestor(
+	datarepoName string,
+	datarepoVersion string,
+	datarepoConfig datarepo.DatarepoConfig,
+	formatConfig datarepo.ManifestConfig,
+	locationConfig datarepo.ManifestConfig,
+	datarepoSchema schema.Schema,
+) (DatarepoIngestor, error) {
 	dataSampler, err := sample.SamplerFactory(formatConfig, locationConfig)
 	if err != nil {
 		return nil, err
@@ -126,6 +129,7 @@ func NewLocalIngestor(datarepoName string, datarepoVersion string, datarepoConfi
 		datarepoName:    datarepoName,
 		datarepoVersion: datarepoVersion,
 		datarepoConfig:  datarepoConfig,
+		datarepoSchema:  datarepoSchema,
 		sampler:         dataSampler,
 		store:           objectStore,
 	}, nil
