@@ -32,11 +32,11 @@ type ContainerdContext struct {
 	containerPool  map[string]containerData
 }
 
-func NewContainerdContext(socketPath string, hostPathPrefix string) *ContainerdContext {
+func newContainerdContext(socketPath string, hostPathPrefix string) *ContainerdContext {
 	defer timing.Timeit("NewContainerdContext", socketPath)()
 
 	cdc := new(ContainerdContext)
-	client, err := containerd.New("/run/containerd/containerd.sock")
+	client, err := containerd.New(socketPath)
 	cdc.client = client
 	if err != nil {
 		logrus.Fatal(err)

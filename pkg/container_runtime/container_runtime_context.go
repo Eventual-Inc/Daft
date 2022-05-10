@@ -30,5 +30,5 @@ type ContainerRuntimeContext interface {
 }
 
 func NewContainerRuntimeContext(socketPath string, hostPathPrefix string) ContainerRuntimeContext {
-	return NewContainerdContext(socketPath, hostPathPrefix)
+	return newContainerdContext(socketPath, hostPathPrefix)
 }
