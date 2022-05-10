@@ -3,12 +3,11 @@ package datarepo
 import (
 	"bytes"
 	"context"
+	"io"
 	"path/filepath"
 
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
-	"github.com/apache/arrow/go/arrow/array"
-	"github.com/apache/arrow/go/arrow/ipc"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
@@ -21,7 +20,7 @@ type StorageClient interface {
 	WriteSchema(ctx context.Context, name string, version string, schema schema.Schema) error
 
 	// Writes a single Partfile, returning the ID of the file as a string
-	WritePartfile(ctx context.Context, name string, version string, rec *array.Record) (string, error)
+	WritePartfile(ctx context.Context, name string, version string, fileData io.Reader) (string, error)
 }
 
 // AWS S3-based storage client
@@ -41,18 +40,9 @@ func (client *S3StorageClient) WriteSchema(ctx context.Context, name string, ver
 	return nil
 }
 
-func (client *S3StorageClient) WritePartfile(ctx context.Context, name string, version string, rec *array.Record) (string, error) {
+func (client *S3StorageClient) WritePartfile(ctx context.Context, name string, version string, fileData io.Reader) (string, error) {
 	partId := uuid.New().String()
 	path := "s3://" + filepath.Join(client.S3bucket, client.S3prefix, name, version, partId)
-
-	// Write rec out to a bytes buffer
-	buf := bytes.Buffer{}
-	writer := ipc.NewWriter(&buf, ipc.WithSchema((*rec).Schema()))
-	err := writer.Write(*rec)
-	if err != nil {
-		return partId, err
-	}
-
-	client.ObjectStore.UploadObject(ctx, path, &buf)
+	client.ObjectStore.UploadObject(ctx, path, fileData)
 	return partId, nil
 }

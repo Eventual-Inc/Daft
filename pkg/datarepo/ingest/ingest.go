@@ -1,19 +1,20 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/Eventual-Inc/Daft/pkg/datarepo"
 	"github.com/Eventual-Inc/Daft/pkg/datarepo/schema"
+	"github.com/Eventual-Inc/Daft/pkg/datarepo/serialization"
 	"github.com/Eventual-Inc/Daft/pkg/objectstorage"
-	"github.com/apache/arrow/go/arrow/array"
-	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/sirupsen/logrus"
 )
 
-// TODO(jaychia): This is currently hardcoded, but could instead be dynamically sampled
-const RowsPerPartfile = 1000000
+// Size in bytes of the threshold for each partfile
+const PartfileSizeThreshold = 100 * 1000 * 1000
 
 type IngestJobID = string
 
@@ -31,6 +32,39 @@ type LocalIngestor struct {
 	datarepoClient  datarepo.StorageClient
 	sampler         Sampler
 	store           objectstorage.ObjectStore
+}
+
+func (ingestor *LocalIngestor) flushSerializerToPartfile(ctx context.Context, serializer serialization.Serializer) error {
+	reader, writer := io.Pipe()
+	errChan := make(chan error)
+	go func() {
+		err := serializer.Flush(writer)
+		writer.CloseWithError(err)
+		errChan <- err
+	}()
+
+	// HACK(jaychia): The AWS S3 APIs seem to be failing weirdly with io.PipeReader and reading 0 bytes of data. It seems that
+	// the API expects all the data to be ready before it is called, instead of properly terminating at an EOF...
+	// Hence, we buffer in memory here by reading all the data into an in-memory []byte buffer before sending it to the S3 client.
+	// This could be optimized if we do uploading by parts instead.
+	b, err := io.ReadAll(reader)
+	if err != nil {
+		return err
+	}
+	bytesBufferReader := bytes.NewReader(b)
+
+	partId, err := ingestor.datarepoClient.WritePartfile(ctx, ingestor.datarepoName, ingestor.datarepoVersion, bytesBufferReader)
+	if err != nil {
+		return fmt.Errorf("error occurred with writing partfile %s : %w", partId, err)
+	}
+	err = <-errChan
+	if err != nil {
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (ingestor *LocalIngestor) Ingest(ctx context.Context) (IngestJobID, error) {
@@ -52,42 +86,27 @@ func (ingestor *LocalIngestor) Ingest(ctx context.Context) (IngestJobID, error) 
 		close(rowChannel)
 	}()
 
-	// Create a new arrow batch every 1,000,000 records
-	// TODO(jaychia): We could instead do a new batch every 100MB
-	arrowSchema := ingestor.datarepoSchema.ArrowSchema()
-	pool := memory.NewGoAllocator()
-	arrowBuilder := array.NewRecordBuilder(pool, arrowSchema)
-	rowCount := 0
+	serializer := serialization.NewArrowSerializer(ingestor.datarepoSchema)
+	totalBytesBuffered := 0
 	for row := range rowChannel {
-		for i, cell := range row {
-			fieldType := ingestor.datarepoSchema.Fields[i].Type
-			switch fieldType {
-			case schema.StringType:
-				arrowBuilder.Field(i).(*array.StringBuilder).Append(string(cell))
-			default:
-				return "", fmt.Errorf("unable to map type %s to an Arrow builder", fieldType)
-			}
+		bytesBuffered, err := serializer.AddRow(row)
+		if err != nil {
+			return "", err
 		}
-		// Upload data if RowsPerPartfile threshold reached
-		if rowCount%RowsPerPartfile == (RowsPerPartfile - 1) {
-			rec := arrowBuilder.NewRecord()
-			_, err := ingestor.datarepoClient.WritePartfile(ctx, ingestor.datarepoName, ingestor.datarepoVersion, &rec)
-			rec.Release()
-			arrowBuilder.Release()
+		// Upload data if PartfileSizeThreshold threshold reached
+		totalBytesBuffered += bytesBuffered
+		if totalBytesBuffered > PartfileSizeThreshold {
+			totalBytesBuffered = 0
+			err = ingestor.flushSerializerToPartfile(ctx, &serializer)
 			if err != nil {
 				return "", err
 			}
-			arrowBuilder = array.NewRecordBuilder(pool, arrowSchema)
 		}
-		rowCount++
 	}
 
 	// Upload remainder of data
-	if rowCount%RowsPerPartfile != (RowsPerPartfile - 1) {
-		rec := arrowBuilder.NewRecord()
-		_, err := ingestor.datarepoClient.WritePartfile(ctx, ingestor.datarepoName, ingestor.datarepoVersion, &rec)
-		rec.Release()
-		arrowBuilder.Release()
+	if totalBytesBuffered != 0 {
+		err := ingestor.flushSerializerToPartfile(ctx, &serializer)
 		if err != nil {
 			return "", err
 		}

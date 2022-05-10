@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -61,6 +62,9 @@ func (sampler *CSVSampler) SampleRows(ctx context.Context, outputChannel chan []
 	objectPaths, err := sampler.objectStore.ListObjects(ctx, sampler.fullDirPath)
 	if err != nil {
 		return err
+	}
+	if len(objectPaths) == 0 {
+		return errors.New("no objects found at specified location")
 	}
 
 	// Use schema if provided as an opt, otherwise detect it first
