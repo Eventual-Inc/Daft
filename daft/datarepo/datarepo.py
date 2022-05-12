@@ -35,7 +35,8 @@ class Datarepo(Generic[Item]):
         `.preview`:    Visualize the top N number of Items in the current notebook
     """
 
-    def __init__(self, path: str):
+    def __init__(self, datarepo_id: str, path: str):
+        self._id = datarepo_id
         self._ray_dataset = ray.data.read_parquet(path)
 
     def map(self, func: MapFunc[Item, OutputItem]) -> "Datarepo[OutputItem]":
@@ -45,7 +46,17 @@ class Datarepo(Generic[Item]):
         pass
 
     def info(self) -> DatarepoInfo:
-        pass
+        """Retrieves information about the Datarepo. This method never triggers any
+        recomputation, but may return <unknown> values if the Datarepo has not been
+        materialized yet.
+
+        Returns:
+            DatarepoInfo: dictionary of information about the Datarepo
+        """
+        return {
+            "id": self._id,
+            "num_rows": self._ray_dataset.count(),
+        }
 
     def sample(self, n: int = 5) -> "Datarepo[Item]":
         pass
@@ -77,4 +88,4 @@ class Datarepo(Generic[Item]):
             Datarepo: retrieved Datarepo
         """
         path = metadata_service.get_metadata_service().get_path(datarepo_id)
-        return cls(path)
+        return cls(datarepo_id, path)
