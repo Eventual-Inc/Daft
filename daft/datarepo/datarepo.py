@@ -1,4 +1,4 @@
-from typing import Dict, List, Generic, TypeVar
+from typing import Dict, List, Generic, TypeVar, Optional
 
 import ray
 
@@ -35,9 +35,19 @@ class Datarepo(Generic[Item]):
         `.preview`:    Visualize the top N number of Items in the current notebook
     """
 
-    def __init__(self, datarepo_id: str, path: str):
+    def __init__(
+        self,
+        datarepo_id: str,
+        ray_dataset: ray.data.Dataset,
+    ):
+        """Creates a new Datarepo
+
+        Args:
+            datarepo_id (str): ID of the datarepo
+            ray_dataset (ray.data.Dataset): Dataset that backs this Datarepo
+        """
         self._id = datarepo_id
-        self._ray_dataset = ray.data.read_parquet(path)
+        self._ray_dataset = ray_dataset
 
     def map(self, func: MapFunc[Item, OutputItem]) -> "Datarepo[OutputItem]":
         pass
@@ -59,10 +69,24 @@ class Datarepo(Generic[Item]):
         }
 
     def sample(self, n: int = 5) -> "Datarepo[Item]":
-        pass
+        """Samples a certain number of Items from the Datarepo
+
+        Args:
+            n (int, optional): number of items to sample. Defaults to 5.
+
+        Returns:
+            Datarepo[Item]: _description_
+        """
+        # TODO(jaychia): This likely triggers a computation, we might need to find
+        # a way to make this lazy, perhaps by building out our own queue of operations?
+        head, _ = self._ray_dataset.split_at_indices([n])
+        return Datarepo(self._id + "[sampled]", head)
 
     def preview(self) -> None:
-        pass
+        """Previews the data in a Datarepo, triggering the computation of that data
+        """
+        # TODO(jaychia): This needs further refinement to display according to our schema
+        return ray.get(self._ray_dataset.get_internal_block_refs()[0]).to_pandas()
 
     ###
     # Static methods: Managing Datarepos
@@ -88,4 +112,4 @@ class Datarepo(Generic[Item]):
             Datarepo: retrieved Datarepo
         """
         path = metadata_service.get_metadata_service().get_path(datarepo_id)
-        return cls(datarepo_id, path)
+        return cls(datarepo_id, ray.data.read_parquet(path))
