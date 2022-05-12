@@ -1,5 +1,7 @@
 from typing import Dict, List, Generic, TypeVar
 
+from daft.datarepo import metadata_service
+
 
 DatarepoInfo = Dict[str, str]
 
@@ -59,8 +61,8 @@ class Datarepo(Generic[Item]):
 
         Returns:
             List[str]: IDs of datarepos
-        """        
-        return ["foo", "bar", "baz"]
+        """
+        return metadata_service.get_metadata_service().list_ids()
 
     @staticmethod
     def get(datarepo_id: str) -> "Datarepo":
@@ -71,5 +73,5 @@ class Datarepo(Generic[Item]):
 
         Returns:
             Datarepo: retrieved Datarepo
-        """        
+        """
         return Datarepo()
