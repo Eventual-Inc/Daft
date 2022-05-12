@@ -1,5 +1,7 @@
 from typing import Dict, List, Generic, TypeVar
 
+import ray
+
 from daft.datarepo import metadata_service
 
 
@@ -33,8 +35,8 @@ class Datarepo(Generic[Item]):
         `.preview`:    Visualize the top N number of Items in the current notebook
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, path: str):
+        self._ray_dataset = ray.data.read_parquet(path)
 
     def map(self, func: MapFunc[Item, OutputItem]) -> "Datarepo[OutputItem]":
         pass
@@ -64,8 +66,8 @@ class Datarepo(Generic[Item]):
         """
         return metadata_service.get_metadata_service().list_ids()
 
-    @staticmethod
-    def get(datarepo_id: str) -> "Datarepo":
+    @classmethod
+    def get(cls, datarepo_id: str) -> "Datarepo":
         """Gets a Datarepo by ID
 
         Args:
@@ -74,4 +76,5 @@ class Datarepo(Generic[Item]):
         Returns:
             Datarepo: retrieved Datarepo
         """
-        return Datarepo()
+        path = metadata_service.get_metadata_service().get_path(datarepo_id)
+        return cls(path)

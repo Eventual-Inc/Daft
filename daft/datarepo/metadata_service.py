@@ -64,4 +64,4 @@ class _S3DatarepoMetadataService(_DatarepoMetadataService):
         Returns:
             str: path to Datarepo's underlying storage
         """
-        return f"s3://{self._bucket}/{self._prefix}/{datarepo_id}"
+        return f"s3://{self._bucket}/{self._prefix.rstrip('/')}/{datarepo_id}"
