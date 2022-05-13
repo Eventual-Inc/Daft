@@ -1,4 +1,5 @@
 import dataclasses
+import io
 
 from typing import Dict, List, Generic, TypeVar, Optional
 
@@ -54,8 +55,8 @@ class Datarepo(Generic[Item]):
             ray_dataset (ray.data.Dataset): Dataset that backs this Datarepo
         """
         self._id = datarepo_id
-        self._ray_dataset_pipeline = ray_dataset_pipeline
         self._num_rows = num_rows
+        self._ray_dataset_pipeline = ray_dataset_pipeline
 
     def map(self, func: MapFunc[Item, OutputItem]) -> "Datarepo[OutputItem]":
         """Runs a function on each item in the Datarepo, returning a new Datarepo
@@ -79,7 +80,23 @@ class Datarepo(Generic[Item]):
             datarepo_id (str): ID to save datarepo as
         """
         path = metadata_service.get_metadata_service().get_path(datarepo_id)
-        return self._ray_dataset_pipeline.write_parquet(path)
+        # TODO(jaychia): Serialize dataclasses to arrow-compatible types properly with schema library
+        import PIL.Image
+        def TODO_serialize(item):
+            if dataclasses.is_dataclass(item):
+                d = {}
+                for field in item.__dataclass_fields__:
+                    val = getattr(item, field)
+                    if isinstance(val, PIL.Image.Image):
+                        bio = io.BytesIO()
+                        val.save(bio, format="JPEG")
+                        d[field] = bio.getvalue()
+                    else:
+                        d[field] = val
+                return d
+            else:
+                raise NotImplementedError("Can only save Daft Dataclasses to Datarepos")
+        return self._ray_dataset_pipeline.map(TODO_serialize).write_parquet(path)
 
     def info(self) -> DatarepoInfo:
         """Retrieves information about the Datarepo. This method never triggers any
