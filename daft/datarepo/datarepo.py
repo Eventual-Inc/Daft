@@ -1,6 +1,7 @@
 from typing import Dict, List, Generic, TypeVar, Optional
 
 import ray
+import pyarrow as pa
 
 from daft.datarepo import metadata_service
 
@@ -50,10 +51,24 @@ class Datarepo(Generic[Item]):
         self._ray_dataset = ray_dataset
 
     def map(self, func: MapFunc[Item, OutputItem]) -> "Datarepo[OutputItem]":
-        pass
+        """Runs a function on each item in the Datarepo, returning a new Datarepo
 
-    def save(self, datarepo_id: str) -> "Datarepo[str]":
-        pass
+        Args:
+            func (MapFunc[Item, OutputItem]): function to run
+
+        Returns:
+            Datarepo[OutputItem]: Datarepo of outputs
+        """
+        return Datarepo(self._id + "[mapped]", self._ray_dataset.map(func))
+
+    def save(self, datarepo_id: str) -> None:
+        """Save a datarepo to persistent storage
+
+        Args:
+            datarepo_id (str): ID to save datarepo as
+        """
+        path = metadata_service.get_metadata_service().get_path(datarepo_id)
+        return self._ray_dataset.write_parquet(path)
 
     def info(self) -> DatarepoInfo:
         """Retrieves information about the Datarepo. This method never triggers any
@@ -84,9 +99,20 @@ class Datarepo(Generic[Item]):
 
     def preview(self) -> None:
         """Previews the data in a Datarepo, triggering the computation of that data
+
+        TODO(jaychia): This needs further refinement to display according to our schema
         """
-        # TODO(jaychia): This needs further refinement to display according to our schema
-        return ray.get(self._ray_dataset.get_internal_block_refs()[0]).to_pandas()
+        from IPython.display import display
+        items = ray.get(self._ray_dataset.get_internal_block_refs()[0])
+
+        # HACK(jaychia): In the absence of schemas, we just detect the types dynamically
+        if isinstance(items, pa.Table):
+            display(items.to_pandas())
+        elif isinstance(items, list):
+            for item in items:
+                print(item)
+        else:
+            print(f"Visualization not supported: {type(items)}")
 
     ###
     # Static methods: Managing Datarepos
