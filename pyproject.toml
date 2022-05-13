@@ -14,6 +14,10 @@ pytest = "^7.1.2"
 mypy = "^0.950"
 boto3 = "^1.23.0"
 boto3-stubs = "^1.23.0"
+types-Pillow = "^9.0.15"
+Pillow = "^9.1.0"
+torch = "^1.11.0"
+torchvision = "^0.12.0"
 
 
 [tool.poetry.dev-dependencies]
