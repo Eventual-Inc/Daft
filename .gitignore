@@ -1,3 +1,5 @@
+.vscode
+
 venv
 notebooks
 **/__pycache__/

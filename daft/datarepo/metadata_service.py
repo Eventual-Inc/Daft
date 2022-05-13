@@ -1,5 +1,4 @@
-from typing import List
-from typing_extensions import Protocol
+from typing import List, Protocol
 
 from daft.datarepo import config
 
