@@ -1,12 +1,11 @@
 import dataclasses
 import io
 
-from typing import Callable, Dict, List, Generic, TypeVar, Optional
+from typing import Dict, List, Generic, TypeVar
 
 import ray
 import ray.data.dataset_pipeline
 from ray.data.impl.arrow_block import ArrowRow
-import pyarrow as pa
 
 from daft.datarepo import metadata_service
 
@@ -23,12 +22,6 @@ class MapFunc(Generic[Item, OutputItem]):
 
     def __call__(self, item: Item) -> OutputItem:
         ...
-
-@dataclasses.dataclass
-class DatarepoOp:
-    name: str
-    num_rows: Callable[[int], int]
-    callable: Callable[[ray.data.dataset_pipeline.DatasetPipeline], ray.data.dataset_pipeline.DatasetPipeline]
 
 class Datarepo(Generic[Item]):
     """Implements Datarepos, which are repositories of Items of data.
@@ -51,9 +44,7 @@ class Datarepo(Generic[Item]):
     def __init__(
         self,
         datarepo_id: str,
-        initial_ray_read_dataset: ray.data.Dataset,
-        num_rows: Optional[int] = None,
-        op_lineage: List[DatarepoOp] = [],
+        ray_dataset: ray.data.Dataset,
     ):
         """Creates a new Datarepo
 
@@ -62,17 +53,7 @@ class Datarepo(Generic[Item]):
             ray_dataset (ray.data.Dataset): Dataset that backs this Datarepo
         """
         self._id = datarepo_id
-        self._num_rows = num_rows
-        self._initial_ray_read_dataset = initial_ray_read_dataset
-        self._op_lineage: List[DatarepoOp] = op_lineage
-
-    def _with_op(self, op: DatarepoOp) -> "Datarepo[Item]":
-        return Datarepo(
-            datarepo_id=f"{self._id}:{op.name}",
-            initial_ray_read_dataset=self._initial_ray_read_dataset,
-            num_rows=op.num_rows(self._num_rows) if self._num_rows is not None else None,
-            op_lineage=self._op_lineage + [op],
-        )
+        self._ray_dataset = ray_dataset
 
     def info(self) -> DatarepoInfo:
         """Retrieves information about the Datarepo. This method never triggers any
@@ -84,11 +65,11 @@ class Datarepo(Generic[Item]):
         """
         return {
             "id": self._id,
-            "num_rows": self._num_rows,
+            "num_rows": self._ray_dataset.count(),
         }
 
     def __repr__(self) -> str:
-        return str(self.info())
+        return f"<DataRepo: {' '.join([f'{k}={v}' for k, v in self.info().items()])}>"
 
     ###
     # Operation Functions: Functions that add to the graph of operations to perform
@@ -103,11 +84,10 @@ class Datarepo(Generic[Item]):
         Returns:
             Datarepo[OutputItem]: Datarepo of outputs
         """
-        return self._with_op(DatarepoOp(
-            name=f"map[{func.__name__}]",
-            num_rows=lambda old_num_rows: old_num_rows,
-            callable=lambda datapipeline: datapipeline.map(func),
-        ))
+        return Datarepo(
+            datarepo_id=f"{self._id}:map[{func.__name__}]",
+            ray_dataset=self._ray_dataset.map(func),
+        )
 
     def sample(self, n: int = 5) -> "Datarepo[Item]":
         """Computes and samples `n` Items from the Datarepo
@@ -118,34 +98,18 @@ class Datarepo(Generic[Item]):
         Returns:
             Datarepo[Item]: new Datarepo with sampled size
         """
-
-        def _sample(pipe: ray.data.dataset_pipeline.DatasetPipeline) -> ray.data.dataset_pipeline.DatasetPipeline:
-            count = 0
-            datasets = []
-            for ds in pipe.iter_datasets():
-                datasets.append(ds)
-                count += ds.count()
-                if count > n:
-                    minimum_dataset = datasets[0] if len(datasets) == 1 else datasets[0].union(datasets[1:])
-                    sampled_dataset, _ = minimum_dataset.split_at_indices([n])
-                    return sampled_dataset.window(blocks_per_window=BLOCKS_PER_WINDOW)
-            raise RuntimeError(f"Attempting to sample {n} items but the Datarepo only has {count} items")
-
-        return self._with_op(DatarepoOp(
-            name=f"sample[{n}]",
-            num_rows=lambda _: n,
-            callable=_sample,
-        ))
+        # TODO(jaychia): This forces the full execution of the Dataset before splitting, which is not good.
+        # We might be able to get around it by converting the Dataset to a pipeline first, with blocks_per_window=1
+        # and then only accessing the first window. Unclear, needs to be benchmarked.
+        head, _ = self._ray_dataset.split_at_indices([n])
+        return Datarepo(
+            datarepo_id=f"{self._id}:sample[{n}]",
+            ray_dataset=head,
+        )
 
     ###
     # Trigger functions: Functions that trigger computation of the Datarepo
     ###
-
-    def _get_pipe(self):
-        pipe = self._initial_ray_read_dataset.window(blocks_per_window=BLOCKS_PER_WINDOW)
-        for op in self._op_lineage:
-            pipe = op.callable(pipe)
-        return pipe
 
     def save(self, datarepo_id: str) -> None:
         """Save a datarepo to persistent storage
@@ -153,8 +117,6 @@ class Datarepo(Generic[Item]):
         Args:
             datarepo_id (str): ID to save datarepo as
         """
-        pipe = self._get_pipe()
-
         # TODO(jaychia): Serialize dataclasses to arrow-compatible types properly with schema library
         import PIL.Image
         def TODO_serialize(item):
@@ -173,19 +135,15 @@ class Datarepo(Generic[Item]):
                 raise NotImplementedError("Can only save Daft Dataclasses to Datarepos")
 
         path = metadata_service.get_metadata_service().get_path(datarepo_id)
-        return pipe.map(TODO_serialize).write_parquet(path)
+        return self._ray_dataset.map(TODO_serialize).write_parquet(path)
 
     def preview(self, n: int = 1) -> None:
         """Previews the data in a Datarepo"""
         sampled_repo = self.sample(n)
-        pipe = sampled_repo._get_pipe()
 
         from IPython.display import display
         import PIL.Image
-        # .iter_rows() of the Ray DatasetPipeline, processes windows lazily as they are requested.
-        # If we request a low number of rows for the preview, then we will process a minimal number
-        # of windows - ideally just one!
-        for i, item in enumerate(pipe.iter_rows()):
+        for i, item in enumerate(sampled_repo._ray_dataset.iter_rows()):
             if i >= n:
                 break
             if isinstance(item, ArrowRow):
@@ -233,7 +191,5 @@ class Datarepo(Generic[Item]):
         # But we should benchmark and verify this.
         return cls(
             datarepo_id=datarepo_id,
-            initial_ray_read_dataset=ds,
-            num_rows=ds.count(),
-            op_lineage=[],
+            ray_dataset=ds,
         )
