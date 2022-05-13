@@ -1,7 +1,7 @@
 import dataclasses
 import io
 
-from typing import Dict, List, Generic, TypeVar
+from typing import Dict, List, Generic, TypeVar, Iterator
 
 import ray
 import ray.data.dataset_pipeline
@@ -9,8 +9,10 @@ from ray.data.impl.arrow_block import ArrowRow
 
 from daft.datarepo import metadata_service
 
-# TODO(jaychia): We should derive this in a smarter way, perhaps N_CPUs * 2 or something similar.
-BLOCKS_PER_WINDOW = 8
+# TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
+MIN_ACTORS = 8
+MAX_ACTORS = 8
+DEFAULT_ACTOR_STRATEGY = ray.data.ActorPoolStrategy(MIN_ACTORS, MAX_ACTORS)
 DatarepoInfo = Dict[str, str]
 
 
@@ -87,6 +89,36 @@ class Datarepo(Generic[Item]):
         return Datarepo(
             datarepo_id=f"{self._id}:map[{func.__name__}]",
             ray_dataset=self._ray_dataset.map(func),
+        )
+
+    def map_batches(
+        self,
+        batched_func: MapFunc[Iterator[Item], Iterator[OutputItem]],
+        batch_size: int,
+    ) -> "Datarepo[OutputItem]":
+        """Runs a function on batches of items in the Datarepo, returning a new Datarepo
+
+        Args:
+            batched_func (MapFunc[Iterator[Item], Iterator[OutputItem]]): a function that runs on a batch of input
+                data, and outputs a batch of output data
+
+        Returns:
+            Datarepo[OutputItem]: Datarepo of outputs
+        """
+        compute_strategy = (
+            "tasks"
+            # HACK(jaychia): hack until we define proper types for our Function decorators
+            if str(type(batched_func)) == "<class 'function'>"
+            else DEFAULT_ACTOR_STRATEGY
+        )
+        return Datarepo(
+            datarepo_id=f"{self._id}:map_batches[{batched_func.__name__}]",
+            ray_dataset=self._ray_dataset.map_batches(
+                batched_func,
+                batch_size=batch_size,
+                compute=compute_strategy,
+                batch_format="native",
+            ),
         )
 
     def sample(self, n: int = 5) -> "Datarepo[Item]":
