@@ -31,3 +31,8 @@ python_version = "3.8"
 files = ["daft/**/*.py", "tests/**/*.py"]
 warn_return_any = true
 warn_unused_configs = true
+
+
+[[tool.mypy.overrides]]
+module = "pyarrow.*"
+ignore_missing_imports = true
