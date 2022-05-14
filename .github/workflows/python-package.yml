@@ -27,12 +27,11 @@ jobs:
     - name: Install dependencies
       run: |
         # Install Poetry and deps
-        curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
-        source $HOME/.poetry/env
+        python -m pip install poetry
         poetry install
     - name: Type Check with Mypy
       run: |
         poetry run mypy
     - name: Test with pytest
       run: |
-       poetry run pytest
+        poetry run pytest
