@@ -1,7 +1,7 @@
 import dataclasses
 import io
 
-from typing import Dict, List, Generic, TypeVar, Iterator
+from typing import Dict, List, Generic, TypeVar, Protocol, Callable, Union
 
 import ray
 import ray.data.dataset_pipeline
@@ -12,17 +12,20 @@ from daft.datarepo import metadata_service
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
 MIN_ACTORS = 8
 MAX_ACTORS = 8
-DEFAULT_ACTOR_STRATEGY = ray.data.ActorPoolStrategy(MIN_ACTORS, MAX_ACTORS)
+DEFAULT_ACTOR_STRATEGY: ray.data.ActorPoolStrategy  = ray.data.ActorPoolStrategy(MIN_ACTORS, MAX_ACTORS)
 DatarepoInfo = Dict[str, str]
 
 
-Item = TypeVar("Item")
-OutputItem = TypeVar("OutputItem")
+Item = TypeVar("Item", contravariant=True)
+OutputItem = TypeVar("OutputItem", covariant=True)
 
-class MapFunc(Generic[Item, OutputItem]):
+class MapFunc(Protocol[Item, OutputItem]):
     """Function to be used to map over a Datarepo"""
 
-    def __call__(self, item: Item) -> OutputItem:
+    def __call__(self, item: Item) -> OutputItem: ...
+
+    @property
+    def __name__(self) -> str:
         ...
 
 class Datarepo(Generic[Item]):
@@ -67,7 +70,7 @@ class Datarepo(Generic[Item]):
         """
         return {
             "id": self._id,
-            "num_rows": self._ray_dataset.count(),
+            "num_rows": str(self._ray_dataset.count()),
         }
 
     def __repr__(self) -> str:
@@ -93,7 +96,7 @@ class Datarepo(Generic[Item]):
 
     def map_batches(
         self,
-        batched_func: MapFunc[Iterator[Item], Iterator[OutputItem]],
+        batched_func: MapFunc[List[Item], List[OutputItem]],
         batch_size: int,
     ) -> "Datarepo[OutputItem]":
         """Runs a function on batches of items in the Datarepo, returning a new Datarepo
@@ -105,7 +108,7 @@ class Datarepo(Generic[Item]):
         Returns:
             Datarepo[OutputItem]: Datarepo of outputs
         """
-        compute_strategy = (
+        compute_strategy: Union[str, ray.data.ActorPoolStrategy] = (
             "tasks"
             # HACK(jaychia): hack until we define proper types for our Function decorators
             if str(type(batched_func)) == "<class 'function'>"
@@ -114,7 +117,8 @@ class Datarepo(Generic[Item]):
         return Datarepo(
             datarepo_id=f"{self._id}:map_batches[{batched_func.__name__}]",
             ray_dataset=self._ray_dataset.map_batches(
-                batched_func,
+                # Mypy getting confused because the __call__ method takes `self` as the first arg
+                batched_func,  # type: ignore
                 batch_size=batch_size,
                 compute=compute_strategy,
                 batch_format="native",
@@ -173,7 +177,7 @@ class Datarepo(Generic[Item]):
         """Previews the data in a Datarepo"""
         sampled_repo = self.sample(n)
 
-        from IPython.display import display
+        from IPython.display import display  # type: ignore
         import PIL.Image
         for i, item in enumerate(sampled_repo._ray_dataset.iter_rows()):
             if i >= n:
@@ -185,8 +189,7 @@ class Datarepo(Generic[Item]):
                 # TODO(jaychia): This needs further refinement for rich display according
                 # to our schema when @sammy is ready with the schema library, by checking
                 # if the item is an instance of a Daft Dataclass.
-                for field in item.__dataclass_fields__:
-                    val = getattr(item, field)
+                for field, val in dataclasses.asdict(item).items():
                     if isinstance(val, PIL.Image.Image):
                         print(f"{field}:")
                         display(val)
