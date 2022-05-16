@@ -1,7 +1,12 @@
-from re import X
 from daft.dataclasses import dataclass
 
 from dataclasses import is_dataclass
+
+from daft.fields import DaftImageField
+
+import numpy as np
+
+from daft.types import DaftImageType
 
 def test_dataclass_without_args() -> None:
     @dataclass
@@ -26,3 +31,9 @@ def test_dataclass_with_args() -> None:
     obj = TestDataclass(1)
 
     assert is_dataclass(obj) and not isinstance(obj, type)
+
+def test_dataclass_with_daft_type() -> None:
+    @dataclass
+    class DataclassWithDaftImage:
+        x: int
+        img: np.ndarray = DaftImageField(encoding=DaftImageType.Encoding.JPEG)
