@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import dataclasses
 import io
 
-from typing import Dict, List, Generic, TypeVar, Callable, Union
+from typing import Any, Dict, List, Generic, TypeVar, Callable, Union
 
 import ray
 import ray.data.dataset_pipeline
@@ -18,7 +20,13 @@ DatarepoInfo = Dict[str, str]
 
 Item = TypeVar("Item")
 OutputItem = TypeVar("OutputItem")
+
+BatchItem = List[Item]
+BatchOutputItem = List[OutputItem]
+
 MapFunc = Callable[[Item], OutputItem]
+
+BatchMapFunc = Union[type, Callable[[Any], Any]]
 
 class Datarepo(Generic[Item]):
     """Implements Datarepos, which are repositories of Items of data.
@@ -88,9 +96,9 @@ class Datarepo(Generic[Item]):
 
     def map_batches(
         self,
-        batched_func: MapFunc[List[Item], List[OutputItem]],
+        batched_func: BatchMapFunc,
         batch_size: int,
-    ) -> "Datarepo[OutputItem]":
+    ) -> Datarepo[OutputItem]:
         """Runs a function on batches of items in the Datarepo, returning a new Datarepo
 
         Args:
@@ -106,15 +114,19 @@ class Datarepo(Generic[Item]):
             if str(type(batched_func)) == "<class 'function'>"
             else DEFAULT_ACTOR_STRATEGY
         )
+
+
+        ray_dataset: ray.data.Dataset[OutputItem] = self._ray_dataset.map_batches(
+            # TODO(jaychia): failing typecheck for some reason:
+            batched_func,
+            batch_size=batch_size,
+            compute=compute_strategy,
+            batch_format="native",
+        )
+
         return Datarepo(
             datarepo_id=f"{self._id}:map_batches[{batched_func.__name__}]",
-            ray_dataset=self._ray_dataset.map_batches(
-                # TODO(jaychia): failing typecheck for some reason:
-                batched_func,  # type: ignore
-                batch_size=batch_size,
-                compute=compute_strategy,
-                batch_format="native",
-            ),
+            ray_dataset=ray_dataset
         )
 
     def sample(self, n: int = 5) -> "Datarepo[Item]":
