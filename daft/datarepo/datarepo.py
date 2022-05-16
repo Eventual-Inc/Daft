@@ -1,7 +1,7 @@
 import dataclasses
 import io
 
-from typing import Dict, List, Generic, TypeVar, Protocol, Callable, Union
+from typing import Dict, List, Generic, TypeVar, Callable, Union
 
 import ray
 import ray.data.dataset_pipeline
@@ -16,17 +16,9 @@ DEFAULT_ACTOR_STRATEGY: ray.data.ActorPoolStrategy  = ray.data.ActorPoolStrategy
 DatarepoInfo = Dict[str, str]
 
 
-Item = TypeVar("Item", contravariant=True)
-OutputItem = TypeVar("OutputItem", covariant=True)
-
-class MapFunc(Protocol[Item, OutputItem]):
-    """Function to be used to map over a Datarepo"""
-
-    def __call__(self, item: Item) -> OutputItem: ...
-
-    @property
-    def __name__(self) -> str:
-        ...
+Item = TypeVar("Item")
+OutputItem = TypeVar("OutputItem")
+MapFunc = Callable[[Item], OutputItem]
 
 class Datarepo(Generic[Item]):
     """Implements Datarepos, which are repositories of Items of data.
@@ -117,7 +109,7 @@ class Datarepo(Generic[Item]):
         return Datarepo(
             datarepo_id=f"{self._id}:map_batches[{batched_func.__name__}]",
             ray_dataset=self._ray_dataset.map_batches(
-                # Mypy getting confused because the __call__ method takes `self` as the first arg
+                # TODO(jaychia): failing typecheck for some reason:
                 batched_func,  # type: ignore
                 batch_size=batch_size,
                 compute=compute_strategy,
