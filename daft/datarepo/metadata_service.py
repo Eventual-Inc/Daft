@@ -1,9 +1,13 @@
+from __future__ import annotations
+
+import os
+
 from typing import List, Protocol
 
 from daft.datarepo import config
 
 
-def get_metadata_service() -> "_DatarepoMetadataService":
+def get_metadata_service() -> _DatarepoMetadataService:
     """Return the appropriate _DatarepoMetadataService as configured by the environment
 
     Returns:
@@ -64,3 +68,22 @@ class _S3DatarepoMetadataService(_DatarepoMetadataService):
             str: path to Datarepo's underlying storage
         """
         return f"s3://{self._bucket}/{self._prefix.rstrip('/')}/{datarepo_id}"
+
+
+class _LocalDatarepoMetadataService(_DatarepoMetadataService):
+    """Implementation of DatarepoMetadataService using a local tmpdir as the backing store
+    """
+
+    def __init__(self, tmpdir: str) -> None:
+        self._tmpdir = tmpdir
+
+    def list_ids(self) -> List[str]:
+        return os.listdir(self._tmpdir)
+
+    def get_path(self, datarepo_id: str) -> str:
+        """Returns the path to a Datarepo's underlying storage
+
+        Returns:
+            str: path to Datarepo's underlying storage
+        """
+        return os.path.join(self._tmpdir, datarepo_id)

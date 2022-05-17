@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import io
 
-from typing import Any, Dict, List, Generic, TypeVar, Callable, Union
+from typing import Any, Dict, List, Generic, TypeVar, Callable, Union, Optional
 
 import ray
 import ray.data.dataset_pipeline
@@ -80,7 +80,7 @@ class Datarepo(Generic[Item]):
     # Operation Functions: Functions that add to the graph of operations to perform
     ###
 
-    def map(self, func: MapFunc[Item, OutputItem]) -> "Datarepo[OutputItem]":
+    def map(self, func: MapFunc[Item, OutputItem]) -> Datarepo[OutputItem]:
         """Runs a function on each item in the Datarepo, returning a new Datarepo
 
         Args:
@@ -129,7 +129,7 @@ class Datarepo(Generic[Item]):
             ray_dataset=ray_dataset
         )
 
-    def sample(self, n: int = 5) -> "Datarepo[Item]":
+    def sample(self, n: int = 5) -> Datarepo[Item]:
         """Computes and samples `n` Items from the Datarepo
 
         Args:
@@ -205,25 +205,40 @@ class Datarepo(Generic[Item]):
     ###
 
     @staticmethod
-    def list_ids() -> List[str]:
+    def list_ids(
+        svc: Optional[metadata_service._DatarepoMetadataService] = None,
+    ) -> List[str]:
         """List the IDs of all materialized datarepos
+        Args:
+            svc (Optional[metadata_service._DatarepoMetadataService], optional): Defaults to None which will detect
+                the appropriate service to use from the current environment.
 
         Returns:
             List[str]: IDs of datarepos
         """
-        return metadata_service.get_metadata_service().list_ids()
+        if svc is None:
+            svc = metadata_service.get_metadata_service()
+        return svc.list_ids()
 
     @classmethod
-    def get(cls, datarepo_id: str) -> "Datarepo":
+    def get(
+        cls,
+        datarepo_id: str,
+        svc: Optional[metadata_service._DatarepoMetadataService] = None,
+    ) -> Datarepo:
         """Gets a Datarepo by ID
 
         Args:
             datarepo_id (str): ID of the datarepo
+            svc (Optional[metadata_service._DatarepoMetadataService], optional): Defaults to None which will detect
+                the appropriate service to use from the current environment.
 
         Returns:
             Datarepo: retrieved Datarepo
         """
-        path = metadata_service.get_metadata_service().get_path(datarepo_id)
+        if svc is None:
+            svc = metadata_service.get_metadata_service()
+        path = svc.get_path(datarepo_id)
         ds = ray.data.read_parquet(path)
         # NOTE(jaychia): ds.count() is supposedly O(1) for parquet formats:
         # https://github.com/ray-project/ray/blob/master/python/ray/data/dataset.py#L1640
