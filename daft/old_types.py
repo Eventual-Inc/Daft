@@ -64,7 +64,6 @@ def pytype_to_arrow_type(t: type) -> pa.DataType:
     
     if typing.get_origin(t) is not None:
         origin = typing.get_origin(t)
-        print(issubclass(origin, DaftType))
         args = typing.get_args(t)
         t = args[0]
     arrow_type: Optional[pa.DataType] = None
