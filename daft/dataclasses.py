@@ -4,6 +4,8 @@ from builtins import type
 from pyparsing import Optional
 from pyrsistent import b
 
+from daft.schema import DaftSchema
+
 
 _T = TypeVar("_T")
 
@@ -46,5 +48,5 @@ else:
 
 def __process_class(cls: Type[_T], **kwargs) -> Type[_T]:
     cls = pydataclasses.dataclass(cls)
-    print(pydataclasses.fields(cls))
+    DaftSchema.create(cls)
     return cls
