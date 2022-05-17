@@ -1,5 +1,4 @@
 from typing import Any, Dict, List
-from daft.arrow_extensions import DaftArrowImage
 from daft.dataclasses import dataclass
 
 from dataclasses import is_dataclass, field
@@ -8,11 +7,11 @@ from dataclasses import dataclass as pydataclass
 
 import PIL
 import PIL.Image
-from PIL.Image import Image # type: ignore
 
 import numpy as np
 
 from daft.fields import DaftImageField
+from daft.types import DaftImageType
 
 def test_dataclass_without_args() -> None:
     @dataclass
@@ -61,5 +60,7 @@ def test_dataclass_with_nested_structures() -> None:
 
 def test_dataclass_with_daft_type() -> None:
     @dataclass
-    class SomeSubClass:
-        image: np.ndarray = DaftImageField()
+    class ImageDataClass:
+        id: int
+        labels: np.ndarray
+        image: np.ndarray = DaftImageField(encoding=DaftImageType.Encoding.JPEG)

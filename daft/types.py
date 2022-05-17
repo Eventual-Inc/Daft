@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from abc import abstractmethod, ABC
-from typing import List, Type, Union
+import json
+from typing import Any, Dict, List, Type, Union
 
 
 from enum import Enum
 
 import pyarrow as pa
-
-from daft.arrow_extensions import DaftArrowImage
 
 class DaftType:
     pass
@@ -16,6 +15,21 @@ class DaftType:
     @abstractmethod
     def arrow_type(self) -> pa.DataType:
         raise NotImplementedError()
+
+    @abstractmethod
+    def name(self) -> str:
+        raise NotImplementedError()
+ 
+    @abstractmethod
+    def metadata(self) -> Dict[str, str]:
+        raise NotImplementedError()
+
+    def serialize_type_info(self) -> str:
+        output: dict[str, Any] = {
+            "name": self.name(),
+            "metadata": self.metadata()
+        }
+        return json.dumps(output)
 
 class DaftImageType(DaftType):
     class Encoding(Enum):
@@ -25,8 +39,13 @@ class DaftImageType(DaftType):
         self.encoding = encoding
 
     def arrow_type(self) -> pa.DataType:
-        return DaftArrowImage(str(self.encoding))
+        return pa.binary()
 
+    def name(self) -> str:
+        return 'DaftImageType'
+    
+    def metadata(self) -> Dict[str, str]:
+        return {'encoding': self.encoding.value}
     # def serialize(obj) -> bytes:
     #     pass
 

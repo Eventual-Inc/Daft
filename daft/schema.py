@@ -1,4 +1,5 @@
 from __future__ import annotations
+from importlib.metadata import metadata
 
 from typing import Any, Dict, NamedTuple, Optional, Type, Callable, get_origin, get_args
 import dataclasses as pydataclasses
@@ -47,13 +48,18 @@ class DaftSchema:
             pytype = field.type
             daft_field_metadata: Optional[DaftFieldMetadata] = field.metadata.get(DaftFieldMetadata.__name__, None)
             if daft_field_metadata is not None:
-                arrow_type = daft_field_metadata.daft_type.arrow_type
-                print(arrow_type)
-            arrow_type = cls.parse_type(name, pytype)
-            if isinstance(arrow_type, pa.Field):
-                schema_so_far.append(arrow_type)
+                arrow_type = daft_field_metadata.daft_type.arrow_type()
+                type_info = daft_field_metadata.daft_type.serialize_type_info()
+
+                metadata = cls.type_to_metadata(pytype)
+                metadata['daft_type_info'] = type_info.encode()
+                arrow_field = pa.field(name, arrow_type, metadata=metadata)
             else:
-                schema_so_far.append(pa.field(name, arrow_type))
+                arrow_field = cls.parse_type(name, pytype)
+                assert isinstance(arrow_field, pa.Field)
+
+            schema_so_far.append(arrow_field)
+            
         return pa.struct(schema_so_far)
 
             # daft_field_metadata: Optional[DaftFieldMetadata] = None
@@ -72,7 +78,7 @@ class DaftSchema:
         raise NotImplementedError(f"{t} doesn't have __qualname__ or _name")
 
     @classmethod
-    def parse_type(cls, name:str, t: Type):
+    def parse_type(cls, name:str, t: Type) -> pa.Field:
         if t in cls.primative_translation:
             nargs, f, source_type = cls.primative_translation[t]
             return pa.field(name, f()).with_metadata(cls.type_to_metadata(source_type))
