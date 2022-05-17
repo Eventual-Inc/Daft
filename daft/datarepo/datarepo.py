@@ -151,13 +151,19 @@ class Datarepo(Generic[Item]):
     # Trigger functions: Functions that trigger computation of the Datarepo
     ###
 
-    def save(self, datarepo_id: str) -> None:
+    def save(
+        self,
+        datarepo_id: str,
+        svc: Optional[metadata_service._DatarepoMetadataService] = None,
+    ) -> None:
         """Save a datarepo to persistent storage
 
         Args:
             datarepo_id (str): ID to save datarepo as
         """
-        # TODO(jaychia): Serialize dataclasses to arrow-compatible types properly with schema library
+        if svc is None:
+            svc = metadata_service.get_metadata_service()
+        # TODO(sammy): Serialize dataclasses to arrow-compatible types properly with schema library
         import PIL.Image
         def TODO_serialize(item):
             if dataclasses.is_dataclass(item):
@@ -174,7 +180,7 @@ class Datarepo(Generic[Item]):
             else:
                 raise NotImplementedError("Can only save Daft Dataclasses to Datarepos")
 
-        path = metadata_service.get_metadata_service().get_path(datarepo_id)
+        path = svc.get_path(datarepo_id)
         return self._ray_dataset.map(TODO_serialize).write_parquet(path)
 
     def preview(self, n: int = 1) -> None:
@@ -225,7 +231,7 @@ class Datarepo(Generic[Item]):
         cls,
         datarepo_id: str,
         svc: Optional[metadata_service._DatarepoMetadataService] = None,
-    ) -> Datarepo:
+    ) -> Datarepo[Item]:
         """Gets a Datarepo by ID
 
         Args:
@@ -239,7 +245,10 @@ class Datarepo(Generic[Item]):
         if svc is None:
             svc = metadata_service.get_metadata_service()
         path = svc.get_path(datarepo_id)
+
+        # TODO(sammy): deserialize this dataset into dataclasses
         ds = ray.data.read_parquet(path)
+
         # NOTE(jaychia): ds.count() is supposedly O(1) for parquet formats:
         # https://github.com/ray-project/ray/blob/master/python/ray/data/dataset.py#L1640
         # But we should benchmark and verify this.
