@@ -1,4 +1,2 @@
-
-
 def actor(func):
     return
