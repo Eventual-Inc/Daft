@@ -1,14 +1,12 @@
-from typing import TypeVar, Generic, Dict, Optional
-import typing
-import io
 import dataclasses
-
-
-import pyarrow as pa
-import PIL
-import PIL.Image
+import io
+import typing
+from typing import Dict, Generic, Optional, TypeVar
 
 import numpy as np
+import PIL
+import PIL.Image
+import pyarrow as pa
 
 T = TypeVar("T")
 

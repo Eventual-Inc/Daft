@@ -1,14 +1,11 @@
-from time import time
-from typing import Dict, List, Tuple
-
-from typing import Optional
-from daft.dataclasses import dataclass
-
 import dataclasses as pydataclasses
+from time import time
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-
 import pyarrow as pa
+
+from daft.dataclasses import dataclass
 from daft.schema import DaftSchema
 
 

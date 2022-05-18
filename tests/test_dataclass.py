@@ -1,15 +1,12 @@
-from typing import Any, Dict, List
-from daft.dataclasses import dataclass
-
-from dataclasses import is_dataclass, field
-
 from dataclasses import dataclass as pydataclass
+from dataclasses import field, is_dataclass
+from typing import Any, Dict, List
 
+import numpy as np
 import PIL
 import PIL.Image
 
-import numpy as np
-
+from daft.dataclasses import dataclass
 from daft.fields import DaftImageField
 from daft.types import DaftImageType
 

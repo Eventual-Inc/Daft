@@ -1,11 +1,11 @@
 import dataclasses as pydataclasses
-from typing import Any, Type, Callable, Union, TypeVar, overload, TYPE_CHECKING
 from builtins import type
+from typing import TYPE_CHECKING, Any, Callable, Type, TypeVar, Union, overload
+
 from pyparsing import Optional
 from pyrsistent import b
 
 from daft.schema import DaftSchema
-
 
 _T = TypeVar("_T")
 

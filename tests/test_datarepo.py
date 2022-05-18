@@ -1,14 +1,14 @@
-import ray
-import pytest
-import tempfile
 import dataclasses
+import tempfile
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
-import numpy as np
+import pytest
+import ray
 
-from daft.datarepo.metadata_service import _LocalDatarepoMetadataService
 from daft import Datarepo
+from daft.datarepo.metadata_service import _LocalDatarepoMetadataService
 
 
 @dataclasses.dataclass

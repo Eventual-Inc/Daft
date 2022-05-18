@@ -1,14 +1,26 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Generic, List, NamedTuple, Optional, Type, Callable, TypeVar, get_origin, get_args
 import dataclasses as pydataclasses
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    NamedTuple,
+    Optional,
+    Type,
+    TypeVar,
+    get_args,
+    get_origin,
+)
 
-from daft.fields import DaftFieldMetadata
-
-import pyarrow as pa
 import numpy as np
 import PIL
 import PIL.Image
+import pyarrow as pa
+
+from daft.fields import DaftFieldMetadata
 
 
 class PyConverter:

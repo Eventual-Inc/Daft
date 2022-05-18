@@ -1,6 +1,6 @@
-import ray
-
 from typing import Any, Dict, Optional
+
+import ray
 
 from daft.config import DaftSettings
 

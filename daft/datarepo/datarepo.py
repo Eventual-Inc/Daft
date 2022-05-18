@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import io
-
-from typing import Any, Dict, List, Generic, TypeVar, Callable, Union, Optional
+from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union
 
 import ray
 import ray.data.dataset_pipeline
@@ -185,8 +184,8 @@ class Datarepo(Generic[Item]):
         """Previews the data in a Datarepo"""
         sampled_repo = self.sample(n)
 
-        from IPython.display import display  # type: ignore
         import PIL.Image
+        from IPython.display import display  # type: ignore
 
         for i, item in enumerate(sampled_repo._ray_dataset.iter_rows()):
             if i >= n:
