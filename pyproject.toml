@@ -48,4 +48,3 @@ target-version = ['py38']
 
 [tool.isort]
 profile = "black"
-line-length = 120

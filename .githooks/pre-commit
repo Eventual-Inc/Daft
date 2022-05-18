@@ -1,0 +1,3 @@
+poetry run black
+poetry run autoflake -r --in-place .
+poetry run isort .
