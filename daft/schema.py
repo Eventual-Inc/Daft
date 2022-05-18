@@ -12,9 +12,8 @@ import PIL.Image
 
 
 class PyConverter:
-
     def __init__(self, to_arrow=True):
-        self.to_arrow=to_arrow
+        self.to_arrow = to_arrow
 
     def convert(self, field, obj):
         assert isinstance(field, pa.Field)
@@ -29,7 +28,7 @@ class PyConverter:
 
 class SchemaParser:
     def __init__(self, to_arrow=True):
-        self.to_arrow=to_arrow
+        self.to_arrow = to_arrow
         self.py_converter = PyConverter(to_arrow)
 
     def parse_schema(self, schema, pydict):
@@ -42,7 +41,7 @@ class SchemaParser:
             name = field.name
             assert name in pydict
             pydict[name] = self.parse_field(field, pydict[name])
-        
+
         return pydict
 
     def parse_field(self, field, pydict):
@@ -61,7 +60,7 @@ class SchemaParser:
                 key_field = maptype.key_field
 
                 if self.to_arrow:
-                    assert isinstance(pydict, dict), f'{pydict}'
+                    assert isinstance(pydict, dict), f"{pydict}"
                     keys = list(pydict.keys())
                     items = list(pydict.values())
                 else:
@@ -76,29 +75,31 @@ class SchemaParser:
                 pydict = dict(zipped)
             else:
                 raise NotImplementedError(str(field))
-        
+
         convert = self._require_conversion(field)
         if convert:
             return self.py_converter.convert(field, pydict)
         return pydict
-    
-    
+
     def _require_conversion(self, field) -> bool:
         assert isinstance(field, pa.Field)
         metadata = field.metadata
-        assert b'requires_conversion' in metadata
-        val = metadata[b'requires_conversion']
+        assert b"requires_conversion" in metadata
+        val = metadata[b"requires_conversion"]
         return bool(int(val))
 
-class TypeBuilderTuple(NamedTuple) :
+
+class TypeBuilderTuple(NamedTuple):
     arg_count: int
     func: Callable[[], pa.Datatype]
     source_pytype: Type
     requires_conversion: bool = False
 
+
 TBT = TypeBuilderTuple
 
 _T = TypeVar("_T")
+
 
 class DaftSchema(Generic[_T]):
     primative_translation = {
@@ -108,7 +109,7 @@ class DaftSchema(Generic[_T]):
         bool: TBT(0, pa.bool_, bool),
         bytes: TBT(0, pa.binary, bytes),
         np.ndarray: TBT(0, pa.binary, np.ndarray, True),
-        PIL.Image.Image: TBT(0, pa.binary, PIL.Image.Image, True)
+        PIL.Image.Image: TBT(0, pa.binary, PIL.Image.Image, True),
     }
 
     origin_translation = {
@@ -119,7 +120,7 @@ class DaftSchema(Generic[_T]):
 
     def __init__(self, pytype: Type[_T]) -> None:
         assert pydataclasses.is_dataclass(pytype) and isinstance(pytype, type)
-        root = DaftSchema.parse_type('root', pytype)
+        root = DaftSchema.parse_type("root", pytype)
         self.schema = pa.schema([root])
         self.pytype = pytype
         print(self.schema)
@@ -133,7 +134,7 @@ class DaftSchema(Generic[_T]):
         # print(flat_schema)
         values = []
         for o in objs:
-            obj_dict = {'root': pydataclasses.asdict(o)}
+            obj_dict = {"root": pydataclasses.asdict(o)}
             obj_dict = sp.parse_schema(self.schema, obj_dict)
             # obj_dict = self.resolve_conversions(self.schema, obj_dict)
             values.append(obj_dict)
@@ -147,12 +148,10 @@ class DaftSchema(Generic[_T]):
         values = []
         for o in objs:
             post_obj = sp.parse_schema(self.schema, o)
-            values.append(post_obj['root'])
+            values.append(post_obj["root"])
         return values
         # import pdb
         # pdb.set_trace()
-
-
 
     @classmethod
     def parse_dataclass(cls, t: Type):
@@ -167,22 +166,22 @@ class DaftSchema(Generic[_T]):
                 type_info = daft_field_metadata.daft_type.serialize_type_info()
 
                 metadata = cls.type_to_metadata(pytype, True)
-                metadata['daft_type_info'] = type_info.encode()
+                metadata["daft_type_info"] = type_info.encode()
                 arrow_field = pa.field(name, arrow_type, metadata=metadata)
             else:
                 arrow_field = cls.parse_type(name, pytype)
                 assert isinstance(arrow_field, pa.Field)
 
             schema_so_far.append(arrow_field)
-            
+
         return pa.struct(schema_so_far)
 
     @classmethod
     def type_to_metadata(cls, t: Type, conversion: bool) -> Dict[str, bytes]:
 
         metadata = {}
-        metadata['requires_conversion'] = b'1' if conversion else b'0'
-        
+        metadata["requires_conversion"] = b"1" if conversion else b"0"
+
         if hasattr(t, "__qualname__"):
             metadata["source_type"] = t.__qualname__.encode()
         elif hasattr(t, "_name"):
@@ -191,13 +190,12 @@ class DaftSchema(Generic[_T]):
             raise NotImplementedError(f"{t} doesn't have __qualname__ or _name")
         return metadata
 
-
     @classmethod
-    def parse_type(cls, name:str, t: Type) -> pa.Field:
+    def parse_type(cls, name: str, t: Type) -> pa.Field:
         if t in cls.primative_translation:
             nargs, f, source_type, conversion = cls.primative_translation[t]
             return pa.field(name, f()).with_metadata(cls.type_to_metadata(source_type, conversion))
-        
+
         if get_origin(t) is not None:
             origin = get_origin(t)
             if origin in cls.origin_translation:
@@ -205,12 +203,15 @@ class DaftSchema(Generic[_T]):
                 raw_args = get_args(t)
                 assert arg_count == len(raw_args)
                 if f == pa.map_:
-                    args = [cls.parse_type('key', raw_args[0]).with_nullable(False), cls.parse_type('value', raw_args[1])]
+                    args = [
+                        cls.parse_type("key", raw_args[0]).with_nullable(False),
+                        cls.parse_type("value", raw_args[1]),
+                    ]
                 else:
-                    args = [cls.parse_type(f'{name}/{i}', arg) for i, arg in enumerate(raw_args)]
+                    args = [cls.parse_type(f"{name}/{i}", arg) for i, arg in enumerate(raw_args)]
 
                 return pa.field(name, f(*args)).with_metadata(cls.type_to_metadata(t, conversion))
-        
+
         if pydataclasses.is_dataclass(t):
             assert isinstance(t, type), "unable to parse instances of dataclasses"
             return pa.field(name, cls.parse_dataclass(t)).with_metadata(cls.type_to_metadata(t, False))

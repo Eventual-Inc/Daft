@@ -12,20 +12,20 @@ _T = TypeVar("_T")
 if TYPE_CHECKING:
     from dataclasses import dataclass
 else:
-    def dataclass(
-            _cls: Type=None,
-            *,
-            init:bool=True,
-            repr:bool=True,
-            eq:bool=True,
-            order:bool=False,
-            unsafe_hash:bool=False,
-            frozen:bool=False,
-            match_args:bool=True,
-            kw_only:bool=False,
-            slots:bool=False
-        ) -> Union[Type[_T], Callable[[Type[_T]], Type[_T]]]:
 
+    def dataclass(
+        _cls: Type = None,
+        *,
+        init: bool = True,
+        repr: bool = True,
+        eq: bool = True,
+        order: bool = False,
+        unsafe_hash: bool = False,
+        frozen: bool = False,
+        match_args: bool = True,
+        kw_only: bool = False,
+        slots: bool = False,
+    ) -> Union[Type[_T], Callable[[Type[_T]], Type[_T]]]:
         def wrap(cls: Type) -> Type:
             return __process_class(
                 cls,
@@ -37,7 +37,7 @@ else:
                 frozen=frozen,
                 match_args=match_args,
                 kw_only=kw_only,
-                slots=slots
+                slots=slots,
             )
 
         if _cls is None:

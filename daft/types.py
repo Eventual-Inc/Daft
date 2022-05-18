@@ -9,6 +9,7 @@ from enum import Enum
 
 import pyarrow as pa
 
+
 class DaftType:
     pass
 
@@ -19,21 +20,19 @@ class DaftType:
     @abstractmethod
     def name(self) -> str:
         raise NotImplementedError()
- 
+
     @abstractmethod
     def metadata(self) -> Dict[str, str]:
         raise NotImplementedError()
 
     def serialize_type_info(self) -> str:
-        output: dict[str, Any] = {
-            "name": self.name(),
-            "metadata": self.metadata()
-        }
+        output: dict[str, Any] = {"name": self.name(), "metadata": self.metadata()}
         return json.dumps(output)
+
 
 class DaftImageType(DaftType):
     class Encoding(Enum):
-        JPEG='jpeg'
+        JPEG = "jpeg"
 
     def __init__(self, encoding: DaftImageType.Encoding) -> None:
         self.encoding = encoding
@@ -42,10 +41,11 @@ class DaftImageType(DaftType):
         return pa.binary()
 
     def name(self) -> str:
-        return 'DaftImageType'
-    
+        return "DaftImageType"
+
     def metadata(self) -> Dict[str, str]:
-        return {'encoding': self.encoding.value}
+        return {"encoding": self.encoding.value}
+
     # def serialize(obj) -> bytes:
     #     pass
 

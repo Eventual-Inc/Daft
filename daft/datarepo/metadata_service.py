@@ -42,8 +42,7 @@ class _DatarepoMetadataService(Protocol):
 
 
 class _S3DatarepoMetadataService(_DatarepoMetadataService):
-    """Implementation of DatarepoMetadataService using S3 as the backing store
-    """
+    """Implementation of DatarepoMetadataService using S3 as the backing store"""
 
     def __init__(self, bucket: str, prefix: str) -> None:
         self._bucket = bucket.rstrip("/")
@@ -51,7 +50,8 @@ class _S3DatarepoMetadataService(_DatarepoMetadataService):
 
     def _get_s3_client(self):
         import boto3
-        return boto3.client('s3')
+
+        return boto3.client("s3")
 
     def list_ids(self) -> List[str]:
         s3 = self._get_s3_client()
@@ -71,8 +71,7 @@ class _S3DatarepoMetadataService(_DatarepoMetadataService):
 
 
 class _LocalDatarepoMetadataService(_DatarepoMetadataService):
-    """Implementation of DatarepoMetadataService using a local tmpdir as the backing store
-    """
+    """Implementation of DatarepoMetadataService using a local tmpdir as the backing store"""
 
     def __init__(self, tmpdir: str) -> None:
         self._tmpdir = tmpdir

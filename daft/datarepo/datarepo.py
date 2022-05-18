@@ -14,7 +14,7 @@ from daft.datarepo import metadata_service
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
 MIN_ACTORS = 8
 MAX_ACTORS = 8
-DEFAULT_ACTOR_STRATEGY: ray.data.ActorPoolStrategy  = ray.data.ActorPoolStrategy(MIN_ACTORS, MAX_ACTORS)
+DEFAULT_ACTOR_STRATEGY: ray.data.ActorPoolStrategy = ray.data.ActorPoolStrategy(MIN_ACTORS, MAX_ACTORS)
 DatarepoInfo = Dict[str, str]
 
 
@@ -28,6 +28,7 @@ MapFunc = Callable[[Item], OutputItem]
 
 BatchMapFunc = Union[type, Callable[[Any], Any]]
 
+
 class Datarepo(Generic[Item]):
     """Implements Datarepos, which are repositories of Items of data.
 
@@ -35,7 +36,7 @@ class Datarepo(Generic[Item]):
     analogous to Sets, but provide a rich interactive interface for working with large (millions+)
     sets of Items. Datarepos are built for interactive computing through a REPL such as a notebook
     environment, utilizing Eventual's compute engine for manipulating these large collections of data.
-    
+
     Datarepos provide methods to manipulate Items, including:
 
         `.map`:     Runs a function on each Item, and the outputs form a new Datarepo
@@ -115,7 +116,6 @@ class Datarepo(Generic[Item]):
             else DEFAULT_ACTOR_STRATEGY
         )
 
-
         ray_dataset: ray.data.Dataset[OutputItem] = self._ray_dataset.map_batches(
             # TODO(jaychia): failing typecheck for some reason:
             batched_func,
@@ -124,10 +124,7 @@ class Datarepo(Generic[Item]):
             batch_format="native",
         )
 
-        return Datarepo(
-            datarepo_id=f"{self._id}:map_batches[{batched_func.__name__}]",
-            ray_dataset=ray_dataset
-        )
+        return Datarepo(datarepo_id=f"{self._id}:map_batches[{batched_func.__name__}]", ray_dataset=ray_dataset)
 
     def sample(self, n: int = 5) -> Datarepo[Item]:
         """Computes and samples `n` Items from the Datarepo
@@ -165,6 +162,7 @@ class Datarepo(Generic[Item]):
             svc = metadata_service.get_metadata_service()
         # TODO(sammy): Serialize dataclasses to arrow-compatible types properly with schema library
         import PIL.Image
+
         def TODO_serialize(item):
             if dataclasses.is_dataclass(item):
                 d = {}
@@ -189,6 +187,7 @@ class Datarepo(Generic[Item]):
 
         from IPython.display import display  # type: ignore
         import PIL.Image
+
         for i, item in enumerate(sampled_repo._ray_dataset.iter_rows()):
             if i >= n:
                 break

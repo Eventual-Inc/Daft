@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 from daft.config import DaftSettings
 
+
 class DaftContext:
     def __init__(
         self,
@@ -17,7 +18,9 @@ class DaftContext:
             runtime_env=runtime_env,
         )
 
+
 _DEFAULT_CONTEXT: Optional[DaftContext] = None
+
 
 def init(runtime_env: Optional[Dict[str, Any]] = None) -> DaftContext:
     global _DEFAULT_CONTEXT
