@@ -1,0 +1,9 @@
+# Namespace to be filled in by user, used to identify each cluster deployment
+clusterName: 
+
+# Ray image to use for both the cluster and notebook
+rayImage: "rayproject/ray:1.12.0-py39"
+
+# Worker settings
+workerReplicaCount: "4"
+workerCPURequest: 8  # should match the NUM_CPUs on our machine type

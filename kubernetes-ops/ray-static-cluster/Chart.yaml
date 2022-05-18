@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ray-static-cluster
+description:  Non-autoscaling Ray cluster
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
