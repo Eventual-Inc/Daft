@@ -10,3 +10,7 @@ test:
 ray-up:
 	@helm install ${CLUSTER_NAME} ./kubernetes-ops/ray-static-cluster --set clusterName=${CLUSTER_NAME} --namespace ray --create-namespace
 	@kubectl get pods -n ray
+
+ray-down:
+	@helm uninstall -n ray ${CLUSTER_NAME}
+	@kubectl get pods -n ray

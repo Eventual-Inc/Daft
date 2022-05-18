@@ -28,4 +28,4 @@ Deploying Ray on Kubernetes is not very straightforward and rather manual. There
 
 Here, we go with option 2 as it is the simplest option for now and does not autoscale - we will figure out autoscaling later on.
 
-See: Daft README for instructions on how to deploy a Ray cluster for Daft.
+See: main Daft README for instructions on how to deploy a Ray cluster for Daft.

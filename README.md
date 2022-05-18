@@ -21,16 +21,8 @@
 ```
 aws eks update-kubeconfig --region us-west-2 --name jay_sandbox_eks_cluster
 ```
-3. Spin up Daft deployment:
-    1. Clone and cd into `github.com/Eventual-Inc/engine/kubernetes-ops`
-    2. Run:
-```
-CLUSTER_NAME=MY_CLUSTER
-helm install $CLUSTER_NAME ray-static-cluster \
---set clusterName=$CLUSTER_NAME \
---namespace ray
-```
-4. Spin down Daft deployment: `helm uninstall -n ray $CLUSTER_NAME`
+3. Spin up Daft deployment with `make ray-up`
+4. Spin down Daft deployment: `make ray-down`
 
 If you want your own sandbox Kubernetes cluster instead, create one by [copying and applying this terraform module](https://github.com/Eventual-Inc/engine/blob/main/cloud-ops/main.tf#L131-L134).
 
