@@ -1,0 +1,19 @@
+# Customizations can be found here: https://zero-to-jupyterhub.readthedocs.io/en/latest/jupyterhub/customizing/user-environment.html
+
+hub:
+  config:
+    Auth0OAuthenticator:
+      client_id: zwLsZdOmbKRat6i5Ccm7pq8vfNSNZNvR
+      client_secret:
+      oauth_callback_url: http://a797a8ab1313241dd945465d9adb6337-1081746074.us-west-2.elb.amazonaws.com/hub/oauth_callback
+      scope:
+        - openid
+        - email
+      auth0_subdomain: dev-kn2voyk3.us
+    Authenticator:
+      admin_users:
+        - jay@eventualcomputing.com
+        - sammy@eventualcomputing.com
+      auto_login: true
+    JupyterHub:
+      authenticator_class: auth0

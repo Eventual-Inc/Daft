@@ -29,3 +29,22 @@ Deploying Ray on Kubernetes is not very straightforward and rather manual. There
 Here, we go with option 2 as it is the simplest option for now and does not autoscale - we will figure out autoscaling later on.
 
 See: main Daft README for instructions on how to deploy a Ray cluster for Daft.
+
+## JupyterHub
+
+We deploy JupyterHub using an open-source [Helm chart](https://github.com/jupyterhub/helm-chart):
+
+```
+helm repo add jupyterhub https://jupyterhub.github.io/helm-chart/
+helm repo update
+
+helm upgrade --cleanup-on-fail \
+  --install jupyterhub jupyterhub/jupyterhub \
+  --namespace jupyterhub \
+  --create-namespace \
+  --version=1.2.0 \
+  --values jupyterhub/config.yaml
+  --set hub.config.Auth0OAuthenticator.client_secret=<Auth0 Client Secret>
+```
+
+The Auth0 Client Secret can be retrieved from the [Auth0 application page](https://manage.auth0.com/dashboard/us/dev-kn2voyk3/applications/zwLsZdOmbKRat6i5Ccm7pq8vfNSNZNvR/settings).
