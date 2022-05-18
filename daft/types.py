@@ -67,4 +67,13 @@ class DaftImageType(DaftType):
             return f.getvalue()
 
     def deserialize(self, b: bytes, source_type: str):
-        raise NotImplementedError()
+        with io.BytesIO(b) as f:
+            img = PIL.Image.open(f)
+            img.load()
+
+        if source_type == np.ndarray.__qualname__:
+            return np.array(img)
+        elif source_type == PIL.Image.Image.__qualname__:
+            return img
+        else:
+            raise NotImplementedError(f"cant find deserializer for {source_type}")

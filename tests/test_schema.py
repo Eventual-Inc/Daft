@@ -2,6 +2,7 @@ import io
 from typing import Dict
 
 import numpy as np
+import PIL.Image
 import pyarrow as pa
 
 from daft.dataclasses import dataclass
@@ -90,7 +91,7 @@ def test_schema_nested() -> None:
     assert source_data == back_to_py
 
 
-def test_schema_daft_field() -> None:
+def test_schema_daft_field_numpy() -> None:
     @dataclass
     class SimpleDaftField:
         img: np.ndarray = DaftImageField(encoding=DaftImageType.Encoding.JPEG)
@@ -120,3 +121,48 @@ def test_schema_daft_field() -> None:
         assert "img" in d
         buffer = d["img"]
         assert is_jpeg(buffer)
+
+    back_to_py = daft_schema.deserialize_batch(table, SimpleDaftField)
+
+    for old, new in zip(to_serialize, back_to_py):
+        assert isinstance(new, SimpleDaftField)
+        assert isinstance(new.img, np.ndarray)
+        assert np.all(old.img == new.img)
+
+
+def test_schema_daft_field_PIL() -> None:
+    @dataclass
+    class SimpleDaftField:
+        img: PIL.Image.Image = DaftImageField(encoding=DaftImageType.Encoding.JPEG)
+
+    daft_schema: DaftSchema = getattr(SimpleDaftField, "_daft_schema")
+    arrow_schema = daft_schema.arrow_schema()
+    assert isinstance(arrow_schema, pa.Schema)
+    assert len(arrow_schema.names) == 1
+    root = arrow_schema.field(0).type
+    assert pa.types.is_struct(root)
+    assert root.num_fields == 1
+    img_field = root[0]
+    assert img_field.name == "img"
+    assert pa.types.is_binary(img_field.type)
+    to_serialize = [SimpleDaftField(PIL.Image.new("RGB", (i, i))) for i in range(1, 6)]
+    table = daft_schema.serialize(to_serialize)
+    data = table[0].to_pylist()
+
+    def is_jpeg(buffer):
+        # Magic Headers for JPEG
+        # https://en.wikipedia.org/wiki/JPEG_File_Interchange_Format#File_format_structure
+        assert buffer[:4] == b"\xff\xd8\xff\xe0"
+        assert buffer[6:11] == b"JFIF\0"
+        return True
+
+    for d in data:
+        assert "img" in d
+        buffer = d["img"]
+        assert is_jpeg(buffer)
+
+    back_to_py = daft_schema.deserialize_batch(table, SimpleDaftField)
+    for old, new in zip(to_serialize, back_to_py):
+        assert isinstance(new, SimpleDaftField)
+        assert isinstance(new.img, PIL.Image.Image)
+        assert np.all(np.array(old.img) == np.array(new.img))
