@@ -33,9 +33,14 @@ jobs:
         # Install Poetry and deps
         python -m pip install poetry
         poetry install
-    - name: Type Check with Mypy
-      run: |
-        poetry run mypy
     - name: Test with pytest
       run: |
         poetry run pytest
+    - name: Type Check with Mypy
+      run: |
+        poetry run mypy
+    - name: Python Style Check
+      run: |
+        poetry run black --check .
+        poetry run isort  --check .
+        poetry run autoflake -r --check .
