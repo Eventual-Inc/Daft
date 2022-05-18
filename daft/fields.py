@@ -1,5 +1,5 @@
 import dataclasses as pydataclasses
-from typing import Any, Type, TypeVar
+from typing import TypeVar
 
 from daft.types import DaftImageType, DaftType
 

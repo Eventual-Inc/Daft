@@ -1,6 +1,6 @@
 import dataclasses as pydataclasses
 from builtins import type
-from typing import TYPE_CHECKING, Any, Callable, Type, TypeVar, Union, overload
+from typing import Callable, TYPE_CHECKING, Type, TypeVar, Union
 
 from pyparsing import Optional
 from pyrsistent import b

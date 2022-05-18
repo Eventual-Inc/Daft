@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Type, Union
+from typing import Any, Dict
 
 import pyarrow as pa
 
