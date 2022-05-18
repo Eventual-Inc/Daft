@@ -144,7 +144,7 @@ class DaftSchema(Generic[_T]):
         values = []
         for o in objs:
             post_obj = sp.parse_schema(self.schema, o)
-            values.append(post_obj)
+            values.append(post_obj['root'])
         return values
         # import pdb
         # pdb.set_trace()

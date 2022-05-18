@@ -25,7 +25,6 @@ def test_schema() -> None:
 
     back_to_py = TestDC._daft_schema.deserialize_batch(record_batch)
 
-    # for s, t in zip(source_data, back_to_py):
-    #     flattened = pydataclasses.asdict(s)
-    #     # import pdb
-    #     # pdb.set_trace()
+    for s, t in zip(source_data, back_to_py):
+        flattened = pydataclasses.asdict(s)
+        assert flattened == t
