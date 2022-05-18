@@ -15,11 +15,11 @@ from typing import (
     get_origin,
 )
 
+import dacite
 import numpy as np
 import PIL
 import PIL.Image
 import pyarrow as pa
-from this import d
 
 from daft.fields import DaftFieldMetadata
 
@@ -53,7 +53,6 @@ class PyConverter:
             return obj
 
     def _handle_binary(self, field, obj):
-        metadata = field.metadata
         source_type = field.metadata[b"source_type"].decode()
         assert source_type in self.binary_converters
         ser_des = self.binary_converters[source_type]
@@ -117,7 +116,6 @@ class SchemaParser:
 
                 item_field = maptype.item_field
                 new_items = [self.parse_field(item_field, item) for item in items]
-                # pydict = {key_field.name: new_keys, item_field.name: new_items}
                 zipped = list(zip(new_keys, new_items))
                 pydict = dict(zipped)
             else:
@@ -177,8 +175,6 @@ class DaftSchema(Generic[_T]):
 
     def serialize(self, objs: List[_T]) -> pa.RecordBatch:
         sp = SchemaParser(to_arrow=True)
-        # flat_schema = self.flatten_schema()
-        # print(flat_schema)
         values = []
         for o in objs:
             obj_dict = {"root": pydataclasses.asdict(o)}
@@ -188,14 +184,16 @@ class DaftSchema(Generic[_T]):
 
         return pa.RecordBatch.from_pylist(values, schema=self.schema)
 
-    def deserialize_batch(self, batch: pa.RecordBatch) -> List[_T]:
+    def deserialize_batch(self, batch: pa.RecordBatch, target_type: Type[_T]) -> List[_T]:
+        assert pydataclasses.is_dataclass(target_type) and isinstance(target_type, type)
         sp = SchemaParser(to_arrow=False)
 
         objs = batch.to_pylist()
         values = []
         for o in objs:
-            post_obj = sp.parse_schema(self.schema, o)
-            values.append(post_obj["root"])
+            post_obj = sp.parse_schema(self.schema, o)["root"]
+            py_obj = dacite.from_dict(data_class=target_type, data=post_obj)
+            values.append(py_obj)
         return values
         # import pdb
         # pdb.set_trace()

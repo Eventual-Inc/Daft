@@ -1,4 +1,3 @@
-import dataclasses as pydataclasses
 import io
 from typing import Dict
 
@@ -32,6 +31,9 @@ def test_simple_schema() -> None:
     data = record_batch[0].field(0).to_pylist()
     assert data == list(range(5))
 
+    back_to_py = daft_schema.deserialize_batch(record_batch, SimpleClass)
+    assert to_serialize == back_to_py
+
 
 def test_conversion_schema() -> None:
     @dataclass
@@ -60,10 +62,8 @@ def test_conversion_schema() -> None:
             recreated_np = np.load(f)
             assert np.all(recreated_np == np.full(i + 1, i))
 
-    # outs = daft_schema.deserialize_batch(record_batch)
-    # import pdb
-    # pdb.set_trace()
-    # assert data == [np.full(i+1, i) for i in range(5)]
+    back_to_py = daft_schema.deserialize_batch(record_batch, SimpleClass)
+    assert all([np.all(s.item == t.item) for s, t in zip(to_serialize, back_to_py)])
 
 
 def test_schema_nested() -> None:
@@ -83,8 +83,5 @@ def test_schema_nested() -> None:
     daft_schema: DaftSchema = getattr(TestDC, "_daft_schema")
     record_batch = daft_schema.serialize(source_data)
 
-    back_to_py = daft_schema.deserialize_batch(record_batch)
-
-    for s, t in zip(source_data, back_to_py):
-        flattened = pydataclasses.asdict(s)
-        assert flattened == t
+    back_to_py = daft_schema.deserialize_batch(record_batch, TestDC)
+    assert source_data == back_to_py
