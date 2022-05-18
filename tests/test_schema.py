@@ -32,6 +32,7 @@ def test_simple_schema() -> None:
     data = record_batch[0].field(0).to_pylist()
     assert data == list(range(5))
 
+
 def test_conversion_schema() -> None:
     @dataclass
     class SimpleClass:
@@ -48,8 +49,7 @@ def test_conversion_schema() -> None:
     assert item_field.name == "item"
     assert pa.types.is_binary(item_field.type)
 
-
-    to_serialize = [SimpleClass(np.full(i+1, i)) for i in range(5)]
+    to_serialize = [SimpleClass(np.full(i + 1, i)) for i in range(5)]
     record_batch = daft_schema.serialize(to_serialize)
     assert record_batch.schema == arrow_schema
     data = record_batch[0].field(0).to_pylist()
@@ -58,8 +58,7 @@ def test_conversion_schema() -> None:
         assert type(d) == bytes
         with io.BytesIO(d) as f:
             recreated_np = np.load(f)
-            assert np.all(recreated_np == np.full(i+1, i))
-
+            assert np.all(recreated_np == np.full(i + 1, i))
 
     # outs = daft_schema.deserialize_batch(record_batch)
     # import pdb

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses as pydataclasses
 import io
-from this import d
 from typing import (
     Callable,
     Dict,
@@ -20,13 +19,16 @@ import numpy as np
 import PIL
 import PIL.Image
 import pyarrow as pa
+from this import d
 
 from daft.fields import DaftFieldMetadata
+
 
 def numpy_encoder(x: np.ndarray) -> bytes:
     with io.BytesIO() as f:
         np.save(f, x)
         return f.getvalue()
+
 
 def numpy_decoder(b: bytes) -> np.ndarray:
     with io.BytesIO(b) as f:
@@ -39,10 +41,7 @@ class PyConverter:
         to_arrow: Callable
         from_arrow: Callable
 
-
-    binary_converters = {
-        np.ndarray.__qualname__: SerDes(numpy_encoder, numpy_decoder)
-    }
+    binary_converters = {np.ndarray.__qualname__: SerDes(numpy_encoder, numpy_decoder)}
 
     def __init__(self, to_arrow=True):
         self.to_arrow = to_arrow
@@ -55,7 +54,7 @@ class PyConverter:
 
     def _handle_binary(self, field, obj):
         metadata = field.metadata
-        source_type = field.metadata[b'source_type'].decode()
+        source_type = field.metadata[b"source_type"].decode()
         assert source_type in self.binary_converters
         ser_des = self.binary_converters[source_type]
         if self.to_arrow:
@@ -70,7 +69,7 @@ class PyConverter:
             return self._handle_map(field, obj)
         elif pa.types.is_binary(field.type):
             return self._handle_binary(field, obj)
-        
+
         raise NotImplementedError(f"could not find conversion for {type(obj)} to {field}")
 
 
