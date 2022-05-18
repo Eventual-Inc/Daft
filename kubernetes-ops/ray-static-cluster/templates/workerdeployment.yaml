@@ -47,3 +47,12 @@ spec:
           requests:
             cpu: {{ .Values.workerCPURequest | add -1 | quote }}
             memory: 1Mi
+
+      # Use tolerations and nodeSelector to schedule Ray pods on nodes dedicated to running Ray
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "ray"
+          effect: "NoSchedule"
+      nodeSelector:
+        dedicated: ray
