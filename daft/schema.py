@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import dataclasses as pydataclasses
 import io
+import json
+from inspect import getmembers
 from typing import (
     Callable,
     Dict,
@@ -21,7 +23,11 @@ import PIL
 import PIL.Image
 import pyarrow as pa
 
+from daft import types
 from daft.fields import DaftFieldMetadata
+from daft.types import DaftType
+
+_DaftTypeLookup = dict(getmembers(types))
 
 
 def numpy_encoder(x: np.ndarray) -> bytes:
@@ -63,13 +69,32 @@ class PyConverter:
 
     def convert(self, field, obj):
         assert isinstance(field, pa.Field)
-
-        if pa.types.is_map(field.type):
+        daft_type = self._daft_type(field)
+        if daft_type is not None:
+            daft_type = self._daft_type(field)
+            if self.to_arrow:
+                return daft_type.serialize(obj)
+            else:
+                source_type = field.metadata[b"source_type"].decode()
+                return daft_type.deserialize(obj, source_type)
+        elif pa.types.is_map(field.type):
             return self._handle_map(field, obj)
         elif pa.types.is_binary(field.type):
             return self._handle_binary(field, obj)
 
         raise NotImplementedError(f"could not find conversion for {type(obj)} to {field}")
+
+    def _daft_type(self, field) -> Optional[DaftType]:
+        if b"daft_type_info" in field.metadata:
+            json_string = field.metadata[b"daft_type_info"].decode()
+            daft_type_data = json.loads(json_string)
+            daft_type_name = daft_type_data["name"]
+            daft_type_args = daft_type_data["args"]
+            assert daft_type_name in _DaftTypeLookup, f"{daft_type_name} not in {_DaftTypeLookup.keys()}"
+            cls: Type[DaftType] = _DaftTypeLookup[daft_type_name]
+            return cls(**daft_type_args)
+
+        return None
 
 
 class SchemaParser:

@@ -5,7 +5,9 @@ import numpy as np
 import pyarrow as pa
 
 from daft.dataclasses import dataclass
+from daft.fields import DaftImageField
 from daft.schema import DaftSchema
+from daft.types import DaftImageType
 
 
 def test_simple_schema() -> None:
@@ -86,3 +88,35 @@ def test_schema_nested() -> None:
 
     back_to_py = daft_schema.deserialize_batch(table, TestDC)
     assert source_data == back_to_py
+
+
+def test_schema_daft_field() -> None:
+    @dataclass
+    class SimpleDaftField:
+        img: np.ndarray = DaftImageField(encoding=DaftImageType.Encoding.JPEG)
+
+    daft_schema: DaftSchema = getattr(SimpleDaftField, "_daft_schema")
+    arrow_schema = daft_schema.arrow_schema()
+    assert isinstance(arrow_schema, pa.Schema)
+    assert len(arrow_schema.names) == 1
+    root = arrow_schema.field(0).type
+    assert pa.types.is_struct(root)
+    assert root.num_fields == 1
+    img_field = root[0]
+    assert img_field.name == "img"
+    assert pa.types.is_binary(img_field.type)
+    to_serialize = [SimpleDaftField(np.ones(i + 1, dtype=np.uint8)) for i in range(5)]
+    table = daft_schema.serialize(to_serialize)
+    data = table[0].to_pylist()
+
+    def is_jpeg(buffer):
+        # Magic Headers for JPEG
+        # https://en.wikipedia.org/wiki/JPEG_File_Interchange_Format#File_format_structure
+        assert buffer[:4] == b"\xff\xd8\xff\xe0"
+        assert buffer[6:11] == b"JFIF\0"
+        return True
+
+    for d in data:
+        assert "img" in d
+        buffer = d["img"]
+        assert is_jpeg(buffer)

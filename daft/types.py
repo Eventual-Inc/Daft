@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import io
 import json
 from abc import abstractmethod
 from enum import Enum
 from typing import Any, Dict
 
+import numpy as np
+import PIL.Image
 import pyarrow as pa
 
 
@@ -20,12 +23,20 @@ class DaftType:
         raise NotImplementedError()
 
     @abstractmethod
-    def metadata(self) -> Dict[str, str]:
+    def args(self) -> Dict[str, str]:
         raise NotImplementedError()
 
     def serialize_type_info(self) -> str:
-        output: dict[str, Any] = {"name": self.name(), "metadata": self.metadata()}
+        output: dict[str, Any] = {"name": self.name(), "args": self.args()}
         return json.dumps(output)
+
+    @abstractmethod
+    def serialize(self, obj) -> bytes:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def deserialize(self, b: bytes, source_type: str):
+        raise NotImplementedError()
 
 
 class DaftImageType(DaftType):
@@ -41,11 +52,19 @@ class DaftImageType(DaftType):
     def name(self) -> str:
         return "DaftImageType"
 
-    def metadata(self) -> Dict[str, str]:
+    def args(self) -> Dict[str, str]:
         return {"encoding": self.encoding.value}
 
-    # def serialize(obj) -> bytes:
-    #     pass
+    def serialize(self, obj) -> bytes:
+        if isinstance(obj, np.ndarray):
+            assert obj.dtype == np.uint8, "image np.ndarray must be 8 bit"
+            obj = PIL.Image.fromarray(obj)
+        else:
+            assert isinstance(obj, PIL.Image.Image), f"unsupported image found {type(obj)}"
 
-    # def deserialize(b: bytes):
-    #     pass
+        with io.BytesIO() as f:
+            obj.save(f, format=self.encoding)
+            return f.getvalue()
+
+    def deserialize(self, b: bytes, source_type: str):
+        raise NotImplementedError()
