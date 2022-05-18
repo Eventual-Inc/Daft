@@ -5,7 +5,7 @@ hub:
     Auth0OAuthenticator:
       client_id: zwLsZdOmbKRat6i5Ccm7pq8vfNSNZNvR
       client_secret:
-      oauth_callback_url: http://a797a8ab1313241dd945465d9adb6337-1081746074.us-west-2.elb.amazonaws.com/hub/oauth_callback
+      oauth_callback_url: http://notebook.eventualcomputing.com/hub/oauth_callback
       scope:
         - openid
         - email
@@ -17,3 +17,11 @@ hub:
       auto_login: true
     JupyterHub:
       authenticator_class: auth0
+
+proxy:
+  https:
+    enabled: true
+    hosts:
+      - notebook.eventualcomputing.com
+    letsencrypt:
+      contactEmail: sammy@eventualcomputing.com
