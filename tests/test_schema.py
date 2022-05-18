@@ -26,12 +26,13 @@ def test_simple_schema() -> None:
     assert pa.types.is_integer(item_field.type)
 
     to_serialize = [SimpleClass(i) for i in range(5)]
-    record_batch = daft_schema.serialize(to_serialize)
-    assert record_batch.schema == arrow_schema
-    data = record_batch[0].field(0).to_pylist()
-    assert data == list(range(5))
+    table = daft_schema.serialize(to_serialize)
+    assert table.schema == arrow_schema
+    data = table["root"].to_pylist()
+    values = [d["item"] for d in data]
+    assert values == list(range(5))
 
-    back_to_py = daft_schema.deserialize_batch(record_batch, SimpleClass)
+    back_to_py = daft_schema.deserialize_batch(table, SimpleClass)
     assert to_serialize == back_to_py
 
 
@@ -52,17 +53,17 @@ def test_conversion_schema() -> None:
     assert pa.types.is_binary(item_field.type)
 
     to_serialize = [SimpleClass(np.full(i + 1, i)) for i in range(5)]
-    record_batch = daft_schema.serialize(to_serialize)
-    assert record_batch.schema == arrow_schema
-    data = record_batch[0].field(0).to_pylist()
-
+    table = daft_schema.serialize(to_serialize)
+    assert table.schema == arrow_schema
+    data = table["root"].to_pylist()
     for i, d in enumerate(data):
-        assert type(d) == bytes
-        with io.BytesIO(d) as f:
+        v = d["item"]
+        assert type(v) == bytes
+        with io.BytesIO(v) as f:
             recreated_np = np.load(f)
             assert np.all(recreated_np == np.full(i + 1, i))
 
-    back_to_py = daft_schema.deserialize_batch(record_batch, SimpleClass)
+    back_to_py = daft_schema.deserialize_batch(table, SimpleClass)
     assert all([np.all(s.item == t.item) for s, t in zip(to_serialize, back_to_py)])
 
 
@@ -81,7 +82,7 @@ def test_schema_nested() -> None:
 
     source_data = [TestDC(i, 2.0, Nested(1, "oh wow"), {f"{i}": i}) for i in range(10)]
     daft_schema: DaftSchema = getattr(TestDC, "_daft_schema")
-    record_batch = daft_schema.serialize(source_data)
+    table = daft_schema.serialize(source_data)
 
-    back_to_py = daft_schema.deserialize_batch(record_batch, TestDC)
+    back_to_py = daft_schema.deserialize_batch(table, TestDC)
     assert source_data == back_to_py

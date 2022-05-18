@@ -177,8 +177,19 @@ class Datarepo(Generic[Item]):
             else:
                 raise NotImplementedError("Can only save Daft Dataclasses to Datarepos")
 
+        def serialize(items: List[Item]):
+            if len(items) == 0:
+                return None
+            first_type = items[0].__class__
+            assert dataclasses.is_dataclass(first_type)
+            assert hasattr(first_type, "_daft_schema"), "was not initialized with daft dataclass"
+            daft_schema = getattr(first_type, "_daft_schema")
+            return daft_schema.serialize(items)
+
+        # import pdb
+        # pdb.set_trace()
         path = svc.get_path(datarepo_id)
-        return self._ray_dataset.map(TODO_serialize).write_parquet(path)
+        return self._ray_dataset.map_batches(serialize).write_parquet(path)
 
     def preview(self, n: int = 1) -> None:
         """Previews the data in a Datarepo"""

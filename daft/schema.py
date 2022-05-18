@@ -173,7 +173,7 @@ class DaftSchema(Generic[_T]):
     def arrow_schema(self) -> pa.Schema:
         return self.schema
 
-    def serialize(self, objs: List[_T]) -> pa.RecordBatch:
+    def serialize(self, objs: List[_T]) -> pa.Table:
         sp = SchemaParser(to_arrow=True)
         values = []
         for o in objs:
@@ -182,9 +182,9 @@ class DaftSchema(Generic[_T]):
             # obj_dict = self.resolve_conversions(self.schema, obj_dict)
             values.append(obj_dict)
 
-        return pa.RecordBatch.from_pylist(values, schema=self.schema)
+        return pa.Table.from_pylist(values, schema=self.schema)
 
-    def deserialize_batch(self, batch: pa.RecordBatch, target_type: Type[_T]) -> List[_T]:
+    def deserialize_batch(self, batch: pa.Table, target_type: Type[_T]) -> List[_T]:
         assert pydataclasses.is_dataclass(target_type) and isinstance(target_type, type)
         sp = SchemaParser(to_arrow=False)
 

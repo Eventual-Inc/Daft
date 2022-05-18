@@ -1,4 +1,3 @@
-import dataclasses
 import tempfile
 
 import numpy as np
@@ -8,15 +7,16 @@ import pytest
 import ray
 
 from daft import Datarepo
+from daft.dataclasses import dataclass
 from daft.datarepo.metadata_service import _LocalDatarepoMetadataService
 
 
-@dataclasses.dataclass
+@dataclass
 class FakeDataclass:
     foo: int
 
 
-@dataclasses.dataclass
+@dataclass
 class FakeNumpyDataclass:
     arr: np.ndarray
 
@@ -63,17 +63,17 @@ def test_get_datarepo(ray_cluster: None, populated_metadata_service: _LocalDatar
     assert [row for row in datarepo._ray_dataset.iter_rows()] == FAKE_DATACLASSES
 
 
-@pytest.mark.skip
+# @pytest.mark.skip
 def test_save_datarepo(ray_cluster: None, empty_metadata_service: _LocalDatarepoMetadataService):
     ds = ray.data.range(10).map(lambda i: FakeNumpyDataclass(arr=np.ones((4, 4)) * i))
     datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
 
     # TODO(sammy): This should fail as Ray cannot serialize multidimensional arrays to Arrow
     datarepo.save(DATAREPO_ID, svc=empty_metadata_service)
-    ds_written = ray.data.read_parquet(empty_metadata_service.get_path(DATAREPO_ID))
+    # ds_written = ray.data.read_parquet(empty_metadata_service.get_path(DATAREPO_ID))
 
-    # TODO(sammy): Fill in the correct serialization for numpy on disk
-    assert [row for row in ds_written.iter_rows()] == [{} for i in range(10)]
+    # # TODO(sammy): Fill in the correct serialization for numpy on disk
+    # assert [row for row in ds_written.iter_rows()] == [{} for i in range(10)]
 
 
 def test_datarepo_map(ray_cluster: None):
