@@ -1,7 +1,7 @@
 import tempfile
+from typing import List
 
 import numpy as np
-import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 import ray
@@ -65,29 +65,40 @@ def test_get_datarepo(ray_cluster: None, populated_metadata_service: _LocalDatar
 
 
 def test_save_datarepo(ray_cluster: None, empty_metadata_service: _LocalDatarepoMetadataService):
-    ds = ray.data.range(10).map(lambda i: FakeNumpyDataclass(arr=np.ones((4, 4)) * i))
+    def f(i: int) -> FakeNumpyDataclass:
+        return FakeNumpyDataclass(arr=np.ones((4, 4)) * i)
+
+    ds = ray.data.range(10).map(f)
     datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
 
     datarepo.save(DATAREPO_ID, svc=empty_metadata_service)
 
     readback = Datarepo.get(DATAREPO_ID, data_type=FakeNumpyDataclass, svc=empty_metadata_service)
 
-    original = list(datarepo._ray_dataset.iter_rows())
+    original = [item.arr for item in datarepo._ray_dataset.iter_rows()]  # type: ignore
 
-    to_verify = list(readback._ray_dataset.iter_rows())
+    to_verify = [item.arr for item in readback._ray_dataset.iter_rows()]  # type: ignore
 
-    assert all([np.all(s.arr == t.arr) for s, t in zip(original, to_verify)])
+    assert all([np.all(s == t) for s, t in zip(original, to_verify)])
 
 
 def test_datarepo_map(ray_cluster: None):
     ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i))
     datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
-    mapped_repo = datarepo.map(lambda d: d.foo + 1)
+
+    def f(item: FakeDataclass) -> int:
+        return item.foo + 1
+
+    mapped_repo = datarepo.map(f)
     assert [row for row in mapped_repo._ray_dataset.iter_rows()] == [d["foo"] + 1 for d in FAKE_DATA]
 
 
 def test_datarepo_map_batches(ray_cluster: None):
     ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i))
     datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
-    mapped_repo = datarepo.map_batches(lambda dicts: [d.foo + 1 for d in dicts], batch_size=2)
+
+    def f(items: List[FakeDataclass]) -> List[int]:
+        return [item.foo + 1 for item in items]
+
+    mapped_repo: Datarepo[int] = datarepo.map_batches(f, batch_size=2)
     assert [row for row in mapped_repo._ray_dataset.iter_rows()] == [d["foo"] + 1 for d in FAKE_DATA]

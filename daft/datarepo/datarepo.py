@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import dataclasses
-import io
-from typing import Any, Callable, Dict, Generic, List, Optional, Type, TypeVar, Union
+from typing import Callable, Dict, Generic, List, Optional, Type, TypeVar, Union
 
+import pyarrow as pa
 import ray
 import ray.data.dataset_pipeline
 from ray.data.impl.arrow_block import ArrowRow
@@ -25,7 +25,7 @@ BatchOutputItem = List[OutputItem]
 
 MapFunc = Callable[[Item], OutputItem]
 
-BatchMapFunc = Union[type, Callable[[Any], Any]]
+BatchMapFunc = Union[type, Callable[[Union[BatchItem, Item]], BatchOutputItem]]
 
 
 class Datarepo(Generic[Item]):
@@ -49,7 +49,7 @@ class Datarepo(Generic[Item]):
     def __init__(
         self,
         datarepo_id: str,
-        ray_dataset: ray.data.Dataset,
+        ray_dataset: ray.data.Dataset[Item],
     ):
         """Creates a new Datarepo
 
@@ -159,35 +159,19 @@ class Datarepo(Generic[Item]):
         """
         if svc is None:
             svc = metadata_service.get_metadata_service()
-        # TODO(sammy): Serialize dataclasses to arrow-compatible types properly with schema library
-        import PIL.Image
 
-        def TODO_serialize(item):
-            if dataclasses.is_dataclass(item):
-                d = {}
-                for field in item.__dataclass_fields__:
-                    val = getattr(item, field)
-                    if isinstance(val, PIL.Image.Image):
-                        bio = io.BytesIO()
-                        val.save(bio, format="JPEG")
-                        d[field] = bio.getvalue()
-                    else:
-                        d[field] = val
-                return d
-            else:
-                raise NotImplementedError("Can only save Daft Dataclasses to Datarepos")
-
-        def serialize(items: List[Item]):
+        def serialize(items: List[Item]) -> pa.Table:
             if len(items) == 0:
                 return None
             first_type = items[0].__class__
-            assert dataclasses.is_dataclass(first_type)
+            assert dataclasses.is_dataclass(first_type), "We can only serialize daft dataclasses"
             assert hasattr(first_type, "_daft_schema"), "was not initialized with daft dataclass"
             daft_schema = getattr(first_type, "_daft_schema")
             return daft_schema.serialize(items)
 
         path = svc.get_path(datarepo_id)
-        return self._ray_dataset.map_batches(serialize).write_parquet(path)
+        serialized_ds: ray.data.Dataset[pa.Table] = self._ray_dataset.map_batches(serialize)  # type: ignore
+        return serialized_ds.write_parquet(path)
 
     def preview(self, n: int = 1) -> None:
         """Previews the data in a Datarepo"""
@@ -262,14 +246,15 @@ class Datarepo(Generic[Item]):
         ds = ray.data.read_parquet(path)
 
         def deserialize(items) -> List[Item]:
-            return daft_schema.deserialize_batch(items, data_type)
+            block: List[Item] = daft_schema.deserialize_batch(items, data_type)
+            return block
 
-        ds = ds.map_batches(deserialize, batch_format="pyarrow")
+        deserialized: ray.data.Dataset[Item] = ds.map_batches(deserialize, batch_format="pyarrow")
 
         # NOTE(jaychia): ds.count() is supposedly O(1) for parquet formats:
         # https://github.com/ray-project/ray/blob/master/python/ray/data/dataset.py#L1640
         # But we should benchmark and verify this.
         return cls(
             datarepo_id=datarepo_id,
-            ray_dataset=ds,
+            ray_dataset=deserialized,
         )
