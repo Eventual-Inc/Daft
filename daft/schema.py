@@ -81,7 +81,7 @@ class SchemaParser:
         assert isinstance(schema, pa.Schema)
         n_fields = len(schema.names)
 
-        assert set(schema.names) == pydict.keys()
+        assert set(schema.names) == pydict.keys(), f"{set(schema.names)} vs {pydict.keys()}"
         for i in range(n_fields):
             field = schema.field(i)
             name = field.name
@@ -168,7 +168,6 @@ class DaftSchema(Generic[_T]):
         root = DaftSchema.parse_type("root", pytype)
         self.schema = pa.schema([root])
         self.pytype = pytype
-        print(self.schema)
 
     def arrow_schema(self) -> pa.Schema:
         return self.schema
@@ -177,6 +176,7 @@ class DaftSchema(Generic[_T]):
         sp = SchemaParser(to_arrow=True)
         values = []
         for o in objs:
+            assert pydataclasses.is_dataclass(o)
             obj_dict = {"root": pydataclasses.asdict(o)}
             obj_dict = sp.parse_schema(self.schema, obj_dict)
             # obj_dict = self.resolve_conversions(self.schema, obj_dict)

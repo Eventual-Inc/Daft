@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import io
-from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Generic, List, Optional, Type, TypeVar, Union
 
 import ray
 import ray.data.dataset_pipeline
@@ -186,8 +186,6 @@ class Datarepo(Generic[Item]):
             daft_schema = getattr(first_type, "_daft_schema")
             return daft_schema.serialize(items)
 
-        # import pdb
-        # pdb.set_trace()
         path = svc.get_path(datarepo_id)
         return self._ray_dataset.map_batches(serialize).write_parquet(path)
 
@@ -239,6 +237,7 @@ class Datarepo(Generic[Item]):
     def get(
         cls,
         datarepo_id: str,
+        data_type: Type[Item],
         svc: Optional[metadata_service._DatarepoMetadataService] = None,
     ) -> Datarepo[Item]:
         """Gets a Datarepo by ID
@@ -251,12 +250,21 @@ class Datarepo(Generic[Item]):
         Returns:
             Datarepo: retrieved Datarepo
         """
+
+        assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
+        assert hasattr(data_type, "_daft_schema"), f"{data_type} was not initialized with daft dataclass"
+        daft_schema = getattr(data_type, "_daft_schema")
+
         if svc is None:
             svc = metadata_service.get_metadata_service()
         path = svc.get_path(datarepo_id)
 
-        # TODO(sammy): deserialize this dataset into dataclasses
         ds = ray.data.read_parquet(path)
+
+        def deserialize(items) -> List[Item]:
+            return daft_schema.deserialize_batch(items, data_type)
+
+        ds = ds.map_batches(deserialize, batch_format="pyarrow")
 
         # NOTE(jaychia): ds.count() is supposedly O(1) for parquet formats:
         # https://github.com/ray-project/ray/blob/master/python/ray/data/dataset.py#L1640

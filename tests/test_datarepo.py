@@ -35,7 +35,8 @@ def empty_metadata_service():
 @pytest.fixture()
 def populated_metadata_service(empty_metadata_service: _LocalDatarepoMetadataService):
     path = empty_metadata_service.get_path(DATAREPO_ID)
-    mock_tbl = pa.Table.from_pylist(FAKE_DATA)
+    daft_schema = getattr(FakeDataclass, "_daft_schema")
+    mock_tbl = daft_schema.serialize(FAKE_DATACLASSES)
     pq.write_table(mock_tbl, path)
     yield empty_metadata_service
 
@@ -50,30 +51,32 @@ def ray_cluster():
 def test_get_datarepo_missing(ray_cluster: None, populated_metadata_service: _LocalDatarepoMetadataService):
     # TODO(jaychia): Change when we have better error types
     with pytest.raises(FileNotFoundError):
-        Datarepo.get("SHOULD_NOT_EXIST", svc=populated_metadata_service)
+        Datarepo.get("SHOULD_NOT_EXIST", data_type=FakeDataclass, svc=populated_metadata_service)
 
 
-@pytest.mark.skip
+# @pytest.mark.skip
 def test_get_datarepo(ray_cluster: None, populated_metadata_service: _LocalDatarepoMetadataService):
     datarepo_id = populated_metadata_service.list_ids()[0]
-    datarepo = Datarepo.get(datarepo_id, svc=populated_metadata_service)
+    datarepo = Datarepo.get(datarepo_id, data_type=FakeDataclass, svc=populated_metadata_service)
     assert datarepo._id == DATAREPO_ID
 
     # TODO(sammy): This will throw an error because .get does not yet deserialize the data correctly
     assert [row for row in datarepo._ray_dataset.iter_rows()] == FAKE_DATACLASSES
 
 
-# @pytest.mark.skip
 def test_save_datarepo(ray_cluster: None, empty_metadata_service: _LocalDatarepoMetadataService):
     ds = ray.data.range(10).map(lambda i: FakeNumpyDataclass(arr=np.ones((4, 4)) * i))
     datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
 
-    # TODO(sammy): This should fail as Ray cannot serialize multidimensional arrays to Arrow
     datarepo.save(DATAREPO_ID, svc=empty_metadata_service)
-    # ds_written = ray.data.read_parquet(empty_metadata_service.get_path(DATAREPO_ID))
 
-    # # TODO(sammy): Fill in the correct serialization for numpy on disk
-    # assert [row for row in ds_written.iter_rows()] == [{} for i in range(10)]
+    readback = Datarepo.get(DATAREPO_ID, data_type=FakeNumpyDataclass, svc=empty_metadata_service)
+
+    original = list(datarepo._ray_dataset.iter_rows())
+
+    to_verify = list(readback._ray_dataset.iter_rows())
+
+    assert all([np.all(s.arr == t.arr) for s, t in zip(original, to_verify)])
 
 
 def test_datarepo_map(ray_cluster: None):
