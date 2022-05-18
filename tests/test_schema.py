@@ -8,7 +8,35 @@ import dataclasses as pydataclasses
 
 import numpy as np
 
-def test_schema() -> None:
+import pyarrow as pa
+from daft.schema import DaftSchema
+
+
+def test_simple_schema() -> None:
+    @dataclass
+    class SimpleClass:
+        item: int
+    
+    assert hasattr(SimpleClass, '_daft_schema')
+    daft_schema: DaftSchema = getattr(SimpleClass, '_daft_schema')
+    arrow_schema = daft_schema.arrow_schema()
+    assert isinstance(arrow_schema, pa.Schema)
+    assert len(arrow_schema.names) == 1
+    root = arrow_schema.field(0).type
+    assert pa.types.is_struct(root)
+    assert root.num_fields == 1
+    item_field = root[0]
+    assert item_field.name == "item"
+    assert pa.types.is_integer(item_field.type)
+
+
+    to_serialize = [SimpleClass(i) for i in range(5)]
+    record_batch = daft_schema.serialize(to_serialize)
+    assert record_batch.schema == arrow_schema
+    data = record_batch[0].field(0).to_pylist()
+    assert data == list(range(5))
+
+def test_schema_nested() -> None:
     @dataclass
     class Nested:
         z: int

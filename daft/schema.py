@@ -124,6 +124,9 @@ class DaftSchema(Generic[_T]):
         self.pytype = pytype
         print(self.schema)
 
+    def arrow_schema(self) -> pa.Schema:
+        return self.schema
+
     def serialize(self, objs: List[_T]) -> pa.RecordBatch:
         sp = SchemaParser(to_arrow=True)
         # flat_schema = self.flatten_schema()
