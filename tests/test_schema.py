@@ -48,10 +48,11 @@ def test_schema_nested() -> None:
         y: float
         q: Nested
         nd: Dict[str, int]
-    source_data = [TestDC(i, 2.0, Nested(1, 'oh wow'), {f"{i}": 9}) for i in range(10)]
-    record_batch = TestDC._daft_schema.serialize(source_data)
+    source_data = [TestDC(i, 2.0, Nested(1, 'oh wow'), {f"{i}": i}) for i in range(10)]
+    daft_schema: DaftSchema = getattr(TestDC, '_daft_schema')
+    record_batch = daft_schema.serialize(source_data)
 
-    back_to_py = TestDC._daft_schema.deserialize_batch(record_batch)
+    back_to_py = daft_schema.deserialize_batch(record_batch)
 
     for s, t in zip(source_data, back_to_py):
         flattened = pydataclasses.asdict(s)
