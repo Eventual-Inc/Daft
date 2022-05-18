@@ -48,5 +48,6 @@ else:
 
 def __process_class(cls: Type[_T], **kwargs) -> Type[_T]:
     cls = pydataclasses.dataclass(cls)
-    DaftSchema.create(cls)
+    daft_schema = DaftSchema(cls)
+    setattr(cls, "_daft_schema", daft_schema)
     return cls
