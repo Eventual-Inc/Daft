@@ -32,18 +32,24 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2
     rm -rf aws && \
     rm awscliv2.zip
 
-# Install poetry and Daft's dev python requirements
+# Install poetry and install Daft's dev python requirements
 RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
 COPY poetry.lock /scratch/poetry.lock
 COPY pyproject.toml /scratch/pyproject.toml
 RUN /root/.poetry/bin/poetry config virtualenvs.create false
 RUN --mount=type=cache,target=/root/.cache/pypoetry /root/.poetry/bin/poetry install
+RUN /root/.poetry/bin/poetry export -f requirements.txt --output requirements.txt
 
 USER daftuser
 WORKDIR /home/daftuser
 
-# Build Daft and install into local env
-COPY daft /home/daftuser/daft
+# HACK(jaychia): We should download the latest release and requirements of Daft instead of baking it into the image
+COPY daft /opt/daft
+USER root
+RUN cp /scratch/requirements.txt /opt/daft/requirements.txt
+USER daftuser
+
+COPY scripts/jupyterhub-entrypoint.sh /app/entrypoint.sh
 
 # Default entrypoint is set to be running Jupyterhub's single-user mode
-CMD ["jupyterhub-single-user"]
+ENTRYPOINT ["/app/entrypoint.sh", "jupyterhub-singleuser"]
