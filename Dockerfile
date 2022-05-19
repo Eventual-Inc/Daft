@@ -52,4 +52,4 @@ USER daftuser
 COPY scripts/jupyterhub-entrypoint.sh /app/entrypoint.sh
 
 # Default entrypoint is set to be running Jupyterhub's single-user mode
-ENTRYPOINT ["/app/entrypoint.sh", "jupyterhub-singleuser"]
+ENTRYPOINT ["/app/entrypoint.sh"]
