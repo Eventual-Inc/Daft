@@ -15,6 +15,10 @@ jupyterhub:
         admin_users:
           - jay@eventualcomputing.com
           - sammy@eventualcomputing.com
+        allowed_users:
+          - jaychia94@gmail.com
+          - sammy.sidhu@gmail.com
+          - will@coactive.ai
         auto_login: true
       JupyterHub:
         authenticator_class: auth0
@@ -28,16 +32,23 @@ jupyterhub:
         contactEmail: sammy@eventualcomputing.com
 
   singleuser:
-    # Defines the default image
+    # All notebooks spawned will use this service account
     serviceAccountName: daft
+
+    # Defines the default image
     image:
       name: jupyter/minimal-notebook
       tag: latest
+
     profileList:
-      - display_name: "Minimal environment"
-        description: "Minimal environment for running just Python"
-        default: true
       - display_name: "Daft notebook"
         description: "Notebook with Daft installed and ready to go"
         kubespawner_override:
           image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.1
+      - display_name: "Minimal environment"
+        description: "Minimal environment for running just Python"
+        default: true
+
+    # Modify the default PVC path to our daftuser $HOME instead
+    storage:
+      homeMountPath: /home/daftuser
