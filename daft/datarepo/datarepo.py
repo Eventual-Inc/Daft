@@ -13,7 +13,7 @@ from daft.datarepo import metadata_service
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
 MIN_ACTORS = 8
 MAX_ACTORS = 8
-DEFAULT_ACTOR_STRATEGY: ray.data.ActorPoolStrategy = ray.data.ActorPoolStrategy(MIN_ACTORS, MAX_ACTORS)
+DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.data.ActorPoolStrategy(1, int(ray.available_resources()['CPU']))
 DatarepoInfo = Dict[str, str]
 
 
@@ -112,7 +112,7 @@ class Datarepo(Generic[Item]):
             "tasks"
             # HACK(jaychia): hack until we define proper types for our Function decorators
             if str(type(batched_func)) == "<class 'function'>"
-            else DEFAULT_ACTOR_STRATEGY
+            else DEFAULT_ACTOR_STRATEGY()
         )
 
         ray_dataset: ray.data.Dataset[OutputItem] = self._ray_dataset.map_batches(
@@ -196,6 +196,8 @@ class Datarepo(Generic[Item]):
                         display(val)
                     else:
                         print(f"{field}: {val}")
+            else:
+                display(item)
 
     ###
     # Static methods: Managing Datarepos
@@ -221,7 +223,8 @@ class Datarepo(Generic[Item]):
     def get(
         cls,
         datarepo_id: str,
-        data_type: Type[Item],
+        data_type: Optional[Type[Item]] = None,
+        partitions: Optional[int] = None,
         svc: Optional[metadata_service._DatarepoMetadataService] = None,
     ) -> Datarepo[Item]:
         """Gets a Datarepo by ID
@@ -234,10 +237,13 @@ class Datarepo(Generic[Item]):
         Returns:
             Datarepo: retrieved Datarepo
         """
-
-        assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
-        assert hasattr(data_type, "_daft_schema"), f"{data_type} was not initialized with daft dataclass"
-        daft_schema = getattr(data_type, "_daft_schema")
+        if data_type is not None:
+            assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
+            assert hasattr(data_type, "_daft_schema"), f"{data_type} was not initialized with daft dataclass"
+            daft_schema = getattr(data_type, "_daft_schema")
+            def deserialize(items) -> List[Item]:
+                block: List[Item] = daft_schema.deserialize_batch(items, data_type)
+                return block
 
         if svc is None:
             svc = metadata_service.get_metadata_service()
@@ -245,16 +251,16 @@ class Datarepo(Generic[Item]):
 
         ds = ray.data.read_parquet(path)
 
-        def deserialize(items) -> List[Item]:
-            block: List[Item] = daft_schema.deserialize_batch(items, data_type)
-            return block
+        if partitions is not None:
+            ds = ds.repartition(partitions, shuffle=True)
 
-        deserialized: ray.data.Dataset[Item] = ds.map_batches(deserialize, batch_format="pyarrow")
+        if data_type is not None:
+            ds = ds.map_batches(deserialize, batch_format="pyarrow")
 
         # NOTE(jaychia): ds.count() is supposedly O(1) for parquet formats:
         # https://github.com/ray-project/ray/blob/master/python/ray/data/dataset.py#L1640
         # But we should benchmark and verify this.
         return cls(
             datarepo_id=datarepo_id,
-            ray_dataset=deserialized,
+            ray_dataset=ds,
         )

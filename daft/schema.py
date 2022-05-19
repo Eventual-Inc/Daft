@@ -124,7 +124,7 @@ class SchemaParser:
                 for i in range(struct.num_fields):
                     subfield = struct[i]
                     subname = subfield.name
-                    assert subname in pydict
+                    assert subname in pydict, f"{subname} not in {pydict.keys()}"
                     pydict[subname] = self.parse_field(subfield, pydict[subname])
             elif pa.types.is_map(field.type):
                 maptype = field.type
