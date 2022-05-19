@@ -16,6 +16,9 @@ spec:
         component: ray-head
         type: ray
     spec:
+      # Use Daft service account that should be linked to correct IAM Role via IRSA
+      serviceAccountName: {{ required "A valid .clusterName value is required!" .Values.clusterName }}-daft
+
       # If the head node goes down, the entire cluster (including all worker
       # nodes) will go down as well. If you want Kubernetes to bring up a new
       # head node in this case, set this to "Always," else set it to "Never."
