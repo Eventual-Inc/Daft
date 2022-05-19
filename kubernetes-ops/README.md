@@ -43,7 +43,7 @@ helm upgrade --cleanup-on-fail \
   --namespace jupyterhub \
   --create-namespace \
   --version=1.2.0 \
-  --values jupyterhub/config.yaml
+  --values jupyterhub/config.yaml \
   --set hub.config.Auth0OAuthenticator.client_secret=<Auth0 Client Secret>
 ```
 
