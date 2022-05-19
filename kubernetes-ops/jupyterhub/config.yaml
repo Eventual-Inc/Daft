@@ -38,4 +38,4 @@ singleuser:
     - display_name: "Daft notebook"
       description: "Notebook with Daft installed and ready to go"
       kubespawner_override:
-        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.1rc3
+        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.1
