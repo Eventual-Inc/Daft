@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import dataclasses as pydataclasses
+from daft import dataclasses
 import io
 import json
 from inspect import getmembers
@@ -189,7 +189,7 @@ class DaftSchema(Generic[_T]):
     }
 
     def __init__(self, pytype: Type[_T]) -> None:
-        assert pydataclasses.is_dataclass(pytype) and isinstance(pytype, type)
+        assert dataclasses.is_dataclass(pytype) and isinstance(pytype, type)
         root = DaftSchema.parse_type("root", pytype)
         self.schema = pa.schema([root])
         self.pytype = pytype
@@ -201,8 +201,8 @@ class DaftSchema(Generic[_T]):
         sp = SchemaParser(to_arrow=True)
         values = []
         for o in objs:
-            assert pydataclasses.is_dataclass(o)
-            obj_dict = {"root": pydataclasses.asdict(o)}
+            assert dataclasses.is_dataclass(o)
+            obj_dict = {"root": dataclasses.asdict(o)}
             obj_dict = sp.parse_schema(self.schema, obj_dict)
             # obj_dict = self.resolve_conversions(self.schema, obj_dict)
             values.append(obj_dict)
@@ -210,7 +210,7 @@ class DaftSchema(Generic[_T]):
         return pa.Table.from_pylist(values, schema=self.schema)
 
     def deserialize_batch(self, batch: pa.Table, target_type: Type[_T]) -> List[_T]:
-        assert pydataclasses.is_dataclass(target_type) and isinstance(target_type, type)
+        assert dataclasses.is_dataclass(target_type) and isinstance(target_type, type)
         sp = SchemaParser(to_arrow=False)
 
         objs = batch.to_pylist()
@@ -225,9 +225,9 @@ class DaftSchema(Generic[_T]):
 
     @classmethod
     def parse_dataclass(cls, t: Type):
-        assert pydataclasses.is_dataclass(t) and isinstance(t, type)
+        assert dataclasses.is_dataclass(t) and isinstance(t, type)
         schema_so_far = []
-        for field in pydataclasses.fields(t):
+        for field in dataclasses.fields(t):
             name = field.name
             pytype = field.type
             daft_field_metadata: Optional[DaftFieldMetadata] = field.metadata.get(DaftFieldMetadata.__name__, None)
@@ -282,7 +282,7 @@ class DaftSchema(Generic[_T]):
 
                 return pa.field(name, f(*args)).with_metadata(cls.type_to_metadata(t, conversion))
 
-        if pydataclasses.is_dataclass(t):
+        if dataclasses.is_dataclass(t):
             assert isinstance(t, type), "unable to parse instances of dataclasses"
             return pa.field(name, cls.parse_dataclass(t)).with_metadata(cls.type_to_metadata(t, False))
         raise NotImplementedError(f"Could not parse {t}")

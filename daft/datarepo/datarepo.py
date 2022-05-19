@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import dataclasses
+from daft import dataclasses
 from typing import Callable, Dict, Generic, List, Optional, Type, TypeVar, Union
 
 import pyarrow as pa
@@ -13,7 +13,9 @@ from daft.datarepo import metadata_service
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
 MIN_ACTORS = 8
 MAX_ACTORS = 8
-DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.data.ActorPoolStrategy(1, int(ray.available_resources()['CPU']))
+DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.data.ActorPoolStrategy(
+    1, int(ray.available_resources()["CPU"])
+)
 DatarepoInfo = Dict[str, str]
 
 
@@ -241,6 +243,7 @@ class Datarepo(Generic[Item]):
             assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
             assert hasattr(data_type, "_daft_schema"), f"{data_type} was not initialized with daft dataclass"
             daft_schema = getattr(data_type, "_daft_schema")
+
             def deserialize(items) -> List[Item]:
                 block: List[Item] = daft_schema.deserialize_batch(items, data_type)
                 return block
