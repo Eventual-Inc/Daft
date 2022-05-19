@@ -1,5 +1,5 @@
-from typing import TypeVar
 import dataclasses as pydataclasses
+from typing import TypeVar
 
 from daft.types import DaftImageType, DaftType
 
@@ -8,8 +8,10 @@ _T = TypeVar("_T")
 
 class DaftFieldMetadata:
     daft_type: DaftType
+
     def __init__(self, daft_type) -> None:
         self.daft_type = daft_type
+
 
 def DaftField(*, daft_type: DaftType, **kwargs) -> _T:
     daft_metadata_key_name = DaftFieldMetadata.__name__

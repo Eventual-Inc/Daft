@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from daft import dataclasses
 import io
 import json
 from inspect import getmembers
@@ -23,7 +22,7 @@ import PIL
 import PIL.Image
 import pyarrow as pa
 
-from daft import types
+from daft import dataclasses, types
 from daft.fields import DaftFieldMetadata
 from daft.types import DaftType
 

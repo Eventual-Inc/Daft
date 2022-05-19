@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from daft import dataclasses
 from typing import Callable, Dict, Generic, List, Optional, Type, TypeVar, Union
 
 import pyarrow as pa
@@ -8,6 +7,7 @@ import ray
 import ray.data.dataset_pipeline
 from ray.data.impl.arrow_block import ArrowRow
 
+from daft import dataclasses
 from daft.datarepo import metadata_service
 
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
