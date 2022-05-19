@@ -27,6 +27,8 @@ black = "^22.3.0"
 isort = "^5.10.1"
 autoflake = "^1.4"
 jupyter = "^1.0.0"
+jupyterlab = "^3.4.2"
+jupyterhub = "1.5.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
