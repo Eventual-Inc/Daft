@@ -44,7 +44,7 @@ jupyterhub:
       - display_name: "Daft notebook"
         description: "Notebook with Daft installed and ready to go"
         kubespawner_override:
-          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.2
+          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.3rc1
       - display_name: "Minimal environment"
         description: "Minimal environment for running just Python"
         default: true
