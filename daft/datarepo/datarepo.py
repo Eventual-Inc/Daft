@@ -141,7 +141,7 @@ class Datarepo(Generic[Item]):
             ray_dataset=head,
         )
 
-    def take(self, n: int = 5) -> List[Item]:
+    def take(self, n: int = 5) -> Union[List[Item], List[ArrowRow]]:
         """Takes `n` Items from the Datarepo and returns a list
 
         Args:
@@ -152,11 +152,6 @@ class Datarepo(Generic[Item]):
         """
         retrieved: List[Item] = []
         for i, row in enumerate(self._ray_dataset.iter_rows()):
-            # .iter_rows() yields ArrowRow if self._ray_dataset is a tabular dataset, but the Daft API does not
-            # use tabular Ray datasets
-            assert not isinstance(row, ArrowRow), "Rows should not be tabular ArrowRows"
-            row = cast(Item, row)
-
             retrieved.append(row)
             if i >= n - 1:
                 break
