@@ -1,21 +1,20 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Callable, Dict, Generic, List, Optional, Type, TypeVar, Union
+from typing import Callable, Dict, Generic, List, Literal, Optional, Type, TypeVar, Union, cast
 
 import pyarrow as pa
 import ray
 import ray.data.dataset_pipeline
 from ray.data.impl.arrow_block import ArrowRow
 
+from daft.dataclasses import _patch_class_for_deserialization
 from daft.datarepo import metadata_service
-from daft.utils import _patch_class_for_deserialization
 
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
-MIN_ACTORS = 8
-MAX_ACTORS = 8
 DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.data.ActorPoolStrategy(
-    1, int(ray.available_resources()["CPU"])
+    min_size=1,
+    max_size=ray.cluster_resources()["CPU"],
 )
 DatarepoInfo = Dict[str, str]
 
@@ -26,9 +25,9 @@ OutputItem = TypeVar("OutputItem")
 BatchItem = List[Item]
 BatchOutputItem = List[OutputItem]
 
-MapFunc = Callable[[Item], OutputItem]
-
-BatchMapFunc = Union[type, Callable[[Union[BatchItem, Item]], BatchOutputItem]]
+CallableClass = type
+MapFunc = Union[CallableClass, Callable[[Item], OutputItem]]
+BatchMapFunc = Union[CallableClass, Callable[[Union[BatchItem, Item]], BatchOutputItem]]
 
 
 class Datarepo(Generic[Item]):
@@ -77,13 +76,13 @@ class Datarepo(Generic[Item]):
         }
 
     def __repr__(self) -> str:
-        return f"<DataRepo: {' '.join([f'{k}={v}' for k, v in self.info().items()])}>"
+        body = "\n".join([f"\t{k}={v}" for k, v in self.info().items()])
+        return f"""<DataRepo:{body}>"""
 
-    ###
-    # Operation Functions: Functions that add to the graph of operations to perform
-    ###
-
-    def map(self, func: MapFunc[Item, OutputItem]) -> Datarepo[OutputItem]:
+    def map(
+        self,
+        func: MapFunc[Item, OutputItem],
+    ) -> Datarepo[OutputItem]:
         """Runs a function on each item in the Datarepo, returning a new Datarepo
 
         Args:
@@ -94,7 +93,11 @@ class Datarepo(Generic[Item]):
         """
         return Datarepo(
             datarepo_id=f"{self._id}:map[{func.__name__}]",
-            ray_dataset=self._ray_dataset.map(func),
+            ray_dataset=self._ray_dataset.map(
+                func,
+                # Type failing because Ray mistakenly requests for Optional[str]
+                compute=_get_compute_strategy(func),  # type: ignore
+            ),
         )
 
     def map_batches(
@@ -111,22 +114,17 @@ class Datarepo(Generic[Item]):
         Returns:
             Datarepo[OutputItem]: Datarepo of outputs
         """
-        compute_strategy: Union[str, ray.data.ActorPoolStrategy] = (
-            "tasks"
-            # HACK(jaychia): hack until we define proper types for our Function decorators
-            if str(type(batched_func)) == "<class 'function'>"
-            else DEFAULT_ACTOR_STRATEGY()
-        )
-
         ray_dataset: ray.data.Dataset[OutputItem] = self._ray_dataset.map_batches(
-            # TODO(jaychia): failing typecheck for some reason:
             batched_func,
             batch_size=batch_size,
-            compute=compute_strategy,
+            compute=_get_compute_strategy(batched_func),
             batch_format="native",
         )
 
-        return Datarepo(datarepo_id=f"{self._id}:map_batches[{batched_func.__name__}]", ray_dataset=ray_dataset)
+        return Datarepo(
+            datarepo_id=f"{self._id}:map_batches[{batched_func.__name__}]",
+            ray_dataset=ray_dataset,
+        )
 
     def sample(self, n: int = 5) -> Datarepo[Item]:
         """Computes and samples `n` Items from the Datarepo
@@ -137,18 +135,47 @@ class Datarepo(Generic[Item]):
         Returns:
             Datarepo[Item]: new Datarepo with sampled size
         """
-        # TODO(jaychia): This forces the full execution of the Dataset before splitting, which is not good.
-        # We might be able to get around it by converting the Dataset to a pipeline first, with blocks_per_window=1
-        # and then only accessing the first window. Unclear, needs to be benchmarked.
         head, _ = self._ray_dataset.split_at_indices([n])
         return Datarepo(
             datarepo_id=f"{self._id}:sample[{n}]",
             ray_dataset=head,
         )
 
-    ###
-    # Trigger functions: Functions that trigger computation of the Datarepo
-    ###
+    def take(self, n: int = 5) -> List[Item]:
+        """Takes `n` Items from the Datarepo and returns a list
+
+        Args:
+            n (int, optional): number of items to take. Defaults to 5.
+
+        Returns:
+            List[Item]: list of items
+        """
+        retrieved: List[Item] = []
+        for i, row in enumerate(self._ray_dataset.iter_rows()):
+            # .iter_rows() yields ArrowRow if self._ray_dataset is a tabular dataset, but the Daft API does not
+            # use tabular Ray datasets
+            assert not isinstance(row, ArrowRow), "Rows should not be tabular ArrowRows"
+            row = cast(Item, row)
+
+            retrieved.append(row)
+            if i >= n - 1:
+                break
+        return retrieved
+
+    def filter(self, func: MapFunc[Item, bool]) -> Datarepo[Item]:
+        """Filters the Datarepo using a function that returns a boolean indicating whether to keep or discard an item
+
+        Args:
+            func (MapFunc[Item, bool]): function to filter with
+
+        Returns:
+            Datarepo[Item]: filtered Datarepo
+        """
+        return Datarepo(
+            datarepo_id=f"{self._id}:filter[{func.__name__}]]",
+            # Type failing because Ray mistakenly requests for Optional[str]
+            ray_dataset=self._ray_dataset.filter(func, compute=_get_compute_strategy(func)),  # type: ignore
+        )
 
     def save(
         self,
@@ -184,14 +211,14 @@ class Datarepo(Generic[Item]):
         serialized_ds: ray.data.Dataset[pa.Table] = self._ray_dataset.map_batches(serialize)  # type: ignore
         return serialized_ds.write_parquet(path)
 
-    def preview(self, n: int = 1) -> None:
+    def show(self, n: int = 1) -> None:
         """Previews the data in a Datarepo"""
-        sampled_repo = self.sample(n)
+        items = self.take(n)
 
         import PIL.Image
         from IPython.display import display  # type: ignore
 
-        for i, item in enumerate(sampled_repo._ray_dataset.iter_rows()):
+        for i, item in enumerate(items):
             if i >= n:
                 break
             if isinstance(item, ArrowRow):
@@ -262,7 +289,6 @@ class Datarepo(Generic[Item]):
             #     setattr(data_type, "__daft_patched", id(dataclasses._FIELD))
 
             def deserialize(items) -> List[Item]:
-
                 block: List[Item] = daft_schema.deserialize_batch(items, data_type)
                 return block
 
@@ -285,3 +311,18 @@ class Datarepo(Generic[Item]):
             datarepo_id=datarepo_id,
             ray_dataset=ds,
         )
+
+
+def _get_compute_strategy(func: Callable[[Item], OutputItem]) -> Union[Literal["tasks"], ray.data.ActorPoolStrategy]:
+    """Returns the appropriate compute_strategy when given a callable.
+
+    Callables can either be a Function, or a Class which defines an .__init__() and a .__call__()
+    We handle both cases by constructing the appropriate compute_strategy and passing that to Ray.
+
+    Args:
+        func: Callable to evaluate
+
+    Returns:
+        Union[str, ray.data.ActorPoolStrategy]: Either the string "tasks" or a ray.data.ActorPoolStrategy
+    """
+    return DEFAULT_ACTOR_STRATEGY() if isinstance(func, type) else "tasks"

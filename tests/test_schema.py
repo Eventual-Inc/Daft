@@ -1,6 +1,7 @@
 import io
 from typing import Dict
 
+import pytest
 import numpy as np
 import PIL.Image
 import pyarrow as pa
@@ -70,6 +71,7 @@ def test_conversion_schema() -> None:
     assert all([np.all(s.item == t.item) for s, t in zip(to_serialize, back_to_py)])
 
 
+@pytest.mark.skip(reason="not currently supporting nested")
 def test_schema_nested() -> None:
     @dataclass
     class Nested:

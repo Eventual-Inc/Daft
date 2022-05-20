@@ -1,5 +1,5 @@
 import tempfile
-from typing import List
+from typing import List, cast
 
 import numpy as np
 import pyarrow.parquet as pq
@@ -93,6 +93,23 @@ def test_datarepo_map(ray_cluster: None):
     assert [row for row in mapped_repo._ray_dataset.iter_rows()] == [d["foo"] + 1 for d in FAKE_DATA]
 
 
+def test_datarepo_map_actor(ray_cluster: None):
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i))
+    datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
+
+    class Actor:
+        def __init__(self):
+            pass
+
+        def __call__(self, item: FakeDataclass):
+            return item.foo + 1
+
+    mapped_repo: Datarepo[int] = datarepo.map(Actor)
+
+    # NOTE(jaychia): Use sets here because for some reason actors reverse the order of data
+    assert {row for row in mapped_repo._ray_dataset.iter_rows()} == {d["foo"] + 1 for d in FAKE_DATA}
+
+
 def test_datarepo_map_batches(ray_cluster: None):
     ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i))
     datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
@@ -102,3 +119,64 @@ def test_datarepo_map_batches(ray_cluster: None):
 
     mapped_repo: Datarepo[int] = datarepo.map_batches(f, batch_size=2)
     assert [row for row in mapped_repo._ray_dataset.iter_rows()] == [d["foo"] + 1 for d in FAKE_DATA]
+
+
+def test_datarepo_map_batches_actor(ray_cluster: None):
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i))
+    datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
+
+    class Actor:
+        def __init__(self):
+            pass
+
+        def __call__(self, items: List[FakeDataclass]):
+            return [item.foo + 1 for item in items]
+
+    mapped_repo: Datarepo[int] = datarepo.map_batches(Actor, batch_size=2)
+    # NOTE(jaychia): Use sets here because for some reason actors reverse the order of data
+    assert {row for row in mapped_repo._ray_dataset.iter_rows()} == {d["foo"] + 1 for d in FAKE_DATA}
+
+
+def test_datarepo_filter(ray_cluster: None):
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i))
+    datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
+
+    def f(item: FakeDataclass) -> bool:
+        return item.foo < 5
+
+    mapped_repo: Datarepo[int] = datarepo.filter(f)
+    assert [row for row in mapped_repo._ray_dataset.iter_rows()] == [FakeDataclass(foo=i) for i in range(5)]
+
+
+def test_datarepo_filter_actor(ray_cluster: None):
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i))
+    datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
+
+    class Actor:
+        def __init__(self):
+            pass
+
+        def __call__(self, item: FakeDataclass):
+            return item.foo < 5
+
+    mapped_repo: Datarepo[FakeDataclass] = datarepo.filter(Actor)
+    # NOTE(jaychia): Use sets here because for some reason actors reverse the order of data
+    assert {
+        # This is always a FakeDataclass and not an ArrowRow as ._ray_dataset is not tabular
+        row.foo  # type: ignore
+        for row in mapped_repo._ray_dataset.iter_rows()
+    } == {i for i in range(5)}
+
+
+def test_datarepo_take(ray_cluster: None):
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i))
+    datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
+    sample = datarepo.take(5)
+    assert sample == [FakeDataclass(foo=i) for i in range(5)]
+
+
+def test_datarepo_sample(ray_cluster: None):
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i))
+    datarepo = Datarepo(datarepo_id=DATAREPO_ID, ray_dataset=ds)
+    sample_repo = datarepo.sample(5)
+    assert [row for row in sample_repo._ray_dataset.iter_rows()] == [FakeDataclass(foo=i) for i in range(5)]
