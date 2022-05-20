@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import List, Protocol
 
-from daft.datarepo import config
+from daft import config
 
 
 def get_metadata_service() -> _DatarepoMetadataService:
@@ -12,9 +12,10 @@ def get_metadata_service() -> _DatarepoMetadataService:
     Returns:
         _DatarepoMetadataService: _DatarepoMetadataService to access Datarepo metadata
     """
+    daft_settings = config.DaftSettings()
     return _S3DatarepoMetadataService(
-        bucket=config.Settings.DATAREPOS_BUCKET,
-        prefix=config.Settings.DATAREPOS_PREFIX,
+        bucket=daft_settings.DAFT_DATAREPOS_BUCKET,
+        prefix=daft_settings.DAFT_DATAREPOS_PREFIX,
     )
 
 

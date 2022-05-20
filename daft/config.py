@@ -1,6 +1,13 @@
 from typing import Optional
 
+from pydantic import BaseSettings
 
-class DaftSettings:
-    RAY_ADDRESS: str = "ray://127.0.0.1:10001"
-    NUM_CPUS: Optional[int] = None
+class DaftSettings(BaseSettings):
+    DAFT_CLUSTER_NAME: Optional[str] = None
+    DAFT_CLUSTER_HEAD_ADDR: Optional[str] = None
+    DAFT_DATAREPOS_BUCKET: str = "eventual-data-test-bucket"
+    DAFT_DATAREPOS_PREFIX: str = "datarepos"
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"

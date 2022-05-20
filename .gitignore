@@ -4,3 +4,4 @@ venv
 notebooks
 dist
 **/__pycache__/
+.env
