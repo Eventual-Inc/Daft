@@ -11,7 +11,6 @@ from typing import (
     Type,
     TypeVar,
     Union,
-    cast,
 )
 
 import pyarrow as pa
