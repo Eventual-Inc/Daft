@@ -26,6 +26,7 @@ import pyarrow as pa
 from daft import types
 from daft.fields import DaftFieldMetadata
 from daft.types import DaftType
+from daft.utils import _patch_class_for_deserialization
 
 _DaftTypeLookup = dict(getmembers(types))
 
@@ -211,6 +212,9 @@ class DaftSchema(Generic[_T]):
 
     def deserialize_batch(self, batch: pa.Table, target_type: Type[_T]) -> List[_T]:
         assert pydataclasses.is_dataclass(target_type) and isinstance(target_type, type)
+
+        _patch_class_for_deserialization(target_type)
+
         sp = SchemaParser(to_arrow=False)
 
         objs = batch.to_pylist()

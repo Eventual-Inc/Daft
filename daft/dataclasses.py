@@ -2,6 +2,7 @@ import dataclasses as pydataclasses
 from typing import TYPE_CHECKING, Callable, Type, TypeVar, Union
 
 from daft.schema import DaftSchema
+from daft.utils import _default_setter, _patch_class_for_deserialization
 
 _T = TypeVar("_T")
 
@@ -46,4 +47,14 @@ def __process_class(cls: Type[_T], **kwargs) -> Type[_T]:
     cls = pydataclasses.dataclass(cls)
     daft_schema = DaftSchema(cls)
     setattr(cls, "_daft_schema", daft_schema)
+    if hasattr(cls, "__setstate__"):
+        func = getattr(cls, "__setstate__")
+    else:
+        func = _default_setter
+
+    def dataclass_override_setstate(self, state):
+        _patch_class_for_deserialization(self.__class__)
+        func(self, state)
+
+    setattr(cls, "__setstate__", dataclass_override_setstate)
     return cls
