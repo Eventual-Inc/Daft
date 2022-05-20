@@ -1,10 +1,10 @@
 import io
 from typing import Dict
 
-import pytest
 import numpy as np
 import PIL.Image
 import pyarrow as pa
+import pytest
 
 from daft.dataclasses import dataclass
 from daft.fields import DaftImageField
