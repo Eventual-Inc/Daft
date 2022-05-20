@@ -5,7 +5,7 @@ import ray
 from daft import config
 
 
-class DaftContext:
+class _DaftContext:
     def __init__(
         self,
         ray_address: Optional[str] = None,
@@ -19,14 +19,14 @@ class DaftContext:
         )
 
 
-_DEFAULT_CONTEXT: Optional[DaftContext] = None
+_DEFAULT_CONTEXT: Optional[_DaftContext] = None
 
 
 def init(
     ray_address: Optional[str] = None,
     runtime_env: Optional[Dict[str, Any]] = None,
     **kwargs,
-) -> DaftContext:
+) -> _DaftContext:
     """Inititialize the Daft Context
 
     Args:
@@ -38,7 +38,7 @@ def init(
             variables, or default to None if not found.
 
     Returns:
-        DaftContext: context object
+        _DaftContext: context object
     """
     global _DEFAULT_CONTEXT
     daft_settings = config.DaftSettings()
@@ -54,7 +54,7 @@ def init(
                     "excludes": [".cache/**"],
                 }
 
-        _DEFAULT_CONTEXT = DaftContext(
+        _DEFAULT_CONTEXT = _DaftContext(
             ray_address=ray_address,
             runtime_env=runtime_env,
             **kwargs,
