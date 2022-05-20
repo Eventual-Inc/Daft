@@ -201,8 +201,8 @@ class DaftSchema(Generic[_T]):
     def serialize(self, objs: List[_T]) -> pa.Table:
         sp = SchemaParser(to_arrow=True)
         values = []
-        if len(objs) != 0:
-            _patch_class_for_deserialization(objs[0])
+        # if len(objs) != 0:
+        #     _patch_class_for_deserialization(objs[0])
         for o in objs:
             assert pydataclasses.is_dataclass(o)
             obj_dict = {"root": o.__dict__}
@@ -215,7 +215,7 @@ class DaftSchema(Generic[_T]):
     def deserialize_batch(self, batch: pa.Table, target_type: Type[_T]) -> List[_T]:
         assert pydataclasses.is_dataclass(target_type) and isinstance(target_type, type)
 
-        _patch_class_for_deserialization(target_type)
+        # _patch_class_for_deserialization(target_type)
 
         sp = SchemaParser(to_arrow=False)
 

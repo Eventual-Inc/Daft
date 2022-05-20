@@ -163,13 +163,13 @@ class Datarepo(Generic[Item]):
         if svc is None:
             svc = metadata_service.get_metadata_service()
 
-        sample_item = self._ray_dataset.take(1)
+        # sample_item = self._ray_dataset.take(1)
 
-        if len(sample_item) == 0:
-            print("nothing to save")
-            return None
+        # if len(sample_item) == 0:
+        #     print("nothing to save")
+        #     return None
 
-        _patch_class_for_deserialization(sample_item[0].__class__)
+        # _patch_class_for_deserialization(sample_item[0].__class__)
 
         def serialize(items: List[Item]) -> pa.Table:
             if len(items) == 0:
@@ -252,7 +252,7 @@ class Datarepo(Generic[Item]):
             assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
             assert hasattr(data_type, "_daft_schema"), f"{data_type} was not initialized with daft dataclass"
             daft_schema = getattr(data_type, "_daft_schema")
-            _patch_class_for_deserialization(data_type)
+            # _patch_class_for_deserialization(data_type)
             # if getattr(data_type, "__daft_patched", None) != id(dataclasses._FIELD):
             #     assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
             #     fields = data_type.__dict__["__dataclass_fields__"]
