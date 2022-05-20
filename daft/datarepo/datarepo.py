@@ -86,8 +86,8 @@ class Datarepo(Generic[Item]):
         }
 
     def __repr__(self) -> str:
-        body = "\n".join([f"\t{k}={v}" for k, v in self.info().items()])
-        return f"""<DataRepo:{body}>"""
+        body = "\n".join([f" {k}={v}" for k, v in self.info().items()])
+        return f"""<DataRepo:\n{body}>"""
 
     def map(
         self,
