@@ -258,7 +258,7 @@ class Datarepo(Generic[Item]):
         return svc.list_ids()
 
     @classmethod
-    def get(
+    def from_id(
         cls,
         datarepo_id: str,
         data_type: Optional[Type[Item]] = None,
@@ -269,6 +269,8 @@ class Datarepo(Generic[Item]):
 
         Args:
             datarepo_id (str): ID of the datarepo
+            data_type (Optional[Type[Item]], optional): Dataclass of the type of data. Defaults to None.
+            partitions (Optional[int], optional): number of partitions to split data into. Defaults to None.
             svc (Optional[metadata_service._DatarepoMetadataService], optional): Defaults to None which will detect
                 the appropriate service to use from the current environment.
 
@@ -304,9 +306,6 @@ class Datarepo(Generic[Item]):
         if data_type is not None:
             ds = ds.map_batches(deserialize, batch_format="pyarrow")
 
-        # NOTE(jaychia): ds.count() is supposedly O(1) for parquet formats:
-        # https://github.com/ray-project/ray/blob/master/python/ray/data/dataset.py#L1640
-        # But we should benchmark and verify this.
         return cls(
             datarepo_id=datarepo_id,
             ray_dataset=ds,

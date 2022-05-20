@@ -51,13 +51,12 @@ def ray_cluster():
 def test_get_datarepo_missing(ray_cluster: None, populated_metadata_service: _LocalDatarepoMetadataService):
     # TODO(jaychia): Change when we have better error types
     with pytest.raises(FileNotFoundError):
-        Datarepo.get("SHOULD_NOT_EXIST", data_type=FakeDataclass, svc=populated_metadata_service)
+        Datarepo.from_id("SHOULD_NOT_EXIST", data_type=FakeDataclass, svc=populated_metadata_service)
 
 
-# @pytest.mark.skip
-def test_get_datarepo(ray_cluster: None, populated_metadata_service: _LocalDatarepoMetadataService):
+def test_datarepo_from_id(ray_cluster: None, populated_metadata_service: _LocalDatarepoMetadataService):
     datarepo_id = populated_metadata_service.list_ids()[0]
-    datarepo = Datarepo.get(datarepo_id, data_type=FakeDataclass, svc=populated_metadata_service)
+    datarepo = Datarepo.from_id(datarepo_id, data_type=FakeDataclass, svc=populated_metadata_service)
     assert datarepo._id == DATAREPO_ID
 
     # TODO(sammy): This will throw an error because .get does not yet deserialize the data correctly
@@ -73,7 +72,7 @@ def test_save_datarepo(ray_cluster: None, empty_metadata_service: _LocalDatarepo
 
     datarepo.save(DATAREPO_ID, svc=empty_metadata_service)
 
-    readback = Datarepo.get(DATAREPO_ID, data_type=FakeNumpyDataclass, svc=empty_metadata_service)
+    readback = Datarepo.from_id(DATAREPO_ID, data_type=FakeNumpyDataclass, svc=empty_metadata_service)
 
     original = [item.arr for item in datarepo._ray_dataset.iter_rows()]  # type: ignore
 
