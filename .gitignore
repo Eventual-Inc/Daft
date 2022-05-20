@@ -1,7 +1,6 @@
 .vscode
 
 venv
-notebooks
 dist
 **/__pycache__/
 requirements.txt
