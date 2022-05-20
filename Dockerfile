@@ -45,6 +45,7 @@ WORKDIR /home/daftuser
 
 # HACK(jaychia): We should download the latest release and requirements of Daft instead of baking it into the image
 COPY daft /opt/daft
+COPY notebooks /opt/notebooks
 USER root
 RUN cp /scratch/requirements.txt /opt/daft/requirements.txt
 USER daftuser
