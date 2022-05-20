@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import dataclasses as pydataclasses
 import io
 import json
@@ -22,7 +23,6 @@ import numpy as np
 import PIL
 import PIL.Image
 import pyarrow as pa
-import copy
 
 from daft import types
 from daft.fields import DaftFieldMetadata

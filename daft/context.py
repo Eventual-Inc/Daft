@@ -1,6 +1,5 @@
 from typing import Any, Dict, Optional
 
-import os
 import ray
 
 from daft import config
