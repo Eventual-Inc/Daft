@@ -22,6 +22,7 @@ import numpy as np
 import PIL
 import PIL.Image
 import pyarrow as pa
+import copy
 
 from daft import types
 from daft.fields import DaftFieldMetadata
@@ -205,7 +206,7 @@ class DaftSchema(Generic[_T]):
         #     _patch_class_for_deserialization(objs[0])
         for o in objs:
             assert pydataclasses.is_dataclass(o)
-            obj_dict = {"root": o.__dict__}
+            obj_dict = {"root": copy.deepcopy(o.__dict__)}
             obj_dict = sp.parse_schema(self.schema, obj_dict)
             # obj_dict = self.resolve_conversions(self.schema, obj_dict)
             values.append(obj_dict)
