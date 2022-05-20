@@ -38,7 +38,7 @@ spec:
           imagePullPolicy: IfNotPresent
           command: [ "/bin/bash", "-c", "--" ]
           args:
-            - "ray start --head --port=6379 --redis-shard-ports=6380,6381 --num-cpus=$MY_CPU_REQUEST --object-manager-port=22345 --node-manager-port=22346 --dashboard-host=0.0.0.0 --block"
+            - "ray start --head --port=6379 --redis-shard-ports=6380,6381 --num-cpus=$MY_CPU_REQUEST --object-manager-port=22345 --node-manager-port=22346 --dashboard-host=0.0.0.0 --block --object-store-memory={{ .Values.objectStoreMemoryBytes }}"
           ports:
             - containerPort: 6379 # Redis port
             - containerPort: 10001 # Used by Ray Client

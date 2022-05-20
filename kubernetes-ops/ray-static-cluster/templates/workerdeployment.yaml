@@ -29,7 +29,7 @@ spec:
         imagePullPolicy: IfNotPresent
         command: ["/bin/bash", "-c", "--"]
         args:
-          - ray start --num-cpus=$MY_CPU_REQUEST --address={{ required "A valid .clusterName value is required!" .Values.clusterName }}-ray-head-svc:6379 --object-manager-port=22345 --node-manager-port=22346 --block
+          - ray start --num-cpus=$MY_CPU_REQUEST --address={{ required "A valid .clusterName value is required!" .Values.clusterName }}-ray-head-svc:6379 --object-manager-port=22345 --node-manager-port=22346 --block --object-store-memory={{ .Values.objectStoreMemoryBytes }}
         # This volume allocates shared memory for Ray to use for its plasma
         # object store. If you do not provide this, Ray will fall back to
         # /tmp which cause slowdowns if is not a shared memory volume.

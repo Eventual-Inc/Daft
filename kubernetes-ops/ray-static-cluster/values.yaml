@@ -7,3 +7,4 @@ rayImage: "rayproject/ray:1.12.0-py39"
 # Worker settings
 workerReplicaCount: "4"
 workerCPURequest: 8  # should match the NUM_CPUs on our machine type
+objectStoreMemoryBytes: "20000000000"
