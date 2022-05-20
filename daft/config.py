@@ -2,6 +2,7 @@ from typing import Optional
 
 from pydantic import BaseSettings
 
+
 class DaftSettings(BaseSettings):
     DAFT_CLUSTER_HEAD_ADDR: str = "ray://default-ray-head-svc.ray:10001"
     DAFT_DATAREPOS_BUCKET: str = "eventual-data-test-bucket"
