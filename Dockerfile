@@ -49,7 +49,6 @@ USER root
 RUN cp /scratch/requirements.txt /opt/daft/requirements.txt
 USER daftuser
 
-COPY scripts/jupyterhub-entrypoint.sh /app/entrypoint.sh
-
 # Default entrypoint is set to be running Jupyterhub's single-user mode
+COPY scripts/jupyterhub-entrypoint.sh /app/entrypoint.sh
 ENTRYPOINT ["/app/entrypoint.sh"]
