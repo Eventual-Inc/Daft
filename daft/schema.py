@@ -201,9 +201,11 @@ class DaftSchema(Generic[_T]):
     def serialize(self, objs: List[_T]) -> pa.Table:
         sp = SchemaParser(to_arrow=True)
         values = []
+        if len(objs) != 0:
+            _patch_class_for_deserialization(objs[0])
         for o in objs:
             assert pydataclasses.is_dataclass(o)
-            obj_dict = {"root": pydataclasses.asdict(o)}
+            obj_dict = {"root": o.__dict__}
             obj_dict = sp.parse_schema(self.schema, obj_dict)
             # obj_dict = self.resolve_conversions(self.schema, obj_dict)
             values.append(obj_dict)
@@ -221,7 +223,8 @@ class DaftSchema(Generic[_T]):
         values = []
         for o in objs:
             post_obj = sp.parse_schema(self.schema, o)["root"]
-            py_obj = dacite.from_dict(data_class=target_type, data=post_obj)
+            # py_obj = dacite.from_dict(data_class=target_type, data=post_obj)
+            py_obj = target_type(**post_obj)
             values.append(py_obj)
         return values
         # import pdb

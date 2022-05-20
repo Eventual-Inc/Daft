@@ -8,8 +8,8 @@ import ray
 import ray.data.dataset_pipeline
 from ray.data.impl.arrow_block import ArrowRow
 
-from daft.dataclasses import _patch_class_for_deserialization
 from daft.datarepo import metadata_service
+from daft.utils import _patch_class_for_deserialization
 
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
 MIN_ACTORS = 8
@@ -163,6 +163,14 @@ class Datarepo(Generic[Item]):
         if svc is None:
             svc = metadata_service.get_metadata_service()
 
+        sample_item = self._ray_dataset.take(1)
+
+        if len(sample_item) == 0:
+            print("nothing to save")
+            return None
+
+        _patch_class_for_deserialization(sample_item[0].__class__)
+
         def serialize(items: List[Item]) -> pa.Table:
             if len(items) == 0:
                 return None
@@ -193,7 +201,7 @@ class Datarepo(Generic[Item]):
                 # TODO(jaychia): This needs further refinement for rich display according
                 # to our schema when @sammy is ready with the schema library, by checking
                 # if the item is an instance of a Daft Dataclass.
-                for field, val in dataclasses.asdict(item).items():
+                for field, val in item.__dict__.items():
                     if isinstance(val, PIL.Image.Image):
                         print(f"{field}:")
                         display(val)
@@ -244,8 +252,17 @@ class Datarepo(Generic[Item]):
             assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
             assert hasattr(data_type, "_daft_schema"), f"{data_type} was not initialized with daft dataclass"
             daft_schema = getattr(data_type, "_daft_schema")
+            _patch_class_for_deserialization(data_type)
+            # if getattr(data_type, "__daft_patched", None) != id(dataclasses._FIELD):
+            #     assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
+            #     fields = data_type.__dict__["__dataclass_fields__"]
+            #     for field in fields.values():
+            #         if type(field._field_type) is type(dataclasses._FIELD):
+            #             field._field_type = dataclasses._FIELD
+            #     setattr(data_type, "__daft_patched", id(dataclasses._FIELD))
 
             def deserialize(items) -> List[Item]:
+
                 block: List[Item] = daft_schema.deserialize_batch(items, data_type)
                 return block
 

@@ -1,6 +1,6 @@
 
 NOTEBOOK_IMAGE_TAG ?= latest
-CLUSTER_NAME ?= ${USER}-default
+CLUSTER_NAME ?= default
 init:
 	poetry install
 	git config core.hooksPath .githooks
