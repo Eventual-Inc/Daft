@@ -23,35 +23,6 @@ jupyterhub:
       JupyterHub:
         authenticator_class: auth0
 
-    # Extra config specified as Python
-    # https://zero-to-jupyterhub.readthedocs.io/en/latest/administrator/advanced.html#hub-extraconfig
-    #
-    # TODO(jaychia): We can make an API request here to retrieve a list of images for profiles
-    # Also, version 4.1 of KubeSpawner (May 19 2022) makes this much nicer with a dropdown menu
-    # within a single profile. We should move to that once it becomes available in a new release
-    # of JupyterHub Kubernetes.
-    extraConfig:
-      00-env-profiles: |
-        def get_profiles(spawner):
-          return [
-            {
-              "display_name": "Daft notebook",
-              "description": "Notebook with Daft installed and environment: My Default Environment",
-              "kubespawner_override": {
-                "image": "941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc0",
-              },
-              "default": True,
-            },
-            {
-              "display_name": "Daft notebook",
-              "description": "Notebook with Daft installed and environment: My Environment 2",
-              "kubespawner_override": {
-                "image": "941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc0",
-              },
-            },
-          ]
-        c.KubeSpawner.profile_list = get_profiles
-
   proxy:
     https:
       enabled: true
@@ -63,6 +34,24 @@ jupyterhub:
   singleuser:
     # All notebooks spawned will use this service account
     serviceAccountName: daft
+
+    # Defines the default image
+    image:
+      name: jupyter/minimal-notebook
+      tag: latest
+
+    profileList:
+      - display_name: "Daft notebook"
+        description: "Notebook with Daft installed and ready to go"
+        kubespawner_override:
+          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc0
+        default: true
+      - display_name: "Daft notebook (experimental)"
+        description: "Experimental build of the Daft notebook"
+        kubespawner_override:
+          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc0
+      - display_name: "Minimal environment"
+        description: "Minimal environment for running just Python"
 
     # Modify the default PVC path to our daftuser $HOME instead
     storage:
