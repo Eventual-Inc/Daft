@@ -32,6 +32,11 @@ jupyterhub:
         contactEmail: sammy@eventualcomputing.com
 
   singleuser:
+    # Use JupyterLab by default
+    defaultUrl: "/lab"
+    extraEnv:
+      JUPYTERHUB_SINGLEUSER_APP: "jupyter_server.serverapp.ServerApp"
+
     # All notebooks spawned will use this service account
     serviceAccountName: daft
 
@@ -44,12 +49,12 @@ jupyterhub:
       - display_name: "Daft notebook"
         description: "Notebook with Daft installed and ready to go"
         kubespawner_override:
-          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc0
+          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc2
         default: true
       - display_name: "Daft notebook (experimental)"
         description: "Experimental build of the Daft notebook"
         kubespawner_override:
-          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc0
+          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc2
       - display_name: "Minimal environment"
         description: "Minimal environment for running just Python"
 
