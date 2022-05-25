@@ -52,12 +52,12 @@ jupyterhub:
       - display_name: "Daft notebook"
         description: "Notebook with Daft installed and ready to go"
         kubespawner_override:
-          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc3
+          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc7
         default: true
       - display_name: "Daft notebook (experimental)"
         description: "Experimental build of the Daft notebook"
         kubespawner_override:
-          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc3
+          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc7
       - display_name: "Minimal environment"
         description: "Minimal environment for running just Python"
 
@@ -66,8 +66,7 @@ jupyterhub:
       homeMountPath: /home/daftuser
 
     extraEnv:
-      DAFT_WORKDIR: /home/daftuser
-      DAFT_REQUIREMENTS_TXT: /opt/daft/requirements.txt
+      DAFT_PACKAGE_ZIP_S3_LOCATION: s3://eventual-release-artifacts-bucket/daft_package-amd64/latest.zip
       DAFT_CLUSTER_HEAD_ADDR: ray://default-ray-head-svc.ray:10001
       DAFT_DATAREPOS_BUCKET: eventual-data-test-bucket
       DAFT_DATAREPOS_PREFIX: datarepos

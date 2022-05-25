@@ -8,8 +8,4 @@ class DaftSettings(BaseSettings):
     DAFT_DATAREPOS_BUCKET: str = "eventual-data-test-bucket"
     DAFT_DATAREPOS_PREFIX: str = "datarepos"
 
-    # TODO(jaychia): These should be refactored into a remote zip file
-    # The working directory that contains Daft
-    DAFT_WORKDIR: Optional[str] = None
-    # A requirements.txt file that Daft uses to specify all app requirements
-    DAFT_REQUIREMENTS_TXT: Optional[str] = None
+    DAFT_PACKAGE_ZIP_S3_LOCATION: Optional[str] = None

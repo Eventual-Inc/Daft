@@ -47,11 +47,9 @@ def init(
         if ray_address is None:
             ray_address = daft_settings.DAFT_CLUSTER_HEAD_ADDR
         if runtime_env is None:
-            if daft_settings.DAFT_REQUIREMENTS_TXT and daft_settings.DAFT_WORKDIR:
+            if daft_settings.DAFT_PACKAGE_ZIP_S3_LOCATION:
                 runtime_env = {
-                    "working_dir": daft_settings.DAFT_WORKDIR,
-                    "pip": daft_settings.DAFT_REQUIREMENTS_TXT,
-                    "excludes": [".cache/**"],
+                    "py_modules": [daft_settings.DAFT_PACKAGE_ZIP_S3_LOCATION],
                 }
 
         _DEFAULT_CONTEXT = _DaftContext(
