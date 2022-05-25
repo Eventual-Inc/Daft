@@ -1,4 +1,4 @@
-
+RAY_IMAGE_TAG ?= latest
 NOTEBOOK_IMAGE_TAG ?= latest
 CLUSTER_NAME ?= default
 
@@ -21,6 +21,17 @@ ray-up:
 ray-down:
 	@helm uninstall -n ray ${CLUSTER_NAME}
 	@kubectl get pods -n ray
+
+deploy-package-zip:
+	@poetry build
+	@mkdir -p dist/full-package
+	@poetry run pip install --upgrade -t dist/full-package dist/*.whl
+	@cd dist/full-package && zip -r - . -x '*.pyc' > ../full-package.zip
+	@aws s3 cp dist/full-package.zip s3://eventual-release-artifacts-bucket/daft_package-amd64/latest.zip
+
+deploy-ray-image:
+	@DOCKER_BUILDKIT=1 docker build . -f Dockerfile.ray -t 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/ray:${RAY_IMAGE_TAG}
+	@docker push  941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/ray:${RAY_IMAGE_TAG}
 
 deploy-notebook-image:
 	@DOCKER_BUILDKIT=1 docker build . -t 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:${NOTEBOOK_IMAGE_TAG}

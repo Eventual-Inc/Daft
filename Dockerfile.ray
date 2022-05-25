@@ -1,0 +1,3 @@
+FROM rayproject/ray:1.12.0-py39
+
+RUN pip install smart_open==6.0.0 boto3==1.23.6

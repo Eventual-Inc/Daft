@@ -1,0 +1,7 @@
+.vscode
+
+.env
+venv
+dist
+**/__pycache__/
+requirements.txt

@@ -22,6 +22,9 @@ jupyterhub:
         auto_login: true
       JupyterHub:
         authenticator_class: auth0
+    
+    extraConfigs:
+
 
   proxy:
     https:
@@ -49,12 +52,12 @@ jupyterhub:
       - display_name: "Daft notebook"
         description: "Notebook with Daft installed and ready to go"
         kubespawner_override:
-          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc2
+          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc3
         default: true
       - display_name: "Daft notebook (experimental)"
         description: "Experimental build of the Daft notebook"
         kubespawner_override:
-          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc2
+          image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/notebook:0.0.6rc3
       - display_name: "Minimal environment"
         description: "Minimal environment for running just Python"
 
