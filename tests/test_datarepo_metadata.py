@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from daft.datarepo.metadata_service import _LocalDatarepoMetadataService
+from daft.datarepos.metadata_service import _LocalDatarepoMetadataService
 
 DATAREPO_ID = "datarepo_foo"
 

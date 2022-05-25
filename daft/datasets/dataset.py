@@ -17,16 +17,17 @@ import pyarrow as pa
 import ray
 import ray.data.dataset_pipeline
 from ray.data.impl.arrow_block import ArrowRow
+from ray.data.row import TableRow
 
 from daft.dataclasses import _patch_class_for_deserialization
-from daft.datarepo import metadata_service
+from daft import datarepos
 
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
 DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.data.ActorPoolStrategy(
     min_size=1,
     max_size=ray.cluster_resources()["CPU"],
 )
-DatarepoInfo = Dict[str, str]
+DatasetInfo = Dict[str, str]
 
 
 Item = TypeVar("Item")
@@ -40,20 +41,20 @@ MapFunc = Union[CallableClass, Callable[[Item], OutputItem]]
 BatchMapFunc = Union[CallableClass, Callable[[Union[BatchItem, Item]], BatchOutputItem]]
 
 
-class Datarepo(Generic[Item]):
-    """Implements Datarepos, which are repositories of Items of data.
+class Dataset(Generic[Item]):
+    """Implements Datasets, which are repositories of Items of data.
 
-    Datarepos are unordered collections of Items. In terms of datastructures, they are roughly
+    Datasets are unordered collections of Items. In terms of datastructures, they are roughly
     analogous to Sets, but provide a rich interactive interface for working with large (millions+)
-    sets of Items. Datarepos are built for interactive computing through a REPL such as a notebook
+    sets of Items. Datasets are built for interactive computing through a REPL such as a notebook
     environment, utilizing Eventual's compute engine for manipulating these large collections of data.
 
-    Datarepos provide methods to manipulate Items, including:
+    Datasets provide methods to manipulate Items, including:
 
-        `.map`:     Runs a function on each Item, and the outputs form a new Datarepo
-        `.sample`:  Retrieves a subset of Items as a new Datarepo
+        `.map`:     Runs a function on each Item, and the outputs form a new Dataset
+        `.sample`:  Retrieves a subset of Items as a new Dataset
 
-    Additionally, Datarepos provide an interactive experience to working with Items to aid rapid visualization:
+    Additionally, Datasets provide an interactive experience to working with Items to aid rapid visualization:
 
         `.preview`:    Visualize the top N number of Items in the current notebook
     """
@@ -63,22 +64,22 @@ class Datarepo(Generic[Item]):
         datarepo_id: str,
         ray_dataset: ray.data.Dataset[Item],
     ):
-        """Creates a new Datarepo
+        """Creates a new Dataset
 
         Args:
             datarepo_id (str): ID of the datarepo
-            ray_dataset (ray.data.Dataset): Dataset that backs this Datarepo
+            ray_dataset (ray.data.Dataset): Dataset that backs this Dataset
         """
         self._id = datarepo_id
         self._ray_dataset = ray_dataset
 
-    def info(self) -> DatarepoInfo:
-        """Retrieves information about the Datarepo. This method never triggers any
-        recomputation, but may return <unknown> values if the Datarepo has not been
+    def info(self) -> DatasetInfo:
+        """Retrieves information about the Dataset. This method never triggers any
+        recomputation, but may return <unknown> values if the Dataset has not been
         materialized yet.
 
         Returns:
-            DatarepoInfo: dictionary of information about the Datarepo
+            DatasetInfo: dictionary of information about the Dataset
         """
         return {
             "id": self._id,
@@ -92,16 +93,16 @@ class Datarepo(Generic[Item]):
     def map(
         self,
         func: MapFunc[Item, OutputItem],
-    ) -> Datarepo[OutputItem]:
-        """Runs a function on each item in the Datarepo, returning a new Datarepo
+    ) -> Dataset[OutputItem]:
+        """Runs a function on each item in the Dataset, returning a new Dataset
 
         Args:
             func (MapFunc[Item, OutputItem]): function to run
 
         Returns:
-            Datarepo[OutputItem]: Datarepo of outputs
+            Dataset[OutputItem]: Dataset of outputs
         """
-        return Datarepo(
+        return Dataset(
             datarepo_id=f"{self._id}:map[{func.__name__}]",
             ray_dataset=self._ray_dataset.map(
                 func,
@@ -114,15 +115,15 @@ class Datarepo(Generic[Item]):
         self,
         batched_func: BatchMapFunc,
         batch_size: int,
-    ) -> Datarepo[OutputItem]:
-        """Runs a function on batches of items in the Datarepo, returning a new Datarepo
+    ) -> Dataset[OutputItem]:
+        """Runs a function on batches of items in the Dataset, returning a new Dataset
 
         Args:
             batched_func (MapFunc[Iterator[Item], Iterator[OutputItem]]): a function that runs on a batch of input
                 data, and outputs a batch of output data
 
         Returns:
-            Datarepo[OutputItem]: Datarepo of outputs
+            Dataset[OutputItem]: Dataset of outputs
         """
         ray_dataset: ray.data.Dataset[OutputItem] = self._ray_dataset.map_batches(
             batched_func,
@@ -131,28 +132,28 @@ class Datarepo(Generic[Item]):
             batch_format="native",
         )
 
-        return Datarepo(
+        return Dataset(
             datarepo_id=f"{self._id}:map_batches[{batched_func.__name__}]",
             ray_dataset=ray_dataset,
         )
 
-    def sample(self, n: int = 5) -> Datarepo[Item]:
-        """Computes and samples `n` Items from the Datarepo
+    def sample(self, n: int = 5) -> Dataset[Item]:
+        """Computes and samples `n` Items from the Dataset
 
         Args:
             n (int, optional): number of items to sample. Defaults to 5.
 
         Returns:
-            Datarepo[Item]: new Datarepo with sampled size
+            Dataset[Item]: new Dataset with sampled size
         """
         head, _ = self._ray_dataset.split_at_indices([n])
-        return Datarepo(
+        return Dataset(
             datarepo_id=f"{self._id}:sample[{n}]",
             ray_dataset=head,
         )
 
-    def take(self, n: int = 5) -> Union[List[Item], List[ArrowRow]]:
-        """Takes `n` Items from the Datarepo and returns a list
+    def take(self, n: int = 5) -> List[Union[Item, TableRow]]:
+        """Takes `n` Items from the Dataset and returns a list
 
         Args:
             n (int, optional): number of items to take. Defaults to 5.
@@ -160,23 +161,23 @@ class Datarepo(Generic[Item]):
         Returns:
             List[Item]: list of items
         """
-        retrieved: List[Item] = []
+        retrieved: List[Union[Item, TableRow]] = []
         for i, row in enumerate(self._ray_dataset.iter_rows()):
             retrieved.append(row)
             if i >= n - 1:
                 break
         return retrieved
 
-    def filter(self, func: MapFunc[Item, bool]) -> Datarepo[Item]:
-        """Filters the Datarepo using a function that returns a boolean indicating whether to keep or discard an item
+    def filter(self, func: MapFunc[Item, bool]) -> Dataset[Item]:
+        """Filters the Dataset using a function that returns a boolean indicating whether to keep or discard an item
 
         Args:
             func (MapFunc[Item, bool]): function to filter with
 
         Returns:
-            Datarepo[Item]: filtered Datarepo
+            Dataset[Item]: filtered Dataset
         """
-        return Datarepo(
+        return Dataset(
             datarepo_id=f"{self._id}:filter[{func.__name__}]]",
             # Type failing because Ray mistakenly requests for Optional[str]
             ray_dataset=self._ray_dataset.filter(func, compute=_get_compute_strategy(func)),  # type: ignore
@@ -185,15 +186,15 @@ class Datarepo(Generic[Item]):
     def save(
         self,
         datarepo_id: str,
-        svc: Optional[metadata_service._DatarepoMetadataService] = None,
+        client: Optional[datarepos.DatarepoClient] = None,
     ) -> None:
         """Save a datarepo to persistent storage
 
         Args:
             datarepo_id (str): ID to save datarepo as
         """
-        if svc is None:
-            svc = metadata_service.get_metadata_service()
+        if client is None:
+            client = datarepos.get_client()
 
         # sample_item = self._ray_dataset.take(1)
 
@@ -212,12 +213,12 @@ class Datarepo(Generic[Item]):
             daft_schema = getattr(first_type, "_daft_schema")
             return daft_schema.serialize(items)
 
-        path = svc.get_path(datarepo_id)
+        path = client.get_path(datarepo_id)
         serialized_ds: ray.data.Dataset[pa.Table] = self._ray_dataset.map_batches(serialize)  # type: ignore
         return serialized_ds.write_parquet(path)
 
     def show(self, n: int = 1) -> None:
-        """Previews the data in a Datarepo"""
+        """Previews the data in a Dataset"""
         items = self.take(n)
 
         import PIL.Image
@@ -243,44 +244,28 @@ class Datarepo(Generic[Item]):
                 display(item)
 
     ###
-    # Static methods: Managing Datarepos
+    # Creation methods: Creating Datasets
     ###
 
-    @staticmethod
-    def list_ids(
-        svc: Optional[metadata_service._DatarepoMetadataService] = None,
-    ) -> List[str]:
-        """List the IDs of all materialized datarepos
-        Args:
-            svc (Optional[metadata_service._DatarepoMetadataService], optional): Defaults to None which will detect
-                the appropriate service to use from the current environment.
-
-        Returns:
-            List[str]: IDs of datarepos
-        """
-        if svc is None:
-            svc = metadata_service.get_metadata_service()
-        return svc.list_ids()
-
     @classmethod
-    def from_id(
+    def from_datarepo_id(
         cls,
         datarepo_id: str,
         data_type: Optional[Type[Item]] = None,
         partitions: Optional[int] = None,
-        svc: Optional[metadata_service._DatarepoMetadataService] = None,
-    ) -> Datarepo[Item]:
-        """Gets a Datarepo by ID
+        client: Optional[datarepos.DatarepoClient] = None,
+    ) -> Dataset[Item]:
+        """Gets a Dataset by ID
 
         Args:
             datarepo_id (str): ID of the datarepo
             data_type (Optional[Type[Item]], optional): Dataclass of the type of data. Defaults to None.
             partitions (Optional[int], optional): number of partitions to split data into. Defaults to None.
-            svc (Optional[metadata_service._DatarepoMetadataService], optional): Defaults to None which will detect
-                the appropriate service to use from the current environment.
+            client (Optional[datarepos.DatarepoClient], optional): Defaults to None which will detect
+                the appropriate client to use from the current environment.
 
         Returns:
-            Datarepo: retrieved Datarepo
+            Dataset: retrieved Dataset
         """
         if data_type is not None:
             assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
@@ -299,9 +284,9 @@ class Datarepo(Generic[Item]):
                 block: List[Item] = daft_schema.deserialize_batch(items, data_type)
                 return block
 
-        if svc is None:
-            svc = metadata_service.get_metadata_service()
-        path = svc.get_path(datarepo_id)
+        if client is None:
+            client = datarepos.get_client()
+        path = client.get_path(datarepo_id)
 
         ds = ray.data.read_parquet(path)
 

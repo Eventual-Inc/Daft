@@ -1,23 +1,6 @@
-from __future__ import annotations
-
 import os
-from typing import List, Protocol
 
-from daft import config
-
-
-def get_metadata_service() -> _DatarepoMetadataService:
-    """Return the appropriate _DatarepoMetadataService as configured by the environment
-
-    Returns:
-        _DatarepoMetadataService: _DatarepoMetadataService to access Datarepo metadata
-    """
-    daft_settings = config.DaftSettings()
-    return _S3DatarepoMetadataService(
-        bucket=daft_settings.DAFT_DATAREPOS_BUCKET,
-        prefix=daft_settings.DAFT_DATAREPOS_PREFIX,
-    )
-
+from typing import Protocol, List
 
 class _DatarepoMetadataService(Protocol):
     """The DatarepoMetadataService provides access to metadata about Datarepos, such as
