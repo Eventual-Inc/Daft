@@ -1,18 +1,16 @@
-from torch import log2_
+import tempfile
 
 from daft.dataclasses import dataclass
 from daft.datarepo.log import DaftLakeLog
 
 
-def test_create_log() -> None:
-    IN_MEMORY_DIR = "memory://"
-
+def _create_log(path: str) -> None:
     @dataclass
     class TestSchema:
         x: int
         name: str
 
-    log = DaftLakeLog(IN_MEMORY_DIR)
+    log = DaftLakeLog(path)
     log.create(TestSchema._daft_schema.arrow_schema())
 
     log.start_transaction("sammy")
@@ -30,7 +28,17 @@ def test_create_log() -> None:
     first_table = log.history().to_arrow_table().to_pandas()
     del log
 
-    log2 = DaftLakeLog(IN_MEMORY_DIR)
+    log2 = DaftLakeLog(path)
     second_table = log2.history().to_arrow_table().to_pandas()
 
     assert first_table.equals(second_table)
+
+
+def test_create_log_in_memory():
+    _create_log("memory://")
+
+
+def test_create_log_local_fs():
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        print(tmpdirname)
+        _create_log(f"file://{tmpdirname}")
