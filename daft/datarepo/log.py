@@ -198,6 +198,14 @@ class DaftLakeLog:
     def history(self) -> DaftActionModelList:
         return copy.deepcopy(self._commits)
 
+    def file_list(self) -> List[str]:
+        df = self._commits.to_arrow_table().to_pandas()
+        add_files = df["operation_params"][df["operation"] == "add"].map(lambda x: x[0][1]).to_list()
+        remove_files = df["operation_params"][df["operation"] == "remove"].map(lambda x: x[0][1]).to_list()
+        net_files = list(set(add_files) - set(remove_files))
+        net_files.sort()
+        return net_files
+
     def add_file(self, file: str) -> None:
         self._add_action(DaftLakeAddFile(user=self._user, source_version=self._current_version, file=file))
 

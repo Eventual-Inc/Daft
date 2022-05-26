@@ -1,5 +1,7 @@
 import tempfile
 
+import ipdb
+
 from daft.dataclasses import dataclass
 from daft.datarepo.log import DaftLakeLog
 
@@ -18,6 +20,7 @@ def _create_log(path: str) -> None:
     log.commit()
 
     log.start_transaction("sammy")
+
     for i in range(5):
         log.add_file(f"test/add_many_file_{i}")
     log.commit()
@@ -30,7 +33,10 @@ def _create_log(path: str) -> None:
     second_table = log2.history().to_arrow_table().to_pandas()
 
     assert first_table.equals(second_table)
-    print(first_table)
+
+    file_list = log2.file_list()
+    assert len(file_list) == 5
+    assert file_list == [f"test/add_many_file_{i}" for i in range(5)]
 
 
 def test_create_log_in_memory():
