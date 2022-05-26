@@ -47,10 +47,8 @@ def __process_class(cls: Type[_T], **kwargs) -> Type[_T]:
     cls = pydataclasses.dataclass(cls)
     daft_schema = DaftSchema(cls)
     setattr(cls, "_daft_schema", daft_schema)
-
-    def dataclass_override_setstate(self, state):
-        _patch_class_for_deserialization(self.__class__)
-        self.__dict__ = state
-
-    setattr(cls, "__setstate__", dataclass_override_setstate)
     return cls
+
+
+def is_daft_dataclass(cls: Type[_T]) -> bool:
+    return pydataclasses.is_dataclass(cls) and hasattr(cls, "_daft_schema")

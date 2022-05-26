@@ -34,6 +34,7 @@ jupyter = "^1.0.0"
 jupyterlab = "^3.4.2"
 jupyterhub = "1.5.0"
 jupyterlab-git = "^0.37.1"
+ipdb = "^0.13.9"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

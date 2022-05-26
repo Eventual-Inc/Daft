@@ -1,5 +1,7 @@
 import dataclasses as pydataclasses
 
+import pyarrow as pa
+
 
 def _default_setter(self, state):
     self.__dict__ = state
