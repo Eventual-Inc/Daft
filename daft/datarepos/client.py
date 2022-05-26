@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
+import fsspec
 from daft import config
-from daft.datarepos import metadata_service
 
 
 class DatarepoClient:
-    def __init__(self, metadata_service: metadata_service._DatarepoMetadataService):
-        self._metadata_service = metadata_service
+    def __init__(self, path: str):
+        pathsplit = path.split("://")
+        if len(pathsplit) != 2:
+            raise ValueError(f"Expected path in format <protocol>://<path> but received: {path}")
+        self._protocol, self._prefix = pathsplit
+        self._fs = fsspec.filesystem(self._protocol)
 
     def list_ids(self) -> List[str]:
         """List the IDs of all datarepos
@@ -16,7 +20,7 @@ class DatarepoClient:
         Returns:
             List[str]: IDs of datarepos
         """
-        return self._metadata_service.list_ids()
+        return [path.replace(self._prefix, "").lstrip("/") for path in self._fs.ls(self._prefix)]
 
     def get_path(self, datarepo_id: str) -> str:
         """Returns the path to a Datarepo's underlying storage
@@ -24,19 +28,16 @@ class DatarepoClient:
         Returns:
             str: path to Datarepo's underlying storage
         """
-        return self._metadata_service.get_path(datarepo_id)
+        return f"{self._protocol}://{self._prefix}/{datarepo_id}"
 
 
-def get_client() -> DatarepoClient:
+def get_client(datarepo_path: Optional[str] = None) -> DatarepoClient:
     """Return the appropriate DatarepoClient as configured by the environment
 
     Returns:
         DatarepoClient: DatarepoClient to access Datarepos
     """
-    daft_settings = config.DaftSettings()
-    return DatarepoClient(
-        metadata_service=metadata_service._S3DatarepoMetadataService(
-            bucket=daft_settings.DAFT_DATAREPOS_BUCKET,
-            prefix=daft_settings.DAFT_DATAREPOS_PREFIX,
-        ),
-    )
+    if datarepo_path is None:
+        daft_settings = config.DaftSettings()
+        datarepo_path = f"s3://{daft_settings.DAFT_DATAREPOS_BUCKET}/{daft_settings.DAFT_DATAREPOS_PREFIX}"
+    return DatarepoClient(datarepo_path)

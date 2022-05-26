@@ -9,7 +9,6 @@ import ray
 from daft import Dataset
 from daft.dataclasses import dataclass
 from daft.datarepos import DatarepoClient
-from daft.datarepos.metadata_service import _LocalDatarepoMetadataService
 
 
 @dataclass
@@ -30,7 +29,7 @@ FAKE_DATACLASSES = [FakeDataclass(foo=d["foo"]) for d in FAKE_DATA]
 @pytest.fixture()
 def empty_datarepo_client():
     with tempfile.TemporaryDirectory() as tmpdir:
-        yield DatarepoClient(metadata_service=_LocalDatarepoMetadataService(tmpdir))
+        yield DatarepoClient(f"file://{tmpdir}")
 
 
 @pytest.fixture()
