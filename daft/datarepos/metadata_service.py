@@ -1,6 +1,6 @@
 import os
+from typing import List, Protocol
 
-from typing import Protocol, List
 
 class _DatarepoMetadataService(Protocol):
     """The DatarepoMetadataService provides access to metadata about Datarepos, such as

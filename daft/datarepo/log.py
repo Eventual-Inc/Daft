@@ -105,12 +105,13 @@ class DaftLakeRemoveFile(DaftLakeAction):
 class DaftLakeUpdateMetadata(DaftLakeAction):
     name = "update_metadata"
 
-    def __init__(self, user: str, source_version: int, metadata: Dict[str, Any]) -> None:
+    def __init__(self, user: str, source_version: int, key: str, value: str) -> None:
         DaftLakeAction.__init__(self, user, source_version)
-        self._metadata = metadata
+        self._key = key
+        self._value = value
 
-    def operation_params(self) -> Dict[str, Any]:
-        return {"updates": json.dumps(self._metadata)}
+    def operation_params(self) -> Dict[str, str]:
+        return {self._key: self._value}
 
 
 class DaftLakeLog:
@@ -122,7 +123,7 @@ class DaftLakeLog:
         self._fs = get_filesystem_from_path(path)
         self._commits: DaftActionModelList = DaftActionModelList(actions=list())
         self._to_commit: DaftActionModelList = DaftActionModelList(actions=list())
-
+        self._metadata: Dict[str, str] = dict()
         self._current_version: Optional[int] = None
         self._user: Optional[str] = None
         self._schema: Optional[pa.Schema] = None
@@ -148,11 +149,16 @@ class DaftLakeLog:
             self._fs.makedir(self._logdir)
             return
         files = sorted(self._fs.glob(f"{self._logdir}/*.json"))
+
         for file in files:
             with self._fs.open(file) as f:
-                data_model = DaftActionModelList(**json.load(f))
-
-        raise NotImplementedError()
+                self._commits.actions.extend(DaftActionModelList(**json.load(f)).actions)
+        for action in self._commits.actions:
+            self._current_version = action.version
+            if action.operation == "update_metadata":
+                if "schema" in action.operation_params:
+                    self._schema = self.__deserialize_schema(action.operation_params["schema"])
+                self._metadata.update(action.operation_params)
 
     def create(self, schema: pa.Schema, already_exist_ok: bool = False) -> bool:
         assert self._current_version is None, "log already exists"
@@ -202,15 +208,21 @@ class DaftLakeLog:
             DaftLakeUpdateMetadata(
                 user=self._user,
                 source_version=self._current_version,
-                metadata={"schema": self._serialize_schema(schema)},
+                key="schema",
+                value=self.__serialize_schema(schema),
             )
         )
 
-    def _serialize_schema(self, arrow_schema: pa.Schema) -> bytes:
+    def __serialize_schema(self, arrow_schema: pa.Schema) -> bytes:
         empty_table = arrow_schema.empty_table()
         buffer = pa.serialize(empty_table).to_buffer()
         data = buffer.to_pybytes()
         return base64.b64encode(data).decode()
+
+    def __deserialize_schema(self, string_data: str) -> pa.Schema:
+        data = base64.b64decode(string_data.encode())
+        table = pa.deserialize(data)
+        return table.schema
 
     def _add_action(self, action: DaftLakeAction) -> int:
         assert self._in_transaction, "you can only add actions during a transaction"

@@ -1,3 +1,5 @@
+from torch import log2_
+
 from daft.dataclasses import dataclass
 from daft.datarepo.log import DaftLakeLog
 
@@ -25,5 +27,10 @@ def test_create_log() -> None:
     log.start_transaction("sammy")
     log.remove_file("test/add_one_file")
     log.commit()
+    first_table = log.history().to_arrow_table().to_pandas()
+    del log
 
-    print(f"\n{log.history().to_arrow_table().to_pandas()}")
+    log2 = DaftLakeLog(IN_MEMORY_DIR)
+    second_table = log2.history().to_arrow_table().to_pandas()
+
+    assert first_table.equals(second_table)

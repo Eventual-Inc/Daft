@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import os
-from typing import List, Protocol
+from typing import List
 
 from daft import config
 from daft.datarepos import metadata_service
 
 
 class DatarepoClient:
-
     def __init__(self, metadata_service: metadata_service._DatarepoMetadataService):
         self._metadata_service = metadata_service
 

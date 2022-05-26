@@ -8,8 +8,8 @@ import ray
 
 from daft import Dataset
 from daft.dataclasses import dataclass
-from daft.datarepos.metadata_service import _LocalDatarepoMetadataService
 from daft.datarepos import DatarepoClient
+from daft.datarepos.metadata_service import _LocalDatarepoMetadataService
 
 
 @dataclass

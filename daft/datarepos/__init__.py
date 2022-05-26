@@ -1,4 +1,4 @@
-from .client import get_client, DatarepoClient
+from .client import DatarepoClient, get_client
 
 __all__ = [
     "get_client",
