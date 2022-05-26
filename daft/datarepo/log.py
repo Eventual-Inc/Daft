@@ -160,9 +160,10 @@ class DaftLakeLog:
                     self._schema = self.__deserialize_schema(action.operation_params["schema"])
                 self._metadata.update(action.operation_params)
 
-    def create(self, schema: pa.Schema, already_exist_ok: bool = False) -> bool:
+    def create(self, name: str, schema: pa.Schema, already_exist_ok: bool = False) -> bool:
         assert self._current_version is None, "log already exists"
         self.start_transaction()
+        self.update_name(name)
         self.update_schema(schema)
         status = self.commit() != 0
         self._schema = schema
@@ -211,6 +212,11 @@ class DaftLakeLog:
                 key="schema",
                 value=self.__serialize_schema(schema),
             )
+        )
+
+    def update_name(self, name: str) -> None:
+        self._add_action(
+            DaftLakeUpdateMetadata(user=self._user, source_version=self._current_version, key="name", value=name)
         )
 
     def __serialize_schema(self, arrow_schema: pa.Schema) -> bytes:

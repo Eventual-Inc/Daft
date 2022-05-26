@@ -11,7 +11,7 @@ def _create_log(path: str) -> None:
         name: str
 
     log = DaftLakeLog(path)
-    log.create(TestSchema._daft_schema.arrow_schema())
+    log.create("test1", TestSchema._daft_schema.arrow_schema())
 
     log.start_transaction("sammy")
     log.add_file("test/add_one_file")
@@ -26,12 +26,11 @@ def _create_log(path: str) -> None:
     log.remove_file("test/add_one_file")
     log.commit()
     first_table = log.history().to_arrow_table().to_pandas()
-    del log
-
     log2 = DaftLakeLog(path)
     second_table = log2.history().to_arrow_table().to_pandas()
 
     assert first_table.equals(second_table)
+    print(first_table)
 
 
 def test_create_log_in_memory():
