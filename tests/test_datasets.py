@@ -60,8 +60,6 @@ def test_datarepo_from_datarepo_id(ray_cluster: None, populated_datarepo_client:
     datarepo_id = populated_datarepo_client.list_ids()[0]
     datarepo = Dataset.from_datarepo_id(datarepo_id, data_type=FakeDataclass, client=populated_datarepo_client)
     assert datarepo._id == DATAREPO_ID
-
-    # TODO(sammy): This will throw an error because .get does not yet deserialize the data correctly
     assert [row for row in datarepo._ray_dataset.iter_rows()] == FAKE_DATACLASSES
 
 
@@ -74,8 +72,6 @@ def test_datarepo_from_datarepo_id_load_column_subset(ray_cluster: None, populat
         client=populated_datarepo_client,
     )
     assert datarepo._id == DATAREPO_ID
-
-    # TODO(sammy): This will throw an error because .get does not yet deserialize the data correctly
     assert [row for row in datarepo._ray_dataset.iter_rows()] == [
         FakeDataclass(foo=dc.foo, bar=None) for dc in FAKE_DATACLASSES
     ]

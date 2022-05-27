@@ -19,7 +19,6 @@ import ray.data.dataset_pipeline
 from ray.data.impl.arrow_block import ArrowRow
 from ray.data.row import TableRow
 
-from daft.dataclasses import DaftDataclassField
 from daft import datarepos
 from daft.dataclasses import _patch_class_for_deserialization
 
@@ -290,10 +289,7 @@ class Dataset(Generic[Item]):
             client = datarepos.get_client()
         path = client.get_path(datarepo_id)
 
-        ds = ray.data.read_parquet(
-            path,
-            columns=columns,
-        )
+        ds = ray.data.read_parquet(path, columns=columns)
 
         if partitions is not None:
             ds = ds.repartition(partitions, shuffle=True)
