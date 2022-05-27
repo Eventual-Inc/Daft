@@ -43,6 +43,11 @@ else:
             return wrap(_cls)
 
 
+@pydataclasses.dataclass(frozen=True)
+class DaftDataclassField:
+    name: str
+
+
 def __process_class(cls: Type[_T], **kwargs) -> Type[_T]:
     cls = pydataclasses.dataclass(cls)
     daft_schema = DaftSchema(cls)

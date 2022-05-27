@@ -8,4 +8,4 @@ class DaftSettings(BaseSettings):
     DAFT_DATAREPOS_BUCKET: str = "eventual-data-test-bucket"
     DAFT_DATAREPOS_PREFIX: str = "datarepos"
 
-    DAFT_PACKAGE_ZIP_S3_LOCATION: Optional[str] = None
+    DAFT_PACKAGE_ZIP_S3_LOCATION: Optional[str] = "s3://eventual-release-artifacts-bucket/daft_package-amd64/latest.zip"
