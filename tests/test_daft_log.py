@@ -3,7 +3,7 @@ import tempfile
 import ipdb
 
 from daft.dataclasses import dataclass
-from daft.datarepo.log import DaftLakeLog
+from daft.datarepos.log import DaftLakeLog
 
 
 def _create_log(path: str) -> None:
