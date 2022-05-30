@@ -19,4 +19,4 @@ spec:
     port: 6379
     targetPort: 6379
   selector:
-    component: ray-head
+    component: {{ required "A valid .clusterName value is required!" .Values.clusterName }}-ray-head

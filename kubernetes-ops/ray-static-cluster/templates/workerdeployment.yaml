@@ -8,12 +8,12 @@ spec:
   replicas: {{ .Values.workerReplicaCount }}
   selector:
     matchLabels:
-      component: ray-worker
+      component: {{ required "A valid .clusterName value is required!" .Values.clusterName }}-ray-worker
       type: ray
   template:
     metadata:
       labels:
-        component: ray-worker
+        component: {{ required "A valid .clusterName value is required!" .Values.clusterName }}-ray-worker
         type: ray
     spec:
       # Use Daft service account that should be linked to correct IAM Role via IRSA

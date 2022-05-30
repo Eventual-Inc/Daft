@@ -8,12 +8,12 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      component: ray-head
+      component: {{ required "A valid .clusterName value is required!" .Values.clusterName }}-ray-head
       type: ray
   template:
     metadata:
       labels:
-        component: ray-head
+        component: {{ required "A valid .clusterName value is required!" .Values.clusterName }}-ray-head
         type: ray
     spec:
       # Use Daft service account that should be linked to correct IAM Role via IRSA
