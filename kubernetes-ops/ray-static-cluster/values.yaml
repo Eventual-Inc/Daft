@@ -8,4 +8,3 @@ rayImage: "941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/ray:0.0.1"
 workerReplicaCount: "4"
 workerCPURequest: 8  # should match the NUM_CPUs on our machine type
 workerMemRequestGi: 32  # should match the Memory on our machine type
-objectStoreMemoryBytes: "20000000000"
