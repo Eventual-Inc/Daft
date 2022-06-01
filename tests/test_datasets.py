@@ -11,7 +11,7 @@ import ray
 
 from daft import Dataset
 from daft.dataclasses import dataclass
-from daft.datarepos import DatarepoClient
+from daft.datarepo import DatarepoClient
 
 
 @dataclass

@@ -1,9 +1,9 @@
-from daft.datarepos.client import DatarepoClient
+from daft.datarepo.client import DatarepoClient
 import numpy as np
 import ray
 from ray.data.impl.arrow_block import ArrowRow
 
-from daft.datarepos import get_client, DatarepoClient
+from daft.datarepo import get_client, DatarepoClient
 
 from typing import Optional, List
 

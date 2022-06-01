@@ -1,7 +1,7 @@
 import tempfile
 
 from daft.dataclasses import dataclass
-from daft.datarepos.log import DaftLakeLog
+from daft.datarepo.log import DaftLakeLog
 
 
 def _create_log(path: str) -> None:

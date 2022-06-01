@@ -19,8 +19,8 @@ import ray.data.dataset_pipeline
 from ray.data.impl.arrow_block import ArrowRow
 from ray.data.row import TableRow
 
-from daft import datarepos
-from daft.datasets.read_api import read_datarepo
+from daft import datarepo
+from daft.dataset.read_api import read_datarepo
 from daft.dataclasses import _patch_class_for_deserialization
 
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
@@ -187,7 +187,7 @@ class Dataset(Generic[Item]):
     def save(
         self,
         datarepo_id: str,
-        client: Optional[datarepos.DatarepoClient] = None,
+        client: Optional[datarepo.DatarepoClient] = None,
     ) -> None:
         """Save a datarepo to persistent storage
 
@@ -195,7 +195,7 @@ class Dataset(Generic[Item]):
             datarepo_id (str): ID to save datarepo as
         """
         if client is None:
-            client = datarepos.get_client()
+            client = datarepo.get_client()
 
         # sample_item = self._ray_dataset.take(1)
 
@@ -255,7 +255,7 @@ class Dataset(Generic[Item]):
         columns: Optional[List[str]] = None,
         data_type: Optional[Type[Item]] = None,
         partitions: Optional[int] = None,
-        client: Optional[datarepos.DatarepoClient] = None,
+        client: Optional[datarepo.DatarepoClient] = None,
     ) -> Dataset[Item]:
         """Gets a Dataset by ID
 
@@ -287,7 +287,7 @@ class Dataset(Generic[Item]):
                 return block
 
         if client is None:
-            client = datarepos.get_client()
+            client = datarepo.get_client()
 
         ds = read_datarepo(
             datarepo_id,
