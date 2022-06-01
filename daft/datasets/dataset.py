@@ -289,7 +289,10 @@ class Dataset(Generic[Item]):
             client = datarepos.get_client()
         path = client.get_path(datarepo_id)
 
-        ds = ray.data.read_parquet(path, columns=columns)
+        ds = ray.data.read_parquet(
+            path,
+            columns=columns and [f"root.{col}" for col in columns],
+        )
 
         if partitions is not None:
             ds = ds.repartition(partitions, shuffle=True)

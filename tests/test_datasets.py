@@ -15,7 +15,7 @@ from daft.datarepos import DatarepoClient
 @dataclass
 class FakeDataclass:
     foo: int
-    bar: str
+    bar: int
 
 
 @dataclass
@@ -24,7 +24,7 @@ class FakeNumpyDataclass:
 
 
 DATAREPO_ID = "datarepo_foo"
-FAKE_DATA = [{"foo": i, "bar": str(i)} for i in range(10)]
+FAKE_DATA = [{"foo": i, "bar": i} for i in range(10)]
 FAKE_DATACLASSES = [FakeDataclass(foo=d["foo"], bar=d["bar"]) for d in FAKE_DATA]
 
 
@@ -73,7 +73,7 @@ def test_datarepo_from_datarepo_id_load_column_subset(ray_cluster: None, populat
     )
     assert datarepo._id == DATAREPO_ID
     assert [row for row in datarepo._ray_dataset.iter_rows()] == [
-        FakeDataclass(foo=dc.foo, bar=None) for dc in FAKE_DATACLASSES
+        FakeDataclass(foo=dc.foo, bar=None) for dc in FAKE_DATACLASSES  # type: ignore
     ]
 
 
@@ -96,7 +96,7 @@ def test_save_datarepo(ray_cluster: None, empty_datarepo_client: DatarepoClient)
 
 
 def test_datarepo_map(ray_cluster: None):
-    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=str(i)))
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=i))
     datarepo = Dataset(datarepo_id=DATAREPO_ID, ray_dataset=ds)
 
     def f(item: FakeDataclass) -> int:
@@ -107,7 +107,7 @@ def test_datarepo_map(ray_cluster: None):
 
 
 def test_datarepo_map_actor(ray_cluster: None):
-    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=str(i)))
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=i))
     datarepo = Dataset(datarepo_id=DATAREPO_ID, ray_dataset=ds)
 
     class Actor:
@@ -124,7 +124,7 @@ def test_datarepo_map_actor(ray_cluster: None):
 
 
 def test_datarepo_map_batches(ray_cluster: None):
-    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=str(i)))
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=i))
     datarepo = Dataset(datarepo_id=DATAREPO_ID, ray_dataset=ds)
 
     def f(items: List[FakeDataclass]) -> List[int]:
@@ -135,7 +135,7 @@ def test_datarepo_map_batches(ray_cluster: None):
 
 
 def test_datarepo_map_batches_actor(ray_cluster: None):
-    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=str(i)))
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=i))
     datarepo = Dataset(datarepo_id=DATAREPO_ID, ray_dataset=ds)
 
     class Actor:
@@ -151,18 +151,18 @@ def test_datarepo_map_batches_actor(ray_cluster: None):
 
 
 def test_datarepo_filter(ray_cluster: None):
-    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=str(i)))
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=i))
     datarepo = Dataset(datarepo_id=DATAREPO_ID, ray_dataset=ds)
 
     def f(item: FakeDataclass) -> bool:
         return item.foo < 5
 
     mapped_repo: Dataset[int] = datarepo.filter(f)
-    assert [row for row in mapped_repo._ray_dataset.iter_rows()] == [FakeDataclass(foo=i, bar=str(i)) for i in range(5)]
+    assert [row for row in mapped_repo._ray_dataset.iter_rows()] == [FakeDataclass(foo=i, bar=i) for i in range(5)]
 
 
 def test_datarepo_filter_actor(ray_cluster: None):
-    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=str(i)))
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=i))
     datarepo = Dataset(datarepo_id=DATAREPO_ID, ray_dataset=ds)
 
     class Actor:
@@ -182,14 +182,14 @@ def test_datarepo_filter_actor(ray_cluster: None):
 
 
 def test_datarepo_take(ray_cluster: None):
-    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=str(i)))
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=i))
     datarepo = Dataset(datarepo_id=DATAREPO_ID, ray_dataset=ds)
     sample = datarepo.take(5)
-    assert sample == [FakeDataclass(foo=i, bar=str(i)) for i in range(5)]
+    assert sample == [FakeDataclass(foo=i, bar=i) for i in range(5)]
 
 
 def test_datarepo_sample(ray_cluster: None):
-    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=str(i)))
+    ds = ray.data.range(10).map(lambda i: FakeDataclass(foo=i, bar=i))
     datarepo = Dataset(datarepo_id=DATAREPO_ID, ray_dataset=ds)
     sample_repo = datarepo.sample(5)
-    assert [row for row in sample_repo._ray_dataset.iter_rows()] == [FakeDataclass(foo=i, bar=str(i)) for i in range(5)]
+    assert [row for row in sample_repo._ray_dataset.iter_rows()] == [FakeDataclass(foo=i, bar=i) for i in range(5)]
