@@ -20,6 +20,7 @@ from ray.data.impl.arrow_block import ArrowRow
 from ray.data.row import TableRow
 
 from daft import datarepos
+from daft.datasets.read_api import read_datarepo
 from daft.dataclasses import _patch_class_for_deserialization
 
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
@@ -287,10 +288,10 @@ class Dataset(Generic[Item]):
 
         if client is None:
             client = datarepos.get_client()
-        path = client.get_path(datarepo_id)
 
-        ds = ray.data.read_parquet(
-            path,
+        ds = read_datarepo(
+            datarepo_id,
+            datarepo_client=client,
             columns=columns and [f"root.{col}" for col in columns],
         )
 

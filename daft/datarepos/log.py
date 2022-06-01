@@ -6,7 +6,6 @@ import os
 from datetime import datetime
 from typing import Any, ClassVar, Dict, List, Optional
 
-import ipdb
 import pyarrow as pa
 import pydantic
 from sqlalchemy import true

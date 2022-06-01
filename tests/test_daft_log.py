@@ -1,7 +1,5 @@
 import tempfile
 
-import ipdb
-
 from daft.dataclasses import dataclass
 from daft.datarepos.log import DaftLakeLog
 

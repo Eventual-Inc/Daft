@@ -30,6 +30,23 @@ class DatarepoClient:
         """
         return f"{self._protocol}://{self._prefix}/{datarepo_id}"
 
+    def get_parquet_filepaths(self, datarepo_id: str) -> List[str]:
+        """Returns a sorted list of filepaths to the Parquet files that make up this datarepo
+
+        Args:
+            datarepo_id (str): ID of the datarepo
+
+        Returns:
+            List[str]: list of paths to Parquet files
+        """
+        return sorted(
+            [
+                f"{self._protocol}://{path}"
+                for path in self._fs.ls(f"{self._prefix}/{datarepo_id}")
+                if path.endswith(".parquet")
+            ]
+        )
+
 
 def get_client(datarepo_path: Optional[str] = None) -> DatarepoClient:
     """Return the appropriate DatarepoClient as configured by the environment

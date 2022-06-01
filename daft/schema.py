@@ -227,8 +227,6 @@ class DaftSchema(Generic[_T]):
             py_obj = target_type(**post_obj)
             values.append(py_obj)
         return values
-        # import pdb
-        # pdb.set_trace()
 
     @classmethod
     def parse_dataclass(cls, t: Type):

@@ -2,6 +2,8 @@ import tempfile
 import dataclasses as pydataclasses
 from typing import List
 
+import os
+import uuid
 import numpy as np
 import pyarrow.parquet as pq
 import pytest
@@ -37,9 +39,10 @@ def empty_datarepo_client():
 @pytest.fixture()
 def populated_datarepo_client(empty_datarepo_client: DatarepoClient):
     path = empty_datarepo_client.get_path(DATAREPO_ID)
+    empty_datarepo_client._fs.mkdir(path)
     daft_schema = getattr(FakeDataclass, "_daft_schema")
     mock_tbl = daft_schema.serialize(FAKE_DATACLASSES)
-    pq.write_table(mock_tbl, path)
+    pq.write_table(mock_tbl, os.path.join(path, str(uuid.uuid4()) + ".parquet"))
     yield empty_datarepo_client
 
 
