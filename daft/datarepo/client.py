@@ -1,20 +1,16 @@
 from __future__ import annotations
-import dataclasses
 import logging
 
 
-from typing import List, Optional
-from os import path
 import re
-import fsspec
-import pyarrow as pa
-import ray
-from ray.data.impl.arrow_block import ArrowRow
+from os import path
+from typing import List, Optional
 
-from typing import List, Optional, Type, TypeVar
+import fsspec
+
+from typing import List, Optional, TypeVar
 
 from daft import config
-from daft.dataset import Dataset
 
 
 logger = logging.getLogger(__name__)
@@ -36,9 +32,9 @@ class DatarepoClient:
         Returns:
             List[str]: IDs of datarepos
         """
-        pattern_to_search = path.join(self._prefix, f'**/_log')
+        pattern_to_search = path.join(self._prefix, f"**/_log")
         dirs_with_log = self._fs.glob(pattern_to_search)
-        id_pattern = f'{self._prefix}/(.*)/_log'
+        id_pattern = f"{self._prefix}/(.*)/_log"
         lexer = re.compile(id_pattern)
         dirs_to_return = []
         for dir in dirs_with_log:
