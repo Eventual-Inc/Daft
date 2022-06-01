@@ -108,12 +108,10 @@ class SchemaParser:
         assert isinstance(schema, pa.Schema)
         n_fields = len(schema.names)
 
-        assert set(schema.names) == pydict.keys(), f"{set(schema.names)} vs {pydict.keys()}"
         for i in range(n_fields):
             field = schema.field(i)
             name = field.name
-            assert name in pydict
-            pydict[name] = self.parse_field(field, pydict[name])
+            pydict[name] = self.parse_field(field, pydict[name]) if name in pydict else None
 
         return pydict
 
@@ -193,7 +191,7 @@ class DaftSchema(Generic[_T]):
     def __init__(self, pytype: Type[_T]) -> None:
         assert pydataclasses.is_dataclass(pytype) and isinstance(pytype, type)
         root = DaftSchema.parse_type("root", pytype)
-        self.schema = pa.schema([root])
+        self.schema = pa.schema(root.flatten())
         self.pytype = pytype
 
     def arrow_schema(self) -> pa.Schema:
@@ -206,7 +204,7 @@ class DaftSchema(Generic[_T]):
         #     _patch_class_for_deserialization(objs[0])
         for o in objs:
             assert pydataclasses.is_dataclass(o)
-            obj_dict = {"root": copy.deepcopy(o.__dict__)}
+            obj_dict = {f"root.{key}": val for key, val in copy.deepcopy(o.__dict__).items()}
             obj_dict = sp.parse_schema(self.schema, obj_dict)
             # obj_dict = self.resolve_conversions(self.schema, obj_dict)
             values.append(obj_dict)
@@ -223,7 +221,8 @@ class DaftSchema(Generic[_T]):
         objs = batch.to_pylist()
         values = []
         for o in objs:
-            post_obj = sp.parse_schema(self.schema, o)["root"]
+            post_obj = sp.parse_schema(self.schema, o)
+            post_obj = {key[len(f"root.") :]: val for key, val in post_obj.items() if key.startswith("root.")}
             # py_obj = dacite.from_dict(data_class=target_type, data=post_obj)
             py_obj = target_type(**post_obj)
             values.append(py_obj)

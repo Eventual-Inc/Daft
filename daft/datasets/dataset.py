@@ -251,6 +251,7 @@ class Dataset(Generic[Item]):
     def from_datarepo_id(
         cls,
         datarepo_id: str,
+        columns: Optional[List[str]] = None,
         data_type: Optional[Type[Item]] = None,
         partitions: Optional[int] = None,
         client: Optional[datarepos.DatarepoClient] = None,
@@ -288,7 +289,10 @@ class Dataset(Generic[Item]):
             client = datarepos.get_client()
         path = client.get_path(datarepo_id)
 
-        ds = ray.data.read_parquet(path)
+        ds = ray.data.read_parquet(
+            path,
+            columns=columns and [f"root.{col}" for col in columns],
+        )
 
         if partitions is not None:
             ds = ds.repartition(partitions, shuffle=True)

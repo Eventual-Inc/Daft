@@ -22,18 +22,15 @@ def test_simple_schema() -> None:
     arrow_schema = daft_schema.arrow_schema()
     assert isinstance(arrow_schema, pa.Schema)
     assert len(arrow_schema.names) == 1
-    root = arrow_schema.field(0).type
-    assert pa.types.is_struct(root)
-    assert root.num_fields == 1
-    item_field = root[0]
-    assert item_field.name == "item"
+    item_field = arrow_schema.field(0)
+    assert item_field.name == "root.item"
     assert pa.types.is_integer(item_field.type)
 
     to_serialize = [SimpleClass(i) for i in range(5)]
     table = daft_schema.serialize(to_serialize)
     assert table.schema == arrow_schema
-    data = table["root"].to_pylist()
-    values = [d["item"] for d in data]
+    data = table.to_pylist()
+    values = [d["root.item"] for d in data]
     assert values == list(range(5))
 
     back_to_py = daft_schema.deserialize_batch(table, SimpleClass)
@@ -49,19 +46,16 @@ def test_conversion_schema() -> None:
     arrow_schema = daft_schema.arrow_schema()
     assert isinstance(arrow_schema, pa.Schema)
     assert len(arrow_schema.names) == 1
-    root = arrow_schema.field(0).type
-    assert pa.types.is_struct(root)
-    assert root.num_fields == 1
-    item_field = root[0]
-    assert item_field.name == "item"
+    item_field = arrow_schema.field(0)
+    assert item_field.name == "root.item"
     assert pa.types.is_binary(item_field.type)
 
     to_serialize = [SimpleClass(np.full(i + 1, i)) for i in range(5)]
     table = daft_schema.serialize(to_serialize)
     assert table.schema == arrow_schema
-    data = table["root"].to_pylist()
+    data = table.to_pylist()
     for i, d in enumerate(data):
-        v = d["item"]
+        v = d["root.item"]
         assert type(v) == bytes
         with io.BytesIO(v) as f:
             recreated_np = np.load(f)
@@ -102,15 +96,12 @@ def test_schema_daft_field_numpy() -> None:
     arrow_schema = daft_schema.arrow_schema()
     assert isinstance(arrow_schema, pa.Schema)
     assert len(arrow_schema.names) == 1
-    root = arrow_schema.field(0).type
-    assert pa.types.is_struct(root)
-    assert root.num_fields == 1
-    img_field = root[0]
-    assert img_field.name == "img"
+    img_field = arrow_schema.field(0)
+    assert img_field.name == "root.img"
     assert pa.types.is_binary(img_field.type)
     to_serialize = [SimpleDaftField(np.ones(i + 1, dtype=np.uint8)) for i in range(5)]
     table = daft_schema.serialize(to_serialize)
-    data = table[0].to_pylist()
+    data = table.to_pylist()
 
     def is_jpeg(buffer):
         # Magic Headers for JPEG
@@ -120,8 +111,8 @@ def test_schema_daft_field_numpy() -> None:
         return True
 
     for d in data:
-        assert "img" in d
-        buffer = d["img"]
+        assert "root.img" in d
+        buffer = d["root.img"]
         assert is_jpeg(buffer)
 
     back_to_py = daft_schema.deserialize_batch(table, SimpleDaftField)
@@ -141,15 +132,12 @@ def test_schema_daft_field_PIL() -> None:
     arrow_schema = daft_schema.arrow_schema()
     assert isinstance(arrow_schema, pa.Schema)
     assert len(arrow_schema.names) == 1
-    root = arrow_schema.field(0).type
-    assert pa.types.is_struct(root)
-    assert root.num_fields == 1
-    img_field = root[0]
-    assert img_field.name == "img"
+    img_field = arrow_schema.field(0)
+    assert img_field.name == "root.img"
     assert pa.types.is_binary(img_field.type)
     to_serialize = [SimpleDaftField(PIL.Image.new("RGB", (i, i))) for i in range(1, 6)]
     table = daft_schema.serialize(to_serialize)
-    data = table[0].to_pylist()
+    data = table.to_pylist()
 
     def is_jpeg(buffer):
         # Magic Headers for JPEG
@@ -159,8 +147,8 @@ def test_schema_daft_field_PIL() -> None:
         return True
 
     for d in data:
-        assert "img" in d
-        buffer = d["img"]
+        assert "root.img" in d
+        buffer = d["root.img"]
         assert is_jpeg(buffer)
 
     back_to_py = daft_schema.deserialize_batch(table, SimpleDaftField)
