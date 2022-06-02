@@ -70,7 +70,7 @@ class DatarepoClient:
 
         Returns:
             Dataset[Dataclass]: Dataset containing the retrieved data from the Datarepo
-        """    
+        """
         if data_type != ArrowRow:
             assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
             assert hasattr(data_type, "_daft_schema"), f"{data_type} was not initialized with daft dataclass"
