@@ -115,7 +115,7 @@ class DaftLakeUpdateMetadata(DaftLakeAction):
 
 class DaftLakeLog:
     SUBDIR = "_log"
-    DATADIR = '_data'
+    DATADIR = "_data"
 
     def __init__(self, path: str) -> None:
         self.path = path

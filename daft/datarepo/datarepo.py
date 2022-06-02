@@ -59,7 +59,7 @@ class DataRepo:
             assert daft_schema is not None
             arrow_table = daft_schema.serialize(block)
             pq.write_table(arrow_table, filepath, filesystem=filesystem)
-            return [filepath]
+            return [f"{protocol}:{filepath}"]
 
         num_partitions = ceil(dataset.count() // rows_per_partition)
         dataset = dataset.repartition(num_partitions, shuffle=True)

@@ -1,8 +1,8 @@
+import os
 import tempfile
+import uuid
 from typing import List
 
-import os
-import uuid
 import numpy as np
 import pyarrow.parquet as pq
 import pytest

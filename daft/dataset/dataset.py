@@ -20,6 +20,7 @@ from ray.data.impl.arrow_block import ArrowRow
 from ray.data.row import TableRow
 
 from daft.dataclasses import _patch_class_for_deserialization
+from daft.dataset.read_api import read_datarepo
 
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
 DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.data.ActorPoolStrategy(
