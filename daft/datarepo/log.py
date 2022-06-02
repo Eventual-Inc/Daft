@@ -115,10 +115,12 @@ class DaftLakeUpdateMetadata(DaftLakeAction):
 
 class DaftLakeLog:
     SUBDIR = "_log"
+    DATADIR = '_data'
 
     def __init__(self, path: str) -> None:
         self.path = path
         self._logdir = os.path.join(self.path, self.SUBDIR)
+        self._data_dir = os.path.join(self.path, self.DATADIR)
         self._fs = get_filesystem_from_path(path)
         self._commits: DaftActionModelList = DaftActionModelList(actions=list())
         self._to_commit: DaftActionModelList = DaftActionModelList(actions=list())
@@ -169,7 +171,10 @@ class DaftLakeLog:
         return status
 
     def schema(self) -> pa.Schema:
-        self._schema
+        return self._schema
+
+    def data_dir(self) -> str:
+        return self._data_dir
 
     def commit(self) -> int:
         if len(self._to_commit.actions) == 0:
@@ -189,13 +194,19 @@ class DaftLakeLog:
             f.write(self._to_commit.json())
 
         self._commits.actions.extend(self._to_commit.actions)
+        num_commited_actions = len(self._to_commit.actions)
         self._to_commit.actions.clear()
         self._current_version = commit_version
         self._user = None
         self._in_transaction = False
 
+        return num_commited_actions
+
     def history(self) -> DaftActionModelList:
         return copy.deepcopy(self._commits)
+
+    def is_empty(self) -> bool:
+        return len(self._commits.actions) == 0
 
     def file_list(self) -> List[str]:
         df = self._commits.to_arrow_table().to_pandas()
