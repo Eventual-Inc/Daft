@@ -19,8 +19,6 @@ import ray.data.dataset_pipeline
 from ray.data.impl.arrow_block import ArrowRow
 from ray.data.row import TableRow
 
-from daft import datarepo
-from daft.dataset.read_api import read_datarepo
 from daft.dataclasses import _patch_class_for_deserialization
 
 # TODO(jaychia): We should derive these in a smarter way, derived from number of CPUs or GPUs?
@@ -68,7 +66,7 @@ class Dataset(Generic[Item]):
         """Creates a new Dataset
 
         Args:
-            datarepo_id (str): ID of the datarepo
+            dataset_id (str): ID of the dataset
             ray_dataset (ray.data.Dataset): Dataset that backs this Dataset
         """
         self._id = dataset_id
@@ -184,40 +182,6 @@ class Dataset(Generic[Item]):
             ray_dataset=self._ray_dataset.filter(func, compute=_get_compute_strategy(func)),  # type: ignore
         )
 
-    def save(
-        self,
-        datarepo_id: str,
-        client: Optional[datarepo.DatarepoClient] = None,
-    ) -> None:
-        """Save a datarepo to persistent storage
-
-        Args:
-            datarepo_id (str): ID to save datarepo as
-        """
-        if client is None:
-            client = datarepo.get_client()
-
-        # sample_item = self._ray_dataset.take(1)
-
-        # if len(sample_item) == 0:
-        #     print("nothing to save")
-        #     return None
-
-        # _patch_class_for_deserialization(sample_item[0].__class__)
-
-        def serialize(items: List[Item]) -> pa.Table:
-            if len(items) == 0:
-                return None
-            first_type = items[0].__class__
-            assert dataclasses.is_dataclass(first_type), "We can only serialize daft dataclasses"
-            assert hasattr(first_type, "_daft_schema"), "was not initialized with daft dataclass"
-            daft_schema = getattr(first_type, "_daft_schema")
-            return daft_schema.serialize(items)
-
-        path = client.get_path(datarepo_id)
-        serialized_ds: ray.data.Dataset[pa.Table] = self._ray_dataset.map_batches(serialize)  # type: ignore
-        return serialized_ds.write_parquet(path)
-
     def show(self, n: int = 1) -> None:
         """Previews the data in a Dataset"""
         items = self.take(n)
@@ -243,68 +207,6 @@ class Dataset(Generic[Item]):
                         print(f"{field}: {val}")
             else:
                 display(item)
-
-    ###
-    # Creation methods: Creating Datasets
-    ###
-
-    @classmethod
-    def from_datarepo_id(
-        cls,
-        datarepo_id: str,
-        columns: Optional[List[str]] = None,
-        data_type: Optional[Type[Item]] = None,
-        partitions: Optional[int] = None,
-        client: Optional[datarepo.DatarepoClient] = None,
-    ) -> Dataset[Item]:
-        """Gets a Dataset by ID
-
-        Args:
-            datarepo_id (str): ID of the datarepo
-            data_type (Optional[Type[Item]], optional): Dataclass of the type of data. Defaults to None.
-            partitions (Optional[int], optional): number of partitions to split data into. Defaults to None.
-            client (Optional[datarepos.DatarepoClient], optional): Defaults to None which will detect
-                the appropriate client to use from the current environment.
-
-        Returns:
-            Dataset: retrieved Dataset
-        """
-        if data_type is not None:
-            assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
-            assert hasattr(data_type, "_daft_schema"), f"{data_type} was not initialized with daft dataclass"
-            daft_schema = getattr(data_type, "_daft_schema")
-            # _patch_class_for_deserialization(data_type)
-            # if getattr(data_type, "__daft_patched", None) != id(dataclasses._FIELD):
-            #     assert dataclasses.is_dataclass(data_type) and isinstance(data_type, type)
-            #     fields = data_type.__dict__["__dataclass_fields__"]
-            #     for field in fields.values():
-            #         if type(field._field_type) is type(dataclasses._FIELD):
-            #             field._field_type = dataclasses._FIELD
-            #     setattr(data_type, "__daft_patched", id(dataclasses._FIELD))
-
-            def deserialize(items) -> List[Item]:
-                block: List[Item] = daft_schema.deserialize_batch(items, data_type)
-                return block
-
-        if client is None:
-            client = datarepo.get_client()
-
-        ds = read_datarepo(
-            datarepo_id,
-            datarepo_client=client,
-            columns=columns and [f"root.{col}" for col in columns],
-        )
-
-        if partitions is not None:
-            ds = ds.repartition(partitions, shuffle=True)
-
-        if data_type is not None:
-            ds = ds.map_batches(deserialize, batch_format="pyarrow")
-
-        return cls(
-            dataset_id=datarepo_id,
-            ray_dataset=ds,
-        )
 
 
 def _get_compute_strategy(func: Callable[[Item], OutputItem]) -> Union[Literal["tasks"], ray.data.ActorPoolStrategy]:
