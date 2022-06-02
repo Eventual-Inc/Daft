@@ -62,7 +62,7 @@ class Dataset(Generic[Item]):
 
     def __init__(
         self,
-        datarepo_id: str,
+        dataset_id: str,
         ray_dataset: ray.data.Dataset[Item],
     ):
         """Creates a new Dataset
@@ -71,7 +71,7 @@ class Dataset(Generic[Item]):
             datarepo_id (str): ID of the datarepo
             ray_dataset (ray.data.Dataset): Dataset that backs this Dataset
         """
-        self._id = datarepo_id
+        self._id = dataset_id
         self._ray_dataset = ray_dataset
 
     def info(self) -> DatasetInfo:
@@ -104,7 +104,7 @@ class Dataset(Generic[Item]):
             Dataset[OutputItem]: Dataset of outputs
         """
         return Dataset(
-            datarepo_id=f"{self._id}:map[{func.__name__}]",
+            dataset_id=f"{self._id}:map[{func.__name__}]",
             ray_dataset=self._ray_dataset.map(
                 func,
                 # Type failing because Ray mistakenly requests for Optional[str]
@@ -134,7 +134,7 @@ class Dataset(Generic[Item]):
         )
 
         return Dataset(
-            datarepo_id=f"{self._id}:map_batches[{batched_func.__name__}]",
+            dataset_id=f"{self._id}:map_batches[{batched_func.__name__}]",
             ray_dataset=ray_dataset,
         )
 
@@ -149,7 +149,7 @@ class Dataset(Generic[Item]):
         """
         head, _ = self._ray_dataset.split_at_indices([n])
         return Dataset(
-            datarepo_id=f"{self._id}:sample[{n}]",
+            dataset_id=f"{self._id}:sample[{n}]",
             ray_dataset=head,
         )
 
@@ -179,7 +179,7 @@ class Dataset(Generic[Item]):
             Dataset[Item]: filtered Dataset
         """
         return Dataset(
-            datarepo_id=f"{self._id}:filter[{func.__name__}]]",
+            dataset_id=f"{self._id}:filter[{func.__name__}]]",
             # Type failing because Ray mistakenly requests for Optional[str]
             ray_dataset=self._ray_dataset.filter(func, compute=_get_compute_strategy(func)),  # type: ignore
         )
@@ -302,7 +302,7 @@ class Dataset(Generic[Item]):
             ds = ds.map_batches(deserialize, batch_format="pyarrow")
 
         return cls(
-            datarepo_id=datarepo_id,
+            dataset_id=datarepo_id,
             ray_dataset=ds,
         )
 
