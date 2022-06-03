@@ -45,13 +45,6 @@ def populated_datarepo_client(empty_datarepo_client: DatarepoClient):
     yield empty_datarepo_client
 
 
-@pytest.fixture(scope="module")
-def ray_cluster():
-    ray.init(num_cpus=2)
-    yield
-    ray.shutdown()
-
-
 @pytest.mark.skip
 def test_get_datarepo_missing(ray_cluster: None, populated_datarepo_client: DatarepoClient):
     # TODO(jaychia): Change when we have better error types

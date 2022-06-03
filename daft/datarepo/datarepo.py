@@ -9,6 +9,7 @@ from pyarrow import parquet as pq
 
 from daft.dataclasses import is_daft_dataclass
 from daft.datarepo.log import DaftLakeLog
+from daft.datarepo.query import DatarepoQuery
 
 
 class DataRepo:
@@ -17,6 +18,9 @@ class DataRepo:
 
     def _load(self, path) -> None:
         ...
+
+    def query(self, dtype: Type) -> DatarepoQuery:
+        return DatarepoQuery._from_datarepo_log(self._log, dtype=dtype)
 
     def to_dataset(self, dtype: Type):
         return self.__read_dataset(dtype)
