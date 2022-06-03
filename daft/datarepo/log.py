@@ -8,11 +8,9 @@ from typing import Any, ClassVar, Dict, List, Optional
 
 import pyarrow as pa
 import pydantic
-from sqlalchemy import true
 
 from daft.dataclasses import is_daft_dataclass
 from daft.filesystem import get_filesystem_from_path
-from daft.schema import DaftSchema
 
 
 class DaftActionModel(pydantic.BaseModel):
