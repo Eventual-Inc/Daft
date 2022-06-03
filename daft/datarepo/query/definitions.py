@@ -2,6 +2,7 @@ import dataclasses
 
 from typing import Any, Callable, cast
 
+# Node IDs in the NetworkX graph are uuid strings
 NodeId = str
 
 

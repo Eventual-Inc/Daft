@@ -19,14 +19,26 @@ class DatarepoQueryBuilder:
         root: str,
     ) -> None:
         # The Query is structured as a Query Tree
-        # 1. The root represents the query as a whole
-        # 2. Leaf nodes are Datarepos
-        # 3. Other nodes are Operations
+        # 1. There is one root, which holds the entire query
+        # 2. Leaf nodes are stages that read from other queries or Datarepos
+        # 3. Other nodes are Operations that process data
+        # 4. Edges hold a "key" attribute which defines the name of the input to a given operation
         self._query_tree = query_tree
         self._root = root
 
     @classmethod
     def _from_datarepo_log(cls, daft_lake_log: DaftLakeLog, dtype: Type) -> DatarepoQueryBuilder:
+        """Initializes a DatarepoQueryBuilder with the root node being a GetDatarepoStage
+
+        This should not be called by users. Users should access queries through the Datarepo.query() API.
+
+        Args:
+            daft_lake_log (DaftLakeLog): log of the Datarepo to query
+            dtype (Type): Dataclass to query
+
+        Returns:
+            DatarepoQueryBuilder: initialized DatarepoQueryBuilder
+        """
         tree = NX.DiGraph()
         stage = stages.GetDatarepoStage(
             daft_lake_log=daft_lake_log,
@@ -37,44 +49,31 @@ class DatarepoQueryBuilder:
         return cls(query_tree=tree, root=node_id)
 
     def filter(self, predicate: FilterPredicate) -> DatarepoQueryBuilder:
-        """Filters the query
-
-        Predicates are provided as simple SQL-compatible strings, for example:
-
-        1. `"id > 5"`: Filters for all data where the ID column is greater than 5
-        2. `"id > 5 AND id < 3"`: Filters for all data where the ID column is greater than 5 and smaller than 3
-        3. `"(id > 5 AND id < 3) OR id is NULL"`: Same as (2), but includes all results where id is None
-
-        More complex filters requiring processing of data can be achieved using `.apply` to first transform the data
-        and then `.filter` to apply a simple filter on transformed data. For example, running an ML model on images and
-        running a filter on the classification scores.
-
-        Args:
-            predicate (FilterPredicate): _description_
-
-        Returns:
-            DatarepoQueryBuilder: _description_
-        """
+        """Filters the query"""
         stage = stages.FilterStage(predicate=predicate)
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(query_tree=tree, root=node_id)
 
     def apply(self, func: Callable, *args: QueryColumn, **kwargs: QueryColumn) -> DatarepoQueryBuilder:
+        """Applies a function on specified columns of the data in the query"""
         stage = stages.ApplyStage(f=func, args=args, kwargs=kwargs)
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(query_tree=tree, root=node_id)
 
     def limit(self, limit: int) -> DatarepoQueryBuilder:
+        """Limits the number of rows in the query"""
         stage = stages.LimitStage(limit=limit)
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(query_tree=tree, root=node_id)
 
     def to_daft_dataset(self) -> daft.Dataset:
+        """Executes the query and returns it as a Daft dataset"""
         tree, root = self._optimize_query_tree()
         ds = _execute_query_tree(tree, root)
         return daft.Dataset(dataset_id="query_results", ray_dataset=ds)
 
     def _optimize_query_tree(self) -> Tuple[NX.DiGraph, NodeId]:
+        """Optimize the current query tree and returns the optimized copy"""
         tree, root = _limit_pushdown(self._query_tree, self._root)
         return tree, root
 

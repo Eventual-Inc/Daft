@@ -55,6 +55,31 @@ def test_query_limit_optimization_simple(fake_datarepo: DataRepo) -> None:
     assert [v for _, v in optimized_tree.nodes().items()][0]["stage"] == expected_optimized_read_stage
 
 
+def test_query_limit_optimization_interleaved(fake_datarepo: DataRepo) -> None:
+    limit = 10
+    pred = FilterPredicate(left="id", comparator=">", right="5")
+    f = lambda x: 1
+    q = (
+        fake_datarepo.query(MyFakeDataclass)
+        .limit(limit)
+        .filter(predicate=pred)
+        .limit(limit + 2)
+        .filter(predicate=pred)
+        .limit(limit + 1)
+        .apply(f, QueryColumn(name="foo"))
+        .limit(limit)
+    )
+    optimized_tree, root = q._optimize_query_tree()
+    expected_optimized_stages = [
+        stages.GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass, read_limit=limit),
+        # TODO: the filter stages will likely be pushed down to GetDatarepoStage as well in the near future
+        stages.FilterStage(predicate=pred),
+        stages.FilterStage(predicate=pred),
+        stages.ApplyStage(f=f, args=(QueryColumn(name="foo"),), kwargs={}),
+    ]
+    assert [v["stage"] for _, v in optimized_tree.nodes().items()] == expected_optimized_stages
+
+
 def test_query_limit_optimization_min_limits(fake_datarepo: DataRepo) -> None:
     limit = 10
     for q in [
