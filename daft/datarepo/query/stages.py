@@ -1,5 +1,6 @@
 import dataclasses
 import uuid
+import enum
 
 import networkx as NX
 import ray
@@ -8,10 +9,20 @@ from daft.datarepo.log import DaftLakeLog
 from daft.datarepo.query.definitions import NodeId, FilterPredicate, QueryColumn
 from daft.schema import DaftSchema
 
-from typing import Dict, Type, Tuple, cast, Protocol, Callable
+from typing import Dict, Type, Tuple, cast, Protocol, Callable, Optional, List
+
+
+class StageType(enum.Enum):
+    GetDatarepoStageType = "get_datarepo"
+    FilterStageType = "filter"
+    LimitStageType = "limit"
+    ApplyStageType = "apply"
 
 
 class QueryStage(Protocol):
+    def type(self) -> StageType:
+        ...
+
     def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
         ...
 
@@ -23,10 +34,14 @@ class QueryStage(Protocol):
 class GetDatarepoStage(QueryStage):
     daft_lake_log: DaftLakeLog
     dtype: Type
+    read_limit: Optional[int]
 
     def __post_init__(self):
         if not dataclasses.is_dataclass(self.dtype):
             raise ValueError(f"{self.dtype} is not a Daft Dataclass")
+
+    def type(self) -> StageType:
+        return StageType.GetDatarepoStageType
 
     def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
         assert len(query_tree.nodes) == 0, "can only add _GetDatarepoStage to empty query tree"
@@ -44,6 +59,10 @@ class GetDatarepoStage(QueryStage):
         daft_schema = cast(DaftSchema, getattr(self.dtype, "_daft_schema", None))
         assert daft_schema is not None, f"{self.dtype} is not a Daft Dataclass"
         ds: ray.data.Dataset = ray.data.read_parquet(files, schema=self.daft_lake_log.schema())
+
+        if self.read_limit is not None:
+            ds = ds.limit(self.read_limit)
+
         return ds.map_batches(
             lambda batch: daft_schema.deserialize_batch(batch, self.dtype),
             batch_format="pyarrow",
@@ -53,6 +72,9 @@ class GetDatarepoStage(QueryStage):
 @dataclasses.dataclass
 class FilterStage(QueryStage):
     predicate: FilterPredicate
+
+    def type(self) -> StageType:
+        return StageType.FilterStageType
 
     def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
         node_id = str(uuid.uuid4())
@@ -72,6 +94,9 @@ class FilterStage(QueryStage):
 @dataclasses.dataclass
 class LimitStage(QueryStage):
     limit: int
+
+    def type(self) -> StageType:
+        return StageType.LimitStageType
 
     def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
         node_id = str(uuid.uuid4())
@@ -93,6 +118,9 @@ class ApplyStage(QueryStage):
     f: Callable
     args: Tuple[QueryColumn, ...]
     kwargs: Dict[str, QueryColumn]
+
+    def type(self) -> StageType:
+        return StageType.ApplyStageType
 
     def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
         node_id = str(uuid.uuid4())

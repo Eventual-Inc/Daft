@@ -1,14 +1,15 @@
 from __future__ import annotations
+import dataclasses
 
 from daft.datarepo.log import DaftLakeLog
 import networkx as NX
 import ray
 
 import daft
-from daft.datarepo.query import stages
+from daft.datarepo.query import stages, tree_ops
 from daft.datarepo.query.definitions import NodeId, FilterPredicate, QueryColumn
 
-from typing import Callable, Type
+from typing import Callable, Type, Tuple, List, cast
 
 
 class DatarepoQueryBuilder:
@@ -30,6 +31,7 @@ class DatarepoQueryBuilder:
         stage = stages.GetDatarepoStage(
             daft_lake_log=daft_lake_log,
             dtype=dtype,
+            read_limit=None,
         )
         node_id, tree = stage.add_root(tree, "")
         return cls(query_tree=tree, root=node_id)
@@ -67,13 +69,14 @@ class DatarepoQueryBuilder:
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(query_tree=tree, root=node_id)
 
-    ###
-    # Execution methods: methods that trigger computation
-    ###
-
     def to_daft_dataset(self) -> daft.Dataset:
-        ds = _execute_query_tree(self._query_tree, self._root)
+        tree, root = self._optimize_query_tree()
+        ds = _execute_query_tree(tree, root)
         return daft.Dataset(dataset_id="query_results", ray_dataset=ds)
+
+    def _optimize_query_tree(self) -> Tuple[NX.DiGraph, NodeId]:
+        tree, root = _limit_pushdown(self._query_tree, self._root)
+        return tree, root
 
 
 def _execute_query_tree(tree: NX.DiGraph, root: NodeId) -> ray.data.Dataset:
@@ -93,3 +96,35 @@ def _execute_query_tree(tree: NX.DiGraph, root: NodeId) -> ray.data.Dataset:
     # Recursive case: recursively resolve inputs for each child
     inputs = {tree.edges[root, child]["key"]: _execute_query_tree(tree, child) for _, child in children}
     return stage.run(inputs)
+
+
+def _limit_pushdown(tree: NX.DiGraph, root: NodeId) -> Tuple[NX.DiGraph, NodeId]:
+    """Fuses any `LimitStage`s with the lowest possible read operation"""
+    # Find all LimitStages and the lowest read stage
+    limit_node_ids = tree_ops.dfs_search(
+        tree, root, lambda data: cast(stages.QueryStage, data["stage"]).type() == stages.StageType.LimitStageType
+    )
+    read_node_ids = tree_ops.dfs_search(
+        tree, root, lambda data: cast(stages.QueryStage, data["stage"]).type() == stages.StageType.GetDatarepoStageType
+    )
+
+    assert len(read_node_ids) == 1, "limit pushdown only supports one read node for now"
+    lowest_read_node_id = read_node_ids[0]
+
+    # If no LimitStage was found, no work to be done
+    if len(limit_node_ids) == 0:
+        return tree, root
+
+    # Get minimum limit
+    min_limit = min([tree.nodes[limit_node_id]["stage"].limit for limit_node_id in limit_node_ids])
+
+    # Prune all LimitStages from tree
+    for limit_node_id in limit_node_ids:
+        tree, root = tree_ops.prune_singlechild_node(tree, root, limit_node_id)
+
+    # Set limit on the lowest read node
+    lowest_read_stage: stages.GetDatarepoStage = tree.nodes[lowest_read_node_id]["stage"]
+    limited_read_stage = dataclasses.replace(lowest_read_stage, read_limit=min_limit)
+    NX.set_node_attributes(tree, {lowest_read_node_id: {"stage": limited_read_stage}})
+
+    return tree, root

@@ -31,17 +31,33 @@ def populated_datarepo(ray_cluster) -> Iterator[DataRepo]:
         yield dr
 
 
-def test_query_to_df(populated_datarepo):
-    limit = 5
+def test_query_all(populated_datarepo):
+    ds = populated_datarepo.query(TestDc).to_daft_dataset()
+    assert sorted([row for row in ds._ray_dataset.iter_rows()], key=lambda dc: dc.x) == [
+        TestDc(i, np.ones(1)) for i in range(100)
+    ]
 
+
+def test_query_limit(populated_datarepo):
+    limit = 5
+    ds = populated_datarepo.query(TestDc).limit(limit).to_daft_dataset()
+    results = sorted([row for row in ds._ray_dataset.iter_rows()], key=lambda dc: dc.x)
+    assert len(results) == limit
+
+
+def test_query_apply(populated_datarepo):
     def add_x_to_arr(arr: np.ndarray, x_kwarg: int = 100) -> np.ndarray:
         return arr + x_kwarg
 
     ds = (
         populated_datarepo.query(TestDc)
-        .filter(FilterPredicate(left="x", comparator="<", right=10))
         .apply(add_x_to_arr, QueryColumn(name="arr"), x_kwarg=QueryColumn(name="x"))
-        .limit(limit)
         .to_daft_dataset()
     )
-    assert [row for row in ds._ray_dataset.iter_rows()] == [np.ones(1) * i for i in range(1, limit + 1)]
+    assert sorted([row for row in ds._ray_dataset.iter_rows()]) == [np.ones(1) * i for i in range(1, 100 + 1)]
+
+
+def test_query_filter(populated_datarepo):
+    ds = populated_datarepo.query(TestDc).filter(FilterPredicate(left="x", comparator="<", right=10)).to_daft_dataset()
+    results = sorted([row for row in ds._ray_dataset.iter_rows()], key=lambda dc: dc.x)
+    assert results == [TestDc(i, np.ones(1)) for i in range(10)]
