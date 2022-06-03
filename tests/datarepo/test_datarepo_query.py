@@ -9,7 +9,7 @@ import ray
 
 from daft.dataclasses import dataclass
 from daft.datarepo.datarepo import DataRepo
-from daft.datarepo.query import _FilterPredicate, QueryColumn
+from daft.datarepo.query.definitions import FilterPredicate, QueryColumn
 
 from typing import Iterator
 
@@ -39,7 +39,7 @@ def test_query_to_df(populated_datarepo):
 
     ds = (
         populated_datarepo.query(TestDc)
-        .filter(_FilterPredicate(left="x", comparator="<", right=10))
+        .filter(FilterPredicate(left="x", comparator="<", right=10))
         .apply(add_x_to_arr, QueryColumn(name="arr"), x_kwarg=QueryColumn(name="x"))
         .limit(limit)
         .to_daft_dataset()

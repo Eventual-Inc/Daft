@@ -2,14 +2,8 @@ import pytest
 
 from daft.dataclasses import dataclass
 from daft.datarepo.log import DaftLakeLog
-from daft.datarepo.query import (
-    QueryColumn,
-    _FilterPredicate,
-    _GetDatarepoStage,
-    _LimitStage,
-    _FilterStage,
-    _ApplyStage,
-)
+from daft.datarepo.query.definitions import QueryColumn, FilterPredicate
+from daft.datarepo.query import stages
 from daft.datarepo.datarepo import DataRepo
 
 FAKE_DATAREPO_ID = "mydatarepo"
@@ -30,37 +24,43 @@ def fake_datarepo() -> DataRepo:
 
 def test_query_select_star(fake_datarepo: DataRepo) -> None:
     q = fake_datarepo.query(MyFakeDataclass)
-    stages = [_GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass)]
+    expected_stages = [stages.GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass)]
     assert len(q._query_tree.nodes()) == 1
     assert [k for k in q._query_tree.nodes()][0] == q._root
-    assert [v["stage"] for _, v in q._query_tree.nodes().items()] == stages
+    assert [v["stage"] for _, v in q._query_tree.nodes().items()] == expected_stages
 
 
 def test_query_limit(fake_datarepo: DataRepo) -> None:
     limit = 10
     q = fake_datarepo.query(MyFakeDataclass).limit(limit)
-    stages = [_GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass), _LimitStage(limit=limit)]
+    expected_stages = [
+        stages.GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass),
+        stages.LimitStage(limit=limit),
+    ]
     assert len(q._query_tree.nodes()) == 2
     assert [k for k in q._query_tree.nodes()][-1] == q._root
-    assert [v["stage"] for _, v in q._query_tree.nodes().items()] == stages
+    assert [v["stage"] for _, v in q._query_tree.nodes().items()] == expected_stages
 
 
 def test_query_filter(fake_datarepo: DataRepo) -> None:
-    pred = _FilterPredicate(left="id", comparator=">", right="5")
+    pred = FilterPredicate(left="id", comparator=">", right="5")
     q = fake_datarepo.query(MyFakeDataclass).filter(pred)
-    stages = [_GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass), _FilterStage(predicate=pred)]
+    expected_stages = [
+        stages.GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass),
+        stages.FilterStage(predicate=pred),
+    ]
     assert len(q._query_tree.nodes()) == 2
     assert [k for k in q._query_tree.nodes()][-1] == q._root
-    assert [v["stage"] for _, v in q._query_tree.nodes().items()] == stages
+    assert [v["stage"] for _, v in q._query_tree.nodes().items()] == expected_stages
 
 
 def test_query_apply(fake_datarepo: DataRepo) -> None:
     f = lambda x: 1
     q = fake_datarepo.query(MyFakeDataclass).apply(f, QueryColumn(name="foo"), somekwarg=QueryColumn(name="bar"))
-    stages = [
-        _GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass),
-        _ApplyStage(f=f, args=(QueryColumn(name="foo"),), kwargs={"somekwarg": QueryColumn(name="bar")}),
+    expected_stages = [
+        stages.GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass),
+        stages.ApplyStage(f=f, args=(QueryColumn(name="foo"),), kwargs={"somekwarg": QueryColumn(name="bar")}),
     ]
     assert len(q._query_tree.nodes()) == 2
     assert [k for k in q._query_tree.nodes()][-1] == q._root
-    assert [v["stage"] for _, v in q._query_tree.nodes().items()] == stages
+    assert [v["stage"] for _, v in q._query_tree.nodes().items()] == expected_stages
