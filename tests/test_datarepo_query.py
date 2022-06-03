@@ -1,12 +1,12 @@
 from daft.datarepo.query import (
     QueryColumn,
-    query,
-    _QueryTreeNode,
-    _DatarepoNodeType,
-    _LimitOpNodeType,
-    _FilterOpNodeType,
     _ApplyOpNodeType,
+    _DatarepoNodeType,
+    _FilterOpNodeType,
     _FilterPredicate,
+    _LimitOpNodeType,
+    _QueryTreeNode,
+    query,
 )
 
 FAKE_DATAREPO_ID = "mydatarepo"

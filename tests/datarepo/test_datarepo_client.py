@@ -1,6 +1,6 @@
 import fsspec
 
-from daft.datarepos.client import DatarepoClient
+from daft.datarepo.client import DatarepoClient
 
 
 def test_datarepo_client_list_ids(path="memory://") -> None:

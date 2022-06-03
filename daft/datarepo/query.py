@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import dataclasses
-import networkx as NX
 import uuid
+from typing import Any, Callable, Dict, Optional, Tuple
 
-from typing import Callable, Tuple, Dict, Optional, Any
+import networkx as NX
 
 
 def query(datarepo_id: str) -> DatarepoQuery:

@@ -43,5 +43,4 @@ def test_create_log_in_memory():
 
 def test_create_log_local_fs():
     with tempfile.TemporaryDirectory() as tmpdirname:
-        print(tmpdirname)
         _create_log(f"file://{tmpdirname}")

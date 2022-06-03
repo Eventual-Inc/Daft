@@ -1,17 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import (
-    Callable,
-    Dict,
-    Generic,
-    List,
-    Literal,
-    Optional,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Callable, Dict, Generic, List, Literal, TypeVar, Union
 
 import pyarrow as pa
 import ray

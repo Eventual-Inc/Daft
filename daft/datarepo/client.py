@@ -1,17 +1,13 @@
 from __future__ import annotations
+
 import logging
-
-
 import re
 from os import path
-from typing import List, Optional
+from typing import List, Optional, TypeVar
 
 import fsspec
 
-from typing import List, Optional, TypeVar
-
 from daft import config
-
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +38,9 @@ class DatarepoClient:
             if result is not None:
                 dirs_to_return.append(result.group(1))
         return dirs_to_return
+
+    def get_path(self, name: str) -> str:
+        return f"{self._protocol}://{self._prefix}/{name}"
 
 
 def get_client(datarepo_path: Optional[str] = None) -> DatarepoClient:

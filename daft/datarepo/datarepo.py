@@ -34,7 +34,7 @@ class DataRepo:
         def _read_block(files: List[str]) -> List[dtype]:
             to_rtn = []
             for filepath in files:
-                filepath = filepath.replace('file://', '')
+                filepath = filepath.replace("file://", "")
                 table = pq.read_table(filepath, filesystem=filesystem)
                 to_rtn.extend(daft_schema.deserialize_batch(table, dtype))
             return to_rtn
@@ -46,7 +46,7 @@ class DataRepo:
 
     def __write_dataset(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:
         data_dir = self._log.data_dir()
-        data_dir = data_dir.replace('file://', '')
+        data_dir = data_dir.replace("file://", "")
         filesystem = self._log._fs
         filesystem.makedir(data_dir)
 
@@ -59,7 +59,7 @@ class DataRepo:
             assert daft_schema is not None
             arrow_table = daft_schema.serialize(block)
             pq.write_table(arrow_table, filepath, filesystem=filesystem)
-            return [f"{protocol}:{filepath}"]
+            return [filepath]
 
         num_partitions = ceil(dataset.count() // rows_per_partition)
         dataset = dataset.repartition(num_partitions, shuffle=True)
