@@ -2,7 +2,7 @@ import pytest
 
 from daft.dataclasses import dataclass
 from daft.datarepo.log import DaftLakeLog
-from daft.datarepo.query.definitions import QueryColumn, FilterPredicate
+from daft.datarepo.query.definitions import QueryColumn
 from daft.datarepo.query import stages
 from daft.datarepo.datarepo import DataRepo
 
@@ -57,14 +57,13 @@ def test_query_limit_optimization_simple(fake_datarepo: DataRepo) -> None:
 
 def test_query_limit_optimization_interleaved(fake_datarepo: DataRepo) -> None:
     limit = 10
-    pred = FilterPredicate(left="id", comparator=">", right="5")
     f = lambda x: 1
     q = (
         fake_datarepo.query(MyFakeDataclass)
         .limit(limit)
-        .filter(predicate=pred)
+        .where(QueryColumn("id"), ">", 5)
         .limit(limit + 2)
-        .filter(predicate=pred)
+        .where(QueryColumn("id"), ">", 5)
         .limit(limit + 1)
         .apply(f, QueryColumn(name="foo"))
         .limit(limit)
@@ -72,9 +71,8 @@ def test_query_limit_optimization_interleaved(fake_datarepo: DataRepo) -> None:
     optimized_tree, root = q._optimize_query_tree()
     expected_optimized_stages = [
         stages.GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass, read_limit=limit),
-        # TODO: the filter stages will likely be pushed down to GetDatarepoStage as well in the near future
-        stages.FilterStage(predicate=pred),
-        stages.FilterStage(predicate=pred),
+        stages.WhereStage(QueryColumn("id"), ">", 5),
+        stages.WhereStage(QueryColumn("id"), ">", 5),
         stages.ApplyStage(f=f, args=(QueryColumn(name="foo"),), kwargs={}),
     ]
     assert [v["stage"] for _, v in optimized_tree.nodes().items()] == expected_optimized_stages
@@ -96,11 +94,10 @@ def test_query_limit_optimization_min_limits(fake_datarepo: DataRepo) -> None:
 
 
 def test_query_filter(fake_datarepo: DataRepo) -> None:
-    pred = FilterPredicate(left="id", comparator=">", right="5")
-    q = fake_datarepo.query(MyFakeDataclass).filter(pred)
+    q = fake_datarepo.query(MyFakeDataclass).where(QueryColumn("id"), ">", 5)
     expected_stages = [
         stages.GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass, read_limit=None),
-        stages.FilterStage(predicate=pred),
+        stages.WhereStage(QueryColumn("id"), ">", 5),
     ]
     assert len(q._query_tree.nodes()) == 2
     assert [k for k in q._query_tree.nodes()][-1] == q._root

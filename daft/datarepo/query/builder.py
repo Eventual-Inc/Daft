@@ -1,5 +1,6 @@
 from __future__ import annotations
 import dataclasses
+from platform import node
 
 from daft.datarepo.log import DaftLakeLog
 import networkx as NX
@@ -7,9 +8,9 @@ import ray
 
 import daft
 from daft.datarepo.query import stages, tree_ops
-from daft.datarepo.query.definitions import NodeId, FilterPredicate, QueryColumn
+from daft.datarepo.query.definitions import NodeId, QueryColumn, Comparator
 
-from typing import Callable, Type, Tuple, List, cast
+from typing import Callable, Type, Tuple, List, Union, cast
 
 
 class DatarepoQueryBuilder:
@@ -48,9 +49,15 @@ class DatarepoQueryBuilder:
         node_id, tree = stage.add_root(tree, "")
         return cls(query_tree=tree, root=node_id)
 
-    def filter(self, predicate: FilterPredicate) -> DatarepoQueryBuilder:
-        """Filters the query"""
-        stage = stages.FilterStage(predicate=predicate)
+    def where(self, column: QueryColumn, operation: Comparator, value: Union[str, float, int]):
+        """Filters the query with a simple predicate.
+
+        Args:
+            column (QueryColumn): column to filter on
+            operation (Comparator): operation to compare the column with
+            value (Union[str, float, int]): value to compare the column with
+        """
+        stage = stages.WhereStage(column, operation, value)
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(query_tree=tree, root=node_id)
 

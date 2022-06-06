@@ -9,7 +9,7 @@ import ray
 
 from daft.dataclasses import dataclass
 from daft.datarepo.datarepo import DataRepo
-from daft.datarepo.query.definitions import FilterPredicate, QueryColumn
+from daft.datarepo.query.definitions import QueryColumn
 
 from typing import Iterator
 
@@ -57,7 +57,7 @@ def test_query_apply(populated_datarepo):
     assert sorted([row for row in ds._ray_dataset.iter_rows()]) == [np.ones(1) * i for i in range(1, 100 + 1)]
 
 
-def test_query_filter(populated_datarepo):
-    ds = populated_datarepo.query(TestDc).filter(FilterPredicate(left="x", comparator="<", right=10)).to_daft_dataset()
+def test_query_where(populated_datarepo):
+    ds = populated_datarepo.query(TestDc).where(QueryColumn("x"), "<", 10).to_daft_dataset()
     results = sorted([row for row in ds._ray_dataset.iter_rows()], key=lambda dc: dc.x)
     assert results == [TestDc(i, np.ones(1)) for i in range(10)]

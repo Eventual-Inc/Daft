@@ -6,17 +6,17 @@ import networkx as NX
 import ray
 
 from daft.datarepo.log import DaftLakeLog
-from daft.datarepo.query.definitions import NodeId, FilterPredicate, QueryColumn
+from daft.datarepo.query.definitions import Comparator, NodeId, QueryColumn, COMPARATOR_MAP
 from daft.schema import DaftSchema
 
-from typing import Dict, Type, Tuple, cast, Protocol, Callable, Optional, List
+from typing import Any, Dict, Type, Tuple, cast, Protocol, Callable, Optional, Union
 
 
 class StageType(enum.Enum):
     GetDatarepoStageType = "get_datarepo"
-    FilterStageType = "filter"
     LimitStageType = "limit"
     ApplyStageType = "apply"
+    WhereStageType = "where"
 
 
 class QueryStage(Protocol):
@@ -54,7 +54,7 @@ class GetDatarepoStage(QueryStage):
         return node_id, tree_copy
 
     def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
-        assert len(input_stage_results) == 0, "_GetDatarepoStage does not take in inputs"
+        assert len(input_stage_results) == 0, "GetDatarepoStage does not take in inputs"
         files = self.daft_lake_log.file_list()
         daft_schema = cast(DaftSchema, getattr(self.dtype, "_daft_schema", None))
         assert daft_schema is not None, f"{self.dtype} is not a Daft Dataclass"
@@ -70,11 +70,13 @@ class GetDatarepoStage(QueryStage):
 
 
 @dataclasses.dataclass
-class FilterStage(QueryStage):
-    predicate: FilterPredicate
+class WhereStage(QueryStage):
+    column: QueryColumn
+    operation: Comparator
+    value: Union[str, int, float]
 
     def type(self) -> StageType:
-        return StageType.FilterStageType
+        return StageType.WhereStageType
 
     def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
         node_id = str(uuid.uuid4())
@@ -86,9 +88,20 @@ class FilterStage(QueryStage):
     def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
         assert (
             len(input_stage_results) == 1 and "prev" in input_stage_results
-        ), f"_FilterStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
+        ), f"WhereStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
         prev = input_stage_results["prev"]
-        return prev.filter(self.predicate.get_callable())
+        return prev.filter(self._get_filter_func())
+
+    def _get_filter_func(self) -> Callable[[Any], bool]:
+        """Converts the where clause into a lambda that can be used to filter a dataset"""
+
+        def f(x: Any) -> bool:
+            comparator_magic_method = COMPARATOR_MAP[self.operation]
+            if dataclasses.is_dataclass(x):
+                return cast(bool, getattr(getattr(x, self.column.name), comparator_magic_method)(self.value))
+            return cast(bool, getattr(x[self.column.name], comparator_magic_method)(self.value))
+
+        return f
 
 
 @dataclasses.dataclass
@@ -108,7 +121,7 @@ class LimitStage(QueryStage):
     def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
         assert (
             len(input_stage_results) == 1 and "prev" in input_stage_results
-        ), f"_LimitStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
+        ), f"LimitStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
         prev = input_stage_results["prev"]
         return prev.limit(self.limit)
 
@@ -132,7 +145,7 @@ class ApplyStage(QueryStage):
     def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
         assert (
             len(input_stage_results) == 1 and "prev" in input_stage_results
-        ), f"_ApplyStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
+        ), f"ApplyStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
         prev = input_stage_results["prev"]
         return prev.map(
             lambda x: self.f(
