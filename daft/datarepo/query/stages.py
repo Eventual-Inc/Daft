@@ -4,12 +4,14 @@ import enum
 
 import networkx as NX
 import ray
+import pyarrow.dataset as pads
+import pyarrow.compute as pc
 
 from daft.datarepo.log import DaftLakeLog
 from daft.datarepo.query.definitions import Comparator, NodeId, QueryColumn, COMPARATOR_MAP
 from daft.schema import DaftSchema
 
-from typing import Any, Dict, Type, Tuple, cast, Protocol, Callable, Optional, Union
+from typing import Any, Dict, Type, Tuple, cast, Protocol, Callable, Optional, Union, List
 
 
 class StageType(enum.Enum):
@@ -34,11 +36,37 @@ class QueryStage(Protocol):
 class GetDatarepoStage(QueryStage):
     daft_lake_log: DaftLakeLog
     dtype: Type
-    read_limit: Optional[int]
+    read_limit: Optional[int] = None
+    # Filters in DNF form, see the `filters` kwarg in:
+    # https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html
+    filters: Optional[List[List[Tuple]]] = None
 
     def __post_init__(self):
         if not dataclasses.is_dataclass(self.dtype):
             raise ValueError(f"{self.dtype} is not a Daft Dataclass")
+
+    def _get_arrow_filter_expression(self) -> Optional[pads.Expression]:
+        if self.filters is None:
+            return None
+
+        final_expr = None
+
+        for conjunction_filters in self.filters:
+            conjunctive_expr = None
+            for raw_filter in conjunction_filters:
+                col, op, val = raw_filter
+                expr = getattr(pc.field(f"root.{col}"), COMPARATOR_MAP[op])(val)
+                if conjunctive_expr is None:
+                    conjunctive_expr = expr
+                else:
+                    conjunctive_expr = conjunctive_expr & expr
+
+            if final_expr is None:
+                final_expr = conjunctive_expr
+            else:
+                final_expr = final_expr | conjunctive_expr
+
+        return final_expr
 
     def type(self) -> StageType:
         return StageType.GetDatarepoStageType
@@ -58,7 +86,14 @@ class GetDatarepoStage(QueryStage):
         files = self.daft_lake_log.file_list()
         daft_schema = cast(DaftSchema, getattr(self.dtype, "_daft_schema", None))
         assert daft_schema is not None, f"{self.dtype} is not a Daft Dataclass"
-        ds: ray.data.Dataset = ray.data.read_parquet(files, schema=self.daft_lake_log.schema())
+        ds: ray.data.Dataset = ray.data.read_parquet(
+            files,
+            schema=self.daft_lake_log.schema(),
+            # Dataset kwargs passed to Pyarrow Parquet Dataset
+            dataset_kwargs={"filters": self.filters},
+            # Reader kwargs passed to Pyarrow Scanner.from_fragment
+            filter=self._get_arrow_filter_expression(),
+        )
 
         if self.read_limit is not None:
             ds = ds.limit(self.read_limit)
