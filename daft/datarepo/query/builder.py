@@ -129,7 +129,7 @@ def _where_pushdown(tree: NX.DiGraph, root: NodeId) -> Tuple[NX.DiGraph, NodeId]
     # AND all the WhereStages that we found in DNF form, currently no support for OR
     conjuction_predicates = []
     for where_stage in [tree.nodes[where_node_id]["stage"] for where_node_id in where_node_ids]:
-        predicate = (where_stage.column.name, where_stage.operation, where_stage.value)
+        predicate = (where_stage.column, where_stage.operation, where_stage.value)
         conjuction_predicates.append(predicate)
     dnf_filter = [conjuction_predicates]
 

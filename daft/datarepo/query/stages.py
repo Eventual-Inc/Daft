@@ -133,8 +133,8 @@ class WhereStage(QueryStage):
         def f(x: Any) -> bool:
             comparator_magic_method = COMPARATOR_MAP[self.operation]
             if dataclasses.is_dataclass(x):
-                return cast(bool, getattr(getattr(x, self.column.name), comparator_magic_method)(self.value))
-            return cast(bool, getattr(x[self.column.name], comparator_magic_method)(self.value))
+                return cast(bool, getattr(getattr(x, self.column), comparator_magic_method)(self.value))
+            return cast(bool, getattr(x[self.column], comparator_magic_method)(self.value))
 
         return f
 
@@ -184,7 +184,7 @@ class ApplyStage(QueryStage):
         prev = input_stage_results["prev"]
         return prev.map(
             lambda x: self.f(
-                *[getattr(x, qc.name) for qc in self.args],
-                **{key: getattr(x, qc.name) for key, qc in self.kwargs.items()},
+                *[getattr(x, query_column) for query_column in self.args],
+                **{key: getattr(x, query_column) for key, query_column in self.kwargs.items()},
             )
         )

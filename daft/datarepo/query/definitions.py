@@ -5,11 +5,8 @@ from typing import Any, Callable, Literal, cast, Union
 # Node IDs in the NetworkX graph are uuid strings
 NodeId = str
 
-
-@dataclasses.dataclass(frozen=True)
-class QueryColumn:
-    name: str
-
+# Columns are just aliases for strings
+QueryColumn = str
 
 Comparator = Union[
     Literal[">"],
