@@ -8,6 +8,7 @@ import pyarrow.dataset as pads
 import pyarrow.compute as pc
 
 from daft.datarepo.log import DaftLakeLog
+from daft.datarepo.query import functions as F
 from daft.datarepo.query.definitions import Comparator, NodeId, QueryColumn, COMPARATOR_MAP
 from daft.schema import DaftSchema
 
@@ -18,6 +19,7 @@ class StageType(enum.Enum):
     GetDatarepoStageType = "get_datarepo"
     LimitStageType = "limit"
     ApplyStageType = "apply"
+    WithColumnStageType = "with_column"
     WhereStageType = "where"
 
 
@@ -188,3 +190,35 @@ class ApplyStage(QueryStage):
                 **{key: getattr(x, query_column) for key, query_column in self.kwargs.items()},
             )
         )
+
+
+@dataclasses.dataclass
+class WithColumnStage(QueryStage):
+    new_column: QueryColumn
+    expr: F.QueryExpression
+
+    def type(self) -> StageType:
+        return StageType.WithColumnStageType
+
+    def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
+        node_id = str(uuid.uuid4())
+        tree_copy = query_tree.copy()
+        tree_copy.add_node(node_id, stage=self)
+        tree_copy.add_edge(node_id, root_node, key="prev")
+        return node_id, tree_copy
+
+    def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
+        assert (
+            len(input_stage_results) == 1 and "prev" in input_stage_results
+        ), f"WithColumnStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
+        prev = input_stage_results["prev"]
+
+        def with_column_func(item):
+            value = self.expr.func(
+                *[getattr(item, query_column) for query_column in self.expr.args],
+                **{key: getattr(item, query_column) for key, query_column in self.expr.kwargs.items()},
+            )
+            setattr(item, self.new_column, value)
+            return item
+
+        return prev.map(with_column_func)

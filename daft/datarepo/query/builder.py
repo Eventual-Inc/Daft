@@ -9,6 +9,7 @@ import ray
 import daft
 from daft.datarepo.query import stages, tree_ops
 from daft.datarepo.query.definitions import NodeId, QueryColumn, Comparator
+from daft.datarepo.query import functions as F
 
 from typing import Callable, Type, Tuple, List, Union, cast
 
@@ -65,6 +66,12 @@ class DatarepoQueryBuilder:
     def apply(self, func: Callable, *args: QueryColumn, **kwargs: QueryColumn) -> DatarepoQueryBuilder:
         """Applies a function on specified columns of the data in the query"""
         stage = stages.ApplyStage(f=func, args=args, kwargs=kwargs)
+        node_id, tree = stage.add_root(self._query_tree, self._root)
+        return DatarepoQueryBuilder(query_tree=tree, root=node_id)
+
+    def with_column(self, new_column: QueryColumn, expr: F.QueryExpression) -> DatarepoQueryBuilder:
+        """Creates a new column with value derived from the specified expression"""
+        stage = stages.WithColumnStage(new_column=new_column, expr=expr)
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(query_tree=tree, root=node_id)
 

@@ -10,6 +10,7 @@ import ray
 from daft.dataclasses import dataclass
 from daft.datarepo.datarepo import DataRepo
 from daft.datarepo.query.definitions import QueryColumn
+from daft.datarepo.query import functions as F
 
 from typing import Iterator
 
@@ -51,6 +52,27 @@ def test_query_apply(populated_datarepo):
 
     ds = populated_datarepo.query(TestDc).apply(add_x_to_arr, "arr", x_kwarg="x").to_daft_dataset()
     assert sorted([row for row in ds._ray_dataset.iter_rows()]) == [np.ones(1) * i for i in range(1, 100 + 1)]
+
+
+def test_query_with_column_decorator(populated_datarepo):
+    @F.func
+    def add_x_to_arr(arr: np.ndarray, x_kwarg: int = 100) -> np.ndarray:
+        return arr + x_kwarg
+
+    ds = populated_datarepo.query(TestDc).with_column("arr_added", add_x_to_arr("arr", x_kwarg="x")).to_daft_dataset()
+    rows = sorted([row for row in ds._ray_dataset.iter_rows()], key=lambda dc: dc.x)
+    assert [row.arr_added for row in rows] == [np.ones(1) * i for i in range(1, 100 + 1)]
+
+
+def test_query_with_column(populated_datarepo):
+    def add_x_to_arr(arr: np.ndarray, x_kwarg: int = 100) -> np.ndarray:
+        return arr + x_kwarg
+
+    add_x_to_arr = F.func(add_x_to_arr, return_type=np.ndarray)
+
+    ds = populated_datarepo.query(TestDc).with_column("arr_added", add_x_to_arr("arr", x_kwarg="x")).to_daft_dataset()
+    rows = sorted([row for row in ds._ray_dataset.iter_rows()], key=lambda dc: dc.x)
+    assert [row.arr_added for row in rows] == [np.ones(1) * i for i in range(1, 100 + 1)]
 
 
 def test_query_where(populated_datarepo):
