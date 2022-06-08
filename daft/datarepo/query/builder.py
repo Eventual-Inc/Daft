@@ -81,7 +81,7 @@ class DatarepoQueryBuilder:
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(query_tree=tree, root=node_id)
 
-    def to_daft_dataset(self) -> daft.Dataset:
+    def execute(self) -> daft.Dataset:
         """Executes the query and returns it as a Daft dataset"""
         tree, root = self._optimize_query_tree()
         ds = _execute_query_tree(tree, root)
