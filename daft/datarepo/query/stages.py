@@ -100,6 +100,12 @@ class GetDatarepoStage(QueryStage):
         if self.read_limit is not None:
             ds = ds.limit(self.read_limit)
 
+        # If the cluster has more CPUs available than the number of blocks, repartition the
+        # dataset to take advantage of the full parallelism afforded by the cluster
+        cluster_cpus = ray.cluster_resources().get("CPU", -1)
+        if cluster_cpus != -1 and ds.num_blocks() < cluster_cpus and ds.count() > cluster_cpus:
+            ds = ds.repartition(int(cluster_cpus * 2), shuffle=True)
+
         return ds.map_batches(
             lambda batch: daft_schema.deserialize_batch(batch, self.dtype),
             batch_format="pyarrow",

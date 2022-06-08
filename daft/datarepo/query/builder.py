@@ -6,7 +6,6 @@ from daft.datarepo.log import DaftLakeLog
 import networkx as NX
 import ray
 
-import daft
 from daft.datarepo.query import stages, tree_ops
 from daft.datarepo.query.definitions import NodeId, QueryColumn, Comparator
 from daft.datarepo.query import functions as F
@@ -81,11 +80,11 @@ class DatarepoQueryBuilder:
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(query_tree=tree, root=node_id)
 
-    def execute(self) -> daft.Dataset:
+    def execute(self) -> ray.data.Dataset:
         """Executes the query and returns it as a Daft dataset"""
         tree, root = self._optimize_query_tree()
         ds = _execute_query_tree(tree, root)
-        return daft.Dataset(dataset_id="query_results", ray_dataset=ds)
+        return ds
 
     def _optimize_query_tree(self) -> Tuple[NX.DiGraph, NodeId]:
         """Optimize the current query tree and returns the optimized copy"""
