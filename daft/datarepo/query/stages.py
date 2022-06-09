@@ -12,7 +12,13 @@ from daft.datarepo.query import functions as F
 from daft.datarepo.query.definitions import Comparator, NodeId, QueryColumn, COMPARATOR_MAP
 from daft.schema import DaftSchema
 
-from typing import Any, Dict, Type, Tuple, cast, Protocol, Callable, Optional, Union, List
+from typing import Any, Dict, Type, Tuple, cast, Protocol, Callable, Optional, Union, List, Literal
+
+
+DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.data.ActorPoolStrategy(
+    min_size=1,
+    max_size=ray.cluster_resources()["CPU"],
+)
 
 
 class StageType(enum.Enum):
@@ -202,6 +208,15 @@ class ApplyStage(QueryStage):
 class WithColumnStage(QueryStage):
     new_column: QueryColumn
     expr: F.QueryExpression
+    batch_size: Optional[int] = None
+
+    def _get_compute_strategy(self) -> Union[Literal["tasks"], ray.data.ActorPoolStrategy]:
+        """Returns the appropriate compute_strategy for the function in this stage's QueryExpression
+
+        Callables can either be a Function, or a Class which defines an .__init__() and a .__call__()
+        We handle both cases by constructing the appropriate compute_strategy and passing that to Ray.
+        """
+        return DEFAULT_ACTOR_STRATEGY() if isinstance(self.expr.func, type) else "tasks"
 
     def type(self) -> StageType:
         return StageType.WithColumnStageType
@@ -219,12 +234,75 @@ class WithColumnStage(QueryStage):
         ), f"WithColumnStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
         prev = input_stage_results["prev"]
 
-        def with_column_func(item):
-            value = self.expr.func(
-                *[getattr(item, query_column) for query_column in self.expr.args],
-                **{key: getattr(item, query_column) for key, query_column in self.expr.kwargs.items()},
+        compute_strategy = self._get_compute_strategy()
+        if self.batch_size is None and compute_strategy == "tasks":
+            return prev.map(WithColumnStage._get_func_wrapper(self.new_column, self.expr), compute=compute_strategy)
+        elif self.batch_size is None:
+            assert isinstance(compute_strategy, ray.data.ActorPoolStrategy)
+            return prev.map(
+                WithColumnStage._get_actor_wrapper(self.new_column, self.expr),
+                compute=compute_strategy,  # type: ignore
             )
-            setattr(item, self.new_column, value)
-            return item
+        elif compute_strategy == "tasks":
+            return prev.map_batches(
+                WithColumnStage._get_batched_func_wrapper(self.new_column, self.expr),  # type: ignore
+                compute=compute_strategy,
+                batch_size=self.batch_size,
+            )
+        else:
+            assert isinstance(compute_strategy, ray.data.ActorPoolStrategy)
+            return prev.map_batches(WithColumnStage._get_batched_actor_wrapper(self.new_column, self.expr), compute=compute_strategy, batch_size=self.batch_size)
 
-        return prev.map(with_column_func)
+    @staticmethod
+    def _get_actor_wrapper(new_column: QueryColumn, expr: F.QueryExpression) -> Type[Callable[[Any], Any]]:
+        assert isinstance(expr.func, type), "must wrap an actor class"
+        class ActorWrapper:
+            def __init__(self):
+                self._actor = expr.func()
+
+            def __call__(self, item):
+                args_batched = [getattr(item, query_column) for query_column in expr.args]
+                kwargs_batched = {key: getattr(item, query_column) for key, query_column in expr.kwargs.items()}
+                value = self._actor(*args_batched, **kwargs_batched)
+                setattr(item, new_column, value)
+                return item
+        return ActorWrapper
+
+    @staticmethod
+    def _get_batched_actor_wrapper(new_column: QueryColumn, expr: F.QueryExpression) -> Type[Callable[[List[Any]], List[Any]]]:
+        assert isinstance(expr.func, type), "must wrap an actor class"
+        class BatchActorWrapper:
+            def __init__(self):
+                self._actor = expr.func()
+
+            def __call__(self, items):
+                args_batched = [[getattr(item, query_column) for item in items] for query_column in expr.args]
+                kwargs_batched = {key: [getattr(item, query_column) for item in items] for key, query_column in expr.kwargs.items()}
+                values = self._actor(*args_batched, **kwargs_batched)
+                for item, value in zip(items, values):
+                    setattr(item, new_column, value)
+                return items
+        return BatchActorWrapper
+
+    @staticmethod
+    def _get_func_wrapper(new_column: QueryColumn, expr: F.QueryExpression) -> Callable[[Any], Any]:
+        def with_column_func(item):
+            value = expr.func(
+                *[getattr(item, query_column) for query_column in expr.args],
+                **{key: getattr(item, query_column) for key, query_column in expr.kwargs.items()},
+            )
+            setattr(item, new_column, value)
+            return item
+        return with_column_func
+
+    @staticmethod
+    def _get_batched_func_wrapper(new_column: QueryColumn, expr: F.QueryExpression) -> Callable[[List[Any]], List[Any]]:
+        def with_column_func_batched(items):
+            values = expr.func(
+                *[[getattr(item, query_column) for item in items] for query_column in expr.args],
+                **{key: [getattr(item, query_column) for item in items] for key, query_column in expr.kwargs.items()},
+            )
+            for item, value in zip(items, values):
+                setattr(item, new_column, value)
+            return items
+        return with_column_func_batched

@@ -60,7 +60,7 @@ def func(
     """
     parsed_return_type: Type[ReturnType]
     if return_type is None:
-        type_hints = get_type_hints(user_func)
+        type_hints = get_type_hints(user_func.__call__) if isinstance(user_func, type) else get_type_hints(user_func)
         if "return" not in type_hints:
             raise ValueError(
                 f"Function {user_func} is not type-annotated with a return type and no return_type provided"
