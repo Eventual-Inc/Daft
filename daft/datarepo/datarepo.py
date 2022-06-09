@@ -70,14 +70,15 @@ class DataRepo:
         filepaths = dataset.map_batches(_write_block, batch_size=rows_per_partition).take_all()
         return filepaths
 
-    def append(self, dataset: ray.data.Dataset, rows_per_partition=1024):
+    def append(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:
         filepaths = self.__write_dataset(dataset, rows_per_partition)
         self._log.start_transaction()
         for file in filepaths:
             self._log.add_file(file)
         self._log.commit()
+        return filepaths
 
-    def overwrite(self, dataset: ray.data.Dataset, rows_per_partition=1024):
+    def overwrite(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:
         old_filepaths = self._log.file_list()
         filepaths = self.__write_dataset(dataset, rows_per_partition)
         self._log.start_transaction()
@@ -86,6 +87,7 @@ class DataRepo:
         for file in old_filepaths:
             self._log.remove_file(file)
         self._log.commit()
+        return filepaths
 
     def update(self, dataset, func):
         raise NotImplementedError("update not implemented")

@@ -7,10 +7,10 @@ import networkx as NX
 import ray
 
 from daft.datarepo.query import stages, tree_ops
-from daft.datarepo.query.definitions import NodeId, QueryColumn, Comparator
+from daft.datarepo.query.definitions import NodeId, QueryColumn, Comparator, WriteDatarepoStageOutput
 from daft.datarepo.query import functions as F
 
-from typing import Callable, Type, Tuple, List, Union, cast
+from typing import Literal, Type, Tuple, List, Union, cast
 
 
 @dataclasses.dataclass(frozen=True)
@@ -94,6 +94,30 @@ class DatarepoQueryBuilder:
         stage = stages.LimitStage(limit=limit)
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(query_tree=tree, root=node_id, current_columns=self._current_columns)
+
+    def write_datarepo(
+        self,
+        datarepo_path: str,
+        dtype: type,
+        mode: Union[Literal["append"], Literal["overwrite"]] = "append",
+        rows_per_partition: int = 1024,
+    ) -> DatarepoQueryBuilder:
+        """Writes the query to a datarepo, returning the results of the write"""
+        stage = stages.WriteDatarepoStage(
+            datarepo_path=datarepo_path,
+            mode=mode,
+            rows_per_partition=rows_per_partition,
+            dtype=dtype,
+        )
+        node_id, tree = stage.add_root(self._query_tree, self._root)
+        return DatarepoQueryBuilder(
+            query_tree=tree,
+            root=node_id,
+            current_columns=[
+                _QueryColumnSchema(name=field.name, type=field.type)
+                for field in dataclasses.fields(WriteDatarepoStageOutput)
+            ],
+        )
 
     def execute(self) -> ray.data.Dataset:
         """Executes the query and returns it as a Daft dataset"""

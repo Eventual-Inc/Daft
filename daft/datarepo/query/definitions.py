@@ -1,4 +1,4 @@
-import dataclasses
+from daft.dataclasses import dataclass
 
 from typing import Any, Callable, Literal, cast, Union
 
@@ -22,3 +22,8 @@ COMPARATOR_MAP = {
     "<=": "__le__",
     "=": "__eq__",
 }
+
+
+@dataclass
+class WriteDatarepoStageOutput:
+    filepath: str

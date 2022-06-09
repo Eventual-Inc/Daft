@@ -1,15 +1,17 @@
 import dataclasses
 import uuid
 import enum
+import math
 
 import networkx as NX
 import ray
 import pyarrow.dataset as pads
 import pyarrow.compute as pc
+import pyarrow.parquet as pq
 
 from daft.datarepo.log import DaftLakeLog
 from daft.datarepo.query import functions as F
-from daft.datarepo.query.definitions import Comparator, NodeId, QueryColumn, COMPARATOR_MAP
+from daft.datarepo.query.definitions import Comparator, NodeId, QueryColumn, COMPARATOR_MAP, WriteDatarepoStageOutput
 from daft.schema import DaftSchema
 
 from typing import Any, Dict, Type, Tuple, cast, Protocol, Callable, Optional, Union, List, Literal
@@ -26,6 +28,7 @@ class StageType(enum.Enum):
     Limit = "limit"
     WithColumn = "with_column"
     Where = "where"
+    WriteDatarepo = "write_datarepo"
 
 
 class QueryStage(Protocol):
@@ -335,3 +338,77 @@ class WithColumnStage(QueryStage):
             return items
 
         return with_column_func_batched
+
+
+@dataclasses.dataclass
+class WriteDatarepoStage(QueryStage):
+    mode: Union[Literal["overwrite"], Literal["append"]]
+    datarepo_path: str
+    rows_per_partition: int
+    dtype: type
+
+    def type(self) -> StageType:
+        return StageType.WriteDatarepo
+
+    def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
+        node_id = str(uuid.uuid4())
+        tree_copy = query_tree.copy()
+        tree_copy.add_node(node_id, stage=self)
+        tree_copy.add_edge(node_id, root_node, key="prev")
+        return node_id, tree_copy
+
+    def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
+        assert (
+            len(input_stage_results) == 1 and "prev" in input_stage_results
+        ), f"WithColumnStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
+        prev = input_stage_results["prev"]
+
+        # TODO(jay): When we have dynamic dataclasses, this code should be modified to use that instead
+        # It will currently fail because our schema is not being amended.
+        daft_schema: DaftSchema = getattr(self.dtype, "_daft_schema")
+        log = DaftLakeLog(self.datarepo_path)
+        data_dir = log.data_dir().replace("file://", "")
+        filesystem = log._fs
+        filesystem.makedir(data_dir)
+        old_filepaths = log.file_list()
+
+        def _write_block(block) -> List[WriteDatarepoStageOutput]:
+            assert len(block) > 0
+            name = uuid.uuid4()
+            filepath = f"{data_dir}/{name}.parquet"
+            arrow_table = daft_schema.serialize(block)
+            pq.write_table(arrow_table, filepath, filesystem=filesystem)
+            return [WriteDatarepoStageOutput(filepath=filepath)]
+
+        num_partitions = max(math.ceil(prev.count() // self.rows_per_partition), 1)
+        prev = prev.repartition(num_partitions, shuffle=True)
+        outputs = prev.map_batches(_write_block, batch_size=self.rows_per_partition)
+
+        log.start_transaction()
+        for output in outputs.take_all():
+            log.add_file(output.filepath)
+        if self.mode == "overwrite":
+            for file in old_filepaths:
+                log.remove_file(file)
+        log.commit()
+
+        return outputs
+
+        # TODO(jay): When dynamic dataclasses are implemented, we can use the DataRepo API instead
+        # datarepo = DataRepo(DaftLakeLog(self.datarepo_path))
+        # filepaths: List[str]
+        # if self.mode == "overwrite":
+        #     filepaths = datarepo.overwrite(prev, rows_per_partition=self.rows_per_partition)
+        # elif self.mode == "append":
+        #     filepaths = datarepo.append(prev, rows_per_partition=self.rows_per_partition)
+        # else:
+        #     raise NotImplementedError(f"Not implemented writing mode {self.mode}")
+        # return ray.data.from_items([WriteDatarepoStageOutput(filepath=filepath) for filepath in filepaths])
+
+    def __repr__(self) -> str:
+        args = {
+            "mode": self.mode,
+            "datarepo_path": self.datarepo_path,
+            "rows_per_partition": self.rows_per_partition,
+        }
+        return _query_stage_repr(self.type(), args)
