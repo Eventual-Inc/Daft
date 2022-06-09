@@ -44,25 +44,6 @@ class QueryExpression(Generic[ReturnType]):
     batch_size: Optional[int]
 
 
-# def trace(*args):
-#     def _trace(func):
-#         def wrapper(*args, **kwargs):
-#             print enter_string
-#             func(*args, **kwargs)
-#             print exit_string
-#         return wrapper
-#     if len(args) == 1 and callable(args[0]):
-#         # No arguments, this is the decorator
-#         # Set default values for the arguments
-#         enter_string = 'entering'
-#         exit_string = 'exiting'
-#         return _trace(args[0])
-#     else:
-#         # This is just returning the decorator
-#         enter_string, exit_string = args
-#         return _trace
-
-
 @overload
 def func(
     userfunc: None = None, *, return_type: Optional[Type[ReturnType]] = None
