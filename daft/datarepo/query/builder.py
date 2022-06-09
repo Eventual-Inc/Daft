@@ -74,14 +74,6 @@ class DatarepoQueryBuilder:
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(query_tree=tree, root=node_id)
 
-    def with_column_batched(self, new_column: QueryColumn, expr: F.QueryExpression, batch_size: int = 32) -> DatarepoQueryBuilder:
-        """Creates a new column with value derived from the specified expression, and executes the function
-        encapsulated in the expression on batches of data instead of single items
-        """
-        stage = stages.WithColumnStage(new_column=new_column, expr=expr, batch_size=batch_size)
-        node_id, tree = stage.add_root(self._query_tree, self._root)
-        return DatarepoQueryBuilder(query_tree=tree, root=node_id)
-
     def limit(self, limit: int) -> DatarepoQueryBuilder:
         """Limits the number of rows in the query"""
         stage = stages.LimitStage(limit=limit)

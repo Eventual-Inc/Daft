@@ -208,7 +208,6 @@ class ApplyStage(QueryStage):
 class WithColumnStage(QueryStage):
     new_column: QueryColumn
     expr: F.QueryExpression
-    batch_size: Optional[int] = None
 
     def _get_compute_strategy(self) -> Union[Literal["tasks"], ray.data.ActorPoolStrategy]:
         """Returns the appropriate compute_strategy for the function in this stage's QueryExpression
@@ -235,9 +234,9 @@ class WithColumnStage(QueryStage):
         prev = input_stage_results["prev"]
 
         compute_strategy = self._get_compute_strategy()
-        if self.batch_size is None and compute_strategy == "tasks":
+        if self.expr.batch_size is None and compute_strategy == "tasks":
             return prev.map(WithColumnStage._get_func_wrapper(self.new_column, self.expr), compute=compute_strategy)
-        elif self.batch_size is None:
+        elif self.expr.batch_size is None:
             assert isinstance(compute_strategy, ray.data.ActorPoolStrategy)
             return prev.map(
                 WithColumnStage._get_actor_wrapper(self.new_column, self.expr),
@@ -247,15 +246,20 @@ class WithColumnStage(QueryStage):
             return prev.map_batches(
                 WithColumnStage._get_batched_func_wrapper(self.new_column, self.expr),  # type: ignore
                 compute=compute_strategy,
-                batch_size=self.batch_size,
+                batch_size=self.expr.batch_size,
             )
         else:
             assert isinstance(compute_strategy, ray.data.ActorPoolStrategy)
-            return prev.map_batches(WithColumnStage._get_batched_actor_wrapper(self.new_column, self.expr), compute=compute_strategy, batch_size=self.batch_size)
+            return prev.map_batches(
+                WithColumnStage._get_batched_actor_wrapper(self.new_column, self.expr),
+                compute=compute_strategy,
+                batch_size=self.expr.batch_size,
+            )
 
     @staticmethod
     def _get_actor_wrapper(new_column: QueryColumn, expr: F.QueryExpression) -> Type[Callable[[Any], Any]]:
         assert isinstance(expr.func, type), "must wrap an actor class"
+
         class ActorWrapper:
             def __init__(self):
                 self._actor = expr.func()
@@ -266,22 +270,29 @@ class WithColumnStage(QueryStage):
                 value = self._actor(*args_batched, **kwargs_batched)
                 setattr(item, new_column, value)
                 return item
+
         return ActorWrapper
 
     @staticmethod
-    def _get_batched_actor_wrapper(new_column: QueryColumn, expr: F.QueryExpression) -> Type[Callable[[List[Any]], List[Any]]]:
+    def _get_batched_actor_wrapper(
+        new_column: QueryColumn, expr: F.QueryExpression
+    ) -> Type[Callable[[List[Any]], List[Any]]]:
         assert isinstance(expr.func, type), "must wrap an actor class"
+
         class BatchActorWrapper:
             def __init__(self):
                 self._actor = expr.func()
 
             def __call__(self, items):
                 args_batched = [[getattr(item, query_column) for item in items] for query_column in expr.args]
-                kwargs_batched = {key: [getattr(item, query_column) for item in items] for key, query_column in expr.kwargs.items()}
+                kwargs_batched = {
+                    key: [getattr(item, query_column) for item in items] for key, query_column in expr.kwargs.items()
+                }
                 values = self._actor(*args_batched, **kwargs_batched)
                 for item, value in zip(items, values):
                     setattr(item, new_column, value)
                 return items
+
         return BatchActorWrapper
 
     @staticmethod
@@ -293,6 +304,7 @@ class WithColumnStage(QueryStage):
             )
             setattr(item, new_column, value)
             return item
+
         return with_column_func
 
     @staticmethod
@@ -305,4 +317,5 @@ class WithColumnStage(QueryStage):
             for item, value in zip(items, values):
                 setattr(item, new_column, value)
             return items
+
         return with_column_func_batched
