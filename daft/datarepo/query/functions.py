@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 
 from daft.datarepo.query.definitions import QueryColumn
 
@@ -82,6 +83,7 @@ def func(
     def _func(user_func: UserFunction) -> QueryFunction[ReturnType]:
         parsed_return_type = return_type if return_type is not None else _get_return_type(user_func)
 
+        @functools.wraps(user_func)
         def query_function(*args: QueryColumn, **kwargs: QueryColumn) -> QueryExpression[ReturnType]:
             return QueryExpression(
                 func=user_func, return_type=parsed_return_type, args=args, kwargs=kwargs, batch_size=None
@@ -122,6 +124,7 @@ def batch_func(
     def _batch_func(user_func: UserFunction) -> QueryFunction[ReturnType]:
         parsed_return_type = return_type if return_type is not None else _get_return_type(user_func)
 
+        @functools.wraps(user_func)
         def query_function(*args: QueryColumn, **kwargs: QueryColumn) -> QueryExpression[ReturnType]:
             return QueryExpression(
                 func=user_func, return_type=parsed_return_type, args=args, kwargs=kwargs, batch_size=batch_size

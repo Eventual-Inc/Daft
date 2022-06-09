@@ -5,6 +5,7 @@ from daft.datarepo.log import DaftLakeLog
 from daft.datarepo.query.definitions import QueryColumn
 from daft.datarepo.query import stages
 from daft.datarepo.datarepo import DataRepo
+from daft.datarepo.query import functions as F
 
 FAKE_DATAREPO_ID = "mydatarepo"
 FAKE_DATAREPO_PATH = f"file:///tmp/fake_{FAKE_DATAREPO_ID}_path"
@@ -57,7 +58,8 @@ def test_query_limit_optimization_simple(fake_datarepo: DataRepo) -> None:
 
 def test_query_optimization_interleaved(fake_datarepo: DataRepo) -> None:
     limit = 10
-    f = lambda x: 1
+    wrapped_func = lambda x: 1
+    f = F.func(wrapped_func, return_type=int)
     q = (
         fake_datarepo.query(MyFakeDataclass)
         .limit(limit)
@@ -65,7 +67,7 @@ def test_query_optimization_interleaved(fake_datarepo: DataRepo) -> None:
         .limit(limit + 2)
         .where("id", ">", 6)
         .limit(limit + 1)
-        .apply(f, "foo")
+        .with_column("foo", f("x"))
         .limit(limit)
     )
     optimized_tree, root = q._optimize_query_tree()
@@ -76,7 +78,16 @@ def test_query_optimization_interleaved(fake_datarepo: DataRepo) -> None:
             read_limit=limit,
             filters=[[("id", ">", 6), ("id", ">", 5)]],
         ),
-        stages.ApplyStage(f=f, args=("foo",), kwargs={}),
+        stages.WithColumnStage(
+            new_column="foo",
+            expr=F.QueryExpression(
+                func=wrapped_func,
+                return_type=int,
+                args=("x",),
+                kwargs={},
+                batch_size=None,
+            ),
+        ),
     ]
     assert [v["stage"] for _, v in optimized_tree.nodes().items()] == expected_optimized_stages
 
@@ -107,12 +118,22 @@ def test_query_filter(fake_datarepo: DataRepo) -> None:
     assert [v["stage"] for _, v in q._query_tree.nodes().items()] == expected_stages
 
 
-def test_query_apply(fake_datarepo: DataRepo) -> None:
-    f = lambda x: 1
-    q = fake_datarepo.query(MyFakeDataclass).apply(f, "foo", somekwarg="bar")
+def test_query_with_column(fake_datarepo: DataRepo) -> None:
+    wrapped_func = lambda x: 1
+    f = F.func(wrapped_func, return_type=int)
+    q = fake_datarepo.query(MyFakeDataclass).with_column("foo", f("x"))
     expected_stages = [
         stages.GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass, read_limit=None),
-        stages.ApplyStage(f=f, args=("foo",), kwargs={"somekwarg": "bar"}),
+        stages.WithColumnStage(
+            new_column="foo",
+            expr=F.QueryExpression(
+                func=wrapped_func,
+                args=("x",),
+                kwargs={},
+                batch_size=None,
+                return_type=int,
+            ),
+        ),
     ]
     assert len(q._query_tree.nodes()) == 2
     assert [k for k in q._query_tree.nodes()][-1] == q._root

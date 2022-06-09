@@ -44,14 +44,6 @@ def test_query_limit(populated_datarepo):
     assert len(results) == limit
 
 
-def test_query_apply(populated_datarepo):
-    def add_x_to_arr(arr: np.ndarray, x_kwarg: int = 100) -> np.ndarray:
-        return arr + x_kwarg
-
-    ds = populated_datarepo.query(TestDc).apply(add_x_to_arr, "arr", x_kwarg="x").execute()
-    assert sorted([row for row in ds.iter_rows()]) == [np.ones(1) * i for i in range(1, 100 + 1)]
-
-
 @F.func
 def add_x_to_arr_decorator(arr: np.ndarray, x_kwarg: int = 100) -> np.ndarray:
     return arr + x_kwarg
@@ -121,7 +113,7 @@ def add_x_to_arr_batch_decorator(arr_batch: List[np.ndarray], x_batch: List[int]
     return [arr + x for arr, x in zip(arr_batch, x_batch)]
 
 
-@F.batch_func(return_type=np.ndarray)
+@F.batch_func(return_type=List[np.ndarray])
 def add_x_to_arr_batch_decorator_kwarg(arr_batch: List[np.ndarray], x_batch: List[int]):
     return [arr + x for arr, x in zip(arr_batch, x_batch)]
 
@@ -130,7 +122,7 @@ def add_x_to_arr_batch(arr_batch: List[np.ndarray], x_batch: List[int]):
     return [arr + x for arr, x in zip(arr_batch, x_batch)]
 
 
-add_x_to_arr_batch_func = F.batch_func(add_x_to_arr_batch, return_type=np.ndarray)
+add_x_to_arr_batch_func = F.batch_func(add_x_to_arr_batch, return_type=List[np.ndarray])
 
 
 @F.batch_func
@@ -142,7 +134,7 @@ class AddXToArrBatchDecorator:
         return [arr + x for arr, x in zip(arr_batch, x_batch)]
 
 
-@F.batch_func(return_type=np.ndarray)
+@F.batch_func(return_type=List[np.ndarray])
 class AddXToArrBatchDecoratorKwarg:
     def __init__(self):
         self.offset = 0
@@ -159,7 +151,7 @@ class AddXToArrBatch:
         return [arr + x for arr, x in zip(arr_batch, x_batch)]
 
 
-AddXToArrBatchFunc = F.batch_func(AddXToArrBatch, return_type=np.ndarray)
+AddXToArrBatchFunc = F.batch_func(AddXToArrBatch, return_type=List[np.ndarray])
 
 
 @pytest.mark.parametrize(

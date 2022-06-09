@@ -13,11 +13,18 @@ from daft.datarepo.query import functions as F
 from typing import Callable, Type, Tuple, List, Union, cast
 
 
+@dataclasses.dataclass(frozen=True)
+class _QueryColumnSchema:
+    name: QueryColumn
+    type: Type
+
+
 class DatarepoQueryBuilder:
     def __init__(
         self,
         query_tree: NX.DiGraph,
         root: str,
+        current_columns: List[_QueryColumnSchema],
     ) -> None:
         # The Query is structured as a Query Tree
         # 1. There is one root, which holds the entire query
@@ -26,6 +33,9 @@ class DatarepoQueryBuilder:
         # 4. Edges hold a "key" attribute which defines the name of the input to a given operation
         self._query_tree = query_tree
         self._root = root
+
+        # TODO(jaychia): Replace with dynamic dataclass when that is ready
+        self._current_columns = current_columns
 
     @classmethod
     def _from_datarepo_log(cls, daft_lake_log: DaftLakeLog, dtype: Type) -> DatarepoQueryBuilder:
@@ -48,7 +58,13 @@ class DatarepoQueryBuilder:
             filters=None,
         )
         node_id, tree = stage.add_root(tree, "")
-        return cls(query_tree=tree, root=node_id)
+        return cls(
+            query_tree=tree,
+            root=node_id,
+            current_columns=[
+                _QueryColumnSchema(name=field.name, type=field.type) for field in dataclasses.fields(dtype)
+            ],
+        )
 
     def where(self, column: QueryColumn, operation: Comparator, value: Union[str, float, int]):
         """Filters the query with a simple predicate.
@@ -60,25 +76,24 @@ class DatarepoQueryBuilder:
         """
         stage = stages.WhereStage(column, operation, value)
         node_id, tree = stage.add_root(self._query_tree, self._root)
-        return DatarepoQueryBuilder(query_tree=tree, root=node_id)
-
-    def apply(self, func: Callable, *args: QueryColumn, **kwargs: QueryColumn) -> DatarepoQueryBuilder:
-        """Applies a function on specified columns of the data in the query"""
-        stage = stages.ApplyStage(f=func, args=args, kwargs=kwargs)
-        node_id, tree = stage.add_root(self._query_tree, self._root)
-        return DatarepoQueryBuilder(query_tree=tree, root=node_id)
+        return DatarepoQueryBuilder(query_tree=tree, root=node_id, current_columns=self._current_columns)
 
     def with_column(self, new_column: QueryColumn, expr: F.QueryExpression) -> DatarepoQueryBuilder:
         """Creates a new column with value derived from the specified expression"""
         stage = stages.WithColumnStage(new_column=new_column, expr=expr)
         node_id, tree = stage.add_root(self._query_tree, self._root)
-        return DatarepoQueryBuilder(query_tree=tree, root=node_id)
+        new_columns = self._current_columns + [
+            _QueryColumnSchema(
+                name=new_column, type=expr.return_type if expr.batch_size is None else expr.return_type.__args__[0]
+            )
+        ]
+        return DatarepoQueryBuilder(query_tree=tree, root=node_id, current_columns=new_columns)
 
     def limit(self, limit: int) -> DatarepoQueryBuilder:
         """Limits the number of rows in the query"""
         stage = stages.LimitStage(limit=limit)
         node_id, tree = stage.add_root(self._query_tree, self._root)
-        return DatarepoQueryBuilder(query_tree=tree, root=node_id)
+        return DatarepoQueryBuilder(query_tree=tree, root=node_id, current_columns=self._current_columns)
 
     def execute(self) -> ray.data.Dataset:
         """Executes the query and returns it as a Daft dataset"""
@@ -92,6 +107,20 @@ class DatarepoQueryBuilder:
         tree, root = _limit_pushdown(tree, root)
         tree, root = _where_pushdown(tree, root)
         return tree, root
+
+    def __repr__(self) -> str:
+        columns = "\n".join([f"`{field.name}`:\t{field.type}" for field in self._current_columns])
+        stages = [self._query_tree.nodes[node_id]["stage"] for node_id in NX.dfs_tree(self._query_tree)]
+        stages_repr = "\n|\n".join([stage.__repr__() for stage in stages])
+        return f"""
+Columns
+-------
+{columns}
+
+Query Plan
+----------
+{stages_repr}
+"""
 
 
 def _execute_query_tree(tree: NX.DiGraph, root: NodeId) -> ray.data.Dataset:
@@ -119,10 +148,10 @@ def _where_pushdown(tree: NX.DiGraph, root: NodeId) -> Tuple[NX.DiGraph, NodeId]
 
     # Find all WhereStages and the lowest read stage
     where_node_ids = tree_ops.dfs_search(
-        tree, root, lambda data: cast(stages.QueryStage, data["stage"]).type() == stages.StageType.WhereStageType
+        tree, root, lambda data: cast(stages.QueryStage, data["stage"]).type() == stages.StageType.Where
     )
     read_node_ids = tree_ops.dfs_search(
-        tree, root, lambda data: cast(stages.QueryStage, data["stage"]).type() == stages.StageType.GetDatarepoStageType
+        tree, root, lambda data: cast(stages.QueryStage, data["stage"]).type() == stages.StageType.GetDatarepo
     )
 
     assert len(read_node_ids) == 1, "where pushdown only supports one read node for now"
@@ -157,10 +186,10 @@ def _limit_pushdown(tree: NX.DiGraph, root: NodeId) -> Tuple[NX.DiGraph, NodeId]
 
     # Find all LimitStages and the lowest read stage
     limit_node_ids = tree_ops.dfs_search(
-        tree, root, lambda data: cast(stages.QueryStage, data["stage"]).type() == stages.StageType.LimitStageType
+        tree, root, lambda data: cast(stages.QueryStage, data["stage"]).type() == stages.StageType.Limit
     )
     read_node_ids = tree_ops.dfs_search(
-        tree, root, lambda data: cast(stages.QueryStage, data["stage"]).type() == stages.StageType.GetDatarepoStageType
+        tree, root, lambda data: cast(stages.QueryStage, data["stage"]).type() == stages.StageType.GetDatarepo
     )
 
     assert len(read_node_ids) == 1, "limit pushdown only supports one read node for now"

@@ -22,11 +22,10 @@ DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.d
 
 
 class StageType(enum.Enum):
-    GetDatarepoStageType = "get_datarepo"
-    LimitStageType = "limit"
-    ApplyStageType = "apply"
-    WithColumnStageType = "with_column"
-    WhereStageType = "where"
+    GetDatarepo = "get_datarepo"
+    Limit = "limit"
+    WithColumn = "with_column"
+    Where = "where"
 
 
 class QueryStage(Protocol):
@@ -38,6 +37,18 @@ class QueryStage(Protocol):
 
     def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
         ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+def _query_stage_repr(stage_type: StageType, args: Dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            f"* {stage_type.name}",
+            *[f"| {arg_key}: {arg}" for arg_key, arg in args.items()],
+        ]
+    )
 
 
 @dataclasses.dataclass
@@ -77,7 +88,7 @@ class GetDatarepoStage(QueryStage):
         return final_expr
 
     def type(self) -> StageType:
-        return StageType.GetDatarepoStageType
+        return StageType.GetDatarepo
 
     def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
         assert len(query_tree.nodes) == 0, "can only add _GetDatarepoStage to empty query tree"
@@ -117,6 +128,18 @@ class GetDatarepoStage(QueryStage):
             batch_format="pyarrow",
         )
 
+    def __repr__(self) -> str:
+        args = {
+            "datarepo": self.daft_lake_log.path,
+        }
+        if self.read_limit is not None:
+            args["read_limit"] = str(self.read_limit)
+        if self.filters is not None:
+            args["filters"] = " or ".join(
+                ["(" + " and ".join([f"{col} {op} {val}" for col, op, val in conj]) + ")" for conj in self.filters]
+            )
+        return _query_stage_repr(self.type(), args)
+
 
 @dataclasses.dataclass
 class WhereStage(QueryStage):
@@ -125,7 +148,7 @@ class WhereStage(QueryStage):
     value: Union[str, int, float]
 
     def type(self) -> StageType:
-        return StageType.WhereStageType
+        return StageType.Where
 
     def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
         node_id = str(uuid.uuid4())
@@ -152,13 +175,19 @@ class WhereStage(QueryStage):
 
         return f
 
+    def __repr__(self) -> str:
+        args = {
+            "predicate": f"{self.column} {self.operation} {self.value}",
+        }
+        return _query_stage_repr(self.type(), args)
+
 
 @dataclasses.dataclass
 class LimitStage(QueryStage):
     limit: int
 
     def type(self) -> StageType:
-        return StageType.LimitStageType
+        return StageType.Limit
 
     def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
         node_id = str(uuid.uuid4())
@@ -174,34 +203,11 @@ class LimitStage(QueryStage):
         prev = input_stage_results["prev"]
         return prev.limit(self.limit)
 
-
-@dataclasses.dataclass
-class ApplyStage(QueryStage):
-    f: Callable
-    args: Tuple[QueryColumn, ...]
-    kwargs: Dict[str, QueryColumn]
-
-    def type(self) -> StageType:
-        return StageType.ApplyStageType
-
-    def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
-        node_id = str(uuid.uuid4())
-        tree_copy = query_tree.copy()
-        tree_copy.add_node(node_id, stage=self)
-        tree_copy.add_edge(node_id, root_node, key="prev")
-        return node_id, tree_copy
-
-    def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
-        assert (
-            len(input_stage_results) == 1 and "prev" in input_stage_results
-        ), f"ApplyStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
-        prev = input_stage_results["prev"]
-        return prev.map(
-            lambda x: self.f(
-                *[getattr(x, query_column) for query_column in self.args],
-                **{key: getattr(x, query_column) for key, query_column in self.kwargs.items()},
-            )
-        )
+    def __repr__(self) -> str:
+        args = {
+            "limit": str(self.limit),
+        }
+        return _query_stage_repr(self.type(), args)
 
 
 @dataclasses.dataclass
@@ -218,7 +224,7 @@ class WithColumnStage(QueryStage):
         return DEFAULT_ACTOR_STRATEGY() if isinstance(self.expr.func, type) else "tasks"
 
     def type(self) -> StageType:
-        return StageType.WithColumnStageType
+        return StageType.WithColumn
 
     def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
         node_id = str(uuid.uuid4())
@@ -255,6 +261,16 @@ class WithColumnStage(QueryStage):
                 compute=compute_strategy,
                 batch_size=self.expr.batch_size,
             )
+
+    def __repr__(self) -> str:
+        ret_type = self.expr.return_type if self.expr.batch_size is None else self.expr.return_type.__args__[0]
+        args_str = tuple(f"`{arg}`" for arg in self.expr.args)
+        kwargs_str = tuple(f"{key}=`{col}`" for key, col in self.expr.kwargs.items())
+        args = {
+            "column": f"`{self.new_column}`",
+            "expression": f"{self.expr.func.__name__}({', '.join(args_str + kwargs_str)}) -> {ret_type}",
+        }
+        return _query_stage_repr(self.type(), args)
 
     @staticmethod
     def _get_actor_wrapper(new_column: QueryColumn, expr: F.QueryExpression) -> Type[Callable[[Any], Any]]:
