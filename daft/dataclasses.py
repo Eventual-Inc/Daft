@@ -64,7 +64,7 @@ class DataclassBuilder:
     def add_field(self, name: str, dtype: Type, field: Optional[pydataclasses.Field] = None) -> None:
         if name in self.fields:
             raise ValueError(f"{name} already in builder")
-        
+
         assert isinstance(dtype, Type) or (get_origin(dtype) is not None)
         if field is None:
             self.fields[name] = (name, dtype)
@@ -92,18 +92,28 @@ class DataclassBuilder:
         db = DataclassBuilder()
         assert pydataclasses.is_dataclass(dtype)
         for field in getattr(dtype, "__dataclass_fields__").values():
+            if isinstance(field.default, pydataclasses._MISSING_TYPE):
+                default = pydataclasses.MISSING
+            else:
+                default = field.default
+
+            if isinstance(field.default_factory, pydataclasses._MISSING_TYPE):
+                default_factory = pydataclasses.MISSING
+            else:
+                default_factory = field.default_factory
             db.add_field(
                 field.name,
                 field.type,
                 pydataclasses.field(
-                    default=field.default,
-                    default_factory=field.default_factory,
+                    default=default,
+                    default_factory=default_factory,
                     init=field.init,
                     repr=field.repr,
                     hash=field.hash,
                     compare=field.compare,
-                    metadata=field.metadata
-                ))
+                    metadata=field.metadata,
+                ),
+            )
         return db
 
     @classmethod

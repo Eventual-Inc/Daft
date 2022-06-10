@@ -1,6 +1,6 @@
 import pytest
 
-from daft.dataclasses import dataclass
+from daft.dataclasses import DataclassBuilder, dataclass
 from daft.datarepo.log import DaftLakeLog
 from daft.datarepo.query.definitions import QueryColumn
 from daft.datarepo.query import stages
@@ -59,11 +59,14 @@ def test_query_filter(fake_datarepo: DataRepo) -> None:
 def test_query_with_column(fake_datarepo: DataRepo) -> None:
     wrapped_func = lambda x: 1
     f = F.func(wrapped_func, return_type=int)
-    q = fake_datarepo.query(MyFakeDataclass).with_column("foo", f("x"))
+    q = fake_datarepo.query(MyFakeDataclass).with_column("bar", f("x"))
+    dataclass_builder = DataclassBuilder.from_class(MyFakeDataclass)
+    dataclass_builder.add_field("bar", int)
+    new_dataclass = dataclass_builder.generate()
     expected_stages = [
         stages.GetDatarepoStage(daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass, read_limit=None),
         stages.WithColumnStage(
-            new_column="foo",
+            new_column="bar",
             expr=F.QueryExpression(
                 func=wrapped_func,
                 args=("x",),
@@ -71,6 +74,7 @@ def test_query_with_column(fake_datarepo: DataRepo) -> None:
                 batch_size=None,
                 return_type=int,
             ),
+            dataclass=new_dataclass,
         ),
     ]
     assert len(q._query_tree.nodes()) == 2

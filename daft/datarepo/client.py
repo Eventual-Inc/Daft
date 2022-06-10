@@ -58,10 +58,10 @@ class DatarepoClient:
         if exists:
             if exists_ok:
                 data_repo = self.from_id(repo_id)
-                new_schema = getattr(dtype, '_daft_schema')
+                new_schema = getattr(dtype, "_daft_schema")
                 if data_repo.schema() != new_schema.arrow_schema():
-                    logger.warning('New Schema and Data Repo Schema differs')
-                    raise ValueError('New Schema does not match old')
+                    logger.warning("New Schema and Data Repo Schema differs")
+                    raise ValueError("New Schema does not match old")
                 else:
                     return self.from_id(repo_id)
             else:
@@ -70,6 +70,7 @@ class DatarepoClient:
 
     def delete(self, repo_id: str) -> None:
         self._fs.rmdir(self.get_path(repo_id))
+
 
 def get_client(datarepo_path: Optional[str] = None) -> DatarepoClient:
     """Return the appropriate DatarepoClient as configured by the environment
