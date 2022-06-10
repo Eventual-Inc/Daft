@@ -16,9 +16,6 @@ class DataRepo:
     def __init__(self, log: DaftLakeLog) -> None:
         self._log = log
 
-    def _load(self, path) -> None:
-        ...
-
     def query(self, dtype: Type) -> DatarepoQueryBuilder:
         return DatarepoQueryBuilder._from_datarepo_log(self._log, dtype=dtype)
 

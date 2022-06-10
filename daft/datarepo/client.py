@@ -3,11 +3,13 @@ from __future__ import annotations
 import logging
 import re
 from os import path
-from typing import List, Optional, TypeVar
+from typing import List, Optional, Type, TypeVar
 
 import fsspec
 
 from daft import config
+from daft.datarepo.datarepo import DataRepo
+from daft.datarepo.log import DaftLakeLog
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ class DatarepoClient:
         if len(pathsplit) != 2:
             raise ValueError(f"Expected path in format <protocol>://<path> but received: {path}")
         self._protocol, self._prefix = pathsplit
-        self._fs = fsspec.filesystem(self._protocol)
+        self._fs: fsspec.AbstractFileSystem = fsspec.filesystem(self._protocol)
 
     def list_ids(self) -> List[str]:
         """List the IDs of all datarepos
@@ -41,6 +43,21 @@ class DatarepoClient:
 
     def get_path(self, name: str) -> str:
         return f"{self._protocol}://{self._prefix}/{name}"
+
+    def from_id(self, repo_id: str) -> DataRepo:
+        full_path = self.get_path(repo_id)
+        exists = self._fs.exists(full_path)
+        if not exists:
+            raise ValueError(f"{repo_id} does not exist")
+        daft_log = DaftLakeLog(full_path)
+        return DataRepo(daft_log)
+
+    def create(self, repo_id: str, dtype: Type) -> DataRepo:
+        full_path = self.get_path(repo_id)
+        exists = self._fs.exists(full_path)
+        if exists:
+            raise ValueError(f"{repo_id} already exists")
+        return DataRepo.create(full_path, repo_id, dtype)
 
 
 def get_client(datarepo_path: Optional[str] = None) -> DatarepoClient:
