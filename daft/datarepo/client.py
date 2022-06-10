@@ -52,13 +52,24 @@ class DatarepoClient:
         daft_log = DaftLakeLog(full_path)
         return DataRepo(daft_log)
 
-    def create(self, repo_id: str, dtype: Type) -> DataRepo:
+    def create(self, repo_id: str, dtype: Type, exists_ok=False) -> DataRepo:
         full_path = self.get_path(repo_id)
         exists = self._fs.exists(full_path)
         if exists:
-            raise ValueError(f"{repo_id} already exists")
+            if exists_ok:
+                data_repo = self.from_id(repo_id)
+                new_schema = getattr(dtype, '_daft_schema')
+                if data_repo.schema() != new_schema.arrow_schema():
+                    logger.warning('New Schema and Data Repo Schema differs')
+                    raise ValueError('New Schema does not match old')
+                else:
+                    return self.from_id(repo_id)
+            else:
+                raise ValueError(f"{repo_id} already exists")
         return DataRepo.create(full_path, repo_id, dtype)
 
+    def delete(self, repo_id: str) -> None:
+        self._fs.rmdir(self.get_path(repo_id))
 
 def get_client(datarepo_path: Optional[str] = None) -> DatarepoClient:
     """Return the appropriate DatarepoClient as configured by the environment
