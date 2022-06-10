@@ -10,13 +10,7 @@ from daft.datarepo.query import stages, tree_ops
 from daft.datarepo.query.definitions import NodeId, QueryColumn, Comparator, WriteDatarepoStageOutput
 from daft.datarepo.query import functions as F
 
-from typing import Literal, Type, Union, ForwardRef
-
-
-@dataclasses.dataclass(frozen=True)
-class _QueryColumnSchema:
-    name: QueryColumn
-    type: Type
+from typing import Literal, Type, Union, ForwardRef, Tuple, cast
 
 
 class DatarepoQueryBuilder:
