@@ -200,6 +200,9 @@ class DaftLakeLog:
 
         return num_commited_actions
 
+    def name(self) -> str:
+        return self._metadata["name"]
+
     def history(self) -> DaftActionModelList:
         return copy.deepcopy(self._commits)
 

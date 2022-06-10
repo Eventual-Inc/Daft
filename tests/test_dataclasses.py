@@ -103,7 +103,6 @@ def test_dataclass_builder_from_other_dataclass() -> None:
 
     assert values == [("x", int), ("y", str), ("img", np.ndarray), ("new_value", str)]
 
-
     db2.remove_field("new_value")
 
     dc2 = db2.generate()
@@ -112,7 +111,6 @@ def test_dataclass_builder_from_other_dataclass() -> None:
     assert values == [("x", int), ("y", str), ("img", np.ndarray)]
 
     assert all([f1 is not f2 for f1, f2 in zip(fields(dc), fields(dc2))])
-
 
 
 def test_dataclass_builder_with_root_types() -> None:

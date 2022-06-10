@@ -25,6 +25,9 @@ class DataRepo:
     def schema(self):
         return self._log.schema()
 
+    def name(self):
+        return self._log.name()
+
     def __read_dataset(self, dtype: Type):
         filelist = self._log.file_list()
         data_dir = self._log.data_dir()

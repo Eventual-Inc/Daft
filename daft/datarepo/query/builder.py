@@ -10,7 +10,7 @@ from daft.datarepo.query import stages
 from daft.datarepo.query.definitions import NodeId, QueryColumn, Comparator, WriteDatarepoStageOutput
 from daft.datarepo.query import functions as F
 
-from typing import Literal, Type, Tuple, List, Union, cast
+from typing import Literal, Type, Union, ForwardRef
 
 
 @dataclasses.dataclass(frozen=True)
@@ -91,18 +91,17 @@ class DatarepoQueryBuilder:
 
     def write_datarepo(
         self,
-        datarepo_path: str,
-        datarepo_name: str,
+        datarepo: ForwardRef("DataRepo"),
+        dataclass: Type,
         mode: Union[Literal["append"], Literal["overwrite"]] = "append",
         rows_per_partition: int = 1024,
     ) -> DatarepoQueryBuilder:
         """Writes the query to a datarepo, returning the results of the write"""
         stage = stages.WriteDatarepoStage(
-            datarepo_name=datarepo_name,
-            datarepo_path=datarepo_path,
+            datarepo=datarepo,
             mode=mode,
             rows_per_partition=rows_per_partition,
-            dtype=self._current_dataclass,
+            dtype=dataclass,
         )
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(

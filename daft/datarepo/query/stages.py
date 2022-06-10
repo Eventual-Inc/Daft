@@ -12,7 +12,7 @@ from daft.datarepo.query import functions as F
 from daft.datarepo.query.definitions import Comparator, NodeId, QueryColumn, COMPARATOR_MAP, WriteDatarepoStageOutput
 from daft.schema import DaftSchema
 
-from typing import Any, Dict, Type, Tuple, cast, Protocol, Callable, Optional, Union, List, Literal
+from typing import Any, Dict, Type, Tuple, cast, Protocol, Callable, Optional, Union, List, Literal, ForwardRef
 
 
 DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.data.ActorPoolStrategy(
@@ -243,7 +243,9 @@ class WithColumnStage(QueryStage):
 
         compute_strategy = self._get_compute_strategy()
         if self.expr.batch_size is None and compute_strategy == "tasks":
-            return prev.map(WithColumnStage._get_func_wrapper(self.new_column, self.expr, self.dataclass), compute=compute_strategy)
+            return prev.map(
+                WithColumnStage._get_func_wrapper(self.new_column, self.expr, self.dataclass), compute=compute_strategy
+            )
         elif self.expr.batch_size is None:
             assert isinstance(compute_strategy, ray.data.ActorPoolStrategy)
             return prev.map(
@@ -278,15 +280,19 @@ class WithColumnStage(QueryStage):
         if not isinstance(other, WithColumnStage):
             return False
         return (
-            other.expr == self.expr and
-            other.new_column == self.new_column and
-            other.dataclass.__name__ == self.dataclass.__name__ and
-            [(field.name, field.type) for field in dataclasses.fields(other.dataclass)] == [(field.name, field.type) for field in dataclasses.fields(self.dataclass)]
+            other.expr == self.expr
+            and other.new_column == self.new_column
+            and other.dataclass.__name__ == self.dataclass.__name__
+            and [(field.name, field.type) for field in dataclasses.fields(other.dataclass)]
+            == [(field.name, field.type) for field in dataclasses.fields(self.dataclass)]
         )
 
     @staticmethod
-    def _get_actor_wrapper(new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type) -> Type[Callable[[Any], Any]]:
+    def _get_actor_wrapper(
+        new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type
+    ) -> Type[Callable[[Any], Any]]:
         assert isinstance(expr.func, type), "must wrap an actor class"
+        old_fields = [f for f in new_dataclass.__dataclass_fields__ if f != new_column]
 
         class ActorWrapper:
             def __init__(self):
@@ -296,9 +302,9 @@ class WithColumnStage(QueryStage):
                 args_batched = [getattr(item, query_column) for query_column in expr.args]
                 kwargs_batched = {key: getattr(item, query_column) for key, query_column in expr.kwargs.items()}
                 value = self._actor(*args_batched, **kwargs_batched)
-                
+
                 new_item = new_dataclass(
-                    **{field.name: getattr(item, field.name) for field in dataclasses.fields(item)},
+                    **{field: getattr(item, field) for field in old_fields},
                     **{new_column: value},
                 )
                 return new_item
@@ -310,6 +316,7 @@ class WithColumnStage(QueryStage):
         new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type
     ) -> Type[Callable[[List[Any]], List[Any]]]:
         assert isinstance(expr.func, type), "must wrap an actor class"
+        old_fields = [f for f in new_dataclass.__dataclass_fields__ if f != new_column]
 
         class BatchActorWrapper:
             def __init__(self):
@@ -323,23 +330,28 @@ class WithColumnStage(QueryStage):
                 values = self._actor(*args_batched, **kwargs_batched)
                 new_items = [
                     new_dataclass(
-                        **{field.name: getattr(item, field.name) for field in dataclasses.fields(item)},
+                        **{field: getattr(item, field) for field in old_fields},
                         **{new_column: value},
-                    ) for item, value in zip(items, values)
+                    )
+                    for item, value in zip(items, values)
                 ]
                 return new_items
 
         return BatchActorWrapper
 
     @staticmethod
-    def _get_func_wrapper(new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type) -> Callable[[Any], Any]:
+    def _get_func_wrapper(
+        new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type
+    ) -> Callable[[Any], Any]:
+        old_fields = [f for f in new_dataclass.__dataclass_fields__ if f != new_column]
+
         def with_column_func(item):
             value = expr.func(
                 *[getattr(item, query_column) for query_column in expr.args],
                 **{key: getattr(item, query_column) for key, query_column in expr.kwargs.items()},
             )
             new_item = new_dataclass(
-                **{field.name: getattr(item, field.name) for field in dataclasses.fields(item)},
+                **{field: getattr(item, field) for field in old_fields},
                 **{new_column: value},
             )
             return new_item
@@ -347,7 +359,11 @@ class WithColumnStage(QueryStage):
         return with_column_func
 
     @staticmethod
-    def _get_batched_func_wrapper(new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type) -> Callable[[List[Any]], List[Any]]:
+    def _get_batched_func_wrapper(
+        new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type
+    ) -> Callable[[List[Any]], List[Any]]:
+        old_fields = [f for f in new_dataclass.__dataclass_fields__ if f != new_column]
+
         def with_column_func_batched(items):
             values = expr.func(
                 *[[getattr(item, query_column) for item in items] for query_column in expr.args],
@@ -355,9 +371,10 @@ class WithColumnStage(QueryStage):
             )
             new_items = [
                 new_dataclass(
-                    **{field.name: getattr(item, field.name) for field in dataclasses.fields(item)},
+                    **{field: getattr(item, field) for field in old_fields},
                     **{new_column: value},
-                ) for item, value in zip(items, values)
+                )
+                for item, value in zip(items, values)
             ]
             return new_items
 
@@ -367,8 +384,7 @@ class WithColumnStage(QueryStage):
 @dataclasses.dataclass
 class WriteDatarepoStage(QueryStage):
     mode: Union[Literal["overwrite"], Literal["append"]]
-    datarepo_path: str
-    datarepo_name: str
+    datarepo: ForwardRef("DataRepo")
     rows_per_partition: int
     dtype: type
 
@@ -383,28 +399,26 @@ class WriteDatarepoStage(QueryStage):
         return node_id, tree_copy
 
     def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
-        # Avoiding a circular import
-        from daft.datarepo.client import DatarepoClient
-
         assert (
             len(input_stage_results) == 1 and "prev" in input_stage_results
         ), f"WithColumnStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
         prev = input_stage_results["prev"]
+        field_names = [field for field in self.dtype.__dataclass_fields__]
+        prev = prev.map(lambda item: self.dtype(**{field: getattr(item, field) for field in field_names}))
 
-        datarepo = DatarepoClient(self.datarepo_path).from_id(self.datarepo_name)
         filepaths: List[str]
         if self.mode == "overwrite":
-            filepaths = datarepo.overwrite(prev, rows_per_partition=self.rows_per_partition)
+            filepaths = self.datarepo.overwrite(prev, rows_per_partition=self.rows_per_partition)
         elif self.mode == "append":
-            filepaths = datarepo.append(prev, rows_per_partition=self.rows_per_partition)
+            filepaths = self.datarepo.append(prev, rows_per_partition=self.rows_per_partition)
         else:
             raise NotImplementedError(f"Not implemented writing mode {self.mode}")
         return ray.data.from_items([WriteDatarepoStageOutput(filepath=filepath) for filepath in filepaths])
 
     def __repr__(self) -> str:
         args = {
+            "datarepo_name": self.datarepo.name(),
             "mode": self.mode,
-            "datarepo_path": self.datarepo_path,
             "rows_per_partition": self.rows_per_partition,
         }
         return _query_stage_repr(self.type(), args)
