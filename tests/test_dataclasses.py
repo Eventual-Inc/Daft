@@ -108,3 +108,12 @@ def test_dataclass_builder_from_other_dataclass() -> None:
     values = [(f.name, f.type) for f in fields(dc2)]
 
     assert values == [("x", int), ("y", str), ("img", np.ndarray)]
+
+
+def test_dataclass_builder_with_root_types() -> None:
+    builder = DataclassBuilder()
+    builder.add_field("foo", List[str])
+    dc = builder.generate()
+    values = [(f.name, f.type) for f in fields(dc)]
+
+    assert values == [("foo", List[str])]

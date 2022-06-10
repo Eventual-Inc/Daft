@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses as pydataclasses
-from typing import TYPE_CHECKING, Callable, Optional, OrderedDict, Type, TypeVar, Union
+from typing import TYPE_CHECKING, Callable, Optional, OrderedDict, Type, TypeVar, Union, get_origin
 
 from daft.schema import DaftSchema
 from daft.utils import _patch_class_for_deserialization
@@ -64,7 +64,8 @@ class DataclassBuilder:
     def add_field(self, name: str, dtype: Type, field: Optional[pydataclasses.Field] = None) -> None:
         if name in self.fields:
             raise ValueError(f"{name} already in builder")
-        assert isinstance(dtype, Type)
+        
+        assert isinstance(dtype, Type) or (get_origin(dtype) is not None)
         if field is None:
             self.fields[name] = (name, dtype)
         else:
