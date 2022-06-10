@@ -133,13 +133,11 @@ class DatarepoQueryBuilder:
         return tree, root
 
     def __repr__(self) -> str:
-        columns = "\n".join([f"`{field.name}`:\t{field.type}" for field in self._current_columns])
+        fields = "\n".join([f"    {field.name}: {field.type.__name__}" for field in self._current_columns])
         stages = [self._query_tree.nodes[node_id]["stage"] for node_id in NX.dfs_tree(self._query_tree)]
         stages_repr = "\n|\n".join([stage.__repr__() for stage in stages])
-        return f"""
-Columns
--------
-{columns}
+        return f"""class Item:
+{fields}
 
 Query Plan
 ----------
