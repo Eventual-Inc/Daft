@@ -92,12 +92,21 @@ class DataclassBuilder:
         db = DataclassBuilder()
         assert pydataclasses.is_dataclass(dtype)
         for field in getattr(dtype, "__dataclass_fields__").values():
+            if isinstance(field.default, pydataclasses._MISSING_TYPE):
+                default = pydataclasses.MISSING
+            else:
+                default = field.default
+            
+            if isinstance(field.default_factory, pydataclasses._MISSING_TYPE):
+                default_factory = pydataclasses.MISSING
+            else: 
+                default_factory = field.default_factory
             db.add_field(
                 field.name,
                 field.type,
                 pydataclasses.field(
-                    default=field.default,
-                    default_factory=field.default_factory,
+                    default=default,
+                    default_factory=default_factory,
                     init=field.init,
                     repr=field.repr,
                     hash=field.hash,
