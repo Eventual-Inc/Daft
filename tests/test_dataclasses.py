@@ -3,8 +3,8 @@ from typing import Dict, List
 import numpy as np
 import PIL
 import PIL.Image
-
-from daft.dataclasses import DataclassBuilder, dataclass, fields, is_dataclass
+from dataclasses import fields, is_dataclass
+from daft.dataclasses import DataclassBuilder, dataclass
 from daft.fields import DaftImageField
 from daft.types import DaftImageType
 
