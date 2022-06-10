@@ -45,6 +45,68 @@ def test_query_limit(fake_datarepo: DataRepo) -> None:
     assert [v["stage"] for _, v in q._query_tree.nodes().items()] == expected_stages
 
 
+def test_query_limit_optimization_simple(fake_datarepo: DataRepo) -> None:
+    limit = 10
+    q = fake_datarepo.query(MyFakeDataclass).limit(limit)
+    optimized_tree, root = q._optimize_query_tree()
+    expected_optimized_read_stage = stages.GetDatarepoStage(
+        daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass, read_limit=limit
+    )
+    assert len(optimized_tree.nodes()) == 1
+    assert [v for _, v in optimized_tree.nodes().items()][0]["stage"] == expected_optimized_read_stage
+
+
+def test_query_optimization_interleaved(fake_datarepo: DataRepo) -> None:
+    limit = 10
+    wrapped_func = lambda x: 1
+    f = F.func(wrapped_func, return_type=int)
+    q = (
+        fake_datarepo.query(MyFakeDataclass)
+        .limit(limit)
+        .where("id", ">", 5)
+        .limit(limit + 2)
+        .where("id", ">", 6)
+        .limit(limit + 1)
+        .with_column("foo", f("x"))
+        .limit(limit)
+    )
+    optimized_tree, root = q._optimize_query_tree()
+    expected_optimized_stages = [
+        stages.GetDatarepoStage(
+            daft_lake_log=fake_datarepo._log,
+            dtype=MyFakeDataclass,
+            read_limit=limit,
+            filters=[[("id", ">", 6), ("id", ">", 5)]],
+        ),
+        stages.WithColumnStage(
+            new_column="foo",
+            expr=F.QueryExpression(
+                func=wrapped_func,
+                return_type=int,
+                args=("x",),
+                kwargs={},
+                batch_size=None,
+            ),
+        ),
+    ]
+    assert [v["stage"] for _, v in optimized_tree.nodes().items()] == expected_optimized_stages
+
+
+def test_query_limit_optimization_min_limits(fake_datarepo: DataRepo) -> None:
+    limit = 10
+    for q in [
+        fake_datarepo.query(MyFakeDataclass).limit(limit).limit(limit + 10),
+        fake_datarepo.query(MyFakeDataclass).limit(limit + 10).limit(limit),
+        fake_datarepo.query(MyFakeDataclass).limit(limit).limit(limit),
+    ]:
+        optimized_tree, root = q._optimize_query_tree()
+        expected_optimized_read_stage = stages.GetDatarepoStage(
+            daft_lake_log=fake_datarepo._log, dtype=MyFakeDataclass, read_limit=limit
+        )
+        assert len(optimized_tree.nodes()) == 1
+        assert [v for _, v in optimized_tree.nodes().items()][0]["stage"] == expected_optimized_read_stage
+
+
 def test_query_filter(fake_datarepo: DataRepo) -> None:
     q = fake_datarepo.query(MyFakeDataclass).where("id", ">", 5)
     expected_stages = [
