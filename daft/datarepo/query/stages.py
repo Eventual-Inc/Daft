@@ -1,13 +1,11 @@
 import dataclasses
 import uuid
 import enum
-import math
 
 import networkx as NX
 import ray
 import pyarrow.dataset as pads
 import pyarrow.compute as pc
-import pyarrow.parquet as pq
 
 from daft.datarepo.log import DaftLakeLog
 from daft.datarepo.query import functions as F
@@ -217,6 +215,7 @@ class LimitStage(QueryStage):
 class WithColumnStage(QueryStage):
     new_column: QueryColumn
     expr: F.QueryExpression
+    dataclass: Type
 
     def _get_compute_strategy(self) -> Union[Literal["tasks"], ray.data.ActorPoolStrategy]:
         """Returns the appropriate compute_strategy for the function in this stage's QueryExpression
@@ -244,23 +243,23 @@ class WithColumnStage(QueryStage):
 
         compute_strategy = self._get_compute_strategy()
         if self.expr.batch_size is None and compute_strategy == "tasks":
-            return prev.map(WithColumnStage._get_func_wrapper(self.new_column, self.expr), compute=compute_strategy)
+            return prev.map(WithColumnStage._get_func_wrapper(self.new_column, self.expr, self.dataclass), compute=compute_strategy)
         elif self.expr.batch_size is None:
             assert isinstance(compute_strategy, ray.data.ActorPoolStrategy)
             return prev.map(
-                WithColumnStage._get_actor_wrapper(self.new_column, self.expr),
+                WithColumnStage._get_actor_wrapper(self.new_column, self.expr, self.dataclass),
                 compute=compute_strategy,  # type: ignore
             )
         elif compute_strategy == "tasks":
             return prev.map_batches(
-                WithColumnStage._get_batched_func_wrapper(self.new_column, self.expr),  # type: ignore
+                WithColumnStage._get_batched_func_wrapper(self.new_column, self.expr, self.dataclass),  # type: ignore
                 compute=compute_strategy,
                 batch_size=self.expr.batch_size,
             )
         else:
             assert isinstance(compute_strategy, ray.data.ActorPoolStrategy)
             return prev.map_batches(
-                WithColumnStage._get_batched_actor_wrapper(self.new_column, self.expr),
+                WithColumnStage._get_batched_actor_wrapper(self.new_column, self.expr, self.dataclass),
                 compute=compute_strategy,
                 batch_size=self.expr.batch_size,
             )
@@ -275,8 +274,18 @@ class WithColumnStage(QueryStage):
         }
         return _query_stage_repr(self.type(), args)
 
+    def __eq__(self, other: Any) -> str:
+        if not isinstance(other, WithColumnStage):
+            return False
+        return (
+            other.expr == self.expr and
+            other.new_column == self.new_column and
+            other.dataclass.__name__ == self.dataclass.__name__ and
+            [(field.name, field.type) for field in dataclasses.fields(other.dataclass)] == [(field.name, field.type) for field in dataclasses.fields(self.dataclass)]
+        )
+
     @staticmethod
-    def _get_actor_wrapper(new_column: QueryColumn, expr: F.QueryExpression) -> Type[Callable[[Any], Any]]:
+    def _get_actor_wrapper(new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type) -> Type[Callable[[Any], Any]]:
         assert isinstance(expr.func, type), "must wrap an actor class"
 
         class ActorWrapper:
@@ -287,14 +296,18 @@ class WithColumnStage(QueryStage):
                 args_batched = [getattr(item, query_column) for query_column in expr.args]
                 kwargs_batched = {key: getattr(item, query_column) for key, query_column in expr.kwargs.items()}
                 value = self._actor(*args_batched, **kwargs_batched)
-                setattr(item, new_column, value)
-                return item
+                
+                new_item = new_dataclass(
+                    **{field.name: getattr(item, field.name) for field in dataclasses.fields(item)},
+                    **{new_column: value},
+                )
+                return new_item
 
         return ActorWrapper
 
     @staticmethod
     def _get_batched_actor_wrapper(
-        new_column: QueryColumn, expr: F.QueryExpression
+        new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type
     ) -> Type[Callable[[List[Any]], List[Any]]]:
         assert isinstance(expr.func, type), "must wrap an actor class"
 
@@ -308,34 +321,45 @@ class WithColumnStage(QueryStage):
                     key: [getattr(item, query_column) for item in items] for key, query_column in expr.kwargs.items()
                 }
                 values = self._actor(*args_batched, **kwargs_batched)
-                for item, value in zip(items, values):
-                    setattr(item, new_column, value)
-                return items
+                new_items = [
+                    new_dataclass(
+                        **{field.name: getattr(item, field.name) for field in dataclasses.fields(item)},
+                        **{new_column: value},
+                    ) for item, value in zip(items, values)
+                ]
+                return new_items
 
         return BatchActorWrapper
 
     @staticmethod
-    def _get_func_wrapper(new_column: QueryColumn, expr: F.QueryExpression) -> Callable[[Any], Any]:
+    def _get_func_wrapper(new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type) -> Callable[[Any], Any]:
         def with_column_func(item):
             value = expr.func(
                 *[getattr(item, query_column) for query_column in expr.args],
                 **{key: getattr(item, query_column) for key, query_column in expr.kwargs.items()},
             )
-            setattr(item, new_column, value)
-            return item
+            new_item = new_dataclass(
+                **{field.name: getattr(item, field.name) for field in dataclasses.fields(item)},
+                **{new_column: value},
+            )
+            return new_item
 
         return with_column_func
 
     @staticmethod
-    def _get_batched_func_wrapper(new_column: QueryColumn, expr: F.QueryExpression) -> Callable[[List[Any]], List[Any]]:
+    def _get_batched_func_wrapper(new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type) -> Callable[[List[Any]], List[Any]]:
         def with_column_func_batched(items):
             values = expr.func(
                 *[[getattr(item, query_column) for item in items] for query_column in expr.args],
                 **{key: [getattr(item, query_column) for item in items] for key, query_column in expr.kwargs.items()},
             )
-            for item, value in zip(items, values):
-                setattr(item, new_column, value)
-            return items
+            new_items = [
+                new_dataclass(
+                    **{field.name: getattr(item, field.name) for field in dataclasses.fields(item)},
+                    **{new_column: value},
+                ) for item, value in zip(items, values)
+            ]
+            return new_items
 
         return with_column_func_batched
 
@@ -344,6 +368,7 @@ class WithColumnStage(QueryStage):
 class WriteDatarepoStage(QueryStage):
     mode: Union[Literal["overwrite"], Literal["append"]]
     datarepo_path: str
+    datarepo_name: str
     rows_per_partition: int
     dtype: type
 
@@ -358,52 +383,23 @@ class WriteDatarepoStage(QueryStage):
         return node_id, tree_copy
 
     def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
+        # Avoiding a circular import
+        from daft.datarepo.client import DatarepoClient
+
         assert (
             len(input_stage_results) == 1 and "prev" in input_stage_results
         ), f"WithColumnStage.run expects one input named 'prev', found: {input_stage_results.keys()}"
         prev = input_stage_results["prev"]
 
-        # TODO(jay): When we have dynamic dataclasses, this code should be modified to use that instead
-        # It will currently fail because our schema is not being amended.
-        daft_schema: DaftSchema = getattr(self.dtype, "_daft_schema")
-        log = DaftLakeLog(self.datarepo_path)
-        data_dir = log.data_dir().replace("file://", "")
-        filesystem = log._fs
-        filesystem.makedir(data_dir)
-        old_filepaths = log.file_list()
-
-        def _write_block(block) -> List[WriteDatarepoStageOutput]:
-            assert len(block) > 0
-            name = uuid.uuid4()
-            filepath = f"{data_dir}/{name}.parquet"
-            arrow_table = daft_schema.serialize(block)
-            pq.write_table(arrow_table, filepath, filesystem=filesystem)
-            return [WriteDatarepoStageOutput(filepath=filepath)]
-
-        num_partitions = max(math.ceil(prev.count() // self.rows_per_partition), 1)
-        prev = prev.repartition(num_partitions, shuffle=True)
-        outputs = prev.map_batches(_write_block, batch_size=self.rows_per_partition)
-
-        log.start_transaction()
-        for output in outputs.take_all():
-            log.add_file(output.filepath)
+        datarepo = DatarepoClient(self.datarepo_path).from_id(self.datarepo_name)
+        filepaths: List[str]
         if self.mode == "overwrite":
-            for file in old_filepaths:
-                log.remove_file(file)
-        log.commit()
-
-        return outputs
-
-        # TODO(jay): When dynamic dataclasses are implemented, we can use the DataRepo API instead
-        # datarepo = DataRepo(DaftLakeLog(self.datarepo_path))
-        # filepaths: List[str]
-        # if self.mode == "overwrite":
-        #     filepaths = datarepo.overwrite(prev, rows_per_partition=self.rows_per_partition)
-        # elif self.mode == "append":
-        #     filepaths = datarepo.append(prev, rows_per_partition=self.rows_per_partition)
-        # else:
-        #     raise NotImplementedError(f"Not implemented writing mode {self.mode}")
-        # return ray.data.from_items([WriteDatarepoStageOutput(filepath=filepath) for filepath in filepaths])
+            filepaths = datarepo.overwrite(prev, rows_per_partition=self.rows_per_partition)
+        elif self.mode == "append":
+            filepaths = datarepo.append(prev, rows_per_partition=self.rows_per_partition)
+        else:
+            raise NotImplementedError(f"Not implemented writing mode {self.mode}")
+        return ray.data.from_items([WriteDatarepoStageOutput(filepath=filepath) for filepath in filepaths])
 
     def __repr__(self) -> str:
         args = {

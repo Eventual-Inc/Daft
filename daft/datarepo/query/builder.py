@@ -1,6 +1,6 @@
 from __future__ import annotations
 import dataclasses
-from platform import node
+from daft.dataclasses import DataclassBuilder
 
 from daft.datarepo.log import DaftLakeLog
 import networkx as NX
@@ -24,7 +24,7 @@ class DatarepoQueryBuilder:
         self,
         query_tree: NX.DiGraph,
         root: str,
-        current_columns: List[_QueryColumnSchema],
+        current_dataclass: Type,
     ) -> None:
         # The Query is structured as a Query Tree
         # 1. There is one root, which holds the entire query
@@ -33,9 +33,7 @@ class DatarepoQueryBuilder:
         # 4. Edges hold a "key" attribute which defines the name of the input to a given operation
         self._query_tree = query_tree
         self._root = root
-
-        # TODO(jaychia): Replace with dynamic dataclass when that is ready
-        self._current_columns = current_columns
+        self._current_dataclass = current_dataclass
 
     @classmethod
     def _from_datarepo_log(cls, daft_lake_log: DaftLakeLog, dtype: Type) -> DatarepoQueryBuilder:
@@ -61,9 +59,7 @@ class DatarepoQueryBuilder:
         return cls(
             query_tree=tree,
             root=node_id,
-            current_columns=[
-                _QueryColumnSchema(name=field.name, type=field.type) for field in dataclasses.fields(dtype)
-            ],
+            current_dataclass=dtype,
         )
 
     def where(self, column: QueryColumn, operation: Comparator, value: Union[str, float, int]):
@@ -76,47 +72,43 @@ class DatarepoQueryBuilder:
         """
         stage = stages.WhereStage(column, operation, value)
         node_id, tree = stage.add_root(self._query_tree, self._root)
-        return DatarepoQueryBuilder(query_tree=tree, root=node_id, current_columns=self._current_columns)
+        return DatarepoQueryBuilder(query_tree=tree, root=node_id, current_dataclass=self._current_dataclass)
 
     def with_column(self, new_column: QueryColumn, expr: F.QueryExpression) -> DatarepoQueryBuilder:
         """Creates a new column with value derived from the specified expression"""
-        stage = stages.WithColumnStage(new_column=new_column, expr=expr)
+        dataclass_builder = DataclassBuilder.from_class(self._current_dataclass)
+        dataclass_builder.add_field(name=new_column, dtype=expr.return_type)
+        new_dataclass = dataclass_builder.generate()
+        stage = stages.WithColumnStage(new_column=new_column, expr=expr, dataclass=new_dataclass)
         node_id, tree = stage.add_root(self._query_tree, self._root)
-        new_columns = self._current_columns + [
-            _QueryColumnSchema(
-                name=new_column, type=expr.return_type if expr.batch_size is None else expr.return_type.__args__[0]
-            )
-        ]
-        return DatarepoQueryBuilder(query_tree=tree, root=node_id, current_columns=new_columns)
+        return DatarepoQueryBuilder(query_tree=tree, root=node_id, current_dataclass=new_dataclass)
 
     def limit(self, limit: int) -> DatarepoQueryBuilder:
         """Limits the number of rows in the query"""
         stage = stages.LimitStage(limit=limit)
         node_id, tree = stage.add_root(self._query_tree, self._root)
-        return DatarepoQueryBuilder(query_tree=tree, root=node_id, current_columns=self._current_columns)
+        return DatarepoQueryBuilder(query_tree=tree, root=node_id, current_dataclass=self._current_dataclass)
 
     def write_datarepo(
         self,
         datarepo_path: str,
-        dtype: type,
+        datarepo_name: str,
         mode: Union[Literal["append"], Literal["overwrite"]] = "append",
         rows_per_partition: int = 1024,
     ) -> DatarepoQueryBuilder:
         """Writes the query to a datarepo, returning the results of the write"""
         stage = stages.WriteDatarepoStage(
+            datarepo_name=datarepo_name,
             datarepo_path=datarepo_path,
             mode=mode,
             rows_per_partition=rows_per_partition,
-            dtype=dtype,
+            dtype=self._current_dataclass,
         )
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(
             query_tree=tree,
             root=node_id,
-            current_columns=[
-                _QueryColumnSchema(name=field.name, type=field.type)
-                for field in dataclasses.fields(WriteDatarepoStageOutput)
-            ],
+            current_dataclass=WriteDatarepoStageOutput,
         )
 
     def execute(self) -> ray.data.Dataset:
@@ -125,10 +117,10 @@ class DatarepoQueryBuilder:
         return ds
 
     def __repr__(self) -> str:
-        fields = "\n".join([f"    {field.name}: {field.type.__name__}" for field in self._current_columns])
+        fields = "\n".join([f"  {field.name}: {field.type}" for field in dataclasses.fields(self._current_dataclass)])
         stages = [self._query_tree.nodes[node_id]["stage"] for node_id in NX.dfs_tree(self._query_tree)]
         stages_repr = "\n|\n".join([stage.__repr__() for stage in stages])
-        return f"""class Item:
+        return f"""class {self._current_dataclass.__name__}:
 {fields}
 
 Query Plan
