@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses as pydataclasses
 from typing import TYPE_CHECKING, Callable, Optional, OrderedDict, Type, TypeVar, Union, get_origin
-
+import copy
 from daft.schema import DaftSchema
 from daft.utils import _patch_class_for_deserialization
 
@@ -92,7 +92,18 @@ class DataclassBuilder:
         db = DataclassBuilder()
         assert pydataclasses.is_dataclass(dtype)
         for field in getattr(dtype, "__dataclass_fields__").values():
-            db.add_field(field.name, field.type, field)
+            db.add_field(
+                field.name,
+                field.type,
+                pydataclasses.field(
+                    default=field.default,
+                    default_factory=field.default_factory,
+                    init=field.init,
+                    repr=field.repr,
+                    hash=field.hash,
+                    compare=field.compare,
+                    metadata=field.metadata
+                ))
         return db
 
     @classmethod
