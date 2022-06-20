@@ -67,10 +67,13 @@ def test_query_optimization_interleaved(fake_datarepo: DataRepo) -> None:
         .limit(limit + 2)
         .where("id", ">", 6)
         .limit(limit + 1)
-        .with_column("foo", f("x"))
+        .with_column("bar", f("x"))
         .limit(limit)
     )
     optimized_tree, root = q._optimize_query_tree()
+    dataclass_builder = DataclassBuilder.from_class(MyFakeDataclass)
+    dataclass_builder.add_field("bar", int)
+    new_dataclass = dataclass_builder.generate()
     expected_optimized_stages = [
         stages.GetDatarepoStage(
             daft_lake_log=fake_datarepo._log,
@@ -79,7 +82,7 @@ def test_query_optimization_interleaved(fake_datarepo: DataRepo) -> None:
             filters=[[("id", ">", 6), ("id", ">", 5)]],
         ),
         stages.WithColumnStage(
-            new_column="foo",
+            new_column="bar",
             expr=F.QueryExpression(
                 func=wrapped_func,
                 return_type=int,
@@ -87,6 +90,7 @@ def test_query_optimization_interleaved(fake_datarepo: DataRepo) -> None:
                 kwargs={},
                 batch_size=None,
             ),
+            dataclass=new_dataclass,
         ),
     ]
     assert [v["stage"] for _, v in optimized_tree.nodes().items()] == expected_optimized_stages

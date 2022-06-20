@@ -66,7 +66,7 @@ class DataRepo:
             return [filepath]
 
         num_partitions = ceil(dataset.count() // rows_per_partition)
-        dataset = dataset.repartition(num_partitions, shuffle=True)
+        dataset = dataset.repartition(num_partitions)
         filepaths = dataset.map_batches(_write_block, batch_size=rows_per_partition).take_all()
         return filepaths
 

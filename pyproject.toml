@@ -7,7 +7,7 @@ license = "Copyright Eventual Inc 2022"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-ray = "1.12.0"
+ray = "1.13.0"
 numpy = "^1.22.3"
 pyarrow = "^8.0.0"
 Pillow = "^9.1.0"

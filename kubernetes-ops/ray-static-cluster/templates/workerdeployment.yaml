@@ -49,6 +49,9 @@ spec:
           requests:
             cpu: {{ .Values.workerCPURequest | add -1 | quote }}
             memory: "{{ .Values.workerMemRequestGi | add -4 }}Gi"
+          limits:
+            cpu: {{ .Values.workerCPURequest | add -1 | quote }}
+            memory: "{{ .Values.workerMemRequestGi | add -4 }}Gi"
 
       # Use tolerations and nodeSelector to schedule Ray pods on nodes dedicated to running Ray
       tolerations:
