@@ -1,8 +1,11 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 setup(
     name='icebridge',
-    packages=find_packages(where="app/build/libs"),
-    package_dir={"": "app-uber.jar"},
-    include_package_data=True
+    packages=['icebridge'],
+    package_dir={"": "python"},
+    install_requires=[
+        'py4j ==0.10.9.5',
+    ],
+
 )

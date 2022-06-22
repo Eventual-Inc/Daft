@@ -830,12 +830,12 @@ protobuf = ["grpcio-tools (>=1.43.0)"]
 
 [[package]]
 name = "icebridge"
-version = "0.0.1"
+version = "0.0.0"
 description = ""
 category = "main"
 optional = false
 python-versions = "*"
-develop = false
+develop = true
 
 [package.dependencies]
 py4j = "0.10.9.5"
@@ -2416,7 +2416,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytest-
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "bd8be9542877add2be3c509c305f3632196cb11563adf9edae0a29cb940399fa"
+content-hash = "032389ed607bf337df025c9aa802af5cd781f5f40cdff7fdf9f772b5755ee869"
 
 [metadata.files]
 aiosignal = [
