@@ -65,8 +65,9 @@ class DataRepo:
             pq.write_table(arrow_table, filepath, filesystem=filesystem)
             return [filepath]
 
-        num_partitions = ceil(dataset.count() // rows_per_partition)
-        dataset = dataset.repartition(num_partitions)
+        # This is making getting our Ray workers OOMKilled because repartitioning is expensive
+        # num_partitions = ceil(dataset.count() // rows_per_partition)
+        # dataset = dataset.repartition(num_partitions)
         filepaths = dataset.map_batches(_write_block, batch_size=rows_per_partition).take_all()
         return filepaths
 
