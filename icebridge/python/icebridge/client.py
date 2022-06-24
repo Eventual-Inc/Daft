@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Dict
 
 import os
 import sys
@@ -60,6 +60,80 @@ class IcebergTable:
         self.client = client
         self.table = java_table
     
+    def name(self) -> str:
+        return self.table.name()
+    
+    def schema(self) -> IcebergSchema:
+        return IcebergSchema(self.client, self.table.schema())
+
+    def spec(self) -> IcebergPartitionSpec:
+        return IcebergPartitionSpec(self.client, self.table.spec())
+
+    def new_transaction(self) -> IcebergTransaction:
+        return IcebergTransaction(self.client, self.table.newTransaction())
+
+class IcebergTransaction:
+    def __init__(self, client: IceBridgeClient, java_trasaction) -> None:
+        self.client = client
+        self.transaction = java_trasaction
+
+    def commit_transaction(self) -> None:
+        self.transaction.commitTransaction()
+    
+    def append_files(self) -> IcebergAppendFiles:
+        return IcebergAppendFiles(self.client, self.transaction.newAppend())
+
+    def delete_files(self) -> IcebergDeleteFiles:
+        ...
+
+    def table(self) -> IcebergTable:
+        return IcebergTable(self.client, self.transaction.table())
+
+class IcebergAppendFiles:
+    def __init__(self, client: IceBridgeClient, java_append_files) -> None:
+        self.client = client
+        self.append_files_obj = java_append_files
+    
+    def append_data_file(self, data_file: IcebergDataFile) -> IcebergAppendFiles:
+        java_data_file = IcebergDataFile.data_file
+        return IcebergAppendFiles(self.client, self.append_files_obj.appendFile(java_data_file))
+
+class IcebergDeleteFiles:
+    ...
+
+
+class IcebergMetrics:
+    @classmethod
+    def from_parquet_metadata(cls, schema: IcebergSchema, metadata: pa.parquet.FileMetaData):
+        assert metadata.num_row_groups == 1
+        fields = schema.fields()
+        row_group = metadata.row_group(0)
+        import ipdb
+        ipdb.set_trace()
+
+
+class IcebergDataFile:
+    def __init__(self, client: IceBridgeClient, java_data_file) -> None:
+        self.client = client
+        self.data_file = java_data_file
+
+    @classmethod
+    def from_parquet(
+        cls,
+        path: str,
+        metadata: pa.parquet.FileMetaData,
+        table: IcebergTable,
+    ) -> IcebergDataFile:
+        jvm = table.client.jvm()
+        partition_spec = table.spec()
+        schema = table.schema()
+        datafile = jvm.org.apache.iceberg.DataFiles
+        builder = datafile.builder(partition_spec.partition_spec)
+        builder.withFormat("parquet")
+        builder.withPath(path)
+        IcebergMetrics.from_parquet_metadata(schema, metadata)
+        data_file = builder.build()
+        return IcebergDataFile(table.client, data_file)
 
 class IcebergSchema:
     arrow_to_iceberg = {
@@ -69,11 +143,18 @@ class IcebergSchema:
         pa.string(): ('StringType', 'get'),
     }
 
-
     def __init__(self, client: IceBridgeClient, java_schema) -> None:
         self.client = client
         self.schema = java_schema
     
+    def fields(self) -> Dict[str, int]:
+        fields = dict()
+        for java_column in self.schema.columns():
+            name = java_column.name()
+            id = java_column.fieldId()
+            fields[name] = id
+        return fields
+        
     def partition_spec_builder(self) -> IcebergPartitionSpec.Builder:
         return IcebergPartitionSpec.Builder.from_iceberg_schema(self)
 
