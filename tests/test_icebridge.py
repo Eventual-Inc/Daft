@@ -43,6 +43,10 @@ def test_iceberg_schema_from_arrow() -> None:
         transaction = table.new_transaction()
         append_files = transaction.append_files()
         data_file = IcebergDataFile.from_parquet(path, file_metadata, table)
+        append_files.append_data_file(data_file).commit()
+        transaction.commit()
+
+
         import ipdb
         ipdb.set_trace()
     

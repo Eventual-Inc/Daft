@@ -5,8 +5,9 @@ from typing import Optional, Dict
 import os
 import sys
 
+import fsspec
 import pyarrow as pa
-from py4j.java_collections import ListConverter
+from py4j.java_collections import ListConverter, MapConverter
 
 from icebridge.gateway import launch_gateway
 
@@ -77,7 +78,7 @@ class IcebergTransaction:
         self.client = client
         self.transaction = java_trasaction
 
-    def commit_transaction(self) -> None:
+    def commit(self) -> None:
         self.transaction.commitTransaction()
     
     def append_files(self) -> IcebergAppendFiles:
@@ -95,27 +96,78 @@ class IcebergAppendFiles:
         self.append_files_obj = java_append_files
     
     def append_data_file(self, data_file: IcebergDataFile) -> IcebergAppendFiles:
-        java_data_file = IcebergDataFile.data_file
+        java_data_file = data_file.data_file
         return IcebergAppendFiles(self.client, self.append_files_obj.appendFile(java_data_file))
+
+    def commit(self) -> None:
+        self.append_files_obj.commit()
 
 class IcebergDeleteFiles:
     ...
 
 
 class IcebergMetrics:
+
+    def __init__(self, client: IceBridgeClient, java_metrics) -> None:
+        self.client = client
+        self.metrics = java_metrics
+
+    def record_count(self) -> int:
+        return self.metrics.recordCount()
+
     @classmethod
     def from_parquet_metadata(cls, schema: IcebergSchema, metadata: pa.parquet.FileMetaData):
         assert metadata.num_row_groups == 1
+        client = schema.client
+        jvm = client.jvm()
         fields = schema.fields()
         row_group = metadata.row_group(0)
-        import ipdb
-        ipdb.set_trace()
+        row_count = row_group.num_rows
+        column_sizes = dict()
+        value_counts = dict()
+        null_counts = dict()
+        nan_counts = dict()
+        lower_bounds = dict()
+        upper_bounds = dict()
 
+        for i in range(row_group.num_columns):
+            column = row_group.column(i)
+            name = metadata.schema[i].name
+            field_id = fields[name]
+            column_sizes[field_id] = column.total_uncompressed_size
+            value_counts[field_id] = column.statistics.num_values
+            null_counts[field_id] = column.statistics.null_count
+            nan_counts[field_id] = 0 # TODO(sammy) figure out how to do this
+            lower_bounds[field_id] = column.statistics.min
+            upper_bounds[field_id] = column.statistics.max
+
+        def convert_map_longs(d: Dict):
+            int_map = MapConverter().convert(d, client.gateway._gateway_client)
+            return jvm.com.eventualcomputing.icebridge.App.longMapConverter(int_map)
+
+        java_metrics = jvm.org.apache.iceberg.Metrics(
+            row_count,
+            convert_map_longs(column_sizes),
+            convert_map_longs(value_counts),
+            convert_map_longs(null_counts),
+            convert_map_longs(nan_counts)
+        )
+        return cls(client, java_metrics)
 
 class IcebergDataFile:
     def __init__(self, client: IceBridgeClient, java_data_file) -> None:
         self.client = client
         self.data_file = java_data_file
+
+    @staticmethod
+    def get_file_size(path) -> int:
+        protocol = 'file'
+        if ':' in path:
+            protocol = path.split(':')[0]
+        fs = fsspec.filesystem(protocol)
+        size = fs.size(path)
+        return size
+            
 
     @classmethod
     def from_parquet(
@@ -131,7 +183,10 @@ class IcebergDataFile:
         builder = datafile.builder(partition_spec.partition_spec)
         builder.withFormat("parquet")
         builder.withPath(path)
-        IcebergMetrics.from_parquet_metadata(schema, metadata)
+        metrics = IcebergMetrics.from_parquet_metadata(schema, metadata)
+        builder.withMetrics(metrics.metrics)
+        builder.withRecordCount(metrics.record_count())
+        builder.withFileSizeInBytes(cls.get_file_size(path))
         data_file = builder.build()
         return IcebergDataFile(table.client, data_file)
 
