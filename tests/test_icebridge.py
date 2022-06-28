@@ -32,7 +32,11 @@ def test_iceberg_schema_from_arrow() -> None:
 
     with tempfile.TemporaryDirectory() as tmpdirname:
         hadoop_catalog = IcebergCatalog.from_hadoop_catalog(client, f"file://{tmpdirname}")
+        
+        assert isinstance(hadoop_catalog.catalog, py4j.java_gateway.JavaObject)
+
         table = hadoop_catalog.create_table("test1", iceberg_schema, part_spec)
+        
 
         path = f"file://{tmpdirname}/test_data.parquet"
         writer = pa.parquet.ParquetWriter(path, pa_schema)
@@ -45,12 +49,12 @@ def test_iceberg_schema_from_arrow() -> None:
         data_file = IcebergDataFile.from_parquet(path, file_metadata, table)
         append_files.append_data_file(data_file).commit()
         transaction.commit()
+        scan = table.new_scan()
+        files = scan.plan_files()
 
+        assert len(files) == 1
+        assert files[0] == path
 
-        import ipdb
-        ipdb.set_trace()
-    
-        assert isinstance(hadoop_catalog.catalog, py4j.java_gateway.JavaObject)
 
 
 

@@ -17,6 +17,5 @@ def launch_gateway() -> JavaGateway:
             die_on_exit=True
         )
         java_import(gateway.jvm, 'org.apache.iceberg.*')
-        java_import(gateway.jvm, 'org.apache.hadoop.conf.Configuration')
 
         return gateway

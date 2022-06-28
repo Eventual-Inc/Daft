@@ -1,6 +1,7 @@
 from __future__ import annotations
+from posixpath import lexists
 
-from typing import Optional, Dict
+from typing import Any, List, Optional, Dict
 
 import os
 import sys
@@ -73,6 +74,95 @@ class IcebergTable:
     def new_transaction(self) -> IcebergTransaction:
         return IcebergTransaction(self.client, self.table.newTransaction())
 
+    def new_scan(self) -> IcebergTableScan:
+        return IcebergTableScan(self.client, self.table.newScan())
+class IcebergTableScan:
+    def __init__(self, client: IceBridgeClient, java_table_scan) -> None:
+        self.client = client
+        self.table_scan = java_table_scan
+
+    def filter(self, expr: IcebergExpression) -> IcebergTableScan:
+        new_scan = self.table_scan.filter(expr)
+        return IcebergTableScan(self.client, new_scan)
+    
+    def select(self, column_names: List[str]) -> IcebergTableScan:
+        num_cols = len(column_names)
+        col_name_vargs = self.client.gateway.new_array(self.client.jvm().java.lang.String, num_cols)
+        for i, name in enumerate(column_names):
+            col_name_vargs[i] = name
+        new_scan = self.table_scan.filter(col_name_vargs)
+        return IcebergTableScan(self.client, new_scan)
+
+    def plan_files(self) -> List[str]:
+        files_to_scan = []
+        plan_file_iterator = self.table_scan.planFiles().iterator()
+        for file in plan_file_iterator:
+            files_to_scan.append(file.file().path())
+        return files_to_scan
+class IcebergExpression:
+    def __init__(self, client: IceBridgeClient, java_expression) -> None:
+        self.client = client
+        self.expression = java_expression
+    
+    def negate(self) -> IcebergExpression:
+        return IcebergExpression(self.client, self.expression.negate())
+
+    def OR(self, other: IcebergExpression) -> IcebergExpression:
+        Expressions = self.client.jvm().org.apache.iceberg.expressions.Expressions
+        or_func = getattr(Expressions, "or")
+        return IcebergExpression(self.client, or_func(self.expression, other.expression))
+
+    def AND(self, other: IcebergExpression) -> IcebergExpression:
+        Expressions = self.client.jvm().org.apache.iceberg.expressions.Expressions
+        and_func = getattr(Expressions, "and")
+        return IcebergExpression(self.client, and_func(self.expression, other.expression))
+
+    @classmethod
+    def always_true(cls, client: IceBridgeClient) -> IcebergExpression:
+        Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
+        return cls(client, Expressions.alwaysTrue())
+
+    @classmethod
+    def always_false(cls, client: IceBridgeClient) -> IcebergExpression:
+        Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
+        return cls(client, Expressions.alwaysFalse())
+
+    @classmethod
+    def is_null(cls, client: IceBridgeClient, col_name: str) -> IcebergExpression:
+        Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
+        return cls(client, Expressions.isNull(col_name))
+    
+    @classmethod
+    def is_not_null(cls, client: IceBridgeClient, col_name: str) -> IcebergExpression:
+        Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
+        return cls(client, Expressions.notNull(col_name))
+
+    @classmethod
+    def equal(cls, client: IceBridgeClient, col_name: str, value: Any) -> IcebergExpression:
+        Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
+        return cls(client, Expressions.equal(col_name, value))
+    
+    @classmethod
+    def lt(cls, client: IceBridgeClient, col_name: str, value: Any) -> IcebergExpression:
+        Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
+        return cls(client, Expressions.lessThan(col_name, value))
+
+    @classmethod
+    def lte(cls, client: IceBridgeClient, col_name: str, value: Any) -> IcebergExpression:
+        Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
+        return cls(client, Expressions.lessThanOrEqual(col_name, value))
+
+    @classmethod
+    def gt(cls, client: IceBridgeClient, col_name: str, value: Any) -> IcebergExpression:
+        Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
+        return cls(client, Expressions.greaterThan(col_name, value))
+
+    @classmethod
+    def gte(cls, client: IceBridgeClient, col_name: str, value: Any) -> IcebergExpression:
+        Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
+        return cls(client, Expressions.greaterThanOrEqual(col_name, value))
+
+
 class IcebergTransaction:
     def __init__(self, client: IceBridgeClient, java_trasaction) -> None:
         self.client = client
@@ -129,17 +219,20 @@ class IcebergMetrics:
         nan_counts = dict()
         lower_bounds = dict()
         upper_bounds = dict()
-
+        
+        to_byte_buffer = jvm.org.apache.iceberg.types.Conversions.toByteBuffer
         for i in range(row_group.num_columns):
             column = row_group.column(i)
             name = metadata.schema[i].name
             field_id = fields[name]
+            java_field = schema.schema.findField(name)
+            iceberg_type = java_field.type()
             column_sizes[field_id] = column.total_uncompressed_size
             value_counts[field_id] = column.statistics.num_values
             null_counts[field_id] = column.statistics.null_count
             nan_counts[field_id] = 0 # TODO(sammy) figure out how to do this
-            lower_bounds[field_id] = column.statistics.min
-            upper_bounds[field_id] = column.statistics.max
+            lower_bounds[field_id] = to_byte_buffer(iceberg_type, column.statistics.min)
+            upper_bounds[field_id] = to_byte_buffer(iceberg_type, column.statistics.max)
 
         def convert_map_longs(d: Dict):
             int_map = MapConverter().convert(d, client.gateway._gateway_client)
@@ -150,7 +243,9 @@ class IcebergMetrics:
             convert_map_longs(column_sizes),
             convert_map_longs(value_counts),
             convert_map_longs(null_counts),
-            convert_map_longs(nan_counts)
+            convert_map_longs(nan_counts),
+            MapConverter().convert(lower_bounds, client.gateway._gateway_client),
+            MapConverter().convert(upper_bounds, client.gateway._gateway_client)
         )
         return cls(client, java_metrics)
 
