@@ -66,3 +66,15 @@ helm upgrade --cleanup-on-fail \
 ```
 
 The Auth0 Client Secret can be retrieved from the [Auth0 application page](https://manage.auth0.com/dashboard/us/dev-kn2voyk3/applications/zwLsZdOmbKRat6i5Ccm7pq8vfNSNZNvR/settings).
+
+### Vault
+
+We deploy Vault using the default releases provided by Vault.
+
+```
+helm repo add hashicorp https://helm.releases.hashicorp.com
+helm install vault hashicorp/vault
+```
+
+This installs a single-instance non-HA installation of Vault in the cluster.
+
