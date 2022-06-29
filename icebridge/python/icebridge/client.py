@@ -20,10 +20,6 @@ class IceBridgeClient:
     def jvm(self):
         return self.gateway.jvm
 
-
-
-
-
 class IcebergCatalog:
     def __init__(self, client: IceBridgeClient, java_catalog) -> None:
         self.client = client
@@ -43,7 +39,6 @@ class IcebergCatalog:
         if namespace is None:
             identifier = jvm.org.apache.iceberg.catalog.TableIdentifier.of(name_vargs)
         else:
-            
             identifier = jvm.org.apache.iceberg.catalog.TableIdentifier.of(namespace, name)
         table = self.catalog.createTable(identifier, schema.schema)
         return IcebergTable(self.client, table)
@@ -68,6 +63,12 @@ class IcebergTable:
     def schema(self) -> IcebergSchema:
         return IcebergSchema(self.client, self.table.schema())
 
+    def location(self) -> str:
+        return self.table.location()
+
+    def data_dir(self) -> str:
+        return os.path.join(self.location(), '_data')
+
     def spec(self) -> IcebergPartitionSpec:
         return IcebergPartitionSpec(self.client, self.table.spec())
 
@@ -76,6 +77,8 @@ class IcebergTable:
 
     def new_scan(self) -> IcebergTableScan:
         return IcebergTableScan(self.client, self.table.newScan())
+
+
 class IcebergTableScan:
     def __init__(self, client: IceBridgeClient, java_table_scan) -> None:
         self.client = client
@@ -99,6 +102,7 @@ class IcebergTableScan:
         for file in plan_file_iterator:
             files_to_scan.append(file.file().path())
         return files_to_scan
+    
 class IcebergExpression:
     def __init__(self, client: IceBridgeClient, java_expression) -> None:
         self.client = client
@@ -197,7 +201,7 @@ class IcebergDeleteFiles:
 
 
 class IcebergMetrics:
-
+    METRIC_TYPE_ALLOWLIST = {bool, int, str, float}
     def __init__(self, client: IceBridgeClient, java_metrics) -> None:
         self.client = client
         self.metrics = java_metrics
@@ -220,7 +224,7 @@ class IcebergMetrics:
         lower_bounds = dict()
         upper_bounds = dict()
         
-        to_byte_buffer = jvm.org.apache.iceberg.types.Conversions.toByteBuffer
+        to_byte_buffer = jvm.com.eventualcomputing.icebridge.App.toByteBuffer
         for i in range(row_group.num_columns):
             column = row_group.column(i)
             name = metadata.schema[i].name
@@ -231,8 +235,9 @@ class IcebergMetrics:
             value_counts[field_id] = column.statistics.num_values
             null_counts[field_id] = column.statistics.null_count
             nan_counts[field_id] = 0 # TODO(sammy) figure out how to do this
-            lower_bounds[field_id] = to_byte_buffer(iceberg_type, column.statistics.min)
-            upper_bounds[field_id] = to_byte_buffer(iceberg_type, column.statistics.max)
+            if type(column.statistics.min) in IcebergMetrics.METRIC_TYPE_ALLOWLIST:
+                lower_bounds[field_id] = to_byte_buffer(iceberg_type, column.statistics.min)
+                upper_bounds[field_id] = to_byte_buffer(iceberg_type, column.statistics.max)
 
         def convert_map_longs(d: Dict):
             int_map = MapConverter().convert(d, client.gateway._gateway_client)
@@ -293,9 +298,10 @@ class IcebergSchema:
         pa.string(): ('StringType', 'get'),
     }
 
-    def __init__(self, client: IceBridgeClient, java_schema) -> None:
+    def __init__(self, client: IceBridgeClient, java_schema, arrow_schema=None) -> None:
         self.client = client
         self.schema = java_schema
+        self.arrow_schema = arrow_schema
     
     def fields(self) -> Dict[str, int]:
         fields = dict()
@@ -339,7 +345,7 @@ class IcebergSchema:
             iceberg_fields.append(iceberg_field)
         java_list = ListConverter().convert(iceberg_fields, client.gateway._gateway_client)
         iceberg_schema = jvm.org.apache.iceberg.Schema(java_list)
-        return cls(client, iceberg_schema)
+        return cls(client, iceberg_schema, arrow_schema=arrow_schema)
 
 
 class IcebergPartitionSpec:

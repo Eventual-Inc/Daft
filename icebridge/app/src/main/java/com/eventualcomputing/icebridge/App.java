@@ -6,6 +6,12 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.hadoop.HadoopCatalog;
 import java.util.Map;
 import java.util.HashMap;
+import java.nio.ByteBuffer;
+import java.lang.Number;
+
+import org.apache.iceberg.types.Conversions;
+import org.apache.iceberg.types.Types;
+import org.apache.iceberg.types.Type;
 
 
 public class App {
@@ -22,7 +28,15 @@ public class App {
         return toRtn;
  
     }
-
+    public static ByteBuffer toByteBuffer(Type type, Object value) {
+      Object toConvert = value;
+      switch (type.typeId()) {
+        case LONG:
+          Number long_value = (Number) value;
+          toConvert = long_value.longValue();
+      }
+      return Conversions.toByteBuffer(type, toConvert);
+    }
 
     public static void main(String[] args) {
         GatewayServer gatewayServer = new GatewayServer(new App());

@@ -51,7 +51,6 @@ def test_iceberg_schema_from_arrow() -> None:
         transaction.commit()
         scan = table.new_scan()
         files = scan.plan_files()
-
         assert len(files) == 1
         assert files[0] == path
 
