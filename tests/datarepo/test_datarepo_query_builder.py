@@ -26,9 +26,7 @@ def fake_datarepo() -> DataRepo:
 
 def test_query_select_star(fake_datarepo: DataRepo) -> None:
     q = fake_datarepo.query(MyFakeDataclass)
-    expected_stages = [
-        stages.ReadIcebergTableStage(datarepo=fake_datarepo, dtype=MyFakeDataclass, read_limit=None)
-    ]
+    expected_stages = [stages.ReadIcebergTableStage(datarepo=fake_datarepo, dtype=MyFakeDataclass, read_limit=None)]
     assert len(q._query_tree.nodes()) == 1
     assert [k for k in q._query_tree.nodes()][0] == q._root
     assert [v["stage"] for _, v in q._query_tree.nodes().items()] == expected_stages

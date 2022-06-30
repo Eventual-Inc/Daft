@@ -57,7 +57,10 @@ def get_arrow_filter_expression(filters: Optional[DNFFilters]) -> Optional[pads.
 
     return final_expr
 
-def get_iceberg_filter_expression(filters: Optional[DNFFilters], client: IceBridgeClient) -> Optional[IcebergExpression]:
+
+def get_iceberg_filter_expression(
+    filters: Optional[DNFFilters], client: IceBridgeClient
+) -> Optional[IcebergExpression]:
     if filters is None:
         return None
 
