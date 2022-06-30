@@ -1,3 +1,27 @@
 [build-system]
 requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
 
+[project]
+name = "icebridge"
+version = "0.0.1"
+dependencies = [
+    "py4j == 0.10.9.5",
+    "fsspec",
+    "s3fs",
+    "pyarrow == 8.0.0",
+    "numpy >= 1.20",
+    'importlib-metadata; python_version<"3.8"',
+]
+
+[tool.setuptools]
+# ...
+# By default, include-package-data is true in pyproject.toml, so you do
+# NOT have to specify this line.
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["python"]
+
+[options.package_data]
+icebridge = ["app-uber.jar"]
