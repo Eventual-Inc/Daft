@@ -72,8 +72,7 @@ The Auth0 Client Secret can be retrieved from the [Auth0 application page](https
 We deploy Vault using the default releases provided by Vault.
 
 ```
-helm repo add hashicorp https://helm.releases.hashicorp.com
-helm install vault hashicorp/vault
+helm install vault vault --values vault/values.yaml
 ```
 
 This installs a single-instance non-HA installation of Vault in the cluster.

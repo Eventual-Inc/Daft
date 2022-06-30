@@ -1,0 +1,12 @@
+# All values can be found here:
+# https://github.com/hashicorp/vault-helm/blob/main/values.yaml
+
+vault:
+  server:
+    nodeSelector:
+      dedicated: vaultCluster
+    tolerations:
+      - key: "dedicated"
+        operator: "Equal"
+        value: "vaultCluster"
+        effect: "NoSchedule"
