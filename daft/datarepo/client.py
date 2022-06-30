@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import logging
-import re
-from os import path
 from typing import List, Optional, Type, TypeVar
 
 import fsspec
 
 from daft import config
 from daft.datarepo.datarepo import DataRepo
+from icebridge.client import IcebergCatalog, IceBridgeClient
 
 # from daft.datarepo.log import DaftLakeLog
 
-from icebridge.client import IceBridgeClient, IcebergCatalog
 
 logger = logging.getLogger(__name__)
 

@@ -1,17 +1,21 @@
 from __future__ import annotations
+
 import dataclasses
-from daft.dataclasses import DataclassBuilder
+from typing import ForwardRef, Literal, Tuple, Type, Union, cast
 
 import networkx as NX
 import ray
 
-from icebridge.client import IcebergTable
-
-from daft.datarepo.query import stages, tree_ops
-from daft.datarepo.query.definitions import NodeId, QueryColumn, Comparator, WriteDatarepoStageOutput
+from daft.dataclasses import DataclassBuilder
 from daft.datarepo.query import functions as F
-
-from typing import Literal, Type, Union, ForwardRef, Tuple, cast
+from daft.datarepo.query import stages, tree_ops
+from daft.datarepo.query.definitions import (
+    Comparator,
+    NodeId,
+    QueryColumn,
+    WriteDatarepoStageOutput,
+)
+from icebridge.client import IcebergTable
 
 
 class DatarepoQueryBuilder:

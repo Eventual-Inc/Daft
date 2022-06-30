@@ -1,12 +1,13 @@
-import pytest
 import tempfile
 
+import pytest
+
 from daft.dataclasses import DataclassBuilder, dataclass
-from daft.datarepo.log import DaftLakeLog
-from daft.datarepo.query.definitions import QueryColumn
-from daft.datarepo.query import stages
 from daft.datarepo.datarepo import DataRepo
+from daft.datarepo.log import DaftLakeLog
 from daft.datarepo.query import functions as F
+from daft.datarepo.query import stages
+from daft.datarepo.query.definitions import QueryColumn
 
 from .utils import create_test_catalog
 

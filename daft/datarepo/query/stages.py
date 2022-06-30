@@ -1,26 +1,37 @@
 import dataclasses
-import uuid
 import enum
+import uuid
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    ForwardRef,
+    List,
+    Literal,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    Union,
+    cast,
+)
 
 import networkx as NX
-import ray
-import pyarrow.dataset as pads
 import pyarrow.compute as pc
+import pyarrow.dataset as pads
+import ray
 
 from daft.datarepo.query import functions as F
 from daft.datarepo.query.definitions import (
+    COMPARATOR_MAP,
+    ICEBRIDGE_COMPARATOR_MAP,
     Comparator,
     NodeId,
     QueryColumn,
-    COMPARATOR_MAP,
-    ICEBRIDGE_COMPARATOR_MAP,
     WriteDatarepoStageOutput,
 )
 from daft.schema import DaftSchema
-from icebridge.client import IcebergTable, IcebergExpression
-
-from typing import Any, Dict, Type, Tuple, cast, Protocol, Callable, Optional, Union, List, Literal, ForwardRef
-
+from icebridge.client import IcebergExpression, IcebergTable
 
 DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.data.ActorPoolStrategy(
     min_size=1,

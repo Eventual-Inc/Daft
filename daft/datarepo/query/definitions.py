@@ -1,8 +1,7 @@
+from typing import Any, Callable, Dict, Literal, Union
+
 from daft.dataclasses import dataclass
-
-from typing import Any, Dict, Callable, Literal, cast, Union
-
-from icebridge.client import IceBridgeClient, IcebergExpression
+from icebridge.client import IcebergExpression, IceBridgeClient
 
 # Node IDs in the NetworkX graph are uuid strings
 NodeId = str

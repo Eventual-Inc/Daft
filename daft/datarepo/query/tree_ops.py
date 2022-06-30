@@ -1,8 +1,8 @@
+from typing import Any, Callable, Dict, List, Tuple
+
 import networkx as NX
 
 from daft.datarepo.query.definitions import NodeId
-
-from typing import Callable, Any, Dict, List, Tuple
 
 
 def prune_singlechild_node(tree: NX.DiGraph, root: NodeId, node_id: NodeId) -> Tuple[NX.DiGraph, NodeId]:

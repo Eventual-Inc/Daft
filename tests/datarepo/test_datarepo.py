@@ -5,6 +5,7 @@ from ray import data
 
 from daft.dataclasses import dataclass
 from daft.datarepo.datarepo import DataRepo
+
 from .utils import create_test_catalog
 
 

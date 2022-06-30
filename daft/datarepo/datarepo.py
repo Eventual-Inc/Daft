@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from math import ceil
-from typing import List, Tuple, Type
+from typing import List, Type
 
 import fsspec
 import ray
@@ -11,8 +11,13 @@ from pyarrow import parquet as pq
 from daft.dataclasses import is_daft_dataclass
 from daft.datarepo.log import DaftLakeLog
 from daft.datarepo.query.builder import DatarepoQueryBuilder
-
-from icebridge.client import IceBridgeClient, IcebergCatalog, IcebergSchema, IcebergDataFile, IcebergTable
+from icebridge.client import (
+    IcebergCatalog,
+    IcebergDataFile,
+    IcebergSchema,
+    IcebergTable,
+    IceBridgeClient,
+)
 
 
 class DataRepo:

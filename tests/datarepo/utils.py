@@ -1,4 +1,4 @@
-from icebridge.client import IceBridgeClient, IcebergCatalog
+from icebridge.client import IcebergCatalog, IceBridgeClient
 
 
 def create_test_catalog(path: str) -> IcebergCatalog:
