@@ -9,6 +9,7 @@ from daft.datarepo.datarepo import DataRepo
 from daft.datarepo.query import functions as F
 
 from .utils import create_test_catalog
+FAKE_CATALOG = "mydatarepo"
 
 @dataclass
 class MyFakeDataclass:

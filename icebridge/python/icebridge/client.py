@@ -70,12 +70,31 @@ class IcebergCatalog:
         table = self.catalog.loadTable(identifier)
         return IcebergTable(self.client, table)
 
+    def drop_table(self, name:str, purge:bool, namespace:str="default") -> bool:
+        jvm = self.client.jvm()
+        gateway = self.client.gateway
+
+        namespace_vargs = gateway.new_array(jvm.java.lang.String, 1)
+        namespace_vargs[0] = namespace
+        namespace_obj = jvm.org.apache.iceberg.catalog.Namespace.of(namespace_vargs)
+        
+        identifier = jvm.org.apache.iceberg.catalog.TableIdentifier.of(namespace_obj, name)
+        return self.catalog.dropTable(identifier, purge)
+
+
     @classmethod
     def from_hadoop_catalog(cls, client: IceBridgeClient, hdfs_path: str) -> IcebergCatalog:
         jvm = client.jvm()
         hadoop_conf = jvm.org.apache.hadoop.conf.Configuration
         hadoop_catalog = jvm.org.apache.iceberg.hadoop.HadoopCatalog
         hadoop_catalog_instance = hadoop_catalog(hadoop_conf(), hdfs_path)
+
+
+        namespace_vargs = client.gateway.new_array(jvm.java.lang.String, 1)
+        namespace_vargs[0] = "default"
+        namespace_obj = jvm.org.apache.iceberg.catalog.Namespace.of(namespace_vargs)
+
+        hadoop_catalog_instance.createNamespace(namespace_obj)
 
         return cls(client, hadoop_catalog_instance)
 
