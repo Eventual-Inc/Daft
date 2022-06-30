@@ -16,21 +16,22 @@ from icebridge.gateway import launch_gateway
 class IceBridgeClient:
     def __init__(self) -> None:
         self.gateway = launch_gateway()
-    
+
     def jvm(self):
         return self.gateway.jvm
+
 
 class IcebergCatalog:
     def __init__(self, client: IceBridgeClient, java_catalog) -> None:
         self.client = client
         self.catalog = java_catalog
-    
+
     def create_table(
         self,
-        name:str,
+        name: str,
         schema: IcebergSchema,
-        partition_spec: Optional[IcebergPartitionSpec]=None,
-        namespace: Optional[str] = None
+        partition_spec: Optional[IcebergPartitionSpec] = None,
+        namespace: Optional[str] = None,
     ) -> IcebergTable:
         jvm = self.client.jvm()
         gateway = self.client.gateway
@@ -52,14 +53,15 @@ class IcebergCatalog:
 
         return cls(client, hadoop_catalog_instance)
 
+
 class IcebergTable:
     def __init__(self, client: IceBridgeClient, java_table) -> None:
         self.client = client
         self.table = java_table
-    
+
     def name(self) -> str:
         return self.table.name()
-    
+
     def schema(self) -> IcebergSchema:
         return IcebergSchema(self.client, self.table.schema())
 
@@ -67,7 +69,7 @@ class IcebergTable:
         return self.table.location()
 
     def data_dir(self) -> str:
-        return os.path.join(self.location(), '_data')
+        return os.path.join(self.location(), "_data")
 
     def spec(self) -> IcebergPartitionSpec:
         return IcebergPartitionSpec(self.client, self.table.spec())
@@ -87,7 +89,7 @@ class IcebergTableScan:
     def filter(self, expr: IcebergExpression) -> IcebergTableScan:
         new_scan = self.table_scan.filter(expr)
         return IcebergTableScan(self.client, new_scan)
-    
+
     def select(self, column_names: List[str]) -> IcebergTableScan:
         num_cols = len(column_names)
         col_name_vargs = self.client.gateway.new_array(self.client.jvm().java.lang.String, num_cols)
@@ -102,12 +104,13 @@ class IcebergTableScan:
         for file in plan_file_iterator:
             files_to_scan.append(file.file().path())
         return files_to_scan
-    
+
+
 class IcebergExpression:
     def __init__(self, client: IceBridgeClient, java_expression) -> None:
         self.client = client
         self.expression = java_expression
-    
+
     def negate(self) -> IcebergExpression:
         return IcebergExpression(self.client, self.expression.negate())
 
@@ -135,7 +138,7 @@ class IcebergExpression:
     def is_null(cls, client: IceBridgeClient, col_name: str) -> IcebergExpression:
         Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
         return cls(client, Expressions.isNull(col_name))
-    
+
     @classmethod
     def is_not_null(cls, client: IceBridgeClient, col_name: str) -> IcebergExpression:
         Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
@@ -145,7 +148,7 @@ class IcebergExpression:
     def equal(cls, client: IceBridgeClient, col_name: str, value: Any) -> IcebergExpression:
         Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
         return cls(client, Expressions.equal(col_name, value))
-    
+
     @classmethod
     def lt(cls, client: IceBridgeClient, col_name: str, value: Any) -> IcebergExpression:
         Expressions = client.jvm().org.apache.iceberg.expressions.Expressions
@@ -174,7 +177,7 @@ class IcebergTransaction:
 
     def commit(self) -> None:
         self.transaction.commitTransaction()
-    
+
     def append_files(self) -> IcebergAppendFiles:
         return IcebergAppendFiles(self.client, self.transaction.newAppend())
 
@@ -184,11 +187,12 @@ class IcebergTransaction:
     def table(self) -> IcebergTable:
         return IcebergTable(self.client, self.transaction.table())
 
+
 class IcebergAppendFiles:
     def __init__(self, client: IceBridgeClient, java_append_files) -> None:
         self.client = client
         self.append_files_obj = java_append_files
-    
+
     def append_data_file(self, data_file: IcebergDataFile) -> IcebergAppendFiles:
         java_data_file = data_file.data_file
         return IcebergAppendFiles(self.client, self.append_files_obj.appendFile(java_data_file))
@@ -196,12 +200,14 @@ class IcebergAppendFiles:
     def commit(self) -> None:
         self.append_files_obj.commit()
 
+
 class IcebergDeleteFiles:
     ...
 
 
 class IcebergMetrics:
     METRIC_TYPE_ALLOWLIST = {bool, int, str, float}
+
     def __init__(self, client: IceBridgeClient, java_metrics) -> None:
         self.client = client
         self.metrics = java_metrics
@@ -223,7 +229,7 @@ class IcebergMetrics:
         nan_counts = dict()
         lower_bounds = dict()
         upper_bounds = dict()
-        
+
         to_byte_buffer = jvm.com.eventualcomputing.icebridge.App.toByteBuffer
         for i in range(row_group.num_columns):
             column = row_group.column(i)
@@ -234,7 +240,7 @@ class IcebergMetrics:
             column_sizes[field_id] = column.total_uncompressed_size
             value_counts[field_id] = column.statistics.num_values
             null_counts[field_id] = column.statistics.null_count
-            nan_counts[field_id] = 0 # TODO(sammy) figure out how to do this
+            nan_counts[field_id] = 0  # TODO(sammy) figure out how to do this
             if type(column.statistics.min) in IcebergMetrics.METRIC_TYPE_ALLOWLIST:
                 lower_bounds[field_id] = to_byte_buffer(iceberg_type, column.statistics.min)
                 upper_bounds[field_id] = to_byte_buffer(iceberg_type, column.statistics.max)
@@ -250,9 +256,10 @@ class IcebergMetrics:
             convert_map_longs(null_counts),
             convert_map_longs(nan_counts),
             MapConverter().convert(lower_bounds, client.gateway._gateway_client),
-            MapConverter().convert(upper_bounds, client.gateway._gateway_client)
+            MapConverter().convert(upper_bounds, client.gateway._gateway_client),
         )
         return cls(client, java_metrics)
+
 
 class IcebergDataFile:
     def __init__(self, client: IceBridgeClient, java_data_file) -> None:
@@ -261,13 +268,12 @@ class IcebergDataFile:
 
     @staticmethod
     def get_file_size(path) -> int:
-        protocol = 'file'
-        if ':' in path:
-            protocol = path.split(':')[0]
+        protocol = "file"
+        if ":" in path:
+            protocol = path.split(":")[0]
         fs = fsspec.filesystem(protocol)
         size = fs.size(path)
         return size
-            
 
     @classmethod
     def from_parquet(
@@ -290,19 +296,20 @@ class IcebergDataFile:
         data_file = builder.build()
         return IcebergDataFile(table.client, data_file)
 
+
 class IcebergSchema:
     arrow_to_iceberg = {
-        pa.binary(): ('BinaryType', 'get'),
-        pa.int32(): ('IntegerType', 'get'),
-        pa.int64(): ('LongType', 'get'),
-        pa.string(): ('StringType', 'get'),
+        pa.binary(): ("BinaryType", "get"),
+        pa.int32(): ("IntegerType", "get"),
+        pa.int64(): ("LongType", "get"),
+        pa.string(): ("StringType", "get"),
     }
 
     def __init__(self, client: IceBridgeClient, java_schema, arrow_schema=None) -> None:
         self.client = client
         self.schema = java_schema
         self.arrow_schema = arrow_schema
-    
+
     def fields(self) -> Dict[str, int]:
         fields = dict()
         for java_column in self.schema.columns():
@@ -310,7 +317,7 @@ class IcebergSchema:
             id = java_column.fieldId()
             fields[name] = id
         return fields
-        
+
     def partition_spec_builder(self) -> IcebergPartitionSpec.Builder:
         return IcebergPartitionSpec.Builder.from_iceberg_schema(self)
 
@@ -320,28 +327,20 @@ class IcebergSchema:
         iceberg_types = jvm.org.apache.iceberg.types.Types
         names = arrow_schema.names
         iceberg_fields = []
-        for i, name  in enumerate(names):
+        for i, name in enumerate(names):
             field = arrow_schema.field(i)
             arrow_type = field.type
             nullable = field.nullable
             if arrow_type not in IcebergSchema.arrow_to_iceberg:
-                raise NotImplementedError(f'{arrow_type} to iceberg not implemented')
+                raise NotImplementedError(f"{arrow_type} to iceberg not implemented")
 
             iceberg_type_name, method = IcebergSchema.arrow_to_iceberg[arrow_type]
             iceberg_class = getattr(iceberg_types, iceberg_type_name)
             iceberg_type = getattr(iceberg_class, method)()
             if nullable:
-                iceberg_field = iceberg_types.NestedField.optional(
-                    i + 1,
-                    name,
-                    iceberg_type
-                )
+                iceberg_field = iceberg_types.NestedField.optional(i + 1, name, iceberg_type)
             else:
-                iceberg_field = iceberg_types.NestedField.required(
-                    i + 1,
-                    name,
-                    iceberg_type
-                )
+                iceberg_field = iceberg_types.NestedField.required(i + 1, name, iceberg_type)
             iceberg_fields.append(iceberg_field)
         java_list = ListConverter().convert(iceberg_fields, client.gateway._gateway_client)
         iceberg_schema = jvm.org.apache.iceberg.Schema(java_list)
@@ -352,7 +351,6 @@ class IcebergPartitionSpec:
     def __init__(self, client: IceBridgeClient, java_partition_spec):
         self.client = client
         self.partition_spec = java_partition_spec
-    
 
     class Builder:
         def __init__(self, client: IceBridgeClient, java_partition_spec_builder) -> None:
@@ -364,17 +362,13 @@ class IcebergPartitionSpec:
 
         def bucket(self, field_name: str, num_buckets: int) -> IcebergPartitionSpec.Builder:
             return IcebergPartitionSpec.Builder(
-                self.client,
-                self.partition_spec_builder.bucket(field_name, num_buckets)
+                self.client, self.partition_spec_builder.bucket(field_name, num_buckets)
             )
 
         def time(self, field_name: str, time_unit: str) -> IcebergPartitionSpec.Builder:
-            assert time_unit in {'hour', 'day', 'month', 'year'}
+            assert time_unit in {"hour", "day", "month", "year"}
             method = getattr(self.partition_spec_builder, time_unit)
-            return IcebergPartitionSpec.Builder(
-                self.client,
-                method(field_name)
-            )        
+            return IcebergPartitionSpec.Builder(self.client, method(field_name))
 
         @classmethod
         def from_iceberg_schema(cls, schema: IcebergSchema) -> IcebergPartitionSpec.Builder:

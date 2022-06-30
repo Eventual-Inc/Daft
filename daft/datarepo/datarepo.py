@@ -7,7 +7,7 @@ from typing import List, Tuple, Type
 import fsspec
 import ray
 from pyarrow import parquet as pq
- 
+
 from daft.dataclasses import is_daft_dataclass
 from daft.datarepo.log import DaftLakeLog
 from daft.datarepo.query.builder import DatarepoQueryBuilder
@@ -52,7 +52,7 @@ class DataRepo:
 
     def __write_dataset(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:
         data_dir = self._table.data_dir()
-        protocol = data_dir.split(':')[0] if ':' in data_dir else 'file'
+        protocol = data_dir.split(":")[0] if ":" in data_dir else "file"
         filesystem = fsspec.filesystem(protocol)
         filesystem.makedir(data_dir)
 
