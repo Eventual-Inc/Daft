@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from math import ceil
-from typing import List, Type
+from typing import List, Tuple, Type
 
 import fsspec
 import ray
@@ -63,7 +63,7 @@ class DataRepo:
 
         data_dir = data_dir.replace("file://", "")
 
-        def _write_block(block: List):
+        def _write_block(block: List) -> List[Tuple[str, pq.FileMetaData]]:
             name = uuid.uuid4()
             filepath = f"{data_dir}/{name}.parquet"
             assert len(block) > 0
