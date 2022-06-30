@@ -2,9 +2,10 @@ from __future__ import annotations
 import dataclasses
 from daft.dataclasses import DataclassBuilder
 
-from daft.datarepo.log import DaftLakeLog
 import networkx as NX
 import ray
+
+from icebridge.client import IcebergTable
 
 from daft.datarepo.query import stages, tree_ops
 from daft.datarepo.query.definitions import NodeId, QueryColumn, Comparator, WriteDatarepoStageOutput
@@ -30,21 +31,21 @@ class DatarepoQueryBuilder:
         self._current_dataclass = current_dataclass
 
     @classmethod
-    def _from_datarepo_log(cls, daft_lake_log: DaftLakeLog, dtype: Type) -> DatarepoQueryBuilder:
-        """Initializes a DatarepoQueryBuilder with the root node being a GetDatarepoStage
+    def _from_iceberg_table(cls, iceberg_table: IcebergTable, dtype: Type) -> DatarepoQueryBuilder:
+        """Initializes a DatarepoQueryBuilder with the root node being a ReadIcebergTableStage
 
         This should not be called by users. Users should access queries through the Datarepo.query() API.
 
         Args:
-            daft_lake_log (DaftLakeLog): log of the Datarepo to query
+            iceberg_table (IcebergTable): icerberg table to query
             dtype (Type): Dataclass to query
 
         Returns:
             DatarepoQueryBuilder: initialized DatarepoQueryBuilder
         """
         tree = NX.DiGraph()
-        stage = stages.GetDatarepoStage(
-            daft_lake_log=daft_lake_log,
+        stage = stages.ReadIcebergTableStage(
+            iceberg_table=iceberg_table,
             dtype=dtype,
             read_limit=None,
             filters=None,
@@ -180,7 +181,7 @@ def _where_pushdown(tree: NX.DiGraph, root: NodeId) -> Tuple[NX.DiGraph, NodeId]
         tree, root = tree_ops.prune_singlechild_node(tree, root, where_node_id)
 
     # Set filter on the lowest read node
-    lowest_read_stage: stages.GetDatarepoStage = tree.nodes[lowest_read_node_id]["stage"]
+    lowest_read_stage: stages.ReadIcebergTableStage = tree.nodes[lowest_read_node_id]["stage"]
     filtered_read_stage = dataclasses.replace(lowest_read_stage, filters=dnf_filter)
     NX.set_node_attributes(tree, {lowest_read_node_id: {"stage": filtered_read_stage}})
 
@@ -214,7 +215,7 @@ def _limit_pushdown(tree: NX.DiGraph, root: NodeId) -> Tuple[NX.DiGraph, NodeId]
         tree, root = tree_ops.prune_singlechild_node(tree, root, limit_node_id)
 
     # Set limit on the lowest read node
-    lowest_read_stage: stages.GetDatarepoStage = tree.nodes[lowest_read_node_id]["stage"]
+    lowest_read_stage: stages.ReadIcebergTableStage = tree.nodes[lowest_read_node_id]["stage"]
     limited_read_stage = dataclasses.replace(lowest_read_stage, read_limit=min_limit)
     NX.set_node_attributes(tree, {lowest_read_node_id: {"stage": limited_read_stage}})
 
