@@ -87,7 +87,7 @@ class IcebergTableScan:
         self.table_scan = java_table_scan
 
     def filter(self, expr: IcebergExpression) -> IcebergTableScan:
-        new_scan = self.table_scan.filter(expr)
+        new_scan = self.table_scan.filter(expr.expression)
         return IcebergTableScan(self.client, new_scan)
 
     def select(self, column_names: List[str]) -> IcebergTableScan:
