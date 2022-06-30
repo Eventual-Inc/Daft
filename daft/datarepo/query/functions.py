@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 
-from daft.datarepo.query.definitions import QueryColumn
+from daft.datarepo.query.expressions import QueryColumn
 
 from typing import (
     Union,

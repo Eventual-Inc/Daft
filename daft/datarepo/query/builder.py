@@ -7,8 +7,8 @@ import ray
 
 from icebridge.client import IcebergTable
 
-from daft.datarepo.query import stages, tree_ops
-from daft.datarepo.query.definitions import NodeId, QueryColumn, Comparator, WriteDatarepoStageOutput
+from daft.datarepo.query import stages, tree_ops, expressions
+from daft.datarepo.query.definitions import NodeId, WriteDatarepoStageOutput
 from daft.datarepo.query import functions as F
 
 from typing import Literal, Type, Union, ForwardRef, Tuple, cast
@@ -31,7 +31,7 @@ class DatarepoQueryBuilder:
         self._current_dataclass = current_dataclass
 
     @classmethod
-    def _from_iceberg_table(cls, iceberg_table: IcebergTable, dtype: Type) -> DatarepoQueryBuilder:
+    def _from_datarepo(cls, datarepo: ForwardRef("DataRepo"), dtype: Type) -> DatarepoQueryBuilder:
         """Initializes a DatarepoQueryBuilder with the root node being a ReadIcebergTableStage
 
         This should not be called by users. Users should access queries through the Datarepo.query() API.
@@ -45,7 +45,7 @@ class DatarepoQueryBuilder:
         """
         tree = NX.DiGraph()
         stage = stages.ReadIcebergTableStage(
-            iceberg_table=iceberg_table,
+            datarepo=datarepo,
             dtype=dtype,
             read_limit=None,
             filters=None,
@@ -57,7 +57,7 @@ class DatarepoQueryBuilder:
             current_dataclass=dtype,
         )
 
-    def where(self, column: QueryColumn, operation: Comparator, value: Union[str, float, int]):
+    def where(self, column: expressions.QueryColumn, operation: expressions.Comparator, value: Union[str, float, int]):
         """Filters the query with a simple predicate.
 
         Args:
@@ -69,7 +69,7 @@ class DatarepoQueryBuilder:
         node_id, tree = stage.add_root(self._query_tree, self._root)
         return DatarepoQueryBuilder(query_tree=tree, root=node_id, current_dataclass=self._current_dataclass)
 
-    def with_column(self, new_column: QueryColumn, expr: F.QueryExpression) -> DatarepoQueryBuilder:
+    def with_column(self, new_column: expressions.QueryColumn, expr: F.QueryExpression) -> DatarepoQueryBuilder:
         """Creates a new column with value derived from the specified expression"""
         dataclass_builder = DataclassBuilder.from_class(self._current_dataclass)
         dataclass_builder.add_field(name=new_column, dtype=expr.return_type)
