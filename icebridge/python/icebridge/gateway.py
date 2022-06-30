@@ -6,7 +6,7 @@ from py4j.java_gateway import JavaGateway, java_import
 
 def launch_gateway() -> JavaGateway:
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    jarpath = os.path.join(dir_path, "../../app/build/libs/app-uber.jar")
+    jarpath = os.path.join(dir_path, "jars/app-uber.jar")
 
     if not os.path.exists(jarpath):
         raise ImportError(
