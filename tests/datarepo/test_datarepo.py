@@ -24,6 +24,7 @@ def test_datarepo_load() -> None:
         read_back_ds = dr.to_dataset(TestDc)
         assert ds.sort(lambda v: v.x).take_all() == read_back_ds.sort(lambda v: v.x).take_all()
 
+
 def test_datarepo_overwrite() -> None:
     @dataclass
     class TestDc:
@@ -46,5 +47,3 @@ def test_datarepo_overwrite() -> None:
         read_back_ds = dr.to_dataset(TestDc)
 
         assert ds2.sort(lambda v: v.x).take_all() == read_back_ds.sort(lambda v: v.x).take_all()
-
-

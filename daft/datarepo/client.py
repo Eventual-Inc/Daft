@@ -9,6 +9,7 @@ import fsspec
 
 from daft import config
 from daft.datarepo.datarepo import DataRepo
+
 # from daft.datarepo.log import DaftLakeLog
 
 from icebridge.client import IceBridgeClient, IcebergCatalog

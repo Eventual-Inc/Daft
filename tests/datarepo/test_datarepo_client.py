@@ -6,6 +6,7 @@ import numpy as np
 from daft.dataclasses import dataclass
 from daft.datarepo.client import DatarepoClient
 
+
 @dataclass
 class TestDc:
     x: int
@@ -14,7 +15,7 @@ class TestDc:
 
 def test_datarepo_client_full_workflow() -> None:
     with tempfile.TemporaryDirectory() as td:
-        client = DatarepoClient(f'file://{td}')
+        client = DatarepoClient(f"file://{td}")
         assert client.list_ids() == []
 
         repo = client.create("test_repo", TestDc)
@@ -22,14 +23,12 @@ def test_datarepo_client_full_workflow() -> None:
         assert client.list_ids() == ["test_repo"]
 
         repo = client.from_id("test_repo")
-        
+
         assert repo.name().endswith("test_repo")
 
         assert client.delete("test_repo") == True
 
         assert client.list_ids() == []
-
-
 
 
 # def test_datarepo_create_and_load() -> None:

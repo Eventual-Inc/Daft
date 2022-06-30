@@ -104,7 +104,7 @@ class DataRepo:
             paths_to_rtn.append(path)
 
         append_files.commit()
-        
+
         delete_files = transaction.delete_files()
         for file in old_filepaths:
             delete_files.delete_file(file)

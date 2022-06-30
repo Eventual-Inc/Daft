@@ -18,6 +18,7 @@ from typing import Iterator, List
 
 from .utils import create_test_catalog
 
+
 @dataclass
 class TestDc:
     x: int
