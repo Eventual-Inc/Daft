@@ -1,6 +1,5 @@
-import os
 import tempfile
-import uuid
+from typing import Iterator, List
 
 import numpy as np
 import pyarrow.parquet as pq
@@ -9,10 +8,11 @@ import ray
 
 from daft.dataclasses import dataclass
 from daft.datarepo.datarepo import DataRepo
-from daft.datarepo.query.definitions import QueryColumn
 from daft.datarepo.query import functions as F
+from daft.datarepo.query.definitions import QueryColumn
+from icebridge.client import IcebergCatalog, IceBridgeClient
 
-from typing import Iterator, List
+from .utils import create_test_catalog
 
 
 @dataclass
@@ -24,7 +24,8 @@ class TestDc:
 @pytest.fixture(scope="function")
 def populated_datarepo(ray_cluster) -> Iterator[DataRepo]:
     with tempfile.TemporaryDirectory() as td:
-        dr = DataRepo.create(f"file://{td}", "test_dc", TestDc)
+        catalog = create_test_catalog(td)
+        dr = DataRepo.create(catalog, "test_dc", TestDc)
         ds = ray.data.range(100)
         ds = ds.map(lambda x: TestDc(x, np.ones(1)))
         dr.append(ds, rows_per_partition=10)
