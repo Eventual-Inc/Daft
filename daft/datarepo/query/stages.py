@@ -7,10 +7,17 @@ import ray
 import pyarrow.dataset as pads
 import pyarrow.compute as pc
 
-from daft.datarepo.log import DaftLakeLog
 from daft.datarepo.query import functions as F
-from daft.datarepo.query.definitions import Comparator, NodeId, QueryColumn, COMPARATOR_MAP, WriteDatarepoStageOutput
+from daft.datarepo.query.definitions import (
+    Comparator,
+    NodeId,
+    QueryColumn,
+    COMPARATOR_MAP,
+    ICEBRIDGE_COMPARATOR_MAP,
+    WriteDatarepoStageOutput,
+)
 from daft.schema import DaftSchema
+from icebridge.client import IcebergTable, IcebergExpression
 
 from typing import Any, Dict, Type, Tuple, cast, Protocol, Callable, Optional, Union, List, Literal, ForwardRef
 
@@ -53,8 +60,8 @@ def _query_stage_repr(stage_type: StageType, args: Dict[str, Any]) -> str:
 
 
 @dataclasses.dataclass
-class GetDatarepoStage(QueryStage):
-    daft_lake_log: DaftLakeLog
+class ReadIcebergTableStage(QueryStage):
+    iceberg_table: IcebergTable
     dtype: Type
     read_limit: Optional[int] = None
     # Filters in DNF form, see the `filters` kwarg in:
@@ -88,11 +95,27 @@ class GetDatarepoStage(QueryStage):
 
         return final_expr
 
+    def _get_iceberg_filter_expression(self) -> Optional[IcebergExpression]:
+        if self.filters is None:
+            return None
+
+        final_expr = IcebergExpression.always_false(self.iceberg_table.client)
+
+        for conjunction_filters in self.filters:
+            conjunctive_expr = IcebergExpression.always_true(self.iceberg_table.client)
+            for raw_filter in conjunction_filters:
+                col, op, val = raw_filter
+                expr = ICEBRIDGE_COMPARATOR_MAP[op](self.iceberg_table.client, f"root.{col}", val)
+                conjunctive_expr = conjunctive_expr.AND(expr)
+            final_expr = final_expr.OR(conjunctive_expr)
+
+        return final_expr
+
     def type(self) -> StageType:
         return StageType.GetDatarepo
 
     def add_root(self, query_tree: NX.DiGraph, root_node: NodeId) -> Tuple[NodeId, NX.DiGraph]:
-        assert len(query_tree.nodes) == 0, "can only add _GetDatarepoStage to empty query tree"
+        assert len(query_tree.nodes) == 0, "can only add _ReadIcebergTableStage to empty query tree"
         node_id = str(uuid.uuid4())
         tree_copy = query_tree.copy()
         tree_copy.add_node(
@@ -102,15 +125,26 @@ class GetDatarepoStage(QueryStage):
         return node_id, tree_copy
 
     def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
-        assert len(input_stage_results) == 0, "GetDatarepoStage does not take in inputs"
-        files = self.daft_lake_log.file_list()
+        assert len(input_stage_results) == 0, "ReadIcebergTableStage does not take in inputs"
+        scan = self.iceberg_table.new_scan()
+        if self.filters is not None:
+            scan = scan.filter(self._get_iceberg_filter_expression())
+        filelist = scan.plan_files()
+
         daft_schema = cast(DaftSchema, getattr(self.dtype, "_daft_schema", None))
         assert daft_schema is not None, f"{self.dtype} is not a Daft Dataclass"
+
+        # Read 2 * NUM_CPUs number of partitions to take advantage of
+        # the amount of parallelism afforded by the cluster
+        parallelism = 200
+        cluster_cpus = ray.cluster_resources().get("CPU", -1)
+        if cluster_cpus != -1:
+            parallelism = cluster_cpus * 2
+
         ds: ray.data.Dataset = ray.data.read_parquet(
-            files,
-            schema=self.daft_lake_log.schema(),
-            # Dataset kwargs passed to Pyarrow Parquet Dataset
-            dataset_kwargs={"filters": self.filters},
+            filelist,
+            schema=daft_schema.arrow_schema(),
+            parallelism=parallelism,
             # Reader kwargs passed to Pyarrow Scanner.from_fragment
             filter=self._get_arrow_filter_expression(),
         )
@@ -118,14 +152,12 @@ class GetDatarepoStage(QueryStage):
         if self.read_limit is not None:
             ds = ds.limit(self.read_limit)
 
-        # If the cluster has more CPUs available than the number of blocks, repartition the
-        # dataset to take advantage of the full parallelism afforded by the cluster
-        cluster_cpus = ray.cluster_resources().get("CPU", -1)
-        if cluster_cpus != -1 and ds.num_blocks() < cluster_cpus and ds.count() > cluster_cpus:
-            ds = ds.repartition(int(cluster_cpus * 2), shuffle=True)
+        # NOTE: self.iceberg_table is not pickleable, so we need to ensure that self
+        # is not passed into any remote calls in Ray
+        dtype = self.dtype
 
         return ds.map_batches(
-            lambda batch: daft_schema.deserialize_batch(batch, self.dtype),
+            lambda batch: daft_schema.deserialize_batch(batch, dtype),
             batch_format="pyarrow",
         )
 

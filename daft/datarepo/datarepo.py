@@ -19,8 +19,8 @@ class DataRepo:
     def __init__(self, table: IcebergTable) -> None:
         self._table = table
 
-    # def query(self, dtype: Type) -> DatarepoQueryBuilder:
-    #     return DatarepoQueryBuilder._from_datarepo_log(self._log, dtype=dtype)
+    def query(self, dtype: Type) -> DatarepoQueryBuilder:
+        return DatarepoQueryBuilder._from_iceberg_table(self._table, dtype=dtype)
 
     def to_dataset(self, dtype: Type):
         return self.__read_dataset(dtype)
