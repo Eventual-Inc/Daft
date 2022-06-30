@@ -31,18 +31,32 @@ class IcebergCatalog:
         name: str,
         schema: IcebergSchema,
         partition_spec: Optional[IcebergPartitionSpec] = None,
-        namespace: Optional[str] = None,
+        namespace: str = "default",
     ) -> IcebergTable:
         jvm = self.client.jvm()
         gateway = self.client.gateway
-        name_vargs = gateway.new_array(jvm.java.lang.String, 1)
-        name_vargs[0] = name
-        if namespace is None:
-            identifier = jvm.org.apache.iceberg.catalog.TableIdentifier.of(name_vargs)
-        else:
-            identifier = jvm.org.apache.iceberg.catalog.TableIdentifier.of(namespace, name)
+
+        
+        namespace_vargs = gateway.new_array(jvm.java.lang.String, 1)
+        namespace_vargs[0] = namespace
+        namespace_obj = jvm.org.apache.iceberg.catalog.Namespace.of(namespace_vargs)
+
+        identifier = jvm.org.apache.iceberg.catalog.TableIdentifier.of(namespace_obj, name)
+
         table = self.catalog.createTable(identifier, schema.schema)
         return IcebergTable(self.client, table)
+
+    def list_tables(self, namespace: str="default") -> List[str]:
+        jvm = self.client.jvm()
+        gateway = self.client.gateway
+
+        namespace_vargs = gateway.new_array(jvm.java.lang.String, 1)
+        namespace_vargs[0] = namespace
+        namespace = jvm.org.apache.iceberg.catalog.Namespace.of(namespace_vargs)
+
+        tables = self.catalog.listTables(namespace)
+
+        return [t.name() for t in tables]
 
     @classmethod
     def from_hadoop_catalog(cls, client: IceBridgeClient, hdfs_path: str) -> IcebergCatalog:

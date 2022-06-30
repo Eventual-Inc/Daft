@@ -28,7 +28,10 @@ def test_iceberg_schema_from_arrow() -> None:
         assert isinstance(hadoop_catalog.catalog, py4j.java_gateway.JavaObject)
 
         table = hadoop_catalog.create_table("test1", iceberg_schema, part_spec)
-
+        list_tables = hadoop_catalog.list_tables()
+        assert len(list_tables) == 1
+        assert list_tables[0] == "test1"
+        
         path = f"file://{tmpdirname}/test_data.parquet"
         writer = pa.parquet.ParquetWriter(path, pa_schema)
         writer.write_table(pa_table)
