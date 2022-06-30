@@ -16,6 +16,7 @@ from icebridge.client import IceBridgeClient, IcebergCatalog
 
 from typing import Iterator, List
 
+from .utils import create_test_catalog
 
 @dataclass
 class TestDc:
@@ -26,8 +27,7 @@ class TestDc:
 @pytest.fixture(scope="function")
 def populated_datarepo(ray_cluster) -> Iterator[DataRepo]:
     with tempfile.TemporaryDirectory() as td:
-        client = IceBridgeClient()
-        catalog = IcebergCatalog.from_hadoop_catalog(client, f"file://{td}")
+        catalog = create_test_catalog(td)
         dr = DataRepo.create(catalog, "test_dc", TestDc)
         ds = ray.data.range(100)
         ds = ds.map(lambda x: TestDc(x, np.ones(1)))

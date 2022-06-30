@@ -1,4 +1,5 @@
 import pytest
+import tempfile
 
 from daft.dataclasses import DataclassBuilder, dataclass
 from daft.datarepo.log import DaftLakeLog
@@ -7,9 +8,7 @@ from daft.datarepo.query import stages
 from daft.datarepo.datarepo import DataRepo
 from daft.datarepo.query import functions as F
 
-FAKE_DATAREPO_ID = "mydatarepo"
-FAKE_DATAREPO_PATH = f"file:///tmp/fake_{FAKE_DATAREPO_ID}_path"
-
+from .utils import create_test_catalog
 
 @dataclass
 class MyFakeDataclass:
@@ -18,9 +17,9 @@ class MyFakeDataclass:
 
 @pytest.fixture(scope="function")
 def fake_datarepo() -> DataRepo:
-    # TODO(jaychia): Use Datarepo client here instead once API stabilizes
-    daft_lake_log = DaftLakeLog(FAKE_DATAREPO_PATH)
-    return DataRepo(daft_lake_log)
+    with tempfile.TemporaryDirectory() as td:
+        catalog = create_test_catalog(td)
+        yield DataRepo.create(catalog, FAKE_CATALOG, MyFakeDataclass)
 
 
 def test_query_select_star(fake_datarepo: DataRepo) -> None:
