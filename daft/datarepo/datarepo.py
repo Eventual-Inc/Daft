@@ -54,7 +54,7 @@ class DataRepo:
         data_dir = self._table.data_dir()
         protocol = data_dir.split(":")[0] if ":" in data_dir else "file"
         filesystem = fsspec.filesystem(protocol)
-        filesystem.makedir(data_dir)
+        filesystem.makedirs(data_dir, exist_ok=True)
 
         data_dir = data_dir.replace("file://", "")
 
@@ -90,16 +90,27 @@ class DataRepo:
         transaction.commit()
         return filewrite_outputs
 
-    # def overwrite(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:
-    #     old_filepaths = self._log.file_list()
-    #     filepaths = self.__write_dataset(dataset, rows_per_partition)
-    #     self._log.start_transaction()
-    #     for file in filepaths:
-    #         self._log.add_file(file)
-    #     for file in old_filepaths:
-    #         self._log.remove_file(file)
-    #     self._log.commit()
-    #     return filepaths
+    def overwrite(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:
+        filewrite_outputs = self.__write_dataset(dataset, rows_per_partition)
+        transaction = self._table.new_transaction()
+        scan = self._table.new_scan()
+        old_filepaths = scan.plan_files()
+
+        append_files = transaction.append_files()
+        paths_to_rtn = []
+        for path, file_metadata in filewrite_outputs:
+            data_file = IcebergDataFile.from_parquet(path, file_metadata, self._table)
+            append_files.append_data_file(data_file)
+            paths_to_rtn.append(path)
+
+        append_files.commit()
+        
+        delete_files = transaction.delete_files()
+        for file in old_filepaths:
+            delete_files.delete_file(file)
+        delete_files.commit()
+        transaction.commit()
+        return paths_to_rtn
 
     def update(self, dataset, func):
         raise NotImplementedError("update not implemented")

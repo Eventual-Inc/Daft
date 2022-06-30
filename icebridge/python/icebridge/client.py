@@ -182,7 +182,7 @@ class IcebergTransaction:
         return IcebergAppendFiles(self.client, self.transaction.newAppend())
 
     def delete_files(self) -> IcebergDeleteFiles:
-        ...
+        return IcebergDeleteFiles(self.client, self.transaction.newDelete())
 
     def table(self) -> IcebergTable:
         return IcebergTable(self.client, self.transaction.table())
@@ -202,7 +202,16 @@ class IcebergAppendFiles:
 
 
 class IcebergDeleteFiles:
-    ...
+    def __init__(self, client: IceBridgeClient, java_delete_files) -> None:
+        self.client = client
+        self.delete_files_obj = java_delete_files
+
+    def delete_file(self, data_file_path: str) -> IcebergDeleteFiles:
+        return IcebergDeleteFiles(self.client, self.delete_files_obj.deleteFile(data_file_path))
+
+    def commit(self) -> None:
+        self.delete_files_obj.commit()
+
 
 
 class IcebergMetrics:
