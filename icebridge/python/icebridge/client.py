@@ -52,11 +52,23 @@ class IcebergCatalog:
 
         namespace_vargs = gateway.new_array(jvm.java.lang.String, 1)
         namespace_vargs[0] = namespace
-        namespace = jvm.org.apache.iceberg.catalog.Namespace.of(namespace_vargs)
+        namespace_obj = jvm.org.apache.iceberg.catalog.Namespace.of(namespace_vargs)
 
-        tables = self.catalog.listTables(namespace)
+        tables = self.catalog.listTables(namespace_obj)
 
         return [t.name() for t in tables]
+
+    def load_table(self, name:str, namespace:str="default") -> IcebergTable:
+        jvm = self.client.jvm()
+        gateway = self.client.gateway
+
+        namespace_vargs = gateway.new_array(jvm.java.lang.String, 1)
+        namespace_vargs[0] = namespace
+        namespace_obj = jvm.org.apache.iceberg.catalog.Namespace.of(namespace_vargs)
+        
+        identifier = jvm.org.apache.iceberg.catalog.TableIdentifier.of(namespace_obj, name)
+        table = self.catalog.loadTable(identifier)
+        return IcebergTable(self.client, table)
 
     @classmethod
     def from_hadoop_catalog(cls, client: IceBridgeClient, hdfs_path: str) -> IcebergCatalog:

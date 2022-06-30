@@ -47,3 +47,7 @@ def test_iceberg_schema_from_arrow() -> None:
         files = scan.plan_files()
         assert len(files) == 1
         assert files[0] == path
+
+        read_back_table = hadoop_catalog.load_table("test1")
+
+        assert table.location() == read_back_table.location()
