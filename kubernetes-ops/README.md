@@ -104,25 +104,30 @@ vault secrets enable aws
 We create a Vault policy that allows for reading all `aws/sts/userrole-*` secrets - any Vault role that has this policy attached can now *read* these secrets and retrieve credentials for roles stored in these secrets.
 
 ```
-vault policy write read-all-aws-roles - <<EOF
+vault policy write read-all-user-roles - <<EOF
 path "aws/sts/userrole-*" {
-  capabilities = ["read"]
+  capabilities = ["read", "update"]
 }
 EOF
 ```
 
+Now we create a Vault role and link the aforementioned policy to this Vault role. This Vault role can be authenticated against by entities that have assumed the `jay_sandbox_eks_clusterDaftServiceRole` role.
 
+```
+vault write auth/aws/role/daft-service-role \
+  auth_type=iam \
+  policies=read-all-user-roles \
+  bound_iam_principal_arn=arn:aws:iam::941892620273:role/jay_sandbox_eks_clusterDaftServiceRole
+```
 
 **Linking User Roles**
 
 Let's say Jay is trying to create an Eventual account. Jay will create a new AWS role in his AWS account, and allow Eventual's Vault role to assume it by adding Eventual's Vault role as a Principal in his role's Trust Policy.
 
-On our end, we need to do a few things:
-
-Create a new AWS secret in Vault:
+On our end, all we need to do is to write a new Vault AWS secret:
 
 ```
-vault write aws/roles/jay-role \
-  role_arns=<jay-role-arn> \
+vault write aws/roles/userrole-jay@eventualcomputing.com \
+  role_arns=<JAYS_ROLE_ARN> \
   credential_type=assumed_role
 ```

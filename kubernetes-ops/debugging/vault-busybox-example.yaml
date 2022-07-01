@@ -12,13 +12,15 @@ metadata:
     vault.hashicorp.com/auth-type: aws
     vault.hashicorp.com/auth-path: auth/aws
     vault.hashicorp.com/auth-config-type: iam
+    # Only run an init_container and not the sidecar to pre-populate the file
+    vault.hashicorp.com/agent-pre-populate-only: "true"
     # Retrieve the secrets for some user at aws/sts/userrole-<user-hash> and mount it as a file
     # in /vault/secrets/aws-credentials in the application container
     # The application container can then source from this file to have the proper credentials loaded as
     # environment variables.
-    vault.hashicorp.com/agent-inject-secret-aws-credentials: aws/sts/userrole-some-random-hash
+    vault.hashicorp.com/agent-inject-secret-aws-credentials: aws/sts/userrole-jay@eventualcomputing.com
     vault.hashicorp.com/agent-inject-template-aws-credentials: |
-      {{ with secret "aws/sts/userrole-some-random-hash" -}}
+      {{ with secret "aws/sts/userrole-jay@eventualcomputing.com" "ttl=12h" -}}
       export AWS_ACCESS_KEY_ID="{{ .Data.access_key }}"
       export AWS_SECRET_ACCESS_KEY="{{ .Data.secret_key }}"
       export AWS_SESSION_TOKEN="{{ .Data.security_token }}"
