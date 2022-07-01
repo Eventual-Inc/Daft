@@ -9,7 +9,7 @@ import ray
 from daft.dataclasses import dataclass
 from daft.datarepo.datarepo import DataRepo
 from daft.datarepo.query import functions as F
-from daft.datarepo.query.definitions import QueryColumn
+from daft.datarepo.query.expressions import QueryColumn
 from icebridge.client import IcebergCatalog, IceBridgeClient
 
 from .utils import create_test_catalog

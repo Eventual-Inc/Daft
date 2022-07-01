@@ -17,7 +17,7 @@ from typing import (
     overload,
 )
 
-from daft.datarepo.query.definitions import QueryColumn
+from daft.datarepo.query.expressions import QueryColumn
 
 ReturnType = TypeVar("ReturnType", covariant=True)
 

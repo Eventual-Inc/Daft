@@ -17,21 +17,11 @@ from typing import (
 )
 
 import networkx as NX
-import pyarrow.compute as pc
-import pyarrow.dataset as pads
 import ray
 
+from daft.datarepo.query import expressions
 from daft.datarepo.query import functions as F
-from daft.datarepo.query.definitions import (
-    COMPARATOR_MAP,
-    ICEBRIDGE_COMPARATOR_MAP,
-    Comparator,
-    NodeId,
-    QueryColumn,
-    WriteDatarepoStageOutput,
-)
-from daft.schema import DaftSchema
-from icebridge.client import IcebergExpression, IcebergTable
+from daft.datarepo.query.definitions import NodeId, WriteDatarepoStageOutput
 
 DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.data.ActorPoolStrategy(
     min_size=1,
@@ -72,7 +62,7 @@ def _query_stage_repr(stage_type: StageType, args: Dict[str, Any]) -> str:
 
 @dataclasses.dataclass
 class ReadIcebergTableStage(QueryStage):
-    iceberg_table: IcebergTable
+    datarepo: ForwardRef("DataRepo")
     dtype: Type
     read_limit: Optional[int] = None
     # Filters in DNF form, see the `filters` kwarg in:
@@ -82,45 +72,6 @@ class ReadIcebergTableStage(QueryStage):
     def __post_init__(self):
         if not dataclasses.is_dataclass(self.dtype):
             raise ValueError(f"{self.dtype} is not a Daft Dataclass")
-
-    def _get_arrow_filter_expression(self) -> Optional[pads.Expression]:
-        if self.filters is None:
-            return None
-
-        final_expr = None
-
-        for conjunction_filters in self.filters:
-            conjunctive_expr = None
-            for raw_filter in conjunction_filters:
-                col, op, val = raw_filter
-                expr = getattr(pc.field(f"root.{col}"), COMPARATOR_MAP[op])(val)
-                if conjunctive_expr is None:
-                    conjunctive_expr = expr
-                else:
-                    conjunctive_expr = conjunctive_expr & expr
-
-            if final_expr is None:
-                final_expr = conjunctive_expr
-            else:
-                final_expr = final_expr | conjunctive_expr
-
-        return final_expr
-
-    def _get_iceberg_filter_expression(self) -> Optional[IcebergExpression]:
-        if self.filters is None:
-            return None
-
-        final_expr = IcebergExpression.always_false(self.iceberg_table.client)
-
-        for conjunction_filters in self.filters:
-            conjunctive_expr = IcebergExpression.always_true(self.iceberg_table.client)
-            for raw_filter in conjunction_filters:
-                col, op, val = raw_filter
-                expr = ICEBRIDGE_COMPARATOR_MAP[op](self.iceberg_table.client, f"root.{col}", val)
-                conjunctive_expr = conjunctive_expr.AND(expr)
-            final_expr = final_expr.OR(conjunctive_expr)
-
-        return final_expr
 
     def type(self) -> StageType:
         return StageType.GetDatarepo
@@ -137,40 +88,7 @@ class ReadIcebergTableStage(QueryStage):
 
     def run(self, input_stage_results: Dict[str, ray.data.Dataset]) -> ray.data.Dataset:
         assert len(input_stage_results) == 0, "ReadIcebergTableStage does not take in inputs"
-        scan = self.iceberg_table.new_scan()
-        if self.filters is not None:
-            scan = scan.filter(self._get_iceberg_filter_expression())
-        filelist = scan.plan_files()
-
-        daft_schema = cast(DaftSchema, getattr(self.dtype, "_daft_schema", None))
-        assert daft_schema is not None, f"{self.dtype} is not a Daft Dataclass"
-
-        # Read 2 * NUM_CPUs number of partitions to take advantage of
-        # the amount of parallelism afforded by the cluster
-        parallelism = 200
-        cluster_cpus = ray.cluster_resources().get("CPU", -1)
-        if cluster_cpus != -1:
-            parallelism = cluster_cpus * 2
-
-        ds: ray.data.Dataset = ray.data.read_parquet(
-            filelist,
-            schema=daft_schema.arrow_schema(),
-            parallelism=parallelism,
-            # Reader kwargs passed to Pyarrow Scanner.from_fragment
-            filter=self._get_arrow_filter_expression(),
-        )
-
-        if self.read_limit is not None:
-            ds = ds.limit(self.read_limit)
-
-        # NOTE: self.iceberg_table is not pickleable, so we need to ensure that self
-        # is not passed into any remote calls in Ray
-        dtype = self.dtype
-
-        return ds.map_batches(
-            lambda batch: daft_schema.deserialize_batch(batch, dtype),
-            batch_format="pyarrow",
-        )
+        return self.datarepo.to_dataset(self.dtype, filters=self.filters, limit=self.read_limit)
 
     def __repr__(self) -> str:
         args = {
@@ -187,8 +105,8 @@ class ReadIcebergTableStage(QueryStage):
 
 @dataclasses.dataclass
 class WhereStage(QueryStage):
-    column: QueryColumn
-    operation: Comparator
+    column: expressions.QueryColumn
+    operation: expressions.Comparator
     value: Union[str, int, float]
 
     def type(self) -> StageType:
@@ -212,7 +130,7 @@ class WhereStage(QueryStage):
         """Converts the where clause into a lambda that can be used to filter a dataset"""
 
         def f(x: Any) -> bool:
-            comparator_magic_method = COMPARATOR_MAP[self.operation]
+            comparator_magic_method = expressions.COMPARATOR_MAP[self.operation]
             if dataclasses.is_dataclass(x):
                 return cast(bool, getattr(getattr(x, self.column), comparator_magic_method)(self.value))
             return cast(bool, getattr(x[self.column], comparator_magic_method)(self.value))
@@ -256,7 +174,7 @@ class LimitStage(QueryStage):
 
 @dataclasses.dataclass
 class WithColumnStage(QueryStage):
-    new_column: QueryColumn
+    new_column: expressions.QueryColumn
     expr: F.QueryExpression
     dataclass: Type
 
@@ -332,7 +250,7 @@ class WithColumnStage(QueryStage):
 
     @staticmethod
     def _get_actor_wrapper(
-        new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type
+        new_column: expressions.QueryColumn, expr: F.QueryExpression, new_dataclass: Type
     ) -> Type[Callable[[Any], Any]]:
         assert isinstance(expr.func, type), "must wrap an actor class"
         old_fields = [f for f in new_dataclass.__dataclass_fields__ if f != new_column]
@@ -356,7 +274,7 @@ class WithColumnStage(QueryStage):
 
     @staticmethod
     def _get_batched_actor_wrapper(
-        new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type
+        new_column: expressions.QueryColumn, expr: F.QueryExpression, new_dataclass: Type
     ) -> Type[Callable[[List[Any]], List[Any]]]:
         assert isinstance(expr.func, type), "must wrap an actor class"
         old_fields = [f for f in new_dataclass.__dataclass_fields__ if f != new_column]
@@ -384,7 +302,7 @@ class WithColumnStage(QueryStage):
 
     @staticmethod
     def _get_func_wrapper(
-        new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type
+        new_column: expressions.QueryColumn, expr: F.QueryExpression, new_dataclass: Type
     ) -> Callable[[Any], Any]:
         old_fields = [f for f in new_dataclass.__dataclass_fields__ if f != new_column]
 
@@ -403,7 +321,7 @@ class WithColumnStage(QueryStage):
 
     @staticmethod
     def _get_batched_func_wrapper(
-        new_column: QueryColumn, expr: F.QueryExpression, new_dataclass: Type
+        new_column: expressions.QueryColumn, expr: F.QueryExpression, new_dataclass: Type
     ) -> Callable[[List[Any]], List[Any]]:
         old_fields = [f for f in new_dataclass.__dataclass_fields__ if f != new_column]
 

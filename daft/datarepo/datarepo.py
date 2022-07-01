@@ -2,21 +2,20 @@ from __future__ import annotations
 
 import uuid
 from math import ceil
-from typing import List, Tuple, Type
+from typing import List, Optional, Tuple, Type
 
 import fsspec
 import ray
 from pyarrow import parquet as pq
 
 from daft.dataclasses import is_daft_dataclass
-from daft.datarepo.log import DaftLakeLog
+from daft.datarepo.query import expressions
 from daft.datarepo.query.builder import DatarepoQueryBuilder
 from icebridge.client import (
     IcebergCatalog,
     IcebergDataFile,
     IcebergSchema,
     IcebergTable,
-    IceBridgeClient,
 )
 
 
@@ -25,35 +24,50 @@ class DataRepo:
         self._table = table
 
     def query(self, dtype: Type) -> DatarepoQueryBuilder:
-        return DatarepoQueryBuilder._from_iceberg_table(self._table, dtype=dtype)
+        return DatarepoQueryBuilder._from_datarepo(self, dtype=dtype)
 
-    def to_dataset(self, dtype: Type):
-        return self.__read_dataset(dtype)
+    def to_dataset(
+        self,
+        dtype: Type,
+        filters: Optional[List[List[Tuple]]] = None,
+        limit: Optional[int] = None,
+    ) -> ray.data.Dataset:
+        scan = self._table.new_scan()
+        if filters is not None:
+            scan = scan.filter(expressions.get_iceberg_filter_expression(filters, self._table.client))
+        filelist = scan.plan_files()
+
+        daft_schema = getattr(dtype, "_daft_schema", None)
+        assert daft_schema is not None
+
+        # Read 2 * NUM_CPUs number of partitions to take advantage of
+        # the amount of parallelism afforded by the cluster
+        parallelism = 200
+        cluster_cpus = ray.cluster_resources().get("CPU", -1)
+        if cluster_cpus != -1:
+            parallelism = cluster_cpus * 2
+
+        ds: ray.data.Dataset = ray.data.read_parquet(
+            filelist,
+            schema=daft_schema.arrow_schema(),
+            parallelism=parallelism,
+            # Reader kwargs passed to Pyarrow Scanner.from_fragment
+            filter=expressions.get_arrow_filter_expression(filters),
+        )
+
+        if limit is not None:
+            ds = ds.limit(limit)
+
+        return ds.map_batches(
+            lambda batch: daft_schema.deserialize_batch(batch, dtype),
+            batch_format="pyarrow",
+        )
 
     def schema(self):
         return self._table.schema()
 
     def name(self):
         return self._table.name()
-
-    def __read_dataset(self, dtype: Type):
-        scan = self._table.new_scan()
-        filelist = scan.plan_files()
-        daft_schema = getattr(dtype, "_daft_schema", None)
-        assert daft_schema is not None
-
-        def _read_block(files: List[str]) -> List[dtype]:
-            to_rtn = []
-            for filepath in files:
-                filepath = filepath.replace("file://", "")
-                table = pq.read_table(filepath)
-                to_rtn.extend(daft_schema.deserialize_batch(table, dtype))
-            return to_rtn
-
-        file_ds = ray.data.from_items(filelist)
-
-        blocks = file_ds.map_batches(_read_block)
-        return blocks
 
     def __write_dataset(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:
         data_dir = self._table.data_dir()
