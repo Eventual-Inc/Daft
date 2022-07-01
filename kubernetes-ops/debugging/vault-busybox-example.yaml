@@ -12,8 +12,17 @@ metadata:
     vault.hashicorp.com/auth-type: aws
     vault.hashicorp.com/auth-path: auth/aws
     vault.hashicorp.com/auth-config-type: iam
-    # Retrieve the secrets for some user at aws/sts/userrole-<user-hash>
-    vault.hashicorp.com/agent-inject-secret-foo.txt: aws/sts/userrole-some-random-hash
+    # Retrieve the secrets for some user at aws/sts/userrole-<user-hash> and mount it as a file
+    # in /vault/secrets/aws-credentials in the application container
+    # The application container can then source from this file to have the proper credentials loaded as
+    # environment variables.
+    vault.hashicorp.com/agent-inject-secret-aws-credentials: aws/sts/userrole-some-random-hash
+    vault.hashicorp.com/agent-inject-template-aws-credentials: |
+      {{ with secret "aws/sts/userrole-some-random-hash" -}}
+      export AWS_ACCESS_KEY_ID="{{ .Data.access_key }}"
+      export AWS_SECRET_ACCESS_KEY="{{ .Data.secret_key }}"
+      export AWS_SESSION_TOKEN="{{ .Data.security_token }}"
+      {{- end }}
 spec:
   # Make sure to use the correct service account that is linked to the
   # jay_sandbox_eks_clusterDaftServiceRole AWS IAM role, so that we can authenticate with Vault
