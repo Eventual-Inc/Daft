@@ -830,19 +830,21 @@ protobuf = ["grpcio-tools (>=1.43.0)"]
 
 [[package]]
 name = "icebridge"
-version = "0.0.0"
-description = ""
+version = "0.0.3"
+description = "A Python Bridge to Apache Iceberg using Py4J"
 category = "main"
 optional = false
 python-versions = "*"
-develop = true
 
 [package.dependencies]
+fsspec = "*"
+numpy = ">=1.20"
 py4j = "0.10.9.5"
+pyarrow = "8.0.0"
+s3fs = "*"
 
-[package.source]
-type = "directory"
-url = "icebridge"
+[package.extras]
+test = ["pytest"]
 
 [[package]]
 name = "idna"
@@ -2415,7 +2417,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytest-
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "3e0d0b327b1acc37247812f1f527521e052bda52dc5e057c4e9e8dc5e31ba369"
+content-hash = "1bc233017fc0449818cf3f76466c27ed4c05db23dd4a7ed3658dcbede46b37ad"
 
 [metadata.files]
 aiosignal = [
@@ -2875,7 +2877,10 @@ grpcio = [
     {file = "grpcio-1.43.0-cp39-cp39-win_amd64.whl", hash = "sha256:bdf41550815a831384d21a498b20597417fd31bd084deb17d31ceb39ad9acc79"},
     {file = "grpcio-1.43.0.tar.gz", hash = "sha256:735d9a437c262ab039d02defddcb9f8f545d7009ae61c0114e19dda3843febe5"},
 ]
-icebridge = []
+icebridge = [
+    {file = "icebridge-0.0.3-py3-none-any.whl", hash = "sha256:447e339982d7191731a5e86184364af0c10883a729b00350ede7dd4ab4534c3c"},
+    {file = "icebridge-0.0.3.tar.gz", hash = "sha256:b972c99f382f23e7ec0db1575521afd3e4a96f28950bc820659e2d3377f4fb79"},
+]
 idna = [
     {file = "idna-3.3-py3-none-any.whl", hash = "sha256:84d9dd047ffa80596e0f246e2eab0b391788b0503584e8945f2368256d2735ff"},
     {file = "idna-3.3.tar.gz", hash = "sha256:9d643ff0a55b762d5cdb124b8eaa99c66322e2157b69160bc32796e824360e6d"},
