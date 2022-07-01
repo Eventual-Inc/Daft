@@ -10,3 +10,7 @@ vault:
         operator: "Equal"
         value: "vaultCluster"
         effect: "NoSchedule"
+
+injector:
+  enabled: true
+  authPath: "auth/aws"

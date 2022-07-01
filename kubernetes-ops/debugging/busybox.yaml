@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox-sleep
+  annotations:
+    vault.hashicorp.com/agent-inject: "true"
+    vault.hashicorp.com/agent-inject-secret-foo.txt: aws/sts/jay-role
+    vault.hashicorp.com/role: jay-role
+    vault.hashicorp.com/auth-type: aws
+    vault.hashicorp.com/auth-path: auth/aws
+    vault.hashicorp.com/auth-config-type: iam
+    vault.hashicorp.com/auth-config-role: jay-role
+spec:
+  containers:
+  - name: busybox
+    image: busybox:1.28
+    args:
+    - sleep
+    - "1000000"

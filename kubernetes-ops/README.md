@@ -75,5 +75,60 @@ We deploy Vault using the default releases provided by Vault.
 helm install vault vault --values vault/values.yaml
 ```
 
-This installs a single-instance non-HA installation of Vault in the cluster.
+This installs a single-instance non-HA installation of Vault in the cluster. We will move this out into a Hashicorp Vault cluster deployment instead in the future.
 
+> If this is the first time Vault is being installed, we need to initialize and unseal it.
+> 1. Initialize Vault with: `kubectl exec -ti vault-0 -- vault operator init`
+> 2. Unseal Vault with  3 different seal keys: `kubectl exec -ti vault-0 -- vault operator unseal <key_obtained_at_initialization>`
+
+To use a local Vault client:
+
+```
+kubectl port-forward vault-0 8200:8200
+export VAULT_ADDR=http://127.0.0.1:8200
+export VAULT_TOKEN=<vault_root_token_obtained_at_initialization>
+```
+
+Now we need to enable the AWS auth method to allow us to authenticate with Vault using AWS IAM entities (see: [AWS Auth Method](https://www.vaultproject.io/docs/auth/aws))
+
+```
+vault auth enable aws
+```
+
+We also need to enable AWS secrets to allow us to store and assume AWS roles from Vault:
+
+```
+vault secrets enable aws
+```
+
+**Linking User Roles**
+
+Let's say Jay is trying to create an Eventual account. Jay will create a new AWS role in his AWS account, and allow Eventual's Vault role to assume it by adding Eventual's Vault role as a Principal in his role's Trust Policy.
+
+On our end, we need to do a few things:
+
+Create a new AWS secret in Vault:
+
+```
+vault write aws/roles/jay-role \
+  role_arns=<jay-role-arn> \
+  credential_type=assumed_role
+```
+
+And now we create a new Vault role with the correct policies to read our AWS role's credentials secret:
+
+```
+vault policy write jay-role-policy - <<EOF
+path "aws/sts/jay-role" {
+  capabilities = ["read"]
+}
+EOF
+```
+
+Lastly, we need to link this policy with our AWS auth role, and allow all entities in our account to authenticate against it:
+
+```
+vault write auth/aws/role/jay-role \
+  auth_type=iam policies=jay-role-policy \
+  bound_iam_principal_arn=arn:aws:iam::941892620273:*
+```
