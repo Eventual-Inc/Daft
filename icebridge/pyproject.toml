@@ -4,7 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "icebridge"
-version = "0.0.1"
+description = "A Python Bridge to Apache Iceberg using Py4J"
+authors = [{name="Eventual Inc.", email = "team@eventualcomputing.com"}]
+license = {file="LICENSE"}
+keywords = ["Iceberg", "Data Warehouse"]
 dependencies = [
     "py4j == 0.10.9.5",
     "fsspec",
@@ -13,6 +16,8 @@ dependencies = [
     "numpy >= 1.20",
     'importlib-metadata; python_version<"3.8"',
 ]
+dynamic = ["version"]
+
 
 [tool.setuptools]
 # ...
@@ -25,3 +30,6 @@ where = ["python"]
 
 [options.package_data]
 icebridge = ["app-uber.jar"]
+
+[tool.setuptools.dynamic]
+version = {attr = "icebridge.VERSION"}
