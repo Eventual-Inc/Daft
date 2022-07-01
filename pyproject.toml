@@ -7,7 +7,7 @@ license = "Copyright Eventual Inc 2022"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-ray = "1.12.0"
+ray = "1.13.0"
 numpy = "^1.22.3"
 pyarrow = "^8.0.0"
 Pillow = "^9.1.0"
@@ -25,7 +25,7 @@ s3fs = "*"
 # https://github.com/ray-project/ray/issues/25282
 protobuf = "~3.19.0"
 networkx = "^2.8.2"
-icebridge = { path = "./icebridge", develop=true}
+icebridge = "0.0.3"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"

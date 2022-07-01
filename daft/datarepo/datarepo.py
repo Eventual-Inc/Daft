@@ -77,7 +77,7 @@ class DataRepo:
 
         data_dir = data_dir.replace("file://", "")
 
-        def _write_block(block: List):
+        def _write_block(block: List) -> List[Tuple[str, pq.FileMetaData]]:
             name = uuid.uuid4()
             filepath = f"{data_dir}/{name}.parquet"
             assert len(block) > 0
@@ -98,16 +98,19 @@ class DataRepo:
         filewrite_outputs = dataset.map_batches(_write_block, batch_size=rows_per_partition).take_all()
         return filewrite_outputs
 
-    def append(self, dataset: ray.data.Dataset, rows_per_partition=1024):
+    def append(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:
         filewrite_outputs = self.__write_dataset(dataset, rows_per_partition)
         transaction = self._table.new_transaction()
         append_files = transaction.append_files()
+        paths_to_rtn = []
         for path, file_metadata in filewrite_outputs:
             data_file = IcebergDataFile.from_parquet(path, file_metadata, self._table)
             append_files.append_data_file(data_file)
+            paths_to_rtn.append(path)
+
         append_files.commit()
         transaction.commit()
-        return filewrite_outputs
+        return paths_to_rtn
 
     def overwrite(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:
         filewrite_outputs = self.__write_dataset(dataset, rows_per_partition)

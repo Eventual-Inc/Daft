@@ -2,6 +2,7 @@ ECR_PREFIX ?= 941892620273.dkr.ecr.us-west-2.amazonaws.com
 RAY_IMAGE_TAG ?= latest
 NOTEBOOK_IMAGE_TAG ?= latest
 CLUSTER_NAME ?= default
+WORKER_REPLICA_COUNT ?= 4
 
 ifneq (,$(wildcard ./.env))
     include .env
@@ -16,7 +17,7 @@ test:
 	poetry run pytest
 
 ray-up:
-	@helm install ${CLUSTER_NAME} ./kubernetes-ops/ray-static-cluster --set clusterName=${CLUSTER_NAME} --namespace ray --create-namespace
+	@helm install ${CLUSTER_NAME} ./kubernetes-ops/ray-static-cluster --set clusterName=${CLUSTER_NAME} --set workerReplicaCount=${WORKER_REPLICA_COUNT} --namespace ray --create-namespace
 	@kubectl get pods -n ray
 
 ray-down:
