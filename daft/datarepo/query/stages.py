@@ -1,19 +1,27 @@
 import dataclasses
-import uuid
 import enum
+import uuid
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    ForwardRef,
+    List,
+    Literal,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    Union,
+    cast,
+)
 
 import networkx as NX
 import ray
 
 from daft.datarepo.query import expressions
 from daft.datarepo.query import functions as F
-from daft.datarepo.query.definitions import (
-    NodeId,
-    WriteDatarepoStageOutput,
-)
-
-from typing import Any, Dict, Type, Tuple, cast, Protocol, Callable, Optional, Union, List, Literal, ForwardRef
-
+from daft.datarepo.query.definitions import NodeId, WriteDatarepoStageOutput
 
 DEFAULT_ACTOR_STRATEGY: Callable[[], ray.data.ActorPoolStrategy] = lambda: ray.data.ActorPoolStrategy(
     min_size=1,

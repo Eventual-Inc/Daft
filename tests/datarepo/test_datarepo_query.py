@@ -1,6 +1,5 @@
-import os
 import tempfile
-import uuid
+from typing import Iterator, List
 
 import numpy as np
 import pyarrow.parquet as pq
@@ -9,12 +8,9 @@ import ray
 
 from daft.dataclasses import dataclass
 from daft.datarepo.datarepo import DataRepo
-from daft.datarepo.query.expressions import QueryColumn
 from daft.datarepo.query import functions as F
-
-from icebridge.client import IceBridgeClient, IcebergCatalog
-
-from typing import Iterator, List
+from daft.datarepo.query.expressions import QueryColumn
+from icebridge.client import IcebergCatalog, IceBridgeClient
 
 from .utils import create_test_catalog
 

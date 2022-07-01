@@ -2,25 +2,22 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-
-from daft.datarepo.query.expressions import QueryColumn
-
 from typing import (
-    Union,
     Callable,
-    Any,
-    Optional,
-    Type,
-    Tuple,
     Dict,
     Generic,
-    TypeVar,
+    Optional,
     Protocol,
-    get_type_hints,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
     cast,
+    get_type_hints,
     overload,
 )
 
+from daft.datarepo.query.expressions import QueryColumn
 
 ReturnType = TypeVar("ReturnType", covariant=True)
 

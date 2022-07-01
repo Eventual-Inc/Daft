@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import uuid
 from math import ceil
-from typing import List, Tuple, Type, Optional
+from typing import List, Optional, Tuple, Type
 
 import fsspec
 import ray
 from pyarrow import parquet as pq
 
 from daft.dataclasses import is_daft_dataclass
-from daft.datarepo.query.builder import DatarepoQueryBuilder
 from daft.datarepo.query import expressions
-
-from icebridge.client import IcebergCatalog, IcebergSchema, IcebergDataFile, IcebergTable
+from daft.datarepo.query.builder import DatarepoQueryBuilder
+from icebridge.client import (
+    IcebergCatalog,
+    IcebergDataFile,
+    IcebergSchema,
+    IcebergTable,
+)
 
 
 class DataRepo:

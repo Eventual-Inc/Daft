@@ -1,10 +1,7 @@
 from __future__ import annotations
-from posixpath import lexists
-
-from typing import Any, List, Optional, Dict
 
 import os
-import sys
+from typing import Any, Dict, List, Optional
 
 import fsspec
 import pyarrow as pa

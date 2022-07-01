@@ -1,9 +1,9 @@
-from icebridge.client import IceBridgeClient, IcebergExpression
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
-import pyarrow.dataset as pads
 import pyarrow.compute as pc
+import pyarrow.dataset as pads
 
-from typing import Any, Literal, Union, Dict, Callable, Optional, List, Tuple
+from icebridge.client import IcebergExpression, IceBridgeClient
 
 # Columns are just aliases for strings
 QueryColumn = str

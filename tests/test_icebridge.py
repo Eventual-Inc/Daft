@@ -1,10 +1,15 @@
 import tempfile
-import py4j
 
+import py4j
 import pyarrow as pa
 from pyarrow import parquet as pq
 
-from icebridge.client import IceBridgeClient, IcebergCatalog, IcebergSchema, IcebergDataFile
+from icebridge.client import (
+    IcebergCatalog,
+    IcebergDataFile,
+    IcebergSchema,
+    IceBridgeClient,
+)
 
 
 def test_hadoop_catalog() -> None:

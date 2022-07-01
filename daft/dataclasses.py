@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 import dataclasses as pydataclasses
-from typing import TYPE_CHECKING, Callable, Optional, OrderedDict, Type, TypeVar, Union, get_origin
-import copy
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Optional,
+    OrderedDict,
+    Type,
+    TypeVar,
+    Union,
+    get_origin,
+)
+
 from daft.schema import DaftSchema
 from daft.utils import _patch_class_for_deserialization
 
