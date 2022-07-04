@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "eventual-hub"
+version = "0.1.0"
+description = "Backend services for the hosted Eventual platform"
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+jupyterhub = "^2.3.1"
+fastapi = "^0.78.0"
+
+[tool.poetry.dev-dependencies]
+mypy = "^0.961"
+black = "^22.6.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

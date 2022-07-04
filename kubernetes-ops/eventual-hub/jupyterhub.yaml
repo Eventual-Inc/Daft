@@ -1,0 +1,43 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: jupyterhub
+  namespace: eventual-hub
+  labels:
+    app: jupyterhub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jupyterhub
+  template:
+    metadata:
+      labels:
+        app: jupyterhub
+    spec:
+      containers:
+      - name: jupyterhub
+        image: localhost:5001/eventual-hub-jupyterhub:latest
+        ports:
+        - containerPort: 8000
+          name: jupyterhub-port
+        env:
+        - name: CONFIGPROXY_AUTH_TOKEN
+          value: "DUMMY"
+        - name: HUB_PROXY_ADDR
+          value: "http://traefik:80"
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: jupyterhub-svc
+spec:
+  selector:
+    app: jupyterhub
+  ports:
+  - name: jupyterhub-port
+    protocol: TCP
+    port: 8000
+    targetPort: jupyterhub-port

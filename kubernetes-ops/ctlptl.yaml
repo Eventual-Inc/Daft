@@ -1,0 +1,19 @@
+apiVersion: ctlptl.dev/v1alpha1
+kind: Cluster
+product: kind
+registry: ctlptl-registry
+kindV1Alpha4Cluster:
+  nodes:
+  - role: control-plane
+    image: kindest/node:v1.22.9
+    kubeadmConfigPatches:
+    - |
+      kind: InitConfiguration
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "ingress-ready=true"
+    extraPortMappings:
+    - containerPort: 30000
+      hostPort: 80
+    - containerPort: 30001
+      hostPort: 443
