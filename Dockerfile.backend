@@ -3,5 +3,5 @@ COPY ./backend /app
 WORKDIR /app
 RUN pip install --upgrade pip
 RUN pip install fastapi uvicorn
-EXPOSE 8000
-ENTRYPOINT ["uvicorn", "main:app", "--reload"]
+EXPOSE 80
+ENTRYPOINT ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]

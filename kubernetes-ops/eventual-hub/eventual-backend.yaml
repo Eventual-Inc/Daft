@@ -12,6 +12,7 @@ spec:
       app: backend
   template:
     metadata:
+      name: backend-app
       labels:
         app: backend
     spec:
@@ -28,11 +29,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: backend-svc
+  namespace: eventual-hub
 spec:
   selector:
     app: backend
   ports:
-  - name: backend-port
-    protocol: TCP
-    port: 8000
-    targetPort: backend-port
+  - port: 8000

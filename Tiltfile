@@ -63,10 +63,14 @@ docker_build('localhost:5001/eventual-hub-backend:latest',
 #
 #   More info: https://docs.tilt.dev/api.html#api.k8s_yaml
 #
+
+k8s_yaml(['kubernetes-ops/ingress-controller/kind-nginx-deploy.yaml'])
+
 k8s_yaml([
     'kubernetes-ops/eventual-hub/eventual-backend.yaml',
     'kubernetes-ops/eventual-hub/jupyterhub.yaml',
     'kubernetes-ops/eventual-hub/namespace.yaml',
+    'kubernetes-ops/eventual-hub/ingress.yaml',
 ])
 
 
