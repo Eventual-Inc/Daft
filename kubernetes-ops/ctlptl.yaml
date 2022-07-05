@@ -13,9 +13,9 @@ kindV1Alpha4Cluster:
         kubeletExtraArgs:
           node-labels: "ingress-ready=true"
     extraPortMappings:
-    - containerPort: 80
+    - containerPort: 30000
       hostPort: 80
       protocol: TCP
-    - containerPort: 443
+    - containerPort: 30001
       hostPort: 443
       protocol: TCP

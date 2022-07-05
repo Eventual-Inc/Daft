@@ -64,7 +64,9 @@ docker_build('localhost:5001/eventual-hub-backend:latest',
 #   More info: https://docs.tilt.dev/api.html#api.k8s_yaml
 #
 
-k8s_yaml(['kubernetes-ops/ingress-controller/kind-nginx-deploy.yaml'])
+load('ext://helm_resource', 'helm_resource', 'helm_repo')
+helm_repo('traefik-repo', 'https://helm.traefik.io/traefik')
+helm_resource('traefik', 'traefik-repo/traefik', flags=["-f", "kubernetes-ops/ingress-controller/kind-traefik-deployment-values.yaml"])
 
 k8s_yaml([
     'kubernetes-ops/eventual-hub/eventual-backend.yaml',
