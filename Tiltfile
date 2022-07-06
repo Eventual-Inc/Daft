@@ -20,7 +20,6 @@ print("""
 warn('ℹ️ Open {tiltfile_path} in your favorite editor to get started.'.format(
     tiltfile_path=config.main_path))
 
-
 # Build Docker image
 #   Tilt will automatically associate image builds with the resource(s)
 #   that reference them (e.g. via Kubernetes or Docker Compose YAML).
@@ -74,7 +73,6 @@ k8s_yaml([
     'kubernetes-ops/eventual-hub/namespace.yaml',
     'kubernetes-ops/eventual-hub/ingress.yaml',
 ])
-
 
 # Customize a Kubernetes resource
 #   By default, Kubernetes resource names are automatically assigned

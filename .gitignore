@@ -5,3 +5,5 @@ venv
 dist
 **/__pycache__/
 requirements.txt
+
+**/node_modules/**
