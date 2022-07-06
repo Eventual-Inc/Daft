@@ -49,3 +49,9 @@ endif
 		--namespace jupyterhub \
 		--values kubernetes-ops/jupyterhub/values.yaml \
 		--set jupyterhub.hub.config.Auth0OAuthenticator.client_secret=${AUTH0_JUPYTERHUB_CLIENT_SECRET}
+
+local-dev:
+	ctlptl apply -f kubernetes-ops/ctlptl.yaml
+	tilt up; ret=$$?; \
+	ctlptl delete cluster kind; \
+	exit $$ret

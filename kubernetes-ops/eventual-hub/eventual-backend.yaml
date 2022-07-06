@@ -1,0 +1,37 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: backend
+  namespace: eventual-hub
+  labels:
+    app: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      name: backend-app
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: backend
+        image: localhost:5001/eventual-hub-backend:latest
+        ports:
+        - containerPort: 8000
+          name: backend-port
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-svc
+  namespace: eventual-hub
+spec:
+  selector:
+    app: backend
+  ports:
+  - port: 8000
