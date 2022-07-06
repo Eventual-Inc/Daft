@@ -1,0 +1,10 @@
+apiVersion: v2
+name: daft-vault
+description:  Daft Vault deployment
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+- name: vault
+  version: "0.20.1"
+  repository: "https://helm.releases.hashicorp.com"
