@@ -22,6 +22,15 @@ spec:
         ports:
         - containerPort: 8000
           name: backend-port
+        env:
+        - name: DOMAIN
+          value: eventual-dev.us.auth0.com
+        - name: API_AUDIENCE
+          value: https://auth.eventualcomputing.com
+        - name: ALGORITHMS
+          value: RS256
+        - name: ISSUER
+          value: https://eventual-dev.us.auth0.com/
 
 ---
 
