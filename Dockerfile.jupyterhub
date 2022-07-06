@@ -7,8 +7,8 @@ RUN apt-get update --yes && \
     curl
 
 RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
-COPY poetry.lock /scratch/poetry.lock
-COPY pyproject.toml /scratch/pyproject.toml
+COPY jupyterhub/poetry.lock /scratch/poetry.lock
+COPY jupyterhub/pyproject.toml /scratch/pyproject.toml
 RUN /root/.poetry/bin/poetry config virtualenvs.create false
 RUN --mount=type=cache,target=/root/.cache/pypoetry /root/.poetry/bin/poetry install --no-root
 
