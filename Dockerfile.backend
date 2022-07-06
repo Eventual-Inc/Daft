@@ -2,6 +2,6 @@ FROM python:3.8-slim-buster
 COPY ./backend /app
 WORKDIR /app
 RUN pip install --upgrade pip
-RUN pip install fastapi uvicorn
+RUN pip install fastapi uvicorn pyjwt[crypto]
 EXPOSE 80
 ENTRYPOINT ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
