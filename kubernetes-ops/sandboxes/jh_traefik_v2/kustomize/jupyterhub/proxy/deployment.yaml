@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jupyterhub-proxy
+  labels:
+    component: proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: jupyterhub
+      component: proxy
+  template:
+    metadata:
+      labels:
+        app: jupyterhub
+        component: proxy
+        hub.jupyter.org/network-access-hub: "true"
+        hub.jupyter.org/network-access-singleuser: "true"
+    spec:
+      containers:
+        - name: traefik
+          image: traefik
+          args:
+            - --api=true
+            - --api.dashboard=true
+            - --api.insecure=true
+            - --entrypoints.https=true
+            - --entrypoints.https.address=:8443
+            - --entrypoints.https.http.tls=true
+            - --log.level=INFO
+            - --metrics.prometheus=true
+            - --ping=true
+            - --ping.entryPoint=https
+            - --providers.file.filename=/etc/traefik/file-provider.yml
+            - --providers.kubernetesingress=true
+            - --providers.kubernetesingress.allowexternalnameservices=true
+            - --providers.kubernetesingress.ingressclass=jupyterhub
+            - --providers.kubernetesingress.labelselector=component=singleuser-server
+            - --providers.kubernetesingress.namespaces=$(POD_NAMESPACE)
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: api
+              containerPort: 8080
+            - name: https
+              containerPort: 8443
+          resources:
+            limits:
+              cpu: 500m
+              memory: 200Mi
+          volumeMounts:
+            - mountPath: /etc/traefik
+              name: config
+            - mountPath: /var/run/secrets/certs/tls
+              name: tls-cert
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /ping
+              port: https
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /ping
+              port: https
+      serviceAccountName: jupyterhub-proxy
+      volumes:
+        - name: config
+          configMap:
+            name: jupyterhub-proxy-config
+        - name: tls-cert
+          secret:
+            secretName: proxy-cert
