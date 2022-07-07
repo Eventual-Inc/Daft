@@ -1,0 +1,14 @@
+apiVersion: "etcd.database.coreos.com/v1beta2"
+kind: "EtcdCluster"
+metadata:
+  name: jupyterhub-proxy-etcd-cluster
+  annotations:
+    etcd.database.coreos.com/scope: clusterwide
+spec:
+  version: "3.4.13"
+  size: 3
+  pod:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 500Mi

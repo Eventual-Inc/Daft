@@ -1,0 +1,10 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: db-cert
+spec:
+  secretName: db-cert
+  dnsNames:
+    - postgres
+  issuerRef:
+    name: self-signed-issuer
