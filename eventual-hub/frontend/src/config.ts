@@ -1,5 +1,6 @@
 export default function getConfig() {
   return {
-    baseServerUrl: `http://localhost:80`,
+    baseApiUrl: `http://localhost:80/api`,
+    baseHubUrl: `http://localhost:80`,
   };
 }

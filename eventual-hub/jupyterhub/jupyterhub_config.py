@@ -19,6 +19,30 @@ c.JupyterHub.spawner_class = kubespawner.KubeSpawner
 c.KubeSpawner.image = 'jupyterhub/singleuser:latest'
 c.KubeSpawner.hub_connect_url = 'http://jupyterhub-svc.eventual-hub:8000'
 
+# Grant our backend admin access
+# https://jupyterhub.readthedocs.io/en/stable/reference/rest.html#updating-to-admin-services
+c.JupyterHub.services = [
+    {
+        # give the token a name
+        "name": "eventual-backend",
+        "api_token": os.environ["JUPYTERHUB_ADMIN_TOKEN"],
+    },
+]
+c.JupyterHub.load_roles = [
+    {
+        "name": "eventual-backend-admin-role",
+        "scopes": [
+            # specify the permissions the token should have
+            "admin:users",
+            "admin:servers",
+        ],
+        "services": [
+            # assign the service the above permissions
+            "eventual-backend",
+        ],
+    }
+]
+
 #------------------------------------------------------------------------------
 # Application(SingletonConfigurable) configuration
 #------------------------------------------------------------------------------
@@ -469,7 +493,7 @@ c.KubeSpawner.hub_connect_url = 'http://jupyterhub-svc.eventual-hub:8000'
 #  
 #  .. versionadded:: 1.4
 #  Default: '/'
-# c.JupyterHub.hub_routespec = '/'
+# c.JupyterHub.hub_routespec = '/hub/api'
 
 ## Trigger implicit spawns after this many seconds.
 #  

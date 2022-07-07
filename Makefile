@@ -57,6 +57,7 @@ local-dev:
 	ctlptl apply -f kubernetes-ops/ctlptl.yaml
 	@kubectl create namespace eventual-hub
 	@kubectl create secret generic auth0-client-secret -n eventual-hub --from-literal=client_secret=$(AUTH0_JUPYTERHUB_CLIENT_SECRET)
+	@kubectl create secret generic jupyterhub -n eventual-hub --from-literal=admin-token=$(shell openssl rand -hex 32)
 	tilt up; ret=$$?; \
 	ctlptl delete cluster kind; \
 	exit $$ret
