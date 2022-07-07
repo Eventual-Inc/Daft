@@ -8,6 +8,8 @@ authors = ["Your Name <you@example.com>"]
 python = "^3.9"
 jupyterhub = "^2.3.1"
 fastapi = "^0.78.0"
+oauthenticator = "^15.0.1"
+jupyterhub-kubespawner = "^4.1.0"
 
 [tool.poetry.dev-dependencies]
 mypy = "^0.961"

@@ -2,14 +2,22 @@
 
 import os
 
-###
-# SEPARATE PROXY settings taken from https://jupyterhub.readthedocs.io/en/stable/reference/separate-proxy.html
-###
-c.JupyterHub.cleanup_servers = False 
-c.ConfigurableHTTPProxy.should_start = False
-c.ConfigurableHTTPProxy.auth_token = os.environ["CONFIGPROXY_AUTH_TOKEN"]
-c.ConfigurableHTTPProxy.api_url = os.environ["HUB_PROXY_ADDR"]
+# This must match the ingress path prefix given to the hub
+c.JupyterHub.base_url = '/jupyter/'
 
+# Auth with Auth0
+from oauthenticator.auth0 import Auth0OAuthenticator
+c.JupyterHub.authenticator_class = Auth0OAuthenticator
+c.Auth0OAuthenticator.client_id = os.environ["AUTH0_CLIENT_ID"]
+c.Auth0OAuthenticator.client_secret = os.environ["AUTH0_CLIENT_SECRET"]
+c.Auth0OAuthenticator.oauth_callback_url = os.environ["AUTH0_CALLBACK_URL"]
+c.Auth0OAuthenticator.scope = ['openid', 'email']
+
+# Use Kubespawner for spawning servers
+import kubespawner
+c.JupyterHub.spawner_class = kubespawner.KubeSpawner
+c.KubeSpawner.image = 'jupyterhub/singleuser:latest'
+c.KubeSpawner.hub_connect_url = 'http://jupyterhub-svc.eventual-hub:8000'
 
 #------------------------------------------------------------------------------
 # Application(SingletonConfigurable) configuration

@@ -4,7 +4,11 @@ WORKDIR /scratch
 
 RUN apt-get update --yes && \
     apt-get install --yes --no-install-recommends \
-    curl
+    curl \
+    nodejs \
+    npm
+
+RUN npm install -g configurable-http-proxy
 
 RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
 COPY jupyterhub/poetry.lock /scratch/poetry.lock

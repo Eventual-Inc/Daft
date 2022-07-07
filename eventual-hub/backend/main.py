@@ -7,12 +7,12 @@ app = FastAPI()
 token_auth_scheme = HTTPBearer()
 
 
-@app.get("/")
+@app.get("/api")
 async def root():
     return {"message": "Hello World"}
 
 
-@app.get("/private")
+@app.get("/api/private")
 async def private_endpoint(response: Response, token: str = Depends(token_auth_scheme)):
     result = VerifyToken(token.credentials).verify()
     if result.get("status"):
