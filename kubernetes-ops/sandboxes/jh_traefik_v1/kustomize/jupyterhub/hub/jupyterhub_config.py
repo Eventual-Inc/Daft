@@ -23,7 +23,6 @@ c.JupyterHub.spawner_class = "kubespawner.KubeSpawner"
 c.KubeSpawner.start_timeout = 60 * 10
 
 # Miscellaneous
-c.JupyterHub.allow_named_servers = True
 c.JupyterHub.cleanup_servers = False
 c.JupyterHub.concurrent_spawn_limit = 1
 c.JupyterHub.db_url = "postgresql://postgres@postgres:5432/postgres?sslmode=require"

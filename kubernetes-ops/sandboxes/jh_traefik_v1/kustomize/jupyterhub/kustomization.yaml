@@ -4,5 +4,3 @@ bases:
   - db
   - hub
   - proxy
-resources:
-  - namespace.yaml
