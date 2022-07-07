@@ -52,7 +52,7 @@ endif
 
 local-dev:
 	ifndef AUTH0_JUPYTERHUB_CLIENT_SECRET
-	$(error AUTH0_JUPYTERHUB_CLIENT_SECRET is not set)
+	$(error AUTH0_JUPYTERHUB_CLIENT_SECRET is not set - update your .env file in accordance to .env.example)
 	endif
 	ctlptl apply -f kubernetes-ops/ctlptl.yaml
 	@kubectl create namespace eventual-hub
