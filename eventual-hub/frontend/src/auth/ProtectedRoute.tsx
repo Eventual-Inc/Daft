@@ -8,7 +8,6 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute = ({ component, ...args }: ProtectedRouteProps) => {
-    console.log("PROTECTED");
     const { user, isAuthenticated } = useAuth0();
     const Component = withAuthenticationRequired(component, {
         onRedirecting: () => <Stack padding={12} alignItems="center" sx={{width: "100%", height: "100%"}}><CircularProgress /></Stack>,

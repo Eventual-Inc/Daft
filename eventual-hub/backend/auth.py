@@ -1,17 +1,6 @@
-import os
 import jwt
-from configparser import ConfigParser
 
- 
-def set_up():
-    """Sets up configuration for the app"""
-    config = {
-        "DOMAIN": os.getenv("DOMAIN", "your.domain.com"),
-        "API_AUDIENCE": os.getenv("API_AUDIENCE", "your.audience.com"),
-        "ISSUER": os.getenv("ISSUER", "https://your.domain.com/"),
-        "ALGORITHMS": os.getenv("ALGORITHMS", "RS256"),
-    }
-    return config
+from settings import Settings
 
 
 class VerifyToken():
@@ -19,11 +8,11 @@ class VerifyToken():
 
     def __init__(self, token):
         self.token = token
-        self.config = set_up()
+        self.settings = Settings()
 
         # This gets the JWKS from a given URL and does processing so you can
         # use any of the keys available
-        jwks_url = f'https://{self.config["DOMAIN"]}/.well-known/jwks.json'
+        jwks_url = f'https://{self.settings.auth0_domain}/.well-known/jwks.json'
         self.jwks_client = jwt.PyJWKClient(jwks_url)
 
     def verify(self):
@@ -41,9 +30,9 @@ class VerifyToken():
             payload = jwt.decode(
                 self.token,
                 self.signing_key,
-                algorithms=self.config["ALGORITHMS"],
-                audience=self.config["API_AUDIENCE"],
-                issuer=self.config["ISSUER"],
+                algorithms=self.settings.auth0_algorithm,
+                audience=self.settings.auth0_api_audience,
+                issuer=self.settings.auth0_issuer,
             )
         except Exception as e:
             return {"status": "error", "message": str(e)}

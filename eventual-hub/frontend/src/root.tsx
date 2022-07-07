@@ -33,11 +33,11 @@ import { useEffect } from "react";
 
 function TabbedMenu() {
   const navigate = useNavigate();
-  const baseTabPaths = ["/notebooks", "clusters", "/admin"];
+  const baseTabPaths = ["/notebooks", "/clusters", "/admin"];
   const currentLocation = useLocation().pathname;
-  const matchTabIndex = currentLocation == "/" ? 0 : baseTabPaths.slice(1)
+  const matchTabIndex = currentLocation == "/" ? null : baseTabPaths
     .map((path) => currentLocation.startsWith(path))
-    .findIndex((matched) => matched) + 1;
+    .findIndex((matched) => matched);
 
   return (
     <Stack direction="column" paddingTop={3} spacing={2} alignItems="center" sx={{
@@ -57,18 +57,25 @@ function TabbedMenu() {
 }
 
 function LoginPage() {
-  const { isAuthenticated, logout, isLoading, loginWithRedirect } = useAuth0();
-  const navigate = useNavigate();
-  useEffect(() => {if (isAuthenticated) {navigate("/notebooks");}});
-  let button = 
-    isLoading ?
-    <CircularProgress /> :
-    <Button variant="contained" onClick={() => loginWithRedirect()}>Login</Button>;
-  return <Container sx={{height: "100%", width: "100%"}}>
-    <Stack padding={12} direction="column" alignItems="center">
+  const { user, isAuthenticated, logout, isLoading, loginWithRedirect } = useAuth0();
+  var contents;
+  console.log(isAuthenticated);
+  console.log(isLoading);
+  if (isLoading) {
+    contents = <CircularProgress />;
+  } else if (isAuthenticated) {
+    contents = <Stack padding={12} direction="column" alignItems="center">
+      <Typography>Welcome, {user?.name}</Typography>
+      <Button variant="contained" onClick={() => {logout();}}>Logout</Button>
+    </Stack>;
+  } else {
+    contents = <Stack padding={12} direction="column" alignItems="center">
       <img width="50%" src="https://doodleipsum.com/700/outline?i=2c350be916b8b173cd3026cbcdea1acb" />
-      {button}
-    </Stack>
+      <Button variant="contained" onClick={() => loginWithRedirect()}>Login</Button>
+    </Stack>;
+  }
+  return <Container sx={{height: "100%", width: "100%"}}>
+    {contents}
   </Container>;
 }
 
@@ -98,7 +105,7 @@ function Root() {
       <ReactQueryDevtools initialIsOpen={false} />
       <Auth0Provider
         domain="eventual-dev.us.auth0.com"
-        clientId="TTvQW9ddp3xjCoOZ3Cyka7ZGbour8Fud"
+        clientId="zByGOxzmeNJhfToH8ENnibcRbKzglexp"
         redirectUri={window.location.origin}
       >
         <Router>

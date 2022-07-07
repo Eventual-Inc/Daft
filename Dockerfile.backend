@@ -1,6 +1,6 @@
 FROM python:3.8-slim-buster
 RUN pip install --upgrade pip
-RUN pip install fastapi uvicorn pyjwt[crypto]
+RUN pip install fastapi uvicorn pyjwt[crypto] requests
 COPY ./backend /app
 WORKDIR /app
 EXPOSE 80

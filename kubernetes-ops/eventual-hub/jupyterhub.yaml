@@ -37,6 +37,12 @@ spec:
           value: M7HDeJ9pbU_tD2c7rqV1ibunvn3ZPdw1amzHYm9OuCQpgL-nC_XWvaUwmcqADJzY
         - name: AUTH0_CALLBACK_URL
           value: http://localhost/jupyter/hub/oauth_callback
+        - name: JUPYTERHUB_ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: jupyterhub
+              key: admin-token
+              optional: false
 
 ---
 

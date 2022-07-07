@@ -23,14 +23,22 @@ spec:
         - containerPort: 8000
           name: backend-port
         env:
-        - name: DOMAIN
+        - name: AUTH0_DOMAIN
           value: eventual-dev.us.auth0.com
-        - name: API_AUDIENCE
+        - name: AUTH0_API_AUDIENCE
           value: https://auth.eventualcomputing.com
-        - name: ALGORITHMS
+        - name: AUTH0_ALGORITHM
           value: RS256
-        - name: ISSUER
+        - name: AUTH0_ISSUER
           value: https://eventual-dev.us.auth0.com/
+        - name: JUPYTERHUB_SERVICE_ADDRESS
+          value: http://jupyterhub-svc.eventual-hub:8000/jupyter/hub/api
+        - name: JUPYTERHUB_ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: jupyterhub
+              key: admin-token
+              optional: false
 
 ---
 
