@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jupyterhub-proxy
+  labels:
+    component: proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: jupyterhub
+      component: proxy
+  template:
+    metadata:
+      labels:
+        app: jupyterhub
+        component: proxy
+        hub.jupyter.org/network-access-hub: "true"
+        hub.jupyter.org/network-access-singleuser: "true"
+    spec:
+      containers:
+        - name: traefik
+          image: traefik
+          ports:
+            - name: https
+              containerPort: 8443
+            - name: api
+              containerPort: 8001
+          resources:
+            requests:
+              cpu: 500m
+              memory: 200Mi
+          volumeMounts:
+            - mountPath: /etc/traefik
+              name: config
+            - name: users-file
+              mountPath: /var/run/secrets/traefik/.htpasswd
+              subPath: .htpasswd
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /ping
+              port: https
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /ping
+              port: https
+      volumes:
+        - name: config
+          configMap:
+            name: jupyterhub-proxy-config
+        - name: users-file
+          secret:
+            secretName: jupyterhub-proxy-secrets
