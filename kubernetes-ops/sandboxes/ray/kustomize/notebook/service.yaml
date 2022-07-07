@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: notebook
+  labels:
+    app: notebook
+spec:
+  ports:
+    - name: notebook
+      port: 8888
+      nodePort: 30001
+  selector:
+    app: notebook
+  type: NodePort
