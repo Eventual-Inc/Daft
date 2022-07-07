@@ -67,12 +67,7 @@ load('ext://helm_resource', 'helm_resource', 'helm_repo')
 helm_repo('traefik-repo', 'https://helm.traefik.io/traefik')
 helm_resource('traefik', 'traefik-repo/traefik', flags=["-f", "kubernetes-ops/ingress-controller/kind-traefik-deployment-values.yaml"])
 
-k8s_yaml([
-    'kubernetes-ops/eventual-hub/eventual-backend.yaml',
-    'kubernetes-ops/eventual-hub/jupyterhub.yaml',
-    'kubernetes-ops/eventual-hub/namespace.yaml',
-    'kubernetes-ops/eventual-hub/ingress.yaml',
-])
+k8s_yaml(kustomize("kubernetes-ops/eventual-hub/installs/local_tilt_dev"))
 
 # Customize a Kubernetes resource
 #   By default, Kubernetes resource names are automatically assigned

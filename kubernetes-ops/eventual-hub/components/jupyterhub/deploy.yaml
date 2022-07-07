@@ -1,0 +1,55 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: jupyterhub
+  namespace: eventual-hub
+  labels:
+    app: jupyterhub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jupyterhub
+  template:
+    metadata:
+      labels:
+        app: jupyterhub
+    spec:
+      serviceAccountName: jupyterhub-sa
+      containers:
+      - name: jupyterhub
+        image: localhost:5001/eventual-hub-jupyterhub:latest
+        ports:
+        - containerPort: 8000
+          name: jupyterhub-port
+        env:
+        - name: AUTH0_SUBDOMAIN
+          valueFrom:
+            secretKeyRef:
+              name: eventual-hub
+              key: AUTH0_JUPYTERHUB_SUBDOMAIN
+              optional: false
+        - name: AUTH0_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: eventual-hub
+              key: AUTH0_JUPYTERHUB_CLIENT_ID
+              optional: false
+        - name: AUTH0_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: eventual-hub
+              key: AUTH0_JUPYTERHUB_CLIENT_SECRET
+              optional: false
+        - name: AUTH0_CALLBACK_URL
+          valueFrom:
+            secretKeyRef:
+              name: eventual-hub
+              key: AUTH0_JUPYTERHUB_CALLBACK_URL
+              optional: false
+        - name: JUPYTERHUB_ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: eventual-hub
+              key: JUPYTERHUB_ADMIN_TOKEN
+              optional: false

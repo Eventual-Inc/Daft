@@ -36,19 +36,6 @@ spec:
         - name: JUPYTERHUB_ADMIN_TOKEN
           valueFrom:
             secretKeyRef:
-              name: jupyterhub
-              key: admin-token
+              name: eventual-hub
+              key: JUPYTERHUB_ADMIN_TOKEN
               optional: false
-
----
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: backend-svc
-  namespace: eventual-hub
-spec:
-  selector:
-    app: backend
-  ports:
-  - port: 8000

@@ -1,0 +1,23 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: backend
+  namespace: eventual-hub
+spec:
+  template:
+    spec:
+      containers:
+      - name: backend
+        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/eventual/backend:20220707.1
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: jupyterhub
+  namespace: eventual-hub
+spec:
+  template:
+    spec:
+      containers:
+      - name: jupyterhub
+        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/eventual/jupyterhub:20220707.1

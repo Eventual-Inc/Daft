@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: jupyterhub-svc
+  namespace: eventual-hub
+spec:
+  selector:
+    app: jupyterhub
+  ports:
+  - name: jupyterhub-port
+    protocol: TCP
+    port: 8000
+    targetPort: jupyterhub-port

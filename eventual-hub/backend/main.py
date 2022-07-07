@@ -78,4 +78,3 @@ async def get_notebook_servers(response: Response, token: str = Depends(token_au
         return user_response.json()
 
     return user_response.json()
-

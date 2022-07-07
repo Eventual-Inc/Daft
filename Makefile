@@ -2,6 +2,7 @@ ECR_PREFIX ?= 941892620273.dkr.ecr.us-west-2.amazonaws.com
 RAY_IMAGE_TAG ?= latest
 NOTEBOOK_IMAGE_TAG ?= latest
 CLUSTER_NAME ?= default
+EVENTUAL_HUB_RELEASE_TAG ?= latest
 WORKER_REPLICA_COUNT ?= 4
 
 ifneq (,$(wildcard ./.env))
@@ -31,33 +32,36 @@ deploy-package-zip:
 	@cd dist/full-package && zip -r - . -x '*.pyc' > ../full-package.zip
 	@aws s3 cp dist/full-package.zip s3://eventual-release-artifacts-bucket/daft_package-amd64/latest.zip
 
+###
+# Deployment of Docker images
+###
+
 deploy-ray-image:
-	@DOCKER_BUILDKIT=1 docker build . -f Dockerfile.ray -t ${ECR_PREFIX}/daft/ray:${RAY_IMAGE_TAG}
+	@DOCKER_BUILDKIT=1 docker build --platform linux/amd64 . -f Dockerfile.ray -t ${ECR_PREFIX}/daft/ray:${RAY_IMAGE_TAG}
 	@docker push ${ECR_PREFIX}/daft/ray:${RAY_IMAGE_TAG}
 
 deploy-notebook-image:
-	@DOCKER_BUILDKIT=1 docker build . -f Dockerfile.notebook -t ${ECR_PREFIX}/daft/notebook:${NOTEBOOK_IMAGE_TAG}
+	@DOCKER_BUILDKIT=1 docker build --platform linux/amd64 . -f Dockerfile.notebook -t ${ECR_PREFIX}/daft/notebook:${NOTEBOOK_IMAGE_TAG}
 	@docker push ${ECR_PREFIX}/daft/notebook:${NOTEBOOK_IMAGE_TAG}
 
-deploy-jupyterhub:
-ifndef AUTH0_JUPYTERHUB_CLIENT_SECRET
-	$(error AUTH0_JUPYTERHUB_CLIENT_SECRET is undefined)
-endif
-	helm upgrade --cleanup-on-fail \
-		--install jupyterhub \
-		kubernetes-ops/jupyterhub \
-		--namespace jupyterhub \
-		--values kubernetes-ops/jupyterhub/values.yaml \
-		--set jupyterhub.hub.config.Auth0OAuthenticator.client_secret=${AUTH0_JUPYTERHUB_CLIENT_SECRET}
+deploy-eventual-hub-images:
+	@DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.jupyterhub -t ${ECR_PREFIX}/eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
+	@DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.backend -t ${ECR_PREFIX}/eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
+	@docker push ${ECR_PREFIX}/eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
+	@docker push ${ECR_PREFIX}/eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
+
+###
+# Deployment of environments (local/dev/prod)
+###
+
+deploy-eventual-hub:
+	@echo "Switching kubectl to jay_sandbox_eks_cluster..."
+	@kubectl config use-context arn:aws:eks:us-west-2:941892620273:cluster/jay_sandbox_eks_cluster
+	kubectl apply -k kubernetes-ops/eventual-hub/installs/cluster_dev
+
 
 local-dev:
-	ifndef AUTH0_JUPYTERHUB_CLIENT_SECRET
-	$(error AUTH0_JUPYTERHUB_CLIENT_SECRET is not set - update your .env file in accordance to .env.example)
-	endif
 	ctlptl apply -f kubernetes-ops/ctlptl.yaml
-	@kubectl create namespace eventual-hub
-	@kubectl create secret generic auth0-client-secret -n eventual-hub --from-literal=client_secret=$(AUTH0_JUPYTERHUB_CLIENT_SECRET)
-	@kubectl create secret generic jupyterhub -n eventual-hub --from-literal=admin-token=$(shell openssl rand -hex 32)
 	tilt up; ret=$$?; \
 	ctlptl delete cluster kind; \
 	exit $$ret
