@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        # postgres GID:
+        # https://github.com/docker-library/postgres/blob/f060d1236051da2205da24f7caa6ff5301c6be9a/13/bullseye/Dockerfile#L19
+        fsGroup: 999
+      containers:
+        - image: postgres
+          name: postgres
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/var/run/secrets/certs/db/tls.crt
+            - -c
+            - ssl_key_file=/var/run/secrets/certs/db/tls.key
+          env:
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: trust
+          ports:
+            - containerPort: 5432
+              name: postgres
+          volumeMounts:
+            - mountPath: /var/run/secrets/certs/db
+              name: db-cert
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: db-cert
+          secret:
+            secretName: db-cert
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                mode: 0600
+                path: tls.key
+        - name: postgres-storage
+          emptyDir: {}
