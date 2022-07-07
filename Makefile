@@ -51,7 +51,12 @@ endif
 		--set jupyterhub.hub.config.Auth0OAuthenticator.client_secret=${AUTH0_JUPYTERHUB_CLIENT_SECRET}
 
 local-dev:
+	ifndef AUTH0_JUPYTERHUB_CLIENT_SECRET
+	$(error AUTH0_JUPYTERHUB_CLIENT_SECRET is not set - update your .env file in accordance to .env.example)
+	endif
 	ctlptl apply -f kubernetes-ops/ctlptl.yaml
+	@kubectl create namespace eventual-hub
+	@kubectl create secret generic auth0-client-secret -n eventual-hub --from-literal=client_secret=$(AUTH0_JUPYTERHUB_CLIENT_SECRET)
 	tilt up; ret=$$?; \
 	ctlptl delete cluster kind; \
 	exit $$ret

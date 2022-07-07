@@ -15,6 +15,7 @@ spec:
       labels:
         app: jupyterhub
     spec:
+      serviceAccountName: jupyterhub-sa
       containers:
       - name: jupyterhub
         image: localhost:5001/eventual-hub-jupyterhub:latest
@@ -22,10 +23,20 @@ spec:
         - containerPort: 8000
           name: jupyterhub-port
         env:
-        - name: CONFIGPROXY_AUTH_TOKEN
-          value: "DUMMY"
-        - name: HUB_PROXY_ADDR
-          value: "http://traefik:80"
+        - name: AUTH0_SUBDOMAIN
+          value: eventual-dev.us
+        - name: AUTH0_CLIENT_ID
+          value: TTvQW9ddp3xjCoOZ3Cyka7ZGbour8Fud
+        - name: AUTH0_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth0-client-secret
+              key: client_secret
+              optional: false
+        - name: AUTH0_CLIENT_SECRET
+          value: M7HDeJ9pbU_tD2c7rqV1ibunvn3ZPdw1amzHYm9OuCQpgL-nC_XWvaUwmcqADJzY
+        - name: AUTH0_CALLBACK_URL
+          value: http://localhost/jupyter/hub/oauth_callback
 
 ---
 
@@ -33,6 +44,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: jupyterhub-svc
+  namespace: eventual-hub
 spec:
   selector:
     app: jupyterhub
@@ -41,3 +53,37 @@ spec:
     protocol: TCP
     port: 8000
     targetPort: jupyterhub-port
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jupyterhub-sa
+  namespace: eventual-hub
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: jupyterhub
+  namespace: eventual-hub
+rules:
+  - apiGroups: [""]       # "" indicates the core API group
+    resources: ["pods", "persistentvolumeclaims", "secrets", "services"]
+    verbs: ["get", "watch", "list", "create", "delete"]
+  - apiGroups: [""]       # "" indicates the core API group
+    resources: ["events"]
+    verbs: ["get", "watch", "list"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: jupyterhub
+  namespace: eventual-hub
+subjects:
+  - kind: ServiceAccount
+    name: jupyterhub-sa
+    namespace: eventual-hub
+roleRef:
+  kind: Role
+  name: jupyterhub
+  apiGroup: rbac.authorization.k8s.io
