@@ -17,6 +17,7 @@ _install-prereqs:
 	test -x $(BREW_BIN)/kubectl || brew install kubernetes-cli
 	test -x $(BREW_BIN)/kustomize || brew install kustomize
 	test -x $(BREW_BIN)/skaffold || brew install skaffold
+	test -x $(BREW_BIN)/timeout || brew install coreutils
 
 .PHONY: _create-k8s-cluster
 _create-k8s-cluster: _install-prereqs
