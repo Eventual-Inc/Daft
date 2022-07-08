@@ -59,6 +59,7 @@ k8s_yaml(kustomize("kubernetes-ops/eventual-hub/installs/local_tilt_dev"))
 
 # Tilt doesn't recognize these as a resource, but these CRDs need to be created first
 CERT_CRD = [
+   "cert-manager:namespace",
    "certificaterequests.cert-manager.io:customresourcedefinition",
    "certificates.cert-manager.io:customresourcedefinition",
    "challenges.acme.cert-manager.io:customresourcedefinition",
@@ -90,7 +91,7 @@ k8s_resource(new_name="certs", objects=CERTS, resource_deps=CERT_MANAGER_RESOURC
 # All other services depend on the certs
 k8s_resource("backend", resource_deps=["certs"])
 k8s_resource("jupyterhub", resource_deps=["certs"])
-k8s_resource("jupyterhub-proxy", resource_deps=["certs"])
+k8s_resource("eventual-hub-proxy", resource_deps=["certs"])
 
 # Customize a Kubernetes resource
 #   By default, Kubernetes resource names are automatically assigned
