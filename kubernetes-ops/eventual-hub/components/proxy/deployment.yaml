@@ -36,7 +36,6 @@ spec:
             - --providers.kubernetesingress=true
             - --providers.kubernetesingress.allowexternalnameservices=true
             - --providers.kubernetesingress.ingressclass=jupyterhub
-            - --providers.kubernetesingress.labelselector=component=singleuser-server
             - --providers.kubernetesingress.namespaces=$(POD_NAMESPACE)
           env:
             - name: POD_NAMESPACE
