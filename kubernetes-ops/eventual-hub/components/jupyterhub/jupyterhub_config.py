@@ -26,10 +26,10 @@ c.KubeSpawner.start_timeout = 60 * 10
 c.JupyterHub.proxy_class = "kubespawner.proxy.KubeIngressProxy"
 c.Proxy.should_start = False
 c.KubeIngressProxy.extra_annotations = {
-    "kubernetes.io/ingress.class": "jupyterhub",
+    "kubernetes.io/ingress.class": "eventual-hub",
     "traefik.ingress.kubernetes.io/router.entrypoints": "https",
     "traefik.ingress.kubernetes.io/service.serversscheme": "https",
-    "traefik.ingress.kubernetes.io/service.serverstransport": "jupyterhub-proxy@file",
+    "traefik.ingress.kubernetes.io/service.serverstransport": "eventual-hub-proxy@file",
 }
 
 # Miscellaneous

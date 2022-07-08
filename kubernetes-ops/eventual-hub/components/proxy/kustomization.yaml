@@ -7,6 +7,6 @@ resources:
   - rbac.yaml
   - service.yaml
 configMapGenerator:
-  - name: jupyterhub-proxy-config
+  - name: eventual-hub-proxy-config
     files:
       - file-provider.yml

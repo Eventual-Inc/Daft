@@ -5,10 +5,10 @@ metadata:
   labels:
     component: eventual-hub
   annotations:
-    kubernetes.io/ingress.class: jupyterhub
+    kubernetes.io/ingress.class: eventual-hub
     traefik.ingress.kubernetes.io/router.entrypoints: https
     traefik.ingress.kubernetes.io/service.serversscheme: https
-    traefik.ingress.kubernetes.io/service.serverstransport: jupyterhub-proxy@file
+    traefik.ingress.kubernetes.io/service.serverstransport: eventual-hub-proxy@file
 spec:
   rules:
   - http:

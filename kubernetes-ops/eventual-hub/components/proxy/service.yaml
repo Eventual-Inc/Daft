@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: jupyterhub-proxy
+  name: eventual-hub-proxy
   labels:
     component: proxy-api
 spec:
@@ -11,13 +11,13 @@ spec:
     - name: https
       port: 8443
   selector:
-    app: jupyterhub
+    app: eventual-hub
     component: proxy
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: jupyterhub-proxy-external
+  name: eventual-hub-proxy-external
   labels:
     component: proxy-api
 spec:
@@ -26,6 +26,6 @@ spec:
       port: 8443
       nodePort: 30001
   selector:
-    app: jupyterhub
+    app: eventual-hub
     component: proxy
   type: NodePort

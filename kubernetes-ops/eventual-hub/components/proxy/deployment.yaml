@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: jupyterhub-proxy
+  name: eventual-hub-proxy
   labels:
     component: proxy
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: jupyterhub
+      app: eventual-hub
       component: proxy
   template:
     metadata:
       labels:
-        app: jupyterhub
+        app: eventual-hub
         component: proxy
         hub.jupyter.org/network-access-hub: "true"
         hub.jupyter.org/network-access-singleuser: "true"
@@ -35,7 +35,7 @@ spec:
             - --providers.file.filename=/etc/traefik/file-provider.yml
             - --providers.kubernetesingress=true
             - --providers.kubernetesingress.allowexternalnameservices=true
-            - --providers.kubernetesingress.ingressclass=jupyterhub
+            - --providers.kubernetesingress.ingressclass=eventual-hub
             - --providers.kubernetesingress.namespaces=$(POD_NAMESPACE)
           env:
             - name: POD_NAMESPACE
@@ -66,11 +66,11 @@ spec:
               scheme: HTTPS
               path: /ping
               port: https
-      serviceAccountName: jupyterhub-proxy
+      serviceAccountName: eventual-hub-proxy
       volumes:
         - name: config
           configMap:
-            name: jupyterhub-proxy-config
+            name: eventual-hub-proxy-config
         - name: tls-cert
           secret:
             secretName: proxy-cert

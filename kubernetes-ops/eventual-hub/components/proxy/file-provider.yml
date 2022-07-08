@@ -1,6 +1,6 @@
 http:
   serversTransports:
-    jupyterhub-proxy:
+    eventual-hub-proxy:
       insecureSkipVerify: true
       certificates:
         - certFile: /var/run/secrets/certs/tls/tls.crt

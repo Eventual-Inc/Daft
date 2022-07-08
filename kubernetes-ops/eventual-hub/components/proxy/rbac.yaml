@@ -3,7 +3,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: jupyterhub-proxy-cluster-role
+  name: eventual-hub-proxy-cluster-role
 rules:
   - apiGroups:
       - networking.k8s.io
@@ -17,20 +17,20 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: jupyterhub-proxy-cluster-role-binding
+  name: eventual-hub-proxy-cluster-role-binding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: jupyterhub-proxy-cluster-role
+  name: eventual-hub-proxy-cluster-role
 subjects:
   - kind: ServiceAccount
-    name: jupyterhub-proxy
+    name: eventual-hub-proxy
     namespace: default
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: jupyterhub-proxy-role
+  name: eventual-hub-proxy-role
 rules:
   - apiGroups:
       - ""
@@ -60,18 +60,18 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: jupyterhub-proxy-role-binding
+  name: eventual-hub-proxy-role-binding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: jupyterhub-proxy-role
+  name: eventual-hub-proxy-role
 subjects:
   - kind: ServiceAccount
-    name: jupyterhub-proxy
+    name: eventual-hub-proxy
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: jupyterhub-proxy
+  name: eventual-hub-proxy
   labels:
     component: proxy
