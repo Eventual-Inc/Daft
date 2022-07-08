@@ -26,6 +26,7 @@ s3fs = "*"
 protobuf = "~3.19.0"
 networkx = "^2.8.2"
 icebridge = "0.0.3"
+tabulate = "^0.8.10"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"
