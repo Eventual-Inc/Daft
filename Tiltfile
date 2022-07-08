@@ -30,15 +30,6 @@ docker_build('localhost:5001/eventual-hub-jupyterhub:latest',
              context='eventual-hub/',
              # (Optional) Use a custom Dockerfile path
              dockerfile='./Dockerfile.jupyterhub',
-             # (Recommended) Updating a running container in-place
-             # https://docs.tilt.dev/live_update_reference.html
-             live_update=[
-                # Sync files from host to container
-                sync('./eventual-hub/jupyterhub/jupyterhub_config.py', '/etc/jupyterhub/jupyterhub_config.py'),
-                # Execute commands inside the container when certain
-                # paths change
-                run('jupyterhub -f  /etc/jupyterhub/jupyterhub_config.py', trigger=['./jupyterhub'])
-             ],
              platform="linux/amd64",
 )
 
@@ -63,10 +54,7 @@ docker_build('localhost:5001/eventual-hub-backend:latest',
 #   More info: https://docs.tilt.dev/api.html#api.k8s_yaml
 #
 
-load('ext://helm_resource', 'helm_resource', 'helm_repo')
-helm_repo('traefik-repo', 'https://helm.traefik.io/traefik')
-helm_resource('traefik', 'traefik-repo/traefik', flags=["-f", "kubernetes-ops/ingress-controller/kind-traefik-deployment-values.yaml"])
-
+k8s_yaml(kustomize("kubernetes-ops/eventual-hub/_pre"))
 k8s_yaml(kustomize("kubernetes-ops/eventual-hub/installs/local_tilt_dev"))
 
 # Customize a Kubernetes resource

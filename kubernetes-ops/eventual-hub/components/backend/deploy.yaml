@@ -2,7 +2,6 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: backend
-  namespace: eventual-hub
   labels:
     app: backend
 spec:

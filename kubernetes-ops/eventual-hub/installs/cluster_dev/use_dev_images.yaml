@@ -2,7 +2,6 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: backend
-  namespace: eventual-hub
 spec:
   template:
     spec:
@@ -14,7 +13,6 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: jupyterhub
-  namespace: eventual-hub
 spec:
   template:
     spec:

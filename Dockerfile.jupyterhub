@@ -1,22 +1,7 @@
-FROM python:3.9.5-slim-buster AS jupyterhub
+FROM jupyterhub/jupyterhub:latest
 
-WORKDIR /scratch
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update --yes && \
-    apt-get install --yes --no-install-recommends \
-    curl \
-    nodejs \
-    npm
-
-RUN npm install -g configurable-http-proxy
-
-RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
-COPY jupyterhub/poetry.lock /scratch/poetry.lock
-COPY jupyterhub/pyproject.toml /scratch/pyproject.toml
-RUN /root/.poetry/bin/poetry config virtualenvs.create false
-RUN --mount=type=cache,target=/root/.cache/pypoetry /root/.poetry/bin/poetry install --no-root
-
-WORKDIR /app
-COPY jupyterhub/jupyterhub_config.py /etc/jupyterhub/jupyterhub_config.py
-
-ENTRYPOINT ["jupyterhub", "-f", "/etc/jupyterhub/jupyterhub_config.py"]
+RUN pip install git+https://github.com/jeevb/kubespawner.git@068af4493746b943e362cfcbf884cbf29bbcdaec#egg=jupyterhub-kubespawner psycopg2-binary oauthenticator
