@@ -57,6 +57,41 @@ docker_build('localhost:5001/eventual-hub-backend:latest',
 k8s_yaml(kustomize("kubernetes-ops/eventual-hub/_pre"))
 k8s_yaml(kustomize("kubernetes-ops/eventual-hub/installs/local_tilt_dev"))
 
+# Tilt doesn't recognize these as a resource, but these CRDs need to be created first
+CERT_CRD = [
+   "certificaterequests.cert-manager.io:customresourcedefinition",
+   "certificates.cert-manager.io:customresourcedefinition",
+   "challenges.acme.cert-manager.io:customresourcedefinition",
+   "clusterissuers.cert-manager.io:customresourcedefinition",
+   "issuers.cert-manager.io:customresourcedefinition",
+   "orders.acme.cert-manager.io:customresourcedefinition",
+]
+k8s_resource(new_name="cert_crd", objects=CERT_CRD)
+
+# Cert-manager deployments depend on the CRD
+CERT_MANAGER_RESOURCES = ['cert-manager', 'cert-manager-cainjector', 'cert-manager-webhook']
+for r in CERT_MANAGER_RESOURCES:
+   k8s_resource(r, resource_deps=["cert_crd"])
+
+# Certificates depend on the cert-manager deployments to be up
+CERTS = [
+   "hub-ca:certificate",
+   "notebooks-ca:certificate",
+   "proxy-api-ca:certificate",
+   "proxy-cert:certificate",
+   "proxy-client-ca:certificate",
+   "services-ca:certificate",
+   "proxy-client-ca-issuer:issuer",
+   "self-signed-issuer:issuer",
+]
+k8s_resource(new_name="certs", objects=CERTS, resource_deps=CERT_MANAGER_RESOURCES)
+
+
+# All other services depend on the certs
+k8s_resource("backend", resource_deps=["certs"])
+k8s_resource("jupyterhub", resource_deps=["certs"])
+k8s_resource("jupyterhub-proxy", resource_deps=["certs"])
+
 # Customize a Kubernetes resource
 #   By default, Kubernetes resource names are automatically assigned
 #   based on objects in the YAML manifests, e.g. Deployment name.
