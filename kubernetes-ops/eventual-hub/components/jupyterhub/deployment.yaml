@@ -59,6 +59,36 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: AUTH0_SUBDOMAIN
+              valueFrom:
+                secretKeyRef:
+                  name: eventual-hub
+                  key: AUTH0_JUPYTERHUB_SUBDOMAIN
+                  optional: false
+            - name: AUTH0_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: eventual-hub
+                  key: AUTH0_JUPYTERHUB_CLIENT_ID
+                  optional: false
+            - name: AUTH0_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventual-hub
+                  key: AUTH0_JUPYTERHUB_CLIENT_SECRET
+                  optional: false
+            - name: AUTH0_CALLBACK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: eventual-hub
+                  key: AUTH0_JUPYTERHUB_CALLBACK_URL
+                  optional: false
+            - name: JUPYTERHUB_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: eventual-hub
+                  key: JUPYTERHUB_ADMIN_TOKEN
+                  optional: false
           envFrom:
             - secretRef:
                 name: jupyterhub-secrets
