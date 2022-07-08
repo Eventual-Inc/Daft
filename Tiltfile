@@ -59,6 +59,7 @@ k8s_yaml(kustomize("kubernetes-ops/eventual-hub/installs/local_tilt_dev"))
 
 # Tilt doesn't recognize these as a resource, but these CRDs need to be created first
 CERT_CRD = [
+   "cert-manager:namespace",
    "certificaterequests.cert-manager.io:customresourcedefinition",
    "certificates.cert-manager.io:customresourcedefinition",
    "challenges.acme.cert-manager.io:customresourcedefinition",
@@ -72,6 +73,7 @@ k8s_resource(new_name="cert_crd", objects=CERT_CRD)
 CERT_MANAGER_RESOURCES = ['cert-manager', 'cert-manager-cainjector', 'cert-manager-webhook']
 for r in CERT_MANAGER_RESOURCES:
    k8s_resource(r, resource_deps=["cert_crd"])
+k8s_resource(new_name="cert-manager-webhook-validator", objects=["cert-manager-webhook:validatingwebhookconfiguration", "cert-manager-webhook:mutatingwebhookconfiguration"], resource_deps=CERT_MANAGER_RESOURCES)
 
 # Certificates depend on the cert-manager deployments to be up
 CERTS = [
@@ -81,8 +83,10 @@ CERTS = [
    "proxy-cert:certificate",
    "proxy-client-ca:certificate",
    "services-ca:certificate",
+   "backend-hub-service-cert:certificate",
    "proxy-client-ca-issuer:issuer",
    "self-signed-issuer:issuer",
+   "services-ca-issuer:issuer",
 ]
 k8s_resource(new_name="certs", objects=CERTS, resource_deps=CERT_MANAGER_RESOURCES)
 

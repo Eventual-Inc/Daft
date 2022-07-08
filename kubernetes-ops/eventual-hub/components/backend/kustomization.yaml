@@ -4,3 +4,5 @@ resources:
 - deploy.yaml
 - svc.yaml
 - ingress.yaml
+- ca.yaml
+- cert.yaml
