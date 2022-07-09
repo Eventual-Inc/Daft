@@ -1,0 +1,14 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: proxy-client-ca
+spec:
+  secretName: proxy-client-ca
+  commonName: proxy-client-ca
+  duration: 87600h
+  usages:
+    - server auth
+    - client auth
+  isCA: true
+  issuerRef:
+    name: self-signed-issuer

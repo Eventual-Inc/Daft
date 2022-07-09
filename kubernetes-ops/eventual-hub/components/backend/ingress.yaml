@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eventual-hub-ingress-api
+  labels:
+    component: eventual-hub
+  annotations:
+    kubernetes.io/ingress.class: eventual-hub
+    traefik.ingress.kubernetes.io/router.entrypoints: https
+    traefik.ingress.kubernetes.io/service.serversscheme: https
+    traefik.ingress.kubernetes.io/service.serverstransport: eventual-hub-proxy@file
+spec:
+  rules:
+  - http:
+      paths:
+      - pathType: Prefix
+        path: "/api"
+        backend:
+          service:
+            name: backend-svc
+            port:
+              number: 8000

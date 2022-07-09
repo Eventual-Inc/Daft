@@ -30,15 +30,6 @@ docker_build('localhost:5001/eventual-hub-jupyterhub:latest',
              context='eventual-hub/',
              # (Optional) Use a custom Dockerfile path
              dockerfile='./Dockerfile.jupyterhub',
-             # (Recommended) Updating a running container in-place
-             # https://docs.tilt.dev/live_update_reference.html
-             live_update=[
-                # Sync files from host to container
-                sync('./eventual-hub/jupyterhub/jupyterhub_config.py', '/etc/jupyterhub/jupyterhub_config.py'),
-                # Execute commands inside the container when certain
-                # paths change
-                run('jupyterhub -f  /etc/jupyterhub/jupyterhub_config.py', trigger=['./jupyterhub'])
-             ],
              platform="linux/amd64",
 )
 
@@ -63,16 +54,47 @@ docker_build('localhost:5001/eventual-hub-backend:latest',
 #   More info: https://docs.tilt.dev/api.html#api.k8s_yaml
 #
 
-load('ext://helm_resource', 'helm_resource', 'helm_repo')
-helm_repo('traefik-repo', 'https://helm.traefik.io/traefik')
-helm_resource('traefik', 'traefik-repo/traefik', flags=["-f", "kubernetes-ops/ingress-controller/kind-traefik-deployment-values.yaml"])
+k8s_yaml(kustomize("kubernetes-ops/eventual-hub/_pre"))
+k8s_yaml(kustomize("kubernetes-ops/eventual-hub/installs/local_tilt_dev"))
 
-k8s_yaml([
-    'kubernetes-ops/eventual-hub/eventual-backend.yaml',
-    'kubernetes-ops/eventual-hub/jupyterhub.yaml',
-    'kubernetes-ops/eventual-hub/namespace.yaml',
-    'kubernetes-ops/eventual-hub/ingress.yaml',
-])
+# Tilt doesn't recognize these as a resource, but these CRDs need to be created first
+CERT_CRD = [
+   "cert-manager:namespace",
+   "certificaterequests.cert-manager.io:customresourcedefinition",
+   "certificates.cert-manager.io:customresourcedefinition",
+   "challenges.acme.cert-manager.io:customresourcedefinition",
+   "clusterissuers.cert-manager.io:customresourcedefinition",
+   "issuers.cert-manager.io:customresourcedefinition",
+   "orders.acme.cert-manager.io:customresourcedefinition",
+]
+k8s_resource(new_name="cert_crd", objects=CERT_CRD)
+
+# Cert-manager deployments depend on the CRD
+CERT_MANAGER_RESOURCES = ['cert-manager', 'cert-manager-cainjector', 'cert-manager-webhook']
+for r in CERT_MANAGER_RESOURCES:
+   k8s_resource(r, resource_deps=["cert_crd"])
+k8s_resource(new_name="cert-manager-webhook-validator", objects=["cert-manager-webhook:validatingwebhookconfiguration", "cert-manager-webhook:mutatingwebhookconfiguration"], resource_deps=CERT_MANAGER_RESOURCES)
+
+# Certificates depend on the cert-manager deployments to be up
+CERTS = [
+   "hub-ca:certificate",
+   "notebooks-ca:certificate",
+   "proxy-api-ca:certificate",
+   "proxy-cert:certificate",
+   "proxy-client-ca:certificate",
+   "services-ca:certificate",
+   "backend-hub-service-cert:certificate",
+   "proxy-client-ca-issuer:issuer",
+   "self-signed-issuer:issuer",
+   "services-ca-issuer:issuer",
+]
+k8s_resource(new_name="certs", objects=CERTS, resource_deps=CERT_MANAGER_RESOURCES)
+
+
+# All other services depend on the certs
+k8s_resource("backend", resource_deps=["certs"])
+k8s_resource("jupyterhub", resource_deps=["certs"])
+k8s_resource("eventual-hub-proxy", resource_deps=["certs"])
 
 # Customize a Kubernetes resource
 #   By default, Kubernetes resource names are automatically assigned

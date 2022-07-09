@@ -1,0 +1,77 @@
+# IngressClasses are cluster-scoped. See:
+# https://github.com/traefik/traefik/issues/7729
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: eventual-hub-proxy-cluster-role
+rules:
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - ingressclasses
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: eventual-hub-proxy-cluster-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: eventual-hub-proxy-cluster-role
+subjects:
+  - kind: ServiceAccount
+    name: eventual-hub-proxy
+    namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eventual-hub-proxy-role
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - services
+      - endpoints
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - ingresses
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - extensions
+    resources:
+      - ingresses/status
+    verbs:
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eventual-hub-proxy-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eventual-hub-proxy-role
+subjects:
+  - kind: ServiceAccount
+    name: eventual-hub-proxy
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eventual-hub-proxy
+  labels:
+    component: proxy

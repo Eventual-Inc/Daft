@@ -17,5 +17,5 @@ kindV1Alpha4Cluster:
       hostPort: 80
       protocol: TCP
     - containerPort: 30001
-      hostPort: 443
+      hostPort: 8443
       protocol: TCP

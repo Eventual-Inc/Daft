@@ -1,0 +1,24 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: backend
+spec:
+  template:
+    spec:
+      containers:
+      - name: backend
+        image: localhost:5001/eventual-hub-backend:latest
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jupyterhub
+spec:
+  template:
+    spec:
+      initContainers:
+      - name: copy-certs
+        image: localhost:5001/eventual-hub-jupyterhub:latest
+      containers:
+      - name: hub
+        image: localhost:5001/eventual-hub-jupyterhub:latest

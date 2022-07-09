@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: eventual-hub-proxy
+  labels:
+    component: proxy-api
+spec:
+  ports:
+    - name: api
+      port: 8080
+    - name: https
+      port: 8443
+  selector:
+    app: eventual-hub
+    component: proxy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eventual-hub-proxy-external
+  labels:
+    component: proxy-api
+spec:
+  ports:
+    - name: https
+      port: 8443
+      nodePort: 30001
+  selector:
+    app: eventual-hub
+    component: proxy
+  type: NodePort

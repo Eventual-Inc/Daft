@@ -2,7 +2,6 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: backend
-  namespace: eventual-hub
   labels:
     app: backend
 spec:
@@ -22,6 +21,9 @@ spec:
         ports:
         - containerPort: 8000
           name: backend-port
+        volumeMounts:
+          - mountPath: /var/run/secrets/certs/tls
+            name: tls-cert
         env:
         - name: AUTH0_DOMAIN
           value: eventual-dev.us.auth0.com
@@ -32,23 +34,14 @@ spec:
         - name: AUTH0_ISSUER
           value: https://eventual-dev.us.auth0.com/
         - name: JUPYTERHUB_SERVICE_ADDRESS
-          value: http://jupyterhub-svc.eventual-hub:8000/jupyter/hub/api
+          value: https://jupyterhub.default:8081/jupyter/hub/api
         - name: JUPYTERHUB_ADMIN_TOKEN
           valueFrom:
             secretKeyRef:
-              name: jupyterhub
-              key: admin-token
+              name: eventual-hub
+              key: JUPYTERHUB_ADMIN_TOKEN
               optional: false
-
----
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: backend-svc
-  namespace: eventual-hub
-spec:
-  selector:
-    app: backend
-  ports:
-  - port: 8000
+      volumes:
+        - name: tls-cert
+          secret:
+            secretName: backend-hub-service-cert

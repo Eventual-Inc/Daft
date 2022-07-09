@@ -1,0 +1,7 @@
+http:
+  serversTransports:
+    eventual-hub-proxy:
+      insecureSkipVerify: true
+      certificates:
+        - certFile: /var/run/secrets/certs/tls/tls.crt
+          keyFile: /var/run/secrets/certs/tls/tls.key

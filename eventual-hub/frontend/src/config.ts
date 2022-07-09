@@ -1,6 +1,6 @@
 export default function getConfig() {
   return {
-    baseApiUrl: `http://localhost:80/api`,
-    baseHubUrl: `http://localhost:80`,
+    baseApiUrl: `https://localhost:8443/api`,
+    baseHubUrl: `https://localhost:8443`,
   };
 }
