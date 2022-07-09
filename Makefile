@@ -57,8 +57,8 @@ deploy-eventual-hub-images:
 deploy-eventual-hub:
 	@echo "Switching kubectl to jay_sandbox_eks_cluster..."
 	@kubectl config use-context arn:aws:eks:us-west-2:941892620273:cluster/jay_sandbox_eks_cluster
+	kubectl apply -k kubernetes-ops/eventual-hub/_pre
 	kubectl apply -k kubernetes-ops/eventual-hub/installs/cluster_dev
-
 
 local-dev:
 	ctlptl apply -f kubernetes-ops/ctlptl.yaml
