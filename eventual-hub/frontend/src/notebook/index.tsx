@@ -4,7 +4,7 @@ import ProtectedRoute from '../auth/ProtectedRoute';
 import {useQueryClient, useMutation, useQuery} from 'react-query'
 import axios from "axios";
 import getConfig from "../config";
-import { useAuth0 } from "@auth0/auth0-react";
+import useTokenGenerator from "../auth/auth0";
 
 function getNotebookRoute() {
   return (
@@ -32,10 +32,10 @@ const getNotebookServer = (getToken: () => Promise<string>) => async () => {
 };
 
 function NotebookBody() {
-    const { getAccessTokenWithPopup } = useAuth0();
+    const tokenGenerator = useTokenGenerator();
     const queryClient = useQueryClient()
     const { mutate, isLoading: launchServerIsLoading } = useMutation(
-      launchNotebookServer(() => getAccessTokenWithPopup({audience: "https://auth.eventualcomputing.com"})),
+      launchNotebookServer(tokenGenerator),
       {
         onSuccess: data => {
           console.log(data);
@@ -49,7 +49,7 @@ function NotebookBody() {
     });
     const { data, isLoading: getServerIsLoading } = useQuery(
       "notebook_server",
-      getNotebookServer(() => getAccessTokenWithPopup({audience: "https://auth.eventualcomputing.com"})),
+      getNotebookServer(tokenGenerator),
     );
 
     var button = <CircularProgress />;
