@@ -1,11 +1,24 @@
 from __future__ import annotations
 from collections import defaultdict
+from dataclasses import dataclass
 
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Union
 
 from tabulate import tabulate
 
+@dataclass
+class Column:
+    name: str
+
+
+@dataclass
+class QueryExpression:
+    ...
+
+ColumnArgType = Union[Column, str]
+
 class DataFrame:
+
     class RowView:
         __slots__ = ["_index", "_df"]
         def __init__(self, df: DataFrame, index: int) -> None:
@@ -48,9 +61,6 @@ class DataFrame:
     def columns(self) -> List[str]:
         return self._columns
 
-    def count(self) -> int:
-        return self._count
-
     @classmethod
     def from_items(cls, data: List[Dict[str, Any]]) -> DataFrame:
         transposed = defaultdict(list)
@@ -62,10 +72,31 @@ class DataFrame:
                 transposed[k].append(None)
         return DataFrame(transposed)
 
-    def select(self, *columns: str) -> DataFrame:
-        if not all(c in self._columns for c in columns):
-            raise ValueError(f"Column not in DataFrame {set(columns) - set(self._columns)}")
-        return DataFrame({k: self._data[k].copy() for k in columns})
-
     def __getitem__(self, index: int) -> RowView:
         return DataFrame.RowView(self, index)
+
+
+    def __norm_columns(self, *columns: ColumnArgType) -> List[Column]:
+        norm_columns = [Column(name=c) if isinstance(c, str) else c for c in columns]
+        return norm_columns
+
+
+    def select(self, *columns: ColumnArgType) -> DataFrame:
+        norm_columns = self.__norm_columns(*columns)
+        column_names = [c.name for c in norm_columns]
+        if not all(c in self._columns for c in column_names):
+            raise ValueError(f"Column not in DataFrame {set(column_names) - set(self._columns)}")
+        return DataFrame({k: self._data[k].copy() for k in column_names})
+
+
+    def count(self) -> int:
+        return self._count
+
+    def with_column(self, name: str, new_col: ColumnArgType) -> Column:
+        ...
+    
+    def where(self, expr: QueryExpression) -> DataFrame:
+        ...
+    
+    def sort(self, *columns: ColumnArgType) -> DataFrame:
+        ...
