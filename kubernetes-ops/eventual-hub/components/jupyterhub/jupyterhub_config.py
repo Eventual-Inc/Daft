@@ -9,7 +9,6 @@ c.JupyterHub.bind_url = "http://:8081"
 c.JupyterHub.hub_bind_url = "http://:8081"
 c.JupyterHub.hub_connect_url = "https://jupyterhub:8081"
 c.JupyterHub.base_url = '/jupyter/'
-c.JupyterHub.hub_routespec = "/hub/api"
 
 # Authentication
 from oauthenticator.auth0 import Auth0OAuthenticator
