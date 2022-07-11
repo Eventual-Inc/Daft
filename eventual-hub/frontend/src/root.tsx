@@ -30,6 +30,7 @@ import getAdminRoute from "./admin";
 import getClustersRoute from "./clusters";
 import { theme } from "./theme";
 import { useEffect } from "react";
+import getConfig from "./config";
 
 function TabbedMenu() {
   const navigate = useNavigate();
@@ -64,7 +65,7 @@ function LoginPage() {
   } else if (isAuthenticated) {
     contents = <Stack padding={12} direction="column" alignItems="center">
       <Typography>Welcome, {user?.name}</Typography>
-      <Button variant="contained" onClick={() => {logout();}}>Logout</Button>
+      <Button variant="contained" onClick={() => {logout({returnTo: getConfig().baseUrl});}}>Logout</Button>
     </Stack>;
   } else {
     contents = <Stack padding={12} direction="column" alignItems="center">
