@@ -55,7 +55,11 @@ warn_unused_configs = true
 
 
 [[tool.mypy.overrides]]
-module = "pyarrow.*"
+module = [
+    "pyarrow.*",
+    "fsspec.*",
+    "icebridge.*"
+]
 ignore_missing_imports = true
 
 

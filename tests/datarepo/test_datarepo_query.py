@@ -2,15 +2,12 @@ import tempfile
 from typing import Iterator, List
 
 import numpy as np
-import pyarrow.parquet as pq
 import pytest
 import ray
 
 from daft.dataclasses import dataclass
 from daft.datarepo.datarepo import DataRepo
 from daft.datarepo.query import functions as F
-from daft.datarepo.query.expressions import QueryColumn
-from icebridge.client import IcebergCatalog, IceBridgeClient
 
 from .utils import create_test_catalog
 
@@ -22,7 +19,7 @@ class TestDc:
 
 
 @pytest.fixture(scope="function")
-def populated_datarepo(ray_cluster) -> Iterator[DataRepo]:
+def populated_datarepo() -> Iterator[DataRepo]:
     with tempfile.TemporaryDirectory() as td:
         catalog = create_test_catalog(td)
         dr = DataRepo.create(catalog, "test_dc", TestDc)
