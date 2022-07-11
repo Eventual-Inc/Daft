@@ -69,7 +69,7 @@ class DataRepo:
     def name(self):
         return self._table.name()
 
-    def __write_dataset(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:
+    def __write_dataset(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[Tuple[str, pq.FileMetaData]]:
         data_dir = self._table.data_dir()
         protocol = data_dir.split(":")[0] if ":" in data_dir else "file"
         filesystem = fsspec.filesystem(protocol)
@@ -95,7 +95,7 @@ class DataRepo:
 
         num_partitions = ceil(dataset.count() // rows_per_partition)
         dataset = dataset.repartition(num_partitions, shuffle=True)
-        filewrite_outputs = dataset.map_batches(_write_block, batch_size=rows_per_partition).take_all()
+        filewrite_outputs = dataset.map_batches(_write_block, batch_size=rows_per_partition).take_all() # type: ignore
         return filewrite_outputs
 
     def append(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:

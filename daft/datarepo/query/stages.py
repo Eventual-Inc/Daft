@@ -92,7 +92,7 @@ class ReadIcebergTableStage(QueryStage):
 
     def __repr__(self) -> str:
         args = {
-            "datarepo": self.daft_lake_log.path,
+            "datarepo": self.datarepo.table.path(),
         }
         if self.read_limit is not None:
             args["read_limit"] = str(self.read_limit)
