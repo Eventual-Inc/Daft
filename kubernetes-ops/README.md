@@ -1,8 +1,8 @@
 # Provisioning resources on Kubernetes
 
-We use Terraform to provision our EKS cluster, node pool resources and permissioning. However, for more dynamic provisioning of applications on the cluster itself, we rely on Helm charts and Kubernetes YAML resource definitions.
+We use Terraform to provision our EKS cluster, node pool resources and permissioning. However, for more dynamic provisioning of applications on the cluster itself, we rely on the Helm and Kustomize configurations we store here in `kubernetes-ops`.
 
-## Permissioning
+## Kubernetes Permissioning
 
 For providing our Daft pods with the appropriate permissions, we rely on [IAM roles for service accounts (IRSA)](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html).
 
@@ -11,7 +11,7 @@ For providing our Daft pods with the appropriate permissions, we rely on [IAM ro
 3. Now in Kubernetes, we create Service Accounts with the appropriate annotation (`eks.amazonaws.com/role-arn: <CLUSTER_NAME_DaftRole.arn>`)
 4. Now for every pod that we want to grant Daft application AWS permissions to, simply add `serviceAccountName: ...` to the pod spec
 
-## Helm Releases
+## Deploying applications on the cluster
 
 ### Cluster Autoscaler
 
@@ -29,43 +29,29 @@ Some values in `values.yaml` have been modified for our cluster to ensure that o
 2. `nodeSelector: { dedicated: clusterAutoscaler }` adds a node selector which is configured on our nodes Terraform to be On-Demand nodes
 3. `tolerations: [{ key: "dedicated", operator: "Equal", value: "clusterAutoscaler", effect: "NoSchedule" }]` adds a toleration for those nodes
 
-### Ray
+### Eventual Hub
 
-> As this is a fairly frequent operation, installing Ray helm releases has has been incorporated into the Daft Makefile as a simple `make ray-up/down` command. See the main Daft README for easy instructions for bringing Ray clusters up and down.
+The Eventual hub refers to our deployment of a suite of services that constitute the Eventual platform:
 
-Deploying Ray on Kubernetes is not very straightforward and rather manual. There are three main ways:
+1. Eventual frontend React application
+2. Eventual web backend
+3. Jupyterhub
+4. Users' notebook servers
+5. Traefik proxy as an ingress to the backend/notebook servers
 
-1. Use the existing Helm charts provided by Ray to deploy an autoscaling Ray cluster (recommended by Ray team)
-2. Use a simpler collection of Kubernetes deployments and services to deploy a non-autoscaling Ray cluster
-3. Use the KubeRay project (marked experimental by the Ray team)
+All configurations are stored in `./eventual-hub` as Kustomize templates. This lets us perform templating to have the same configurations be re-used across environments such as our local development, development cluster and production cluster.
 
-Here, we go with option 2 as it is the simplest option for now and does not autoscale - we will figure out autoscaling later on.
+1. `./eventual-hub/_pre`: configs that need to be installed first (e.g. CustomResourceDefinitions)
+2. `./eventual-hub/installs/local_tilt_dev`: configs installed by Tilt when developing locally
+3. `./eventual-hub/installs/cluster_dev`: configs installed in our Dev cluster
 
-The Helm chart for deploying option 2 is found in `ray-static-cluster/`, and can be installed with:
-
-```
-CLUSTER_NAME=my-cluster
-
-helm install ${CLUSTER_NAME} \
-  ray-static-cluster \
-  --set clusterName=${CLUSTER_NAME} \
-  --namespace ray \
-  --create-namespace
-```
-
-### JupyterHub
-
-We deploy JupyterHub using an open-source [Helm chart](https://github.com/jupyterhub/helm-chart). This is added as a subchart under our `jupyterhub/` chart.
+To install the Eventual hub in a cluster, run the following:
 
 ```
-helm upgrade --cleanup-on-fail \
-  --install jupyterhub jupyterhub \
-  --namespace jupyterhub \
-  --values jupyterhub/values.yaml \
-  --set jupyterhub.hub.config.Auth0OAuthenticator.client_secret=<Auth0 Client Secret>
+# NOTE: this is made available as a convenience target in our Makefile as `make deploy-eventual-hub` already
+kubectl apply -k kubernetes-ops/eventual-hub/_pre
+kubectl apply -k kubernetes-ops/eventual-hub/installs/cluster_dev
 ```
-
-The Auth0 Client Secret can be retrieved from the [Auth0 application page](https://manage.auth0.com/dashboard/us/dev-kn2voyk3/applications/zwLsZdOmbKRat6i5Ccm7pq8vfNSNZNvR/settings).
 
 ### Vault
 
