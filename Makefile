@@ -18,7 +18,7 @@ test:
 	poetry run pytest
 
 ray-up:
-	@helm install ${CLUSTER_NAME} ./kubernetes-ops/ray-static-cluster --set clusterName=${CLUSTER_NAME} --set workerReplicaCount=${WORKER_REPLICA_COUNT} --namespace ray --create-namespace
+	@helm install ${CLUSTER_NAME} ./kubernetes-ops/sandboxes/ray-static-cluster --set clusterName=${CLUSTER_NAME} --set workerReplicaCount=${WORKER_REPLICA_COUNT} --namespace ray --create-namespace
 	@kubectl get pods -n ray
 
 ray-down:
