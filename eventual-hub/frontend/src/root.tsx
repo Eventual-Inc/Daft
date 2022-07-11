@@ -59,8 +59,6 @@ function TabbedMenu() {
 function LoginPage() {
   const { user, isAuthenticated, logout, isLoading, loginWithRedirect } = useAuth0();
   var contents;
-  console.log(isAuthenticated);
-  console.log(isLoading);
   if (isLoading) {
     contents = <CircularProgress />;
   } else if (isAuthenticated) {
@@ -99,7 +97,6 @@ function RoutedBody() {
 
 function Root() {
   const queryClient = new QueryClient();
-  console.log(window.location.origin);
   return (
     <QueryClientProvider client={queryClient}>
       <ReactQueryDevtools initialIsOpen={false} />

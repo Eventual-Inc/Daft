@@ -1,6 +1,9 @@
+const baseUrl = process.env.NODE_ENV == "development" ? "https://localhost:8443" : "https://api.eventualcomputing.com"
+
 export default function getConfig() {
   return {
-    baseApiUrl: `https://localhost:8443/api`,
-    baseHubUrl: `https://localhost:8443`,
+    baseApiUrl: `${baseUrl}/api`,
+    baseHubUrl: baseUrl,
+    auth0Audience: "https://auth.eventualcomputing.com",
   };
 }
