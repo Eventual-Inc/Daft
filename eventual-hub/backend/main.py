@@ -10,7 +10,10 @@ from auth import VerifyToken
 from settings import Settings
 
 app = FastAPI()
-origins = ["https://localhost:3000"]
+origins = [
+    "https://app.eventualcomputing.com",
+    "https://localhost:3000",
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

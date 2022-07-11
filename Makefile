@@ -47,8 +47,10 @@ deploy-notebook-image:
 deploy-eventual-hub-images:
 	@DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.jupyterhub -t ${ECR_PREFIX}/eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
 	@DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.backend -t ${ECR_PREFIX}/eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
+	@DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.frontend -t ${ECR_PREFIX}/eventual/frontend:${EVENTUAL_HUB_RELEASE_TAG}
 	@docker push ${ECR_PREFIX}/eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
 	@docker push ${ECR_PREFIX}/eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
+	@docker push ${ECR_PREFIX}/eventual/frontend:${EVENTUAL_HUB_RELEASE_TAG}
 
 ###
 # Deployment of environments (local/dev/prod)

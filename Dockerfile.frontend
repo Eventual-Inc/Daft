@@ -1,0 +1,15 @@
+FROM node:16.16.0-alpine
+
+WORKDIR /app
+RUN npm install -g serve
+
+COPY frontend/package* .
+RUN npm install
+
+COPY frontend/src ./src
+COPY frontend/public ./public
+COPY frontend/tsconfig.json ./tsconfig.json
+
+RUN npm run build
+
+CMD serve -s build
