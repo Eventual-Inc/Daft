@@ -82,6 +82,7 @@ def load_ray_cluster_template():
 
 
 # TODO: what else do we want to parametrize?
+# TODO: switch to t-shirt size node configurations!!
 def create_ray_cluster(
     *, name: str, namespace: str, head_cpu: int, head_memory: str, worker_cpu: int, worker_memory: str, max_workers: int
 ):
@@ -169,6 +170,9 @@ def describe_ray_cluster(*, name: str, namespace: str):
     status["events"] = _get_events_for_object(uid=data["metadata"]["uid"], namespace=namespace)
     return data
 
+
+def get_ray_cluster_endpoint(*, name: str, namespace: str):
+    ...
 
 def main():
     config.load_kube_config()
