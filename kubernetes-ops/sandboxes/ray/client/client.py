@@ -1,8 +1,10 @@
 import copy
+import enum
 import functools
 import json
-from typing import Any, Callable, List, Optional, TypeVar, overload
+from typing import Any, Callable, Dict, List, Optional, TypeVar, overload
 
+import pydantic
 import tenacity
 import yaml
 from kubernetes import client, config
@@ -74,19 +76,40 @@ def retryable(ignore: Optional[List[int]] = None) -> Callable[[FuncT], FuncOptT]
     return decorator
 
 
+class ClusterType(enum.Enum):
+    SMALL = "small"
+    MEDIUM = "medium"
+    LARGE = "large"
+
+
+class ClusterConfig(pydantic.BaseModel):
+    head_cpu: int
+    head_memory: str
+    worker_cpu: int
+    worker_memory: str
+    max_workers: int
+
+
+class ClientConfig(pydantic.BaseModel):
+    cluster_configs: Dict[ClusterType, ClusterConfig]
+    template: Dict[str, Any]
+
+
 # TODO: hot reload from k8s configmap?
 @functools.lru_cache(1)
-def load_ray_cluster_template():
+def load_config() -> ClientConfig:
     with open("config.yaml") as f:
-        return yaml.safe_load(f)
+        return ClientConfig.parse_obj(yaml.safe_load(f))
 
 
 # TODO: what else do we want to parametrize?
 # TODO: switch to t-shirt size node configurations!!
 def create_ray_cluster(
-    *, name: str, namespace: str, head_cpu: int, head_memory: str, worker_cpu: int, worker_memory: str, max_workers: int
+    *, name: str, namespace: str, cluster_type: ClusterType
 ):
-    template = copy.deepcopy(load_ray_cluster_template())
+    config = load_config()
+    template = copy.deepcopy(config.template)
+    cluster_config = config.cluster_configs[cluster_type]
 
     # Set name
     template["metadata"]["name"] = name
@@ -95,14 +118,14 @@ def create_ray_cluster(
     head_group_container = next(
         filter(lambda d: d["name"] == "ray-head", template["spec"]["headGroupSpec"]["template"]["spec"]["containers"])
     )
-    head_group_container["resources"] = {"limits": {"cpu": str(head_cpu), "memory": head_memory}}
+    head_group_container["resources"] = {"limits": {"cpu": str(cluster_config.head_cpu), "memory": cluster_config.head_memory}}
 
     # Set worker max replicas
     # TODO: allow a single worker group for now?
     worker_group_spec = template["spec"]["workerGroupSpecs"][0]
     # TODO: make desired replicas and minReplicas configurable?
     # TODO: set limits based on total CPU/memory usage
-    worker_group_spec["maxReplicas"] = max_workers
+    worker_group_spec["maxReplicas"] = cluster_config.max_workers
     # Set worker node resources
     worker_group_container = next(
         filter(
@@ -110,7 +133,7 @@ def create_ray_cluster(
             worker_group_spec["template"]["spec"]["containers"],
         )
     )
-    worker_group_container["resources"] = {"limits": {"cpu": str(worker_cpu), "memory": worker_memory}}
+    worker_group_container["resources"] = {"limits": {"cpu": str(cluster_config.worker_cpu), "memory": cluster_config.worker_memory}}
 
     api = client.CustomObjectsApi()
     retryable()(api.create_namespaced_custom_object)(
@@ -176,17 +199,13 @@ def get_ray_cluster_endpoint(*, name: str, namespace: str):
 
 def main():
     config.load_kube_config()
-    # delete_ray_cluster(name="foobar", namespace="default")
-    # create_ray_cluster(
-    #     name="foobar",
-    #     namespace="default",
-    #     head_cpu=1,
-    #     head_memory="512M",
-    #     worker_cpu=1,
-    #     worker_memory="512M",
-    #     max_workers=2,
-    # )
-    # print(list_ray_clusters(namespace="default"))
+    delete_ray_cluster(name="foobar", namespace="default")
+    create_ray_cluster(
+        name="foobar",
+        namespace="default",
+        cluster_type=ClusterType.SMALL
+    )
+    print(list_ray_clusters(namespace="default"))
     print(json.dumps(describe_ray_cluster(name="foobar", namespace="default"), indent=4))
 
 
