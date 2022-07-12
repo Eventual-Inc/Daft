@@ -133,7 +133,7 @@ def list_ray_clusters(*, namespace: str):
     items = retryable()(api.list_namespaced_custom_object)(
         group="ray.io", version="v1alpha1", plural="rayclusters", namespace=namespace
     )["items"]
-    return [{"name": i["metadata"]["name"], "status": i["status"]} for i in items]
+    return [{"name": i["metadata"]["name"], "status": i.get("status", {})} for i in items]
 
 
 def _get_events_for_object(*, uid: str, namespace: str):
@@ -165,7 +165,8 @@ def describe_ray_cluster(*, name: str, namespace: str):
     data = retryable()(api.get_namespaced_custom_object)(
         group="ray.io", version="v1alpha1", plural="rayclusters", name=name, namespace=namespace
     )
-    data["status"]["events"] = _get_events_for_object(uid=data["metadata"]["uid"], namespace=namespace)
+    data["status"] = status = data.get("status", {})
+    status["events"] = _get_events_for_object(uid=data["metadata"]["uid"], namespace=namespace)
     return data
 
 
