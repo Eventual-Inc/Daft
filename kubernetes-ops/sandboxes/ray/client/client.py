@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import datetime
 import enum
 import functools
 import json
@@ -111,11 +112,34 @@ def load_config() -> ClientConfig:
         return ClientConfig.parse_obj(yaml.safe_load(f))
 
 
+class RayClusterState(enum.Enum):
+    PENDING = "pending"
+    READY = "ready"
+
+
+class RayClusterEvent(pydantic.BaseModel):
+    timestamp: datetime.datetime
+    note: str
+    reason: str
+    type: str
+
+
+class RayCluster(pydantic.BaseModel):
+    name: str
+    namespace: str
+    type: ClusterType
+
+
+class RayClusterInfo(pydantic.BaseModel):
+    cluster: RayCluster
+    state: RayClusterState = RayClusterState.PENDING
+    endpoint: Optional[str] = None
+    workers: int = 0
+
+
 # TODO: what else do we want to parametrize?
 # TODO: switch to t-shirt size node configurations!!
-async def create_ray_cluster(
-    *, name: str, namespace: str, cluster_type: ClusterType
-):
+async def create_ray_cluster(*, name: str, namespace: str, cluster_type: ClusterType) -> RayCluster:
     config = load_config()
     template = copy.deepcopy(config.template)
     cluster_config = config.cluster_configs[cluster_type]
@@ -123,11 +147,16 @@ async def create_ray_cluster(
     # Set name
     template["metadata"]["name"] = name
 
+    # Inject labels
+    template["metadata"]["labels"] = {"evntl.io/ray-cluster-type": cluster_type.value}
+
     # Set head node resources
     head_group_container = next(
         filter(lambda d: d["name"] == "ray-head", template["spec"]["headGroupSpec"]["template"]["spec"]["containers"])
     )
-    head_group_container["resources"] = {"limits": {"cpu": str(cluster_config.head_cpu), "memory": cluster_config.head_memory}}
+    head_group_container["resources"] = {
+        "limits": {"cpu": str(cluster_config.head_cpu), "memory": cluster_config.head_memory}
+    }
 
     # Set worker max replicas
     # TODO: allow a single worker group for now?
@@ -142,7 +171,9 @@ async def create_ray_cluster(
             worker_group_spec["template"]["spec"]["containers"],
         )
     )
-    worker_group_container["resources"] = {"limits": {"cpu": str(cluster_config.worker_cpu), "memory": cluster_config.worker_memory}}
+    worker_group_container["resources"] = {
+        "limits": {"cpu": str(cluster_config.worker_cpu), "memory": cluster_config.worker_memory}
+    }
 
     async with client.ApiClient() as api_client:
         api = client.CustomObjectsApi(api_client=api_client)
@@ -154,8 +185,10 @@ async def create_ray_cluster(
             body=template,
         )
 
+    return RayCluster(name=name, namespace=namespace, type=cluster_type)
 
-async def delete_ray_cluster(*, name: str, namespace: str):
+
+async def delete_ray_cluster(*, name: str, namespace: str) -> None:
     async with client.ApiClient() as api_client:
         api = client.CustomObjectsApi(api_client=api_client)
         await retryable(ignore=[404])(api.delete_namespaced_custom_object)(
@@ -163,16 +196,23 @@ async def delete_ray_cluster(*, name: str, namespace: str):
         )
 
 
-async def list_ray_clusters(*, namespace: str):
+async def list_ray_clusters(*, namespace: str) -> List[RayCluster]:
     async with client.ApiClient() as api_client:
         api = client.CustomObjectsApi(api_client=api_client)
         data = await retryable()(api.list_namespaced_custom_object)(
             group="ray.io", version="v1alpha1", plural="rayclusters", namespace=namespace
         )
-    return [{"name": i["metadata"]["name"], "status": i.get("status", {})} for i in data["items"]]
+    return [
+        RayCluster(
+            name=i["metadata"]["name"],
+            namespace=i["metadata"]["namespace"],
+            type=i["metadata"]["labels"]["evntl.io/ray-cluster-type"],
+        )
+        for i in data["items"]
+    ]
 
 
-async def _get_events_for_object(*, uid: str, namespace: str):
+async def _get_events_for_object(*, uid: str, namespace: str) -> List[RayClusterEvent]:
     class FakeEventTime:
         def __get__(self, obj, objtype=None):
             return obj._event_time
@@ -189,39 +229,62 @@ async def _get_events_for_object(*, uid: str, namespace: str):
         api = client.EventsV1beta1Api(api_client=api_client)
         data = await retryable()(api.list_namespaced_event)(namespace="default", field_selector=f"regarding.uid={uid}")
     return [
-        {
-            "timestamp": i.metadata.creation_timestamp.isoformat(),
+        RayClusterEvent(
+            timestamp=i.metadata.creation_timestamp.isoformat(),
             **{k: getattr(i, k) for k in ("note", "reason", "type")},
-        }
+        )
         for i in data.items
     ]
 
 
-async def describe_ray_cluster(*, name: str, namespace: str):
+async def describe_ray_cluster(*, name: str, namespace: str) -> RayClusterInfo:
+    info = {}
     async with client.ApiClient() as api_client:
         api = client.CustomObjectsApi(api_client=api_client)
-        data = await retryable()(api.get_namespaced_custom_object)(
+        cluster_data = await retryable()(api.get_namespaced_custom_object)(
             group="ray.io", version="v1alpha1", plural="rayclusters", name=name, namespace=namespace
         )
-    data["status"] = status = data.get("status", {})
-    status["events"] = await _get_events_for_object(uid=data["metadata"]["uid"], namespace=namespace)
-    return data
 
+        # Check for running pods
+        v1 = client.CoreV1Api(api_client=api_client)
+        pod_data = await retryable()(v1.list_namespaced_pod)(
+            namespace=namespace, label_selector=f"ray.io/cluster={name}", field_selector="status.phase==Running"
+        )
 
-async def get_ray_cluster_endpoint(*, name: str, namespace: str):
-    ...
+        head_pod_running = False
+        workers = 0
+        for p in pod_data.items:
+            if p.metadata.labels.get("ray.io/node-type") == "head":
+                head_pod_running = True
+            if p.metadata.labels.get("ray.io/node-type") == "worker":
+                workers += 1
+
+        if head_pod_running:
+            info["state"] = RayClusterState.READY
+            info["workers"] = workers
+
+            # Check if service exists
+            service_data = await retryable()(v1.list_namespaced_service)(
+                namespace=namespace, label_selector=f"ray.io/cluster={name},ray.io/node-type=head"
+            )
+            if service_data.items:
+                service = service_data.items[0]
+                info["endpoint"] = f"ray://{service.metadata.name}.{service.metadata.namespace}.svc.cluster.local:10001"
+
+    cluster = RayCluster(
+        name=cluster_data["metadata"]["name"],
+        namespace=cluster_data["metadata"]["namespace"],
+        type=cluster_data["metadata"]["labels"]["evntl.io/ray-cluster-type"],
+    )
+    return RayClusterInfo(cluster=cluster, **info)
 
 
 async def main():
     await config.load_kube_config()
-    await delete_ray_cluster(name="foobar", namespace="default")
-    await create_ray_cluster(
-        name="foobar",
-        namespace="default",
-        cluster_type=ClusterType.SMALL
-    )
-    print(await list_ray_clusters(namespace="default"))
-    print(json.dumps(await describe_ray_cluster(name="foobar", namespace="default"), indent=4))
+    # await delete_ray_cluster(name="foobar", namespace="default")
+    # print(await create_ray_cluster(name="foobar", namespace="default", cluster_type=ClusterType.SMALL))
+    # print(await list_ray_clusters(namespace="default"))
+    print(await describe_ray_cluster(name="foobar", namespace="default"))
 
 
 if __name__ == "__main__":
