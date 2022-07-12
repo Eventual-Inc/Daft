@@ -42,7 +42,10 @@ spec:
                   fieldRef:
                     fieldPath: status.podIP
             ports:
-              - containerPort: 6379
+              - name: redis
+                containerPort: 6379
+              - name: server
+                containerPort: 10001
             lifecycle:
               preStop:
                 exec:
@@ -64,7 +67,7 @@ spec:
                 - sh
                 - -c
                 - >
-                  until nc -z $RAY_IP.$(__POD_NAMESPACE__).svc.cluster.local 6379; do
+                  until nc -z $RAY_IP.$(__POD_NAMESPACE__).svc.cluster.local 10001; do
                     sleep 0.1
                   done
               env:
