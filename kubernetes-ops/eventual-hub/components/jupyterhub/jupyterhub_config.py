@@ -32,10 +32,20 @@ c.KubeIngressProxy.extra_annotations = {
     "traefik.ingress.kubernetes.io/service.serverstransport": "eventual-hub-proxy@file",
 }
 
+# Database connection if running in a cluster environment
+if "JUPYTERHUB_DB_SERVICE_HOST" in os.environ:
+    assert "JUPYTERHUB_DB_SERVICE_HOST" in os.environ
+    assert "JUPYTERHUB_DB_USERNAME" in os.environ
+    assert "JUPYTERHUB_DB_PASSWORD" in os.environ
+    assert "JUPYTERHUB_DB_TABLE" in os.environ
+    c.JupyterHub.db_url = (
+        f"postgresql://{os.environ['JUPYTERHUB_DB_USERNAME']}:{os.environ['JUPYTERHUB_DB_PASSWORD']}"
+        f"@{os.environ['JUPYTERHUB_DB_SERVICE_HOST']}:5432/{os.environ['JUPYTERHUB_DB_TABLE']}?sslmode=require"
+    )
+
 # Miscellaneous
 c.JupyterHub.cleanup_servers = False
 c.JupyterHub.concurrent_spawn_limit = 1
-# c.JupyterHub.db_url = "postgresql://postgres@postgres:5432/postgres?sslmode=require"
 c.JupyterHub.internal_ssl = True
 c.JupyterHub.external_ssl_authorities = {
     name: {
