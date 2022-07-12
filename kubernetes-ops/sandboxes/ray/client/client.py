@@ -1,22 +1,24 @@
+import asyncio
 import copy
 import enum
 import functools
 import json
-from typing import Any, Callable, Dict, List, Optional, TypeVar, overload
+from typing import (Any, Awaitable, Callable, Dict, List, Optional, TypeVar,
+                    overload)
 
 import pydantic
 import tenacity
 import yaml
-from kubernetes import client, config
+from kubernetes_asyncio import client, config
 
 T = TypeVar("T")
-FuncT = Callable[..., T]
-FuncOptT = Callable[..., Optional[T]]
+FuncT = Callable[..., Awaitable[T]]
+FuncOptT = Callable[..., Awaitable[Optional[T]]]
 
 
 def _should_retry(e: Exception) -> bool:
     # Retry on transient timeouts
-    if isinstance(e, TimeoutError):
+    if isinstance(e, (TimeoutError, asyncio.TimeoutError)):
         return True
 
     if not isinstance(e, client.rest.ApiException):
@@ -54,7 +56,7 @@ def retryable(ignore: List[int]) -> Callable[[FuncT], FuncOptT]:
 def retryable(ignore: Optional[List[int]] = None) -> Callable[[FuncT], FuncOptT]:
     def decorator(func: FuncT) -> FuncOptT:
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Optional[T]:
+        async def wrapper(*args: Any, **kwargs: Any) -> Optional[T]:
             try:
                 # TODO: tune retry policy
                 retry_decorator = tenacity.retry(
@@ -64,7 +66,14 @@ def retryable(ignore: Optional[List[int]] = None) -> Callable[[FuncT], FuncOptT]
                     reraise=True,
                 )
 
-                return retry_decorator(func)(*args, **kwargs)
+                # `func` maybe an asyncio coroutine function or a callable
+                # that returns an asyncio coroutine. In order to seamlessly
+                # handle both these cases, we wrap it as follows:
+                @retry_decorator
+                async def _inner() -> Optional[T]:
+                    return await func(*args, **kwargs)
+
+                return await _inner()
 
             except client.rest.ApiException as e:
                 if ignore is None or e.status not in ignore:
@@ -104,7 +113,7 @@ def load_config() -> ClientConfig:
 
 # TODO: what else do we want to parametrize?
 # TODO: switch to t-shirt size node configurations!!
-def create_ray_cluster(
+async def create_ray_cluster(
     *, name: str, namespace: str, cluster_type: ClusterType
 ):
     config = load_config()
@@ -135,34 +144,35 @@ def create_ray_cluster(
     )
     worker_group_container["resources"] = {"limits": {"cpu": str(cluster_config.worker_cpu), "memory": cluster_config.worker_memory}}
 
-    api = client.CustomObjectsApi()
-    retryable()(api.create_namespaced_custom_object)(
-        group="ray.io",
-        version="v1alpha1",
-        plural="rayclusters",
-        namespace=namespace,
-        body=template,
-    )
+    async with client.ApiClient() as api_client:
+        api = client.CustomObjectsApi(api_client=api_client)
+        await retryable()(api.create_namespaced_custom_object)(
+            group="ray.io",
+            version="v1alpha1",
+            plural="rayclusters",
+            namespace=namespace,
+            body=template,
+        )
 
 
-def delete_ray_cluster(*, name: str, namespace: str):
-    api = client.CustomObjectsApi()
-    retryable(ignore=[404])(api.delete_namespaced_custom_object)(
-        group="ray.io", version="v1alpha1", plural="rayclusters", name=name, namespace=namespace
-    )
+async def delete_ray_cluster(*, name: str, namespace: str):
+    async with client.ApiClient() as api_client:
+        api = client.CustomObjectsApi(api_client=api_client)
+        await retryable(ignore=[404])(api.delete_namespaced_custom_object)(
+            group="ray.io", version="v1alpha1", plural="rayclusters", name=name, namespace=namespace
+        )
 
 
-def list_ray_clusters(*, namespace: str):
-    api = client.CustomObjectsApi()
-    items = retryable()(api.list_namespaced_custom_object)(
-        group="ray.io", version="v1alpha1", plural="rayclusters", namespace=namespace
-    )["items"]
-    return [{"name": i["metadata"]["name"], "status": i.get("status", {})} for i in items]
+async def list_ray_clusters(*, namespace: str):
+    async with client.ApiClient() as api_client:
+        api = client.CustomObjectsApi(api_client=api_client)
+        data = await retryable()(api.list_namespaced_custom_object)(
+            group="ray.io", version="v1alpha1", plural="rayclusters", namespace=namespace
+        )
+    return [{"name": i["metadata"]["name"], "status": i.get("status", {})} for i in data["items"]]
 
 
-def _get_events_for_object(*, uid: str, namespace: str):
-    api = client.EventsV1beta1Api()
-
+async def _get_events_for_object(*, uid: str, namespace: str):
     class FakeEventTime:
         def __get__(self, obj, objtype=None):
             return obj._event_time
@@ -174,40 +184,45 @@ def _get_events_for_object(*, uid: str, namespace: str):
     # See: https://github.com/kubernetes-client/python/issues/1826
     # Fix from: https://stackoverflow.com/a/72591958
     client.V1beta1Event.event_time = FakeEventTime()
-    items = retryable()(api.list_namespaced_event)(namespace="default", field_selector=f"regarding.uid={uid}").items
+
+    async with client.ApiClient() as api_client:
+        api = client.EventsV1beta1Api(api_client=api_client)
+        data = await retryable()(api.list_namespaced_event)(namespace="default", field_selector=f"regarding.uid={uid}")
     return [
         {
             "timestamp": i.metadata.creation_timestamp.isoformat(),
             **{k: getattr(i, k) for k in ("note", "reason", "type")},
         }
-        for i in items
+        for i in data.items
     ]
 
 
-def describe_ray_cluster(*, name: str, namespace: str):
-    api = client.CustomObjectsApi()
-    data = retryable()(api.get_namespaced_custom_object)(
-        group="ray.io", version="v1alpha1", plural="rayclusters", name=name, namespace=namespace
-    )
+async def describe_ray_cluster(*, name: str, namespace: str):
+    async with client.ApiClient() as api_client:
+        api = client.CustomObjectsApi(api_client=api_client)
+        data = await retryable()(api.get_namespaced_custom_object)(
+            group="ray.io", version="v1alpha1", plural="rayclusters", name=name, namespace=namespace
+        )
     data["status"] = status = data.get("status", {})
-    status["events"] = _get_events_for_object(uid=data["metadata"]["uid"], namespace=namespace)
+    status["events"] = await _get_events_for_object(uid=data["metadata"]["uid"], namespace=namespace)
     return data
 
 
-def get_ray_cluster_endpoint(*, name: str, namespace: str):
+async def get_ray_cluster_endpoint(*, name: str, namespace: str):
     ...
 
-def main():
-    config.load_kube_config()
-    delete_ray_cluster(name="foobar", namespace="default")
-    create_ray_cluster(
+
+async def main():
+    await config.load_kube_config()
+    await delete_ray_cluster(name="foobar", namespace="default")
+    await create_ray_cluster(
         name="foobar",
         namespace="default",
         cluster_type=ClusterType.SMALL
     )
-    print(list_ray_clusters(namespace="default"))
-    print(json.dumps(describe_ray_cluster(name="foobar", namespace="default"), indent=4))
+    print(await list_ray_clusters(namespace="default"))
+    print(json.dumps(await describe_ray_cluster(name="foobar", namespace="default"), indent=4))
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
