@@ -5,6 +5,7 @@ resources:
   - rbac.yaml
   - secrets.yaml
   - service.yaml
+  - db.yaml
 configMapGenerator:
   - name: jupyterhub-config
     files:
