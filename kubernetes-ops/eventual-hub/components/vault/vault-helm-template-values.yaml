@@ -2,7 +2,6 @@
 # https://github.com/hashicorp/vault-helm/blob/main/values.yaml
 
 global:
-  enabled: false
   externalVaultAddr: https://vault-cluster-private-vault-0526b740.fc372388.z1.hashicorp.cloud:8200
 
 injector:
