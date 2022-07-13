@@ -1,0 +1,135 @@
+cluster_configs:
+  small:
+    head_cpu: 1
+    head_memory: "512Mi"
+    worker_cpu: 1
+    worker_memory: "512Mi"
+    max_workers: 5
+  medium:
+    head_cpu: 1
+    head_memory: "1Gi"
+    worker_cpu: 1
+    worker_memory: "1Gi"
+    max_workers: 10
+  large:
+    head_cpu: 1
+    head_memory: "2Gi"
+    worker_cpu: 1
+    worker_memory: "2Gi"
+    max_workers: 10
+template:
+  apiVersion: ray.io/v1alpha1
+  kind: RayCluster
+  metadata:
+    name: example
+  spec:
+    rayVersion: "1.13.1"
+    headGroupSpec:
+      serviceType: ClusterIP
+      replicas: 1
+      rayStartParams:
+        object-store-memory: "100000000"
+        node-ip-address: $(__POD_IP__)
+        block: "true"
+      template:
+        spec:
+          containers:
+            - name: ray-head
+              image: rayproject/ray:1.13.1-py39
+              env:
+                - name: CPU_REQUEST
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: ray-head
+                      resource: requests.cpu
+                - name: CPU_LIMITS
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: ray-head
+                      resource: limits.cpu
+                - name: MEMORY_LIMITS
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: ray-head
+                      resource: limits.memory
+                - name: MEMORY_REQUESTS
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: ray-head
+                      resource: requests.memory
+                - name: __POD_IP__
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.podIP
+              ports:
+                - name: redis
+                  containerPort: 6379
+                - name: server
+                  containerPort: 10001
+              lifecycle:
+                preStop:
+                  exec:
+                    command: ["/bin/sh", "-c", "ray stop"]
+    workerGroupSpecs:
+      - replicas: 1
+        minReplicas: 1
+        maxReplicas: 1
+        groupName: main
+        rayStartParams:
+          node-ip-address: $(__POD_IP__)
+          block: "true"
+        template:
+          spec:
+            initContainers:
+              - name: wait-for-head-service
+                image: toolbelt/netcat:latest
+                command:
+                  - sh
+                  - -c
+                  - >
+                    until nc -z $RAY_IP.$(__POD_NAMESPACE__).svc.cluster.local 10001; do
+                      sleep 0.1
+                    done
+                env:
+                  - name: __POD_NAMESPACE__
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: metadata.namespace
+            containers:
+              - name: ray-worker
+                image: rayproject/ray:1.13.1-py39
+                env:
+                  - name: RAY_DISABLE_DOCKER_CPU_WARNING
+                    value: "1"
+                  - name: TYPE
+                    value: worker
+                  - name: CPU_REQUEST
+                    valueFrom:
+                      resourceFieldRef:
+                        containerName: ray-worker
+                        resource: requests.cpu
+                  - name: CPU_LIMITS
+                    valueFrom:
+                      resourceFieldRef:
+                        containerName: ray-worker
+                        resource: limits.cpu
+                  - name: MEMORY_LIMITS
+                    valueFrom:
+                      resourceFieldRef:
+                        containerName: ray-worker
+                        resource: limits.memory
+                  - name: MEMORY_REQUESTS
+                    valueFrom:
+                      resourceFieldRef:
+                        containerName: ray-worker
+                        resource: requests.memory
+                  - name: __POD_IP__
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: status.podIP
+                ports:
+                  - containerPort: 80
+                lifecycle:
+                  preStop:
+                    exec:
+                      command: ["/bin/sh", "-c", "ray stop"]

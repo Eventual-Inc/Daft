@@ -6,3 +6,7 @@ resources:
 - ingress.yaml
 - ca.yaml
 - cert.yaml
+configMapGenerator:
+  - name: kuberay-client-config
+    files:
+      - kuberay-client-config.yaml

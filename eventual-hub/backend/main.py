@@ -1,17 +1,16 @@
 from typing import List
 
-import kubernetes
+import kubernetes_asyncio
 import requests
+from auth import VerifyToken
 from fastapi import Depends, FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
+from models import (RayCluster, RayClusterInfo, RayClusterType,
+                    UserNotebookDetails)
 from pydantic import BaseModel
-
-from .auth import VerifyToken
-from .models import (RayCluster, RayClusterInfo, RayClusterType,
-                     UserNotebookDetails)
-from .settings import settings
-from .utils import kuberay, kubernetes
+from settings import settings
+from utils import kuberay, kubernetes
 
 app = FastAPI()
 origins = [
@@ -36,7 +35,7 @@ TLS_KEY = "/var/run/secrets/certs/tls/tls.key"
 TLS_VERIFY_CRT = "/var/run/secrets/certs/tls/ca.crt"
 
 # Load Kubernetes config
-kubernetes.config.load_incluster_config()
+kubernetes_asyncio.config.load_incluster_config()
 
 
 class LaunchNotebookRequest(BaseModel):
@@ -206,7 +205,7 @@ async def list_ray_clusters(response: Response, token: str = Depends(token_auth_
     return await kubernetes.passthrough_http_error(kuberay.list_ray_clusters)(namespace=namespace)
 
 
-@app.get("/api/rayclusters", status_code=status.HTTP_200_OK)
+@app.get("/api/rayclusters/{name}", status_code=status.HTTP_200_OK)
 async def get_ray_cluster(name: str, response: Response, token: str = Depends(token_auth_scheme)) -> RayClusterInfo:
     result = VerifyToken(token.credentials).verify()
     if result.get("status"):
