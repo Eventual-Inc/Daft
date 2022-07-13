@@ -7,6 +7,7 @@ patchesStrategicMerge:
 - use_dev_images.yaml
 - use_jupyterhub_db.yaml
 - use_dev_serviceaccounts.yaml
+- backend_env.yaml
 patchesJson6902:
 - path: use_loadbalancer_traefik_service.yaml
   target:
