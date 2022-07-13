@@ -138,7 +138,7 @@ class LaunchRayClusterRequest(BaseModel):
     type: RayClusterType
 
 
-@app.post("/api/rayclusters", status_code=status.HTTP_201_CREATED)
+@app.post("/api/rayclusters", status_code=status.HTTP_201_CREATED, response_model=RayCluster)
 async def launch_ray_cluster(
     item: LaunchRayClusterRequest, response: Response, token: str = Depends(token_auth_scheme)
 ) -> RayCluster:
@@ -153,7 +153,7 @@ async def launch_ray_cluster(
     )
 
 
-@app.get("/api/rayclusters", status_code=status.HTTP_200_OK)
+@app.get("/api/rayclusters", status_code=status.HTTP_200_OK, response_model=List[RayCluster])
 async def list_ray_clusters(response: Response, token: str = Depends(token_auth_scheme)) -> List[RayCluster]:
     verified_token = get_token_verifier()(token.credentials)
     email = verified_token.email
@@ -164,7 +164,7 @@ async def list_ray_clusters(response: Response, token: str = Depends(token_auth_
     return await kubernetes.passthrough_http_error(kuberay.list_ray_clusters)(namespace=namespace)
 
 
-@app.get("/api/rayclusters/{name}", status_code=status.HTTP_200_OK)
+@app.get("/api/rayclusters/{name}", status_code=status.HTTP_200_OK, response_model=RayClusterInfo)
 async def get_ray_cluster(name: str, response: Response, token: str = Depends(token_auth_scheme)) -> RayClusterInfo:
     verified_token = get_token_verifier()(token.credentials)
     email = verified_token.email
