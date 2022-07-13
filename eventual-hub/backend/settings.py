@@ -1,5 +1,6 @@
 from pydantic import BaseSettings
 
+
 class Settings(BaseSettings):
 
     # Auth0 API settings
@@ -12,3 +13,9 @@ class Settings(BaseSettings):
     # Admin token to be used in Authorization header when hitting Jupyterhub
     jupyterhub_admin_token: str
     jupyterhub_service_address: str
+
+    # Path to Kuberay client configuration
+    kuberay_client_config_path: str
+
+
+settings = Settings()
