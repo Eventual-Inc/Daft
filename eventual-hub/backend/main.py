@@ -1,5 +1,6 @@
 from typing import List
 
+import kubernetes
 import requests
 from fastapi import Depends, FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +34,9 @@ AUTH0_EMAIL_KEY = "https://auth.eventualcomputing.com/claims/email"
 TLS_CRT = "/var/run/secrets/certs/tls/tls.crt"
 TLS_KEY = "/var/run/secrets/certs/tls/tls.key"
 TLS_VERIFY_CRT = "/var/run/secrets/certs/tls/ca.crt"
+
+# Load Kubernetes config
+kubernetes.config.load_incluster_config()
 
 
 class LaunchNotebookRequest(BaseModel):
