@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from models import UserNotebookDetails
 
-from auth import VerifyToken
+from auth import get_token_verifier
 from settings import Settings
 
 app = FastAPI()
@@ -26,7 +26,6 @@ token_auth_scheme = HTTPBearer()
 
 JUPYTERHUB_SERVICE_ADDR = Settings().jupyterhub_service_address
 JUPYTERHUB_TOKEN = Settings().jupyterhub_admin_token
-AUTH0_EMAIL_KEY = "https://auth.eventualcomputing.com/claims/email"
 TLS_CRT = "/var/run/secrets/certs/tls/tls.crt"
 TLS_KEY = "/var/run/secrets/certs/tls/tls.key"
 TLS_VERIFY_CRT = "/var/run/secrets/certs/tls/ca.crt"
@@ -37,16 +36,8 @@ class LaunchNotebookRequest(BaseModel):
 
 @app.post("/api/notebooks")
 async def launch_notebook_server(item: LaunchNotebookRequest, response: Response, token: str = Depends(token_auth_scheme)):
-    result = VerifyToken(token.credentials).verify()
-    if result.get("status"):
-       response.status_code = status.HTTP_400_BAD_REQUEST
-       return result
-
-    if AUTH0_EMAIL_KEY not in result:
-        response.status_code = status.HTTP_500_INTERNAL_ERROR
-        return {"error": "Internal Error: Auth0 token missing email"}
-
-    email = result[AUTH0_EMAIL_KEY]
+    verified_token = get_token_verifier()(token)
+    email = verified_token.email
 
     # HACK(jaychia): Ensure that user is created, probably a better way to do this here?
     create_user = requests.post(
@@ -81,16 +72,8 @@ async def launch_notebook_server(item: LaunchNotebookRequest, response: Response
 
 @app.get("/api/notebooks")
 async def get_notebook_server(response: Response, token: str = Depends(token_auth_scheme)) -> UserNotebookDetails:
-    result = VerifyToken(token.credentials).verify()
-    if result.get("status"):
-       response.status_code = status.HTTP_400_BAD_REQUEST
-       return result
-
-    if AUTH0_EMAIL_KEY not in result:
-        response.status_code = status.HTTP_500_INTERNAL_ERROR
-        return {"error": "Internal Error: Auth0 token missing email"}
-
-    email = result[AUTH0_EMAIL_KEY]
+    verified_token = get_token_verifier()(token)
+    email = verified_token.email
 
     # HACK(jaychia): Ensure that user is created, probably a better way to do this here?
     create_user = requests.post(
@@ -120,16 +103,8 @@ async def get_notebook_server(response: Response, token: str = Depends(token_aut
 
 @app.delete("/api/notebooks")
 async def delete_notebook_server(response: Response, token: str = Depends(token_auth_scheme)):
-    result = VerifyToken(token.credentials).verify()
-    if result.get("status"):
-       response.status_code = status.HTTP_400_BAD_REQUEST
-       return result
-
-    if AUTH0_EMAIL_KEY not in result:
-        response.status_code = status.HTTP_500_INTERNAL_ERROR
-        return {"error": "Internal Error: Auth0 token missing email"}
-
-    email = result[AUTH0_EMAIL_KEY]
+    verified_token = get_token_verifier()(token)
+    email = verified_token.email
 
     # HACK(jaychia): Ensure that user is created, probably a better way to do this here?
     create_user = requests.post(

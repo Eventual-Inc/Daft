@@ -2,39 +2,65 @@ import jwt
 
 from settings import Settings
 
+from pydantic import BaseModel
+from fastapi.exceptions import HTTPException
 
-class VerifyToken():
-    """Does all the token verification using PyJWT"""
+from typing import Callable
 
-    def __init__(self, token):
-        self.token = token
-        self.settings = Settings()
 
-        # This gets the JWKS from a given URL and does processing so you can
-        # use any of the keys available
+AUTH0_EMAIL_KEY = "https://auth.eventualcomputing.com/claims/email"
+
+
+class DecodedToken(BaseModel):
+    email: str
+
+
+def get_token_verifier() -> Callable[[str], DecodedToken]:
+    settings = Settings()
+    if settings.environment == "local_dev":
+        return LocalDevTokenVerifier(settings)
+    return TokenVerifier(settings)
+
+
+class TokenVerifier:
+
+    def __init__(self, settings: Settings):
+        assert self.settings.auth0_domain is not None
+        assert self.settings.auth0_algorithm is not None
+        assert self.settings.auth0_api_audience is not None
+        assert self.settings.auth0_issuer is not None
+        self.settings = settings
+
+    def __call__(self, token: str) -> DecodedToken:
         jwks_url = f'https://{self.settings.auth0_domain}/.well-known/jwks.json'
-        self.jwks_client = jwt.PyJWKClient(jwks_url)
+        jwks_client = jwt.PyJWKClient(jwks_url)
 
-    def verify(self):
-        # This gets the 'kid' from the passed token
         try:
-            self.signing_key = self.jwks_client.get_signing_key_from_jwt(
-                self.token
-            ).key
+            signing_key = jwks_client.get_signing_key_from_jwt(token).key
         except jwt.exceptions.PyJWKClientError as error:
-            return {"status": "error", "msg": error.__str__()}
+            raise HTTPException(403, detail=error.__str__())
         except jwt.exceptions.DecodeError as error:
-            return {"status": "error", "msg": error.__str__()}
+            raise HTTPException(403, detail=error.__str__())
 
         try:
             payload = jwt.decode(
-                self.token,
-                self.signing_key,
+                token,
+                signing_key,
                 algorithms=self.settings.auth0_algorithm,
                 audience=self.settings.auth0_api_audience,
                 issuer=self.settings.auth0_issuer,
             )
-        except Exception as e:
-            return {"status": "error", "message": str(e)}
+        except Exception as error:
+            raise HTTPException(403, detail=error.__str__())
 
-        return payload
+        return DecodedToken(email=payload[AUTH0_EMAIL_KEY])
+
+
+class LocalDevTokenVerifier:
+
+    def __init__(self, settings: Settings):
+        assert settings.environment == "local_dev"
+        self.settings = settings
+
+    def __call__(self, token: str) -> DecodedToken:
+        return DecodedToken(email="dummy@dummy.com")
