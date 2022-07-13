@@ -10,4 +10,4 @@ resources:
 configMapGenerator:
   - name: kuberay-client-config
     files:
-      - kuberay-client-config.yaml
+      - config.yaml=kuberay-client-config.yaml

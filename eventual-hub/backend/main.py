@@ -135,7 +135,7 @@ async def delete_notebook_server(response: Response, token: str = Depends(token_
 
 class LaunchRayClusterRequest(BaseModel):
     name: str
-    cluster_type: RayClusterType
+    type: RayClusterType
 
 
 @app.post("/api/rayclusters", status_code=status.HTTP_201_CREATED)
@@ -149,11 +149,11 @@ async def launch_ray_cluster(
     namespace = "default"
 
     return await kubernetes.passthrough_http_error(kuberay.launch_ray_cluster)(
-        name=item.name, namespace=namespace, cluster_type=item.cluster_type
+        name=item.name, namespace=namespace, cluster_type=item.type
     )
 
 
-@app.get("/api/rayclusters/list", status_code=status.HTTP_200_OK)
+@app.get("/api/rayclusters", status_code=status.HTTP_200_OK)
 async def list_ray_clusters(response: Response, token: str = Depends(token_auth_scheme)) -> List[RayCluster]:
     verified_token = get_token_verifier()(token.credentials)
     email = verified_token.email
