@@ -1,13 +1,16 @@
+from typing import List
+
+import kubernetes_asyncio
 import requests
+from auth import get_token_verifier
 from fastapi import Depends, FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
-from pydantic import BaseModel
-
-from models import UserNotebookDetails
-
-from auth import get_token_verifier
-from settings import Settings
+from models import (DeleteRayClusterRequest, LaunchNotebookRequest,
+                    LaunchRayClusterRequest, RayCluster, RayClusterInfo,
+                    UserNotebookDetails)
+from settings import settings
+from utils import kuberay, kubernetes
 
 app = FastAPI()
 origins = [
@@ -24,18 +27,20 @@ app.add_middleware(
 
 token_auth_scheme = HTTPBearer()
 
-JUPYTERHUB_SERVICE_ADDR = Settings().jupyterhub_service_address
-JUPYTERHUB_TOKEN = Settings().jupyterhub_admin_token
+JUPYTERHUB_SERVICE_ADDR = settings.jupyterhub_service_address
+JUPYTERHUB_TOKEN = settings.jupyterhub_admin_token
 TLS_CRT = "/var/run/secrets/certs/tls/tls.crt"
 TLS_KEY = "/var/run/secrets/certs/tls/tls.key"
 TLS_VERIFY_CRT = "/var/run/secrets/certs/tls/ca.crt"
 
-class LaunchNotebookRequest(BaseModel):
-    image: str = "jupyter/singleuser:latest"
+# Load Kubernetes config
+kubernetes_asyncio.config.load_incluster_config()
 
 
 @app.post("/api/notebooks")
-async def launch_notebook_server(item: LaunchNotebookRequest, response: Response, token: str = Depends(token_auth_scheme)):
+async def launch_notebook_server(
+    item: LaunchNotebookRequest, response: Response, token: str = Depends(token_auth_scheme)
+):
     verified_token = get_token_verifier()(token.credentials)
     email = verified_token.email
 
@@ -122,3 +127,53 @@ async def delete_notebook_server(response: Response, token: str = Depends(token_
     )
     delete_server_response.raise_for_status()
     return "ok"
+
+
+@app.post("/api/rayclusters", status_code=status.HTTP_201_CREATED, response_model=RayCluster)
+async def launch_ray_cluster(
+    item: LaunchRayClusterRequest, response: Response, token: str = Depends(token_auth_scheme)
+) -> RayCluster:
+    verified_token = get_token_verifier()(token.credentials)
+    email = verified_token.email
+
+    # Get user organization's namespace
+    namespace = "default"
+
+    return await kubernetes.passthrough_http_error(kuberay.launch_ray_cluster)(
+        name=item.name, namespace=namespace, cluster_type=item.type
+    )
+
+
+@app.get("/api/rayclusters", status_code=status.HTTP_200_OK, response_model=List[RayCluster])
+async def list_ray_clusters(response: Response, token: str = Depends(token_auth_scheme)) -> List[RayCluster]:
+    verified_token = get_token_verifier()(token.credentials)
+    email = verified_token.email
+
+    # Get user organization's namespace
+    namespace = "default"
+
+    return await kubernetes.passthrough_http_error(kuberay.list_ray_clusters)(namespace=namespace)
+
+
+@app.get("/api/rayclusters/{name}", status_code=status.HTTP_200_OK, response_model=RayClusterInfo)
+async def get_ray_cluster(name: str, response: Response, token: str = Depends(token_auth_scheme)) -> RayClusterInfo:
+    verified_token = get_token_verifier()(token.credentials)
+    email = verified_token.email
+
+    # Get user organization's namespace
+    namespace = "default"
+
+    return await kubernetes.passthrough_http_error(kuberay.get_ray_cluster)(name=name, namespace=namespace)
+
+
+@app.delete("/api/rayclusters", status_code=status.HTTP_200_OK)
+async def delete_ray_cluster(
+    item: DeleteRayClusterRequest, response: Response, token: str = Depends(token_auth_scheme)
+):
+    verified_token = get_token_verifier()(token.credentials)
+    email = verified_token.email
+
+    # Get user organization's namespace
+    namespace = "default"
+
+    return await kubernetes.passthrough_http_error(kuberay.delete_ray_cluster)(name=item.name, namespace=namespace)

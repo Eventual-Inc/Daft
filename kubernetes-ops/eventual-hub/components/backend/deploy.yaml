@@ -24,6 +24,8 @@ spec:
         volumeMounts:
           - mountPath: /var/run/secrets/certs/tls
             name: tls-cert
+          - mountPath: /etc/eventual/kuberay
+            name: kuberay-client-config
         env:
         - name: ENVIRONMENT
           value: prod
@@ -35,7 +37,13 @@ spec:
               name: eventual-hub
               key: JUPYTERHUB_ADMIN_TOKEN
               optional: false
+        - name: KUBERAY_CLIENT_CONFIG_PATH
+          value: /etc/eventual/kuberay/config.yaml
       volumes:
         - name: tls-cert
           secret:
             secretName: backend-hub-service-cert
+        - name: kuberay-client-config
+          configMap:
+            name: kuberay-client-config
+      serviceAccountName: backend-sa

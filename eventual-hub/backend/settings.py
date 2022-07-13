@@ -3,6 +3,7 @@ from pydantic import BaseSettings, validator
 
 from typing import Dict, Optional
 
+
 class Settings(BaseSettings):
 
     environment: str
@@ -17,3 +18,9 @@ class Settings(BaseSettings):
     # Admin token to be used in Authorization header when hitting Jupyterhub
     jupyterhub_admin_token: str
     jupyterhub_service_address: str
+
+    # Path to Kuberay client configuration
+    kuberay_client_config_path: str
+
+
+settings = Settings()
