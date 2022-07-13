@@ -81,20 +81,16 @@ def k8s_retryable(ignore: Optional[List[int]] = None) -> Callable[[FuncT], FuncO
     return decorator
 
 
-def passthrough_status_code(response: fastapi.Response) -> Callable[[FuncT], FuncT]:
-    def decorator(func: FuncT) -> FuncOptT:
-        @functools.wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> T:
-            try:
+def passthrough_http_error(func: FuncT) -> FuncT:
+    @functools.wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> T:
+        try:
 
-                async def _inner() -> T:
-                    return await func(*args, **kwargs)
+            async def _inner() -> T:
+                return await func(*args, **kwargs)
 
-                return await _inner()
-            except client.rest.ApiException as e:
-                response.status_code = e.status
-                raise e
+            return await _inner()
+        except client.rest.ApiException as e:
+            raise fastapi.HTTPException(status_code=e.status, detail=e.reason)
 
-        return wrapper
-
-    return decorator
+    return wrapper

@@ -182,7 +182,7 @@ async def launch_ray_cluster(
     # Get user organization's namespace
     namespace = "default"
 
-    return await kubernetes.passthrough_status_code(response)(kuberay.launch_ray_cluster)(
+    return await kubernetes.passthrough_http_error(kuberay.launch_ray_cluster)(
         name=item.name, namespace=namespace, cluster_type=item.cluster_type
     )
 
@@ -203,7 +203,7 @@ async def list_ray_clusters(response: Response, token: str = Depends(token_auth_
     # Get user organization's namespace
     namespace = "default"
 
-    return await kubernetes.passthrough_status_code(response)(kuberay.list_ray_clusters)(namespace=namespace)
+    return await kubernetes.passthrough_http_error(kuberay.list_ray_clusters)(namespace=namespace)
 
 
 @app.get("/api/rayclusters", status_code=status.HTTP_200_OK)
@@ -222,7 +222,7 @@ async def get_ray_cluster(name: str, response: Response, token: str = Depends(to
     # Get user organization's namespace
     namespace = "default"
 
-    return await kubernetes.passthrough_status_code(response)(kuberay.get_ray_cluster)(name=name, namespace=namespace)
+    return await kubernetes.passthrough_http_error(kuberay.get_ray_cluster)(name=name, namespace=namespace)
 
 
 class DeleteRayClusterRequest(BaseModel):
@@ -247,6 +247,4 @@ async def delete_ray_cluster(
     # Get user organization's namespace
     namespace = "default"
 
-    return await kubernetes.passthrough_status_code(response)(kuberay.delete_ray_cluster)(
-        name=item.name, namespace=namespace
-    )
+    return await kubernetes.passthrough_http_error(kuberay.delete_ray_cluster)(name=item.name, namespace=namespace)
