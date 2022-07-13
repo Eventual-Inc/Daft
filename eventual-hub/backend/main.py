@@ -2,7 +2,7 @@ from typing import List
 
 import kubernetes_asyncio
 import requests
-from auth import VerifyToken
+from auth import get_token_verifier
 from fastapi import Depends, FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
@@ -29,7 +29,6 @@ token_auth_scheme = HTTPBearer()
 
 JUPYTERHUB_SERVICE_ADDR = settings.jupyterhub_service_address
 JUPYTERHUB_TOKEN = settings.jupyterhub_admin_token
-AUTH0_EMAIL_KEY = "https://auth.eventualcomputing.com/claims/email"
 TLS_CRT = "/var/run/secrets/certs/tls/tls.crt"
 TLS_KEY = "/var/run/secrets/certs/tls/tls.key"
 TLS_VERIFY_CRT = "/var/run/secrets/certs/tls/ca.crt"
@@ -46,16 +45,8 @@ class LaunchNotebookRequest(BaseModel):
 async def launch_notebook_server(
     item: LaunchNotebookRequest, response: Response, token: str = Depends(token_auth_scheme)
 ):
-    result = VerifyToken(token.credentials).verify()
-    if result.get("status"):
-        response.status_code = status.HTTP_400_BAD_REQUEST
-        return result
-
-    if AUTH0_EMAIL_KEY not in result:
-        response.status_code = status.HTTP_500_INTERNAL_ERROR
-        return {"error": "Internal Error: Auth0 token missing email"}
-
-    email = result[AUTH0_EMAIL_KEY]
+    verified_token = get_token_verifier()(token.credentials)
+    email = verified_token.email
 
     # HACK(jaychia): Ensure that user is created, probably a better way to do this here?
     create_user = requests.post(
@@ -90,16 +81,8 @@ async def launch_notebook_server(
 
 @app.get("/api/notebooks")
 async def get_notebook_server(response: Response, token: str = Depends(token_auth_scheme)) -> UserNotebookDetails:
-    result = VerifyToken(token.credentials).verify()
-    if result.get("status"):
-        response.status_code = status.HTTP_400_BAD_REQUEST
-        return result
-
-    if AUTH0_EMAIL_KEY not in result:
-        response.status_code = status.HTTP_500_INTERNAL_ERROR
-        return {"error": "Internal Error: Auth0 token missing email"}
-
-    email = result[AUTH0_EMAIL_KEY]
+    verified_token = get_token_verifier()(token.credentials)
+    email = verified_token.email
 
     # HACK(jaychia): Ensure that user is created, probably a better way to do this here?
     create_user = requests.post(
@@ -129,16 +112,8 @@ async def get_notebook_server(response: Response, token: str = Depends(token_aut
 
 @app.delete("/api/notebooks")
 async def delete_notebook_server(response: Response, token: str = Depends(token_auth_scheme)):
-    result = VerifyToken(token.credentials).verify()
-    if result.get("status"):
-        response.status_code = status.HTTP_400_BAD_REQUEST
-        return result
-
-    if AUTH0_EMAIL_KEY not in result:
-        response.status_code = status.HTTP_500_INTERNAL_ERROR
-        return {"error": "Internal Error: Auth0 token missing email"}
-
-    email = result[AUTH0_EMAIL_KEY]
+    verified_token = get_token_verifier()(token.credentials)
+    email = verified_token.email
 
     # HACK(jaychia): Ensure that user is created, probably a better way to do this here?
     create_user = requests.post(
@@ -167,16 +142,8 @@ class LaunchRayClusterRequest(BaseModel):
 async def launch_ray_cluster(
     item: LaunchRayClusterRequest, response: Response, token: str = Depends(token_auth_scheme)
 ) -> RayCluster:
-    result = VerifyToken(token.credentials).verify()
-    if result.get("status"):
-        response.status_code = status.HTTP_400_BAD_REQUEST
-        return result
-
-    if AUTH0_EMAIL_KEY not in result:
-        response.status_code = status.HTTP_500_INTERNAL_ERROR
-        return {"error": "Internal Error: Auth0 token missing email"}
-
-    email = result[AUTH0_EMAIL_KEY]
+    verified_token = get_token_verifier()(token.credentials)
+    email = verified_token.email
 
     # Get user organization's namespace
     namespace = "default"
@@ -188,16 +155,8 @@ async def launch_ray_cluster(
 
 @app.get("/api/rayclusters/list", status_code=status.HTTP_200_OK)
 async def list_ray_clusters(response: Response, token: str = Depends(token_auth_scheme)) -> List[RayCluster]:
-    result = VerifyToken(token.credentials).verify()
-    if result.get("status"):
-        response.status_code = status.HTTP_400_BAD_REQUEST
-        return result
-
-    if AUTH0_EMAIL_KEY not in result:
-        response.status_code = status.HTTP_500_INTERNAL_ERROR
-        return {"error": "Internal Error: Auth0 token missing email"}
-
-    email = result[AUTH0_EMAIL_KEY]
+    verified_token = get_token_verifier()(token.credentials)
+    email = verified_token.email
 
     # Get user organization's namespace
     namespace = "default"
@@ -207,16 +166,8 @@ async def list_ray_clusters(response: Response, token: str = Depends(token_auth_
 
 @app.get("/api/rayclusters/{name}", status_code=status.HTTP_200_OK)
 async def get_ray_cluster(name: str, response: Response, token: str = Depends(token_auth_scheme)) -> RayClusterInfo:
-    result = VerifyToken(token.credentials).verify()
-    if result.get("status"):
-        response.status_code = status.HTTP_400_BAD_REQUEST
-        return result
-
-    if AUTH0_EMAIL_KEY not in result:
-        response.status_code = status.HTTP_500_INTERNAL_ERROR
-        return {"error": "Internal Error: Auth0 token missing email"}
-
-    email = result[AUTH0_EMAIL_KEY]
+    verified_token = get_token_verifier()(token.credentials)
+    email = verified_token.email
 
     # Get user organization's namespace
     namespace = "default"
@@ -232,16 +183,8 @@ class DeleteRayClusterRequest(BaseModel):
 async def delete_ray_cluster(
     item: DeleteRayClusterRequest, response: Response, token: str = Depends(token_auth_scheme)
 ):
-    result = VerifyToken(token.credentials).verify()
-    if result.get("status"):
-        response.status_code = status.HTTP_400_BAD_REQUEST
-        return result
-
-    if AUTH0_EMAIL_KEY not in result:
-        response.status_code = status.HTTP_500_INTERNAL_ERROR
-        return {"error": "Internal Error: Auth0 token missing email"}
-
-    email = result[AUTH0_EMAIL_KEY]
+    verified_token = get_token_verifier()(token.credentials)
+    email = verified_token.email
 
     # Get user organization's namespace
     namespace = "default"

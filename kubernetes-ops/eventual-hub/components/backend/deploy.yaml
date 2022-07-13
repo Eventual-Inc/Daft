@@ -27,14 +27,8 @@ spec:
           - mountPath: /etc/eventual/kuberay
             name: kuberay-client-config
         env:
-        - name: AUTH0_DOMAIN
-          value: eventual-dev.us.auth0.com
-        - name: AUTH0_API_AUDIENCE
-          value: https://auth.eventualcomputing.com
-        - name: AUTH0_ALGORITHM
-          value: RS256
-        - name: AUTH0_ISSUER
-          value: https://eventual-dev.us.auth0.com/
+        - name: ENVIRONMENT
+          value: prod
         - name: JUPYTERHUB_SERVICE_ADDRESS
           value: https://jupyterhub.default:8081/jupyter/hub/api
         - name: JUPYTERHUB_ADMIN_TOKEN
