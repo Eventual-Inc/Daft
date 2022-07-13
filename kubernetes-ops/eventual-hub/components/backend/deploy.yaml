@@ -52,3 +52,4 @@ spec:
         - name: kuberay-client-config
           configMap:
             name: kuberay-client-config
+      serviceAccountName: backend-sa
