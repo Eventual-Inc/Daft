@@ -25,10 +25,10 @@ def get_token_verifier() -> Callable[[str], DecodedToken]:
 class TokenVerifier:
 
     def __init__(self, settings: Settings):
-        assert self.settings.auth0_domain is not None
-        assert self.settings.auth0_algorithm is not None
-        assert self.settings.auth0_api_audience is not None
-        assert self.settings.auth0_issuer is not None
+        assert settings.auth0_domain is not None
+        assert settings.auth0_algorithm is not None
+        assert settings.auth0_api_audience is not None
+        assert settings.auth0_issuer is not None
         self.settings = settings
 
     def __call__(self, token: str) -> DecodedToken:

@@ -36,7 +36,7 @@ class LaunchNotebookRequest(BaseModel):
 
 @app.post("/api/notebooks")
 async def launch_notebook_server(item: LaunchNotebookRequest, response: Response, token: str = Depends(token_auth_scheme)):
-    verified_token = get_token_verifier()(token)
+    verified_token = get_token_verifier()(token.credentials)
     email = verified_token.email
 
     # HACK(jaychia): Ensure that user is created, probably a better way to do this here?
@@ -72,7 +72,7 @@ async def launch_notebook_server(item: LaunchNotebookRequest, response: Response
 
 @app.get("/api/notebooks")
 async def get_notebook_server(response: Response, token: str = Depends(token_auth_scheme)) -> UserNotebookDetails:
-    verified_token = get_token_verifier()(token)
+    verified_token = get_token_verifier()(token.credentials)
     email = verified_token.email
 
     # HACK(jaychia): Ensure that user is created, probably a better way to do this here?
@@ -103,7 +103,7 @@ async def get_notebook_server(response: Response, token: str = Depends(token_aut
 
 @app.delete("/api/notebooks")
 async def delete_notebook_server(response: Response, token: str = Depends(token_auth_scheme)):
-    verified_token = get_token_verifier()(token)
+    verified_token = get_token_verifier()(token.credentials)
     email = verified_token.email
 
     # HACK(jaychia): Ensure that user is created, probably a better way to do this here?
