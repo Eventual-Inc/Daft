@@ -207,16 +207,16 @@ async def list_ray_clusters(response: Response, token: str = Depends(token_auth_
 
 @app.get("/api/rayclusters/{name}", status_code=status.HTTP_200_OK)
 async def get_ray_cluster(name: str, response: Response, token: str = Depends(token_auth_scheme)) -> RayClusterInfo:
-    # result = VerifyToken(token.credentials).verify()
-    # if result.get("status"):
-    #     response.status_code = status.HTTP_400_BAD_REQUEST
-    #     return result
+    result = VerifyToken(token.credentials).verify()
+    if result.get("status"):
+        response.status_code = status.HTTP_400_BAD_REQUEST
+        return result
 
-    # if AUTH0_EMAIL_KEY not in result:
-    #     response.status_code = status.HTTP_500_INTERNAL_ERROR
-    #     return {"error": "Internal Error: Auth0 token missing email"}
+    if AUTH0_EMAIL_KEY not in result:
+        response.status_code = status.HTTP_500_INTERNAL_ERROR
+        return {"error": "Internal Error: Auth0 token missing email"}
 
-    # email = result[AUTH0_EMAIL_KEY]
+    email = result[AUTH0_EMAIL_KEY]
 
     # Get user organization's namespace
     namespace = "default"
