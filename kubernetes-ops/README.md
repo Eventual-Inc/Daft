@@ -55,36 +55,29 @@ kubectl apply -k kubernetes-ops/eventual-hub/installs/cluster_dev
 
 ### Vault
 
-We deploy Vault using the default releases provided by Vault.
+We deploy Vault on Hashicorp Cloud Platform as a managed service that is VPC-peered into our cluster, and integrate with it via the Vault Kubernetes Agent Injector. The injector is part of the `eventual-hub` Kustomize package.
+
+Setting up Vault:
+
+#### Enable AWS Authentication
+
+Now we need to enable the AWS auth method to allow us to authenticate with Vault using AWS IAM entities (see: [AWS Auth Method](https://www.vaultproject.io/docs/auth/aws) and [Create STS Role](https://www.vaultproject.io/api-docs/auth/aws#create-sts-role)).
 
 ```
-helm install vault vault --values vault/values.yaml
-```
-
-This installs a single-instance non-HA installation of Vault in the cluster. We will move this out into a Hashicorp Vault cluster deployment instead in the future.
-
-> If this is the first time Vault is being installed, we need to initialize and unseal it.
-> 1. Initialize Vault with: `kubectl exec -ti vault-0 -- vault operator init`
-> 2. Unseal Vault with  3 different seal keys: `kubectl exec -ti vault-0 -- vault operator unseal <key_obtained_at_initialization>`
-
-To use a local Vault client:
-
-```
-kubectl port-forward vault-0 8200:8200
-export VAULT_ADDR=http://127.0.0.1:8200
-export VAULT_TOKEN=<vault_root_token_obtained_at_initialization>
-```
-
-Now we need to enable the AWS auth method to allow us to authenticate with Vault using AWS IAM entities (see: [AWS Auth Method](https://www.vaultproject.io/docs/auth/aws))
-
-```
+# Enable AWS authentication to allow us to authenticate with Vault via AWS roles
 vault auth enable aws
-```
 
-We also need to enable AWS secrets to allow us to store and assume AWS roles from Vault:
-
-```
+# Enable AWS secrets to allow us to store and assume AWS roles from Vault
 vault secrets enable aws
+
+# Configures Vault to use the provided IAMUser's credentials when assuming a role in a `GET aws/roles/*` call
+vault write aws/config/root \
+    access_key=<IAM USER ACCESS KEY> \
+    secret_key=<IAM USER ACCESS SECRET> \
+    region=us-west-2
+
+# Configures Vault to use the provided IAMUser's credentials when making API calls to AWS for configuring AWS authentication
+vault write /auth/aws/config/client access_key=<IAM USER ACCESS KEY> secret_key=<IAM USER ACCESS SECRET>
 ```
 
 We create a Vault policy that allows for reading all `aws/sts/userrole-*` secrets - any Vault role that has this policy attached can now *read* these secrets and retrieve credentials for roles stored in these secrets.
@@ -97,13 +90,13 @@ path "aws/sts/userrole-*" {
 EOF
 ```
 
-Now we create a Vault role and link the aforementioned policy to this Vault role. This Vault role can be authenticated against by entities that have assumed the `jay_sandbox_eks_clusterDaftServiceRole` role.
+Now we create a Vault role for the cluster and link the aforementioned policy to this Vault role. This Vault role can be authenticated against by entities that have assumed the `jay_sandbox_eks_cluster-vault-bound-role` role.
 
 ```
 vault write auth/aws/role/daft-service-role \
   auth_type=iam \
   policies=read-all-user-roles \
-  bound_iam_principal_arn=arn:aws:iam::941892620273:role/jay_sandbox_eks_clusterDaftServiceRole
+  bound_iam_principal_arn=arn:aws:iam::941892620273:role/jay_sandbox_eks_cluster-vault-bound-role
 ```
 
 **Linking User Roles**
@@ -117,3 +110,36 @@ vault write aws/roles/userrole-jay@eventualcomputing.com \
   role_arns=<JAYS_ROLE_ARN> \
   credential_type=assumed_role
 ```
+
+Now any entity that has assumed the `arn:aws:iam::941892620273:role/jay_sandbox_eks-vault-bound-role` role can authenticate to Vault as `daft-service-role` and retrieve credentials for the AWS role stored in the secret at `aws/roles/userrole-jay@eventualcomputing.com`.
+
+**Using Vault from Kubernetes**
+
+To have the Vault injector inject IAM credentials into any pod, add these annotations to the pod spec:
+
+```
+# Enable the Vault Agent to inject secrets
+vault.hashicorp.com/agent-inject: "true"
+# Authenticate as the daft-service-role in Vault, which has a policy that allows it to
+# read secrets at aws/sts/userrole-*
+vault.hashicorp.com/namespace: admin
+vault.hashicorp.com/role: daft-service-role
+vault.hashicorp.com/auth-type: aws
+vault.hashicorp.com/auth-path: auth/aws
+vault.hashicorp.com/auth-config-type: iam
+# Only run an init_container and not the sidecar to pre-populate the file
+vault.hashicorp.com/agent-pre-populate-only: "true"
+# Retrieve the secrets for some user at aws/sts/userrole-<user-hash> and mount it as a file
+# in /vault/secrets/aws-credentials in the application container
+# The application container can then source from this file to have the proper credentials loaded as
+# environment variables.
+vault.hashicorp.com/agent-inject-secret-aws-credentials: aws/sts/userrole-jay@eventualcomputing.com
+vault.hashicorp.com/agent-inject-template-aws-credentials: |
+  {{ with secret "aws/sts/userrole-jay@eventualcomputing.com" "ttl=1h" -}}
+  export AWS_ACCESS_KEY_ID="{{ .Data.access_key }}"
+  export AWS_SECRET_ACCESS_KEY="{{ .Data.secret_key }}"
+  export AWS_SESSION_TOKEN="{{ .Data.security_token }}"
+  {{- end }}
+```
+
+Make sure also that the pod uses the correct Kubernetes service account `serviceAccountName: vault-role-sa` that is linked to our IAM `<CLUSTER>-vault-bound-role`.

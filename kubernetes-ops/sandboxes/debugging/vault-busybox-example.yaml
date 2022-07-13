@@ -2,12 +2,12 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: busybox-sleep
-  namespace: jupyterhub
   annotations:
     # Enable the Vault Agent to inject secrets
     vault.hashicorp.com/agent-inject: "true"
     # Authenticate as the daft-service-role in Vault, which has a policy that allows it to
     # read secrets at aws/sts/userrole-*
+    vault.hashicorp.com/namespace: admin
     vault.hashicorp.com/role: daft-service-role
     vault.hashicorp.com/auth-type: aws
     vault.hashicorp.com/auth-path: auth/aws
@@ -20,7 +20,7 @@ metadata:
     # environment variables.
     vault.hashicorp.com/agent-inject-secret-aws-credentials: aws/sts/userrole-jay@eventualcomputing.com
     vault.hashicorp.com/agent-inject-template-aws-credentials: |
-      {{ with secret "aws/sts/userrole-jay@eventualcomputing.com" "ttl=12h" -}}
+      {{ with secret "aws/sts/userrole-jay@eventualcomputing.com" "ttl=1h" -}}
       export AWS_ACCESS_KEY_ID="{{ .Data.access_key }}"
       export AWS_SECRET_ACCESS_KEY="{{ .Data.secret_key }}"
       export AWS_SESSION_TOKEN="{{ .Data.security_token }}"
@@ -28,7 +28,7 @@ metadata:
 spec:
   # Make sure to use the correct service account that is linked to the
   # jay_sandbox_eks_clusterDaftServiceRole AWS IAM role, so that we can authenticate with Vault
-  serviceAccountName: daft
+  serviceAccountName: vault-role-sa
   containers:
   - name: busybox
     image: busybox:1.28
