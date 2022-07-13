@@ -36,13 +36,6 @@ class RayClusterState(str, Enum):
     READY = "ready"
 
 
-class RayClusterEvent(BaseModel):
-    timestamp: datetime.datetime
-    note: str
-    reason: str
-    type: str
-
-
 class RayCluster(BaseModel):
     name: str
     namespace: str
