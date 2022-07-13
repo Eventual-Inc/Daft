@@ -26,7 +26,7 @@ async def launch_ray_cluster(*, name: str, namespace: str, cluster_type: RayClus
     template["metadata"]["name"] = name
 
     # Inject labels
-    template["metadata"]["labels"] = {"evntl.io/ray-cluster-type": cluster_type.value}
+    template["metadata"]["labels"] = {"ray.io/cluster-type": cluster_type.value}
 
     # Set head node resources
     head_group_container = next(
@@ -76,7 +76,7 @@ async def list_ray_clusters(*, namespace: str) -> List[RayCluster]:
         RayCluster(
             name=i["metadata"]["name"],
             namespace=i["metadata"]["namespace"],
-            type=i["metadata"]["labels"]["evntl.io/ray-cluster-type"],
+            type=i["metadata"]["labels"]["ray.io/cluster-type"],
         )
         for i in data["items"]
     ]
@@ -119,7 +119,7 @@ async def get_ray_cluster(*, name: str, namespace: str) -> RayClusterInfo:
     cluster = RayCluster(
         name=cluster_data["metadata"]["name"],
         namespace=cluster_data["metadata"]["namespace"],
-        type=cluster_data["metadata"]["labels"]["evntl.io/ray-cluster-type"],
+        type=cluster_data["metadata"]["labels"]["ray.io/cluster-type"],
     )
     return RayClusterInfo(cluster=cluster, **info)
 
