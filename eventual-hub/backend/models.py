@@ -1,4 +1,3 @@
-import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
@@ -15,6 +14,10 @@ class UserNotebookDetails(BaseModel):
     url: Optional[str]
     ready: bool
     pending: Optional[str]
+
+
+class LaunchNotebookRequest(BaseModel):
+    image: str = "jupyter/singleuser:latest"
 
 
 class RayClusterType(str, Enum):
@@ -52,3 +55,12 @@ class RayClusterInfo(BaseModel):
 class KuberayClientConfig(BaseModel):
     cluster_configs: Dict[RayClusterType, RayClusterTypeConfig]
     template: Dict[str, Any]
+
+
+class LaunchRayClusterRequest(BaseModel):
+    name: str
+    type: RayClusterType
+
+
+class DeleteRayClusterRequest(BaseModel):
+    name: str

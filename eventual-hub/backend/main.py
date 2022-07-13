@@ -6,9 +6,9 @@ from auth import get_token_verifier
 from fastapi import Depends, FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
-from models import (RayCluster, RayClusterInfo, RayClusterType,
+from models import (DeleteRayClusterRequest, LaunchNotebookRequest,
+                    LaunchRayClusterRequest, RayCluster, RayClusterInfo,
                     UserNotebookDetails)
-from pydantic import BaseModel
 from settings import settings
 from utils import kuberay, kubernetes
 
@@ -35,10 +35,6 @@ TLS_VERIFY_CRT = "/var/run/secrets/certs/tls/ca.crt"
 
 # Load Kubernetes config
 kubernetes_asyncio.config.load_incluster_config()
-
-
-class LaunchNotebookRequest(BaseModel):
-    image: str = "jupyter/singleuser:latest"
 
 
 @app.post("/api/notebooks")
@@ -133,11 +129,6 @@ async def delete_notebook_server(response: Response, token: str = Depends(token_
     return "ok"
 
 
-class LaunchRayClusterRequest(BaseModel):
-    name: str
-    type: RayClusterType
-
-
 @app.post("/api/rayclusters", status_code=status.HTTP_201_CREATED, response_model=RayCluster)
 async def launch_ray_cluster(
     item: LaunchRayClusterRequest, response: Response, token: str = Depends(token_auth_scheme)
@@ -173,10 +164,6 @@ async def get_ray_cluster(name: str, response: Response, token: str = Depends(to
     namespace = "default"
 
     return await kubernetes.passthrough_http_error(kuberay.get_ray_cluster)(name=name, namespace=namespace)
-
-
-class DeleteRayClusterRequest(BaseModel):
-    name: str
 
 
 @app.delete("/api/rayclusters", status_code=status.HTTP_200_OK)
