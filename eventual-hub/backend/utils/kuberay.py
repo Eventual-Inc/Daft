@@ -59,7 +59,7 @@ async def launch_ray_cluster(*, name: str, namespace: str, cluster_type: RayClus
 
     async with client.ApiClient() as api_client:
         api = client.CustomObjectsApi(api_client=api_client)
-        await k8s_retryable()(api.create_namespaced_custom_object)(
+        data = await k8s_retryable()(api.create_namespaced_custom_object)(
             group="ray.io",
             version="v1alpha1",
             plural="rayclusters",
@@ -67,7 +67,12 @@ async def launch_ray_cluster(*, name: str, namespace: str, cluster_type: RayClus
             body=template,
         )
 
-    return RayCluster(name=name, namespace=namespace, type=cluster_type)
+    return RayCluster(
+        name=data["metadata"]["name"],
+        namespace=data["metadata"]["namespace"],
+        type=data["metadata"]["labels"]["ray.io/cluster-type"],
+        started_at=data["metadata"]["creationTimestamp"],
+    )
 
 
 async def list_ray_clusters(*, namespace: str) -> List[RayCluster]:
@@ -81,6 +86,7 @@ async def list_ray_clusters(*, namespace: str) -> List[RayCluster]:
             name=i["metadata"]["name"],
             namespace=i["metadata"]["namespace"],
             type=i["metadata"]["labels"]["ray.io/cluster-type"],
+            started_at=i["metadata"]["creationTimestamp"],
         )
         for i in data["items"]
     ]
@@ -124,6 +130,7 @@ async def get_ray_cluster(*, name: str, namespace: str) -> RayClusterInfo:
         name=cluster_data["metadata"]["name"],
         namespace=cluster_data["metadata"]["namespace"],
         type=cluster_data["metadata"]["labels"]["ray.io/cluster-type"],
+        started_at=cluster_data["metadata"]["creationTimestamp"],
     )
     return RayClusterInfo(cluster=cluster, **info)
 
