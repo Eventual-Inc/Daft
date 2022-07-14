@@ -11,7 +11,6 @@ from models import (
     LaunchNotebookRequest,
     LaunchRayClusterRequest,
     RayCluster,
-    RayClusterInfo,
     UserNotebookDetails,
 )
 from settings import settings
@@ -160,8 +159,8 @@ async def list_ray_clusters(response: Response, token: str = Depends(token_auth_
     return await kubernetes.passthrough_http_error(kuberay.list_ray_clusters)(namespace=namespace)
 
 
-@app.get("/api/rayclusters/{name}", status_code=status.HTTP_200_OK, response_model=RayClusterInfo)
-async def get_ray_cluster(name: str, response: Response, token: str = Depends(token_auth_scheme)) -> RayClusterInfo:
+@app.get("/api/rayclusters/{name}", status_code=status.HTTP_200_OK, response_model=RayCluster)
+async def get_ray_cluster(name: str, response: Response, token: str = Depends(token_auth_scheme)) -> RayCluster:
     verified_token = get_token_verifier()(token.credentials)
     verified_token.email
 
