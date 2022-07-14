@@ -25,6 +25,7 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - uses: actions/cache@v3
+      id: poetry-cache
       with:
         path: ~/.cache/pypoetry/virtualenvs
         key: ${{ runner.os }}-python-${{ steps.setup-python.outputs.python-version }}-poetry-${{ hashFiles('poetry.lock') }}
@@ -39,6 +40,12 @@ jobs:
 # - name: Type Check with Mypy
 #   run: |
 #     poetry run mypy
+    - uses: actions/cache@v3
+      id: pre-commit-cache
+      with:
+        path: ~/.cache/pre-commit/
+        key: ${{ runner.os }}-python-${{ steps.setup-python.outputs.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
     - name: Python Style Check
       run: |
         poetry run pre-commit run --all-files
