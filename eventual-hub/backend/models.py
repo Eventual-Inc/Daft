@@ -45,10 +45,6 @@ class RayCluster(BaseModel):
     namespace: str
     type: RayClusterType
     started_at: datetime.datetime
-
-
-class RayClusterInfo(BaseModel):
-    cluster: RayCluster
     state: RayClusterState = RayClusterState.PENDING
     endpoint: Optional[str] = None
     workers: int = 0
