@@ -41,6 +41,4 @@ jobs:
 #     poetry run mypy
     - name: Python Style Check
       run: |
-        poetry run black --check .
-        poetry run isort  --check .
-        poetry run autoflake -r --check .
+        poetry run pre-commit run --all-files
