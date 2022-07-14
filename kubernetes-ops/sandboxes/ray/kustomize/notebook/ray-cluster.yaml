@@ -27,6 +27,7 @@ spec:
       num-cpus: '1' # can be auto-completed from the limits
       node-ip-address: $MY_POD_IP # auto-completed as the head pod IP
       block: 'true'
+      metrics-export-port: '9090'
     #pod template
     template:
       metadata:
@@ -62,5 +63,7 @@ spec:
             name: gcs-server
           - containerPort: 8265 # Ray dashboard
             name: dashboard
+          - containerPort: 9090
+            name: metrics
           - containerPort: 10001
             name: client

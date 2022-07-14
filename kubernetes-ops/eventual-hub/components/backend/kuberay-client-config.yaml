@@ -28,9 +28,10 @@ template:
       serviceType: ClusterIP
       replicas: 1
       rayStartParams:
+        block: "true"
+        metrics-export-port: "9090"
         object-store-memory: "100000000"
         node-ip-address: $(__POD_IP__)
-        block: "true"
       template:
         spec:
           containers:
@@ -64,6 +65,8 @@ template:
               ports:
                 - name: redis
                   containerPort: 6379
+                - name: metrics
+                  containerPort: 9090
                 - name: server
                   containerPort: 10001
               lifecycle:
@@ -76,8 +79,9 @@ template:
         maxReplicas: 1
         groupName: main
         rayStartParams:
-          node-ip-address: $(__POD_IP__)
           block: "true"
+          metrics-export-port: "9090"
+          node-ip-address: $(__POD_IP__)
         template:
           spec:
             initContainers:
@@ -128,7 +132,8 @@ template:
                       fieldRef:
                         fieldPath: status.podIP
                 ports:
-                  - containerPort: 80
+                  - name: metrics
+                    containerPort: 9090
                 lifecycle:
                   preStop:
                     exec:
