@@ -30,7 +30,7 @@ template:
       rayStartParams:
         block: "true"
         metrics-export-port: "9090"
-        object-store-memory: "100000000"
+        object-store-memory: "$$((5 * $(__MEMORY_LIMITS__) / 10))"
         node-ip-address: $(__POD_IP__)
       template:
         spec:
@@ -38,26 +38,11 @@ template:
             - name: ray-head
               image: rayproject/ray:1.13.1-py39
               env:
-                - name: CPU_REQUEST
-                  valueFrom:
-                    resourceFieldRef:
-                      containerName: ray-head
-                      resource: requests.cpu
-                - name: CPU_LIMITS
-                  valueFrom:
-                    resourceFieldRef:
-                      containerName: ray-head
-                      resource: limits.cpu
-                - name: MEMORY_LIMITS
+                - name: __MEMORY_LIMITS__
                   valueFrom:
                     resourceFieldRef:
                       containerName: ray-head
                       resource: limits.memory
-                - name: MEMORY_REQUESTS
-                  valueFrom:
-                    resourceFieldRef:
-                      containerName: ray-head
-                      resource: requests.memory
                 - name: __POD_IP__
                   valueFrom:
                     fieldRef:
@@ -82,6 +67,7 @@ template:
           block: "true"
           metrics-export-port: "9090"
           node-ip-address: $(__POD_IP__)
+          object-store-memory: "$(__MEMORY_LIMITS__)"
         template:
           spec:
             initContainers:
@@ -107,26 +93,11 @@ template:
                     value: "1"
                   - name: TYPE
                     value: worker
-                  - name: CPU_REQUEST
-                    valueFrom:
-                      resourceFieldRef:
-                        containerName: ray-worker
-                        resource: requests.cpu
-                  - name: CPU_LIMITS
-                    valueFrom:
-                      resourceFieldRef:
-                        containerName: ray-worker
-                        resource: limits.cpu
-                  - name: MEMORY_LIMITS
+                  - name: __MEMORY_LIMITS__
                     valueFrom:
                       resourceFieldRef:
                         containerName: ray-worker
                         resource: limits.memory
-                  - name: MEMORY_REQUESTS
-                    valueFrom:
-                      resourceFieldRef:
-                        containerName: ray-worker
-                        resource: requests.memory
                   - name: __POD_IP__
                     valueFrom:
                       fieldRef:
