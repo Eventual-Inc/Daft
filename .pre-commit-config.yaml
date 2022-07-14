@@ -23,7 +23,7 @@ repos:
     - id: requirements-txt-fixer
 
   - repo: https://github.com/psf/black
-    rev: 21.12b0
+    rev: "22.6.0"
     hooks:
     -   id: black
 
@@ -33,7 +33,7 @@ repos:
       - id: isort
         name: isort (python)
         args: ["--profile", "black", "--filter-files"]
-    
+
   - repo: https://github.com/myint/autoflake
     rev: "v1.4"
     hooks:
