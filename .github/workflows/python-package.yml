@@ -36,9 +36,9 @@ jobs:
     - name: Test with pytest
       run: |
         poetry run pytest
-    - name: Type Check with Mypy
-      run: |
-        poetry run mypy
+# - name: Type Check with Mypy
+#   run: |
+#     poetry run mypy
     - name: Python Style Check
       run: |
         poetry run black --check .

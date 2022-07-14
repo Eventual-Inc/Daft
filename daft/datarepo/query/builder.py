@@ -5,7 +5,6 @@ from typing import ForwardRef, Literal, Tuple, Type, Union, cast
 
 import networkx as NX
 import ray
-from icebridge.client import IcebergTable
 
 from daft.dataclasses import DataclassBuilder
 from daft.datarepo.query import expressions

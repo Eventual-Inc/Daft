@@ -2,8 +2,6 @@ from dataclasses import fields, is_dataclass
 from typing import Dict, List
 
 import numpy as np
-import PIL
-import PIL.Image
 
 from daft.dataclasses import DataclassBuilder, dataclass
 from daft.fields import DaftImageField
@@ -35,8 +33,7 @@ def test_dataclass_with_args() -> None:
 
 
 def test_dataclass_with_nested_structures() -> None:
-    from daft.fields import DaftImageField
-    from daft.types import DaftImageType
+    pass
 
     @dataclass
     class SomeSubClass:

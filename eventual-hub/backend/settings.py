@@ -1,7 +1,6 @@
-from typing import Dict, Optional
+from typing import Optional
 
-from pkg_resources import require
-from pydantic import BaseSettings, validator
+from pydantic import BaseSettings
 
 
 class Settings(BaseSettings):

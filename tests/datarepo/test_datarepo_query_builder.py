@@ -6,7 +6,6 @@ from daft.dataclasses import DataclassBuilder, dataclass
 from daft.datarepo.datarepo import DataRepo
 from daft.datarepo.query import functions as F
 from daft.datarepo.query import stages
-from daft.datarepo.query.expressions import QueryColumn
 
 from .utils import create_test_catalog
 

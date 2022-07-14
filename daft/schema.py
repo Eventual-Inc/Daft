@@ -18,7 +18,6 @@ from typing import (
     get_origin,
 )
 
-import dacite
 import numpy as np
 import PIL
 import PIL.Image
@@ -27,7 +26,6 @@ import pyarrow as pa
 from daft import types
 from daft.fields import DaftFieldMetadata
 from daft.types import DaftType
-from daft.utils import _patch_class_for_deserialization
 
 _DaftTypeLookup = dict(getmembers(types))
 

@@ -1,6 +1,5 @@
 import tempfile
 
-import fsspec
 import numpy as np
 
 from daft.dataclasses import dataclass

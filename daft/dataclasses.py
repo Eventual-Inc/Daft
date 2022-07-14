@@ -13,7 +13,6 @@ from typing import (
 )
 
 from daft.schema import DaftSchema
-from daft.utils import _patch_class_for_deserialization
 
 _T = TypeVar("_T")
 

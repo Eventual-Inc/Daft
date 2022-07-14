@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import List, Optional, Type, TypeVar
 
-import fsspec
 from icebridge.client import IcebergCatalog, IceBridgeClient
 
 from daft import config

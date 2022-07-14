@@ -139,7 +139,7 @@ async def launch_ray_cluster(
     item: LaunchRayClusterRequest, response: Response, token: str = Depends(token_auth_scheme)
 ) -> RayCluster:
     verified_token = get_token_verifier()(token.credentials)
-    email = verified_token.email
+    verified_token.email
 
     # Get user organization's namespace
     namespace = "default"
@@ -152,7 +152,7 @@ async def launch_ray_cluster(
 @app.get("/api/rayclusters", status_code=status.HTTP_200_OK, response_model=List[RayCluster])
 async def list_ray_clusters(response: Response, token: str = Depends(token_auth_scheme)) -> List[RayCluster]:
     verified_token = get_token_verifier()(token.credentials)
-    email = verified_token.email
+    verified_token.email
 
     # Get user organization's namespace
     namespace = "default"
@@ -163,7 +163,7 @@ async def list_ray_clusters(response: Response, token: str = Depends(token_auth_
 @app.get("/api/rayclusters/{name}", status_code=status.HTTP_200_OK, response_model=RayClusterInfo)
 async def get_ray_cluster(name: str, response: Response, token: str = Depends(token_auth_scheme)) -> RayClusterInfo:
     verified_token = get_token_verifier()(token.credentials)
-    email = verified_token.email
+    verified_token.email
 
     # Get user organization's namespace
     namespace = "default"
@@ -176,7 +176,7 @@ async def delete_ray_cluster(
     item: DeleteRayClusterRequest, response: Response, token: str = Depends(token_auth_scheme)
 ):
     verified_token = get_token_verifier()(token.credentials)
-    email = verified_token.email
+    verified_token.email
 
     # Get user organization's namespace
     namespace = "default"

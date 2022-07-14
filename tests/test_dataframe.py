@@ -2,8 +2,6 @@ from typing import Dict, List
 
 import pytest
 
-from daft.dataframe import DataFrame
-
 
 @pytest.fixture(scope="function")
 def valid_data() -> List[Dict[str, float]]:

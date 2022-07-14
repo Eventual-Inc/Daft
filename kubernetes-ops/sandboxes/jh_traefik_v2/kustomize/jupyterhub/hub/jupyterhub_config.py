@@ -2,7 +2,6 @@
 
 # Jupyterhub configuration: https://jupyterhub.readthedocs.io/en/stable/getting-started/config-basics.html#generate-a-default-config-file
 
-import os
 
 # Networking
 c.JupyterHub.bind_url = "http://:8081"
