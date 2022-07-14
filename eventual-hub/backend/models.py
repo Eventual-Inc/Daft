@@ -1,3 +1,4 @@
+import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
@@ -43,6 +44,7 @@ class RayCluster(BaseModel):
     name: str
     namespace: str
     type: RayClusterType
+    started_at: datetime.datetime
 
 
 class RayClusterInfo(BaseModel):
