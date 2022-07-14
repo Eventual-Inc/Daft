@@ -1,12 +1,9 @@
-import jwt
-
-from settings import Settings
-
-from pydantic import BaseModel
-from fastapi.exceptions import HTTPException
-
 from typing import Callable
 
+import jwt
+from fastapi.exceptions import HTTPException
+from pydantic import BaseModel
+from settings import Settings
 
 AUTH0_EMAIL_KEY = "https://auth.eventualcomputing.com/claims/email"
 
@@ -23,7 +20,6 @@ def get_token_verifier() -> Callable[[str], DecodedToken]:
 
 
 class TokenVerifier:
-
     def __init__(self, settings: Settings):
         assert settings.auth0_domain is not None
         assert settings.auth0_algorithm is not None
@@ -32,7 +28,7 @@ class TokenVerifier:
         self.settings = settings
 
     def __call__(self, token: str) -> DecodedToken:
-        jwks_url = f'https://{self.settings.auth0_domain}/.well-known/jwks.json'
+        jwks_url = f"https://{self.settings.auth0_domain}/.well-known/jwks.json"
         jwks_client = jwt.PyJWKClient(jwks_url)
 
         try:
@@ -57,7 +53,6 @@ class TokenVerifier:
 
 
 class LocalDevTokenVerifier:
-
     def __init__(self, settings: Settings):
         assert settings.environment == "local_dev"
         self.settings = settings

@@ -4,8 +4,13 @@ from typing import List
 
 import yaml
 from kubernetes_asyncio import client
-from models import (KuberayClientConfig, RayCluster, RayClusterInfo,
-                    RayClusterState, RayClusterType)
+from models import (
+    KuberayClientConfig,
+    RayCluster,
+    RayClusterInfo,
+    RayClusterState,
+    RayClusterType,
+)
 from settings import settings
 from utils.kubernetes import k8s_retryable
 

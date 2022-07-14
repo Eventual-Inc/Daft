@@ -5,13 +5,13 @@ from typing import ForwardRef, Literal, Tuple, Type, Union, cast
 
 import networkx as NX
 import ray
+from icebridge.client import IcebergTable
 
 from daft.dataclasses import DataclassBuilder
 from daft.datarepo.query import expressions
 from daft.datarepo.query import functions as F
 from daft.datarepo.query import stages, tree_ops
 from daft.datarepo.query.definitions import NodeId, WriteDatarepoStageOutput
-from icebridge.client import IcebergTable
 
 
 class DatarepoQueryBuilder:

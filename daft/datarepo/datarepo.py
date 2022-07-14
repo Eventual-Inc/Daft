@@ -6,17 +6,17 @@ from typing import List, Optional, Tuple, Type
 
 import fsspec
 import ray
-from pyarrow import parquet as pq
-
-from daft.dataclasses import is_daft_dataclass
-from daft.datarepo.query import expressions
-from daft.datarepo.query.builder import DatarepoQueryBuilder
 from icebridge.client import (
     IcebergCatalog,
     IcebergDataFile,
     IcebergSchema,
     IcebergTable,
 )
+from pyarrow import parquet as pq
+
+from daft.dataclasses import is_daft_dataclass
+from daft.datarepo.query import expressions
+from daft.datarepo.query.builder import DatarepoQueryBuilder
 
 
 class DataRepo:
@@ -95,7 +95,7 @@ class DataRepo:
 
         num_partitions = ceil(dataset.count() // rows_per_partition)
         dataset = dataset.repartition(num_partitions, shuffle=True)
-        filewrite_outputs = dataset.map_batches(_write_block, batch_size=rows_per_partition).take_all() # type: ignore
+        filewrite_outputs = dataset.map_batches(_write_block, batch_size=rows_per_partition).take_all()  # type: ignore
         return filewrite_outputs
 
     def append(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:

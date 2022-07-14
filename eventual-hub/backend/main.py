@@ -6,9 +6,14 @@ from auth import get_token_verifier
 from fastapi import Depends, FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
-from models import (DeleteRayClusterRequest, LaunchNotebookRequest,
-                    LaunchRayClusterRequest, RayCluster, RayClusterInfo,
-                    UserNotebookDetails)
+from models import (
+    DeleteRayClusterRequest,
+    LaunchNotebookRequest,
+    LaunchRayClusterRequest,
+    RayCluster,
+    RayClusterInfo,
+    UserNotebookDetails,
+)
 from settings import settings
 from utils import kuberay, kubernetes
 

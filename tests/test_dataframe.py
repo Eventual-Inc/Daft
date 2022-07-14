@@ -4,15 +4,13 @@ import pytest
 
 from daft.dataframe import DataFrame
 
+
 @pytest.fixture(scope="function")
 def valid_data() -> List[Dict[str, float]]:
     items = [
-        {"sepal_length": 5.1, "sepal_width": 3.5,
-         "petal_length": 1.4, "petal_width": 0.2, "variety": "Setosa"},
-        {"sepal_length": 4.9, "sepal_width": 3.0,
-         "petal_length": 1.4, "petal_width": 0.2, "variety": "Setosa"},
-        {"sepal_length": 4.7, "sepal_width": 3.2,
-         "petal_width": 1.3, "petal_width": 0.2, "variety": "Setosa"},
+        {"sepal_length": 5.1, "sepal_width": 3.5, "petal_length": 1.4, "petal_width": 0.2, "variety": "Setosa"},
+        {"sepal_length": 4.9, "sepal_width": 3.0, "petal_length": 1.4, "petal_width": 0.2, "variety": "Setosa"},
+        {"sepal_length": 4.7, "sepal_width": 3.2, "petal_width": 1.3, "petal_width": 0.2, "variety": "Setosa"},
     ]
     return items
 

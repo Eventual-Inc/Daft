@@ -4,10 +4,10 @@ import logging
 from typing import List, Optional, Type, TypeVar
 
 import fsspec
+from icebridge.client import IcebergCatalog, IceBridgeClient
 
 from daft import config
 from daft.datarepo.datarepo import DataRepo
-from icebridge.client import IcebergCatalog, IceBridgeClient
 
 # from daft.datarepo.log import DaftLakeLog
 

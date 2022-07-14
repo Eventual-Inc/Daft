@@ -1,5 +1,5 @@
 # Namespace to be filled in by user, used to identify each cluster deployment
-clusterName: 
+clusterName:
 
 # Ray image to use for both the cluster and notebook
 rayImage: "941892620273.dkr.ecr.us-west-2.amazonaws.com/daft/ray:0.0.2"

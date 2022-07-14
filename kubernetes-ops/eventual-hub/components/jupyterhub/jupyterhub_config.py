@@ -8,7 +8,7 @@ import os
 c.JupyterHub.bind_url = "http://:8081"
 c.JupyterHub.hub_bind_url = "http://:8081"
 c.JupyterHub.hub_connect_url = "https://jupyterhub:8081"
-c.JupyterHub.base_url = '/jupyter/'
+c.JupyterHub.base_url = "/jupyter/"
 
 # Authentication
 if "AUTH0_CLIENT_ID" in os.environ:
@@ -16,11 +16,12 @@ if "AUTH0_CLIENT_ID" in os.environ:
     assert "AUTH0_CLIENT_SECRET" in os.environ
     assert "AUTH0_CALLBACK_URL" in os.environ
     from oauthenticator.auth0 import Auth0OAuthenticator
+
     c.JupyterHub.authenticator_class = Auth0OAuthenticator
     c.Auth0OAuthenticator.client_id = os.environ["AUTH0_CLIENT_ID"]
     c.Auth0OAuthenticator.client_secret = os.environ["AUTH0_CLIENT_SECRET"]
     c.Auth0OAuthenticator.oauth_callback_url = os.environ["AUTH0_CALLBACK_URL"]
-    c.Auth0OAuthenticator.scope = ['openid', 'email']
+    c.Auth0OAuthenticator.scope = ["openid", "email"]
 else:
     c.JupyterHub.authenticator_class = "jupyterhub.auth.DummyAuthenticator"
 

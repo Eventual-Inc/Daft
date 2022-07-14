@@ -22,7 +22,7 @@ jupyterhub:
         auto_login: true
       JupyterHub:
         authenticator_class: auth0
-    
+
     extraConfigs:
 
 

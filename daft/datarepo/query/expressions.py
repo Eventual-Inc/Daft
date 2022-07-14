@@ -2,7 +2,6 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import pyarrow.compute as pc
 import pyarrow.dataset as pads
-
 from icebridge.client import IcebergExpression, IceBridgeClient
 
 # Columns are just aliases for strings

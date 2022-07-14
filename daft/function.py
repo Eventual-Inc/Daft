@@ -19,7 +19,6 @@ from typing import (
 
 from daft.column import ColumnArgType
 
-
 ReturnType = TypeVar("ReturnType", covariant=True)
 
 UserFunction = Callable
@@ -83,9 +82,7 @@ def func(
 
         @functools.wraps(user_func)
         def query_function(*args: ColumnArgType, **kwargs: ColumnArgType) -> UDFContext[ReturnType]:
-            return UDFContext(
-                func=user_func, return_type=parsed_return_type, args=args, kwargs=kwargs, batch_size=None
-            )
+            return UDFContext(func=user_func, return_type=parsed_return_type, args=args, kwargs=kwargs, batch_size=None)
 
         return query_function
 

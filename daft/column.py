@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from typing import Union, Optional, ForwardRef
-
 from dataclasses import dataclass
 from enum import Enum
+from typing import ForwardRef, Optional, Union
 
-Operation = ForwardRef('Operation')
+Operation = ForwardRef("Operation")
 
 
 class ColumnType(Enum):
-    RESULT = 'result'
-    BACKED = 'backed'
+    RESULT = "result"
+    BACKED = "backed"
 
 
 @dataclass
@@ -19,13 +18,10 @@ class Column:
     column_type: Optional[ColumnType] = None
     operation: Optional[Operation] = None
 
-    def alias(self, name:str) -> Column:
+    def alias(self, name: str) -> Column:
         from daft.operations import Operation
-        return Column(
-            name=name,
-            column_type=ColumnType.RESULT,
-            operation=Operation("alias_pl", [self])
-        )
+
+        return Column(name=name, column_type=ColumnType.RESULT, operation=Operation("alias_pl", [self]))
 
     @classmethod
     def from_arg(cls, c: "ColumnArgType") -> Column:
@@ -39,5 +35,5 @@ class Column:
 class ColumnExpression:
     ...
 
-ColumnArgType = Union[str, Column]
 
+ColumnArgType = Union[str, Column]

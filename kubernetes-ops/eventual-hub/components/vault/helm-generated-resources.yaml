@@ -61,7 +61,7 @@ metadata:
     app.kubernetes.io/name: vault-agent-injector
     app.kubernetes.io/instance: vault-injector-release
     app.kubernetes.io/managed-by: Helm
-  
+
 spec:
   ports:
   - name: https
@@ -91,7 +91,7 @@ spec:
       app.kubernetes.io/name: vault-agent-injector
       app.kubernetes.io/instance: vault-injector-release
       component: webhook
-  
+
   template:
     metadata:
       labels:
@@ -99,7 +99,7 @@ spec:
         app.kubernetes.io/instance: vault-injector-release
         component: webhook
     spec:
-      
+
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -109,10 +109,10 @@ spec:
                   app.kubernetes.io/instance: "vault-injector-release"
                   component: webhook
               topologyKey: kubernetes.io/hostname
-  
-      
-      
-      
+
+
+
+
       serviceAccountName: "vault-injector-release-agent-injector"
       hostNetwork: false
       securityContext:
@@ -121,7 +121,7 @@ spec:
         runAsUser: 100
       containers:
         - name: sidecar-injector
-          
+
           image: "hashicorp/vault-k8s:0.16.1"
           imagePullPolicy: "IfNotPresent"
           securityContext:
@@ -157,7 +157,7 @@ spec:
               value: "map"
             - name: AGENT_INJECT_TEMPLATE_CONFIG_EXIT_ON_RETRY_FAILURE
               value: "true"
-            
+
             - name: POD_NAME
               valueFrom:
                 fieldRef:
