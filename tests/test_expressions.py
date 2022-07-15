@@ -11,7 +11,4 @@ def test_col_expr_add() -> None:
     assert isinstance(id, ColumnExpression)
     new_id = id + 1
     print(new_id > 10)
-    import ipdb
-
-    ipdb.set_trace()
     assert new_id.is_operation()
