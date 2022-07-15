@@ -29,6 +29,8 @@ icebridge = "0.0.3"
 tabulate = "^0.8.10"
 pre-commit = "^2.20.0"
 pydot = "^1.4.2"
+fastapi = "^0.79.0"
+docker = "^5.0.3"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"
