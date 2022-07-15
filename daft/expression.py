@@ -10,10 +10,18 @@ def col(name: str) -> ColumnExpression:
 
 
 class Expression:
+    def __to_expression(self, input: Any) -> Expression:
+        if not isinstance(input, Expression):
+            return LiteralExpression(input)
+        return input
+
     def _binary_op(self, other: Any, func: Callable) -> Expression:
-        if not isinstance(other, Expression):
-            other = LiteralExpression(other)
-        return BinaryOpExpression(self, other, func)
+        other_expr = self.__to_expression(other)
+        return BinaryOpExpression(self, other_expr, func)
+
+    def _reverse_binary_op(self, other: Any, func: Callable) -> Expression:
+        other_expr = self.__to_expression(other)
+        return other_expr._binary_op(self, func)
 
     def is_literal(self) -> bool:
         return False
@@ -29,6 +37,14 @@ class Expression:
     __truediv__ = partialmethod(_binary_op, func=operator.truediv)
     __pow__ = partialmethod(_binary_op, func=operator.pow)
 
+    # Reverse Arithmetic
+    __radd__ = partialmethod(_reverse_binary_op, func=operator.add)
+    __rsub__ = partialmethod(_reverse_binary_op, func=operator.sub)
+    __rmul__ = partialmethod(_reverse_binary_op, func=operator.mul)
+    __rfloordiv__ = partialmethod(_reverse_binary_op, func=operator.floordiv)
+    __rtruediv__ = partialmethod(_reverse_binary_op, func=operator.truediv)
+    __rpow__ = partialmethod(_reverse_binary_op, func=operator.pow)
+
     # Logical
     __and__ = partialmethod(_binary_op, func=operator.and_)
     __or__ = partialmethod(_binary_op, func=operator.or_)
@@ -39,6 +55,10 @@ class Expression:
     __ne__ = partialmethod(_binary_op, func=operator.ne)
     __gt__ = partialmethod(_binary_op, func=operator.gt)
     __ge__ = partialmethod(_binary_op, func=operator.ge)
+
+    # Reverse Logical
+    __rand__ = partialmethod(_reverse_binary_op, func=operator.and_)
+    __ror__ = partialmethod(_reverse_binary_op, func=operator.or_)
 
 
 class LiteralExpression(Expression):
@@ -61,7 +81,7 @@ class BinaryOpExpression(Expression):
         "truediv": "/",
         "pow": "**",
         "and_": "&",
-        "or": "|",
+        "or_": "|",
         "lt": "<",
         "le": "<=",
         "eq": "=",
