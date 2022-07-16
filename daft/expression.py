@@ -45,8 +45,9 @@ class Expression:
 
     __invert__ = partialmethod(_unary_op, func=operator.not_, symbol="~")
 
-    # func
-    map = _unary_op
+    # function
+    def map(self, func: Callable) -> Expression:
+        return self._unary_op(func)
 
     # BinaryOps
 
@@ -72,8 +73,8 @@ class Expression:
 
     __lt__ = partialmethod(_binary_op, func=operator.lt, symbol="<")
     __le__ = partialmethod(_binary_op, func=operator.le, symbol="<=")
-    __eq__ = partialmethod(_binary_op, func=operator.eq, symbol="=")
-    __ne__ = partialmethod(_binary_op, func=operator.ne, symbol="!=")
+    __eq__ = partialmethod(_binary_op, func=operator.eq, symbol="=")  # type: ignore
+    __ne__ = partialmethod(_binary_op, func=operator.ne, symbol="!=")  # type: ignore
     __gt__ = partialmethod(_binary_op, func=operator.gt, symbol=">")
     __ge__ = partialmethod(_binary_op, func=operator.ge, symbol=">=")
 
@@ -167,7 +168,7 @@ class UDFExpression(OpExpression):
 
 
 def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
-    def new_func(func: Callable) -> UDFExpression:
+    def new_func(func: Callable) -> Callable:
         @functools.wraps(func)
         def final_func(*args, **kwargs):
             if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargs.values()):
@@ -195,3 +196,9 @@ class ColumnExpression(Expression):
 
     def __repr__(self) -> str:
         return f"col({self._name})"
+
+    def is_literal(self) -> bool:
+        return False
+
+    def is_operation(self) -> bool:
+        return False
