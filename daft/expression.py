@@ -168,9 +168,9 @@ class UDFExpression(OpExpression):
 
 
 def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
-    def new_func(func: Callable) -> Callable:
+    def udf_decorator(func: Callable) -> Callable:
         @functools.wraps(func)
-        def final_func(*args, **kwargs):
+        def wrapped_func(*args, **kwargs):
             if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargs.values()):
                 out_expr = UDFExpression(func, func_args=args, func_kwargs=kwargs)
                 if num_returns == 1:
@@ -181,11 +181,11 @@ def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
             else:
                 return func(*args, **kwargs)
 
-        return final_func
+        return wrapped_func
 
     if f is None:
-        return new_func
-    return new_func(f)
+        return udf_decorator
+    return udf_decorator(f)
 
 
 class ColumnExpression(Expression):
