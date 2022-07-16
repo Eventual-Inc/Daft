@@ -56,11 +56,11 @@ data:
         storage.sync              normal
         storage.checksum          off
         storage.backlog.mem_limit 5M
-        
+
     @INCLUDE application-log.conf
     @INCLUDE dataplane-log.conf
     @INCLUDE host-log.conf
-  
+
   application-log.conf: |
     [INPUT]
         Name                tail
@@ -177,7 +177,7 @@ data:
         log_retention_days  180
         auto_create_group   true
         extra_user_agent    container-insights
-    
+
   host-log.conf: |
     [INPUT]
         Name                tail
