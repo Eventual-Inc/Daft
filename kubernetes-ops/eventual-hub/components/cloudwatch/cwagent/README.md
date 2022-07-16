@@ -16,4 +16,6 @@ Kubernetes deployment manifests for CloudWatch Agent copied from [here](https://
 
 ## Changes
 
-- Add tolerations against all NoSchedule and NoExecute node taints.
+- Add tolerations against all NoSchedule and NoExecute node taints
+- Cleanup Prometheus CloudWatch Agent configuration for metrics collection
+- Cleanup Prometheus scrape config

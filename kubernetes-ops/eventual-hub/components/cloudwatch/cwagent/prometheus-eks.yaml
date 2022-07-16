@@ -20,114 +20,6 @@ data:
             "emf_processor": {
               "metric_declaration": [
                 {
-                  "source_labels": ["Service"],
-                  "label_matcher": ".*nginx.*",
-                  "dimensions": [["Service","Namespace","ClusterName"]],
-                  "metric_selectors": [
-                    "^nginx_ingress_controller_(requests|success)$",
-                    "^nginx_ingress_controller_nginx_process_connections$",
-                    "^nginx_ingress_controller_nginx_process_connections_total$",
-                    "^nginx_ingress_controller_nginx_process_resident_memory_bytes$",
-                    "^nginx_ingress_controller_nginx_process_cpu_seconds_total$",
-                    "^nginx_ingress_controller_config_last_reload_successful$"
-                  ]
-                },
-                {
-                  "source_labels": ["Service"],
-                  "label_matcher": ".*nginx.*",
-                  "dimensions": [["Service","Namespace","ClusterName","ingress"],["Service","Namespace","ClusterName","status"]],
-                  "metric_selectors": ["^nginx_ingress_controller_requests$"]
-                },
-                {
-                  "source_labels": ["Service", "frontend"],
-                  "label_matcher": ".*haproxy-ingress-.*metrics;(httpfront-shared-frontend|httpfront-default-backend|httpsfront|_front_http)",
-                  "dimensions": [["Service","Namespace","ClusterName","frontend","code"]],
-                  "metric_selectors": [
-                    "^haproxy_frontend_http_responses_total$"
-                  ]
-                },
-                {
-                  "source_labels": ["Service"],
-                  "label_matcher": ".*haproxy-ingress-.*metrics",
-                  "dimensions": [["Service","Namespace","ClusterName","backend","code"]],
-                  "metric_selectors": [
-                    "^haproxy_backend_http_responses_total$"
-                  ]
-                },
-                {
-                  "source_labels": ["Service"],
-                  "label_matcher": ".*haproxy-ingress-.*metrics",
-                  "dimensions": [["Service","Namespace","ClusterName"]],
-                  "metric_selectors": [
-                    "^haproxy_backend_up$",
-                    "^haproxy_backend_status$",
-                    "^haproxy_backend_bytes_(in|out)_total$",
-                    "^haproxy_backend_connections_total$",
-                    "^haproxy_backend_connection_errors_total$",
-                    "^haproxy_backend_current_sessions$",
-                    "^haproxy_frontend_bytes_(in|out)_total$",
-                    "^haproxy_frontend_connections_total$",
-                    "^haproxy_frontend_http_requests_total$",
-                    "^haproxy_frontend_request_errors_total$",
-                    "^haproxy_frontend_requests_denied_total$",
-                    "^haproxy_frontend_current_sessions$"
-                  ]
-                },
-                {
-                  "source_labels": ["Service"],
-                  "label_matcher": ".*memcached.*",
-                  "dimensions": [["Service","Namespace","ClusterName"]],
-                  "metric_selectors": [
-                    "^memcached_current_(bytes|items|connections)$",
-                    "^memcached_items_(reclaimed|evicted)_total$",
-                    "^memcached_(written|read)_bytes_total$",
-                    "^memcached_limit_bytes$",
-                    "^memcached_commands_total$"
-                  ]
-                },
-                {
-                  "source_labels": ["Service", "status", "command"],
-                  "label_matcher": ".*memcached.*;hit;get",
-                  "dimensions": [["Service","Namespace","ClusterName","status","command"]],
-                  "metric_selectors": [
-                    "^memcached_commands_total$"
-                  ]
-                },
-                {
-                  "source_labels": ["Service", "command"],
-                  "label_matcher": ".*memcached.*;(get|set)",
-                  "dimensions": [["Service","Namespace","ClusterName","command"]],
-                  "metric_selectors": [
-                    "^memcached_commands_total$"
-                  ]
-                },
-                {
-                  "source_labels": ["container_name"],
-                  "label_matcher": "^envoy$",
-                  "dimensions": [["ClusterName","Namespace"]],
-                  "metric_selectors": [
-                    "^envoy_http_downstream_rq_(total|xx)$",
-                    "^envoy_cluster_upstream_cx_(r|t)x_bytes_total$",
-                    "^envoy_cluster_membership_(healthy|total)$",
-                    "^envoy_server_memory_(allocated|heap_size)$",
-                    "^envoy_cluster_upstream_cx_(connect_timeout|destroy_local_with_active_rq)$",
-                    "^envoy_cluster_upstream_rq_(pending_failure_eject|pending_overflow|timeout|per_try_timeout|rx_reset|maintenance_mode)$",
-                    "^envoy_http_downstream_cx_destroy_remote_active_rq$",
-                    "^envoy_cluster_upstream_flow_control_(paused_reading_total|resumed_reading_total|backed_up_total|drained_total)$",
-                    "^envoy_cluster_upstream_rq_retry$",
-                    "^envoy_cluster_upstream_rq_retry_(success|overflow)$",
-                    "^envoy_server_(version|uptime|live)$"
-                  ]
-                },
-                {
-                  "source_labels": ["container_name"],
-                  "label_matcher": "^envoy$",
-                  "dimensions": [["ClusterName","Namespace","envoy_http_conn_manager_prefix","envoy_response_code_class"]],
-                  "metric_selectors": [
-                    "^envoy_http_downstream_rq_xx$"
-                  ]
-                },
-                {
                   "source_labels": ["container_name"],
                   "label_matcher": "^fluent-bit.*$",
                   "dimensions": [["ClusterName","Namespace","NodeName"]],
@@ -141,33 +33,10 @@ data:
                   ]
                 },
                 {
-                  "source_labels": ["job"],
-                  "label_matcher": "^kubernetes-pod-jmx$",
-                  "dimensions": [["ClusterName","Namespace"]],
-                  "metric_selectors": [
-                    "^jvm_threads_(current|daemon)$",
-                    "^jvm_classes_loaded$",
-                    "^java_lang_operatingsystem_(freephysicalmemorysize|totalphysicalmemorysize|freeswapspacesize|totalswapspacesize|systemcpuload|processcpuload|availableprocessors|openfiledescriptorcount)$",
-                    "^catalina_manager_(rejectedsessions|activesessions)$",
-                    "^jvm_gc_collection_seconds_(count|sum)$",
-                    "^catalina_globalrequestprocessor_(bytesreceived|bytessent|requestcount|errorcount|processingtime)$"
-                  ]
-                },
-                {
-                  "source_labels": ["job"],
-                  "label_matcher": "^kubernetes-pod-jmx$",
-                  "dimensions": [["ClusterName","Namespace","area"]],
-                  "metric_selectors": [
-                    "^jvm_memory_bytes_used$"
-                  ]
-                },
-                {
-                  "source_labels": ["job"],
-                  "label_matcher": "^kubernetes-pod-jmx$",
-                  "dimensions": [["ClusterName","Namespace","pool"]],
-                  "metric_selectors": [
-                    "^jvm_memory_pool_bytes_used$"
-                  ]
+                  "source_labels": ["RayClusterName"],
+                  "label_matcher": ".*",
+                  "dimensions": [["ClusterName","Namespace","RayClusterName","RayNodeType"]],
+                  "metric_selectors": [".*"]
                 }
               ]
             }
@@ -191,90 +60,6 @@ data:
       scrape_interval: 1m
       scrape_timeout: 10s
     scrape_configs:
-    - job_name: 'kubernetes-pod-appmesh-envoy'
-      sample_limit: 10000
-      metrics_path: /stats/prometheus
-      kubernetes_sd_configs:
-      - role: pod
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_pod_container_name]
-        action: keep
-        regex: '^envoy$'
-      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
-        action: replace
-        regex: ([^:]+)(?::\d+)?;(\d+)
-        replacement: ${1}:9901
-        target_label: __address__
-      - action: labelmap
-        regex: __meta_kubernetes_pod_label_(.+)
-      - action: replace
-        source_labels:
-        - __meta_kubernetes_namespace
-        target_label: Namespace
-      - source_labels: [__meta_kubernetes_pod_name]
-        action: replace
-        target_label: pod_name
-      - action: replace
-        source_labels:
-        - __meta_kubernetes_pod_container_name
-        target_label: container_name
-      - action: replace
-        source_labels:
-        - __meta_kubernetes_pod_controller_name
-        target_label: pod_controller_name
-      - action: replace
-        source_labels:
-        - __meta_kubernetes_pod_controller_kind
-        target_label: pod_controller_kind
-      - action: replace
-        source_labels:
-        - __meta_kubernetes_pod_phase
-        target_label: pod_phase
-
-    - job_name: 'kubernetes-pod-fluentbit-plugin'
-      sample_limit: 10000
-      metrics_path: /api/v1/metrics/prometheus
-      kubernetes_sd_configs:
-      - role: pod
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_pod_container_name]
-        action: keep
-        regex: '^fluent-bit.*$'
-      - source_labels: [__address__]
-        action: replace
-        regex: ([^:]+)(?::\d+)?
-        replacement: ${1}:2020
-        target_label: __address__
-      - action: labelmap
-        regex: __meta_kubernetes_pod_label_(.+)
-      - action: replace
-        source_labels:
-        - __meta_kubernetes_namespace
-        target_label: Namespace
-      - source_labels: [__meta_kubernetes_pod_name]
-        action: replace
-        target_label: pod_name
-      - action: replace
-        source_labels:
-        - __meta_kubernetes_pod_container_name
-        target_label: container_name
-      - action: replace
-        source_labels:
-        - __meta_kubernetes_pod_controller_name
-        target_label: pod_controller_name
-      - action: replace
-        source_labels:
-        - __meta_kubernetes_pod_controller_kind
-        target_label: pod_controller_kind
-      - action: replace
-        source_labels:
-        - __meta_kubernetes_pod_phase
-        target_label: pod_phase
-      - action: replace
-        source_labels:
-        - __meta_kubernetes_pod_node_name
-        target_label: NodeName
-
     - job_name: kubernetes-service-endpoints
       sample_limit: 10000
       kubernetes_sd_configs:
@@ -327,30 +112,21 @@ data:
       - source_labels: [__name__]
         regex: 'go_gc_duration_seconds.*'
         action: drop
-      - source_labels: [__name__, proxy]
-        regex: "haproxy_frontend.+;(.+)"
-        target_label: frontend
-        replacement: "$1"
-      - source_labels: [__name__, proxy]
-        regex: "haproxy_server.+;(.+)"
-        target_label: backend
-        replacement: "$1"
-      - source_labels: [__name__, proxy]
-        regex: "haproxy_backend.+;(.+)"
-        target_label: backend
-        replacement: "$1"
-      - regex: proxy
-        action: labeldrop
 
-    - job_name: 'kubernetes-pod-jmx'
+    - job_name: 'kubernetes-pod-fluentbit-plugin'
       sample_limit: 10000
-      metrics_path: /metrics
+      metrics_path: /api/v1/metrics/prometheus
       kubernetes_sd_configs:
       - role: pod
       relabel_configs:
-      - source_labels: [__address__]
+      - source_labels: [__meta_kubernetes_pod_container_name]
         action: keep
-        regex: '.*:9404$'
+        regex: '^fluent-bit.*$'
+      - source_labels: [__address__]
+        action: replace
+        regex: ([^:]+)(?::\d+)?
+        replacement: ${1}:2020
+        target_label: __address__
       - action: labelmap
         regex: __meta_kubernetes_pod_label_(.+)
       - action: replace
@@ -376,10 +152,66 @@ data:
         source_labels:
         - __meta_kubernetes_pod_phase
         target_label: pod_phase
-      metric_relabel_configs:
-      - source_labels: [__name__]
-        regex: 'jvm_gc_collection_seconds.*'
-        action: drop
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_pod_node_name
+        target_label: NodeName
+
+    - job_name: 'kubernetes-pod-kuberay'
+      sample_limit: 10000
+      scrape_interval: 15s
+      metrics_path: /
+      kubernetes_sd_configs:
+      - role: pod
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_ray_io_is_ray_node]
+        action: keep
+        regex: '^yes$'
+      - source_labels: [__meta_kubernetes_pod_container_name]
+        action: keep
+        regex: '^ray-(head|worker)$'
+      - source_labels: [__address__]
+        action: replace
+        regex: ([^:]+)(?::\d+)?
+        replacement: ${1}:9090
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_namespace
+        target_label: Namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod_name
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_pod_container_name
+        target_label: container_name
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_pod_controller_name
+        target_label: pod_controller_name
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_pod_controller_kind
+        target_label: pod_controller_kind
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_pod_phase
+        target_label: pod_phase
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_pod_node_name
+        target_label: NodeName
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_pod_label_ray_io_cluster
+        target_label: RayClusterName
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_pod_label_ray_io_node_type
+        target_label: RayNodeType
 
 kind: ConfigMap
 metadata:
