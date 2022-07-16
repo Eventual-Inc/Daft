@@ -82,6 +82,10 @@ class Expression:
     __rand__ = partialmethod(_reverse_binary_op, func=operator.and_, symbol="&")
     __ror__ = partialmethod(_reverse_binary_op, func=operator.or_, symbol="|")
 
+    @abstractmethod
+    def eval(self, **kwargs):
+        raise NotImplementedError()
+
 
 class LiteralExpression(Expression):
     def __init__(self, value: Any) -> None:
@@ -95,6 +99,9 @@ class LiteralExpression(Expression):
 
     def is_operation(self) -> bool:
         return False
+
+    def eval(self, **kwargs):
+        return self._value
 
 
 class OpExpression(Expression):
@@ -120,6 +127,10 @@ class UnaryOpExpression(OpExpression):
         else:
             return f"{self._symbol}({self._operand})"
 
+    def eval(self, **kwargs):
+        operand = self._operand.eval(**kwargs)
+        return self._op(operand)
+
 
 class BinaryOpExpression(OpExpression):
     def __init__(self, left: Expression, right: Expression, op: Callable, symbol: Optional[str] = None) -> None:
@@ -136,6 +147,11 @@ class BinaryOpExpression(OpExpression):
             symbol = self._symbol
         return f"[{self._left} {symbol} {self._right}]"
 
+    def eval(self, **kwargs):
+        eval_left = self._left.eval(**kwargs)
+        eval_right = self._right.eval(**kwargs)
+        return self._op(eval_left, eval_right)
+
 
 class MultipleReturnSelectExpression(OpExpression):
     def __init__(self, expr: Expression, n: int) -> None:
@@ -144,6 +160,13 @@ class MultipleReturnSelectExpression(OpExpression):
 
     def __repr__(self) -> str:
         return f"{self._expr}[{self._n}]"
+
+    def eval(self, **kwargs):
+        all_values = self._expr.eval(**kwargs)
+        assert isinstance(all_values, tuple), f"expected multiple returns from {self._expr}"
+        assert len(all_values) > self._n
+        value = all_values[self._n]
+        return value
 
 
 class UDFExpression(OpExpression):
@@ -165,6 +188,11 @@ class UDFExpression(OpExpression):
 
         kwargs = ", ".join(f"{k}={repr(v)}" for k, v in self._kwargs.items())
         return f"Expr:{func_name}({args}, {kwargs})"
+
+    def eval(self, **kwargs):
+        eval_args = tuple(a.eval(**kwargs) for a in self._args)
+        eval_kwargs = {k: self.eval(**kwargs) for k, v in self._kwargs.items()}
+        return self._func(*eval_args, **eval_kwargs)
 
 
 def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
@@ -202,3 +230,8 @@ class ColumnExpression(Expression):
 
     def is_operation(self) -> bool:
         return False
+
+    def eval(self, **kwargs):
+        if self._name not in kwargs:
+            raise ValueError(f"expected column `{self._name}` to be passed into eval")
+        return kwargs[self._name]

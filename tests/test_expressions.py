@@ -1,3 +1,5 @@
+import numpy as np
+
 from daft.expression import ColumnExpression, Expression, col, udf
 
 
@@ -40,3 +42,14 @@ def test_udf_multiple_return() -> None:
 
     assert out1.is_operation()
     assert out2.is_operation()
+
+
+def test_col_eval() -> None:
+    id = col("id")
+    assert id.eval(id=[1, 2, 3]) == [1, 2, 3]
+
+
+def test_add_col_eval() -> None:
+    id = col("id")
+    result = (id + 1).eval(id=np.ones(10))
+    assert np.all(result == 2)
