@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import operator
+from abc import abstractmethod
 from functools import partialmethod
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -27,11 +28,13 @@ class Expression:
         other_expr = self._to_expression(other)
         return other_expr._binary_op(self, func, symbol=symbol)
 
+    @abstractmethod
     def is_literal(self) -> bool:
-        return False
+        raise NotImplementedError()
 
+    @abstractmethod
     def is_operation(self) -> bool:
-        return False
+        raise NotImplementedError()
 
     # UnaryOps
 
@@ -89,8 +92,19 @@ class LiteralExpression(Expression):
     def is_literal(self) -> bool:
         return True
 
+    def is_operation(self) -> bool:
+        return False
 
-class UnaryOpExpression(Expression):
+
+class OpExpression(Expression):
+    def is_literal(self) -> bool:
+        return False
+
+    def is_operation(self) -> bool:
+        return True
+
+
+class UnaryOpExpression(OpExpression):
     def __init__(self, operand: Expression, op: Callable, symbol: Optional[str] = None) -> None:
         if not isinstance(operand, Expression):
             raise ValueError(f"expected {operand} to be of type Expression, is {type(operand)}")
@@ -106,7 +120,7 @@ class UnaryOpExpression(Expression):
             return f"{self._symbol}({self._operand})"
 
 
-class BinaryOpExpression(Expression):
+class BinaryOpExpression(OpExpression):
     def __init__(self, left: Expression, right: Expression, op: Callable, symbol: Optional[str] = None) -> None:
         self._left = left
         self._right = right
@@ -121,11 +135,8 @@ class BinaryOpExpression(Expression):
             symbol = self._symbol
         return f"[{self._left} {symbol} {self._right}]"
 
-    def is_operation(self) -> bool:
-        return True
 
-
-class MultipleReturnSelectExpression(Expression):
+class MultipleReturnSelectExpression(OpExpression):
     def __init__(self, expr: Expression, n: int) -> None:
         self._expr = expr
         self._n = n
@@ -134,7 +145,7 @@ class MultipleReturnSelectExpression(Expression):
         return f"{self._expr}[{self._n}]"
 
 
-class NAryOpExpression(Expression):
+class UDFExpression(OpExpression):
     def __init__(self, func: Callable, func_args: Tuple, func_kwargs: Optional[Dict[str, Any]] = None) -> None:
         self._args = tuple(self._to_expression(arg) for arg in func_args)
         if func_kwargs is None:
@@ -156,11 +167,11 @@ class NAryOpExpression(Expression):
 
 
 def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
-    def new_func(func: Callable) -> NAryOpExpression:
+    def new_func(func: Callable) -> UDFExpression:
         @functools.wraps(func)
         def final_func(*args, **kwargs):
             if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargs.values()):
-                out_expr = NAryOpExpression(func, func_args=args, func_kwargs=kwargs)
+                out_expr = UDFExpression(func, func_args=args, func_kwargs=kwargs)
                 if num_returns == 1:
                     return out_expr
                 else:
