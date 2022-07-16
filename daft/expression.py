@@ -125,9 +125,18 @@ class BinaryOpExpression(Expression):
         return True
 
 
+class MultipleReturnSelectExpression(Expression):
+    def __init__(self, expr: Expression, n: int) -> None:
+        self._expr = expr
+        self._n = n
+
+    def __repr__(self) -> str:
+        return f"{self._expr}[{self._n}]"
+
+
 class NAryOpExpression(Expression):
     def __init__(self, func: Callable, func_args: Tuple, func_kwargs: Optional[Dict[str, Any]] = None) -> None:
-        self._args = (self._to_expression(arg) for arg in func_args)
+        self._args = tuple(self._to_expression(arg) for arg in func_args)
         if func_kwargs is None:
             func_kwargs = dict()
         self._kwargs = {k: self._to_expression(v) for k, v in func_kwargs.items()}
@@ -146,15 +155,25 @@ class NAryOpExpression(Expression):
         return f"Expr:{func_name}({args}, {kwargs})"
 
 
-def udf(f: Callable) -> Callable:
-    @functools.wraps(f)
-    def new_func(*args, **kwargs) -> NAryOpExpression:
-        if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargs.values()):
-            return NAryOpExpression(f, args, kwargs)
-        else:
-            return f(*args, **kwargs)
+def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
+    def new_func(func: Callable) -> NAryOpExpression:
+        @functools.wraps(func)
+        def final_func(*args, **kwargs):
+            if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargs.values()):
+                out_expr = NAryOpExpression(func, func_args=args, func_kwargs=kwargs)
+                if num_returns == 1:
+                    return out_expr
+                else:
+                    assert num_returns > 1
+                    return tuple(MultipleReturnSelectExpression(out_expr, i) for i in range(num_returns))
+            else:
+                return func(*args, **kwargs)
 
-    return new_func
+        return final_func
+
+    if f is None:
+        return new_func
+    return new_func(f)
 
 
 class ColumnExpression(Expression):
