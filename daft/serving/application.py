@@ -5,22 +5,23 @@ import pathlib
 import sys
 import tarfile
 import tempfile
-from typing import Any, Callable, Optional
+from typing import Any, Callable, List, Optional
 
+import cloudpickle
 import docker
 import fastapi
-
-from daft.serving import pickle
 
 logger = logging.getLogger(__name__)
 
 ENDPOINT_PKL_FILENAME = "endpoint.pkl"
+REQUIREMENTS_TXT_FILENAME = "requirements.txt"
 
 
 class App:
-    def __init__(self):
+    def __init__(self, pip_dependencies: List[str]):
         self.app = fastapi.FastAPI()
         self.registered_endpoint = None
+        self.pip_dependencies = pip_dependencies
 
         # TODO(jay): This breaks when not running as a Python script and needs to be extended for
         # running in an interactive environment
@@ -41,10 +42,15 @@ class App:
             tar.add(pathlib.Path(__file__).parent / "entrypoint.py", arcname="entrypoint.py")
             tar.add(pathlib.Path(__file__).parent / "Dockerfile", arcname="Dockerfile")
 
+            # Add pip dependencies into the Tarfile as a requirements.txt
+            requirements_txt_file = pathlib.Path(td) / "requirements.txt"
+            requirements_txt_file.write_text("\n".join(self.pip_dependencies))
+            tar.add(requirements_txt_file, arcname=REQUIREMENTS_TXT_FILENAME)
+
             # Add the endpoint function to tarfile as a pickle
             pickle_file = pathlib.Path(td) / ENDPOINT_PKL_FILENAME
             with open(pickle_file, "wb") as f:
-                pickle.dump_function(self.registered_endpoint, f)
+                f.write(cloudpickle.dumps(self.registered_endpoint))
             tar.add(pickle_file, arcname=ENDPOINT_PKL_FILENAME)
 
             # Create a Docker image from the tarfile
