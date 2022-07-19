@@ -1,5 +1,4 @@
 ENV ?= dev
-IMAGE_PREFIX ?= dev
 ECR_PREFIX ?= 941892620273.dkr.ecr.us-west-2.amazonaws.com
 RAY_IMAGE_TAG ?= latest
 NOTEBOOK_IMAGE_TAG ?= latest
@@ -47,20 +46,18 @@ deploy-notebook-image:
 	@docker push ${ECR_PREFIX}/daft/notebook:${NOTEBOOK_IMAGE_TAG}
 
 deploy-eventual-hub-images:
-	DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.jupyterhub -t ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
-	DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.backend -t ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
-	DOCKER_BUILDKIT=1 docker build --platform linux/amd64 --build-arg env=${ENV}  ./eventual-hub -f Dockerfile.frontend -t ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/frontend:${EVENTUAL_HUB_RELEASE_TAG}
-	@docker push ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
-	@docker push ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
-	@docker push ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/frontend:${EVENTUAL_HUB_RELEASE_TAG}
+	DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.jupyterhub -t ${ECR_PREFIX}/${ENV}-eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
+	DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.backend -t ${ECR_PREFIX}/${ENV}-eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
+	DOCKER_BUILDKIT=1 docker build --platform linux/amd64 --build-arg env=${ENV}  ./eventual-hub -f Dockerfile.frontend -t ${ECR_PREFIX}/${ENV}-eventual/frontend:${EVENTUAL_HUB_RELEASE_TAG}
+	@docker push ${ECR_PREFIX}/${ENV}-eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
+	@docker push ${ECR_PREFIX}/${ENV}-eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
+	@docker push ${ECR_PREFIX}/${ENV}-eventual/frontend:${EVENTUAL_HUB_RELEASE_TAG}
 
 deploy-dev-eventual-hub-images: ENV=dev
-deploy-dev-eventual-hub-images: IMAGE_PREFIX=dev
 deploy-dev-eventual-hub-images: deploy-eventual-hub-images
 	@echo "Built and pushed dev images to dev repository"
 
 deploy-prod-eventual-hub-images: ENV=prod
-deploy-prod-eventual-hub-images: IMAGE_PREFIX=default
 deploy-prod-eventual-hub-images: deploy-eventual-hub-images
 	@echo "Built and pushed prod images to prod repository"
 
