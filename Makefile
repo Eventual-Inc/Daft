@@ -1,3 +1,5 @@
+ENV ?= dev
+IMAGE_PREFIX ?= dev
 ECR_PREFIX ?= 941892620273.dkr.ecr.us-west-2.amazonaws.com
 RAY_IMAGE_TAG ?= latest
 NOTEBOOK_IMAGE_TAG ?= latest
@@ -45,22 +47,44 @@ deploy-notebook-image:
 	@docker push ${ECR_PREFIX}/daft/notebook:${NOTEBOOK_IMAGE_TAG}
 
 deploy-eventual-hub-images:
-	@DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.jupyterhub -t ${ECR_PREFIX}/eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
-	@DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.backend -t ${ECR_PREFIX}/eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
-	@DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.frontend -t ${ECR_PREFIX}/eventual/frontend:${EVENTUAL_HUB_RELEASE_TAG}
-	@docker push ${ECR_PREFIX}/eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
-	@docker push ${ECR_PREFIX}/eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
-	@docker push ${ECR_PREFIX}/eventual/frontend:${EVENTUAL_HUB_RELEASE_TAG}
+	DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.jupyterhub -t ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
+	DOCKER_BUILDKIT=1 docker build --platform linux/amd64 ./eventual-hub -f Dockerfile.backend -t ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
+	DOCKER_BUILDKIT=1 docker build --platform linux/amd64 --build-arg env=${ENV}  ./eventual-hub -f Dockerfile.frontend -t ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/frontend:${EVENTUAL_HUB_RELEASE_TAG}
+	@docker push ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/jupyterhub:${EVENTUAL_HUB_RELEASE_TAG}
+	@docker push ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/backend:${EVENTUAL_HUB_RELEASE_TAG}
+	@docker push ${ECR_PREFIX}/${IMAGE_PREFIX}-eventual/frontend:${EVENTUAL_HUB_RELEASE_TAG}
+
+deploy-dev-eventual-hub-images: ENV=dev
+deploy-dev-eventual-hub-images: IMAGE_PREFIX=dev
+deploy-dev-eventual-hub-images: deploy-eventual-hub-images
+	@echo "Built and pushed dev images to dev repository"
+
+deploy-prod-eventual-hub-images: ENV=prod
+deploy-prod-eventual-hub-images: IMAGE_PREFIX=default
+deploy-prod-eventual-hub-images: deploy-eventual-hub-images
+	@echo "Built and pushed prod images to prod repository"
 
 ###
 # Deployment of environments (local/dev/prod)
 ###
 
 deploy-eventual-hub:
-	@echo "Switching kubectl to jay_sandbox_eks_cluster..."
-	@kubectl config use-context arn:aws:eks:us-west-2:941892620273:cluster/jay_sandbox_eks_cluster
+	@echo "Switching kubectl to ${ENV} cluster..."
+	@kubectl config use-context ${CLUSTER}
 	kubectl apply -k kubernetes-ops/eventual-hub/_pre
-	kubectl apply -k kubernetes-ops/eventual-hub/installs/cluster_dev
+	kubectl apply -k kubernetes-ops/eventual-hub/installs/${RELEASE_NAME}
+
+deploy-dev-eventual-hub: ENV=dev
+deploy-dev-eventual-hub: CLUSTER=arn:aws:eks:us-west-2:941892620273:cluster/dev-cluster
+deploy-dev-eventual-hub: RELEASE_NAME=cluster_dev
+deploy-dev-eventual-hub: deploy-eventual-hub
+	@echo "Deployed configurations to dev kubernetes cluster"
+
+deploy-prod-eventual-hub: ENV=prod
+deploy-prod-eventual-hub: CLUSTER=arn:aws:eks:us-west-2:941892620273:cluster/default-cluster
+deploy-prod-eventual-hub: RELEASE_NAME=cluster_prod
+deploy-prod-eventual-hub: deploy-eventual-hub
+	@echo "Deployed configurations to prod kubernetes cluster"
 
 local-dev:
 	ctlptl apply -f kubernetes-ops/ctlptl.yaml

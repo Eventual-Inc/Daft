@@ -7,7 +7,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/dev-eventual/backend:20220718.1
+        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/eventual/backend:20220713.4
 ---
 kind: Deployment
 apiVersion: apps/v1
@@ -18,10 +18,10 @@ spec:
     spec:
       initContainers:
       - name: copy-certs
-        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/dev-eventual/jupyterhub:20220718.1
+        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/eventual/jupyterhub:20220713.4
       containers:
       - name: hub
-        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/dev-eventual/jupyterhub:20220718.1
+        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/eventual/jupyterhub:20220713.4
 ---
 kind: Deployment
 apiVersion: apps/v1
@@ -32,4 +32,4 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/dev-eventual/frontend:20220718.1
+        image: 941892620273.dkr.ecr.us-west-2.amazonaws.com/eventual/frontend:20220713.4

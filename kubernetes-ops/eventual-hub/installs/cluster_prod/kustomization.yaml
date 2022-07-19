@@ -5,9 +5,8 @@ bases:
 - ../../components/cloudwatch
 - ../../components/frontend
 patchesStrategicMerge:
-- use_dev_images.yaml
+- use_prod_images.yaml
 - use_jupyterhub_db.yaml
-- use_dev_serviceaccounts.yaml
 - backend_env.yaml
 patchesJson6902:
 - path: use_loadbalancer_traefik_service.yaml
@@ -15,7 +14,7 @@ patchesJson6902:
     version: v1
     kind: Service
     name: eventual-hub-proxy-external
-- path: use_dev_frontend_certificate.yaml
+- path: use_prod_frontend_certificate.yaml
   target:
     version: v1
     kind: Service
@@ -23,4 +22,4 @@ patchesJson6902:
 secretGenerator:
 - name: eventual-hub
   envs:
-  - .env.dev-auth0.secret
+  - .env.prod-auth0.secret
