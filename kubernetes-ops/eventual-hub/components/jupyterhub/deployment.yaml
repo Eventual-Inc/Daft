@@ -77,6 +77,12 @@ spec:
                   name: eventual-hub
                   key: AUTH0_JUPYTERHUB_CALLBACK_URL
                   optional: true
+            - name: AUTH0_SUBDOMAIN
+              valueFrom:
+                secretKeyRef:
+                  name: eventual-hub
+                  key: AUTH0_JUPYTERHUB_SUBDOMAIN
+                  optional: false
             - name: JUPYTERHUB_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:

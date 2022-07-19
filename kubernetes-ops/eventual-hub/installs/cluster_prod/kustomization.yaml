@@ -5,7 +5,7 @@ bases:
 - ../../components/cloudwatch
 - ../../components/frontend
 patchesStrategicMerge:
-- use_dev_images.yaml
+- use_prod_images.yaml
 - use_jupyterhub_db.yaml
 - backend_env.yaml
 - cloudwatch/cwagent/rbac.yaml
@@ -16,7 +16,7 @@ patchesJson6902:
     version: v1
     kind: Service
     name: eventual-hub-proxy-external
-- path: use_dev_frontend_certificate.yaml
+- path: use_prod_frontend_certificate.yaml
   target:
     version: v1
     kind: Service
@@ -24,7 +24,7 @@ patchesJson6902:
 secretGenerator:
 - name: eventual-hub
   envs:
-  - .env.dev-auth0.secret
+  - .env.prod-auth0.secret
 configMapGenerator:
 - name: cwagentconfig
   namespace: amazon-cloudwatch
@@ -35,5 +35,5 @@ configMapGenerator:
   namespace: amazon-cloudwatch
   behavior: merge
   literals:
-  - cluster.name=dev-cluster
+  - cluster.name=prod-cluster
   - logs.region=us-west-2

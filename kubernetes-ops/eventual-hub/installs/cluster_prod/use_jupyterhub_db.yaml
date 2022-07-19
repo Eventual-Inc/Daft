@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: jupyterhub-postgresql-service
 spec:
-  externalName: dev-jupyterhub.czphfuexyzo3.us-west-2.rds.amazonaws.com
+  externalName: prod-jupyterhub.czphfuexyzo3.us-west-2.rds.amazonaws.com
 ---
 apiVersion: apps/v1
 kind: Deployment

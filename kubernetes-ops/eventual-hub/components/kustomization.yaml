@@ -6,5 +6,3 @@ bases:
 - jupyterhub
 - kuberay
 - proxy
-- vault
-- vault-client

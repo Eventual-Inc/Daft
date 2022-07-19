@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::941892620273:role/prod-cluster-cloudwatch-agent-role
+  name: cloudwatch-agent
+  namespace: amazon-cloudwatch
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::941892620273:role/prod-cluster-cloudwatch-agent-role
+  name: cwagent-prometheus
+  namespace: amazon-cloudwatch

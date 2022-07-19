@@ -102,8 +102,8 @@ function Root() {
     <QueryClientProvider client={queryClient}>
       <ReactQueryDevtools initialIsOpen={false} />
       <Auth0Provider
-        domain="eventual-dev.us.auth0.com"
-        clientId="zByGOxzmeNJhfToH8ENnibcRbKzglexp"
+        domain={getConfig().auth0Domain}
+        clientId={getConfig().auth0ClientId}
         redirectUri={window.location.origin}
       >
         <Router>

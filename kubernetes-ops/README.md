@@ -20,7 +20,7 @@ By default, our clusters will not autoscale themselves. We need to deploy a Kube
 We use Helm and a [Helm chart provided by Kubernetes](https://github.com/kubernetes/autoscaler/tree/master/charts/cluster-autoscaler) to install the cluster autoscaler. To do so, simply run:
 
 ```
-helm install cluster-autoscaler cluster-autoscaler
+helm install cluster-autoscaler cluster-autoscaler -f cluster-autoscaler/values.yaml --set autoDiscovery.clusterName=<CLUSTER_NAME>
 ```
 
 Some values in `values.yaml` have been modified for our cluster to ensure that our autoscaler runs on a dedicated On-Demand node pool
@@ -48,7 +48,7 @@ All configurations are stored in `./eventual-hub` as Kustomize templates. This l
 To install the Eventual hub in a cluster, run the following:
 
 ```
-# NOTE: this is made available as a convenience target in our Makefile as `make deploy-eventual-hub` already
+# NOTE: this is made available as a convenience target in our Makefile as `make deploy-dev-eventual-hub` already
 kubectl apply -k kubernetes-ops/eventual-hub/_pre
 kubectl apply -k kubernetes-ops/eventual-hub/installs/cluster_dev
 ```

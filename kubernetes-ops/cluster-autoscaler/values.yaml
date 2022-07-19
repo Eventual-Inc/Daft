@@ -10,7 +10,7 @@ autoDiscovery:
   # Enable autodiscovery for `cloudProvider=clusterapi`, for groups matching `autoDiscovery.labels`.
   # Enable autodiscovery for `cloudProvider=gce`, but no MIG tagging required.
   # Enable autodiscovery for `cloudProvider=magnum`, for groups matching `autoDiscovery.roles`.
-  clusterName:  jay_sandbox_eks_cluster
+  clusterName: dev-cluster
 
   # autoDiscovery.tags -- ASG tags to match, run through `tpl`.
   tags:

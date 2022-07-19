@@ -3,18 +3,3 @@ kind: Kustomization
 bases:
   - cwagent
   - fluent-bit
-patches:
-  - patches/cwagent/rbac.yaml
-  - patches/fluent-bit/rbac.yaml
-configMapGenerator:
-  - name: cwagentconfig
-    namespace: amazon-cloudwatch
-    behavior: merge
-    files:
-      - patches/cwagent/cwagentconfig.json
-  - name: fluent-bit-cluster-info
-    namespace: amazon-cloudwatch
-    behavior: merge
-    literals:
-      - cluster.name=jay_sandbox_eks_cluster
-      - logs.region=us-west-2

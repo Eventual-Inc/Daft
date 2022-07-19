@@ -53,9 +53,10 @@
   "name": "frontend",
   "private": true,
   "scripts": {
-    "build": "NODE_ENV=production react-scripts build",
+    "build_prod": "REACT_APP_BUILD_ENVIRONMENT=production react-scripts build",
+    "build_dev": "REACT_APP_BUILD_ENVIRONMENT=development react-scripts build",
     "eject": "react-scripts eject",
-    "start": "NODE_ENV=development react-scripts start",
+    "start": "REACT_APP_BUILD_ENVIRONMENT=local_development react-scripts start",
     "test": "react-scripts test"
   },
   "version": "0.1.0"

@@ -28,6 +28,7 @@ else:
 # Spawner
 c.JupyterHub.spawner_class = "kubespawner.KubeSpawner"
 c.KubeSpawner.start_timeout = 60 * 10
+c.KubeSpawner.k8s_api_request_timeout = 30
 
 # Proxy
 c.JupyterHub.proxy_class = "kubespawner.proxy.KubeIngressProxy"
