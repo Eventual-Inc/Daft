@@ -6,28 +6,51 @@ from daft.logical.schema import PlanSchema
 
 
 class LogicalPlan(TreeNode):
-    _schema: PlanSchema
+    def __init__(self, schema: PlanSchema) -> None:
+        super().__init__()
+        self._schema = schema
 
     def schema(self) -> PlanSchema:
         return self._schema
+
+    def _validate_columns(self, exprs: List[Expression]) -> bool:
+        for expr in exprs:
+            for needed_col in expr.required_columns():
+                if not self._schema.contains(needed_col):
+                    raise ValueError(f"input does not have required col {needed_col}")
+        return True
 
 
 class Scan(LogicalPlan):
     def __init__(
         self,
         schema: PlanSchema,
-        predicates: Optional[List[Expression]] = None,
         selections: Optional[List[Expression]] = None,
+        projections: Optional[List[Expression]] = None,
     ) -> None:
-        self._schema = schema
-        self._predicates = predicates
+        super().__init__(schema)
+        self._output_schema = schema
+
+        if selections is not None:
+            self._validate_columns(selections)
+
+        if projections is not None:
+            self._validate_columns(projections)
+            self._output_schema = PlanSchema.from_expressions(projections)
+
+        self._projections = projections
         self._selections = selections
+
+    def schema(self) -> PlanSchema:
+        return self._output_schema
 
 
 class Selection(LogicalPlan):
     """Which rows to keep"""
 
     def __init__(self, input: LogicalPlan, predicate: List[Expression]) -> None:
+        input._validate_columns(predicate)
+        super().__init__(input.schema())
         self._input = self._register_child(input)
         self._predicate = predicate
 
@@ -36,6 +59,10 @@ class Projection(LogicalPlan):
     """Which columns to keep"""
 
     def __init__(self, input: LogicalPlan, predicate: List[Expression]) -> None:
+        input._validate_columns(predicate)
+        schema = PlanSchema.from_expressions(predicate)
+        super().__init__(schema)
+
         self._input = self._register_child(input)
         self._predicate = predicate
 
@@ -44,5 +71,8 @@ class HStack(LogicalPlan):
     """zipping columns on without joining"""
 
     def __init__(self, input: LogicalPlan, to_add: List[Expression]) -> None:
+        input._validate_columns(to_add)
+        schema = input.schema().add_columns(PlanSchema.from_expressions(to_add).fields)
+        super().__init__(schema)
         self._input = self._register_child(input)
         self._to_add = to_add
