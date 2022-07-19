@@ -2,7 +2,7 @@
   "logs": {
     "metrics_collected": {
       "kubernetes": {
-        "cluster_name": "jay_sandbox_eks_cluster",
+        "cluster_name": "dev-cluster",
         "metrics_collection_interval": 60
       }
     },
