@@ -1,6 +1,6 @@
 import numpy as np
 
-from daft.expression import ColumnExpression, Expression, col, udf
+from daft.expressions import ColumnExpression, Expression, col, udf
 
 
 def test_column_expression_creation() -> None:
