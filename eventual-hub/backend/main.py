@@ -19,6 +19,7 @@ from utils import kuberay, kubernetes
 app = FastAPI()
 origins = [
     "https://app.eventualcomputing.com",
+    "https://dev-app.eventualcomputing.com",
     "https://localhost:3000",
 ]
 app.add_middleware(
