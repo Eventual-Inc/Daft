@@ -1,4 +1,5 @@
 import tempfile
+from typing import Generator
 
 import pytest
 
@@ -18,7 +19,7 @@ class MyFakeDataclass:
 
 
 @pytest.fixture(scope="function")
-def fake_datarepo() -> DataRepo:
+def fake_datarepo() -> Generator[DataRepo, None, None]:
     with tempfile.TemporaryDirectory() as td:
         catalog = create_test_catalog(td)
         yield DataRepo.create(catalog, FAKE_CATALOG, MyFakeDataclass)

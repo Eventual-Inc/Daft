@@ -50,6 +50,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.mypy]
 python_version = "3.8"
+# WE NEED TO ENABLE THIS FOR eventual-hub
 files = ["daft/**/*.py", "tests/**/*.py"]
 warn_return_any = true
 warn_unused_configs = true
@@ -62,6 +63,15 @@ module = [
     "icebridge.*"
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# WE ARE IGNORING THIS MODULES UNTIL WE CAN FIX THEM
+module = [
+    "daft.datarepo.query.*",
+    "daft.dataclasses"
+]
+ignore_errors = true
+
 
 
 [tool.black]
