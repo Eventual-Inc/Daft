@@ -4,14 +4,19 @@ import functools
 import operator
 from abc import abstractmethod
 from functools import partialmethod
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from daft.internal.treenode import TreeNode
 
 
 def col(name: str) -> ColumnExpression:
     return ColumnExpression(name)
 
 
-class Expression:
+class Expression(TreeNode["Expression"]):
+    def __init__(self) -> None:
+        super().__init__()
+
     def _to_expression(self, input: Any) -> Expression:
         if not isinstance(input, Expression):
             return LiteralExpression(input)
@@ -35,6 +40,19 @@ class Expression:
     @abstractmethod
     def is_operation(self) -> bool:
         raise NotImplementedError()
+
+    def name(self) -> Optional[str]:
+        for child in self._children():
+            name = child.name()
+            if name is not None:
+                return name
+        return None
+
+    def required_columns(self) -> List[str]:
+        to_rtn: List[str] = []
+        for child in self._children():
+            to_rtn.extend(child.required_columns())
+        return to_rtn
 
     # UnaryOps
 
@@ -86,9 +104,13 @@ class Expression:
     def eval(self, **kwargs):
         raise NotImplementedError()
 
+    def alias(self, name: str) -> Expression:
+        return AliasExpression(self, name)
+
 
 class LiteralExpression(Expression):
     def __init__(self, value: Any) -> None:
+        super().__init__()
         self._value = value
 
     def __repr__(self) -> str:
@@ -105,6 +127,9 @@ class LiteralExpression(Expression):
 
 
 class OpExpression(Expression):
+    def __init__(self) -> None:
+        super().__init__()
+
     def is_literal(self) -> bool:
         return False
 
@@ -114,9 +139,10 @@ class OpExpression(Expression):
 
 class UnaryOpExpression(OpExpression):
     def __init__(self, operand: Expression, op: Callable, symbol: Optional[str] = None) -> None:
+        super().__init__()
         if not isinstance(operand, Expression):
             raise ValueError(f"expected {operand} to be of type Expression, is {type(operand)}")
-        self._operand = operand
+        self._operand = self._register_child(operand)
         self._op = op
         self._symbol = symbol
 
@@ -134,8 +160,9 @@ class UnaryOpExpression(OpExpression):
 
 class BinaryOpExpression(OpExpression):
     def __init__(self, left: Expression, right: Expression, op: Callable, symbol: Optional[str] = None) -> None:
-        self._left = left
-        self._right = right
+        super().__init__()
+        self._left = self._register_child(left)
+        self._right = self._register_child(right)
         self._op = op
         self._symbol = symbol
 
@@ -155,7 +182,8 @@ class BinaryOpExpression(OpExpression):
 
 class MultipleReturnSelectExpression(OpExpression):
     def __init__(self, expr: Expression, n: int) -> None:
-        self._expr = expr
+        super().__init__()
+        self._expr = self._register_child(expr)
         self._n = n
 
     def __repr__(self) -> str:
@@ -171,10 +199,11 @@ class MultipleReturnSelectExpression(OpExpression):
 
 class UDFExpression(OpExpression):
     def __init__(self, func: Callable, func_args: Tuple, func_kwargs: Optional[Dict[str, Any]] = None) -> None:
-        self._args = tuple(self._to_expression(arg) for arg in func_args)
+        super().__init__()
+        self._args = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         if func_kwargs is None:
             func_kwargs = dict()
-        self._kwargs = {k: self._to_expression(v) for k, v in func_kwargs.items()}
+        self._kwargs = {k: self._register_child(self._to_expression(v)) for k, v in func_kwargs.items()}
         self._func = func
 
     def is_operation(self) -> bool:
@@ -218,8 +247,9 @@ def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
 
 class ColumnExpression(Expression):
     def __init__(self, name: str) -> None:
+        super().__init__()
         if not isinstance(name, str):
-            raise TypeError(f"Exprected name to be type str, is {type(name)}")
+            raise TypeError(f"Expected name to be type str, is {type(name)}")
         self._name = name
 
     def __repr__(self) -> str:
@@ -235,3 +265,33 @@ class ColumnExpression(Expression):
         if self._name not in kwargs:
             raise ValueError(f"expected column `{self._name}` to be passed into eval")
         return kwargs[self._name]
+
+    def name(self) -> Optional[str]:
+        return self._name
+
+    def required_columns(self) -> List[str]:
+        return [self._name]
+
+
+class AliasExpression(Expression):
+    def __init__(self, expr: Expression, name: str) -> None:
+        super().__init__()
+        if not isinstance(name, str):
+            raise TypeError(f"Expected name to be type str, is {type(name)}")
+        self._expr = self._register_child(expr)
+        self._name = name
+
+    def __repr__(self) -> str:
+        return f"{self._expr}.alias({self._name})"
+
+    def is_literal(self) -> bool:
+        return False
+
+    def is_operation(self) -> bool:
+        return False
+
+    def name(self) -> Optional[str]:
+        return self._name
+
+    def eval(self, **kwargs):
+        return self._expr.eval(**kwargs)
