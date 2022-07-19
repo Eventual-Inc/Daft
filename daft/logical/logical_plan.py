@@ -44,6 +44,9 @@ class Scan(LogicalPlan):
     def schema(self) -> PlanSchema:
         return self._output_schema
 
+    def __repr__(self) -> str:
+        return f"Scan\n\tselection={self._selections}\n\tcolumns={self._columns}"
+
 
 class Selection(LogicalPlan):
     """Which rows to keep"""
@@ -53,6 +56,9 @@ class Selection(LogicalPlan):
         super().__init__(input.schema())
         self._input = self._register_child(input)
         self._predicate = predicate
+
+    def __repr__(self) -> str:
+        return f"Selection\n\tpredicate={self._predicate}"
 
 
 class Projection(LogicalPlan):
@@ -66,6 +72,9 @@ class Projection(LogicalPlan):
         self._input = self._register_child(input)
         self._predicate = predicate
 
+    def __repr__(self) -> str:
+        return f"Projection\n\tpredicate={self._predicate}"
+
 
 class HStack(LogicalPlan):
     """zipping columns on without joining"""
@@ -76,3 +85,6 @@ class HStack(LogicalPlan):
         super().__init__(schema)
         self._input = self._register_child(input)
         self._to_add = to_add
+
+    def __repr__(self) -> str:
+        return f"HStack\n\tadding={self._to_add}"
