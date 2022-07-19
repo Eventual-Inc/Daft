@@ -4,8 +4,8 @@ from typing import List
 
 from tabulate import tabulate
 
-from daft.column import Column, ColumnArgType, ColumnExpression
-from daft.operations import AliasOperation, LimitOperation, WhereOperation
+from daft.column import Column, ColumnArgType, ColumnExpression, ColumnType
+from daft.operations import Operation
 
 
 class RowView:
@@ -59,14 +59,26 @@ class DataFrame:
     def with_column(self, name: str, col: Column) -> Column:
         assert isinstance(col, Column), "col must be Column type"
         assert name not in self.columns, f"duplicate column name {name}"
-        new_column = AliasOperation(name, col).outputs[0]
-        return DataFrame(self._cols + [new_column])
+        return DataFrame(self._cols + [col.alias(name)])
 
     def where(self, expr: ColumnExpression) -> DataFrame:
-        where_op = WhereOperation(expr, self._cols)
-        new_columns = where_op.outputs
+        new_columns = [
+            Column(
+                name=c.name,
+                column_type=ColumnType.RESULT,
+                operation=Operation("where_pl", [c]),
+            )
+            for c in self._cols
+        ]
         return DataFrame(new_columns)
 
     def limit(self, num: int) -> DataFrame:
-        new_columns = [LimitOperation(num, col).outputs[0] for col in self._cols]
+        new_columns = [
+            Column(
+                name=c.name,
+                column_type=ColumnType.RESULT,
+                operation=Operation("limit_pl", [c]),
+            )
+            for c in self._cols
+        ]
         return DataFrame(new_columns)

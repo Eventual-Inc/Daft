@@ -18,6 +18,11 @@ class Column:
     column_type: Optional[ColumnType] = None
     operation: Optional[Operation] = None
 
+    def alias(self, name: str) -> Column:
+        from daft.operations import Operation
+
+        return Column(name=name, column_type=ColumnType.RESULT, operation=Operation("alias_pl", [self]))
+
     @classmethod
     def from_arg(cls, c: "ColumnArgType") -> Column:
         if isinstance(c, Column):
