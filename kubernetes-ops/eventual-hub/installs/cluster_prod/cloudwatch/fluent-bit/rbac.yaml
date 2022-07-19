@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::941892620273:role/prod-cluster-cloudwatch-agent-role
+  name: fluent-bit
+  namespace: amazon-cloudwatch

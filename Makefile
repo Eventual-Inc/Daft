@@ -78,7 +78,7 @@ deploy-dev-eventual-hub: deploy-eventual-hub
 	@echo "Deployed configurations to dev kubernetes cluster"
 
 deploy-prod-eventual-hub: ENV=prod
-deploy-prod-eventual-hub: CLUSTER=arn:aws:eks:us-west-2:941892620273:cluster/default-cluster
+deploy-prod-eventual-hub: CLUSTER=arn:aws:eks:us-west-2:941892620273:cluster/prod-cluster
 deploy-prod-eventual-hub: RELEASE_NAME=cluster_prod
 deploy-prod-eventual-hub: deploy-eventual-hub
 	@echo "Deployed configurations to prod kubernetes cluster"

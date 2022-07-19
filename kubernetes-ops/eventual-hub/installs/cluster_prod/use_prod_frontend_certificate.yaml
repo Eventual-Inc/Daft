@@ -1,4 +1,4 @@
 - op: add
   path: /metadata/annotations
   value:
-    service.beta.kubernetes.io/aws-load-balancer-ssl-cert: arn:aws:acm:us-west-2:941892620273:certificate/732bf13f-5406-4254-886a-d7155be30cbb
+    service.beta.kubernetes.io/aws-load-balancer-ssl-cert: arn:aws:acm:us-west-2:941892620273:certificate/b208da33-cfd1-4a77-9a16-8c3379aa4a8b
