@@ -65,7 +65,10 @@ warn_unused_configs = true
 module = [
     "pyarrow.*",
     "fsspec.*",
-    "icebridge.*"
+    "icebridge.*",
+    "cloudpickle.*",
+    "docker.*",
+    "uvicorn.*"
 ]
 ignore_missing_imports = true
 

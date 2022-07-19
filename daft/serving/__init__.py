@@ -1,1 +1,1 @@
-from .application import App
+from .client import ServingClient
