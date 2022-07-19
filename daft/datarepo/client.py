@@ -30,7 +30,7 @@ class DatarepoClient:
         Returns:
             List[str]: IDs of datarepos
         """
-        return self._iceberg_catalog.list_tables()
+        return self._iceberg_catalog.list_tables()  # type: ignore
 
     def from_id(self, repo_id: str) -> DataRepo:
         table = self._iceberg_catalog.load_table(repo_id)
@@ -40,7 +40,7 @@ class DatarepoClient:
         return DataRepo.create(self._iceberg_catalog, repo_id, dtype)
 
     def delete(self, repo_id: str) -> bool:
-        return self._iceberg_catalog.drop_table(repo_id, True)
+        return self._iceberg_catalog.drop_table(repo_id, True)  # type: ignore
 
 
 def get_client(datarepo_path: Optional[str] = None) -> DatarepoClient:

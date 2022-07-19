@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import ForwardRef, Optional, Union
-
-Operation = ForwardRef("Operation")
+from typing import Union
 
 
 class ColumnType(Enum):
@@ -14,22 +12,18 @@ class ColumnType(Enum):
 
 @dataclass
 class Column:
-    name: str
-    column_type: Optional[ColumnType] = None
-    operation: Optional[Operation] = None
+    ...
+    # name: str
+    # column_type: Optional[ColumnType] = None
+    # operation: Optional[Operation] = None
 
-    def alias(self, name: str) -> Column:
-        from daft.operations import Operation
-
-        return Column(name=name, column_type=ColumnType.RESULT, operation=Operation("alias_pl", [self]))
-
-    @classmethod
-    def from_arg(cls, c: "ColumnArgType") -> Column:
-        if isinstance(c, Column):
-            return c
-        elif isinstance(c, str):
-            return Column(c)
-        raise ValueError(f"unknown type for column {type(c)}")
+    # @classmethod
+    # def from_arg(cls, c: "ColumnArgType") -> Column:
+    #     if isinstance(c, Column):
+    #         return c
+    #     elif isinstance(c, str):
+    #         return Column(c)
+    #     raise ValueError(f"unknown type for column {type(c)}")
 
 
 class ColumnExpression:

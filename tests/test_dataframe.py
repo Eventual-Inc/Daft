@@ -1,16 +1,11 @@
-from typing import Dict, List
-
-import pytest
-
-
-@pytest.fixture(scope="function")
-def valid_data() -> List[Dict[str, float]]:
-    items = [
-        {"sepal_length": 5.1, "sepal_width": 3.5, "petal_length": 1.4, "petal_width": 0.2, "variety": "Setosa"},
-        {"sepal_length": 4.9, "sepal_width": 3.0, "petal_length": 1.4, "petal_width": 0.2, "variety": "Setosa"},
-        {"sepal_length": 4.7, "sepal_width": 3.2, "petal_width": 1.3, "petal_width": 0.2, "variety": "Setosa"},
-    ]
-    return items
+# @pytest.fixture(scope="function")
+# def valid_data() -> List[Dict[str, float]]:
+#     items = [
+#         {"sepal_length": 5.1, "sepal_width": 3.5, "petal_length": 1.4, "petal_width": 0.2, "variety": "Setosa"},
+#         {"sepal_length": 4.9, "sepal_width": 3.0, "petal_length": 1.4, "petal_width": 0.2, "variety": "Setosa"},
+#         {"sepal_length": 4.7, "sepal_width": 3.2, "petal_width": 1.3, "petal_width": 0.2, "variety": "Setosa"},
+#     ]
+#     return items
 
 
 # def test_create_dataframe(valid_data: List[Dict[str, float]]) -> None:

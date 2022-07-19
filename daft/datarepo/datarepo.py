@@ -34,7 +34,7 @@ class DataRepo:
     ) -> ray.data.Dataset:
         scan = self._table.new_scan()
         if filters is not None:
-            scan = scan.filter(expressions.get_iceberg_filter_expression(filters, self._table.client))
+            scan = scan.filter(expressions.get_iceberg_filter_expression(filters, self._table.client))  # type: ignore
         filelist = scan.plan_files()
 
         daft_schema = getattr(dtype, "_daft_schema", None)
@@ -52,14 +52,13 @@ class DataRepo:
             schema=daft_schema.arrow_schema(),
             parallelism=parallelism,
             # Reader kwargs passed to Pyarrow Scanner.from_fragment
-            filter=expressions.get_arrow_filter_expression(filters),
+            filter=expressions.get_arrow_filter_expression(filters),  # type: ignore
         )
 
         if limit is not None:
             ds = ds.limit(limit)
-
         return ds.map_batches(
-            lambda batch: daft_schema.deserialize_batch(batch, dtype),
+            lambda batch: daft_schema.deserialize_batch(batch, dtype),  # type: ignore
             batch_format="pyarrow",
         )
 
@@ -96,7 +95,7 @@ class DataRepo:
         num_partitions = ceil(dataset.count() // rows_per_partition)
         dataset = dataset.repartition(num_partitions, shuffle=True)
         filewrite_outputs = dataset.map_batches(_write_block, batch_size=rows_per_partition).take_all()  # type: ignore
-        return filewrite_outputs
+        return filewrite_outputs  # type: ignore
 
     def append(self, dataset: ray.data.Dataset, rows_per_partition=1024) -> List[str]:
         filewrite_outputs = self.__write_dataset(dataset, rows_per_partition)
