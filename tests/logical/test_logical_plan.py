@@ -10,13 +10,13 @@ def test_scan_predicates() -> None:
     scan = Scan(schema)
     assert scan.schema() == schema
 
-    proj_scan = Scan(schema, projections=[col("a") + 1])
+    proj_scan = Scan(schema, columns=["a"])
     assert proj_scan.schema() == PlanSchema(["a"])
 
     select_scan = Scan(schema, selections=[col("a") < 10])
     assert select_scan.schema() == schema
 
-    both_scan = Scan(schema, selections=[col("a") < 10], projections=[col("b"), col("c")])
+    both_scan = Scan(schema, selections=[col("a") < 10], columns=["b", "c"])
     assert both_scan.schema() == PlanSchema(["b", "c"])
 
 

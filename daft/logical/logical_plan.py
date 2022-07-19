@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from daft.expressions import Expression
+from daft.expressions import ColumnExpression, Expression
 from daft.internal.treenode import TreeNode
 from daft.logical.schema import PlanSchema
 
@@ -26,7 +26,7 @@ class Scan(LogicalPlan):
         self,
         schema: PlanSchema,
         selections: Optional[List[Expression]] = None,
-        projections: Optional[List[Expression]] = None,
+        columns: Optional[List[str]] = None,
     ) -> None:
         super().__init__(schema)
         self._output_schema = schema
@@ -34,11 +34,11 @@ class Scan(LogicalPlan):
         if selections is not None:
             self._validate_columns(selections)
 
-        if projections is not None:
-            self._validate_columns(projections)
-            self._output_schema = PlanSchema.from_expressions(projections)
+        if columns is not None:
+            self._validate_columns([ColumnExpression(c) for c in columns])
+            self._output_schema = PlanSchema(columns)
 
-        self._projections = projections
+        self._columns = columns
         self._selections = selections
 
     def schema(self) -> PlanSchema:
