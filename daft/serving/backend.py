@@ -60,7 +60,7 @@ class DockerEndpointBackend(AbstractEndpointBackend):
             tar.add(pathlib.Path(__file__).parent / "Dockerfile", arcname="Dockerfile")
 
             # Add pip dependencies into the Tarfile as a requirements.txt
-            requirements_txt_file = pathlib.Path(td) / "requirements.txt"
+            requirements_txt_file = pathlib.Path(td) / DockerEndpointBackend.REQUIREMENTS_TXT_FILENAME
             requirements_txt_file.write_text("\n".join(pip_dependencies))
             tar.add(requirements_txt_file, arcname=DockerEndpointBackend.REQUIREMENTS_TXT_FILENAME)
 
