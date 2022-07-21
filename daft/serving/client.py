@@ -1,14 +1,26 @@
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Type
 
-from daft.serving import backend
+from daft.serving import backend, config
+from daft.serving.aws_lambda import AWSLambdaEndpointBackend
+from daft.serving.docker import DockerEndpointBackend
+
+CONFIG_BACKEND_CLASSES: List[Type[backend.AbstractEndpointBackend]] = [DockerEndpointBackend, AWSLambdaEndpointBackend]
+CONFIG_TYPE_ID_TO_BACKEND_CLASS_MAP = {
+    backend_class.config_type_id(): backend_class for backend_class in CONFIG_BACKEND_CLASSES
+}
 
 
 class ServingClient:
-    def __init__(self):
-        self.endpoint_backends: Dict[str, backend.AbstractEndpointBackend] = {
-            "default": backend.DockerEndpointBackend(),
-            "aws_lambda": backend.AWSLambdaEndpointBackend(),
+    def __init__(self, endpoint_backends: Dict[str, backend.AbstractEndpointBackend]):
+        self.endpoint_backends = endpoint_backends
+
+    @classmethod
+    def from_configs(cls, configs: List[Dict[str, Any]]):
+        parsed_configs = [config.BackendConfig.parse_obj(c) for c in configs]
+        instantiated_backends = {
+            c.name: CONFIG_TYPE_ID_TO_BACKEND_CLASS_MAP[c.config.type].from_config(c.config) for c in parsed_configs
         }
+        return cls(instantiated_backends)
 
     def list_backends(self):
         return self.endpoint_backends
