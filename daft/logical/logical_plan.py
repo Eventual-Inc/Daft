@@ -2,57 +2,52 @@ from typing import List, Optional
 
 from daft.expressions import ColumnExpression, Expression
 from daft.internal.treenode import TreeNode
-from daft.logical.schema import PlanSchema
+from daft.logical.schema import ExpressionList
 
 
 class LogicalPlan(TreeNode):
-    def __init__(self, schema: PlanSchema) -> None:
+    def __init__(self, schema: ExpressionList) -> None:
         super().__init__()
         self._schema = schema
 
-    def schema(self) -> PlanSchema:
+    def schema(self) -> ExpressionList:
         return self._schema
-
-    def _validate_columns(self, exprs: List[Expression]) -> bool:
-        for expr in exprs:
-            for needed_col in expr.required_columns():
-                if not self._schema.contains(needed_col):
-                    raise ValueError(f"input does not have required col {needed_col}")
-        return True
 
 
 class Scan(LogicalPlan):
     def __init__(
         self,
-        schema: PlanSchema,
-        selections: Optional[List[Expression]] = None,
+        schema: ExpressionList,
+        selections: Optional[ExpressionList] = None,
         columns: Optional[List[str]] = None,
     ) -> None:
+        schema = schema.resolve()
         super().__init__(schema)
-        self._output_schema = schema
 
         if selections is not None:
-            self._validate_columns(selections)
+            selections = selections.resolve(schema)
 
         if columns is not None:
-            self._validate_columns([ColumnExpression(c) for c in columns])
-            self._output_schema = PlanSchema(columns)
+            new_schema = ExpressionList([ColumnExpression(c) for c in columns])
+            self._output_schema = new_schema.resolve(schema)
+        else:
+            self._output_schema = schema
 
         self._columns = columns
         self._selections = selections
 
-    def schema(self) -> PlanSchema:
+    def schema(self) -> ExpressionList:
         return self._output_schema
 
     def __repr__(self) -> str:
-        return f"Scan\n\tselection={self._selections}\n\tcolumns={self._columns}"
+        return f"Scan\n\tschema={self.schema()}\n\tselection={self._selections}\n\tcolumns={self._columns}"
 
 
 class Selection(LogicalPlan):
     """Which rows to keep"""
 
     def __init__(self, input: LogicalPlan, predicate: List[Expression]) -> None:
-        input._validate_columns(predicate)
+        # input._validate_columns(predicate)
         super().__init__(input.schema())
         self._input = self._register_child(input)
         self._predicate = predicate
@@ -64,27 +59,16 @@ class Selection(LogicalPlan):
 class Projection(LogicalPlan):
     """Which columns to keep"""
 
-    def __init__(self, input: LogicalPlan, predicate: List[Expression]) -> None:
-        input._validate_columns(predicate)
-        schema = PlanSchema.from_expressions(predicate)
-        super().__init__(schema)
+    def __init__(self, input: LogicalPlan, predicate: ExpressionList) -> None:
+        predicate = predicate.resolve(input_schema=input.schema())
+        super().__init__(predicate)
 
         self._input = self._register_child(input)
         self._predicate = predicate
 
     def __repr__(self) -> str:
-        return f"Projection\n\tpredicate={self._predicate}"
+        return f"Projection\n\tschema={self.schema()}\n\tpredicate={self._predicate}"
 
 
-class HStack(LogicalPlan):
-    """zipping columns on without joining"""
-
-    def __init__(self, input: LogicalPlan, to_add: List[Expression]) -> None:
-        input._validate_columns(to_add)
-        schema = input.schema().add_columns(PlanSchema.from_expressions(to_add).fields)
-        super().__init__(schema)
-        self._input = self._register_child(input)
-        self._to_add = to_add
-
-    def __repr__(self) -> str:
-        return f"HStack\n\tadding={self._to_add}"
+class Sort(LogicalPlan):
+    ...

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import itertools
 import operator
 from abc import abstractmethod
 from functools import partialmethod
@@ -13,9 +14,19 @@ def col(name: str) -> ColumnExpression:
     return ColumnExpression(name)
 
 
+_COUNTER = itertools.count()
+
+
 class Expression(TreeNode["Expression"]):
     def __init__(self) -> None:
         super().__init__()
+        self._id: Optional[int] = None
+
+    def __repr__(self) -> str:
+        if self._id is None:
+            return self._display_str()
+        else:
+            return f"{self._display_str()} -> {self.name()}#{self._id}"
 
     def _to_expression(self, input: Any) -> Expression:
         if not isinstance(input, Expression):
@@ -23,23 +34,15 @@ class Expression(TreeNode["Expression"]):
         return input
 
     def _unary_op(self, func: Callable, symbol: Optional[str] = None) -> Expression:
-        return UnaryOpExpression(self, func, symbol=symbol)
+        return UnaryCallExpression(self, func, symbol=symbol)
 
     def _binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
         other_expr = self._to_expression(other)
-        return BinaryOpExpression(self, other_expr, func, symbol=symbol)
+        return BinaryCallExpression(self, other_expr, func, symbol=symbol)
 
     def _reverse_binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
         other_expr = self._to_expression(other)
         return other_expr._binary_op(self, func, symbol=symbol)
-
-    @abstractmethod
-    def is_literal(self) -> bool:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def is_operation(self) -> bool:
-        raise NotImplementedError()
 
     def name(self) -> Optional[str]:
         for child in self._children():
@@ -48,10 +51,18 @@ class Expression(TreeNode["Expression"]):
                 return name
         return None
 
-    def required_columns(self) -> List[str]:
-        to_rtn: List[str] = []
+    def _assign_id(self, strict: bool = True) -> int:
+        if self._id is None:
+            self._id = next(_COUNTER)
+        else:
+            if strict:
+                raise ValueError(f"We have already assigned an id, {self._id}")
+        return self._id
+
+    def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
+        to_rtn: List[ColumnExpression] = []
         for child in self._children():
-            to_rtn.extend(child.required_columns())
+            to_rtn.extend(child.required_columns(unresolved_only))
         return to_rtn
 
     # UnaryOps
@@ -104,8 +115,34 @@ class Expression(TreeNode["Expression"]):
     def eval(self, **kwargs):
         raise NotImplementedError()
 
+    @abstractmethod
+    def _display_str(self) -> str:
+        raise NotImplementedError()
+
     def alias(self, name: str) -> Expression:
         return AliasExpression(self, name)
+
+    def has_call(self) -> bool:
+        if len(self._children()) > 0:
+            return any(c.has_call() for c in self._children())
+        return False
+
+    def is_same(self, other: ColumnExpression) -> bool:
+        """Checks if this Expression is the symbolic the same as the following ColumnExpression
+
+        Args:
+            other (ColumnExpression): the symbolic column whos name and id have to match to self's
+
+        Raises:
+            ValueError: if the ids match but the names dont
+
+        Returns:
+            bool: if the two expressions are symbolic the same
+        """
+        ids_match = self._id is not None and self._id == other._id
+        if ids_match and (self.name() != other.name()):
+            raise ValueError(f"ids match both names dont: self {self.name()}, other {other.name()}")
+        return ids_match
 
 
 class LiteralExpression(Expression):
@@ -113,31 +150,22 @@ class LiteralExpression(Expression):
         super().__init__()
         self._value = value
 
-    def __repr__(self) -> str:
+    def _display_str(self) -> str:
         return f"lit({self._value})"
-
-    def is_literal(self) -> bool:
-        return True
-
-    def is_operation(self) -> bool:
-        return False
 
     def eval(self, **kwargs):
         return self._value
 
 
-class OpExpression(Expression):
+class CallExpression(Expression):
     def __init__(self) -> None:
         super().__init__()
 
-    def is_literal(self) -> bool:
-        return False
-
-    def is_operation(self) -> bool:
+    def has_call(self) -> bool:
         return True
 
 
-class UnaryOpExpression(OpExpression):
+class UnaryCallExpression(CallExpression):
     def __init__(self, operand: Expression, op: Callable, symbol: Optional[str] = None) -> None:
         super().__init__()
         if not isinstance(operand, Expression):
@@ -146,7 +174,7 @@ class UnaryOpExpression(OpExpression):
         self._op = op
         self._symbol = symbol
 
-    def __repr__(self) -> str:
+    def _display_str(self) -> str:
         op_name = self._op.__name__
         if self._symbol is None:
             return f"[{op_name}({self._operand})]"
@@ -158,7 +186,7 @@ class UnaryOpExpression(OpExpression):
         return self._op(operand)
 
 
-class BinaryOpExpression(OpExpression):
+class BinaryCallExpression(CallExpression):
     def __init__(self, left: Expression, right: Expression, op: Callable, symbol: Optional[str] = None) -> None:
         super().__init__()
         self._left = self._register_child(left)
@@ -166,7 +194,7 @@ class BinaryOpExpression(OpExpression):
         self._op = op
         self._symbol = symbol
 
-    def __repr__(self) -> str:
+    def _display_str(self) -> str:
         op_name = self._op.__name__
         if self._symbol is None:
             symbol = op_name
@@ -180,13 +208,13 @@ class BinaryOpExpression(OpExpression):
         return self._op(eval_left, eval_right)
 
 
-class MultipleReturnSelectExpression(OpExpression):
+class MultipleReturnSelectExpression(Expression):
     def __init__(self, expr: Expression, n: int) -> None:
         super().__init__()
         self._expr = self._register_child(expr)
         self._n = n
 
-    def __repr__(self) -> str:
+    def _display_str(self) -> str:
         return f"{self._expr}[{self._n}]"
 
     def eval(self, **kwargs):
@@ -197,7 +225,7 @@ class MultipleReturnSelectExpression(OpExpression):
         return value
 
 
-class UDFExpression(OpExpression):
+class UDFExpression(CallExpression):
     def __init__(self, func: Callable, func_args: Tuple, func_kwargs: Optional[Dict[str, Any]] = None) -> None:
         super().__init__()
         self._args = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
@@ -209,7 +237,7 @@ class UDFExpression(OpExpression):
     def is_operation(self) -> bool:
         return True
 
-    def __repr__(self) -> str:
+    def _display_str(self) -> str:
         func_name = self._func.__name__
         args = ", ".join(repr(a) for a in self._args)
         if len(self._kwargs) == 0:
@@ -252,14 +280,14 @@ class ColumnExpression(Expression):
             raise TypeError(f"Expected name to be type str, is {type(name)}")
         self._name = name
 
+    def _display_str(self) -> str:
+        if self._id is None:
+            return f"col({self._name})"
+        else:
+            return f"col({self._name}#{self._id})"
+
     def __repr__(self) -> str:
-        return f"col({self._name})"
-
-    def is_literal(self) -> bool:
-        return False
-
-    def is_operation(self) -> bool:
-        return False
+        return self._display_str()
 
     def eval(self, **kwargs):
         if self._name not in kwargs:
@@ -269,8 +297,16 @@ class ColumnExpression(Expression):
     def name(self) -> Optional[str]:
         return self._name
 
-    def required_columns(self) -> List[str]:
-        return [self._name]
+    def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
+        if unresolved_only and self._id is not None:
+            return []
+        return [self]
+
+    def assign_id_from_expression(self, other: Expression) -> int:
+        assert other._id is not None
+        assert self.name() == other.name()
+        self._id = other._id
+        return self._id
 
 
 class AliasExpression(Expression):
@@ -281,14 +317,8 @@ class AliasExpression(Expression):
         self._expr = self._register_child(expr)
         self._name = name
 
-    def __repr__(self) -> str:
+    def _display_str(self) -> str:
         return f"{self._expr}.alias({self._name})"
-
-    def is_literal(self) -> bool:
-        return False
-
-    def is_operation(self) -> bool:
-        return False
 
     def name(self) -> Optional[str]:
         return self._name

@@ -1,44 +1,67 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import copy
 from typing import List, Optional
 
-from daft.expressions import Expression
+from daft.expressions import ColumnExpression, Expression
 
 
-@dataclass(frozen=True)
-class PlanSchema:
-    fields: List[str]
+class ExpressionList:
+    def __init__(self, exprs: List[Expression]) -> None:
+        self.exprs = copy.deepcopy(exprs)
+        self.names: List[str] = []
+        for i, e in enumerate(exprs):
+            e_name = e.name()
+            if e_name is None:
+                e_name = "col_{i}"
+            self.names.append(e_name)
+        # self.is_resolved = all(e.required_columns(unresolved_only=True) == [] for e in exprs)
 
     def __post_init__(self) -> None:
-        if len(self.fields) != len(set(self.fields)):
-            raise ValueError(f"found duplicate entries in schema {self.fields}")
+        if len(self.names) != len(set(self.names)):
+            raise ValueError(f"found duplicate entries in schema {self.names}")
 
-    def add_columns(self, names: List[str]) -> PlanSchema:
-        names_copy = self.fields.copy()
-        for name in names:
-            if name in names_copy:
-                raise ValueError(f"column {name} already exists")
-        names_copy.extend(names)
-        return PlanSchema(fields=names_copy)
+    def contains(self, column: ColumnExpression) -> bool:
+        for e in self.exprs:
+            if e.is_same(column):
+                return True
+        return False
 
-    def exclude_columns(self, names: List[str]) -> PlanSchema:
-        names_copy = self.fields.copy()
-        for each in names:
-            if each not in names_copy:
-                raise ValueError(f"{each} not in Schema: {names_copy}")
-        names_filtered = list(filter(lambda x: x in names, names_copy))
-        return PlanSchema(fields=names_filtered)
+    def get_expression_by_name(self, name: str) -> Optional[Expression]:
+        for i, n in enumerate(self.names):
+            if n == name:
+                return self.exprs[i]
+        return None
 
-    def contains(self, name: str) -> bool:
-        return name in self.fields
+    def resolve(self, input_schema: Optional[ExpressionList] = None) -> ExpressionList:
+        if input_schema is None:
+            for e in self.exprs:
+                assert isinstance(e, ColumnExpression), "we can only resolve ColumnExpression without an input_schema"
+                e._assign_id()
+        else:
+            for e in self.exprs:
+                for col_expr in e.required_columns(unresolved_only=True):
+                    col_expr_name = col_expr.name()
+                    assert col_expr_name is not None
+                    match_output_expr = input_schema.get_expression_by_name(col_expr_name)
+                    if match_output_expr is not None:
+                        col_expr.assign_id_from_expression(match_output_expr)
+                    else:
+                        raise ValueError(f"Could not find expr by name {col_expr_name}")
+        for e in self.exprs:
+            e._assign_id(strict=False)
+        # self.is_resolved = True
+        return self
 
-    @classmethod
-    def from_expressions(cls, exprs: List[Expression]) -> PlanSchema:
-        names_with_nones: List[Optional[str]] = [expr.name() for expr in exprs]
-        names: List[str] = []
-        for i, name in enumerate(names_with_nones):
-            if name is None:
-                name = f"col_{i}"
-            names.append(name)
-        return cls(names)
+    def keep(self, to_keep: List[str]) -> ExpressionList:
+        # is_resolved = True
+        exprs_to_keep: List[Expression] = []
+        for name in to_keep:
+            expr = self.get_expression_by_name(name)
+            if expr is None:
+                raise ValueError(f"{name} not found in {self.names}")
+            exprs_to_keep.append(expr)
+        return ExpressionList(exprs_to_keep)
+
+    def __repr__(self) -> str:
+        return repr(self.exprs)
