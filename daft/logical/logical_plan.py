@@ -6,7 +6,7 @@ from daft.internal.treenode import TreeNode
 from daft.logical.schema import ExpressionList
 
 
-class LogicalPlan(TreeNode):
+class LogicalPlan(TreeNode["LogicalPlan"]):
     def __init__(self, schema: ExpressionList) -> None:
         super().__init__()
         self._schema = schema
@@ -57,7 +57,7 @@ class Selection(LogicalPlan):
 
     def __init__(self, input: LogicalPlan, predicate: ExpressionList) -> None:
         super().__init__(input.schema().to_column_expressions())
-        self._input = self._register_child(input)
+        self._register_child(input)
         self._predicate = predicate.resolve(input.schema())
 
     def __repr__(self) -> str:
@@ -74,7 +74,7 @@ class Projection(LogicalPlan):
         projection = projection.resolve(input_schema=input.schema())
         super().__init__(projection)
 
-        self._input = self._register_child(input)
+        self._register_child(input)
         self._projection = projection
 
     def __repr__(self) -> str:
