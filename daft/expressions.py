@@ -26,7 +26,7 @@ class Expression(TreeNode["Expression"]):
         if self._id is None:
             return self._display_str()
         else:
-            return f"{self._display_str()} -> {self.name()}#{self._id}"
+            return f"{self._display_str()} AS {self.name()}#{self._id}"
 
     def _to_expression(self, input: Any) -> Expression:
         if not isinstance(input, Expression):

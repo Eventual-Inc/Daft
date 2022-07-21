@@ -10,11 +10,15 @@ class ExpressionList:
     def __init__(self, exprs: List[Expression]) -> None:
         self.exprs = copy.deepcopy(exprs)
         self.names: List[str] = []
+        name_set = set()
         for i, e in enumerate(exprs):
             e_name = e.name()
             if e_name is None:
                 e_name = "col_{i}"
+            if e_name in name_set:
+                raise ValueError(f"duplicate name found {e_name}")
             self.names.append(e_name)
+            name_set.add(e_name)
         # self.is_resolved = all(e.required_columns(unresolved_only=True) == [] for e in exprs)
 
     def __post_init__(self) -> None:
@@ -37,7 +41,7 @@ class ExpressionList:
         if input_schema is None:
             for e in self.exprs:
                 assert isinstance(e, ColumnExpression), "we can only resolve ColumnExpression without an input_schema"
-                e._assign_id()
+                e._assign_id(strict=False)
         else:
             for e in self.exprs:
                 for col_expr in e.required_columns(unresolved_only=True):
@@ -65,3 +69,6 @@ class ExpressionList:
 
     def __repr__(self) -> str:
         return repr(self.exprs)
+
+    def union(self, other: ExpressionList):
+        return ExpressionList(self.exprs + other.exprs)

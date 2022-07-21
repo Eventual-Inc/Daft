@@ -1,7 +1,7 @@
 import pytest
 
 from daft.expressions import col
-from daft.logical.logical_plan import Projection, Scan
+from daft.logical.logical_plan import Projection, Scan, Selection
 from daft.logical.schema import ExpressionList
 
 
@@ -28,63 +28,62 @@ def test_projection_logical_plan(schema) -> None:
     scan = Scan(schema)
     assert scan.schema() == schema
 
-    full_project = Projection(scan, ExpressionList([col("a"), col("b") * 2, col("c")]))
-    Projection(full_project, ExpressionList([col("a"), col("b"), col("c")]))
-    import ipdb
-
-    ipdb.set_trace()
-    assert full_project.schema() == schema
+    full_project = Projection(scan, ExpressionList([col("a"), col("b"), col("c")]))
+    # Projection(full_project, ExpressionList([col("a"), col("b"), col("c")]))
+    assert full_project.schema().names == schema.names
 
     project = Projection(scan, ExpressionList([col("b")]))
-    assert project.schema() == ExpressionList.keep(["b"])
+    assert project.schema().names == schema.keep(["b"]).names
 
 
-# def test_projection_logical_plan_bad_input(schema) -> None:
-#     scan = Scan(schema)
-#     assert scan.schema() == schema
+def test_projection_logical_plan_bad_input(schema) -> None:
+    scan = Scan(schema)
+    assert scan.schema() == schema
 
-#     with pytest.raises(ValueError):
-#         Projection(scan, [col("d")])
-
-
-# def test_selection_logical_plan(schema) -> None:
-#     scan = Scan(schema)
-#     assert scan.schema() == schema
-
-#     full_select = Selection(scan, [col("a") == 1, col("b") < 10, col("c") > 10])
-#     assert full_select.schema() == schema
-
-#     project = Selection(scan, [col("b") < 10])
-#     assert project.schema() == schema
+    with pytest.raises(ValueError):
+        Projection(scan, ExpressionList([col("d")]))
 
 
-# def test_selection_logical_plan_bad_input(schema) -> None:
-#     scan = Scan(schema)
-#     assert scan.schema() == schema
+def test_selection_logical_plan(schema) -> None:
+    scan = Scan(schema)
+    assert scan.schema().names == schema.names
 
-#     with pytest.raises(ValueError):
-#         select = Selection(scan, [col("d") == 1])
+    full_select = Selection(scan, ExpressionList([col("a") == 1, col("b") < 10, col("c") > 10]))
+    assert full_select.schema().names == schema.names
 
-
-# def test_hstack_logical_plan(schema) -> None:
-#     scan = Scan(schema)
-#     assert scan.schema() == schema
-
-#     hstacked = HStack(scan, [(col("a") + col("b")).alias("d")])
-#     assert hstacked.schema() == schema.add_columns(["d"])
-
-#     projection = Projection(scan, [col("b")])
-
-#     hstacked_on_proj = HStack(projection, [(col("b") + 1).alias("a"), (col("b") + 2).alias("c")])
-#     assert hstacked_on_proj.schema() == ExpressionList(["b", "a", "c"])
-
-#     projection_reorder = Projection(hstacked_on_proj, [col("a"), col("b"), col("c")])
-#     assert projection_reorder.schema() == schema
+    project = Selection(scan, ExpressionList([col("b") < 10]))
+    assert project.schema().names == schema.names
 
 
-# def test_selection_logical_plan_bad_input(schema) -> None:
-#     scan = Scan(schema)
-#     assert scan.schema() == schema
+def test_selection_logical_plan_bad_input(schema) -> None:
+    scan = Scan(schema)
+    assert scan.schema() == schema
 
-#     with pytest.raises(ValueError):
-#         scan = HStack(scan, [(col("b") + 1).alias("a")])
+    with pytest.raises(ValueError):
+        select = Selection(scan, ExpressionList([col("d") == 1]))
+
+
+def test_projection_new_columns_logical_plan(schema) -> None:
+    scan = Scan(schema)
+    assert scan.schema().names == schema.names
+
+    hstacked = Projection(scan, schema.union(ExpressionList([(col("a") + col("b")).alias("d")])))
+    assert hstacked.schema().names == ["a", "b", "c", "d"]
+
+    projection = Projection(scan, ExpressionList([col("b")]))
+    proj_schema = projection.schema()
+    hstacked_on_proj = Projection(
+        projection, proj_schema.union(ExpressionList([(col("b") + 1).alias("a"), (col("b") + 2).alias("c")]))
+    )
+    assert hstacked_on_proj.schema().names == ["b", "a", "c"]
+
+    projection_reorder = Projection(hstacked_on_proj, ExpressionList([col("a"), col("b"), col("c")]))
+    assert projection_reorder.schema().names == ["a", "b", "c"]
+
+
+def test_selection_logical_plan_bad_input(schema) -> None:
+    scan = Scan(schema)
+    assert scan.schema().names == schema.names
+
+    with pytest.raises(ValueError):
+        scan = Projection(scan, ExpressionList([col("a"), (col("b") + 1).alias("a")]))

@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from daft.expressions import ColumnExpression, Expression
+from daft.expressions import ColumnExpression
 from daft.internal.treenode import TreeNode
 from daft.logical.schema import ExpressionList
 
@@ -46,14 +46,14 @@ class Scan(LogicalPlan):
 class Selection(LogicalPlan):
     """Which rows to keep"""
 
-    def __init__(self, input: LogicalPlan, predicate: List[Expression]) -> None:
+    def __init__(self, input: LogicalPlan, predicate: ExpressionList) -> None:
         # input._validate_columns(predicate)
         super().__init__(input.schema())
         self._input = self._register_child(input)
-        self._predicate = predicate
+        self._predicate = predicate.resolve(input.schema())
 
     def __repr__(self) -> str:
-        return f"Selection\n\tpredicate={self._predicate}"
+        return f"Selection\n\tschema={self.schema()}\n\tpredicate={self._predicate}"
 
 
 class Projection(LogicalPlan):
@@ -67,7 +67,7 @@ class Projection(LogicalPlan):
         self._predicate = predicate
 
     def __repr__(self) -> str:
-        return f"Projection\n\tschema={self.schema()}\n\tpredicate={self._predicate}"
+        return f"Projection\n\toutput={self.schema()}"
 
 
 class Sort(LogicalPlan):
