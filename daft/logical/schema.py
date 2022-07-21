@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 from typing import Dict, Iterable, Iterator, List, Optional, Set, TypeVar, cast
 
+from polars import Object
+
 from daft.expressions import ColumnExpression, Expression
 
 ExpressionType = TypeVar("ExpressionType", bound=Expression)

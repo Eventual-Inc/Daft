@@ -59,7 +59,7 @@ def test_filter_logical_plan(schema) -> None:
     assert project.schema() == schema
 
     project = Selection(scan, ExpressionList([col("b") < 10]))
-    assert project.schema().names == schema.names
+    assert project.schema() == schema
 
 def test_filter_logical_plan_bad_input(schema) -> None:
     scan = Scan(schema)
