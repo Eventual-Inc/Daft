@@ -19,6 +19,3 @@ def test_pred_push_down(schema):
 
     full_select = Selection(project, ExpressionList([col("a") == 1, col("b") < 10]))
     rule._selection_through_projection(full_select, project)
-    import ipdb
-
-    ipdb.set_trace()
