@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Generic, List, TypeVar
+from typing import TYPE_CHECKING, Generic, List, TypeVar
+
+if TYPE_CHECKING:
+    from daft.internal.rule import Rule
 
 T = TypeVar("T", bound="TreeNode")
 
@@ -17,6 +20,9 @@ class TreeNode(Generic[T]):
     def _register_child(self, child: T) -> T:
         self._registered_children.append(child)
         return child
+
+    def apply_rule(self, rule: Rule[T]):
+        ...
 
     def to_dot(self) -> str:
         graph: pydot.Graph = pydot.Dot("my_graph", graph_type="digraph", bgcolor="white")  # type: ignore

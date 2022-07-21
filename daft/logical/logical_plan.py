@@ -1,3 +1,4 @@
+from abc import abstractmethod
 from typing import List, Optional
 
 from daft.expressions import ColumnExpression
@@ -13,6 +14,10 @@ class LogicalPlan(TreeNode):
     def schema(self) -> ExpressionList:
         return self._schema
 
+    @abstractmethod
+    def required_columns(self) -> ExpressionList:
+        raise NotImplementedError()
+
 
 class Scan(LogicalPlan):
     def __init__(
@@ -25,7 +30,9 @@ class Scan(LogicalPlan):
         super().__init__(schema)
 
         if selections is not None:
-            selections = selections.resolve(schema)
+            self._selections = selections.resolve(schema)
+        else:
+            self._selections = ExpressionList([])
 
         if columns is not None:
             new_schema = ExpressionList([ColumnExpression(c) for c in columns])
@@ -33,14 +40,16 @@ class Scan(LogicalPlan):
         else:
             self._output_schema = schema
 
-        self._columns = columns
-        self._selections = selections
+        self._columns = self._schema
 
     def schema(self) -> ExpressionList:
         return self._output_schema
 
     def __repr__(self) -> str:
         return f"Scan\n\tschema={self.schema()}\n\tselection={self._selections}\n\tcolumns={self._columns}"
+
+    def required_columns(self) -> ExpressionList:
+        return self._selections.required_columns()
 
 
 class Selection(LogicalPlan):
@@ -53,6 +62,9 @@ class Selection(LogicalPlan):
 
     def __repr__(self) -> str:
         return f"Selection\n\toutput={self.schema()}\n\tpredicate={self._predicate}"
+
+    def required_columns(self) -> ExpressionList:
+        return self._predicate.required_columns()
 
 
 class Projection(LogicalPlan):
@@ -67,6 +79,9 @@ class Projection(LogicalPlan):
 
     def __repr__(self) -> str:
         return f"Projection\n\toutput={self.schema()}"
+
+    def required_columns(self) -> ExpressionList:
+        return self._projection.required_columns()
 
 
 class Sort(LogicalPlan):

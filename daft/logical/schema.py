@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import copy
-from typing import List, Optional
+from typing import Dict, Iterable, Iterator, List, Optional, Set
 
 from daft.expressions import ColumnExpression, Expression
 
 
-class ExpressionList:
+class ExpressionList(Iterable[Expression]):
     def __init__(self, exprs: List[Expression]) -> None:
         self.exprs = copy.deepcopy(exprs)
         self.names: List[str] = []
@@ -77,3 +77,23 @@ class ExpressionList:
             return False
 
         return len(self.exprs) == len(other.exprs) and all(s.is_same(o) for s, o in zip(self.exprs, other.exprs))
+
+    def required_columns(self) -> ExpressionList:
+        name_to_expr: Dict[str, ColumnExpression] = {}
+        for e in self.exprs:
+            for c in e.required_columns():
+                name = c.name()
+                assert name is not None
+                name_to_expr[name] = c
+        return ExpressionList([e for e in name_to_expr.values()])
+
+    def __iter__(self) -> Iterator[Expression]:
+        return iter(self.exprs)
+
+    def to_id_set(self) -> Set[int]:
+        id_set = set()
+        for c in self:
+            id = c.get_id()
+            assert id is not None
+            id_set.add(id)
+        return id_set
