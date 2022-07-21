@@ -3,8 +3,6 @@ from __future__ import annotations
 import copy
 from typing import List, Optional
 
-from polars import Object
-
 from daft.expressions import ColumnExpression, Expression
 
 
@@ -74,7 +72,7 @@ class ExpressionList:
     def to_column_expressions(self) -> ExpressionList:
         return ExpressionList([e.to_column_expression() for e in self.exprs])
 
-    def __eq__(self, other: Object) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, ExpressionList):
             return False
 

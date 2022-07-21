@@ -35,6 +35,10 @@ def test_projection_logical_plan(schema) -> None:
     project = Projection(scan, ExpressionList([col("b")]))
     assert project.schema() == schema.keep(["b"])
 
+    project = Projection(scan, ExpressionList([col("b") * 2]))
+    assert project.schema() != schema.keep(["b"])
+    assert project.schema().get_expression_by_name("b").required_columns() == [schema.get_expression_by_name("b")]
+
 
 def test_projection_logical_plan_bad_input(schema) -> None:
     scan = Scan(schema)
@@ -111,11 +115,18 @@ def test_scan_projection_filter_projection_chain(schema) -> None:
 
     hstacked = Projection(scan, schema.union(ExpressionList([(col("a") + col("b")).alias("d")])))
     assert hstacked.schema().names == ["a", "b", "c", "d"]
+    assert hstacked.schema().keep(["a", "b", "c"]) == schema
 
     filtered = Selection(hstacked, ExpressionList([col("d") < 20, col("a") > 10]))
     assert filtered.schema().names == ["a", "b", "c", "d"]
+    assert filtered.schema() == hstacked.schema()
 
     projection_alias = Projection(filtered, ExpressionList([col("b").alias("out"), col("d")]))
+    projection_alias.schema().get_expression_by_name("out") == schema.get_expression_by_name("b")
+    projection_alias.schema().get_expression_by_name("d") == filtered.schema().get_expression_by_name("d")
 
     projection = Projection(projection_alias, ExpressionList([col("out")]))
+
+    projection_alias.schema().get_expression_by_name("out") == schema.get_expression_by_name("b")
+
     assert projection.schema().names == ["out"]
