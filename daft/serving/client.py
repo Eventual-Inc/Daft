@@ -5,7 +5,10 @@ from daft.serving import backend
 
 class ServingClient:
     def __init__(self):
-        self.endpoint_backends: Dict[str, backend.AbstractEndpointBackend] = {"": backend.DockerEndpointBackend()}
+        self.endpoint_backends: Dict[str, backend.AbstractEndpointBackend] = {
+            "default": backend.DockerEndpointBackend(),
+            "aws_lambda": backend.AWSLambdaEndpointBackend(),
+        }
 
     def list_backends(self):
         return self.endpoint_backends
@@ -14,7 +17,7 @@ class ServingClient:
         self,
         endpoint_name: str,
         endpoint: Callable[[Any], Any],
-        backend: str = "",
+        backend: str = "default",
         pip_dependencies: List[str] = [],
     ):
         if backend not in self.endpoint_backends:
