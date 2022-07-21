@@ -45,8 +45,27 @@ class TreeNode(Generic[TreeNodeType]):
             root._registered_children[i] = root._registered_children[i].apply_and_trickle_down(rule)
         return root
 
-    def apply_rule(self, rule: Rule[T]):
-        ...
+    def apply_and_trickle_down(self, rule: Rule[TreeNodeType]) -> TreeNodeType:
+        root = cast(TreeNodeType, self)
+        continue_looping = True
+        while continue_looping:
+            for child in root._children():
+                fn = rule.dispatch_fn(root, child)
+
+                if fn is None:
+                    continue
+
+                maybe_new_root = fn(root, child)
+
+                if maybe_new_root is not None:
+                    root = maybe_new_root
+                    break
+            else:
+                continue_looping = False
+        n_children = len(root._children())
+        for i in range(n_children):
+            root._registered_children[i] = root._registered_children[i].apply_and_trickle_down(rule)
+        return root
 
     def to_dot(self) -> str:
         graph: pydot.Graph = pydot.Dot("TreeNode", graph_type="digraph", bgcolor="white")  # type: ignore
