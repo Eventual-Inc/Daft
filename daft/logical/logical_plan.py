@@ -69,6 +69,9 @@ class Filter(LogicalPlan):
     def __repr__(self) -> str:
         return f"Selection\n\tschema={self.schema()}\n\tpredicate={self._predicate}"
 
+    def required_columns(self) -> ExpressionList:
+        return self._predicate.required_columns()
+
 
 class Projection(LogicalPlan):
     """Which columns to keep"""

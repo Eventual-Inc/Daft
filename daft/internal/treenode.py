@@ -45,6 +45,9 @@ class TreeNode(Generic[TreeNodeType]):
             root._registered_children[i] = root._registered_children[i].apply_and_trickle_down(rule)
         return root
 
+    def apply_rule(self, rule: Rule[T]):
+        ...
+
     def to_dot(self) -> str:
         graph: pydot.Graph = pydot.Dot("TreeNode", graph_type="digraph", bgcolor="white")  # type: ignore
         counter = 0
