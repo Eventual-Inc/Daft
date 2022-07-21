@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import copy
-from typing import Dict, Iterable, Iterator, List, Optional, Set
+from typing import Dict, Iterable, Iterator, List, Optional, Set, TypeVar
 
 from daft.expressions import ColumnExpression, Expression
 
+ExpressionType = TypeVar("ExpressionType", bound=Expression)
 
-class ExpressionList(Iterable[Expression]):
-    def __init__(self, exprs: List[Expression]) -> None:
+
+class ExpressionList(Iterable[ExpressionType]):
+    def __init__(self, exprs: List[ExpressionType]) -> None:
         self.exprs = copy.deepcopy(exprs)
         self.names: List[str] = []
         name_set = set()
@@ -27,7 +29,7 @@ class ExpressionList(Iterable[Expression]):
                 return True
         return False
 
-    def get_expression_by_name(self, name: str) -> Optional[Expression]:
+    def get_expression_by_name(self, name: str) -> Optional[ExpressionType]:
         for i, n in enumerate(self.names):
             if n == name:
                 return self.exprs[i]
@@ -87,7 +89,7 @@ class ExpressionList(Iterable[Expression]):
                 name_to_expr[name] = c
         return ExpressionList([e for e in name_to_expr.values()])
 
-    def __iter__(self) -> Iterator[Expression]:
+    def __iter__(self) -> Iterator[ExpressionType]:
         return iter(self.exprs)
 
     def to_id_set(self) -> Set[int]:
