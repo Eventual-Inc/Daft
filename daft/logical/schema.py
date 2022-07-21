@@ -21,10 +21,6 @@ class ExpressionList:
             name_set.add(e_name)
         # self.is_resolved = all(e.required_columns(unresolved_only=True) == [] for e in exprs)
 
-    def __post_init__(self) -> None:
-        if len(self.names) != len(set(self.names)):
-            raise ValueError(f"found duplicate entries in schema {self.names}")
-
     def contains(self, column: ColumnExpression) -> bool:
         for e in self.exprs:
             if e.is_same(column):
@@ -72,3 +68,6 @@ class ExpressionList:
 
     def union(self, other: ExpressionList):
         return ExpressionList(self.exprs + other.exprs)
+
+    def to_column_expressions(self) -> ExpressionList:
+        return ExpressionList([e.to_column_expression() for e in self.exprs])

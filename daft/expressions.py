@@ -23,10 +23,10 @@ class Expression(TreeNode["Expression"]):
         self._id: Optional[int] = None
 
     def __repr__(self) -> str:
-        if self._id is None:
-            return self._display_str()
+        if self.has_id():
+            return f"{self._display_str()} AS {self.name()}#{self.get_id()}"
         else:
-            return f"{self._display_str()} AS {self.name()}#{self._id}"
+            return self._display_str()
 
     def _to_expression(self, input: Any) -> Expression:
         if not isinstance(input, Expression):
@@ -52,12 +52,31 @@ class Expression(TreeNode["Expression"]):
         return None
 
     def _assign_id(self, strict: bool = True) -> int:
-        if self._id is None:
+        if not self.has_id():
             self._id = next(_COUNTER)
+            return self._id
         else:
             if strict:
-                raise ValueError(f"We have already assigned an id, {self._id}")
+                raise ValueError(f"We have already assigned an id, {self.get_id()}")
+            else:
+                assert self._id is not None
+                return self._id
+
+    def get_id(self) -> Optional[int]:
         return self._id
+
+    def has_id(self) -> bool:
+        return self.get_id() is not None
+
+    def to_column_expression(self) -> ColumnExpression:
+        if not self.has_id():
+            raise ValueError("we can only convert expressions with assigned id to ColumnExpressions")
+        name = self.name()
+        if name is None:
+            raise ValueError("we can only convert expressions to ColumnExpressions if they have a name")
+        ce = ColumnExpression(name)
+        ce.assign_id_from_expression(self)
+        return ce
 
     def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
         to_rtn: List[ColumnExpression] = []
@@ -139,7 +158,7 @@ class Expression(TreeNode["Expression"]):
         Returns:
             bool: if the two expressions are symbolic the same
         """
-        ids_match = self._id is not None and self._id == other._id
+        ids_match = self.has_id() and self.get_id() == other.get_id()
         if ids_match and (self.name() != other.name()):
             raise ValueError(f"ids match both names dont: self {self.name()}, other {other.name()}")
         return ids_match
@@ -281,7 +300,7 @@ class ColumnExpression(Expression):
         self._name = name
 
     def _display_str(self) -> str:
-        if self._id is None:
+        if not self.has_id():
             return f"col({self._name})"
         else:
             return f"col({self._name}#{self._id})"
@@ -298,14 +317,14 @@ class ColumnExpression(Expression):
         return self._name
 
     def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
-        if unresolved_only and self._id is not None:
+        if unresolved_only and self.has_id():
             return []
         return [self]
 
     def assign_id_from_expression(self, other: Expression) -> int:
-        assert other._id is not None
         assert self.name() == other.name()
-        self._id = other._id
+        self._id = other.get_id()
+        assert self._id is not None
         return self._id
 
 
@@ -318,10 +337,16 @@ class AliasExpression(Expression):
         self._name = name
 
     def _display_str(self) -> str:
-        return f"{self._expr}.alias({self._name})"
+        return f"[{self._expr}].alias({self._name})"
 
     def name(self) -> Optional[str]:
         return self._name
+
+    def get_id(self) -> Optional[int]:
+        return self._expr.get_id()
+
+    def _assign_id(self, strict: bool = True) -> int:
+        return self._expr._assign_id(strict)
 
     def eval(self, **kwargs):
         return self._expr.eval(**kwargs)

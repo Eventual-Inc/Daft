@@ -39,7 +39,7 @@ class PushDownPredicates(Rule[Selection, LogicalPlan]):
     @Rule.register(Selection, Projection)
     def _selection_through_projection(self, parent: Selection, child: Projection) -> Projection:
         grandchild = child._input
-        return Projection(input=Selection(grandchild, predicate=parent._predicate), predicate=child._predicate)
+        return Projection(input=Selection(grandchild, predicate=parent._predicate), projection=child._projection)
 
     # @Rule.register(Selection, HStack)
     # def _selection_through_hstack(self, parent: Selection, child: Projection) -> Projection:

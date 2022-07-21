@@ -87,3 +87,20 @@ def test_selection_logical_plan_bad_input(schema) -> None:
 
     with pytest.raises(ValueError):
         scan = Projection(scan, ExpressionList([col("a"), (col("b") + 1).alias("a")]))
+
+
+def test_scan_projection_filter_projection_chain(schema) -> None:
+    scan = Scan(schema)
+    assert scan.schema().names == schema.names
+
+    hstacked = Projection(scan, schema.union(ExpressionList([(col("a") + col("b")).alias("d")])))
+    assert hstacked.schema().names == ["a", "b", "c", "d"]
+
+    filtered = Selection(hstacked, ExpressionList([col("d") < 20, col("a") > 10]))
+    assert filtered.schema().names == ["a", "b", "c", "d"]
+
+    projection_alias = Projection(filtered, ExpressionList([col("b").alias("out"), col("d")]))
+
+    projection = Projection(projection_alias, ExpressionList([col("out")]))
+    assert projection.schema().names == ["out"]
+    print(projection.to_dot())

@@ -47,24 +47,23 @@ class Selection(LogicalPlan):
     """Which rows to keep"""
 
     def __init__(self, input: LogicalPlan, predicate: ExpressionList) -> None:
-        # input._validate_columns(predicate)
-        super().__init__(input.schema())
+        super().__init__(input.schema().to_column_expressions())
         self._input = self._register_child(input)
         self._predicate = predicate.resolve(input.schema())
 
     def __repr__(self) -> str:
-        return f"Selection\n\tschema={self.schema()}\n\tpredicate={self._predicate}"
+        return f"Selection\n\toutput={self.schema()}\n\tpredicate={self._predicate}"
 
 
 class Projection(LogicalPlan):
     """Which columns to keep"""
 
-    def __init__(self, input: LogicalPlan, predicate: ExpressionList) -> None:
-        predicate = predicate.resolve(input_schema=input.schema())
-        super().__init__(predicate)
+    def __init__(self, input: LogicalPlan, projection: ExpressionList) -> None:
+        projection = projection.resolve(input_schema=input.schema())
+        super().__init__(projection)
 
         self._input = self._register_child(input)
-        self._predicate = predicate
+        self._projection = projection
 
     def __repr__(self) -> str:
         return f"Projection\n\toutput={self.schema()}"
