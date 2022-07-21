@@ -9,13 +9,6 @@ class PushDownPredicates(Rule[LogicalPlan]):
         super().__init__()
         self.register_fn(Selection, Projection, self._selection_through_projection)
 
-    def apply(self, parent: LogicalPlan, child: LogicalPlan) -> Optional[LogicalPlan]:
-        fn = self.dispatch_fn(parent, child)
-        if fn is not None:
-            return fn(parent, child)
-        else:
-            return None
-
     def _selection_through_projection(self, parent: Selection, child: Projection) -> Optional[Projection]:
         ids_needed_for_selection = parent.required_columns().to_id_set()
         grandchild = child._children()[0]
