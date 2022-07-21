@@ -2,7 +2,7 @@ import pytest
 
 from daft.expressions import col
 from daft.internal.rule import RuleRunner
-from daft.logical.logical_plan import Projection, Scan, Selection
+from daft.logical.logical_plan import Filter, Projection, Scan
 from daft.logical.optimizer import PushDownPredicates
 from daft.logical.schema import ExpressionList
 
@@ -20,7 +20,7 @@ def test_pred_push_down(schema):
     for i in range(3):
         input = Projection(input, ExpressionList([col("b") * 2, col("a")]))
 
-    full_select = Selection(input, ExpressionList([col("a") == 1, col("b") < 10]))
+    full_select = Filter(input, ExpressionList([col("a") == 1, col("b") < 10]))
 
     print(full_select.to_dot())
     runner = RuleRunner([rule])

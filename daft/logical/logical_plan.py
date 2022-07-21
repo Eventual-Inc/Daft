@@ -23,16 +23,16 @@ class Scan(LogicalPlan):
     def __init__(
         self,
         schema: ExpressionList,
-        selections: Optional[ExpressionList] = None,
+        filters: Optional[ExpressionList] = None,
         columns: Optional[List[str]] = None,
     ) -> None:
         schema = schema.resolve()
         super().__init__(schema)
 
-        if selections is not None:
-            self._selections = selections.resolve(schema)
+        if filters is not None:
+            self._filters = filters.resolve(schema)
         else:
-            self._selections = ExpressionList([])
+            self._filters = ExpressionList([])
 
         if columns is not None:
             new_schema = ExpressionList([ColumnExpression(c) for c in columns])
@@ -46,13 +46,13 @@ class Scan(LogicalPlan):
         return self._output_schema
 
     def __repr__(self) -> str:
-        return f"Scan\n\tschema={self.schema()}\n\tselection={self._selections}\n\tcolumns={self._columns}"
+        return f"Scan\n\tschema={self.schema()}\n\tfilter={self._filters}\n\tcolumns={self._columns}"
 
     def required_columns(self) -> ExpressionList:
-        return self._selections.required_columns()
+        return self._filters.required_columns()
 
 
-class Selection(LogicalPlan):
+class Filter(LogicalPlan):
     """Which rows to keep"""
 
     def __init__(self, input: LogicalPlan, predicate: ExpressionList) -> None:
@@ -61,7 +61,7 @@ class Selection(LogicalPlan):
         self._predicate = predicate.resolve(input.schema())
 
     def __repr__(self) -> str:
-        return f"Selection\n\toutput={self.schema()}\n\tpredicate={self._predicate}"
+        return f"filter\n\toutput={self.schema()}\n\tpredicate={self._predicate}"
 
     def required_columns(self) -> ExpressionList:
         return self._predicate.required_columns()

@@ -1,7 +1,7 @@
 import pytest
 
 from daft.expressions import col
-from daft.logical.logical_plan import Projection, Scan, Selection
+from daft.logical.logical_plan import Filter, Projection, Scan
 from daft.logical.schema import ExpressionList
 
 
@@ -17,10 +17,10 @@ def test_scan_predicates(schema) -> None:
     proj_scan = Scan(schema, columns=["a"])
     assert proj_scan.schema().names == ["a"]
 
-    select_scan = Scan(schema, selections=ExpressionList([col("a") < 10]))
-    assert select_scan.schema() == schema
+    filter_scan = Scan(schema, filters=ExpressionList([col("a") < 10]))
+    assert filter_scan.schema() == schema
 
-    both_scan = Scan(schema, selections=ExpressionList([col("a") < 10]), columns=["b", "c"])
+    both_scan = Scan(schema, filters=ExpressionList([col("a") < 10]), columns=["b", "c"])
     assert both_scan.schema() == schema.keep(["b", "c"])
 
 
@@ -48,23 +48,23 @@ def test_projection_logical_plan_bad_input(schema) -> None:
         Projection(scan, ExpressionList([col("d")]))
 
 
-def test_selection_logical_plan(schema) -> None:
+def test_filter_logical_plan(schema) -> None:
     scan = Scan(schema)
     assert scan.schema() == schema
 
-    full_select = Selection(scan, ExpressionList([col("a") == 1, col("b") < 10, col("c") > 10]))
-    assert full_select.schema() == schema
+    full_filter = Filter(scan, ExpressionList([col("a") == 1, col("b") < 10, col("c") > 10]))
+    assert full_filter.schema() == schema
 
-    project = Selection(scan, ExpressionList([col("b") < 10]))
+    project = Filter(scan, ExpressionList([col("b") < 10]))
     assert project.schema() == schema
 
 
-def test_selection_logical_plan_bad_input(schema) -> None:
+def test_filter_logical_plan_bad_input(schema) -> None:
     scan = Scan(schema)
     assert scan.schema() == schema
 
     with pytest.raises(ValueError):
-        select = Selection(scan, ExpressionList([col("d") == 1]))
+        filter = Filter(scan, ExpressionList([col("d") == 1]))
 
 
 def test_projection_new_columns_logical_plan(schema) -> None:
@@ -101,7 +101,7 @@ def test_projection_new_columns_logical_plan(schema) -> None:
     assert projection_reorder.schema() == hstacked_on_proj.schema().keep(["a", "b", "c"])
 
 
-def test_selection_logical_plan_bad_input(schema) -> None:
+def test_filter_logical_plan_bad_input(schema) -> None:
     scan = Scan(schema)
     assert scan.schema() == schema
 
@@ -117,7 +117,7 @@ def test_scan_projection_filter_projection_chain(schema) -> None:
     assert hstacked.schema().names == ["a", "b", "c", "d"]
     assert hstacked.schema().keep(["a", "b", "c"]) == schema
 
-    filtered = Selection(hstacked, ExpressionList([col("d") < 20, col("a") > 10]))
+    filtered = Filter(hstacked, ExpressionList([col("d") < 20, col("a") > 10]))
     assert filtered.schema().names == ["a", "b", "c", "d"]
     assert filtered.schema() == hstacked.schema()
 
