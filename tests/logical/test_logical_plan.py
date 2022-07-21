@@ -18,10 +18,10 @@ def test_scan_predicates(schema) -> None:
     assert proj_scan.schema().names == ["a"]
 
     select_scan = Scan(schema, selections=ExpressionList([col("a") < 10]))
-    assert select_scan.schema().names == schema.names
+    assert select_scan.schema() == schema
 
     both_scan = Scan(schema, selections=ExpressionList([col("a") < 10]), columns=["b", "c"])
-    assert both_scan.schema().names == schema.keep(["b", "c"]).names
+    assert both_scan.schema() == schema.keep(["b", "c"])
 
 
 def test_projection_logical_plan(schema) -> None:
@@ -30,10 +30,10 @@ def test_projection_logical_plan(schema) -> None:
 
     full_project = Projection(scan, ExpressionList([col("a"), col("b"), col("c")]))
     # Projection(full_project, ExpressionList([col("a"), col("b"), col("c")]))
-    assert full_project.schema().names == schema.names
+    assert full_project.schema() == schema
 
     project = Projection(scan, ExpressionList([col("b")]))
-    assert project.schema().names == schema.keep(["b"]).names
+    assert project.schema() == schema.keep(["b"])
 
 
 def test_projection_logical_plan_bad_input(schema) -> None:
@@ -46,13 +46,13 @@ def test_projection_logical_plan_bad_input(schema) -> None:
 
 def test_selection_logical_plan(schema) -> None:
     scan = Scan(schema)
-    assert scan.schema().names == schema.names
+    assert scan.schema() == schema
 
     full_select = Selection(scan, ExpressionList([col("a") == 1, col("b") < 10, col("c") > 10]))
-    assert full_select.schema().names == schema.names
+    assert full_select.schema() == schema
 
     project = Selection(scan, ExpressionList([col("b") < 10]))
-    assert project.schema().names == schema.names
+    assert project.schema() == schema
 
 
 def test_selection_logical_plan_bad_input(schema) -> None:
@@ -65,25 +65,41 @@ def test_selection_logical_plan_bad_input(schema) -> None:
 
 def test_projection_new_columns_logical_plan(schema) -> None:
     scan = Scan(schema)
-    assert scan.schema().names == schema.names
+    assert scan.schema() == schema
 
     hstacked = Projection(scan, schema.union(ExpressionList([(col("a") + col("b")).alias("d")])))
-    assert hstacked.schema().names == ["a", "b", "c", "d"]
+    assert hstacked.schema().keep(["a", "b", "c"]) == schema
+    old_ids = {schema.get_expression_by_name(n).get_id() for n in schema.names}
+
+    assert hstacked.schema().get_expression_by_name("d").get_id() not in old_ids
 
     projection = Projection(scan, ExpressionList([col("b")]))
     proj_schema = projection.schema()
     hstacked_on_proj = Projection(
         projection, proj_schema.union(ExpressionList([(col("b") + 1).alias("a"), (col("b") + 2).alias("c")]))
     )
+
     assert hstacked_on_proj.schema().names == ["b", "a", "c"]
+    assert hstacked_on_proj.schema().get_expression_by_name("b") == schema.get_expression_by_name("b")
+
+    assert hstacked_on_proj.schema().get_expression_by_name("a") != schema.get_expression_by_name("a")
+    assert hstacked_on_proj.schema().get_expression_by_name("a").required_columns() == [
+        schema.get_expression_by_name("a")
+    ]
+
+    assert hstacked_on_proj.schema().get_expression_by_name("c") != schema.get_expression_by_name("c")
+    assert hstacked_on_proj.schema().get_expression_by_name("c").required_columns() == [
+        schema.get_expression_by_name("b")
+    ]
 
     projection_reorder = Projection(hstacked_on_proj, ExpressionList([col("a"), col("b"), col("c")]))
     assert projection_reorder.schema().names == ["a", "b", "c"]
+    assert projection_reorder.schema() == hstacked_on_proj.schema().keep(["a", "b", "c"])
 
 
 def test_selection_logical_plan_bad_input(schema) -> None:
     scan = Scan(schema)
-    assert scan.schema().names == schema.names
+    assert scan.schema() == schema
 
     with pytest.raises(ValueError):
         scan = Projection(scan, ExpressionList([col("a"), (col("b") + 1).alias("a")]))
@@ -91,7 +107,7 @@ def test_selection_logical_plan_bad_input(schema) -> None:
 
 def test_scan_projection_filter_projection_chain(schema) -> None:
     scan = Scan(schema)
-    assert scan.schema().names == schema.names
+    assert scan.schema() == schema
 
     hstacked = Projection(scan, schema.union(ExpressionList([(col("a") + col("b")).alias("d")])))
     assert hstacked.schema().names == ["a", "b", "c", "d"]
@@ -103,4 +119,3 @@ def test_scan_projection_filter_projection_chain(schema) -> None:
 
     projection = Projection(projection_alias, ExpressionList([col("out")]))
     assert projection.schema().names == ["out"]
-    print(projection.to_dot())

@@ -146,21 +146,10 @@ class Expression(TreeNode["Expression"]):
             return any(c.has_call() for c in self._children())
         return False
 
-    def is_same(self, other: ColumnExpression) -> bool:
-        """Checks if this Expression is the symbolic the same as the following ColumnExpression
-
-        Args:
-            other (ColumnExpression): the symbolic column whos name and id have to match to self's
-
-        Raises:
-            ValueError: if the ids match but the names dont
-
-        Returns:
-            bool: if the two expressions are symbolic the same
-        """
+    def is_same(self, other: Expression) -> bool:
         ids_match = self.has_id() and self.get_id() == other.get_id()
-        if ids_match and (self.name() != other.name()):
-            raise ValueError(f"ids match both names dont: self {self.name()}, other {other.name()}")
+        # if ids_match and (self.name() != other.name()):
+        #     raise ValueError(f"ids match both names dont: self {self.name()}, other {other.name()}")
         return ids_match
 
 
