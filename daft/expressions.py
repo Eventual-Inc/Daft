@@ -186,6 +186,8 @@ class Expression(TreeNode["Expression"]):
 
         return True
 
+#     def has_call(self) -> bool:
+#         return True
 
 class LiteralExpression(Expression):
     def __init__(self, value: Any) -> None:
