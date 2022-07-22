@@ -64,3 +64,34 @@ def test_alias() -> None:
     assert (col("c") + alias_expr) == "c"
 
     assert (col("c") + alias_expr).required_columns() == [col("c"), col("a"), col("b")]
+
+
+def test_column_expr_eq() -> None:
+    assert col("a").is_eq(col("a"))
+
+    assert not col("a").is_eq(col("b"))
+
+
+def test_unary_op_eq() -> None:
+    neg_col = -col("a")
+    assert not neg_col.is_eq(col("a"))
+    assert neg_col.is_eq(-col("a"))
+    assert not (-neg_col).is_eq(neg_col)
+    assert not (-neg_col).is_eq(abs(neg_col))
+
+
+def test_binary_op_eq() -> None:
+    assert col("a").is_eq(col("a"))
+    assert (col("a") + col("b")).is_eq(col("a") + col("b"))
+
+    assert not (col("a") + col("b")).is_eq(col("a") + col("c"))
+
+    assert not (col("a") + col("b")).is_eq(col("b") + col("a"))
+
+    assert not (col("a") + col("b")).is_eq(col("b") + col("a"))
+
+    assert not (col("a") + col("b")).is_eq((col("a") + col("b")).alias("c"))
+
+    assert (col("a") + col("b")).alias("c").is_eq((col("a") + col("b")).alias("c"))
+
+    assert not col("c").is_eq((col("a") + col("b")).alias("c"))

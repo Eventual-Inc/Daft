@@ -19,9 +19,9 @@ class TreeNode(Generic[TreeNodeType]):
     def _children(self) -> List[TreeNodeType]:
         return self._registered_children
 
-    def _register_child(self, child: TreeNodeType) -> TreeNodeType:
+    def _register_child(self, child: TreeNodeType) -> int:
         self._registered_children.append(child)
-        return child
+        return len(self._registered_children) - 1
 
     def apply_and_trickle_down(self, rule: Rule[TreeNodeType]) -> TreeNodeType:
         root = cast(TreeNodeType, self)

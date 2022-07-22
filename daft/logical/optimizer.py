@@ -8,6 +8,8 @@ from daft.logical.schema import ExpressionList
 class PushDownPredicates(Rule[LogicalPlan]):
     def __init__(self) -> None:
         super().__init__()
+        self._combine_filters_rule = CombineFilters()
+        self.register_fn(Filter, Filter, self._combine_filters_rule._combine_filters)
         self.register_fn(Filter, Projection, self._filter_through_projection)
 
     def _filter_through_projection(self, parent: Filter, child: Projection) -> Optional[LogicalPlan]:
@@ -34,3 +36,14 @@ class PushDownPredicates(Rule[LogicalPlan]):
             return pushed_down_filter
         else:
             return Filter(pushed_down_filter, ExpressionList(can_not_push_down))
+
+
+class CombineFilters(Rule[LogicalPlan]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_fn(Filter, Filter, self._combine_filters)
+
+    def _combine_filters(self, parent: Filter, child: Filter) -> Filter:
+        new_predicate = parent._predicate.union(child._predicate)
+        grand_child = child._children()[0]
+        return Filter(grand_child, new_predicate)
