@@ -202,69 +202,6 @@ class LiteralExpression(Expression):
         return isinstance(other, LiteralExpression) and self._value == other._value
 
 
-# class CallExpression(Expression):
-#     def __init__(self) -> None:
-#         super().__init__()
-
-#     def has_call(self) -> bool:
-#         return True
-
-
-# class UnaryCallExpression(CallExpression):
-#     def __init__(self, operand: Expression, op: Callable, symbol: Optional[str] = None) -> None:
-#         super().__init__()
-#         if not isinstance(operand, Expression):
-#             raise ValueError(f"expected {operand} to be of type Expression, is {type(operand)}")
-#         self._register_child(operand)
-#         self._op = op
-#         self._symbol = symbol
-
-#     @property
-#     def _operand(self) -> Expression:
-#         return self._children()[0]
-
-#     def _display_str(self) -> str:
-#         op_name = self._op.__name__
-#         if self._symbol is None:
-#             return f"[{op_name}({self._operand})]"
-#         else:
-#             return f"{self._symbol}({self._operand})"
-
-#     def eval(self, **kwargs):
-#         operand = self._operand.eval(**kwargs)
-#         return self._op(operand)
-
-
-# class BinaryCallExpression(CallExpression):
-#     def __init__(self, left: Expression, right: Expression, op: Callable, symbol: Optional[str] = None) -> None:
-#         super().__init__()
-#         self._register_child(left)
-#         self._register_child(right)
-#         self._op = op
-#         self._symbol = symbol
-
-#     @property
-#     def _left(self) -> Expression:
-#         return self._children()[0]
-
-#     @property
-#     def _right(self) -> Expression:
-#         return self._children()[1]
-
-#     def _display_str(self) -> str:
-#         op_name = self._op.__name__
-#         if self._symbol is None:
-#             symbol = op_name
-#         else:
-#             symbol = self._symbol
-#         return f"[{self._left} {symbol} {self._right}]"
-
-#     def eval(self, **kwargs):
-#         eval_left = self._left.eval(**kwargs)
-#         eval_right = self._right.eval(**kwargs)
-#         return self._op(eval_left, eval_right)
-
-
 class MultipleReturnSelectExpression(Expression):
     def __init__(self, expr: Expression, n: int) -> None:
         super().__init__()
