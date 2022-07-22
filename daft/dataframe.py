@@ -1,84 +1,91 @@
-# from __future__ import annotations
+from __future__ import annotations
 
-# from typing import List
+import csv
+from typing import Any, Dict, List, TypeVar
 
-# from tabulate import tabulate
+from daft.expressions import col
+from daft.filesystem import get_filesystem_from_path
+from daft.logical.logical_plan import LogicalPlan, Projection, Scan
+from daft.logical.schema import ExpressionList
 
-# from daft.column import Column, ColumnArgType, ColumnExpression, ColumnType
-# from daft.operations import Operation
-
-
-# class RowView:
-#     __slots__ = ["_index", "_df"]
-
-#     def __init__(self, df: DataFrame, index: int) -> None:
-#         self._index = index
-#         self._df = df
-#         if index >= df.count():
-#             raise ValueError("index out of bounds")
-
-#     def __repr__(self) -> str:
-#         df = self.__getattribute__("_df")
-#         index = self.__getattribute__("_index")
-#         return f"RowView: index: {index}\n" + tabulate([df.columns, [df._data[col][index] for col in df.columns]])
-
-#     def __dir__(self):
-#         return self.__getattribute__("_df").columns
-
-#     def __getattr__(self, col: str):
-#         df = self.__getattribute__("_df")
-#         index = self.__getattribute__("_index")
-#         if col not in df.columns:
-#             raise ValueError(f"column {col} not in {df.columns}")
-#         return df._data[col][index]
+UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 
-# class DataFrame:
-#     def __init__(self, cols: List[ColumnArgType]) -> None:
-#         self._cols = [Column.from_arg(c) for c in self._cols]
-#         self._column_names = [c.name for c in self._cols]
+class DataFrame:
+    def __init__(self, plan: LogicalPlan) -> None:
+        self._plan = plan
 
-#     @property
-#     def columns(self) -> List[str]:
-#         return self._column_names
+    def explain(self) -> LogicalPlan:
+        return self._plan
 
-#     # def __getitem__(self, index: int) -> RowView:
-#     #     return DataFrame.RowView(self, index)
+    def schema(self) -> ExpressionList:
+        return self._plan.schema()
 
-#     def select(self, *columns: ColumnArgType) -> DataFrame:
-#         selected_cols = []
-#         for c in columns:
-#             if isinstance(c, Column):
-#                 selected_cols.append(c)
-#             elif isinstance(c, str):
-#                 assert c in self.columns, f"{c} not found in dataframes columns: {self.columns}"
-#                 index = self.columns.index(c)
-#                 selected_cols.append(self._cols[index])
-#         return DataFrame(selected_cols)
+    ###
+    # Creation methods
+    ###
 
-#     def with_column(self, name: str, col: Column) -> Column:
-#         assert isinstance(col, Column), "col must be Column type"
-#         assert name not in self.columns, f"duplicate column name {name}"
-#         return DataFrame(self._cols + [col.alias(name)])
+    @classmethod
+    def from_pylist(cls, data: List[Dict[str, Any]]) -> DataFrame:
+        if not data:
+            raise ValueError("Unable to create DataFrame from empty list")
+        schema = ExpressionList([col(header) for header in data[0]])
+        plan = Scan(
+            schema=schema,
+            predicate=None,
+            columns=None,
+        )
+        return cls(plan)
 
-#     def where(self, expr: ColumnExpression) -> DataFrame:
-#         new_columns = [
-#             Column(
-#                 name=c.name,
-#                 column_type=ColumnType.RESULT,
-#                 operation=Operation("where_pl", [c]),
-#             )
-#             for c in self._cols
-#         ]
-#         return DataFrame(new_columns)
+    @classmethod
+    def from_pydict(cls, data: Dict[str, Any]) -> DataFrame:
+        schema = ExpressionList([col(header) for header in data])
+        plan = Scan(
+            schema=schema,
+            predicate=None,
+            columns=None,
+        )
+        return cls(plan)
 
-#     def limit(self, num: int) -> DataFrame:
-#         new_columns = [
-#             Column(
-#                 name=c.name,
-#                 column_type=ColumnType.RESULT,
-#                 operation=Operation("limit_pl", [c]),
-#             )
-#             for c in self._cols
-#         ]
-#         return DataFrame(new_columns)
+    @classmethod
+    def from_csv(cls, path: str, headers: bool = True, delimiter: str = ",") -> DataFrame:
+        fs = get_filesystem_from_path(path)
+
+        # Read first row to ascertain schema
+        schema = None
+        with fs.open(path, "r") as f:
+            reader = csv.reader(f, delimiter=delimiter)
+            for row in reader:
+                schema = (
+                    ExpressionList([col(header) for header in row])
+                    if headers
+                    else ExpressionList([col(f"col_{i}") for i in range(len(row))])
+                )
+                break
+        assert schema is not None, "Unable to read CSV file to determine schema"
+
+        plan = Scan(
+            schema=schema,
+            predicate=None,
+            columns=None,
+        )
+        return cls(plan)
+
+    ###
+    # DataFrame operations
+    ###
+
+    # def with_column(self, column_name: str, udf: UDFContext[UDFReturnType]) -> DataFrame:
+    #     return DataFrame(new_plan)
+
+    def select(self, columns: List[str]):
+        undefined_columns = {c for c in columns} - {
+            col_expr.name() for col_expr in self._plan.schema().to_column_expressions()
+        }
+        if undefined_columns:
+            raise ValueError(f"Columns not found in schema: {undefined_columns}")
+        projection = Projection(self._plan, ExpressionList([col(c) for c in columns]))
+        return DataFrame(projection)
+
+    # def where(self): ...
+    # def limit(self): ...
