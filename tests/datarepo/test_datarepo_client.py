@@ -7,7 +7,7 @@ from daft.datarepo.client import DatarepoClient
 
 
 @dataclass
-class TestDc:
+class _TestDc:
     x: int
     arr: np.ndarray
 
@@ -17,7 +17,7 @@ def test_datarepo_client_full_workflow() -> None:
         client = DatarepoClient(f"file://{td}")
         assert client.list_ids() == []
 
-        repo = client.create("test_repo", TestDc)
+        repo = client.create("test_repo", _TestDc)
 
         assert client.list_ids() == ["test_repo"]
 
