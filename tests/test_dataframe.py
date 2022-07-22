@@ -46,11 +46,17 @@ def test_create_dataframe_csv(valid_data: List[Dict[str, float]]) -> None:
         ]
 
 
-# def test_select_dataframe(valid_data: List[Dict[str, float]]) -> None:
-#     df = DataFrame.from_items(valid_data)
-#     assert df.columns == ["sepal_length", "sepal_width", "petal_length", "petal_width", "variety"]
-#     df = df.select("sepal_length", "sepal_width")
-#     assert df.columns == ["sepal_length", "sepal_width"]
+def test_select_dataframe(valid_data: List[Dict[str, float]]) -> None:
+    df = DataFrame.from_pylist(valid_data)
+    df = df.select("sepal_length", "sepal_width")
+    assert [c.name() for c in df.schema()] == ["sepal_length", "sepal_width"]
+
+
+def test_select_dataframe_missing_col(valid_data: List[Dict[str, float]]) -> None:
+    df = DataFrame.from_pylist(valid_data)
+    with pytest.raises(ValueError):
+        df = df.select("foo", "sepal_length")
+
 
 # def test_dataframe_row_view(valid_data: List[Dict[str, float]]) -> None:
 #     df = DataFrame.from_items(valid_data)

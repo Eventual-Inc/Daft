@@ -78,7 +78,7 @@ class DataFrame:
     # def with_column(self, column_name: str, udf: UDFContext[UDFReturnType]) -> DataFrame:
     #     return DataFrame(new_plan)
 
-    def select(self, columns: List[str]):
+    def select(self, *columns: str) -> DataFrame:
         undefined_columns = {c for c in columns} - {
             col_expr.name() for col_expr in self._plan.schema().to_column_expressions()
         }
