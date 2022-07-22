@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import itertools
 import operator
 from abc import abstractmethod
 from functools import partialmethod
@@ -13,9 +14,19 @@ def col(name: str) -> ColumnExpression:
     return ColumnExpression(name)
 
 
+_COUNTER = itertools.count()
+
+
 class Expression(TreeNode["Expression"]):
     def __init__(self) -> None:
         super().__init__()
+        self._id: Optional[int] = None
+
+    def __repr__(self) -> str:
+        if self.has_id():
+            return f"{self._display_str()} AS {self.name()}#{self.get_id()}"
+        else:
+            return self._display_str()
 
     def _to_expression(self, input: Any) -> Expression:
         if not isinstance(input, Expression):
@@ -23,23 +34,16 @@ class Expression(TreeNode["Expression"]):
         return input
 
     def _unary_op(self, func: Callable, symbol: Optional[str] = None) -> Expression:
-        return UnaryOpExpression(self, func, symbol=symbol)
+        return CallExpression(func, func_args=(self,), symbol=symbol)
 
     def _binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
         other_expr = self._to_expression(other)
-        return BinaryOpExpression(self, other_expr, func, symbol=symbol)
+        return CallExpression(func, func_args=(self, other_expr), symbol=symbol)
+        # return BinaryCallExpression(self, other_expr, func, symbol=symbol)
 
     def _reverse_binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
         other_expr = self._to_expression(other)
         return other_expr._binary_op(self, func, symbol=symbol)
-
-    @abstractmethod
-    def is_literal(self) -> bool:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def is_operation(self) -> bool:
-        raise NotImplementedError()
 
     def name(self) -> Optional[str]:
         for child in self._children():
@@ -48,11 +52,48 @@ class Expression(TreeNode["Expression"]):
                 return name
         return None
 
-    def required_columns(self) -> List[str]:
-        to_rtn: List[str] = []
+    def _assign_id(self, strict: bool = True) -> int:
+        if not self.has_id():
+            self._id = next(_COUNTER)
+            return self._id
+        else:
+            if strict:
+                raise ValueError(f"We have already assigned an id, {self.get_id()}")
+            else:
+                assert self._id is not None
+                return self._id
+
+    def get_id(self) -> Optional[int]:
+        return self._id
+
+    def has_id(self) -> bool:
+        return self.get_id() is not None
+
+    def to_column_expression(self) -> ColumnExpression:
+        if not self.has_id():
+            raise ValueError("we can only convert expressions with assigned id to ColumnExpressions")
+        name = self.name()
+        if name is None:
+            raise ValueError("we can only convert expressions to ColumnExpressions if they have a name")
+        ce = ColumnExpression(name)
+        ce.assign_id_from_expression(self)
+        return ce
+
+    def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
+        to_rtn: List[ColumnExpression] = []
         for child in self._children():
-            to_rtn.extend(child.required_columns())
+            to_rtn.extend(child.required_columns(unresolved_only))
         return to_rtn
+
+    def _replace_column_with_expression(self, col_expr: ColumnExpression, new_expr: Expression) -> Expression:
+        assert col_expr.is_same(new_expr)
+        if isinstance(self, ColumnExpression) and self.is_eq(col_expr):
+            return new_expr
+        for i in range(len(self._children())):
+            self._registered_children[i] = self._registered_children[i]._replace_column_with_expression(
+                col_expr, new_expr
+            )
+        return self
 
     # UnaryOps
 
@@ -61,6 +102,7 @@ class Expression(TreeNode["Expression"]):
     __pos__ = partialmethod(_unary_op, func=operator.pos, symbol="+")
     __abs__ = partialmethod(_unary_op, func=operator.abs)
 
+    # Logical
     __invert__ = partialmethod(_unary_op, func=operator.not_, symbol="~")
 
     # function
@@ -104,8 +146,45 @@ class Expression(TreeNode["Expression"]):
     def eval(self, **kwargs):
         raise NotImplementedError()
 
+    @abstractmethod
+    def _display_str(self) -> str:
+        raise NotImplementedError()
+
     def alias(self, name: str) -> Expression:
         return AliasExpression(self, name)
+
+    def has_call(self) -> bool:
+        if isinstance(self, CallExpression):
+            return True
+        if len(self._children()) > 0:
+            return any(c.has_call() for c in self._children())
+        return False
+
+    def is_same(self, other: Expression) -> bool:
+        if self is other:
+            return True
+        ids_match = self.has_id() and self.get_id() == other.get_id()
+        return ids_match
+
+    @abstractmethod
+    def _is_eq_local(self, other: Expression) -> bool:
+        raise NotImplementedError()
+
+    def is_eq(self, other: Expression) -> bool:
+        if self is other:
+            return True
+
+        if not self._is_eq_local(other):
+            return False
+
+        if len(self._children()) != len(other._children()):
+            return False
+
+        for s, o in zip(self._children(), other._children()):
+            if not s.is_eq(o):
+                return False
+
+        return True
 
 
 class LiteralExpression(Expression):
@@ -113,80 +192,27 @@ class LiteralExpression(Expression):
         super().__init__()
         self._value = value
 
-    def __repr__(self) -> str:
+    def _display_str(self) -> str:
         return f"lit({self._value})"
-
-    def is_literal(self) -> bool:
-        return True
-
-    def is_operation(self) -> bool:
-        return False
 
     def eval(self, **kwargs):
         return self._value
 
-
-class OpExpression(Expression):
-    def __init__(self) -> None:
-        super().__init__()
-
-    def is_literal(self) -> bool:
-        return False
-
-    def is_operation(self) -> bool:
-        return True
+    def _is_eq_local(self, other: Expression) -> bool:
+        return isinstance(other, LiteralExpression) and self._value == other._value
 
 
-class UnaryOpExpression(OpExpression):
-    def __init__(self, operand: Expression, op: Callable, symbol: Optional[str] = None) -> None:
-        super().__init__()
-        if not isinstance(operand, Expression):
-            raise ValueError(f"expected {operand} to be of type Expression, is {type(operand)}")
-        self._operand = self._register_child(operand)
-        self._op = op
-        self._symbol = symbol
-
-    def __repr__(self) -> str:
-        op_name = self._op.__name__
-        if self._symbol is None:
-            return f"[{op_name}({self._operand})]"
-        else:
-            return f"{self._symbol}({self._operand})"
-
-    def eval(self, **kwargs):
-        operand = self._operand.eval(**kwargs)
-        return self._op(operand)
-
-
-class BinaryOpExpression(OpExpression):
-    def __init__(self, left: Expression, right: Expression, op: Callable, symbol: Optional[str] = None) -> None:
-        super().__init__()
-        self._left = self._register_child(left)
-        self._right = self._register_child(right)
-        self._op = op
-        self._symbol = symbol
-
-    def __repr__(self) -> str:
-        op_name = self._op.__name__
-        if self._symbol is None:
-            symbol = op_name
-        else:
-            symbol = self._symbol
-        return f"[{self._left} {symbol} {self._right}]"
-
-    def eval(self, **kwargs):
-        eval_left = self._left.eval(**kwargs)
-        eval_right = self._right.eval(**kwargs)
-        return self._op(eval_left, eval_right)
-
-
-class MultipleReturnSelectExpression(OpExpression):
+class MultipleReturnSelectExpression(Expression):
     def __init__(self, expr: Expression, n: int) -> None:
         super().__init__()
-        self._expr = self._register_child(expr)
+        self._register_child(expr)
         self._n = n
 
-    def __repr__(self) -> str:
+    @property
+    def _expr(self) -> Expression:
+        return self._children()[0]
+
+    def _display_str(self) -> str:
         return f"{self._expr}[{self._n}]"
 
     def eval(self, **kwargs):
@@ -196,32 +222,61 @@ class MultipleReturnSelectExpression(OpExpression):
         value = all_values[self._n]
         return value
 
+    def _is_eq_local(self, other: Expression) -> bool:
+        return isinstance(other, MultipleReturnSelectExpression) and self._n == other._n
 
-class UDFExpression(OpExpression):
-    def __init__(self, func: Callable, func_args: Tuple, func_kwargs: Optional[Dict[str, Any]] = None) -> None:
+
+class CallExpression(Expression):
+    def __init__(
+        self,
+        func: Callable,
+        func_args: Tuple,
+        func_kwargs: Optional[Dict[str, Any]] = None,
+        symbol: Optional[str] = None,
+    ) -> None:
         super().__init__()
-        self._args = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
+        self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         if func_kwargs is None:
             func_kwargs = dict()
-        self._kwargs = {k: self._register_child(self._to_expression(v)) for k, v in func_kwargs.items()}
+        self._kwargs_ids = {k: self._register_child(self._to_expression(v)) for k, v in func_kwargs.items()}
         self._func = func
+        self._symbol = symbol
 
-    def is_operation(self) -> bool:
-        return True
+    @property
+    def _args(self) -> Tuple[Expression, ...]:
+        return tuple(self._children()[i] for i in self._args_ids)
 
-    def __repr__(self) -> str:
-        func_name = self._func.__name__
-        args = ", ".join(repr(a) for a in self._args)
+    @property
+    def _kwargs(self) -> Dict[str, Expression]:
+        return {k: self._children()[i] for k, i in self._kwargs_ids.items()}
+
+    def _display_str(self) -> str:
+        symbol = self._func.__name__ if self._symbol is None else self._symbol
+
+        # Handle Binary Case:
+        if len(self._kwargs) == 0 and len(self._args) == 2:
+            return f"[{self._args[0]._display_str()} {symbol} {self._args[1]._display_str()}]"
+
+        args = ", ".join(a._display_str() for a in self._args)
         if len(self._kwargs) == 0:
-            return f"Expr:{func_name}({args})"
+            return f"{symbol}({args})"
 
-        kwargs = ", ".join(f"{k}={repr(v)}" for k, v in self._kwargs.items())
-        return f"Expr:{func_name}({args}, {kwargs})"
+        kwargs = ", ".join(f"{k}={v._display_str()}" for k, v in self._kwargs.items())
+        return f"{symbol}({args}, {kwargs})"
 
     def eval(self, **kwargs):
         eval_args = tuple(a.eval(**kwargs) for a in self._args)
         eval_kwargs = {k: self.eval(**kwargs) for k, v in self._kwargs.items()}
         return self._func(*eval_args, **eval_kwargs)
+
+    def _is_eq_local(self, other: Expression) -> bool:
+        return (
+            isinstance(other, CallExpression)
+            and self._args_ids == other._args_ids
+            and self._kwargs_ids == other._kwargs_ids
+            and self._func == other._func
+            and self._symbol == other._symbol
+        )
 
 
 def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
@@ -229,7 +284,7 @@ def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
             if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargs.values()):
-                out_expr = UDFExpression(func, func_args=args, func_kwargs=kwargs)
+                out_expr = CallExpression(func, func_args=args, func_kwargs=kwargs)
                 if num_returns == 1:
                     return out_expr
                 else:
@@ -252,14 +307,14 @@ class ColumnExpression(Expression):
             raise TypeError(f"Expected name to be type str, is {type(name)}")
         self._name = name
 
+    def _display_str(self) -> str:
+        if not self.has_id():
+            return f"col({self._name})"
+        else:
+            return f"col({self._name}#{self._id})"
+
     def __repr__(self) -> str:
-        return f"col({self._name})"
-
-    def is_literal(self) -> bool:
-        return False
-
-    def is_operation(self) -> bool:
-        return False
+        return self._display_str()
 
     def eval(self, **kwargs):
         if self._name not in kwargs:
@@ -269,8 +324,19 @@ class ColumnExpression(Expression):
     def name(self) -> Optional[str]:
         return self._name
 
-    def required_columns(self) -> List[str]:
-        return [self._name]
+    def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
+        if unresolved_only and self.has_id():
+            return []
+        return [self]
+
+    def assign_id_from_expression(self, other: Expression) -> int:
+        assert self.name() == other.name()
+        self._id = other.get_id()
+        assert self._id is not None
+        return self._id
+
+    def _is_eq_local(self, other: Expression) -> bool:
+        return isinstance(other, ColumnExpression) and self._name == other._name and self.get_id() == other.get_id()
 
 
 class AliasExpression(Expression):
@@ -278,20 +344,27 @@ class AliasExpression(Expression):
         super().__init__()
         if not isinstance(name, str):
             raise TypeError(f"Expected name to be type str, is {type(name)}")
-        self._expr = self._register_child(expr)
+        self._register_child(expr)
         self._name = name
 
-    def __repr__(self) -> str:
-        return f"{self._expr}.alias({self._name})"
+    @property
+    def _expr(self) -> Expression:
+        return self._children()[0]
 
-    def is_literal(self) -> bool:
-        return False
-
-    def is_operation(self) -> bool:
-        return False
+    def _display_str(self) -> str:
+        return f"[{self._expr}].alias({self._name})"
 
     def name(self) -> Optional[str]:
         return self._name
 
+    def get_id(self) -> Optional[int]:
+        return self._expr.get_id()
+
+    def _assign_id(self, strict: bool = True) -> int:
+        return self._expr._assign_id(strict)
+
     def eval(self, **kwargs):
         return self._expr.eval(**kwargs)
+
+    def _is_eq_local(self, other: Expression) -> bool:
+        return isinstance(other, AliasExpression) and self._name == other._name
