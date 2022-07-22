@@ -3,7 +3,7 @@ import pytest
 from daft.expressions import col
 from daft.internal.rule import RuleRunner
 from daft.logical.logical_plan import Filter, Projection, Scan
-from daft.logical.optimizer import PushDownPredicates
+from daft.logical.optimizer import PushDownClausesIntoScan, PushDownPredicates
 from daft.logical.schema import ExpressionList
 
 
@@ -13,7 +13,7 @@ def schema():
 
 
 def test_pred_push_down(schema):
-    rule = PushDownPredicates()
+    pred_push_down = PushDownPredicates()
     scan = Scan(schema)
 
     input = scan
@@ -24,8 +24,15 @@ def test_pred_push_down(schema):
     full_select = Filter(full_select, ExpressionList([col("a") == 1, col("b") < 10]))
 
     print(full_select.to_dot())
-    runner = RuleRunner([rule])
+    runner = RuleRunner([pred_push_down])
 
-    output = runner.run_single_rule(full_select, rule)
+    output = runner.run_single_rule(full_select, pred_push_down)
     print(output.to_dot())
+
+    pred_push_down_into_scan = PushDownClausesIntoScan()
+
+    output_scan = runner.run_single_rule(output, pred_push_down_into_scan)
+
+    print(output_scan.to_dot())
+
     # assert isinstance(output, Projection)

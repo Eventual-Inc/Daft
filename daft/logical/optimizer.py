@@ -1,7 +1,7 @@
 from typing import Optional
 
 from daft.internal.rule import Rule
-from daft.logical.logical_plan import Filter, LogicalPlan, Projection
+from daft.logical.logical_plan import Filter, LogicalPlan, Projection, Scan
 from daft.logical.schema import ExpressionList
 
 
@@ -47,3 +47,29 @@ class CombineFilters(Rule[LogicalPlan]):
         new_predicate = parent._predicate.union(child._predicate)
         grand_child = child._children()[0]
         return Filter(grand_child, new_predicate)
+
+
+class PushDownClausesIntoScan(Rule[LogicalPlan]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_fn(Filter, Scan, self._push_down_predicates_into_scan)
+        self.register_fn(Projection, Scan, self._push_down_projections_into_scan)
+
+    def _push_down_predicates_into_scan(self, parent: Filter, child: Scan) -> Scan:
+        new_predicate = parent._predicate.union(child._predicate)
+        child_schema = child.schema()
+        assert new_predicate.required_columns().to_id_set().issubset(child_schema.to_id_set())
+        return Scan(child._schema, new_predicate, child_schema.names)
+
+    def _push_down_projections_into_scan(self, parent: Projection, child: Scan) -> Optional[LogicalPlan]:
+        required_columns = parent.schema().required_columns()
+        scan_columns = child.schema()
+        if required_columns.to_id_set() == scan_columns.to_id_set():
+            return None
+
+        new_scan = Scan(child._schema, child._predicate, columns=required_columns.names)
+        projection_required = any(e.has_call() for e in parent._projection)
+        if projection_required:
+            return Projection(new_scan, parent._projection)
+        else:
+            return new_scan

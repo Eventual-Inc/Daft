@@ -23,16 +23,16 @@ class Scan(LogicalPlan):
     def __init__(
         self,
         schema: ExpressionList,
-        filters: Optional[ExpressionList] = None,
+        predicate: Optional[ExpressionList] = None,
         columns: Optional[List[str]] = None,
     ) -> None:
         schema = schema.resolve()
         super().__init__(schema)
 
-        if filters is not None:
-            self._filters = filters.resolve(schema)
+        if predicate is not None:
+            self._predicate = predicate.resolve(schema)
         else:
-            self._filters = ExpressionList([])
+            self._predicate = ExpressionList([])
 
         if columns is not None:
             new_schema = ExpressionList([ColumnExpression(c) for c in columns])
@@ -46,10 +46,10 @@ class Scan(LogicalPlan):
         return self._output_schema
 
     def __repr__(self) -> str:
-        return f"Scan\n\tschema={self.schema()}\n\tfilter={self._filters}\n\tcolumns={self._columns}"
+        return f"Scan\n\toutput={self.schema()}\n\tpredicate={self._predicate}\n\tcolumns={self._columns}"
 
     def required_columns(self) -> ExpressionList:
-        return self._filters.required_columns()
+        return self._predicate.required_columns()
 
 
 class Filter(LogicalPlan):
