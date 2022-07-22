@@ -111,7 +111,7 @@ class ExpressionList(Iterable[ExpressionType]):
         if not isinstance(other, ExpressionList):
             return False
 
-        return len(self.exprs) == len(other.exprs) and all(s.is_same(o) for s, o in zip(self.exprs, other.exprs))
+        return len(self.exprs) == len(other.exprs) and all(s.is_eq(o) for s, o in zip(self.exprs, other.exprs))
 
     def required_columns(self) -> ExpressionList:
         name_to_expr: Dict[str, ColumnExpression] = {}

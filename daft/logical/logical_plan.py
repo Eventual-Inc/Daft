@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from daft.expressions import ColumnExpression
 from daft.internal.treenode import TreeNode
@@ -17,6 +17,9 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
     @abstractmethod
     def required_columns(self) -> ExpressionList:
         raise NotImplementedError()
+
+    def __eq__(self, other: Any) -> bool:
+        return all([self_child == other_child for self_child, other_child in zip(self._children(), other._children())])
 
 
 class Scan(LogicalPlan):
@@ -51,6 +54,14 @@ class Scan(LogicalPlan):
     def required_columns(self) -> ExpressionList:
         return self._predicate.required_columns()
 
+    def __eq__(self, other: Any) -> bool:
+        return (
+            super().__eq__(other)
+            and isinstance(other, Scan)
+            and self.schema() == other.schema()
+            and self._predicate == other._predicate
+        )
+
 
 class Filter(LogicalPlan):
     """Which rows to keep"""
@@ -82,6 +93,9 @@ class Projection(LogicalPlan):
 
     def required_columns(self) -> ExpressionList:
         return self._projection.required_columns()
+
+    def __eq__(self, other: Any) -> bool:
+        return super().__eq__(other) and isinstance(other, Projection) and self._projection == other._projection
 
 
 class Sort(LogicalPlan):

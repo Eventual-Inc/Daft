@@ -3,19 +3,19 @@ from __future__ import annotations
 import csv
 from typing import Any, Dict, List, TypeVar
 
-from daft.expressions import col
+from daft.expressions import Expression, col
 from daft.filesystem import get_filesystem_from_path
-from daft.logical.logical_plan import LogicalPlan, Projection, Scan
+from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 
 class DataFrame:
-    def __init__(self, plan: LogicalPlan) -> None:
+    def __init__(self, plan: logical_plan.LogicalPlan) -> None:
         self._plan = plan
 
-    def explain(self) -> LogicalPlan:
+    def explain(self) -> logical_plan.LogicalPlan:
         return self._plan
 
     def schema(self) -> ExpressionList:
@@ -30,7 +30,7 @@ class DataFrame:
         if not data:
             raise ValueError("Unable to create DataFrame from empty list")
         schema = ExpressionList([col(header) for header in data[0]])
-        plan = Scan(
+        plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
             columns=None,
@@ -40,7 +40,7 @@ class DataFrame:
     @classmethod
     def from_pydict(cls, data: Dict[str, Any]) -> DataFrame:
         schema = ExpressionList([col(header) for header in data])
-        plan = Scan(
+        plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
             columns=None,
@@ -64,7 +64,7 @@ class DataFrame:
                 break
         assert schema is not None, "Unable to read CSV file to determine schema"
 
-        plan = Scan(
+        plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
             columns=None,
@@ -84,8 +84,11 @@ class DataFrame:
         }
         if undefined_columns:
             raise ValueError(f"Columns not found in schema: {undefined_columns}")
-        projection = Projection(self._plan, ExpressionList([col(c) for c in columns]))
+        projection = logical_plan.Projection(self._plan, ExpressionList([col(c) for c in columns]))
         return DataFrame(projection)
 
-    # def where(self): ...
+    def where(self, expr: Expression) -> DataFrame:
+        plan = logical_plan.Filter(self._plan, ExpressionList([expr]))
+        return DataFrame(plan)
+
     # def limit(self): ...
