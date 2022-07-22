@@ -61,7 +61,7 @@ class Filter(LogicalPlan):
         self._predicate = predicate.resolve(input.schema())
 
     def __repr__(self) -> str:
-        return f"filter\n\toutput={self.schema()}\n\tpredicate={self._predicate}"
+        return f"Filter\n\toutput={self.schema()}\n\tpredicate={self._predicate}"
 
     def required_columns(self) -> ExpressionList:
         return self._predicate.required_columns()

@@ -69,7 +69,27 @@ class ExpressionList(Iterable[ExpressionType]):
         return repr(self.exprs)
 
     def union(self, other: ExpressionList):
-        return ExpressionList(self.exprs + other.exprs)
+        new_exprs = self.exprs + other.exprs
+        deduped = []
+        seen: Dict[str, Expression] = {}
+        for e in new_exprs:
+            name = e.name()
+            if name is None:
+                deduped.append(e)
+                continue
+
+            if name in seen:
+                if seen[name].is_eq(e):
+                    continue
+                else:
+                    raise ValueError(
+                        f"Duplicate name found with different expression. name: {name}, seen: {seen[name]}, current: {e}"
+                    )
+            else:
+                deduped.append(e)
+                seen[name] = e
+
+        return ExpressionList(deduped)
 
     def to_column_expressions(self) -> ExpressionList:
         return ExpressionList([e.to_column_expression() for e in self.exprs])
