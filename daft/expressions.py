@@ -39,7 +39,6 @@ class Expression(TreeNode["Expression"]):
     def _binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
         other_expr = self._to_expression(other)
         return CallExpression(func, func_args=(self, other_expr), symbol=symbol)
-        # return BinaryCallExpression(self, other_expr, func, symbol=symbol)
 
     def _reverse_binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
         other_expr = self._to_expression(other)
