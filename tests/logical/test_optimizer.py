@@ -27,22 +27,14 @@ def test_pred_push_down(schema):
     full_select = Filter(input, ExpressionList([col("a") == 1, col("b") < 10]))
     full_select = Filter(full_select, ExpressionList([col("a") == 1, col("b") > 20]))
 
-    print(full_select.to_dot())
     runner = RuleRunner([pred_push_down])
 
     output = runner.run_single_rule(full_select, pred_push_down)
-    print(output.to_dot())
 
     pred_push_down_into_scan = PushDownClausesIntoScan()
 
     output_scan = runner.run_single_rule(output, pred_push_down_into_scan)
 
-    print(output_scan.to_dot())
-
     fold_proj_rule = FoldProjections()
 
-    fold_projs = runner.run_single_rule(output_scan, fold_proj_rule)
-
-    print(fold_projs.to_dot())
-
-    # assert isinstance(output, Projection)
+    runner.run_single_rule(output_scan, fold_proj_rule)

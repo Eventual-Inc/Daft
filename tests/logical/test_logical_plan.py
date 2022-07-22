@@ -17,10 +17,10 @@ def test_scan_predicates(schema) -> None:
     proj_scan = Scan(schema, columns=["a"])
     assert proj_scan.schema().names == ["a"]
 
-    filter_scan = Scan(schema, filters=ExpressionList([col("a") < 10]))
+    filter_scan = Scan(schema, predicate=ExpressionList([col("a") < 10]))
     assert filter_scan.schema() == schema
 
-    both_scan = Scan(schema, filters=ExpressionList([col("a") < 10]), columns=["b", "c"])
+    both_scan = Scan(schema, predicate=ExpressionList([col("a") < 10]), columns=["b", "c"])
     assert both_scan.schema() == schema.keep(["b", "c"])
 
 
