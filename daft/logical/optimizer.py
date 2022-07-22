@@ -1,3 +1,4 @@
+import copy
 from typing import Optional
 
 from daft.internal.rule import Rule
@@ -44,7 +45,7 @@ class CombineFilters(Rule[LogicalPlan]):
         self.register_fn(Filter, Filter, self._combine_filters)
 
     def _combine_filters(self, parent: Filter, child: Filter) -> Filter:
-        new_predicate = parent._predicate.union(child._predicate)
+        new_predicate = parent._predicate.union(child._predicate, strict=False)
         grand_child = child._children()[0]
         return Filter(grand_child, new_predicate)
 
@@ -56,7 +57,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
         self.register_fn(Projection, Scan, self._push_down_projections_into_scan)
 
     def _push_down_predicates_into_scan(self, parent: Filter, child: Scan) -> Scan:
-        new_predicate = parent._predicate.union(child._predicate)
+        new_predicate = parent._predicate.union(child._predicate, strict=False)
         child_schema = child.schema()
         assert new_predicate.required_columns().to_id_set().issubset(child_schema.to_id_set())
         return Scan(child._schema, new_predicate, child_schema.names)
@@ -73,3 +74,36 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             return Projection(new_scan, parent._projection)
         else:
             return new_scan
+
+
+class FoldProjections(Rule[LogicalPlan]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_fn(Projection, Projection, self._push_down_predicates_into_scan)
+
+    def _push_down_predicates_into_scan(self, parent: Projection, child: Projection) -> Optional[Projection]:
+        required_columns = parent._projection.required_columns()
+        grandchild = child._children()[0]
+        grandchild_output = grandchild.schema()
+        grandchild_ids = grandchild_output.to_id_set()
+
+        can_skip_child = required_columns.to_id_set().issubset(grandchild_ids)
+        if can_skip_child:
+            return Projection(grandchild, parent._projection)
+
+        child_output = child.schema()
+        ids_needed = required_columns.to_id_set() - grandchild_ids
+
+        to_sub = {i: child_output.get_expression_by_id(i) for i in ids_needed}
+
+        new_projection = []
+        for e in parent._projection:
+            for req_col in e.required_columns():
+                rid = req_col.get_id()
+                assert rid is not None
+                if rid in ids_needed:
+                    e = copy.deepcopy(e)
+                    e._replace_column_with_expression(req_col, to_sub[rid])
+            new_projection.append(e)
+
+        return Projection(grandchild, ExpressionList(new_projection))

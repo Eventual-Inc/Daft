@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Dict, Iterable, Iterator, List, Optional, Set, TypeVar
+from typing import Dict, Iterable, Iterator, List, Optional, Set, TypeVar, cast
 
 from daft.expressions import ColumnExpression, Expression
 
@@ -33,6 +33,12 @@ class ExpressionList(Iterable[ExpressionType]):
         for i, n in enumerate(self.names):
             if n == name:
                 return self.exprs[i]
+        return None
+
+    def get_expression_by_id(self, id: int) -> Optional[ExpressionType]:
+        for e in self.exprs:
+            if e.get_id() == id:
+                return e
         return None
 
     def resolve(self, input_schema: Optional[ExpressionList] = None) -> ExpressionList:
@@ -68,11 +74,15 @@ class ExpressionList(Iterable[ExpressionType]):
     def __repr__(self) -> str:
         return repr(self.exprs)
 
-    def union(self, other: ExpressionList):
-        new_exprs = self.exprs + other.exprs
-        deduped = []
-        seen: Dict[str, Expression] = {}
-        for e in new_exprs:
+    def union(self, other: ExpressionList, strict: bool = True):
+        deduped = self.exprs.copy()
+        seen: Dict[str, ExpressionType] = {}
+        for e in self.exprs:
+            name = e.name()
+            if name is not None:
+                seen[name] = e
+
+        for e in other:
             name = e.name()
             if name is None:
                 deduped.append(e)
@@ -81,13 +91,16 @@ class ExpressionList(Iterable[ExpressionType]):
             if name in seen:
                 if seen[name].is_eq(e):
                     continue
-                else:
+                if strict:
                     raise ValueError(
                         f"Duplicate name found with different expression. name: {name}, seen: {seen[name]}, current: {e}"
                     )
-            else:
-                deduped.append(e)
-                seen[name] = e
+                else:
+                    name = f"right.{name}"
+                    e = cast(ExpressionType, e.alias(name))
+                    # )
+            deduped.append(e)
+            seen[name] = e
 
         return ExpressionList(deduped)
 
