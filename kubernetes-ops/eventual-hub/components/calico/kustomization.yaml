@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: calico-system
+resources:
+  # Copied from: https://github.com/aws/amazon-vpc-cni-k8s/blob/f8d731abd1689375cd6fde5bb9e2f4b4895d9684/config/master/calico-crs.yaml
+  - calico-crs.yaml
+  - namespace.yaml

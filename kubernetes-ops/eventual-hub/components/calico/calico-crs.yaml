@@ -1,0 +1,12 @@
+---
+# Source: aws-calico/templates/crs/custom-resources.yaml
+# This section includes base Calico installation configuration.
+# For more information, see: https://docs.projectcalico.org/v3.17/reference/installation/api#operator.tigera.io/v1.Installation
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  # Configures Calico policy configured to work with AmazonVPC CNI networking.
+  cni:
+    type: AmazonVPC
