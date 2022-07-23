@@ -7,7 +7,7 @@ patches:
 - cloudwatch/cwagent/rbac.yaml
 - cloudwatch/fluent-bit/rbac.yaml
 - frontend/service.yaml
-- jupyterhub/db-service.yaml
+- jupyterhub/db.yaml
 - proxy/service.yaml
 configMapGenerator:
 - name: cwagentconfig
