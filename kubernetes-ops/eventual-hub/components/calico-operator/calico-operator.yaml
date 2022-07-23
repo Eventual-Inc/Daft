@@ -5069,7 +5069,7 @@ rules:
     verbs:
       - list
       - watch
-      - create 
+      - create
       - update
   # Needed for operator lock
   - apiGroups:
@@ -5150,7 +5150,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: tigera-operator
-          image: quay.io/tigera/operator:v1.20.1 
+          image: quay.io/tigera/operator:v1.20.1
           imagePullPolicy: IfNotPresent
           command:
             - operator
