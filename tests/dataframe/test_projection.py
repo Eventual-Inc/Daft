@@ -6,9 +6,6 @@ from daft.dataframe import DataFrame
 from daft.logical import optimizer
 from tests.dataframe.utils import optimize_plan
 
-# TODO(jay): Add tests for:
-# 1. df.select().select() -> Projection(projection=projection_1 & projection_2)
-
 
 def test_select_dataframe(valid_data: List[Dict[str, float]]) -> None:
     df = DataFrame.from_pylist(valid_data)
