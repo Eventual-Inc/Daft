@@ -23,7 +23,7 @@ def test_projection_scan_pushdown(valid_data: List[Dict[str, float]]) -> None:
     selected_columns = ["sepal_length", "sepal_width"]
     df = DataFrame.from_pylist(valid_data)
     df = df.select(*selected_columns)
-    assert [c.name() for c in df.schema()] == selected_columns
+    assert df.column_names() == selected_columns
 
     optimized = optimize_plan(df.explain(), [optimizer.PushDownClausesIntoScan()])
     expected = logical_plan.Scan(df.schema(), predicate=None, columns=selected_columns)

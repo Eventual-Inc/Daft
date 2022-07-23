@@ -21,6 +21,9 @@ class DataFrame:
     def schema(self) -> ExpressionList:
         return self._plan.schema()
 
+    def column_names(self) -> List[str]:
+        return [expr.name() for expr in self._plan.schema()]
+
     ###
     # Creation methods
     ###
@@ -79,16 +82,13 @@ class DataFrame:
     #     return DataFrame(new_plan)
 
     def select(self, *columns: str) -> DataFrame:
-        undefined_columns = {c for c in columns} - {
-            col_expr.name() for col_expr in self._plan.schema().to_column_expressions()
-        }
-        if undefined_columns:
-            raise ValueError(f"Columns not found in schema: {undefined_columns}")
-        projection = logical_plan.Projection(self._plan, ExpressionList([col(c) for c in columns]))
+        projection = logical_plan.Projection(self._plan, self.schema().keep(list(columns)))
         return DataFrame(projection)
 
     def where(self, expr: Expression) -> DataFrame:
         plan = logical_plan.Filter(self._plan, ExpressionList([expr]))
         return DataFrame(plan)
 
-    # def limit(self): ...
+    def with_column(self, column_name: str, expr: Expression) -> DataFrame:
+        projection = logical_plan.Projection(self._plan, self.schema().union(ExpressionList([expr.alias(column_name)])))
+        return DataFrame(projection)
