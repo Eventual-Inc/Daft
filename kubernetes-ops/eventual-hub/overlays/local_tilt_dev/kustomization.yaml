@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+bases:
+- ../../base/local
+patches:
+- backend/deployment.yaml
+secretGenerator:
+- name: eventual-hub
+  envs:
+  - .env.dev-auth0.secret
+images:
+- name: backend
+  newName: localhost:5001/eventual-hub-backend
+  newTag: latest
+- name: jupyterhub
+  newName: localhost:5001/eventual-hub-jupyterhub
+  newTag: latest
+- name: traefik
+  newTag: v2.8.1

@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+bases:
+- ../../components/backend
+- ../../components/ca
+- ../../components/calico
+- ../../components/cloudwatch
+- ../../components/eventual-hub
+- ../../components/frontend
+- ../../components/jupyterhub
+- ../../components/kuberay
+- ../../components/proxy
+patches:
+- jupyterhub/deployment.yaml
+- proxy/service.yaml
