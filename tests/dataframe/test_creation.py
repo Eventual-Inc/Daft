@@ -7,13 +7,13 @@ from daft.dataframe import DataFrame
 
 def test_create_dataframe(valid_data: List[Dict[str, float]]) -> None:
     df = DataFrame.from_pylist(valid_data)
-    assert [c.name() for c in df.schema()] == ["sepal_length", "sepal_width", "petal_length", "petal_width", "variety"]
+    assert df.column_names() == ["sepal_length", "sepal_width", "petal_length", "petal_width", "variety"]
 
 
 def test_create_dataframe_pydict(valid_data: List[Dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     df = DataFrame.from_pydict(pydict)
-    assert [c.name() for c in df.schema()] == ["sepal_length", "sepal_width", "petal_length", "petal_width", "variety"]
+    assert df.column_names() == ["sepal_length", "sepal_width", "petal_length", "petal_width", "variety"]
 
 
 def test_create_dataframe_csv(valid_data: List[Dict[str, float]]) -> None:
@@ -25,7 +25,7 @@ def test_create_dataframe_csv(valid_data: List[Dict[str, float]]) -> None:
         f.flush()
 
         df = DataFrame.from_csv(f.name)
-        assert [c.name() for c in df.schema()] == [
+        assert df.column_names() == [
             "sepal_length",
             "sepal_width",
             "petal_length",

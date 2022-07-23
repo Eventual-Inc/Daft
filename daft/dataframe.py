@@ -78,9 +78,6 @@ class DataFrame:
     # DataFrame operations
     ###
 
-    # def with_column(self, column_name: str, udf: UDFContext[UDFReturnType]) -> DataFrame:
-    #     return DataFrame(new_plan)
-
     def select(self, *columns: str) -> DataFrame:
         projection = logical_plan.Projection(self._plan, self.schema().keep(list(columns)))
         return DataFrame(projection)
