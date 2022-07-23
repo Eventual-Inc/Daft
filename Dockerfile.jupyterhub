@@ -4,4 +4,4 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install git+https://github.com/jeevb/kubespawner.git@068af4493746b943e362cfcbf884cbf29bbcdaec#egg=jupyterhub-kubespawner psycopg2-binary oauthenticator
+RUN pip install git+https://github.com/Eventual-Inc/kubespawner.git@d71a114d938ddf87f68e5a530e0e1d6f8ca4b35f#egg=jupyterhub-kubespawner psycopg2-binary oauthenticator
