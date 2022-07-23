@@ -23,7 +23,7 @@ spec:
     spec:
       initContainers:
         - name: copy-certs
-          image: localhost:5001/eventual/jupyterhub:latest
+          image: jupyterhub
           command:
             - /bin/bash
             - -c
@@ -46,7 +46,7 @@ spec:
               name: state-dir
       containers:
         - name: hub
-          image: localhost:5001/eventual/jupyterhub:latest
+          image: jupyterhub
           command:
             - jupyterhub
             - --config

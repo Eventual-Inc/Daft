@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jupyterhub
+spec:
+  template:
+    spec:
+      containers:
+      - name: hub
+        env:
+        - name: JUPYTERHUB_DB_SERVICE_HOST
+          value: jupyterhub-postgresql-service
+        - name: JUPYTERHUB_DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: eventual-hub
+              key: JUPYTERHUB_DB_USERNAME
+              optional: false
+        - name: JUPYTERHUB_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: eventual-hub
+              key: JUPYTERHUB_DB_PASSWORD
+              optional: false
+        - name: JUPYTERHUB_DB_TABLE
+          valueFrom:
+            secretKeyRef:
+              name: eventual-hub
+              key: JUPYTERHUB_DB_TABLE
+              optional: false

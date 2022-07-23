@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-svc
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-ssl-cert: arn:aws:acm:us-west-2:941892620273:certificate/b208da33-cfd1-4a77-9a16-8c3379aa4a8b

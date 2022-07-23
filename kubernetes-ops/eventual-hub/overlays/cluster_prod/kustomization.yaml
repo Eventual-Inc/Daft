@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+bases:
+- ../../base/eks
+patches:
+- backend/deployment.yaml
+- cloudwatch/cwagent/rbac.yaml
+- cloudwatch/fluent-bit/rbac.yaml
+- frontend/service.yaml
+- jupyterhub/db.yaml
+- proxy/service.yaml
+configMapGenerator:
+- name: cwagentconfig
+  namespace: amazon-cloudwatch
+  behavior: merge
+  files:
+  - cloudwatch/cwagent/cwagentconfig.json
+- name: fluent-bit-cluster-info
+  namespace: amazon-cloudwatch
+  behavior: merge
+  literals:
+  - cluster.name=prod-cluster
+  - logs.region=us-west-2
+secretGenerator:
+- name: eventual-hub
+  envs:
+  - .env.prod-auth0.secret
+images:
+- name: backend
+  newName: 941892620273.dkr.ecr.us-west-2.amazonaws.com/prod-eventual/backend
+  newTag: "20220718.3"
+- name: frontend
+  newName: 941892620273.dkr.ecr.us-west-2.amazonaws.com/prod-eventual/frontend
+  newTag: "20220718.3"
+- name: jupyterhub
+  newName: 941892620273.dkr.ecr.us-west-2.amazonaws.com/prod-eventual/jupyterhub
+  newTag: "20220718.3"
+- name: traefik
+  newTag: v2.8.1

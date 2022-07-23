@@ -54,8 +54,8 @@ docker_build('localhost:5001/eventual-hub-backend:latest',
 #   More info: https://docs.tilt.dev/api.html#api.k8s_yaml
 #
 
-k8s_yaml(kustomize("kubernetes-ops/eventual-hub/_pre"))
-k8s_yaml(kustomize("kubernetes-ops/eventual-hub/installs/local_tilt_dev"))
+k8s_yaml(kustomize("kubernetes-ops/eventual-hub/overlays/local_tilt_dev/_pre"))
+k8s_yaml(kustomize("kubernetes-ops/eventual-hub/overlays/local_tilt_dev"))
 
 # Tilt doesn't recognize these as a resource, but these CRDs need to be created first
 CERT_CRD = [

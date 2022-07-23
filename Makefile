@@ -68,8 +68,8 @@ deploy-prod-eventual-hub-images: deploy-eventual-hub-images
 deploy-eventual-hub:
 	@echo "Switching kubectl to ${ENV} cluster..."
 	@kubectl config use-context ${CLUSTER}
-	kubectl apply -k kubernetes-ops/eventual-hub/_pre
-	kubectl apply -k kubernetes-ops/eventual-hub/installs/${RELEASE_NAME}
+	kubectl apply -k kubernetes-ops/eventual-hub/overlays/${RELEASE_NAME}/_pre
+	kubectl apply -k kubernetes-ops/eventual-hub/overlays/${RELEASE_NAME}
 
 deploy-dev-eventual-hub: ENV=dev
 deploy-dev-eventual-hub: CLUSTER=arn:aws:eks:us-west-2:941892620273:cluster/dev-cluster

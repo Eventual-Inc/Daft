@@ -1,12 +1,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- deploy.yaml
-- svc.yaml
-- ingress.yaml
 - ca.yaml
 - cert.yaml
+- deployment.yaml
+- ingress.yaml
 - rbac.yaml
+- service.yaml
 configMapGenerator:
   - name: kuberay-client-config
     files:
