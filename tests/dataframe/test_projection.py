@@ -26,7 +26,7 @@ def test_fold_projections(valid_data: List[Dict[str, float]]) -> None:
     df_optimized = df.select("sepal_width")
 
     assert df_unoptimized.column_names() == ["sepal_width"]
-    assert optimize_plan(df_unoptimized.explain(), [optimizer.FoldProjections()]) == df_optimized.explain()
+    assert optimize_plan(df_unoptimized.plan(), [optimizer.FoldProjections()]).is_eq(df_optimized.plan())
 
 
 def test_with_column(valid_data: List[Dict[str, float]]) -> None:

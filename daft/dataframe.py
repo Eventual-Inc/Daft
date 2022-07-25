@@ -15,7 +15,7 @@ class DataFrame:
     def __init__(self, plan: logical_plan.LogicalPlan) -> None:
         self._plan = plan
 
-    def explain(self) -> logical_plan.LogicalPlan:
+    def plan(self) -> logical_plan.LogicalPlan:
         return self._plan
 
     def schema(self) -> ExpressionList:

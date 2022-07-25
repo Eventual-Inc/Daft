@@ -98,7 +98,6 @@ class ExpressionList(Iterable[ExpressionType]):
                 else:
                     name = f"right.{name}"
                     e = cast(ExpressionType, e.alias(name))
-                    # )
             deduped.append(e)
             seen[name] = e
 

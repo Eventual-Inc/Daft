@@ -13,10 +13,10 @@ def test_filter_scan_pushdown(valid_data: List[Dict[str, float]]) -> None:
     df = DataFrame.from_pylist(valid_data)
     df = df.where(predicate_expr)
 
-    optimized = optimize_plan(df.explain(), [optimizer.PushDownClausesIntoScan()])
+    optimized = optimize_plan(df.plan(), [optimizer.PushDownClausesIntoScan()])
     expected = logical_plan.Scan(df.schema(), predicate=ExpressionList([predicate_expr]), columns=None)
     assert isinstance(optimized, logical_plan.Scan)
-    assert optimized == expected
+    assert optimized.is_eq(expected)
 
 
 def test_projection_scan_pushdown(valid_data: List[Dict[str, float]]) -> None:
@@ -25,6 +25,6 @@ def test_projection_scan_pushdown(valid_data: List[Dict[str, float]]) -> None:
     df = df.select(*selected_columns)
     assert df.column_names() == selected_columns
 
-    optimized = optimize_plan(df.explain(), [optimizer.PushDownClausesIntoScan()])
+    optimized = optimize_plan(df.plan(), [optimizer.PushDownClausesIntoScan()])
     expected = logical_plan.Scan(df.schema(), predicate=None, columns=selected_columns)
-    assert optimized == expected
+    assert optimized.is_eq(expected)

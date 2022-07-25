@@ -174,7 +174,6 @@ class Expression(TreeNode["Expression"]):
             return True
 
         if not self._is_eq_local(other):
-            print(f"Is local not equal: {self} != {other}")
             return False
 
         if len(self._children()) != len(other._children()):
