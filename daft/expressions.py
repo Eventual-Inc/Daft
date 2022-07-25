@@ -170,7 +170,7 @@ class Expression(TreeNode["Expression"]):
         raise NotImplementedError()
 
     def is_eq(self, other: Expression) -> bool:
-        if self is other:
+        if self.is_same(other):
             return True
 
         if not self._is_eq_local(other):

@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from daft.expressions import ColumnExpression
 from daft.internal.treenode import TreeNode
@@ -17,6 +17,21 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
     @abstractmethod
     def required_columns(self) -> ExpressionList:
         raise NotImplementedError()
+
+    @abstractmethod
+    def _local_eq(self, other: Any) -> bool:
+        raise NotImplementedError()
+
+    def is_eq(self, other: Any) -> bool:
+        return all(
+            [self_child.is_eq(other_child) for self_child, other_child in zip(self._children(), other._children())]
+        ) and self._local_eq(other)
+
+    def __eq__(self, other: Any) -> bool:
+        raise NotImplementedError(
+            "The == operation is not implemented. "
+            "Use .is_eq() to check if expressions are 'equal' (ignores differences in IDs but checks for the same expression structure)"
+        )
 
 
 class Scan(LogicalPlan):
@@ -51,6 +66,9 @@ class Scan(LogicalPlan):
     def required_columns(self) -> ExpressionList:
         return self._predicate.required_columns()
 
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, Scan) and self.schema() == other.schema() and self._predicate == other._predicate
+
 
 class Filter(LogicalPlan):
     """Which rows to keep"""
@@ -65,6 +83,9 @@ class Filter(LogicalPlan):
 
     def required_columns(self) -> ExpressionList:
         return self._predicate.required_columns()
+
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, Filter) and self._predicate == other._predicate
 
 
 class Projection(LogicalPlan):
@@ -82,6 +103,9 @@ class Projection(LogicalPlan):
 
     def required_columns(self) -> ExpressionList:
         return self._projection.required_columns()
+
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, Projection) and self._projection == other._projection
 
 
 class Sort(LogicalPlan):
