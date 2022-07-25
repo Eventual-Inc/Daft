@@ -2,8 +2,8 @@ from typing import Union
 
 import pydantic
 
-from daft.serving.aws_lambda import AWSLambdaBackendConfig
-from daft.serving.docker import DockerBackendConfig
+from daft.serving.backends.aws_lambda import AWSLambdaBackendConfig
+from daft.serving.backends.docker import DockerBackendConfig
 
 
 class BackendConfig(pydantic.BaseModel):

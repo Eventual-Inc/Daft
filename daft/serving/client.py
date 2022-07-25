@@ -1,8 +1,8 @@
 from typing import Any, Callable, Dict, List, Type
 
 from daft.serving import backend, config
-from daft.serving.aws_lambda import AWSLambdaEndpointBackend
-from daft.serving.docker import DockerEndpointBackend
+from daft.serving.backends.aws_lambda import AWSLambdaEndpointBackend
+from daft.serving.backends.docker import DockerEndpointBackend
 
 CONFIG_BACKEND_CLASSES: List[Type[backend.AbstractEndpointBackend]] = [DockerEndpointBackend, AWSLambdaEndpointBackend]
 CONFIG_TYPE_ID_TO_BACKEND_CLASS_MAP = {

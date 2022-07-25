@@ -36,8 +36,8 @@ def build_image(
     tarbytes = io.BytesIO()
     with tempfile.TemporaryDirectory() as td, tarfile.open(fileobj=tarbytes, mode="w") as tar:
         # Add static files into the Tarfile
-        tar.add(pathlib.Path(__file__).parent / "static" / "docker-entrypoint.py", arcname="entrypoint.py")
-        tar.add(pathlib.Path(__file__).parent / "static" / "Dockerfile", arcname="Dockerfile")
+        tar.add(pathlib.Path(__file__).parent.parent / "static" / "docker-entrypoint.py", arcname="entrypoint.py")
+        tar.add(pathlib.Path(__file__).parent.parent / "static" / "Dockerfile", arcname="Dockerfile")
 
         # Add pip dependencies into the Tarfile as a requirements.txt
         requirements_txt_file = pathlib.Path(td) / REQUIREMENTS_TXT_FILENAME
