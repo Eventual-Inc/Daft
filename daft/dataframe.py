@@ -76,7 +76,7 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
-    def from_http_endpoint(cls, endpoint: HTTPEndpoint) -> DataFrame:
+    def from_endpoint(cls, endpoint: HTTPEndpoint) -> DataFrame:
         plan = logical_plan.HTTPRequest(schema=endpoint._request_schema)
         return cls(plan)
 
@@ -84,7 +84,7 @@ class DataFrame:
     # DataFrame write operations
     ###
 
-    def write_http_endpoint(self, endpoint: HTTPEndpoint) -> None:
+    def write_endpoint(self, endpoint: HTTPEndpoint) -> None:
         endpoint._set_plan(self.plan())
 
     ###

@@ -20,6 +20,8 @@ class HTTPEndpoint:
         return
 
     def deploy(self, endpoint_name: str, backend: str, client: ServingClient) -> Endpoint:
+        if self._plan is None:
+            raise RuntimeError("Unable to deploy HTTPEndpoint without a plan")
         print(f"Currently stubbed, but supposed to be deploying plan: {self._plan}")
         # TODO(jay): Replace with an actual runner that takes as a parameter the plan object and is able to process incoming requests
         def endpoint_func(request: str) -> str:

@@ -39,6 +39,7 @@ jupyterhub = "1.5.0"
 jupyterlab-git = "^0.37.1"
 ipdb = "^0.13.9"
 pre-commit = "^2.20.0"
+types-requests = "^2.28.4"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
