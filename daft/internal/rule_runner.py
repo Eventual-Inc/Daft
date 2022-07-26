@@ -55,7 +55,9 @@ class RuleRunner(Generic[TreeNodeType]):
                     applied_least_one_rule = True
 
         else:
-            if result is not None:
-                logger.debug(f"Optimizer Batch {batch.name} reached max iteration {max_runs}")
+            if applied_least_one_rule:
+                logger.debug(
+                    f"Optimizer Batch {batch.name} reached max iteration {max_runs} and had changes in the last iteration"
+                )
 
         return root
