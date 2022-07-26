@@ -23,9 +23,14 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         raise NotImplementedError()
 
     def is_eq(self, other: Any) -> bool:
-        return all(
-            [self_child.is_eq(other_child) for self_child, other_child in zip(self._children(), other._children())]
-        ) and self._local_eq(other)
+        return (
+            isinstance(other, LogicalPlan)
+            and self._local_eq(other)
+            and self.schema() == other.schema()
+            and all(
+                [self_child.is_eq(other_child) for self_child, other_child in zip(self._children(), other._children())]
+            )
+        )
 
     def __eq__(self, other: Any) -> bool:
         raise NotImplementedError(
@@ -67,7 +72,12 @@ class Scan(LogicalPlan):
         return self._predicate.required_columns()
 
     def _local_eq(self, other: Any) -> bool:
-        return isinstance(other, Scan) and self.schema() == other.schema() and self._predicate == other._predicate
+        return (
+            isinstance(other, Scan)
+            and self.schema() == other.schema()
+            and self._predicate == other._predicate
+            and self._columns == other._columns
+        )
 
 
 class Filter(LogicalPlan):
@@ -85,7 +95,7 @@ class Filter(LogicalPlan):
         return self._predicate.required_columns()
 
     def _local_eq(self, other: Any) -> bool:
-        return isinstance(other, Filter) and self._predicate == other._predicate
+        return isinstance(other, Filter) and self.schema() == other.schema() and self._predicate == other._predicate
 
 
 class Projection(LogicalPlan):
@@ -105,7 +115,9 @@ class Projection(LogicalPlan):
         return self._projection.required_columns()
 
     def _local_eq(self, other: Any) -> bool:
-        return isinstance(other, Projection) and self._projection == other._projection
+        return (
+            isinstance(other, Projection) and self.schema() == other.schema() and self._projection == other._projection
+        )
 
 
 class Sort(LogicalPlan):

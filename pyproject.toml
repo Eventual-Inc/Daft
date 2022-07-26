@@ -33,6 +33,7 @@ fastapi = "^0.79.0"
 docker = "^5.0.3"
 uvicorn = "^0.18.2"
 cloudpickle = "^2.1.0"
+loguru = "^0.6.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"

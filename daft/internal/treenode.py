@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Generic, List, TypeVar, cast
+from typing import TYPE_CHECKING, Generic, List, Optional, TypeVar, cast
 
 if TYPE_CHECKING:
     from daft.internal.rule import Rule
@@ -23,9 +23,10 @@ class TreeNode(Generic[TreeNodeType]):
         self._registered_children.append(child)
         return len(self._registered_children) - 1
 
-    def apply_and_trickle_down(self, rule: Rule[TreeNodeType]) -> TreeNodeType:
+    def apply_and_trickle_down(self, rule: Rule[TreeNodeType]) -> Optional[TreeNodeType]:
         root = cast(TreeNodeType, self)
         continue_looping = True
+        made_change = False
         while continue_looping:
             for child in root._children():
                 fn = rule.dispatch_fn(root, child)
@@ -37,13 +38,21 @@ class TreeNode(Generic[TreeNodeType]):
 
                 if maybe_new_root is not None:
                     root = maybe_new_root
+                    made_change = True
                     break
             else:
                 continue_looping = False
         n_children = len(root._children())
         for i in range(n_children):
-            root._registered_children[i] = root._registered_children[i].apply_and_trickle_down(rule)
-        return root
+            maybe_new_child = root._registered_children[i].apply_and_trickle_down(rule)
+            if maybe_new_child is not None:
+                root._registered_children[i] = maybe_new_child
+                made_change = True
+
+        if made_change:
+            return root
+        else:
+            return None
 
     def to_dot(self) -> str:
         graph: pydot.Graph = pydot.Dot("TreeNode", graph_type="digraph", bgcolor="white")  # type: ignore
