@@ -31,4 +31,4 @@ def test_pred_push_down(schema):
     full_select = Filter(input, ExpressionList([col("a") == 1, col("b") < 10]))
     full_select = Filter(full_select, ExpressionList([col("a") == 1, col("b") > 20]))
 
-    optimizer.optimize(full_select)
+    optimizer(full_select)

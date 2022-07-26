@@ -35,6 +35,9 @@ class RuleRunner(Generic[TreeNodeType]):
             root = self._run_single_batch(root, batch)
         return root
 
+    def __call__(self, root: TreeNodeType) -> TreeNodeType:
+        return self.optimize(root)
+
     def _run_single_batch(self, root: TreeNodeType, batch: RuleBatch) -> TreeNodeType:
         logger.debug(f"Running optimizer batch: {batch.name}")
         max_runs = batch.mode.num_runs
