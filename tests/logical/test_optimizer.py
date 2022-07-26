@@ -1,7 +1,7 @@
 import pytest
 
 from daft.expressions import col
-from daft.internal.rule import RuleRunner
+from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import Filter, Projection, Scan
 from daft.logical.optimizer import (
     FoldProjections,
@@ -17,7 +17,11 @@ def schema():
 
 
 def test_pred_push_down(schema):
-    pred_push_down = PushDownPredicates()
+    PushDownPredicates()
+    optimizer = RuleRunner(
+        [RuleBatch("pred_pushdown", Once, [PushDownPredicates(), PushDownClausesIntoScan(), FoldProjections()])]
+    )
+
     scan = Scan(schema)
 
     input = scan
@@ -27,14 +31,4 @@ def test_pred_push_down(schema):
     full_select = Filter(input, ExpressionList([col("a") == 1, col("b") < 10]))
     full_select = Filter(full_select, ExpressionList([col("a") == 1, col("b") > 20]))
 
-    runner = RuleRunner([pred_push_down])
-
-    output = runner.run_single_rule(full_select, pred_push_down)
-
-    pred_push_down_into_scan = PushDownClausesIntoScan()
-
-    output_scan = runner.run_single_rule(output, pred_push_down_into_scan)
-
-    fold_proj_rule = FoldProjections()
-
-    runner.run_single_rule(output_scan, fold_proj_rule)
+    optimizer.optimize(full_select)

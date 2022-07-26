@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Generic, List, Optional, Tuple, Type, TypeVar
+from typing import Callable, Dict, Generic, Optional, Tuple, Type, TypeVar
 
 from daft.internal.treenode import TreeNode
 
@@ -26,11 +26,3 @@ class Rule(Generic[TreeNodeType]):
             return fn(parent, child)
         else:
             return None
-
-
-class RuleRunner(Generic[TreeNodeType]):
-    def __init__(self, rules: List[Rule[TreeNodeType]]) -> None:
-        self._rules = rules
-
-    def run_single_rule(self, root: TreeNodeType, rule: Rule[TreeNodeType]):
-        return root.apply_and_trickle_down(rule)

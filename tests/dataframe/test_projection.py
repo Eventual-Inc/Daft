@@ -4,8 +4,24 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
-from daft.logical import optimizer
-from tests.dataframe.utils import optimize_plan
+from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
+from daft.logical.logical_plan import LogicalPlan
+from daft.logical.optimizer import FoldProjections
+
+
+@pytest.fixture(scope="function")
+def optimizer() -> RuleRunner[LogicalPlan]:
+    return RuleRunner(
+        [
+            RuleBatch(
+                "fold_projections",
+                Once,
+                [
+                    FoldProjections(),
+                ],
+            )
+        ]
+    )
 
 
 def test_select_dataframe(valid_data: List[Dict[str, float]]) -> None:
@@ -20,13 +36,13 @@ def test_select_dataframe_missing_col(valid_data: List[Dict[str, float]]) -> Non
         df = df.select("foo", "sepal_length")
 
 
-def test_fold_projections(valid_data: List[Dict[str, float]]) -> None:
+def test_fold_projections(valid_data: List[Dict[str, float]], optimizer) -> None:
     df = DataFrame.from_pylist(valid_data)
     df_unoptimized = df.select("sepal_length", "sepal_width").select("sepal_width")
     df_optimized = df.select("sepal_width")
 
     assert df_unoptimized.column_names() == ["sepal_width"]
-    assert optimize_plan(df_unoptimized.plan(), [optimizer.FoldProjections()]).is_eq(df_optimized.plan())
+    assert optimizer.optimize(df_unoptimized.plan()).is_eq(df_optimized.plan())
 
 
 def test_with_column(valid_data: List[Dict[str, float]]) -> None:
