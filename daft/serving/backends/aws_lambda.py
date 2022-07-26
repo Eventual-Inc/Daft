@@ -10,7 +10,7 @@ import cloudpickle
 import pydantic
 
 from daft.serving.backend import AbstractEndpointBackend
-from daft.serving.endpoints import Endpoint
+from daft.serving.definitions import Endpoint
 
 CONFIG_TYPE_ID = Literal["aws_lambda"]
 
@@ -110,7 +110,7 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as zipfile_td:
             tmpdir = pathlib.Path(td)
             shutil.copy2(
-                pathlib.Path(__file__).parent / "static" / "aws-lambda-entrypoint.py",
+                pathlib.Path(__file__).parent.parent / "static" / "aws-lambda-entrypoint.py",
                 tmpdir / "aws-lambda-entrypoint.py",
             )
             proc = subprocess.run(

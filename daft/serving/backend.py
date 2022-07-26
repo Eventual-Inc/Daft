@@ -5,7 +5,7 @@ from typing import Any, Callable, List, Protocol
 
 import pydantic
 
-from daft.serving.endpoints import Endpoint
+from daft.serving.definitions import Endpoint
 
 logger = logging.getLogger(__name__)
 

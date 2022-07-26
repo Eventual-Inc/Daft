@@ -122,3 +122,45 @@ class Projection(LogicalPlan):
 
 class Sort(LogicalPlan):
     ...
+
+
+class HTTPRequest(LogicalPlan):
+    def __init__(
+        self,
+        schema: ExpressionList,
+    ) -> None:
+        self._output_schema = schema.resolve()
+        super().__init__(schema)
+
+    def schema(self) -> ExpressionList:
+        return self._output_schema
+
+    def __repr__(self) -> str:
+        return f"HTTPRequest\n\toutput={self.schema()}"
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, HTTPRequest) and self.schema() == other.schema()
+
+
+class HTTPResponse(LogicalPlan):
+    def __init__(
+        self,
+        input: LogicalPlan,
+    ) -> None:
+        self._schema = input.schema()
+        super().__init__(self._schema)
+
+    def schema(self) -> ExpressionList:
+        return self._schema
+
+    def __repr__(self) -> str:
+        return f"HTTPResponse\n\toutput={self.schema()}"
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, HTTPResponse) and self.schema() == other.schema()

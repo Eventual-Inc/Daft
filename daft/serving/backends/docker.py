@@ -11,7 +11,7 @@ import docker
 import pydantic
 
 from daft.serving.backend import AbstractEndpointBackend
-from daft.serving.endpoints import Endpoint
+from daft.serving.definitions import Endpoint
 
 CONFIG_TYPE_ID = Literal["docker"]
 REQUIREMENTS_TXT_FILENAME = "requirements.txt"
@@ -36,8 +36,8 @@ def build_image(
     tarbytes = io.BytesIO()
     with tempfile.TemporaryDirectory() as td, tarfile.open(fileobj=tarbytes, mode="w") as tar:
         # Add static files into the Tarfile
-        tar.add(pathlib.Path(__file__).parent / "static" / "docker-entrypoint.py", arcname="entrypoint.py")
-        tar.add(pathlib.Path(__file__).parent / "static" / "Dockerfile", arcname="Dockerfile")
+        tar.add(pathlib.Path(__file__).parent.parent / "static" / "docker-entrypoint.py", arcname="entrypoint.py")
+        tar.add(pathlib.Path(__file__).parent.parent / "static" / "Dockerfile", arcname="Dockerfile")
 
         # Add pip dependencies into the Tarfile as a requirements.txt
         requirements_txt_file = pathlib.Path(td) / REQUIREMENTS_TXT_FILENAME
@@ -106,10 +106,10 @@ class DockerEndpointBackend(AbstractEndpointBackend):
         try:
             container = self.docker_client.containers.run(
                 img,
-                name=f"daft-endpoint-{endpoint_name}",
+                name=f"daft-endpoint-{endpoint_name}-v{version}",
                 ports={f"8000/tcp": str(port)},
                 detach=True,
-                auto_remove=True,
+                auto_remove=False,
                 labels={
                     DockerEndpointBackend.DAFT_ENDPOINT_NAME_LABEL: endpoint_name,
                     DockerEndpointBackend.DAFT_ENDPOINT_PORT_LABEL: str(port),

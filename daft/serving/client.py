@@ -1,10 +1,16 @@
 from typing import Any, Callable, Dict, List, Type
 
 from daft.serving import backend, config
-from daft.serving.aws_lambda import AWSLambdaEndpointBackend
-from daft.serving.docker import DockerEndpointBackend
+from daft.serving.backends.aws_lambda import AWSLambdaEndpointBackend
+from daft.serving.backends.docker import DockerEndpointBackend
+from daft.serving.backends.multiprocessing import MultiprocessingEndpointBackend
+from daft.serving.definitions import Endpoint
 
-CONFIG_BACKEND_CLASSES: List[Type[backend.AbstractEndpointBackend]] = [DockerEndpointBackend, AWSLambdaEndpointBackend]
+CONFIG_BACKEND_CLASSES: List[Type[backend.AbstractEndpointBackend]] = [
+    DockerEndpointBackend,
+    AWSLambdaEndpointBackend,
+    MultiprocessingEndpointBackend,
+]
 CONFIG_TYPE_ID_TO_BACKEND_CLASS_MAP = {
     backend_class.config_type_id(): backend_class for backend_class in CONFIG_BACKEND_CLASSES
 }
@@ -31,7 +37,7 @@ class ServingClient:
         endpoint: Callable[[Any], Any],
         backend: str = "default",
         pip_dependencies: List[str] = [],
-    ):
+    ) -> Endpoint:
         if backend not in self.endpoint_backends:
             raise ValueError(f"Unknown backend {backend}, expected one of: {list(self.endpoint_backends.keys())}")
         endpoint_backend = self.endpoint_backends[backend]
