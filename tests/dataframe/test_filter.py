@@ -5,7 +5,6 @@ import pytest
 from daft.dataframe import DataFrame
 from daft.expressions import col
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
-from daft.logical import optimizer
 from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import PushDownPredicates
 

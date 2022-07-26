@@ -5,7 +5,7 @@ import pytest
 from daft.dataframe import DataFrame
 from daft.expressions import col
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
-from daft.logical import logical_plan, optimizer
+from daft.logical import logical_plan
 from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import (
     FoldProjections,
