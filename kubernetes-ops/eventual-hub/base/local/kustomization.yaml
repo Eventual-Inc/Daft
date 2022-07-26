@@ -1,9 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-bases:
-- ../../components/ca
-- ../../components/backend
-- ../../components/eventual-hub
-- ../../components/jupyterhub
-- ../../components/kuberay
-- ../../components/proxy

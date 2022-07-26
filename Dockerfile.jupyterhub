@@ -1,7 +1,0 @@
-FROM jupyterhub/jupyterhub:latest
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip install git+https://github.com/Eventual-Inc/kubespawner.git@d71a114d938ddf87f68e5a530e0e1d6f8ca4b35f#egg=jupyterhub-kubespawner psycopg2-binary oauthenticator
