@@ -11,23 +11,13 @@ ray = "1.13.0"
 numpy = "^1.22.3"
 pyarrow = "^8.0.0"
 Pillow = "^9.1.0"
-torch = "^1.11.0"
-torchvision = "^0.12.0"
-pandas = "^1.4.2"
-dacite = "^1.6.0"
-tqdm = "^4.64.0"
 pydantic = {extras = ["dotenv"], version = "^1.9.1"}
-smart-open = "^6.0.0"
 boto3 = "^1.23.0"
 fsspec = "*"
-s3fs = "*"
 # Ray-protobuf generation issue requires pinning at 3.19:
 # https://github.com/ray-project/ray/issues/25282
 protobuf = "~3.19.0"
-networkx = "^2.8.2"
 icebridge = "0.0.3"
-tabulate = "^0.8.10"
-pre-commit = "^2.20.0"
 pydot = "^1.4.2"
 fastapi = "^0.79.0"
 docker = "^5.0.3"
@@ -48,6 +38,7 @@ jupyterlab = "^3.4.2"
 jupyterhub = "1.5.0"
 jupyterlab-git = "^0.37.1"
 ipdb = "^0.13.9"
+pre-commit = "^2.20.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -76,7 +67,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 # WE ARE IGNORING THIS MODULES UNTIL WE CAN FIX THEM
 module = [
-    "daft.datarepo.query.*",
     "daft.dataclasses"
 ]
 ignore_errors = true
