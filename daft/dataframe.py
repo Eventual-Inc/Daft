@@ -7,6 +7,7 @@ from daft.expressions import Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
+from daft.serving.endpoint import HTTPEndpoint
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
@@ -73,6 +74,18 @@ class DataFrame:
             columns=None,
         )
         return cls(plan)
+
+    @classmethod
+    def from_http_endpoint(cls, endpoint: HTTPEndpoint) -> DataFrame:
+        plan = logical_plan.HTTPRequest(schema=endpoint._request_schema)
+        return cls(plan)
+
+    ###
+    # DataFrame write operations
+    ###
+
+    def write_http_endpoint(self, endpoint: HTTPEndpoint) -> None:
+        endpoint._set_plan(self.plan())
 
     ###
     # DataFrame operations

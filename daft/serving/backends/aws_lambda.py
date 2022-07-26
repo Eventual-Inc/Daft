@@ -10,7 +10,7 @@ import cloudpickle
 import pydantic
 
 from daft.serving.backend import AbstractEndpointBackend
-from daft.serving.endpoints import Endpoint
+from daft.serving.definitions import Endpoint
 
 CONFIG_TYPE_ID = Literal["aws_lambda"]
 
