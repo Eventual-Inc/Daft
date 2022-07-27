@@ -34,7 +34,7 @@ def docker_backend():
 
 
 def test_identity_dataframe_serving_multiprocessing(multiprocessing_backend: MultiprocessingEndpointBackend) -> None:
-    endpoint = HTTPEndpoint(SCHEMA)
+    endpoint = HTTPEndpoint(SCHEMA, backend=multiprocessing_backend)
     df = DataFrame.from_endpoint(endpoint)
     df.write_endpoint(endpoint)
 
@@ -44,7 +44,7 @@ def test_identity_dataframe_serving_multiprocessing(multiprocessing_backend: Mul
 
     endpoint._plan = endpoint_func
 
-    deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME, backend=multiprocessing_backend)
+    deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME)
 
     # TODO(jay): Replace with actual logic when the endpoint is deployed with a runner
     response = requests.get(f"{deployed_endpoint.addr}?request=foo")
@@ -52,7 +52,7 @@ def test_identity_dataframe_serving_multiprocessing(multiprocessing_backend: Mul
 
 
 def test_identity_dataframe_serving_docker(docker_backend: DockerEndpointBackend) -> None:
-    endpoint = HTTPEndpoint(SCHEMA)
+    endpoint = HTTPEndpoint(SCHEMA, backend=docker_backend)
     df = DataFrame.from_endpoint(endpoint)
     df.write_endpoint(endpoint)
 
@@ -62,7 +62,7 @@ def test_identity_dataframe_serving_docker(docker_backend: DockerEndpointBackend
 
     endpoint._plan = endpoint_func
 
-    deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME, backend=docker_backend)
+    deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME)
 
     try:
         # TODO(jay): Replace with actual logic when the endpoint is deployed with a runner
@@ -77,7 +77,7 @@ def test_identity_dataframe_serving_docker(docker_backend: DockerEndpointBackend
 
 
 def test_identity_dataframe_serving_docker_with_pip_dependency(docker_backend: DockerEndpointBackend) -> None:
-    endpoint = HTTPEndpoint(SCHEMA)
+    endpoint = HTTPEndpoint(SCHEMA, backend=docker_backend, custom_env=DaftEnv(pip_packages=["numpy"]))
     df = DataFrame.from_endpoint(endpoint)
     df.write_endpoint(endpoint)
 
@@ -87,9 +87,7 @@ def test_identity_dataframe_serving_docker_with_pip_dependency(docker_backend: D
 
     endpoint._plan = endpoint_func
 
-    deployed_endpoint = endpoint.deploy(
-        FAKE_ENDPOINT_NAME, backend=docker_backend, custom_env=DaftEnv(pip_packages=["numpy"])
-    )
+    deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME)
 
     try:
         # TODO(jay): Replace with actual logic when the endpoint is deployed with a runner
@@ -104,50 +102,38 @@ def test_identity_dataframe_serving_docker_with_pip_dependency(docker_backend: D
 
 
 def test_identity_dataframe_serving_docker_with_requirements_txt(docker_backend: DockerEndpointBackend) -> None:
-    endpoint = HTTPEndpoint(SCHEMA)
-    df = DataFrame.from_endpoint(endpoint)
-    df.write_endpoint(endpoint)
-
-    # HACK(jay): Override ._plan with a mock function to execute, because we don't yet have a runner that can run ._plan
-    def endpoint_func(request: str) -> float:
-        return np.sum(np.ones(int(request)))
-
-    endpoint._plan = endpoint_func
-
     with tempfile.NamedTemporaryFile(mode="w") as requirements_txt:
         requirements_txt.write("numpy")
         requirements_txt.flush()
-        deployed_endpoint = endpoint.deploy(
-            FAKE_ENDPOINT_NAME,
-            docker_backend,
-            custom_env=DaftEnv(requirements_txt=requirements_txt.name),
-        )
 
-    try:
-        # TODO(jay): Replace with actual logic when the endpoint is deployed with a runner
-        response = requests.get(f"{deployed_endpoint.addr}?request=5")
-        assert response.text == "5.0"
-    finally:
-        docker_client = docker.from_env()
+        endpoint = HTTPEndpoint(
+            SCHEMA, backend=docker_backend, custom_env=DaftEnv(requirements_txt=requirements_txt.name)
+        )
+        df = DataFrame.from_endpoint(endpoint)
+        df.write_endpoint(endpoint)
+
+        # HACK(jay): Override ._plan with a mock function to execute, because we don't yet have a runner that can run ._plan
+        def endpoint_func(request: str) -> float:
+            return np.sum(np.ones(int(request)))
+
+        endpoint._plan = endpoint_func
+        deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME)
+
         try:
-            docker_client.containers.get(f"daft-endpoint-{deployed_endpoint.name}-v{deployed_endpoint.version}").kill()
-        except docker.errors.NotFound:
-            pass
+            # TODO(jay): Replace with actual logic when the endpoint is deployed with a runner
+            response = requests.get(f"{deployed_endpoint.addr}?request=5")
+            assert response.text == "5.0"
+        finally:
+            docker_client = docker.from_env()
+            try:
+                docker_client.containers.get(
+                    f"daft-endpoint-{deployed_endpoint.name}-v{deployed_endpoint.version}"
+                ).kill()
+            except docker.errors.NotFound:
+                pass
 
 
 def test_identity_dataframe_serving_docker_with_local_pkg(docker_backend: DockerEndpointBackend) -> None:
-    endpoint = HTTPEndpoint(SCHEMA)
-    df = DataFrame.from_endpoint(endpoint)
-    df.write_endpoint(endpoint)
-
-    # HACK(jay): Override ._plan with a mock function to execute, because we don't yet have a runner that can run ._plan
-    def endpoint_func(request: str) -> int:
-        import fake_pkg
-
-        return fake_pkg.foo(request)
-
-    endpoint._plan = endpoint_func
-
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = pathlib.Path(tmpdir)
         setup_py = tmpdir / "setup.py"
@@ -158,19 +144,29 @@ def test_identity_dataframe_serving_docker_with_local_pkg(docker_backend: Docker
         pkg_dir.mkdir()
         pkg_init = tmpdir / "fake_pkg" / "__init__.py"
         pkg_init.write_text("def foo(request: str) -> int: return int(request)")
-        deployed_endpoint = endpoint.deploy(
-            FAKE_ENDPOINT_NAME,
-            docker_backend,
-            custom_env=DaftEnv(local_packages=[str(tmpdir)]),
-        )
 
-    try:
-        # TODO(jay): Replace with actual logic when the endpoint is deployed with a runner
-        response = requests.get(f"{deployed_endpoint.addr}?request=5")
-        assert response.text == "5"
-    finally:
-        docker_client = docker.from_env()
+        endpoint = HTTPEndpoint(SCHEMA, docker_backend, custom_env=DaftEnv(local_packages=[str(tmpdir)]))
+        df = DataFrame.from_endpoint(endpoint)
+        df.write_endpoint(endpoint)
+
+        # HACK(jay): Override ._plan with a mock function to execute, because we don't yet have a runner that can run ._plan
+        def endpoint_func(request: str) -> int:
+            import fake_pkg
+
+            return fake_pkg.foo(request)
+
+        endpoint._plan = endpoint_func
+        deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME)
+
         try:
-            docker_client.containers.get(f"daft-endpoint-{deployed_endpoint.name}-v{deployed_endpoint.version}").kill()
-        except docker.errors.NotFound:
-            pass
+            # TODO(jay): Replace with actual logic when the endpoint is deployed with a runner
+            response = requests.get(f"{deployed_endpoint.addr}?request=5")
+            assert response.text == "5"
+        finally:
+            docker_client = docker.from_env()
+            try:
+                docker_client.containers.get(
+                    f"daft-endpoint-{deployed_endpoint.name}-v{deployed_endpoint.version}"
+                ).kill()
+            except docker.errors.NotFound:
+                pass
