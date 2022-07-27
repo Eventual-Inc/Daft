@@ -1,8 +1,16 @@
 import copy
-from typing import Optional
+from functools import cached_property
+from typing import Optional, Set, Type
 
 from daft.internal.rule import Rule
-from daft.logical.logical_plan import Filter, LogicalPlan, Projection, Scan
+from daft.logical.logical_plan import (
+    Filter,
+    LogicalPlan,
+    Projection,
+    Scan,
+    Sort,
+    UnaryNode,
+)
 from daft.logical.schema import ExpressionList
 
 
@@ -12,6 +20,8 @@ class PushDownPredicates(Rule[LogicalPlan]):
         self._combine_filters_rule = CombineFilters()
         self.register_fn(Filter, Filter, self._combine_filters_rule._combine_filters)
         self.register_fn(Filter, Projection, self._filter_through_projection)
+        for op in self._supported_unary_nodes:
+            self.register_fn(Filter, op, self._filter_through_unary_node)
 
     def _filter_through_projection(self, parent: Filter, child: Projection) -> Optional[LogicalPlan]:
         filter_predicate = parent._predicate
@@ -37,6 +47,15 @@ class PushDownPredicates(Rule[LogicalPlan]):
             return pushed_down_filter
         else:
             return Filter(pushed_down_filter, ExpressionList(can_not_push_down))
+
+    def _filter_through_unary_node(self, parent: Filter, child: UnaryNode) -> Optional[UnaryNode]:
+        assert type(child) in self._supported_unary_nodes
+        grandchild = child._children()[0]
+        return child.copy_with_new_input(Filter(grandchild, parent._predicate))
+
+    @cached_property
+    def _supported_unary_nodes(self) -> Set[Type[UnaryNode]]:
+        return {Sort}
 
 
 class CombineFilters(Rule[LogicalPlan]):

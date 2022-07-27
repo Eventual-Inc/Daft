@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-from typing import Any, Dict, List, TypeVar
+from typing import Any, Dict, List, Tuple, TypeVar, Union
 
 from daft.expressions import Expression, col
 from daft.filesystem import get_filesystem_from_path
@@ -10,6 +10,8 @@ from daft.logical.schema import ExpressionList
 from daft.serving.endpoint import HTTPEndpoint
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
+
+ColumnInputType = Union[Expression, str]
 
 
 class DataFrame:
@@ -91,8 +93,12 @@ class DataFrame:
     # DataFrame operations
     ###
 
-    def select(self, *columns: str) -> DataFrame:
-        projection = logical_plan.Projection(self._plan, self.schema().keep(list(columns)))
+    def __column_input_to_expression(self, columns: Tuple[ColumnInputType, ...]) -> ExpressionList:
+        expressions = [col(c) if isinstance(c, str) else c for c in columns]
+        return ExpressionList(expressions)
+
+    def select(self, *columns: ColumnInputType) -> DataFrame:
+        projection = logical_plan.Projection(self._plan, self.__column_input_to_expression(columns))
         return DataFrame(projection)
 
     def where(self, expr: Expression) -> DataFrame:
@@ -102,3 +108,7 @@ class DataFrame:
     def with_column(self, column_name: str, expr: Expression) -> DataFrame:
         projection = logical_plan.Projection(self._plan, self.schema().union(ExpressionList([expr.alias(column_name)])))
         return DataFrame(projection)
+
+    def sort(self, *columns: str) -> DataFrame:
+        sort = logical_plan.Sort(self._plan, self.__column_input_to_expression(columns))
+        return DataFrame(sort)
