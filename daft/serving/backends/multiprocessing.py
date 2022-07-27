@@ -3,15 +3,17 @@ import logging
 import multiprocessing
 import pickle
 import socket
-from typing import Any, Callable, Dict, List, Literal
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 import cloudpickle
 import fastapi
 import pydantic
 import requests
 import uvicorn
+from loguru import logger
 from requests.adapters import HTTPAdapter, Retry
 
+from daft.env import DaftEnv
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
 
@@ -79,8 +81,13 @@ class MultiprocessingEndpointBackend(AbstractEndpointBackend):
         ]
 
     def deploy_endpoint(
-        self, endpoint_name: str, endpoint: Callable[[Any], Any], pip_dependencies: List[str] = []
+        self,
+        endpoint_name: str,
+        endpoint: Callable[[Any], Any],
+        custom_env: Optional[DaftEnv] = None,
     ) -> Endpoint:
+        if custom_env is not None:
+            logger.warn(f"Custom env is not supported for multiprocessing backend, ignoring {custom_env}")
         endpoint_version = 1
         if endpoint_name in self.multiprocessing_servers:
             server = self.multiprocessing_servers[endpoint_name]
