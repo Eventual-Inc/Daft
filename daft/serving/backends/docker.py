@@ -7,7 +7,7 @@ import pydantic
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
-from daft.env import DaftEnv
+from daft.env import DaftEnv, build_serving_docker_image
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
 
@@ -119,9 +119,7 @@ class DockerEndpointBackend(AbstractEndpointBackend):
         endpoint: Callable[[Any], Any],
         custom_env: Optional[DaftEnv] = None,
     ) -> Endpoint:
-        if custom_env is None:
-            custom_env = DaftEnv(docker_client=self.docker_client)
-        img = custom_env.build_image(endpoint_name, endpoint)
+        img = build_serving_docker_image(custom_env if custom_env is not None else DaftEnv(), endpoint_name, endpoint)
         container = self._run_container(endpoint_name, img)
         addr = f"http://localhost:{container.labels['DAFT_ENDPOINT_PORT']}"
 

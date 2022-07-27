@@ -91,7 +91,7 @@ def test_identity_dataframe_serving_docker_with_pip_dependency(serving_client_do
     endpoint._plan = endpoint_func
 
     deployed_endpoint = endpoint.deploy(
-        FAKE_ENDPOINT_NAME, "default", serving_client_docker, custom_env=DaftEnv().with_pip_package("numpy")
+        FAKE_ENDPOINT_NAME, "default", serving_client_docker, custom_env=DaftEnv(pip_packages=["numpy"])
     )
 
     try:
@@ -124,7 +124,7 @@ def test_identity_dataframe_serving_docker_with_requirements_txt(serving_client_
             FAKE_ENDPOINT_NAME,
             "default",
             serving_client_docker,
-            custom_env=DaftEnv().with_requirements_txt(requirements_txt.name),
+            custom_env=DaftEnv(requirements_txt=requirements_txt.name),
         )
 
     try:
@@ -166,7 +166,7 @@ def test_identity_dataframe_serving_docker_with_local_pkg(serving_client_docker:
             FAKE_ENDPOINT_NAME,
             "default",
             serving_client_docker,
-            custom_env=DaftEnv().with_local_package(str(tmpdir)),
+            custom_env=DaftEnv(local_packages=[str(tmpdir)]),
         )
 
     try:

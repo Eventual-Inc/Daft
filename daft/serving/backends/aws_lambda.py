@@ -101,7 +101,7 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
         custom_env: Optional[DaftEnv] = None,
     ) -> Endpoint:
         if custom_env is not None:
-            raise ValueError(f"Image building is not yet supported for AWS Lambda backend, ignoring {custom_env}")
+            raise ValueError(f"Custom environments is not yet supported for AWS Lambda backend, ignoring {custom_env}")
 
         lambda_function_name = f"{AWSLambdaEndpointBackend.FUNCTION_NAME_PREFIX}{endpoint_name}"
         lambda_function_version = 1

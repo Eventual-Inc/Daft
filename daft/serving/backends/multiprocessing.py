@@ -87,7 +87,7 @@ class MultiprocessingEndpointBackend(AbstractEndpointBackend):
         custom_env: Optional[DaftEnv] = None,
     ) -> Endpoint:
         if custom_env is not None:
-            logger.warn(f"Image building is not supported for multiprocessing backend, ignoring {custom_env}")
+            logger.warn(f"Custom env is not supported for multiprocessing backend, ignoring {custom_env}")
         endpoint_version = 1
         if endpoint_name in self.multiprocessing_servers:
             server = self.multiprocessing_servers[endpoint_name]

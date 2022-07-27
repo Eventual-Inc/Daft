@@ -6,120 +6,126 @@ import re
 import sys
 import tarfile
 import tempfile
-from typing import Any, Callable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, List, Optional
 
 import cloudpickle
 import docker
 from loguru import logger
 
 ENDPOINT_PKL_FILENAME = "endpoint.pkl"
+ENTRYPOINT_FILE_NAME = "entrypoint.py"
+VENV_PATH = "/opt/venv"
+BASE_IMAGE_BUILD_TARGET = "daft_env_base"
+SERVING_IMAGE_BUILD_TARGET = "daft_serving"
 
 
+@dataclass(frozen=True)
 class DaftEnv:
-    """Reproduces the user's current Python environment as a Docker image"""
+    python_version: str = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    requirements_txt: Optional[str] = None
+    pip_packages: List[str] = field(default_factory=list)
+    local_packages: List[str] = field(default_factory=list)
 
-    def __init__(self, docker_client: Optional[docker.DockerClient] = None):
-        self.docker_client = docker_client if docker_client is not None else docker.from_env()
-        self._manifest = [
-            # Match the user's current Python version
-            f"FROM python:{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}-slim-buster",
-            # Install base python dependencies required to run the server
-            "WORKDIR /scratch",
-            "RUN pip install --upgrade pip",
-            "RUN pip install fastapi uvicorn cloudpickle",
-        ]
-        self._tarbytes = io.BytesIO()
-        self._tar = tarfile.open(fileobj=self._tarbytes, mode="w")
 
-        # Add static files to the Docker context
-        self._tar.add(
-            pathlib.Path(__file__).parent / "serving" / "static" / "docker-entrypoint.py", arcname="entrypoint.py"
-        )
+def daft_env_image_dockerfile(env: DaftEnv, tar: tarfile.TarFile) -> List[str]:
+    manifest = [
+        f"FROM python:{env.python_version}-slim-buster AS {BASE_IMAGE_BUILD_TARGET}",
+        "WORKDIR /scratch",
+        # Use a Virtual Environment for installing dependencies, and we can then copy all installed dependencies
+        # in subsequent build stages from /opt/venv
+        f"RUN python -m venv {VENV_PATH}",
+        f'ENV PATH="{VENV_PATH}/bin:$PATH"',
+    ]
 
-    def with_requirements_txt(self, requirements_txt_path: str) -> DaftEnv:
-        """Install requirements as specified in a valid requirements.txt file"""
-        self._manifest.extend(
+    if env.requirements_txt is not None:
+        manifest.extend(
             [
                 f"COPY requirements.txt requirements.txt",
                 "RUN pip install -r requirements.txt",
             ]
         )
-        self._tar.add(requirements_txt_path, arcname="requirements.txt")
-        return self
-
-    def with_local_package(self, package_path: str) -> DaftEnv:
-        """Install a local package (folder with a setup.py or pyproject.toml)"""
-        pkg_folder_name = pathlib.Path(package_path).name
-        self._manifest.extend(
+        tar.add(env.requirements_txt, arcname="requirements.txt")
+    if env.pip_packages:
+        manifest.extend(
             [
-                f"COPY {pkg_folder_name} {pkg_folder_name}",
-                f"RUN pip install /scratch/{pkg_folder_name}",
+                f"RUN pip install {' '.join(env.pip_packages)}",
             ]
         )
-        self._tar.add(package_path, arcname=pkg_folder_name)
-        return self
+    if env.local_packages:
+        for local_package_path in env.local_packages:
+            pkg_folder_name = pathlib.Path(local_package_path).name
+            manifest.extend(
+                [
+                    f"COPY {pkg_folder_name} {pkg_folder_name}",
+                    f"RUN pip install /scratch/{pkg_folder_name}",
+                ]
+            )
+            tar.add(local_package_path, arcname=pkg_folder_name)
 
-    def with_pip_package(self, pip_package: str) -> DaftEnv:
-        """Install a pip package"""
-        self._manifest.extend(
-            [
-                f"RUN pip install {pip_package}",
-            ]
+    return manifest
+
+
+def serving_image_dockerfile(env: DaftEnv, tar: tarfile.TarFile, endpoint: Callable[[Any], Any]) -> List[str]:
+    with tempfile.TemporaryDirectory() as td:
+        # Add the endpoint function to tarfile as a pickle
+        pickle_file = pathlib.Path(td) / ENDPOINT_PKL_FILENAME
+        with open(pickle_file, "wb") as f:
+            f.write(cloudpickle.dumps(endpoint))
+        tar.add(pickle_file, arcname=ENDPOINT_PKL_FILENAME)
+
+        # Add entrypoint file to tarfile
+        tar.add(
+            pathlib.Path(__file__).parent / "serving" / "static" / "docker-entrypoint.py", arcname=ENTRYPOINT_FILE_NAME
         )
-        return self
 
-    def build_image(
-        self,
-        endpoint_name: str,
-        endpoint: Callable[[Any], Any],
-        platform: str = "linux/amd64",
-    ):
-        """Builds the Docker image"""
-        with tempfile.TemporaryDirectory() as td:
-            # Add the endpoint function to tarfile as a pickle
-            pickle_file = pathlib.Path(td) / ENDPOINT_PKL_FILENAME
-            with open(pickle_file, "wb") as f:
-                f.write(cloudpickle.dumps(endpoint))
-            self._tar.add(pickle_file, arcname=ENDPOINT_PKL_FILENAME)
-            self._manifest.extend(
-                [
-                    "WORKDIR /app",
-                    "COPY entrypoint.py entrypoint.py",
-                    "COPY endpoint.pkl /app/endpoint.pkl",
-                    'CMD ["python", "entrypoint.py", "--endpoint-pkl-file=/app/endpoint.pkl"]',
-                ]
-            )
+    manifest = [
+        f"FROM python:{env.python_version}-slim-buster AS {SERVING_IMAGE_BUILD_TARGET}",
+        f"COPY --from={BASE_IMAGE_BUILD_TARGET} {VENV_PATH} {VENV_PATH}",
+        f'ENV PATH="{VENV_PATH}/bin:$PATH"',
+        "RUN pip install fastapi uvicorn cloudpickle",
+        "WORKDIR /app",
+        f"COPY {ENTRYPOINT_FILE_NAME} {ENTRYPOINT_FILE_NAME}",
+        f"COPY {ENDPOINT_PKL_FILENAME} {ENDPOINT_PKL_FILENAME}",
+        f'CMD ["python", "{ENTRYPOINT_FILE_NAME}", "--endpoint-pkl-file={ENDPOINT_PKL_FILENAME}"]',
+    ]
 
-            # Add the Dockerfile to tarfile
-            self._manifest.extend(
-                [
-                    "WORKDIR /app",
-                ]
-            )
-            dockerfile = pathlib.Path(td) / "Dockerfile"
-            with open(dockerfile, "w") as f:
-                f.write("\n".join(self._manifest))
-            self._tar.add(dockerfile, arcname="Dockerfile")
+    return manifest
 
-            # Create a Docker image from the tarfile
-            self._tarbytes.seek(0)
-            print(f"DaFt is building your server")
 
-            response = self.docker_client.api.build(
-                fileobj=self._tarbytes,
-                custom_context=True,
-                tag=f"daft-serving:{endpoint_name}",
-                decode=True,
-                platform=platform,
-            )
-            for msg in response:
-                if "stream" in msg:
-                    logger.debug(msg["stream"])
-                    match = re.search(r"(^Successfully built |sha256:)([0-9a-f]+)$", msg["stream"])
-                    if match:
-                        image_id = match.group(2)
-                        print(f"Built image: {image_id}")
-                        return self.docker_client.images.get(image_id)
-                if "aux" in msg:
-                    logger.debug(msg["aux"])
-            raise RuntimeError("Failed to build Docker image, check debug logs for more info")
+def build_serving_docker_image(
+    env: DaftEnv, endpoint_name: str, endpoint: Callable[[Any], Any], platform: str = "linux/amd64"
+) -> docker.models.images.Image:
+    docker_client = docker.from_env()
+
+    tarbytes = io.BytesIO()
+    with tarfile.open(fileobj=tarbytes, mode="w") as tar, tempfile.TemporaryDirectory() as td:
+        base_manifest = daft_env_image_dockerfile(env, tar)
+        serving_manifest = serving_image_dockerfile(env, tar, endpoint)
+
+        dockerfile = pathlib.Path(td) / "Dockerfile"
+        with open(dockerfile, "w") as f:
+            f.write("\n".join(base_manifest + serving_manifest))
+        tar.add(dockerfile, arcname="Dockerfile")
+
+        # Build the image
+        tarbytes.seek(0)
+        response = docker_client.api.build(
+            fileobj=tarbytes,
+            custom_context=True,
+            tag=f"daft-serving:{endpoint_name}",
+            decode=True,
+            platform=platform,
+            target=SERVING_IMAGE_BUILD_TARGET,
+        )
+        for msg in response:
+            if "stream" in msg:
+                logger.debug(msg["stream"])
+                match = re.search(r"(^Successfully built |sha256:)([0-9a-f]+)$", msg["stream"])
+                if match:
+                    image_id = match.group(2)
+                    print(f"Built image: {image_id}")
+                    return docker_client.images.get(image_id)
+            if "aux" in msg:
+                logger.debug(msg["aux"])
+        raise RuntimeError("Failed to build base Docker image, check debug logs for more info")
