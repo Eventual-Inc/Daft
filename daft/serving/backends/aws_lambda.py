@@ -3,12 +3,13 @@ import re
 import shutil
 import subprocess
 import tempfile
-from typing import Any, Callable, List, Literal
+from typing import Any, Callable, List, Literal, Optional
 
 import boto3
 import cloudpickle
 import pydantic
 
+from daft.env import DaftEnv
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
 
@@ -94,8 +95,14 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
         ]
 
     def deploy_endpoint(
-        self, endpoint_name: str, endpoint: Callable[[Any], Any], pip_dependencies: List[str] = []
+        self,
+        endpoint_name: str,
+        endpoint: Callable[[Any], Any],
+        custom_env: Optional[DaftEnv] = None,
     ) -> Endpoint:
+        if custom_env is not None:
+            raise ValueError(f"Image building is not yet supported for AWS Lambda backend, ignoring {custom_env}")
+
         lambda_function_name = f"{AWSLambdaEndpointBackend.FUNCTION_NAME_PREFIX}{endpoint_name}"
         lambda_function_version = 1
 
@@ -106,13 +113,17 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
         except self.lambda_client.exceptions.ResourceNotFoundException:
             pass
 
-        # Build the zip file
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as zipfile_td:
+
+            # Add the entrypoint Python file to zipfile
             tmpdir = pathlib.Path(td)
             shutil.copy2(
                 pathlib.Path(__file__).parent.parent / "static" / "aws-lambda-entrypoint.py",
                 tmpdir / "aws-lambda-entrypoint.py",
             )
+
+            # TODO(jay): We should install modules in a separate location and override the PYTHONPATH
+            # Add pip requirements to zipfile
             proc = subprocess.run(
                 [
                     "pip",
@@ -123,10 +134,11 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
                     "--only-binary=:all:",
                     "--python-version=3.9",
                     *AWSLambdaEndpointBackend.DAFT_REQUIRED_DEPS,
-                    *pip_dependencies,
                 ]
             )
             proc.check_returncode()
+
+            # Write endpoint as a pickle
             pickle_file = tmpdir / "endpoint.pkl"
             with open(pickle_file, "wb") as f:
                 f.write(cloudpickle.dumps(endpoint))
@@ -157,7 +169,9 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
                         Code={"ZipFile": zipfile_bytes},
                         Description="Daft serving endpoint",
                         Environment={
-                            "Variables": {"ENDPOINT_PKL_FILEPATH": "endpoint.pkl"},
+                            "Variables": {
+                                "ENDPOINT_PKL_FILEPATH": "endpoint.pkl",
+                            },
                         },
                         Architectures=["x86_64"],
                         Tags={

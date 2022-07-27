@@ -1,65 +1,27 @@
-import io
-import logging
 import pathlib
 import socket
-import tarfile
-import tempfile
-from typing import Any, Callable, List, Literal
+from typing import Any, Callable, List, Literal, Optional
 
-import cloudpickle
 import docker
 import pydantic
+import requests
+from requests.adapters import HTTPAdapter, Retry
 
+from daft.env import DaftEnv
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
 
 CONFIG_TYPE_ID = Literal["docker"]
 REQUIREMENTS_TXT_FILENAME = "requirements.txt"
 ENDPOINT_PKL_FILENAME = "endpoint.pkl"
-
-logger = logging.getLogger(__name__)
+WORKING_DIR_PATH = pathlib.Path("working_dir")
+MODULES_PATH = pathlib.Path("site-packages")
 
 
 class DockerBackendConfig(pydantic.BaseModel):
     """Configuration for the Docker backend"""
 
     type: CONFIG_TYPE_ID
-
-
-def build_image(
-    docker_client: docker.DockerClient,
-    endpoint_name: str,
-    endpoint: Callable[[Any], Any],
-    pip_dependencies: List[str] = [],
-) -> docker.models.images.Image:
-    """Builds a Docker image from the endpoint function"""
-    tarbytes = io.BytesIO()
-    with tempfile.TemporaryDirectory() as td, tarfile.open(fileobj=tarbytes, mode="w") as tar:
-        # Add static files into the Tarfile
-        tar.add(pathlib.Path(__file__).parent.parent / "static" / "docker-entrypoint.py", arcname="entrypoint.py")
-        tar.add(pathlib.Path(__file__).parent.parent / "static" / "Dockerfile", arcname="Dockerfile")
-
-        # Add pip dependencies into the Tarfile as a requirements.txt
-        requirements_txt_file = pathlib.Path(td) / REQUIREMENTS_TXT_FILENAME
-        requirements_txt_file.write_text("\n".join(pip_dependencies))
-        tar.add(requirements_txt_file, arcname=REQUIREMENTS_TXT_FILENAME)
-
-        # Add the endpoint function to tarfile as a pickle
-        pickle_file = pathlib.Path(td) / ENDPOINT_PKL_FILENAME
-        with open(pickle_file, "wb") as f:
-            f.write(cloudpickle.dumps(endpoint))
-        tar.add(pickle_file, arcname=ENDPOINT_PKL_FILENAME)
-
-        # Create a Docker image from the tarfile
-        tarbytes.seek(0)
-        print(f"DaFt is building your server")
-        img, build_logs = docker_client.images.build(
-            fileobj=tarbytes, tag=f"daft-serving:{endpoint_name}-latest", custom_context=True
-        )
-        for log in build_logs:
-            logger.debug(log)
-        print(f"Your server was built successfully!")
-        return img
 
 
 class DockerEndpointBackend(AbstractEndpointBackend):
@@ -91,17 +53,21 @@ class DockerEndpointBackend(AbstractEndpointBackend):
         # Check and remove existing container with the same name
         containers = [
             c
-            for c in self._get_daft_serving_containers()
+            for c in self._get_daft_serving_containers(running_only=False)
             if c.labels[DockerEndpointBackend.DAFT_ENDPOINT_NAME_LABEL] == endpoint_name
         ]
+        containers = sorted(containers, key=lambda c: int(c.labels[DockerEndpointBackend.DAFT_ENDPOINT_VERSION_LABEL]))
         if containers:
-            assert len(containers) == 1, "Multiple endpoints with the same name are not supported"
-            match = containers[0]
+            match = containers[-1]
             old_version = int(match.labels[DockerEndpointBackend.DAFT_ENDPOINT_VERSION_LABEL])
             version = old_version + 1
             port = match.labels[DockerEndpointBackend.DAFT_ENDPOINT_PORT_LABEL]
-            print(f"Tearing down existing endpoint {endpoint_name}/v{old_version}")
-            match.stop()
+            for container in containers:
+                if container.status == "running":
+                    print(
+                        f"Tearing down existing endpoint {endpoint_name}/v{container.labels[DockerEndpointBackend.DAFT_ENDPOINT_VERSION_LABEL]}"
+                    )
+                    container.stop()
 
         try:
             container = self.docker_client.containers.run(
@@ -127,17 +93,17 @@ class DockerEndpointBackend(AbstractEndpointBackend):
         sock.bind(("", 0))
         return int(sock.getsockname()[1])
 
-    def _get_daft_serving_containers(self) -> List[docker.models.containers.Container]:
+    def _get_daft_serving_containers(self, running_only: bool = True) -> List[docker.models.containers.Container]:
         """Returns all Daft Serving containers"""
         return [
             container
-            for container in self.docker_client.containers.list()
+            for container in self.docker_client.containers.list(all=not running_only)
             if container.labels.get(DockerEndpointBackend.DAFT_ENDPOINT_NAME_LABEL)
         ]
 
     def list_endpoints(self) -> List[Endpoint]:
         """Lists all endpoints managed by this endpoint manager"""
-        containers = self._get_daft_serving_containers()
+        containers = self._get_daft_serving_containers(running_only=True)
         return [
             Endpoint(
                 name=c.labels[DockerEndpointBackend.DAFT_ENDPOINT_NAME_LABEL],
@@ -148,12 +114,31 @@ class DockerEndpointBackend(AbstractEndpointBackend):
         ]
 
     def deploy_endpoint(
-        self, endpoint_name: str, endpoint: Callable[[Any], Any], pip_dependencies: List[str] = []
+        self,
+        endpoint_name: str,
+        endpoint: Callable[[Any], Any],
+        custom_env: Optional[DaftEnv] = None,
     ) -> Endpoint:
-        img = build_image(self.docker_client, endpoint_name, endpoint, pip_dependencies=pip_dependencies)
+        if custom_env is None:
+            custom_env = DaftEnv(docker_client=self.docker_client)
+        img = custom_env.build_image(endpoint_name, endpoint)
         container = self._run_container(endpoint_name, img)
+        addr = f"http://localhost:{container.labels['DAFT_ENDPOINT_PORT']}"
+
+        # Wait for process to start serving
+        session = requests.Session()
+        session.mount((f"http://"), HTTPAdapter(max_retries=Retry(total=5, backoff_factor=0.5)))
+        try:
+            response = session.get(f"{addr}/healthz")
+        except requests.exceptions.ConnectionError:
+            raise RuntimeError(
+                f"Container for endpoint {endpoint_name} unable to start:\n{container.logs().decode('utf-8')}"
+            )
+        if response.status_code != 200:
+            raise RuntimeError(f"Failed to start endpoint {endpoint_name}: {response.text}")
+
         return Endpoint(
             name=endpoint_name,
-            addr=f"http://localhost:{container.labels['DAFT_ENDPOINT_PORT']}",
+            addr=addr,
             version=int(container.labels[DockerEndpointBackend.DAFT_ENDPOINT_VERSION_LABEL]),
         )

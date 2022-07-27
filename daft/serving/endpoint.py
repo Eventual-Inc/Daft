@@ -1,5 +1,6 @@
 from typing import Optional
 
+from daft.env import DaftEnv
 from daft.logical.logical_plan import HTTPResponse, LogicalPlan
 from daft.logical.schema import ExpressionList
 from daft.serving.client import ServingClient
@@ -19,12 +20,16 @@ class HTTPEndpoint:
         self._plan = HTTPResponse(input=plan)
         return
 
-    def deploy(self, endpoint_name: str, backend: str, client: ServingClient) -> Endpoint:
+    def deploy(
+        self, endpoint_name: str, backend: str, client: ServingClient, custom_env: Optional[DaftEnv] = None
+    ) -> Endpoint:
         if self._plan is None:
             raise RuntimeError("Unable to deploy HTTPEndpoint without a plan")
-        print(f"Currently stubbed, but supposed to be deploying plan: {self._plan}")
-        # TODO(jay): Replace with an actual runner that takes as a parameter the plan object and is able to process incoming requests
-        def endpoint_func(request: str) -> str:
-            return request
 
-        return client.deploy(endpoint_name, endpoint_func, backend=backend)
+        # TODO(jay): In the absence of a runner, we deploy whatever the ._plan is as a function. This is a hack and
+        # is only meant to be used in unit tests by monkey-patching ._plan for now to test the e2e flow.
+        if isinstance(self._plan, LogicalPlan):
+            raise RuntimeError("HTTPEndpoint unable to deploy LogicalPlans until runners are implemented")
+        endpoint_func = self._plan
+
+        return client.deploy(endpoint_name, endpoint_func, backend=backend, custom_env=custom_env)

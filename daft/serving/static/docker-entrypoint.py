@@ -1,4 +1,4 @@
-import os
+import argparse
 import pickle
 
 import fastapi
@@ -7,9 +7,18 @@ import uvicorn
 app = fastapi.FastAPI()
 
 
+@app.get("/healthz")
+def healthcheck():
+    return {"status": "ok"}
+
+
 if __name__ == "__main__":
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("--endpoint-pkl-file", required=True)
+    args = argparser.parse_args()
+
     # Load cloudpickled function
-    with open(os.environ["ENDPOINT_PKL_FILEPATH"], "rb") as f:
+    with open(args.endpoint_pkl_file, "rb") as f:
         endpoint = pickle.loads(f.read())
     app.get("/")(endpoint)
 

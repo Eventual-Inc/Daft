@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, List, Protocol
+from typing import Any, Callable, List, Optional, Protocol
 
 import pydantic
 
+from daft.env import DaftEnv
 from daft.serving.definitions import Endpoint
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,10 @@ class AbstractEndpointBackend(Protocol):
         ...
 
     def deploy_endpoint(
-        self, endpoint_name: str, endpoint: Callable[[Any], Any], pip_dependencies: List[str] = []
+        self,
+        endpoint_name: str,
+        endpoint: Callable[[Any], Any],
+        custom_env: Optional[DaftEnv] = None,
     ) -> Endpoint:
         """Deploys an endpoint managed by this endpoint manager"""
         ...

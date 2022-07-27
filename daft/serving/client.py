@@ -1,5 +1,6 @@
-from typing import Any, Callable, Dict, List, Type
+from typing import Any, Callable, Dict, List, Optional, Type
 
+from daft.env import DaftEnv
 from daft.serving import backend, config
 from daft.serving.backends.aws_lambda import AWSLambdaEndpointBackend
 from daft.serving.backends.docker import DockerEndpointBackend
@@ -36,12 +37,12 @@ class ServingClient:
         endpoint_name: str,
         endpoint: Callable[[Any], Any],
         backend: str = "default",
-        pip_dependencies: List[str] = [],
+        custom_env: Optional[DaftEnv] = None,
     ) -> Endpoint:
         if backend not in self.endpoint_backends:
             raise ValueError(f"Unknown backend {backend}, expected one of: {list(self.endpoint_backends.keys())}")
         endpoint_backend = self.endpoint_backends[backend]
-        return endpoint_backend.deploy_endpoint(endpoint_name, endpoint, pip_dependencies=pip_dependencies)
+        return endpoint_backend.deploy_endpoint(endpoint_name, endpoint, custom_env=custom_env)
 
     def list_endpoints(self):
         for backend_name, endpoint_backend in self.endpoint_backends.items():
