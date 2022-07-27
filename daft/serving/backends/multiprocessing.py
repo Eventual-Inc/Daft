@@ -56,7 +56,7 @@ class MultiprocessingBackendConfig(pydantic.BaseModel):
 class MultiprocessingEndpointBackend(AbstractEndpointBackend):
     """Manages Daft Serving endpoints for a Multiprocessing backend"""
 
-    def __init__(self, config: MultiprocessingBackendConfig):
+    def __init__(self):
         self.multiprocessing_servers: Dict[str, MultiprocessingServerEndpoint] = {}
 
     @staticmethod
@@ -64,8 +64,9 @@ class MultiprocessingEndpointBackend(AbstractEndpointBackend):
         return "multiprocessing"
 
     @classmethod
-    def from_config(cls, config: MultiprocessingBackendConfig) -> AbstractEndpointBackend:
-        return cls(config)
+    def from_config(cls, config: Dict[str, Any]) -> AbstractEndpointBackend:
+        assert config["type"] == cls.config_type_id()
+        return cls()
 
     def _get_free_local_port(self) -> int:
         """Returns a free local port"""

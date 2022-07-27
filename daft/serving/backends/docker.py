@@ -1,9 +1,8 @@
 import pathlib
 import socket
-from typing import Any, Callable, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 import docker
-import pydantic
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
@@ -18,12 +17,6 @@ WORKING_DIR_PATH = pathlib.Path("working_dir")
 MODULES_PATH = pathlib.Path("site-packages")
 
 
-class DockerBackendConfig(pydantic.BaseModel):
-    """Configuration for the Docker backend"""
-
-    type: CONFIG_TYPE_ID
-
-
 class DockerEndpointBackend(AbstractEndpointBackend):
     """Manages Daft Serving endpoints for a Docker backend"""
 
@@ -34,7 +27,7 @@ class DockerEndpointBackend(AbstractEndpointBackend):
     DAFT_ENDPOINT_NAME_LABEL = "DAFT_ENDPOINT_NAME"
     DAFT_ENDPOINT_PORT_LABEL = "DAFT_ENDPOINT_PORT"
 
-    def __init__(self, config: DockerBackendConfig):
+    def __init__(self):
         self.docker_client = docker.from_env()
 
     @staticmethod
@@ -42,8 +35,9 @@ class DockerEndpointBackend(AbstractEndpointBackend):
         return "docker"
 
     @classmethod
-    def from_config(cls, config: DockerBackendConfig) -> AbstractEndpointBackend:
-        return cls(config)
+    def from_config(cls, config: Dict[str, Any]) -> AbstractEndpointBackend:
+        assert config["type"] == cls.config_type_id()
+        return cls()
 
     def _run_container(self, endpoint_name: str, img: docker.models.images.Image) -> docker.models.containers.Container:
         """Runs a Docker container from the given image"""
