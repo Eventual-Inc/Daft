@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import abstractmethod
 from typing import Any, List, Optional
 
@@ -37,6 +39,12 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
             "The == operation is not implemented. "
             "Use .is_eq() to check if expressions are 'equal' (ignores differences in IDs but checks for the same expression structure)"
         )
+
+
+class UnaryNode(LogicalPlan):
+    @abstractmethod
+    def copy_with_new_input(self, new_input: UnaryNode) -> UnaryNode:
+        raise NotImplementedError()
 
 
 class Scan(LogicalPlan):
@@ -80,7 +88,7 @@ class Scan(LogicalPlan):
         )
 
 
-class Filter(LogicalPlan):
+class Filter(UnaryNode):
     """Which rows to keep"""
 
     def __init__(self, input: LogicalPlan, predicate: ExpressionList) -> None:
@@ -97,8 +105,11 @@ class Filter(LogicalPlan):
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, Filter) and self.schema() == other.schema() and self._predicate == other._predicate
 
+    def copy_with_new_input(self, new_input: LogicalPlan) -> Filter:
+        raise NotImplementedError()
 
-class Projection(LogicalPlan):
+
+class Projection(UnaryNode):
     """Which columns to keep"""
 
     def __init__(self, input: LogicalPlan, projection: ExpressionList) -> None:
@@ -119,9 +130,33 @@ class Projection(LogicalPlan):
             isinstance(other, Projection) and self.schema() == other.schema() and self._projection == other._projection
         )
 
+    def copy_with_new_input(self, new_input: LogicalPlan) -> Projection:
+        raise NotImplementedError()
 
-class Sort(LogicalPlan):
-    ...
+
+class Sort(UnaryNode):
+    def __init__(self, input: LogicalPlan, sort_by: ExpressionList, desc: bool = False) -> None:
+        super().__init__(input.schema().to_column_expressions())
+        self._register_child(input)
+        self._sort_by = sort_by.resolve(input_schema=input.schema())
+        self._desc = desc
+
+    def __repr__(self) -> str:
+        return f"Sort\n\toutput={self.schema()}\n\tsort_by={self._sort_by}\n\tdesc={self._desc}"
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> Sort:
+        return Sort(new_input, sort_by=self._sort_by, desc=self._desc)
+
+    def required_columns(self) -> ExpressionList:
+        return self._sort_by.required_columns()
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, Sort)
+            and self.schema() == other.schema()
+            and self._sort_by == self._sort_by
+            and self._desc == self._desc
+        )
 
 
 class HTTPRequest(LogicalPlan):
@@ -145,7 +180,7 @@ class HTTPRequest(LogicalPlan):
         return isinstance(other, HTTPRequest) and self.schema() == other.schema()
 
 
-class HTTPResponse(LogicalPlan):
+class HTTPResponse(UnaryNode):
     def __init__(
         self,
         input: LogicalPlan,
@@ -164,3 +199,6 @@ class HTTPResponse(LogicalPlan):
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, HTTPResponse) and self.schema() == other.schema()
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> HTTPResponse:
+        raise NotImplementedError()
