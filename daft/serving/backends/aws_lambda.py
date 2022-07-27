@@ -3,7 +3,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from typing import Any, Callable, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 import boto3
 import cloudpickle
@@ -44,8 +44,8 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
         return "aws_lambda"
 
     @classmethod
-    def from_config(cls, config: AWSLambdaBackendConfig) -> AbstractEndpointBackend:
-        return cls(config)
+    def from_config(cls, config: Dict[str, Any]) -> AbstractEndpointBackend:
+        return cls(AWSLambdaBackendConfig.parse_obj(config))
 
     def _list_daft_serving_lambda_functions(self) -> List[dict]:
         aws_lambda_functions = []

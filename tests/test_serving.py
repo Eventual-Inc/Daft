@@ -10,16 +10,13 @@ from daft.dataframe import DataFrame
 from daft.env import DaftEnv
 from daft.expressions import ColumnExpression
 from daft.logical.schema import ExpressionList
-from daft.serving import HTTPEndpoint, ServingClient
+from daft.serving import HTTPEndpoint
+from daft.serving.backend import get_serving_backend
+from daft.serving.backends import DockerEndpointBackend, MultiprocessingEndpointBackend
 
-MP_BACKEND_CONFIG = {
-    "name": "default",
-    "config": {"type": "multiprocessing"},
-}
-
-DOCKER_BACKEND_CONFIG = {
-    "name": "default",
-    "config": {"type": "docker"},
+TEST_BACKEND_CONFIG = {
+    "mp": {"type": "multiprocessing"},
+    "docker": {"type": "docker"},
 }
 
 FAKE_ENDPOINT_NAME = "test-endpoint"
@@ -27,16 +24,16 @@ SCHEMA = ExpressionList([ColumnExpression("foo")])
 
 
 @pytest.fixture(scope="function")
-def serving_client_multiprocessing():
-    return ServingClient.from_configs([MP_BACKEND_CONFIG])
+def multiprocessing_backend():
+    return get_serving_backend(name="mp", configs=TEST_BACKEND_CONFIG)
 
 
 @pytest.fixture(scope="function")
-def serving_client_docker():
-    return ServingClient.from_configs([DOCKER_BACKEND_CONFIG])
+def docker_backend():
+    return get_serving_backend(name="docker", configs=TEST_BACKEND_CONFIG)
 
 
-def test_identity_dataframe_serving_multiprocessing(serving_client_multiprocessing: ServingClient) -> None:
+def test_identity_dataframe_serving_multiprocessing(multiprocessing_backend: MultiprocessingEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA)
     df = DataFrame.from_endpoint(endpoint)
     df.write_endpoint(endpoint)
@@ -47,14 +44,14 @@ def test_identity_dataframe_serving_multiprocessing(serving_client_multiprocessi
 
     endpoint._plan = endpoint_func
 
-    deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME, "default", serving_client_multiprocessing)
+    deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME, backend=multiprocessing_backend)
 
     # TODO(jay): Replace with actual logic when the endpoint is deployed with a runner
     response = requests.get(f"{deployed_endpoint.addr}?request=foo")
     assert response.text == '"foo"'
 
 
-def test_identity_dataframe_serving_docker(serving_client_docker: ServingClient) -> None:
+def test_identity_dataframe_serving_docker(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA)
     df = DataFrame.from_endpoint(endpoint)
     df.write_endpoint(endpoint)
@@ -65,7 +62,7 @@ def test_identity_dataframe_serving_docker(serving_client_docker: ServingClient)
 
     endpoint._plan = endpoint_func
 
-    deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME, "default", serving_client_docker)
+    deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME, backend=docker_backend)
 
     try:
         # TODO(jay): Replace with actual logic when the endpoint is deployed with a runner
@@ -79,7 +76,7 @@ def test_identity_dataframe_serving_docker(serving_client_docker: ServingClient)
             pass
 
 
-def test_identity_dataframe_serving_docker_with_pip_dependency(serving_client_docker: ServingClient) -> None:
+def test_identity_dataframe_serving_docker_with_pip_dependency(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA)
     df = DataFrame.from_endpoint(endpoint)
     df.write_endpoint(endpoint)
@@ -91,7 +88,7 @@ def test_identity_dataframe_serving_docker_with_pip_dependency(serving_client_do
     endpoint._plan = endpoint_func
 
     deployed_endpoint = endpoint.deploy(
-        FAKE_ENDPOINT_NAME, "default", serving_client_docker, custom_env=DaftEnv(pip_packages=["numpy"])
+        FAKE_ENDPOINT_NAME, backend=docker_backend, custom_env=DaftEnv(pip_packages=["numpy"])
     )
 
     try:
@@ -106,7 +103,7 @@ def test_identity_dataframe_serving_docker_with_pip_dependency(serving_client_do
             pass
 
 
-def test_identity_dataframe_serving_docker_with_requirements_txt(serving_client_docker: ServingClient) -> None:
+def test_identity_dataframe_serving_docker_with_requirements_txt(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA)
     df = DataFrame.from_endpoint(endpoint)
     df.write_endpoint(endpoint)
@@ -122,8 +119,7 @@ def test_identity_dataframe_serving_docker_with_requirements_txt(serving_client_
         requirements_txt.flush()
         deployed_endpoint = endpoint.deploy(
             FAKE_ENDPOINT_NAME,
-            "default",
-            serving_client_docker,
+            docker_backend,
             custom_env=DaftEnv(requirements_txt=requirements_txt.name),
         )
 
@@ -139,7 +135,7 @@ def test_identity_dataframe_serving_docker_with_requirements_txt(serving_client_
             pass
 
 
-def test_identity_dataframe_serving_docker_with_local_pkg(serving_client_docker: ServingClient) -> None:
+def test_identity_dataframe_serving_docker_with_local_pkg(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA)
     df = DataFrame.from_endpoint(endpoint)
     df.write_endpoint(endpoint)
@@ -164,8 +160,7 @@ def test_identity_dataframe_serving_docker_with_local_pkg(serving_client_docker:
         pkg_init.write_text("def foo(request: str) -> int: return int(request)")
         deployed_endpoint = endpoint.deploy(
             FAKE_ENDPOINT_NAME,
-            "default",
-            serving_client_docker,
+            docker_backend,
             custom_env=DaftEnv(local_packages=[str(tmpdir)]),
         )
 
