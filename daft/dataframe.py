@@ -112,3 +112,8 @@ class DataFrame:
     def sort(self, *columns: str) -> DataFrame:
         sort = logical_plan.Sort(self._plan, self.__column_input_to_expression(columns))
         return DataFrame(sort)
+
+    def limit(self, num: int) -> DataFrame:
+        local_limit = logical_plan.LocalLimit(self._plan, num=num)
+        global_limit = logical_plan.GlobalLimit(local_limit, num=num)
+        return DataFrame(global_limit)

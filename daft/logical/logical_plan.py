@@ -159,6 +159,31 @@ class Sort(UnaryNode):
         )
 
 
+class LocalLimit(UnaryNode):
+    def __init__(self, input: LogicalPlan, num: int) -> None:
+        super().__init__(input.schema())
+        self._num = num
+
+    def __repr__(self) -> str:
+        return f"LocalLimit\n\toutput={self.schema()}\n\tN={self._num}"
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> LocalLimit:
+        raise NotImplementedError()
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, LocalLimit) and self.schema() == other.schema() and self._num == self._num
+
+
+class GlobalLimit(LocalLimit):
+    ...
+
+    def __repr__(self) -> str:
+        return f"GlobalLimit\n\toutput={self.schema()}\n\tN={self._num}"
+
+
 class HTTPRequest(LogicalPlan):
     def __init__(
         self,
