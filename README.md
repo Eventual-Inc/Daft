@@ -1,3 +1,7 @@
+# Daft
+
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/Eventual-Inc/Daft/main.svg?badge_token=SFJqvkZzS3uRF1QZnITL3w)](https://results.pre-commit.ci/latest/github/Eventual-Inc/Daft/main?badge_token=SFJqvkZzS3uRF1QZnITL3w)
+
 # Developing on Daft
 
 1. [Install Poetry](https://python-poetry.org/docs/#installation)
