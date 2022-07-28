@@ -19,7 +19,7 @@ def get_serving_backend(
     name: str = "default", configs: Optional[Dict[str, BackendConfigRaw]] = None
 ) -> AbstractEndpointBackend:
     # TODO(jay): Ensure that all endpoint subclasses have been imported and registered with factory - is there a better way to do this?
-    pass
+    from daft.serving import backends  # noqa: F401
 
     # TODO(jay): Implement support for detecting configs from a user's environment (e.g. a ~/.daft.yaml file)
     if configs is None:

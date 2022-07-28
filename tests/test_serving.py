@@ -133,6 +133,7 @@ def test_identity_dataframe_serving_docker_with_requirements_txt(docker_backend:
                 pass
 
 
+@pytest.mark.skip(reason="Not implemented yet")
 def test_identity_dataframe_serving_docker_with_local_pkg(docker_backend: DockerEndpointBackend) -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = pathlib.Path(tmpdir)
