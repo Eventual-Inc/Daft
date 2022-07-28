@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from dataclasses import dataclass
+from enum import Enum
 from typing import Any, List, Optional
 
 from daft.expressions import ColumnExpression
@@ -48,9 +50,21 @@ class UnaryNode(LogicalPlan):
 
 
 class Scan(LogicalPlan):
+    class ScanType(Enum):
+        csv = "csv"
+        parquet = "parquet"
+        in_memory = "in_memory"
+
+    @dataclass(frozen=True)
+    class SourceInfo:
+        scan_type: Scan.ScanType
+        source: Optional[Any] = None
+
     def __init__(
         self,
+        *,
         schema: ExpressionList,
+        source_info: Scan.SourceInfo,
         predicate: Optional[ExpressionList] = None,
         columns: Optional[List[str]] = None,
     ) -> None:
@@ -69,12 +83,13 @@ class Scan(LogicalPlan):
             self._output_schema = schema
 
         self._columns = self._schema
+        self._source_info = source_info
 
     def schema(self) -> ExpressionList:
         return self._output_schema
 
     def __repr__(self) -> str:
-        return f"Scan\n\toutput={self.schema()}\n\tpredicate={self._predicate}\n\tcolumns={self._columns}"
+        return f"Scan\n\toutput={self.schema()}\n\tpredicate={self._predicate}\n\tcolumns={self._columns}\n\t{self._source_info}"
 
     def required_columns(self) -> ExpressionList:
         return self._predicate.required_columns()
@@ -85,6 +100,7 @@ class Scan(LogicalPlan):
             and self.schema() == other.schema()
             and self._predicate == other._predicate
             and self._columns == other._columns
+            and self._source_info == other._source_info
         )
 
 
