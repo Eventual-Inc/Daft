@@ -6,7 +6,7 @@ from daft.dataframe import DataFrame
 from daft.expressions import col
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
-from daft.logical.logical_plan import LogicalPlan
+from daft.logical.logical_plan import LogicalPlan, Scan
 from daft.logical.optimizer import (
     FoldProjections,
     PushDownClausesIntoScan,
@@ -30,7 +30,12 @@ def test_filter_scan_pushdown(valid_data: List[Dict[str, float]], optimizer) -> 
     df = df.where(predicate_expr)
 
     optimized = optimizer(df.plan())
-    expected = logical_plan.Scan(original_schema, predicate=ExpressionList([predicate_expr]), columns=None)
+    expected = logical_plan.Scan(
+        schema=original_schema,
+        predicate=ExpressionList([predicate_expr]),
+        columns=None,
+        source_info=Scan.SourceInfo(scan_type=Scan.ScanType.in_memory, source=valid_data),
+    )
     assert isinstance(optimized, logical_plan.Scan)
     assert optimized.is_eq(expected)
 
@@ -43,5 +48,10 @@ def test_projection_scan_pushdown(valid_data: List[Dict[str, float]], optimizer)
     assert df.column_names() == selected_columns
 
     optimized = optimizer(df.plan())
-    expected = logical_plan.Scan(original_schema, predicate=None, columns=selected_columns)
+    expected = logical_plan.Scan(
+        schema=original_schema,
+        predicate=None,
+        columns=selected_columns,
+        source_info=Scan.SourceInfo(scan_type=Scan.ScanType.in_memory, source=valid_data),
+    )
     assert optimized.is_eq(expected)

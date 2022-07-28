@@ -73,3 +73,14 @@ class TreeNode(Generic[TreeNodeType]):
 
         recurser(self)
         return graph.to_string()  # type: ignore
+
+    def post_order(self) -> List[TreeNode[TreeNodeType]]:
+        nodes = []
+
+        def helper(curr: TreeNode[TreeNodeType]) -> None:
+            for child in curr._children():
+                helper(child)
+            nodes.append(curr)
+
+        helper(self)
+        return nodes

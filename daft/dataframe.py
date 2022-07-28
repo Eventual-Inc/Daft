@@ -40,6 +40,7 @@ class DataFrame:
             schema=schema,
             predicate=None,
             columns=None,
+            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.in_memory, source=data),
         )
         return cls(plan)
 
@@ -50,6 +51,7 @@ class DataFrame:
             schema=schema,
             predicate=None,
             columns=None,
+            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.in_memory, source=data),
         )
         return cls(plan)
 
@@ -74,6 +76,7 @@ class DataFrame:
             schema=schema,
             predicate=None,
             columns=None,
+            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.csv, source=path),
         )
         return cls(plan)
 

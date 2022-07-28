@@ -51,6 +51,7 @@ def test_identity_dataframe_serving_multiprocessing(multiprocessing_backend: Mul
     assert response.text == '"foo"'
 
 
+@pytest.mark.skip()
 def test_identity_dataframe_serving_docker(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA)
     df = DataFrame.from_endpoint(endpoint)
@@ -76,6 +77,7 @@ def test_identity_dataframe_serving_docker(docker_backend: DockerEndpointBackend
             pass
 
 
+@pytest.mark.skip()
 def test_identity_dataframe_serving_docker_with_pip_dependency(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA)
     df = DataFrame.from_endpoint(endpoint)
@@ -103,6 +105,7 @@ def test_identity_dataframe_serving_docker_with_pip_dependency(docker_backend: D
             pass
 
 
+@pytest.mark.skip()
 def test_identity_dataframe_serving_docker_with_requirements_txt(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA)
     df = DataFrame.from_endpoint(endpoint)
@@ -135,6 +138,7 @@ def test_identity_dataframe_serving_docker_with_requirements_txt(docker_backend:
             pass
 
 
+@pytest.mark.skip()
 def test_identity_dataframe_serving_docker_with_local_pkg(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA)
     df = DataFrame.from_endpoint(endpoint)
