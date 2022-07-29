@@ -51,6 +51,54 @@ def test_identity_dataframe_serving_multiprocessing(multiprocessing_backend: Mul
     assert response.text == '"foo"'
 
 
+@pytest.mark.conda
+def test_identity_dataframe_serving_multiprocessing_with_pip_dependency(
+    multiprocessing_backend: MultiprocessingEndpointBackend,
+) -> None:
+    endpoint = HTTPEndpoint(SCHEMA, backend=multiprocessing_backend, custom_env=DaftEnv(pip_packages=["numpy"]))
+    df = DataFrame.from_endpoint(endpoint)
+    df.write_endpoint(endpoint)
+
+    # HACK(jay): Override ._plan with a mock function to execute, because we don't yet have a runner that can run ._plan
+    def endpoint_func(request: str) -> float:
+        return np.sum(np.ones(int(request)))
+
+    endpoint._plan = endpoint_func
+
+    deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME)
+
+    # TODO(jay): Replace with actual logic when the endpoint is deployed with a runner
+    response = requests.get(f"{deployed_endpoint.addr}?request=5")
+    assert response.text == "5.0"
+
+
+@pytest.mark.conda
+def test_identity_dataframe_serving_multiprocessing_with_requirements_txt(
+    multiprocessing_backend: DockerEndpointBackend,
+) -> None:
+    with tempfile.NamedTemporaryFile(mode="w") as requirements_txt:
+        requirements_txt.write("numpy")
+        requirements_txt.flush()
+
+        endpoint = HTTPEndpoint(
+            SCHEMA, backend=multiprocessing_backend, custom_env=DaftEnv(requirements_txt=requirements_txt.name)
+        )
+        df = DataFrame.from_endpoint(endpoint)
+        df.write_endpoint(endpoint)
+
+        # HACK(jay): Override ._plan with a mock function to execute, because we don't yet have a runner that can run ._plan
+        def endpoint_func(request: str) -> float:
+            return np.sum(np.ones(int(request)))
+
+        endpoint._plan = endpoint_func
+        deployed_endpoint = endpoint.deploy(FAKE_ENDPOINT_NAME)
+
+        # TODO(jay): Replace with actual logic when the endpoint is deployed with a runner
+        response = requests.get(f"{deployed_endpoint.addr}?request=5")
+        assert response.text == "5.0"
+
+
+@pytest.mark.docker
 def test_identity_dataframe_serving_docker(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA, backend=docker_backend)
     df = DataFrame.from_endpoint(endpoint)
@@ -76,6 +124,7 @@ def test_identity_dataframe_serving_docker(docker_backend: DockerEndpointBackend
             pass
 
 
+@pytest.mark.docker
 def test_identity_dataframe_serving_docker_with_pip_dependency(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA, backend=docker_backend, custom_env=DaftEnv(pip_packages=["numpy"]))
     df = DataFrame.from_endpoint(endpoint)
@@ -101,6 +150,7 @@ def test_identity_dataframe_serving_docker_with_pip_dependency(docker_backend: D
             pass
 
 
+@pytest.mark.docker
 def test_identity_dataframe_serving_docker_with_requirements_txt(docker_backend: DockerEndpointBackend) -> None:
     with tempfile.NamedTemporaryFile(mode="w") as requirements_txt:
         requirements_txt.write("numpy")
@@ -133,6 +183,8 @@ def test_identity_dataframe_serving_docker_with_requirements_txt(docker_backend:
                 pass
 
 
+@pytest.mark.docker
+@pytest.mark.skip(reason="Not implemented yet")
 def test_identity_dataframe_serving_docker_with_local_pkg(docker_backend: DockerEndpointBackend) -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = pathlib.Path(tmpdir)

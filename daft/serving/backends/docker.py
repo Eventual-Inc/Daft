@@ -1,27 +1,41 @@
+import io
 import pathlib
+import re
 import socket
+import tarfile
+import tempfile
 from typing import Any, Callable, Dict, List, Literal, Optional
 
+import cloudpickle
 import docker
 import requests
+import yaml
+from loguru import logger
 from requests.adapters import HTTPAdapter, Retry
 
-from daft.env import DaftEnv, build_serving_docker_image
+from daft.env import DaftEnv
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
 
 CONFIG_TYPE_ID = Literal["docker"]
-REQUIREMENTS_TXT_FILENAME = "requirements.txt"
 ENDPOINT_PKL_FILENAME = "endpoint.pkl"
-WORKING_DIR_PATH = pathlib.Path("working_dir")
-MODULES_PATH = pathlib.Path("site-packages")
+ENTRYPOINT_FILE_NAME = "entrypoint.py"
+VENV_PATH = "/opt/venv"
+CONDA_ENV_PATH = "conda_environment.yml"
+SERVING_IMAGE_DOCKER_MANIFEST = f"""
+FROM continuumio/miniconda3:4.12.0
+WORKDIR /scratch
+COPY {CONDA_ENV_PATH} {CONDA_ENV_PATH}
+RUN conda env create --prefix {VENV_PATH} -f {CONDA_ENV_PATH}
+WORKDIR /app
+COPY {ENTRYPOINT_FILE_NAME} {ENTRYPOINT_FILE_NAME}
+COPY {ENDPOINT_PKL_FILENAME} {ENDPOINT_PKL_FILENAME}
+CMD ["conda", "run", "--prefix", "{VENV_PATH}", "python", "{ENTRYPOINT_FILE_NAME}", "--endpoint-pkl-file={ENDPOINT_PKL_FILENAME}"]
+"""
 
 
 class DockerEndpointBackend(AbstractEndpointBackend):
     """Manages Daft Serving endpoints for a Docker backend"""
-
-    REQUIREMENTS_TXT_FILENAME = "requirements.txt"
-    ENDPOINT_PKL_FILENAME = "endpoint.pkl"
 
     DAFT_ENDPOINT_VERSION_LABEL = "DAFT_ENDPOINT_VERSION"
     DAFT_ENDPOINT_NAME_LABEL = "DAFT_ENDPOINT_NAME"
@@ -134,3 +148,56 @@ class DockerEndpointBackend(AbstractEndpointBackend):
             addr=addr,
             version=int(container.labels[DockerEndpointBackend.DAFT_ENDPOINT_VERSION_LABEL]),
         )
+
+
+def build_serving_docker_image(
+    env: DaftEnv, endpoint_name: str, endpoint: Callable[[Any], Any]
+) -> docker.models.images.Image:
+    """Builds the image to be served locally"""
+    docker_client = docker.from_env()
+
+    # Extend the base conda environment with serving dependencies
+    conda_env = env.get_conda_environment()
+    conda_env["dependencies"].extend(["fastapi", "uvicorn", "cloudpickle"])
+
+    tarbytes = io.BytesIO()
+    with tarfile.open(fileobj=tarbytes, mode="w") as tar, tempfile.TemporaryDirectory() as td:
+        tmpdir = pathlib.Path(td)
+
+        # Add conda env as a YAML file
+        conda_env_file = tmpdir / CONDA_ENV_PATH
+        conda_env_file.write_text(yaml.dump(conda_env))
+        tar.add(conda_env_file, arcname=CONDA_ENV_PATH)
+
+        # Add the endpoint function to tarfile as a pickle
+        pickle_file = tmpdir / ENDPOINT_PKL_FILENAME
+        pickle_file.write_bytes(cloudpickle.dumps(endpoint))
+        tar.add(pickle_file, arcname=ENDPOINT_PKL_FILENAME)
+
+        # Add entrypoint file to tarfile
+        tar.add(pathlib.Path(__file__).parent.parent / "static" / "docker-entrypoint.py", arcname=ENTRYPOINT_FILE_NAME)
+
+        # Add Dockerfile to tarfile
+        dockerfile = tmpdir / "Dockerfile"
+        dockerfile.write_text(SERVING_IMAGE_DOCKER_MANIFEST)
+        tar.add(dockerfile, arcname="Dockerfile")
+
+        # Build the image
+        tarbytes.seek(0)
+        response = docker_client.api.build(
+            fileobj=tarbytes,
+            custom_context=True,
+            tag=f"daft-serving:{endpoint_name}",
+            decode=True,
+        )
+        for msg in response:
+            if "stream" in msg:
+                logger.debug(msg["stream"])
+                match = re.search(r"(^Successfully built |sha256:)([0-9a-f]+)$", msg["stream"])
+                if match:
+                    image_id = match.group(2)
+                    print(f"Built image: {image_id}")
+                    return docker_client.images.get(image_id)
+            if "aux" in msg:
+                logger.debug(msg["aux"])
+        raise RuntimeError("Failed to build base Docker image, check debug logs for more info")

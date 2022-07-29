@@ -1,19 +1,21 @@
 import dataclasses
 import logging
-import multiprocessing
-import pickle
+import os
+import pathlib
 import socket
+import subprocess
+import sys
+import tempfile
 from typing import Any, Callable, Dict, List, Literal, Optional
 
 import cloudpickle
-import fastapi
 import pydantic
 import requests
-import uvicorn
+import yaml
 from loguru import logger
 from requests.adapters import HTTPAdapter, Retry
 
-from daft.env import DaftEnv
+from daft.env import DaftEnv, get_conda_executable
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
 
@@ -24,27 +26,71 @@ logger = logging.getLogger(__name__)
 
 @dataclasses.dataclass
 class MultiprocessingServerEndpoint:
-    process: multiprocessing.Process
+    process: Optional[subprocess.Popen]
     endpoint_name: str
     endpoint_version: int
     port: int
+    custom_env: Optional[DaftEnv]
+    conda_env_path: tempfile.TemporaryDirectory
+    endpoint_pkl_file: tempfile._TemporaryFileWrapper
 
+    def start(self):
+        if self.custom_env is None:
+            self.process = subprocess.Popen(
+                [
+                    sys.executable,
+                    pathlib.Path(__file__).parent.parent / "static" / "multiprocessing-entrypoint.py",
+                    "--endpoint-pkl-file",
+                    self.endpoint_pkl_file.name,
+                    "--port",
+                    str(self.port),
+                ]
+            )
+        else:
+            conda_executable = get_conda_executable()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                environment_yaml = pathlib.Path(tmpdir) / "conda_environment.yml"
+                environment_yaml.write_text(yaml.dump(self.custom_env.get_conda_environment()))
+                conda_create_env_proc = subprocess.run(
+                    [
+                        conda_executable,
+                        "env",
+                        "create",
+                        "--prefix",
+                        self.conda_env_path.name,
+                        "-f",
+                        str(environment_yaml),
+                    ]
+                )
+                if conda_create_env_proc.returncode != 0:
+                    raise RuntimeError(f"Error while creating Conda environment: {conda_create_env_proc.stderr}")
+            self.process = subprocess.Popen(
+                [
+                    conda_executable,
+                    "run",
+                    "--prefix",
+                    self.conda_env_path.name,
+                    sys.executable,
+                    pathlib.Path(__file__).parent.parent / "static" / "multiprocessing-entrypoint.py",
+                    "--endpoint-pkl-file",
+                    self.endpoint_pkl_file.name,
+                    "--port",
+                    str(self.port),
+                ]
+            )
 
-def run_process(endpoint_pkl: bytes, port: int):
-    app = fastapi.FastAPI()
+        # Wait for process to start serving
+        session = requests.Session()
+        session.mount((f"http://"), HTTPAdapter(max_retries=Retry(total=5, backoff_factor=0.5)))
+        response = session.get(f"http://localhost:{self.port}/healthz")
+        if response.status_code != 200:
+            raise RuntimeError(f"Failed to start endpoint {self.endpoint_name}: {response.text}")
 
-    # Load cloudpickled function
-    endpoint = pickle.loads(endpoint_pkl)
-    app.get("/")(endpoint)
-
-    def healthcheck():
-        return {"status": "ok"}
-
-    app.get("/healthz")(healthcheck)
-
-    config = uvicorn.Config(app=app, port=port)
-    server = uvicorn.Server(config)
-    server.run()
+    def __del__(self):
+        self.conda_env_path.cleanup()
+        os.remove(self.endpoint_pkl_file.name)
+        if self.process is not None:
+            self.process.kill()
 
 
 class MultiprocessingBackendConfig(pydantic.BaseModel):
@@ -58,6 +104,11 @@ class MultiprocessingEndpointBackend(AbstractEndpointBackend):
 
     def __init__(self):
         self.multiprocessing_servers: Dict[str, MultiprocessingServerEndpoint] = {}
+
+    def __del__(self):
+        # Best effort cleanup of all resources used
+        for endpoint in self.multiprocessing_servers.values():
+            del endpoint
 
     @staticmethod
     def config_type_id() -> str:
@@ -87,33 +138,31 @@ class MultiprocessingEndpointBackend(AbstractEndpointBackend):
         endpoint: Callable[[Any], Any],
         custom_env: Optional[DaftEnv] = None,
     ) -> Endpoint:
-        if custom_env is not None:
-            logger.warn(f"Custom env is not supported for multiprocessing backend, ignoring {custom_env}")
+
+        # Get correct endpoint_version
         endpoint_version = 1
         if endpoint_name in self.multiprocessing_servers:
             server = self.multiprocessing_servers[endpoint_name]
             endpoint_version = server.endpoint_version + 1
-            server.process.kill()
             del self.multiprocessing_servers[endpoint_name]
 
         port = self._get_free_local_port()
-        endpoint = cloudpickle.dumps(endpoint)
-        process = multiprocessing.Process(target=run_process, args=(endpoint, port))
-        process.daemon = True
+
+        # Write the endpoint out as a pkl file
+        endpoint_pkl_file = tempfile.NamedTemporaryFile()
+        endpoint_pkl_file.write(cloudpickle.dumps(endpoint))
+        endpoint_pkl_file.flush()
+
         self.multiprocessing_servers[endpoint_name] = MultiprocessingServerEndpoint(
-            process=process,
+            process=None,
             endpoint_name=endpoint_name,
             endpoint_version=endpoint_version,
             port=port,
+            endpoint_pkl_file=endpoint_pkl_file,
+            conda_env_path=tempfile.TemporaryDirectory(),
+            custom_env=custom_env,
         )
-        process.start()
-
-        # Wait for process to start serving
-        session = requests.Session()
-        session.mount((f"http://"), HTTPAdapter(max_retries=Retry(total=5, backoff_factor=0.5)))
-        response = session.get(f"http://localhost:{port}/healthz")
-        if response.status_code != 200:
-            raise RuntimeError(f"Failed to start endpoint {endpoint_name}: {response.text}")
+        self.multiprocessing_servers[endpoint_name].start()
 
         return Endpoint(
             name=endpoint_name,
