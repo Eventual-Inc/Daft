@@ -5,6 +5,6 @@ from daft.runners.pyrunner import PyRunner
 
 
 def test_pyrunner(valid_data: List[Dict[str, float]]):
-    df = DataFrame.from_pylist(valid_data)
-    df = df.select("sepal_length", "sepal_width").select("sepal_width")
+    df = DataFrame.from_csv("/Users/sammy/iris.csv")
+    df = df.select("sepal.length", "sepal.width").select("sepal.width")
     PyRunner(df.plan()).run()
