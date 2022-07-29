@@ -1,9 +1,28 @@
 from __future__ import annotations
 
+import json
+import os
 import pathlib
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+
+def get_conda_executable() -> pathlib.Path:
+    conda_info_proc = subprocess.run(["conda", "info", "--json"], capture_output=True)
+    if conda_info_proc.returncode != 0:
+        raise RuntimeError(
+            "Unable to find Conda installation, please ensure that Conda is installed and available on your $PATH"
+        )
+    conda_info = json.loads(conda_info_proc.stdout)
+
+    expected_conda_executable_path = pathlib.Path(conda_info["root_prefix"]) / "condabin" / "conda"
+    if not expected_conda_executable_path.is_file():
+        raise RuntimeError(f"Unable to find Conda executable at: {expected_conda_executable_path}")
+    if not os.access(str(expected_conda_executable_path), os.X_OK):
+        raise RuntimeError(f"Conda executable at {expected_conda_executable_path} is not executable")
+    return expected_conda_executable_path
 
 
 @dataclass(frozen=True)
