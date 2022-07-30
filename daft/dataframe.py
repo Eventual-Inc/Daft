@@ -109,7 +109,10 @@ class DataFrame:
         return DataFrame(plan)
 
     def with_column(self, column_name: str, expr: Expression) -> DataFrame:
-        projection = logical_plan.Projection(self._plan, self.schema().union(ExpressionList([expr.alias(column_name)])))
+        prev_schema_as_cols = self.schema().to_column_expressions()
+        projection = logical_plan.Projection(
+            self._plan, prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]))
+        )
         return DataFrame(projection)
 
     def sort(self, *columns: str) -> DataFrame:
