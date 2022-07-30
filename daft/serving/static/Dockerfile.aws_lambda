@@ -1,39 +1,61 @@
 ARG PYTHON_VERSION
-ARG TARGETPLATFORM=linux/amd64
-
-FROM --platform=${TARGETPLATFORM} continuumio/miniconda3:4.12.0 AS conda_env
-
-ARG PYTHON_VERSION
-ARG TARGETPLATFORM
 ARG CONDA_ENV_PATH=conda_environment.yml
 ARG VENV_PATH=/opt/venv
 ARG CONDA_PACK_OUTPUT_PATH=/opt/conda_pack_env.tar.gz
-ARG ENDPOINT_PKL_FILENAME=endpoint.pkl
-ARG ENTRYPOINT_FILE_NAME=entrypoint.py
+
+###
+# `conda_env` builds a conda-pack .tar.gz that will be used in `serving` as the environment
+###
+
+FROM --platform=${BUILDPLATFORM} continuumio/miniconda3:4.12.0 AS conda_env
+
+ARG CONDA_ENV_PATH
+ARG VENV_PATH
+ARG CONDA_PACK_OUTPUT_PATH
 
 COPY $CONDA_ENV_PATH $CONDA_ENV_PATH
-RUN conda env create --prefix $VENV_PATH -f $CONDA_ENV_PATH --no-default-packages --quiet
+RUN conda create --prefix ${VENV_PATH} --no-default-packages --quiet
+RUN conda run --prefix ${VENV_PATH} conda config --env --set subdir linux-64
+RUN conda run --prefix ${VENV_PATH} conda env update -f ${CONDA_ENV_PATH}
 
 RUN conda install conda-pack
-RUN conda pack --prefix $VENV_PATH -o $CONDA_PACK_OUTPUT_PATH --quiet
+RUN conda run --prefix ${VENV_PATH} conda list
+RUN conda pack --prefix ${VENV_PATH} -o ${CONDA_PACK_OUTPUT_PATH} --quiet
+
+###
+# `unpack_conda` Unpacks the conda-pack .tar.gz file
+###
 
 FROM --platform=${TARGETPLATFORM} public.ecr.aws/lambda/python:${PYTHON_VERSION} AS unpack_conda
 
 ARG VENV_PATH
+ARG CONDA_PACK_OUTPUT_PATH
 
 RUN yum install -y tar gzip
-COPY --from=conda_env $CONDA_PACK_OUTPUT_PATH $CONDA_PACK_OUTPUT_PATH
+COPY --from=conda_env ${CONDA_PACK_OUTPUT_PATH} ${CONDA_PACK_OUTPUT_PATH}
 
-RUN mkdir $VENV_PATH
-RUN tar -xzf $CONDA_PACK_OUTPUT_PATH -C $VENV_PATH
+RUN mkdir ${VENV_PATH}
+RUN tar -xzf ${CONDA_PACK_OUTPUT_PATH} -C ${VENV_PATH}
+
+###
+# `serving` is the image used by AWS Lambda to serve the function
+###
 
 FROM --platform=${TARGETPLATFORM} public.ecr.aws/lambda/python:${PYTHON_VERSION} AS serving
 
-COPY --from=unpack_conda $VENV_PATH $VENV_PATH
-ENV ENDPOINT_PKL_FILEPATH ${LAMBDA_TASK_ROOT}/$ENDPOINT_PKL_FILENAME
-COPY $ENDPOINT_PKL_FILENAME ${LAMBDA_TASK_ROOT}
-COPY $ENTRYPOINT_FILE_NAME ${LAMBDA_TASK_ROOT}
+ARG VENV_PATH
+ARG ENDPOINT_PKL_FILENAME=endpoint.pkl
+ARG ENTRYPOINT_FILE_NAME=entrypoint.py
 
-ENTRYPOINT ["/lambda-entrypoint.sh"]
-# ENTRYPOINT ["VENV_PATH", "&&", "/lambda-entrypoint.sh"]
-CMD ["entrypoint:lambda_handler"]
+# COPY --from=unpack_conda ${VENV_PATH} ${VENV_PATH}
+ENV ENDPOINT_PKL_FILEPATH ${LAMBDA_TASK_ROOT}/${ENDPOINT_PKL_FILENAME}
+COPY ${ENDPOINT_PKL_FILENAME} ${LAMBDA_TASK_ROOT}
+COPY ${ENTRYPOINT_FILE_NAME} ${LAMBDA_TASK_ROOT}
+
+# RUN echo "#!/bin/sh" > entrypoint.sh && \
+    # echo "source /opt/venv/bin/activate" >> entrypoint.sh && \
+    # echo 'exec /lambda-entrypoint "$@"' >> entrypoint.sh && \
+    # chmod +x entrypoint.sh
+
+# ENTRYPOINT ["./entrypoint.sh"]
+CMD ["entrypoint.lambda_handler"]

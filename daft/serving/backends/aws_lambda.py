@@ -1,7 +1,8 @@
 import base64
-import io
+import os
 import pathlib
 import re
+import subprocess
 import tarfile
 import tempfile
 from typing import Any, Callable, Dict, List, Literal, Optional
@@ -175,11 +176,6 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
                 PackageType="Image",
                 Code={"ImageUri": docker_tag},
                 Description="Daft serving endpoint",
-                Environment={
-                    "Variables": {
-                        "ENDPOINT_PKL_FILEPATH": "endpoint.pkl",
-                    },
-                },
                 Architectures=["x86_64"],
                 Tags={
                     "owner": "daft-serving",
@@ -226,53 +222,44 @@ def build_aws_lambda_docker_image(
     conda_env = env.get_conda_environment()
     conda_env["dependencies"].extend(["cloudpickle"])
 
-    tarbytes = io.BytesIO()
-    with tarfile.open(fileobj=tarbytes, mode="w") as tar, tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory() as td:
         tmpdir = pathlib.Path(td)
 
-        # Add conda env as a YAML file
+        # Add conda env as a YAML file in context
         conda_env_file = tmpdir / CONDA_ENV_PATH
         conda_env_file.write_text(yaml.dump(conda_env))
-        tar.add(conda_env_file, arcname=CONDA_ENV_PATH)
 
-        # Add the endpoint function to tarfile as a pickle
+        # Add the endpoint function to context as a pickle
         pickle_file = tmpdir / ENDPOINT_PKL_FILENAME
         pickle_file.write_bytes(cloudpickle.dumps(endpoint))
-        tar.add(pickle_file, arcname=ENDPOINT_PKL_FILENAME)
 
-        # Add entrypoint file to tarfile
-        tar.add(pathlib.Path(__file__).parent.parent / "static" / "docker-entrypoint.py", arcname=ENTRYPOINT_FILE_NAME)
+        # Add entrypoint file to context
+        entrypoint_file_src = pathlib.Path(__file__).parent.parent / "static" / "aws-lambda-entrypoint.py"
+        entrypoint_file = tmpdir / ENTRYPOINT_FILE_NAME
+        entrypoint_file.write_bytes(entrypoint_file_src.read_bytes())
 
-        # Add Dockerfile to tarfile
-        dockerfile = pathlib.Path(__file__).parent.parent / "static" / "Dockerfile.aws_lambda"
-        tar.add(str(dockerfile), arcname="Dockerfile")
+        # Add Dockerfile to context
+        dockerfile_src = pathlib.Path(__file__).parent.parent / "static" / "Dockerfile.aws_lambda"
+        dockerfile = tmpdir / "Dockerfile"
+        dockerfile.write_bytes(dockerfile_src.read_bytes())
 
         # Build the image
-        tarbytes.seek(0)
-        response = docker_client.api.build(
-            fileobj=tarbytes,
-            custom_context=True,
-            tag=docker_tag,
-            decode=True,
-            buildargs={
-                "PYTHON_VERSION": env.python_version[: env.python_version.rfind(".")],
-                "CONDA_ENV_PATH": CONDA_ENV_PATH,
-                "ENDPOINT_PKL_FILENAME": ENDPOINT_PKL_FILENAME,
-                "ENTRYPOINT_FILE_NAME": ENTRYPOINT_FILE_NAME,
-            },
-            platform=AWS_LAMBDA_DOCKER_BUILD_PLATFORM,
-            target="serving",
+        build_args = [
+            ("PYTHON_VERSION", env.python_version[: env.python_version.rfind(".")]),
+            ("CONDA_ENV_PATH", CONDA_ENV_PATH),
+            ("ENDPOINT_PKL_FILENAME", ENDPOINT_PKL_FILENAME),
+            ("ENTRYPOINT_FILE_NAME", ENTRYPOINT_FILE_NAME),
+        ]
+        os.environ["DOCKER_BUILDKIT"] = "1"
+        build_proc = subprocess.run(
+            [
+                "docker",
+                "build",
+                td,
+                *[c for key, value in build_args for c in ("--build-arg", f"{key}={value}")],
+                *("--platform", AWS_LAMBDA_DOCKER_BUILD_PLATFORM),
+                *("--tag", docker_tag),
+                *("--target", "serving"),
+            ],
         )
-        for msg in response:
-            if "stream" in msg:
-                logger.debug(msg["stream"])
-                match = re.search(r"(^Successfully built |sha256:)([0-9a-f]+)$", msg["stream"])
-                if match:
-                    image_id = match.group(2)
-                    print(f"Built image: {image_id}")
-                    return docker_client.images.get(image_id)
-            if "aux" in msg:
-                logger.debug(msg["aux"])
-            if "errorDetail" in msg:
-                logger.debug(msg["errorDetail"]["message"])
-        raise RuntimeError("Failed to build base Docker image, check debug logs for more info")
+        build_proc.check_returncode()
