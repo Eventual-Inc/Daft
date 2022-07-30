@@ -1,24 +1,40 @@
+import base64
+import io
 import pathlib
 import re
-import shutil
-import subprocess
+import tarfile
 import tempfile
 from typing import Any, Callable, Dict, List, Literal, Optional
 
 import boto3
 import cloudpickle
+import docker
 import pydantic
+import yaml
+from loguru import logger
 
-from daft.env import DaftEnv
+from daft.env import DaftEnv, get_docker_client
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
 
 CONFIG_TYPE_ID = Literal["aws_lambda"]
 
+AWS_LAMBDA_DOCKER_BUILD_PLATFORM = "linux/amd64"
+CONDA_ENV_PATH = "conda_environment.yml"
+ENDPOINT_PKL_FILENAME = "endpoint_file.pkl"
+ENTRYPOINT_FILE_NAME = "entrypoint.py"
+
 
 class AWSLambdaBackendConfig(pydantic.BaseModel):
     type: CONFIG_TYPE_ID
     execution_role_arn: str
+    ecr_repository: str
+
+    def get_ecr_repo_name(self) -> str:
+        return self.ecr_repository.split("/")[-1]
+
+    def get_ecr_repo_account_id(self) -> str:
+        return self.ecr_repository.split("/")[-2]
 
 
 class AWSLambdaEndpointBackend(AbstractEndpointBackend):
@@ -27,7 +43,7 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
     Limitations:
 
         1. Only deploys public endpoints and no auth is performed when requesting
-        2. Only allows for 50MB packages, using images from ECR (up to 10GB) is not yet supported
+        2. If running a custom environment, we require access to Docker and an ECR repository
     """
 
     DAFT_REQUIRED_DEPS = ["cloudpickle"]
@@ -36,8 +52,11 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
     FUNCTION_NAME_PREFIX = "daft-serving-"
 
     def __init__(self, config: AWSLambdaBackendConfig):
+        self.docker_client = get_docker_client()
+        self.ecr_client = boto3.client("ecr")
         self.lambda_client = boto3.client("lambda")
         self.role_arn = config.execution_role_arn
+        self.ecr_repository = config.ecr_repository
 
     @staticmethod
     def config_type_id() -> str:
@@ -100,9 +119,6 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
         endpoint: Callable[[Any], Any],
         custom_env: Optional[DaftEnv] = None,
     ) -> Endpoint:
-        if custom_env is not None:
-            raise ValueError(f"Custom environments is not yet supported for AWS Lambda backend, ignoring {custom_env}")
-
         lambda_function_name = f"{AWSLambdaEndpointBackend.FUNCTION_NAME_PREFIX}{endpoint_name}"
         lambda_function_version = 1
 
@@ -113,74 +129,65 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
         except self.lambda_client.exceptions.ResourceNotFoundException:
             pass
 
-        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as zipfile_td:
-
-            # Add the entrypoint Python file to zipfile
-            tmpdir = pathlib.Path(td)
-            shutil.copy2(
-                pathlib.Path(__file__).parent.parent / "static" / "aws-lambda-entrypoint.py",
-                tmpdir / "aws-lambda-entrypoint.py",
+        # Build and push image to ECR
+        image_tag = f"{endpoint_name}-v{lambda_function_version}"
+        docker_tag = f"{self.ecr_repository}:{image_tag}"
+        docker_image = build_aws_lambda_docker_image(
+            docker_client=self.docker_client,
+            env=custom_env if custom_env is not None else DaftEnv(),
+            docker_tag=docker_tag,
+            endpoint=endpoint,
+        )
+        resp = self.ecr_client.get_authorization_token()
+        token = base64.b64decode(resp["authorizationData"][0]["authorizationToken"]).decode()
+        username, password = token.split(":")
+        try:
+            for line in self.docker_client.images.push(
+                repository=self.ecr_repository,
+                tag=image_tag,
+                auth_config={"username": username, "password": password},
+                stream=True,
+                decode=True,
+            ):
+                if "status" in line and not line["status"] == "Pushing":
+                    logger.debug(f"Pushing image: {line['status']}")
+        except docker.errors.APIError as e:
+            logger.error(
+                f"Failed to push image, ensure that you have the correct credentials to be pushing to {self.ecr_repository}: {e}"
             )
 
-            # TODO(jay): We should install modules in a separate location and override the PYTHONPATH
-            # Add pip requirements to zipfile
-            proc = subprocess.run(
-                [
-                    "pip",
-                    "install",
-                    "-t",
-                    td,
-                    "--platform=manylinux1_x86_64",
-                    "--only-binary=:all:",
-                    "--python-version=3.9",
-                    *AWSLambdaEndpointBackend.DAFT_REQUIRED_DEPS,
-                ]
+        # Create Lambda function
+        if lambda_function_version > 1:
+            response = self.lambda_client.update_function_code(
+                FunctionName=lambda_function_name,
+                ImageUri=docker_tag,
+                Publish=True,
             )
-            proc.check_returncode()
-
-            # Write endpoint as a pickle
-            pickle_file = tmpdir / "endpoint.pkl"
-            with open(pickle_file, "wb") as f:
-                f.write(cloudpickle.dumps(endpoint))
-
-            # Create Lambda function
-            lambda_layer_path = pathlib.Path(zipfile_td) / "lambda_layer"
-            shutil.make_archive(base_name=str(lambda_layer_path), format="zip", root_dir=td)
-            with open(f"{lambda_layer_path}.zip", "rb") as f:
-                zipfile_bytes = f.read()
-
-                if lambda_function_version > 1:
-                    response = self.lambda_client.update_function_code(
-                        FunctionName=lambda_function_name,
-                        ZipFile=zipfile_bytes,
-                        Publish=True,
-                    )
-                    self.lambda_client.tag_resource(
-                        Resource=self._strip_function_arn_version(response["FunctionArn"]),
-                        Tags={
-                            AWSLambdaEndpointBackend.ENDPOINT_VERSION_TAG: str(lambda_function_version),
-                        },
-                    )
-                else:
-                    self.lambda_client.create_function(
-                        FunctionName=lambda_function_name,
-                        Runtime="python3.9",
-                        Handler="aws-lambda-entrypoint.lambda_handler",
-                        Code={"ZipFile": zipfile_bytes},
-                        Description="Daft serving endpoint",
-                        Environment={
-                            "Variables": {
-                                "ENDPOINT_PKL_FILEPATH": "endpoint.pkl",
-                            },
-                        },
-                        Architectures=["x86_64"],
-                        Tags={
-                            "owner": "daft-serving",
-                            AWSLambdaEndpointBackend.ENDPOINT_VERSION_TAG: str(lambda_function_version),
-                        },
-                        Role=self.role_arn,
-                        Publish=True,
-                    )
+            self.lambda_client.tag_resource(
+                Resource=self._strip_function_arn_version(response["FunctionArn"]),
+                Tags={
+                    AWSLambdaEndpointBackend.ENDPOINT_VERSION_TAG: str(lambda_function_version),
+                },
+            )
+        else:
+            self.lambda_client.create_function(
+                FunctionName=lambda_function_name,
+                PackageType="Image",
+                Code={"ImageUri": docker_tag},
+                Description="Daft serving endpoint",
+                Environment={
+                    "Variables": {
+                        "ENDPOINT_PKL_FILEPATH": "endpoint.pkl",
+                    },
+                },
+                Architectures=["x86_64"],
+                Tags={
+                    "owner": "daft-serving",
+                    AWSLambdaEndpointBackend.ENDPOINT_VERSION_TAG: str(lambda_function_version),
+                },
+                Role=self.role_arn,
+                Publish=True,
+            )
 
         # Add permission for anyone to invoke the lambda function
         try:
@@ -208,3 +215,64 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
             version=lambda_function_version,
             addr=url_config["FunctionUrl"],
         )
+
+
+def build_aws_lambda_docker_image(
+    docker_client: docker.DockerClient, env: DaftEnv, docker_tag: str, endpoint: Callable[[Any], Any]
+) -> docker.models.images.Image:
+    """Builds the image to be served locally"""
+
+    # Extend the base conda environment with serving dependencies
+    conda_env = env.get_conda_environment()
+    conda_env["dependencies"].extend(["cloudpickle"])
+
+    tarbytes = io.BytesIO()
+    with tarfile.open(fileobj=tarbytes, mode="w") as tar, tempfile.TemporaryDirectory() as td:
+        tmpdir = pathlib.Path(td)
+
+        # Add conda env as a YAML file
+        conda_env_file = tmpdir / CONDA_ENV_PATH
+        conda_env_file.write_text(yaml.dump(conda_env))
+        tar.add(conda_env_file, arcname=CONDA_ENV_PATH)
+
+        # Add the endpoint function to tarfile as a pickle
+        pickle_file = tmpdir / ENDPOINT_PKL_FILENAME
+        pickle_file.write_bytes(cloudpickle.dumps(endpoint))
+        tar.add(pickle_file, arcname=ENDPOINT_PKL_FILENAME)
+
+        # Add entrypoint file to tarfile
+        tar.add(pathlib.Path(__file__).parent.parent / "static" / "docker-entrypoint.py", arcname=ENTRYPOINT_FILE_NAME)
+
+        # Add Dockerfile to tarfile
+        dockerfile = pathlib.Path(__file__).parent.parent / "static" / "Dockerfile.aws_lambda"
+        tar.add(str(dockerfile), arcname="Dockerfile")
+
+        # Build the image
+        tarbytes.seek(0)
+        response = docker_client.api.build(
+            fileobj=tarbytes,
+            custom_context=True,
+            tag=docker_tag,
+            decode=True,
+            buildargs={
+                "PYTHON_VERSION": env.python_version[: env.python_version.rfind(".")],
+                "CONDA_ENV_PATH": CONDA_ENV_PATH,
+                "ENDPOINT_PKL_FILENAME": ENDPOINT_PKL_FILENAME,
+                "ENTRYPOINT_FILE_NAME": ENTRYPOINT_FILE_NAME,
+            },
+            platform=AWS_LAMBDA_DOCKER_BUILD_PLATFORM,
+            target="serving",
+        )
+        for msg in response:
+            if "stream" in msg:
+                logger.debug(msg["stream"])
+                match = re.search(r"(^Successfully built |sha256:)([0-9a-f]+)$", msg["stream"])
+                if match:
+                    image_id = match.group(2)
+                    print(f"Built image: {image_id}")
+                    return docker_client.images.get(image_id)
+            if "aux" in msg:
+                logger.debug(msg["aux"])
+            if "errorDetail" in msg:
+                logger.debug(msg["errorDetail"]["message"])
+        raise RuntimeError("Failed to build base Docker image, check debug logs for more info")
