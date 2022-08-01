@@ -48,6 +48,7 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
     """
 
     DAFT_REQUIRED_DEPS = ["cloudpickle"]
+    DAFT_REQUIRED_PIP_DEPS = ["awslambdaric"]
 
     ENDPOINT_VERSION_TAG = "endpoint_version"
     FUNCTION_NAME_PREFIX = "daft-serving-"
@@ -183,6 +184,14 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
                 },
                 Role=self.role_arn,
                 Publish=True,
+                ImageConfig={
+                    "EntryPoint": [
+                        "/var/task/miniconda3/bin/conda",
+                    ],
+                    'Command': [
+                        "run,-n,serving,python,-m,awslambdaric,entrypoint.lambda_handler",
+                    ],
+                },
             )
 
         # Add permission for anyone to invoke the lambda function
@@ -219,8 +228,14 @@ def build_aws_lambda_docker_image(
     """Builds the image to be served locally"""
 
     # Extend the base conda environment with serving dependencies
+    env = DaftEnv(
+        python_version=env.python_version,
+        requirements_txt=env.requirements_txt,
+        pip_packages=[*env.pip_packages, *AWSLambdaEndpointBackend.DAFT_REQUIRED_PIP_DEPS],
+    )
     conda_env = env.get_conda_environment()
-    conda_env["dependencies"].extend(["cloudpickle"])
+    conda_env["dependencies"].extend(AWSLambdaEndpointBackend.DAFT_REQUIRED_DEPS)
+    print(yaml.dump(conda_env))
 
     with tempfile.TemporaryDirectory() as td:
         tmpdir = pathlib.Path(td)
