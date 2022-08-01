@@ -7,7 +7,7 @@ import pytest
 import requests
 
 from daft.dataframe import DataFrame
-from daft.env import DaftEnv
+from daft.env import DaftEnv, get_docker_client
 from daft.expressions import ColumnExpression
 from daft.logical.schema import ExpressionList
 from daft.serving import HTTPEndpoint
@@ -117,7 +117,7 @@ def test_identity_dataframe_serving_docker(docker_backend: DockerEndpointBackend
         response = requests.get(f"{deployed_endpoint.addr}?request=foo")
         assert response.text == '"foo"'
     finally:
-        docker_client = docker.from_env()
+        docker_client = get_docker_client()
         try:
             docker_client.containers.get(f"daft-endpoint-{deployed_endpoint.name}-v{deployed_endpoint.version}").kill()
         except docker.errors.NotFound:
@@ -143,7 +143,7 @@ def test_identity_dataframe_serving_docker_with_pip_dependency(docker_backend: D
         response = requests.get(f"{deployed_endpoint.addr}?request=5")
         assert response.text == "5.0"
     finally:
-        docker_client = docker.from_env()
+        docker_client = get_docker_client()
         try:
             docker_client.containers.get(f"daft-endpoint-{deployed_endpoint.name}-v{deployed_endpoint.version}").kill()
         except docker.errors.NotFound:
@@ -174,7 +174,7 @@ def test_identity_dataframe_serving_docker_with_requirements_txt(docker_backend:
             response = requests.get(f"{deployed_endpoint.addr}?request=5")
             assert response.text == "5.0"
         finally:
-            docker_client = docker.from_env()
+            docker_client = get_docker_client()
             try:
                 docker_client.containers.get(
                     f"daft-endpoint-{deployed_endpoint.name}-v{deployed_endpoint.version}"
@@ -215,7 +215,7 @@ def test_identity_dataframe_serving_docker_with_local_pkg(docker_backend: Docker
             response = requests.get(f"{deployed_endpoint.addr}?request=5")
             assert response.text == "5"
         finally:
-            docker_client = docker.from_env()
+            docker_client = get_docker_client()
             try:
                 docker_client.containers.get(
                     f"daft-endpoint-{deployed_endpoint.name}-v{deployed_endpoint.version}"

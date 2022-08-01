@@ -13,7 +13,7 @@ import yaml
 from loguru import logger
 from requests.adapters import HTTPAdapter, Retry
 
-from daft.env import DaftEnv
+from daft.env import DaftEnv, get_docker_client
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
 
@@ -26,7 +26,7 @@ SERVING_IMAGE_DOCKER_MANIFEST = f"""
 FROM continuumio/miniconda3:4.12.0
 WORKDIR /scratch
 COPY {CONDA_ENV_PATH} {CONDA_ENV_PATH}
-RUN conda env create --prefix {VENV_PATH} -f {CONDA_ENV_PATH}
+RUN conda env create --prefix {VENV_PATH} -f {CONDA_ENV_PATH} --quiet
 WORKDIR /app
 COPY {ENTRYPOINT_FILE_NAME} {ENTRYPOINT_FILE_NAME}
 COPY {ENDPOINT_PKL_FILENAME} {ENDPOINT_PKL_FILENAME}
@@ -42,7 +42,7 @@ class DockerEndpointBackend(AbstractEndpointBackend):
     DAFT_ENDPOINT_PORT_LABEL = "DAFT_ENDPOINT_PORT"
 
     def __init__(self):
-        self.docker_client = docker.from_env()
+        self.docker_client = get_docker_client()
 
     @staticmethod
     def config_type_id() -> str:

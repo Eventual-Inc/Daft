@@ -8,6 +8,17 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+import docker
+
+
+def get_docker_client() -> docker.Client:
+    client = docker.from_env()
+    try:
+        client.info()
+    except docker.errors.APIError as e:
+        raise RuntimeError("Unable to run Docker, please make sure Docker is installed and running.")
+    return client
+
 
 def get_conda_executable() -> pathlib.Path:
     conda_info_proc = subprocess.run(["conda", "info", "--json"], capture_output=True)
@@ -57,4 +68,5 @@ class DaftEnv:
             "channels": ["conda-forge", "defaults"],
             "dependencies": dependencies,
         }
+
         return conda_environment

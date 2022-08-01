@@ -1,0 +1,52 @@
+ARG PYTHON_VERSION
+ARG CONDA_SOLVED_DEP_PATH=/opt/conda_environment.yml
+ARG ENV_NAME=serving
+
+###
+# Solve for all the dependencies we actually need to pull down
+# TODO: We should actually be able to do this in the native environment (e.g. arm64 for M1 Macbooks)
+#       To do so, we should use the Conda Python APIs to just do solving, but not install the libraries.
+###
+
+FROM --platform=${TARGETPLATFORM} continuumio/miniconda3:4.12.0 AS solving
+
+ARG ENV_NAME
+ARG CONDA_SOLVED_DEP_PATH
+ARG CONDA_ENV_PATH=conda_environment.yml
+
+# Solve Conda environment
+COPY $CONDA_ENV_PATH $CONDA_ENV_PATH
+ENV CONDA_SUBDIR linux-64
+RUN conda create -n ${ENV_NAME} --no-default-packages --quiet
+RUN conda run -n ${ENV_NAME} conda config --env --set subdir linux-64
+RUN conda env update -n ${ENV_NAME} -f ${CONDA_ENV_PATH}
+RUN conda run -n ${ENV_NAME} conda env export > ${CONDA_SOLVED_DEP_PATH}
+
+###
+# Run serving
+###
+
+FROM --platform=${TARGETPLATFORM} public.ecr.aws/lambda/python:${PYTHON_VERSION} AS serving
+
+ARG ENV_NAME
+ARG CONDA_SOLVED_DEP_PATH
+ARG ENDPOINT_PKL_FILENAME=endpoint.pkl
+ARG ENTRYPOINT_FILE_NAME=entrypoint.py
+
+COPY --from=solving ${CONDA_SOLVED_DEP_PATH} ${CONDA_SOLVED_DEP_PATH}
+
+RUN yum install -y wget
+RUN wget -q \
+    https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+    && mkdir /root/.conda \
+    && bash Miniconda3-latest-Linux-x86_64.sh -b -p ${LAMBDA_TASK_ROOT}/miniconda3 \
+    && rm -f Miniconda3-latest-Linux-x86_64.sh
+RUN ${LAMBDA_TASK_ROOT}/miniconda3/bin/conda env create -n ${ENV_NAME} --file ${CONDA_SOLVED_DEP_PATH}
+
+# Copy all application files
+ENV ENDPOINT_PKL_FILEPATH ${LAMBDA_TASK_ROOT}/${ENDPOINT_PKL_FILENAME}
+COPY ${ENDPOINT_PKL_FILENAME} ${LAMBDA_TASK_ROOT}
+COPY ${ENTRYPOINT_FILE_NAME} ${LAMBDA_TASK_ROOT}
+
+ENTRYPOINT ["/var/task/miniconda3/bin/conda"]
+CMD ["run", "-n", ${ENV_NAME}, "python", "-m", "awslambdaric", "entrypoint.lambda_handler"]
