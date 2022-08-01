@@ -3,7 +3,6 @@ import os
 import pathlib
 import re
 import subprocess
-import tarfile
 import tempfile
 from typing import Any, Callable, Dict, List, Literal, Optional
 
@@ -188,7 +187,7 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
                     "EntryPoint": [
                         "/var/task/miniconda3/bin/conda",
                     ],
-                    'Command': [
+                    "Command": [
                         "run,-n,serving,python,-m,awslambdaric,entrypoint.lambda_handler",
                     ],
                 },

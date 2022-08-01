@@ -13,7 +13,7 @@ import yaml
 from loguru import logger
 from requests.adapters import HTTPAdapter, Retry
 
-from daft.env import DaftEnv
+from daft.env import DaftEnv, get_docker_client
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
 
@@ -42,7 +42,7 @@ class DockerEndpointBackend(AbstractEndpointBackend):
     DAFT_ENDPOINT_PORT_LABEL = "DAFT_ENDPOINT_PORT"
 
     def __init__(self):
-        self.docker_client = docker.from_env()
+        self.docker_client = get_docker_client()
 
     @staticmethod
     def config_type_id() -> str:
