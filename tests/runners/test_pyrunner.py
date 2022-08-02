@@ -1,12 +1,10 @@
-from typing import Dict, List
-
 import pandas as pd
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
 
 
-def test_pyrunner_with_pandas(valid_data: List[Dict[str, float]]):
+def test_pyrunner_with_pandas():
 
     # Pandas query
     pd_df = pd.read_csv("tests/assets/iris.csv")

@@ -46,8 +46,6 @@ class PyRunnerColumnManager:
 
         sharded_column = node_output.col_id_to_sharded_column[column_id]
 
-        assert partition_id not in sharded_column.part_idx_to_tile
-
         sharded_column.part_idx_to_tile[partition_id] = PyListTile(
             node_id=node_id, column_id=column_id, column_name=column_name, partition_id=partition_id, block=block
         )
