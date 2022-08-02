@@ -1,22 +1,28 @@
 from __future__ import annotations
 
 import csv
-from typing import Any, Dict, List, Tuple, TypeVar, Union
+from typing import Any, Dict, List, Optional, Tuple, TypeVar, Union
+
+import pandas
 
 from daft.expressions import Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
+from daft.runners.pyrunner import NodeOutput, PyRunner
 from daft.serving.endpoint import HTTPEndpoint
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
 
+_RUNNER = PyRunner()
+
 
 class DataFrame:
     def __init__(self, plan: logical_plan.LogicalPlan) -> None:
         self._plan = plan
+        self._node_output: Optional[NodeOutput] = None
 
     def plan(self) -> logical_plan.LogicalPlan:
         return self._plan
@@ -123,3 +129,14 @@ class DataFrame:
         local_limit = logical_plan.LocalLimit(self._plan, num=num)
         global_limit = logical_plan.GlobalLimit(local_limit, num=num)
         return DataFrame(global_limit)
+
+    def collect(self) -> DataFrame:
+        if self._node_output is None:
+            self._node_output = _RUNNER.run(self._plan)
+        return self
+
+    def to_pandas(self) -> pandas.DataFrame:
+        self.collect()
+        assert self._node_output is not None
+        arrow_table = self._node_output.to_arrow_table()
+        return arrow_table.to_pandas()

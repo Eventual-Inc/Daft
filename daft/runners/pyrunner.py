@@ -275,16 +275,26 @@ class PyListShardedColumn:
 class NodeOutput:
     col_id_to_sharded_column: Dict[int, PyListShardedColumn]
 
+    def to_arrow_table(self) -> pa.Table:
+        values = []
+        names = []
+        for i in sorted(self.col_id_to_sharded_column.keys()):
+            sharded_col = self.col_id_to_sharded_column[i]
+            assert len(sharded_col.part_idx_to_tile) == 1
+            name = sharded_col.column_name
+            block = list(sharded_col.part_idx_to_tile.values())[0].block.data
+            names.append(name)
+            values.append(block)
+        return pa.table(values, names=names)
+
 
 class PyRunner(Runner):
-    def __init__(self, plan: LogicalPlan) -> None:
-        self._plan = plan
-        self._run_order = self._plan.post_order()
+    def __init__(self) -> None:
         self._col_manager = PyRunnerColumnManager()
 
-    def run(self) -> None:
-        for node in self._run_order:
-            print(node)
+    def run(self, plan: LogicalPlan) -> NodeOutput:
+        run_order = plan.post_order()
+        for node in run_order:
             if isinstance(node, Scan):
                 self._handle_scan(node)
             elif isinstance(node, Projection):
@@ -300,7 +310,7 @@ class PyRunner(Runner):
                 self._handle_sort(node)
             else:
                 raise NotImplementedError(f"{node} not implemented")
-        print(self._col_manager._nid_to_node_output[node.id()])
+        return self._col_manager._nid_to_node_output[node.id()]
 
     def _handle_scan(self, scan: Scan) -> None:
         n_partitions = scan.num_partitions()
