@@ -1,14 +1,34 @@
 from __future__ import annotations
 
+import collections
+from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partialmethod
-from typing import Any, Callable, ClassVar, Dict, Generic, List, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+)
 
 import pyarrow as pa
 from pyarrow import compute as pac
 from pyarrow import csv
 
-from daft.logical.logical_plan import LogicalPlan, Projection, Scan
+from daft.logical.logical_plan import (
+    Filter,
+    GlobalLimit,
+    LocalLimit,
+    LogicalPlan,
+    Projection,
+    Scan,
+    Sort,
+)
 from daft.runners.runner import Runner
 
 
@@ -50,7 +70,7 @@ class PyRunnerColumnManager:
         ...
 
 
-ArrType = TypeVar("ArrType")
+ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
 UnaryFuncType = Callable[[ArrType], ArrType]
 BinaryFuncType = Callable[[ArrType, ArrType], ArrType]
 
@@ -85,6 +105,10 @@ class FunctionDispatch:
     gt: BinaryFuncType
     ge: BinaryFuncType
 
+    # Dataframe ops
+    filter: BinaryFuncType
+    take: BinaryFuncType
+
 
 ArrowFunctionDispatch = FunctionDispatch(
     neg=pac.negate,
@@ -104,6 +128,8 @@ ArrowFunctionDispatch = FunctionDispatch(
     ne=pac.not_equal,
     gt=pac.greater,
     ge=pac.greater_equal,
+    filter=pac.array_filter,
+    take=pac.take,
 )
 
 
@@ -119,14 +145,16 @@ class DataBlock(Generic[ArrType]):
 
     @classmethod
     def make_block(cls, data: Any) -> DataBlock:
-        if isinstance(data, list):
-            return PyListDataBlock(data=data)
-        elif isinstance(data, pa.ChunkedArray):
+        # if isinstance(data, list):
+        #     return PyListDataBlock(data=data)
+        if isinstance(data, pa.ChunkedArray):
             return ArrowDataBlock(data=data)
         else:
-            arrow_type = pa.infer_type([data])
-            is_prim = pa.types.is_primitive(arrow_type)
-            if not is_prim:
+            try:
+                arrow_type = pa.infer_type([data])
+            except pa.lib.ArrowInvalid:
+                arrow_type = None
+            if arrow_type is None or pa.types.is_nested(arrow_type):
                 raise ValueError("Don't know what block {data} should be")
             return ArrowDataBlock(data=pa.scalar(data))
 
@@ -190,6 +218,24 @@ class DataBlock(Generic[ArrType]):
     __rand__ = partialmethod(_reverse_binary_op, func="and_")
     __ror__ = partialmethod(_reverse_binary_op, func="or_")
 
+    # DataFrame ops
+    filter = partialmethod(_binary_op, func="filter")
+    take = partialmethod(_binary_op, func="take")
+
+    def head(self, num: int) -> DataBlock[ArrType]:
+        return DataBlock.make_block(self.data[:num])
+
+    @abstractmethod
+    def _argsort(self, others: Optional[List[DataBlock[ArrType]]] = None, desc=False) -> DataBlock[ArrType]:
+        raise NotImplementedError()
+
+    @classmethod
+    def argsort(cls, blocks: List[DataBlock[ArrType]], desc=False) -> DataBlock[ArrType]:
+        assert len(blocks) > 0, "no blocks to sort"
+        first_type = type(blocks[0])
+        assert all(type(b) == first_type for b in blocks), "all block types must match"
+        return blocks[0]._argsort(blocks[1:], desc=desc)
+
 
 class PyListDataBlock(DataBlock[List]):
     ...
@@ -197,6 +243,17 @@ class PyListDataBlock(DataBlock[List]):
 
 class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
     operators: ClassVar[FunctionDispatch] = ArrowFunctionDispatch
+
+    def _argsort(self, others: Optional[List[DataBlock]] = None, desc=False) -> DataBlock:
+        to_convert = {"0": self.data}
+        order = "descending" if desc else "ascending"
+        cols = [("0", order)]
+        if others is not None:
+            to_convert.update({str(i + 1): o.data for i, o in enumerate(others)})
+            cols.extend((str(i + 1), order) for i, _ in enumerate(others))
+        table = pa.table(to_convert)
+        sort_indices = pac.sort_indices(table, sort_keys=cols)
+        return ArrowDataBlock(data=sort_indices)
 
 
 @dataclass(frozen=True)
@@ -232,11 +289,22 @@ class PyRunner(Runner):
                 self._handle_scan(node)
             elif isinstance(node, Projection):
                 self._handle_projection(node)
+            elif isinstance(node, Filter):
+                self._handle_filter(node)
+            elif isinstance(node, LocalLimit):
+                self._handle_local_limit(node)
+            elif isinstance(node, GlobalLimit):
+                # TODO update this to global partition
+                self._handle_local_limit(node)
+            elif isinstance(node, Sort):
+                self._handle_sort(node)
+            else:
+                raise NotImplementedError(f"{node} not implemented")
         print(self._col_manager._nid_to_node_output[node.id()])
 
     def _handle_scan(self, scan: Scan) -> None:
         n_partitions = scan.num_partitions()
-        id = scan.id()
+        node_id = scan.id()
         if scan._source_info.scan_type == Scan.ScanType.in_memory:
             assert n_partitions == 1
             raise NotImplementedError()
@@ -250,7 +318,7 @@ class PyRunner(Runner):
                 assert col_name in table.column_names
                 col_array = table[col_name]
                 self._col_manager.put(
-                    node_id=id,
+                    node_id=node_id,
                     partition_id=0,
                     column_id=col_id,
                     column_name=col_name,
@@ -260,7 +328,7 @@ class PyRunner(Runner):
     def _handle_projection(self, proj: Projection) -> None:
         assert proj.num_partitions() == 1
         output = proj.schema()
-        id = proj.id()
+        node_id = proj.id()
         child_id = proj._children()[0].id()
         for expr in output:
             col_id = expr.get_id()
@@ -269,7 +337,11 @@ class PyRunner(Runner):
                 assert col_id is not None
                 prev_node_value = self._col_manager.get(node_id=child_id, partition_id=0, column_id=col_id)
                 self._col_manager.put(
-                    node_id=id, partition_id=0, column_id=col_id, column_name=output_name, block=prev_node_value.block
+                    node_id=node_id,
+                    partition_id=0,
+                    column_id=col_id,
+                    column_name=output_name,
+                    block=prev_node_value.block,
                 )
             else:
                 required_cols = expr.required_columns()
@@ -280,10 +352,74 @@ class PyRunner(Runner):
                 result = expr.eval(**required_blocks)
 
                 self._col_manager.put(
-                    node_id=id, partition_id=0, column_id=col_id, column_name=output_name, block=result
+                    node_id=node_id, partition_id=0, column_id=col_id, column_name=output_name, block=result
                 )
 
-    def logical_node_dispatcher(self, op: LogicalPlan) -> None:
-        {
-            Scan: self._handle_scan,
-        }
+    def _handle_filter(self, filter: Filter) -> None:
+        assert filter.num_partitions() == 1
+        predicate = filter._predicate
+        mask_so_far = None
+        node_id = filter.id()
+        child_id = filter._children()[0].id()
+        for expr in predicate:
+            required_cols = expr.required_columns()
+            required_blocks = {}
+            for c in required_cols:
+                block = self._col_manager.get(node_id=child_id, partition_id=0, column_id=c.get_id()).block
+                required_blocks[c.name()] = block
+            mask = expr.eval(**required_blocks)
+
+            if mask_so_far is None:
+                mask_so_far = mask
+            else:
+                mask_so_far = mask_so_far & mask
+        for expr in filter.schema():
+            assert not expr.has_call()
+            col_id = expr.get_id()
+            output_name = expr.name()
+            unfiltered_column = self._col_manager.get(node_id=child_id, partition_id=0, column_id=col_id).block
+            filtered_column = unfiltered_column.filter(mask_so_far)
+            self._col_manager.put(
+                node_id=node_id, partition_id=0, column_id=col_id, column_name=output_name, block=filtered_column
+            )
+
+    def _handle_local_limit(self, limit: Union[LocalLimit, GlobalLimit]) -> None:
+        assert limit.num_partitions() == 1
+        num = limit._num
+        child_id = limit._children()[0].id()
+        node_id = limit.id()
+        for expr in limit.schema():
+            col_id = expr.get_id()
+            output_name = expr.name()
+            unlimited_column = self._col_manager.get(node_id=child_id, partition_id=0, column_id=col_id).block
+            limited_column = unlimited_column.head(num)
+            self._col_manager.put(
+                node_id=node_id, partition_id=0, column_id=col_id, column_name=output_name, block=limited_column
+            )
+
+    def _handle_sort(self, sort: Sort) -> None:
+        assert sort.num_partitions() == 1
+        desc = sort._desc
+        child_id = sort._children()[0].id()
+        values_to_sort = []
+        node_id = sort.id()
+
+        for expr in sort._sort_by:
+            col_id = expr.get_id()
+            required_cols = expr.required_columns()
+            required_blocks = {}
+            for c in required_cols:
+                block = self._col_manager.get(node_id=child_id, partition_id=0, column_id=c.get_id()).block
+                required_blocks[c.name()] = block
+            values_to_sort.append(expr.eval(**required_blocks))
+        sort_indices = DataBlock.argsort(values_to_sort, desc=desc)
+
+        for expr in sort.schema():
+            assert not expr.has_call()
+            col_id = expr.get_id()
+            output_name = expr.name()
+            unsorted_column = self._col_manager.get(node_id=child_id, partition_id=0, column_id=col_id).block
+            sorted_column = unsorted_column.take(sort_indices)
+            self._col_manager.put(
+                node_id=node_id, partition_id=0, column_id=col_id, column_name=output_name, block=sorted_column
+            )

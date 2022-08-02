@@ -115,8 +115,8 @@ class DataFrame:
         )
         return DataFrame(projection)
 
-    def sort(self, *columns: str) -> DataFrame:
-        sort = logical_plan.Sort(self._plan, self.__column_input_to_expression(columns))
+    def sort(self, *columns: str, desc=False) -> DataFrame:
+        sort = logical_plan.Sort(self._plan, self.__column_input_to_expression(columns), desc=desc)
         return DataFrame(sort)
 
     def limit(self, num: int) -> DataFrame:

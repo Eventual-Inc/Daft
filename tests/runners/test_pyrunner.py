@@ -7,8 +7,10 @@ from daft.runners.pyrunner import PyRunner
 
 def test_pyrunner(valid_data: List[Dict[str, float]]):
     df = DataFrame.from_csv("tests/assets/iris.csv")
-    # df = df.select("sepal.length", "sepal.width").select((col("sepal.width") * col("sepal.length")).alias('area'))
-    # df = df.with_column('area+1', col('area') == 20)
-    df = df.select(col("sepal.length") == 10)
+    df = df.with_column("area", col("sepal.width") * col("sepal.length"))
+    df = df.where(col("area") < 20)
+    df = df.where(col("variety") == "Virginica")
+    df = df.sort(col("area"), col("sepal.width"), desc=True)
+    df = df.limit(3)
     print(df.plan())
     PyRunner(df.plan()).run()

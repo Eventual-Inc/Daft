@@ -201,6 +201,7 @@ class Sort(UnaryNode):
 class LocalLimit(UnaryNode):
     def __init__(self, input: LogicalPlan, num: int) -> None:
         super().__init__(input.schema(), num_partitions=input.num_partitions(), op_level=OpLevel.PARTITION)
+        self._register_child(input)
         self._num = num
 
     def __repr__(self) -> str:
@@ -219,6 +220,7 @@ class LocalLimit(UnaryNode):
 class GlobalLimit(UnaryNode):
     def __init__(self, input: LogicalPlan, num: int) -> None:
         super().__init__(input.schema(), num_partitions=input.num_partitions(), op_level=OpLevel.GLOBAL)
+        self._register_child(input)
         self._num = num
 
     def __repr__(self) -> str:
