@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import itertools
 from abc import abstractmethod
+from dataclasses import dataclass
+from enum import Enum, IntEnum
 from typing import Any, List, Optional
 
 from daft.expressions import ColumnExpression
@@ -8,10 +11,21 @@ from daft.internal.treenode import TreeNode
 from daft.logical.schema import ExpressionList
 
 
+class OpLevel(IntEnum):
+    ROW = 1
+    PARTITION = 2
+    GLOBAL = 3
+
+
 class LogicalPlan(TreeNode["LogicalPlan"]):
-    def __init__(self, schema: ExpressionList) -> None:
+    id_iter = itertools.count()
+
+    def __init__(self, schema: ExpressionList, num_partitions: int, op_level: OpLevel) -> None:
         super().__init__()
         self._schema = schema
+        self._op_level = op_level
+        self._num_partitions = num_partitions
+        self._id = next(LogicalPlan.id_iter)
 
     def schema(self) -> ExpressionList:
         return self._schema
@@ -29,6 +43,7 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
             isinstance(other, LogicalPlan)
             and self._local_eq(other)
             and self.schema() == other.schema()
+            and self.num_partitions() == other.num_partitions()
             and all(
                 [self_child.is_eq(other_child) for self_child, other_child in zip(self._children(), other._children())]
             )
@@ -40,6 +55,12 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
             "Use .is_eq() to check if expressions are 'equal' (ignores differences in IDs but checks for the same expression structure)"
         )
 
+    def num_partitions(self) -> int:
+        return self._num_partitions
+
+    def id(self) -> int:
+        return self._id
+
 
 class UnaryNode(LogicalPlan):
     @abstractmethod
@@ -48,14 +69,26 @@ class UnaryNode(LogicalPlan):
 
 
 class Scan(LogicalPlan):
+    class ScanType(Enum):
+        csv = "csv"
+        parquet = "parquet"
+        in_memory = "in_memory"
+
+    @dataclass(frozen=True)
+    class SourceInfo:
+        scan_type: Scan.ScanType
+        source: Optional[Any] = None
+
     def __init__(
         self,
+        *,
         schema: ExpressionList,
+        source_info: Scan.SourceInfo,
         predicate: Optional[ExpressionList] = None,
         columns: Optional[List[str]] = None,
     ) -> None:
         schema = schema.resolve()
-        super().__init__(schema)
+        super().__init__(schema, num_partitions=1, op_level=OpLevel.PARTITION)
 
         if predicate is not None:
             self._predicate = predicate.resolve(schema)
@@ -69,12 +102,13 @@ class Scan(LogicalPlan):
             self._output_schema = schema
 
         self._columns = self._schema
+        self._source_info = source_info
 
     def schema(self) -> ExpressionList:
         return self._output_schema
 
     def __repr__(self) -> str:
-        return f"Scan\n\toutput={self.schema()}\n\tpredicate={self._predicate}\n\tcolumns={self._columns}"
+        return f"Scan\n\toutput={self.schema()}\n\tpredicate={self._predicate}\n\tcolumns={self._columns}\n\t{self._source_info}"
 
     def required_columns(self) -> ExpressionList:
         return self._predicate.required_columns()
@@ -85,6 +119,7 @@ class Scan(LogicalPlan):
             and self.schema() == other.schema()
             and self._predicate == other._predicate
             and self._columns == other._columns
+            and self._source_info == other._source_info
         )
 
 
@@ -92,7 +127,9 @@ class Filter(UnaryNode):
     """Which rows to keep"""
 
     def __init__(self, input: LogicalPlan, predicate: ExpressionList) -> None:
-        super().__init__(input.schema().to_column_expressions())
+        super().__init__(
+            input.schema().to_column_expressions(), num_partitions=input.num_partitions(), op_level=OpLevel.PARTITION
+        )
         self._register_child(input)
         self._predicate = predicate.resolve(input.schema())
 
@@ -114,7 +151,7 @@ class Projection(UnaryNode):
 
     def __init__(self, input: LogicalPlan, projection: ExpressionList) -> None:
         projection = projection.resolve(input_schema=input.schema())
-        super().__init__(projection)
+        super().__init__(projection, num_partitions=input.num_partitions(), op_level=OpLevel.ROW)
 
         self._register_child(input)
         self._projection = projection
@@ -136,7 +173,9 @@ class Projection(UnaryNode):
 
 class Sort(UnaryNode):
     def __init__(self, input: LogicalPlan, sort_by: ExpressionList, desc: bool = False) -> None:
-        super().__init__(input.schema().to_column_expressions())
+        super().__init__(
+            input.schema().to_column_expressions(), num_partitions=input.num_partitions(), op_level=OpLevel.GLOBAL
+        )
         self._register_child(input)
         self._sort_by = sort_by.resolve(input_schema=input.schema())
         self._desc = desc
@@ -161,7 +200,8 @@ class Sort(UnaryNode):
 
 class LocalLimit(UnaryNode):
     def __init__(self, input: LogicalPlan, num: int) -> None:
-        super().__init__(input.schema())
+        super().__init__(input.schema(), num_partitions=input.num_partitions(), op_level=OpLevel.PARTITION)
+        self._register_child(input)
         self._num = num
 
     def __repr__(self) -> str:
@@ -177,11 +217,23 @@ class LocalLimit(UnaryNode):
         return isinstance(other, LocalLimit) and self.schema() == other.schema() and self._num == self._num
 
 
-class GlobalLimit(LocalLimit):
-    ...
+class GlobalLimit(UnaryNode):
+    def __init__(self, input: LogicalPlan, num: int) -> None:
+        super().__init__(input.schema(), num_partitions=input.num_partitions(), op_level=OpLevel.GLOBAL)
+        self._register_child(input)
+        self._num = num
 
     def __repr__(self) -> str:
         return f"GlobalLimit\n\toutput={self.schema()}\n\tN={self._num}"
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> GlobalLimit:
+        raise NotImplementedError()
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, GlobalLimit) and self.schema() == other.schema() and self._num == self._num
 
 
 class HTTPRequest(LogicalPlan):
@@ -190,7 +242,7 @@ class HTTPRequest(LogicalPlan):
         schema: ExpressionList,
     ) -> None:
         self._output_schema = schema.resolve()
-        super().__init__(schema)
+        super().__init__(schema, num_partitions=1, op_level=OpLevel.ROW)
 
     def schema(self) -> ExpressionList:
         return self._output_schema
@@ -211,7 +263,7 @@ class HTTPResponse(UnaryNode):
         input: LogicalPlan,
     ) -> None:
         self._schema = input.schema()
-        super().__init__(self._schema)
+        super().__init__(self._schema, num_partitions=input.num_partitions(), op_level=OpLevel.ROW)
 
     def schema(self) -> ExpressionList:
         return self._schema

@@ -10,22 +10,29 @@ def schema():
     return ExpressionList(list(map(col, ["a", "b", "c"])))
 
 
-def test_scan_predicates(schema) -> None:
-    scan = Scan(schema)
+@pytest.fixture(scope="function")
+def source_info():
+    return Scan.SourceInfo(scan_type=Scan.ScanType.in_memory, source=None)
+
+
+def test_scan_predicates(schema, source_info) -> None:
+    scan = Scan(schema=schema, source_info=source_info)
     assert scan.schema() == schema
 
-    proj_scan = Scan(schema, columns=["a"])
+    proj_scan = Scan(schema=schema, source_info=source_info, columns=["a"])
     assert proj_scan.schema().names == ["a"]
 
-    filter_scan = Scan(schema, predicate=ExpressionList([col("a") < 10]))
+    filter_scan = Scan(schema=schema, source_info=source_info, predicate=ExpressionList([col("a") < 10]))
     assert filter_scan.schema() == schema
 
-    both_scan = Scan(schema, predicate=ExpressionList([col("a") < 10]), columns=["b", "c"])
+    both_scan = Scan(
+        schema=schema, source_info=source_info, predicate=ExpressionList([col("a") < 10]), columns=["b", "c"]
+    )
     assert both_scan.schema() == schema.keep(["b", "c"])
 
 
-def test_projection_logical_plan(schema) -> None:
-    scan = Scan(schema)
+def test_projection_logical_plan(schema, source_info) -> None:
+    scan = Scan(schema=schema, source_info=source_info)
     assert scan.schema() == schema
 
     full_project = Projection(scan, ExpressionList([col("a"), col("b"), col("c")]))
@@ -40,16 +47,16 @@ def test_projection_logical_plan(schema) -> None:
     assert project.schema().get_expression_by_name("b").required_columns() == [schema.get_expression_by_name("b")]
 
 
-def test_projection_logical_plan_bad_input(schema) -> None:
-    scan = Scan(schema)
+def test_projection_logical_plan_bad_input(schema, source_info) -> None:
+    scan = Scan(schema=schema, source_info=source_info)
     assert scan.schema() == schema
 
     with pytest.raises(ValueError):
         Projection(scan, ExpressionList([col("d")]))
 
 
-def test_filter_logical_plan(schema) -> None:
-    scan = Scan(schema)
+def test_filter_logical_plan(schema, source_info) -> None:
+    scan = Scan(schema=schema, source_info=source_info)
     assert scan.schema() == schema
 
     full_filter = Filter(scan, ExpressionList([col("a") == 1, col("b") < 10, col("c") > 10]))
@@ -59,16 +66,16 @@ def test_filter_logical_plan(schema) -> None:
     assert project.schema() == schema
 
 
-def test_filter_logical_plan_bad_input(schema) -> None:
-    scan = Scan(schema)
+def test_filter_logical_plan_bad_input(schema, source_info) -> None:
+    scan = Scan(schema=schema, source_info=source_info)
     assert scan.schema() == schema
 
     with pytest.raises(ValueError):
         filter = Filter(scan, ExpressionList([col("d") == 1]))
 
 
-def test_projection_new_columns_logical_plan(schema) -> None:
-    scan = Scan(schema)
+def test_projection_new_columns_logical_plan(schema, source_info) -> None:
+    scan = Scan(schema=schema, source_info=source_info)
     assert scan.schema() == schema
 
     hstacked = Projection(scan, schema.union(ExpressionList([(col("a") + col("b")).alias("d")])))
@@ -101,16 +108,16 @@ def test_projection_new_columns_logical_plan(schema) -> None:
     assert projection_reorder.schema() == hstacked_on_proj.schema().keep(["a", "b", "c"])
 
 
-def test_filter_logical_plan_bad_input(schema) -> None:
-    scan = Scan(schema)
+def test_filter_logical_plan_bad_input(schema, source_info) -> None:
+    scan = Scan(schema=schema, source_info=source_info)
     assert scan.schema() == schema
 
     with pytest.raises(ValueError):
         scan = Projection(scan, ExpressionList([col("a"), (col("b") + 1).alias("a")]))
 
 
-def test_scan_projection_filter_projection_chain(schema) -> None:
-    scan = Scan(schema)
+def test_scan_projection_filter_projection_chain(schema, source_info) -> None:
+    scan = Scan(schema=schema, source_info=source_info)
     assert scan.schema() == schema
 
     hstacked = Projection(scan, schema.union(ExpressionList([(col("a") + col("b")).alias("d")])))

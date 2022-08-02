@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from typing import TYPE_CHECKING, Generic, List, Optional, TypeVar, cast
 
 if TYPE_CHECKING:
@@ -73,3 +74,14 @@ class TreeNode(Generic[TreeNodeType]):
 
         recurser(self)
         return graph.to_string()  # type: ignore
+
+    def post_order(self) -> List[TreeNodeType]:
+        nodes = []
+
+        def helper(curr: TreeNode[TreeNodeType]) -> None:
+            for child in curr._children():
+                helper(child)
+            nodes.append(curr)
+
+        helper(self)
+        return typing.cast(List[TreeNodeType], nodes)

@@ -79,7 +79,9 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
         new_predicate = parent._predicate.union(child._predicate, strict=False)
         child_schema = child.schema()
         assert new_predicate.required_columns().to_id_set().issubset(child_schema.to_id_set())
-        return Scan(child._schema, new_predicate, child_schema.names)
+        return Scan(
+            schema=child._schema, predicate=new_predicate, columns=child_schema.names, source_info=child._source_info
+        )
 
     def _push_down_projections_into_scan(self, parent: Projection, child: Scan) -> Optional[LogicalPlan]:
         required_columns = parent.schema().required_columns()
@@ -87,7 +89,12 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
         if required_columns.to_id_set() == scan_columns.to_id_set():
             return None
 
-        new_scan = Scan(child._schema, child._predicate, columns=required_columns.names)
+        new_scan = Scan(
+            schema=child._schema,
+            predicate=child._predicate,
+            columns=required_columns.names,
+            source_info=child._source_info,
+        )
         projection_required = any(e.has_call() for e in parent._projection)
         if projection_required:
             return Projection(new_scan, parent._projection)
