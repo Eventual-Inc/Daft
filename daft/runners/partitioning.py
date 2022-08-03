@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any, Dict
 
 from daft.expressions import ColID, Expression
+from daft.logical.schema import ExpressionList
 
 PartID = int
 
@@ -35,6 +38,11 @@ class vPartition:
         assert expr_col_id is not None
         assert expr_name is not None
         return PyListTile(column_id=expr_col_id, column_name=expr_name, partition_id=self.partition_id, block=result)
+
+    def eval_expression_list(self, exprs: ExpressionList) -> vPartition:
+        tile_list = [self.eval_expression(e) for e in exprs]
+        new_columns = {t.column_id: t for t in tile_list}
+        return vPartition(columns=new_columns, partition_id=self.partition_id)
 
 
 @dataclass
