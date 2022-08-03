@@ -136,6 +136,7 @@ class DataFrame:
             scheme = logical_plan.PartitionScheme.ROUND_ROBIN
             exprs: ExpressionList = ExpressionList([])
         else:
+            raise NotImplementedError()
             scheme = logical_plan.PartitionScheme.HASH
             exprs = self.__column_input_to_expression((partition_by,))
 
