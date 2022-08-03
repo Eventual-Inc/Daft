@@ -46,7 +46,7 @@ class DataFrame:
             schema=schema,
             predicate=None,
             columns=None,
-            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.in_memory, source=data),
+            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.IN_MEMORY, source=data),
         )
         return cls(plan)
 
@@ -57,7 +57,7 @@ class DataFrame:
             schema=schema,
             predicate=None,
             columns=None,
-            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.in_memory, source=data),
+            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.IN_MEMORY, source=data),
         )
         return cls(plan)
 
@@ -82,7 +82,7 @@ class DataFrame:
             schema=schema,
             predicate=None,
             columns=None,
-            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.csv, source=path),
+            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.CSV, source=path),
         )
         return cls(plan)
 
@@ -107,6 +107,7 @@ class DataFrame:
         return ExpressionList(expressions)
 
     def select(self, *columns: ColumnInputType) -> DataFrame:
+        assert len(columns) > 0
         projection = logical_plan.Projection(self._plan, self.__column_input_to_expression(columns))
         return DataFrame(projection)
 
@@ -121,7 +122,8 @@ class DataFrame:
         )
         return DataFrame(projection)
 
-    def sort(self, *columns: str, desc=False) -> DataFrame:
+    def sort(self, *columns: ColumnInputType, desc=False) -> DataFrame:
+        assert len(columns) > 0
         sort = logical_plan.Sort(self._plan, self.__column_input_to_expression(columns), desc=desc)
         return DataFrame(sort)
 
@@ -129,6 +131,17 @@ class DataFrame:
         local_limit = logical_plan.LocalLimit(self._plan, num=num)
         global_limit = logical_plan.GlobalLimit(local_limit, num=num)
         return DataFrame(global_limit)
+
+    def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
+        if len(partition_by) == 0:
+            scheme = logical_plan.PartitionScheme.ROUND_ROBIN
+        else:
+            scheme = logical_plan.PartitionScheme.HASH
+
+        repartition_op = logical_plan.Repartition(
+            self._plan, num_partitions=num, partition_by=self.__column_input_to_expression(partition_by), scheme=scheme
+        )
+        return DataFrame(repartition_op)
 
     def collect(self) -> DataFrame:
         if self._node_output is None:

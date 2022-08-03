@@ -34,7 +34,7 @@ def test_filter_scan_pushdown(valid_data: List[Dict[str, float]], optimizer) -> 
         schema=original_schema,
         predicate=ExpressionList([predicate_expr]),
         columns=None,
-        source_info=Scan.SourceInfo(scan_type=Scan.ScanType.in_memory, source=valid_data),
+        source_info=Scan.SourceInfo(scan_type=Scan.ScanType.IN_MEMORY, source=valid_data),
     )
     assert isinstance(optimized, logical_plan.Scan)
     assert optimized.is_eq(expected)
@@ -52,6 +52,6 @@ def test_projection_scan_pushdown(valid_data: List[Dict[str, float]], optimizer)
         schema=original_schema,
         predicate=None,
         columns=selected_columns,
-        source_info=Scan.SourceInfo(scan_type=Scan.ScanType.in_memory, source=valid_data),
+        source_info=Scan.SourceInfo(scan_type=Scan.ScanType.IN_MEMORY, source=valid_data),
     )
     assert optimized.is_eq(expected)

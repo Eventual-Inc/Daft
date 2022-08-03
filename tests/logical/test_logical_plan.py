@@ -12,7 +12,7 @@ def schema():
 
 @pytest.fixture(scope="function")
 def source_info():
-    return Scan.SourceInfo(scan_type=Scan.ScanType.in_memory, source=None)
+    return Scan.SourceInfo(scan_type=Scan.ScanType.IN_MEMORY, source=None)
 
 
 def test_scan_predicates(schema, source_info) -> None:

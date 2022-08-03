@@ -4,6 +4,7 @@ import collections
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partialmethod
+from itertools import accumulate
 from typing import (
     Any,
     Callable,
@@ -20,12 +21,15 @@ import pyarrow as pa
 from pyarrow import compute as pac
 from pyarrow import csv
 
+from daft.execution.execution_plan import ExecutionPlan
 from daft.logical.logical_plan import (
     Filter,
     GlobalLimit,
     LocalLimit,
     LogicalPlan,
+    PartitionScheme,
     Projection,
+    Repartition,
     Scan,
     Sort,
 )
@@ -140,6 +144,9 @@ class DataBlock(Generic[ArrType]):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}\n{self.data}"
+
+    def __len__(self) -> int:
+        return len(self.data)
 
     @classmethod
     def make_block(cls, data: Any) -> DataBlock:
@@ -291,32 +298,36 @@ class PyRunner(Runner):
         self._col_manager = PyRunnerColumnManager()
 
     def run(self, plan: LogicalPlan) -> NodeOutput:
-        run_order = plan.post_order()
-        for node in run_order:
-            if isinstance(node, Scan):
-                self._handle_scan(node)
-            elif isinstance(node, Projection):
-                self._handle_projection(node)
-            elif isinstance(node, Filter):
-                self._handle_filter(node)
-            elif isinstance(node, LocalLimit):
-                self._handle_local_limit(node)
-            elif isinstance(node, GlobalLimit):
-                # TODO update this to global partition
-                self._handle_local_limit(node)
-            elif isinstance(node, Sort):
-                self._handle_sort(node)
-            else:
-                raise NotImplementedError(f"{node} not implemented")
+        exec_plan = ExecutionPlan.plan_from_logical(plan)
+        print(exec_plan)
+        for exec_op in exec_plan.execution_ops:
+            for node in exec_op.logical_ops:
+                if isinstance(node, Scan):
+                    self._handle_scan(node)
+                elif isinstance(node, Projection):
+                    self._handle_projection(node)
+                elif isinstance(node, Filter):
+                    self._handle_filter(node)
+                elif isinstance(node, LocalLimit):
+                    self._handle_local_limit(node)
+                elif isinstance(node, GlobalLimit):
+                    # TODO update this to global partition
+                    self._handle_local_limit(node)
+                elif isinstance(node, Sort):
+                    self._handle_sort(node)
+                elif isinstance(node, Repartition):
+                    self._handle_repartition(node)
+                else:
+                    raise NotImplementedError(f"{node} not implemented")
         return self._col_manager._nid_to_node_output[node.id()]
 
     def _handle_scan(self, scan: Scan) -> None:
         n_partitions = scan.num_partitions()
         node_id = scan.id()
-        if scan._source_info.scan_type == Scan.ScanType.in_memory:
+        if scan._source_info.scan_type == Scan.ScanType.IN_MEMORY:
             assert n_partitions == 1
             raise NotImplementedError()
-        elif scan._source_info.scan_type == Scan.ScanType.csv:
+        elif scan._source_info.scan_type == Scan.ScanType.CSV:
             assert isinstance(scan._source_info.source, str)
             schema = scan.schema()
             table = csv.read_csv(scan._source_info.source)
@@ -431,3 +442,21 @@ class PyRunner(Runner):
             self._col_manager.put(
                 node_id=node_id, partition_id=0, column_id=col_id, column_name=output_name, block=sorted_column
             )
+
+    def _handle_repartition(self, repartition: Repartition) -> None:
+        child_id = repartition._children()[0].id()
+        repartition.id()
+        output_schema = repartition.schema()
+        assert repartition._scheme == PartitionScheme.ROUND_ROBIN
+        source_num_partitions = repartition._children()[0].num_partitions()
+        repartition.num_partitions()
+        first_col_id = next(iter(output_schema)).get_id()
+        assert first_col_id is not None
+        size_per_tile = []
+        for i in range(source_num_partitions):
+            column = self._col_manager.get(node_id=child_id, partition_id=i, column_id=first_col_id)
+            size_per_tile.append(len(column.block))
+        prefix_sum = [0] + list(accumulate(size_per_tile))[:-1]
+        import ipdb
+
+        ipdb.set_trace()
