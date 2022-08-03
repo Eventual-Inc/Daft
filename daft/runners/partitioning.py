@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, List
+
+import pyarrow as pa
 
 from daft.expressions import ColID, Expression
 from daft.logical.schema import ExpressionList
+from daft.runners.blocks import DataBlock
 
 PartID = int
 
@@ -14,7 +17,7 @@ class PyListTile:
     column_id: ColID
     column_name: str
     partition_id: PartID
-    block: Any
+    block: DataBlock
 
 
 @dataclass(frozen=True)
@@ -44,7 +47,34 @@ class vPartition:
         new_columns = {t.column_id: t for t in tile_list}
         return vPartition(columns=new_columns, partition_id=self.partition_id)
 
+    @classmethod
+    def from_arrow_table(cls, table: pa.Table, column_ids: List[ColID], partition_id: PartID) -> vPartition:
+        names = table.column_names
+        assert len(names) == len(column_ids)
+        tiles = {}
+        for i, (col_id, name) in enumerate(zip(column_ids, names)):
+            arr = table[i]
+            block = DataBlock.make_block(arr)
+            tiles[col_id] = PyListTile(column_id=col_id, column_name=name, partition_id=partition_id, block=block)
+        return vPartition(columns=tiles, partition_id=partition_id)
+
+    def to_arrow_table(self) -> pa.Table:
+        values = []
+        names = []
+        for tile in self.columns.values():
+            name = tile.column_name
+            names.append(name)
+            values.append(tile.block.data)
+        return pa.table(values, names=names)
+
+    @classmethod
+    def from_pydict(cls, data: Dict[str, List[Any]]) -> vPartition:
+        raise NotImplementedError()
+
+    def to_pydict(self) -> Dict[str, List[Any]]:
+        raise NotImplementedError()
+
 
 @dataclass
-class PartitionManager:
+class PartitionSet:
     partitions: Dict[PartID, vPartition]

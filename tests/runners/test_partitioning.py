@@ -1,8 +1,9 @@
 from typing import List
 
 import numpy as np
+import pyarrow as pa
 
-from daft.expressions import Expression, col
+from daft.expressions import ColID, Expression, col
 from daft.logical.schema import ExpressionList
 from daft.runners.blocks import DataBlock
 from daft.runners.partitioning import PyListTile, vPartition
@@ -56,3 +57,26 @@ def test_vpartition_eval_expression_list() -> None:
         assert result_tile.column_id == expr.get_id()
         assert result_tile.column_name == expr.name()
         assert result_tile.block == DataBlock.make_block((np.ones(10) * 2) + i)
+
+
+def test_vpartition_to_arrow_table() -> None:
+    tiles = {}
+    for i in range(4):
+        block = DataBlock.make_block(np.ones(10) * i)
+        tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
+    part = vPartition(columns=tiles, partition_id=0)
+    arrow_table = part.to_arrow_table()
+    assert arrow_table.column_names == [f"col_{i}" for i in range(4)]
+
+    for i in range(4):
+        assert np.all(arrow_table[i] == np.ones(10) * i)
+
+
+def test_vpartition_from_arrow_table() -> None:
+    arrow_table = pa.table([np.ones(10) * i for i in range(4)], names=[f"col_{i}" for i in range(4)])
+    vpart = vPartition.from_arrow_table(arrow_table, column_ids=[ColID(i) for i in range(4)], partition_id=0)
+    for i, (col_id, tile) in enumerate(vpart.columns.items()):
+        assert tile.block == DataBlock.make_block(data=np.ones(10) * i)
+        assert tile.column_id == col_id
+        assert tile.column_name == f"col_{i}"
+        assert tile.partition_id == 0
