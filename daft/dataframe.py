@@ -122,9 +122,8 @@ class DataFrame:
         )
         return DataFrame(projection)
 
-    def sort(self, *columns: ColumnInputType, desc=False) -> DataFrame:
-        assert len(columns) > 0
-        sort = logical_plan.Sort(self._plan, self.__column_input_to_expression(columns), desc=desc)
+    def sort(self, column: ColumnInputType, desc: bool = False) -> DataFrame:
+        sort = logical_plan.Sort(self._plan, self.__column_input_to_expression((column,)), desc=desc)
         return DataFrame(sort)
 
     def limit(self, num: int) -> DataFrame:
@@ -132,15 +131,15 @@ class DataFrame:
         global_limit = logical_plan.GlobalLimit(local_limit, num=num)
         return DataFrame(global_limit)
 
-    def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
-        if len(partition_by) == 0:
+    def repartition(self, num: int, partition_by: Optional[ColumnInputType] = None) -> DataFrame:
+        if partition_by is None:
             scheme = logical_plan.PartitionScheme.ROUND_ROBIN
+            exprs: ExpressionList = ExpressionList([])
         else:
             scheme = logical_plan.PartitionScheme.HASH
+            exprs = self.__column_input_to_expression((partition_by,))
 
-        repartition_op = logical_plan.Repartition(
-            self._plan, num_partitions=num, partition_by=self.__column_input_to_expression(partition_by), scheme=scheme
-        )
+        repartition_op = logical_plan.Repartition(self._plan, num_partitions=num, partition_by=exprs, scheme=scheme)
         return DataFrame(repartition_op)
 
     def collect(self) -> DataFrame:
