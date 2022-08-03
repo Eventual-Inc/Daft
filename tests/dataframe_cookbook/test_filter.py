@@ -3,7 +3,7 @@ import pytest
 from daft.expressions import col
 from tests.dataframe_cookbook.conftest import assert_df_equals, partitioned_daft_df
 
-COL_SUBSET = ["Complaint Type", "Borough", "Descriptor"]
+COL_SUBSET = ["Unique Key", "Complaint Type", "Borough", "Descriptor"]
 
 
 @partitioned_daft_df("daft_df")
@@ -14,17 +14,17 @@ COL_SUBSET = ["Complaint Type", "Borough", "Descriptor"]
         lambda daft_df: (
             daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
             .limit(10)
-            .select(col("Complaint Type"), col("Borough"), col("Descriptor"))
+            .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
         ),
         # Select before the limit clause
         lambda daft_df: (
             daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
-            .select(col("Complaint Type"), col("Borough"), col("Descriptor"))
+            .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
             .limit(10)
         ),
         # Select before the where clause
         lambda daft_df: (
-            daft_df.select(col("Complaint Type"), col("Borough"), col("Descriptor"))
+            daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
             .where(col("Complaint Type") == "Noise - Street/Sidewalk")
             .limit(10)
         ),
@@ -48,18 +48,18 @@ def test_filter(daft_df_ops, daft_df, pd_df):
             daft_df.where(
                 ((col("Complaint Type") == "Noise - Street/Sidewalk") | (col("Complaint Type") == "Noise - Commercial"))
                 & (col("Borough") == "BROOKLYN")
-            ).select(col("Complaint Type"), col("Borough"), col("Descriptor"))
+            ).select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
         ),
         # Select before the Where clause
         lambda daft_df: (
-            daft_df.select(col("Complaint Type"), col("Borough"), col("Descriptor")).where(
+            daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
                 ((col("Complaint Type") == "Noise - Street/Sidewalk") | (col("Complaint Type") == "Noise - Commercial"))
                 & (col("Borough") == "BROOKLYN")
             )
         ),
         # Flipped ordering of complex boolean expression
         lambda daft_df: (
-            daft_df.select(col("Complaint Type"), col("Borough"), col("Descriptor")).where(
+            daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
                 (col("Borough") == "BROOKLYN")
                 & (
                     (col("Complaint Type") == "Noise - Street/Sidewalk")
@@ -88,17 +88,17 @@ def test_composite_filter(daft_df_ops, daft_df, pd_df):
         lambda daft_df: (
             daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
             .where(col("Borough") == "BROOKLYN")
-            .select(col("Complaint Type"), col("Borough"), col("Descriptor"))
+            .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
         ),
         # Select in between the where clauses
         lambda daft_df: (
             daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
-            .select(col("Complaint Type"), col("Borough"), col("Descriptor"))
+            .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
             .where(col("Borough") == "BROOKLYN")
         ),
         # Select before the where clauses
         lambda daft_df: (
-            daft_df.select(col("Complaint Type"), col("Borough"), col("Descriptor"))
+            daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
             .where(col("Complaint Type") == "Noise - Street/Sidewalk")
             .where(col("Borough") == "BROOKLYN")
         ),
