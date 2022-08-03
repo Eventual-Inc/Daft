@@ -61,6 +61,9 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
     def id(self) -> int:
         return self._id
 
+    def op_level(self) -> OpLevel:
+        return self._op_level
+
 
 class UnaryNode(LogicalPlan):
     @abstractmethod
@@ -70,9 +73,9 @@ class UnaryNode(LogicalPlan):
 
 class Scan(LogicalPlan):
     class ScanType(Enum):
-        csv = "csv"
-        parquet = "parquet"
-        in_memory = "in_memory"
+        CSV = "CSV"
+        PARQUET = "PARQUET"
+        IN_MEMORY = "IN_MEMORY"
 
     @dataclass(frozen=True)
     class SourceInfo:
@@ -177,6 +180,7 @@ class Sort(UnaryNode):
             input.schema().to_column_expressions(), num_partitions=input.num_partitions(), op_level=OpLevel.GLOBAL
         )
         self._register_child(input)
+        assert len(sort_by.exprs) == 1, "we can only sort with 1 expression"
         self._sort_by = sort_by.resolve(input_schema=input.schema())
         self._desc = desc
 
@@ -234,6 +238,44 @@ class GlobalLimit(UnaryNode):
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, GlobalLimit) and self.schema() == other.schema() and self._num == self._num
+
+
+class PartitionScheme(Enum):
+    RANGE = "RANGE"
+    HASH = "HASH"
+    ROUND_ROBIN = "ROUND_ROBIN"
+
+
+class Repartition(UnaryNode):
+    def __init__(
+        self, input: LogicalPlan, partition_by: ExpressionList, num_partitions: int, scheme: PartitionScheme
+    ) -> None:
+        super().__init__(input.schema().to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.GLOBAL)
+        self._register_child(input)
+        self._partition_by = partition_by
+        self._scheme = scheme
+        if scheme == PartitionScheme.ROUND_ROBIN and len(partition_by.names) > 0:
+            raise ValueError("Can not pass in round robin partitioning and partition_by args")
+
+    def __repr__(self) -> str:
+        return (
+            f"Repartition\n\toutput={self.schema()}\n\tpartition_by={self._partition_by}"
+            f"\n\tnum_partitions={self.num_partitions()}\n\tscheme={self._scheme}"
+        )
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> Repartition:
+        raise NotImplementedError()
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, Repartition)
+            and self.schema() == other.schema()
+            and self._partition_by == other._partition_by
+            and self._scheme == other._scheme
+        )
 
 
 class HTTPRequest(LogicalPlan):
