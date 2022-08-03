@@ -19,11 +19,24 @@ class PyListTile:
     partition_id: PartID
     block: DataBlock
 
+    def __len__(self) -> int:
+        return len(self.block)
+
 
 @dataclass(frozen=True)
 class vPartition:
     columns: Dict[ColID, PyListTile]
     partition_id: PartID
+
+    def __post_init__(self) -> None:
+        size = None
+        for col_id, tile in self.columns.items():
+            if tile.partition_id != self.partition_id:
+                raise ValueError(f"mismatch of partition id: {tile.partition_id} vs {self.partition_id}")
+            if size is None:
+                size = len(tile)
+            if len(tile) != size:
+                raise ValueError(f"mismatch of tile lengths: {len(tile)} vs {size}")
 
     def eval_expression(self, expr: Expression) -> PyListTile:
         required_cols = expr.required_columns()

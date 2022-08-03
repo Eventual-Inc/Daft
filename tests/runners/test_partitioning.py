@@ -2,6 +2,7 @@ from typing import List
 
 import numpy as np
 import pyarrow as pa
+import pytest
 
 from daft.expressions import ColID, Expression, col
 from daft.logical.schema import ExpressionList
@@ -80,3 +81,23 @@ def test_vpartition_from_arrow_table() -> None:
         assert tile.column_id == col_id
         assert tile.column_name == f"col_{i}"
         assert tile.partition_id == 0
+
+
+def test_vpartition_uneven_tiles() -> None:
+    tiles = {}
+    for i in range(4):
+        block = DataBlock.make_block(np.ones(10 + i) * i)
+        tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
+
+    with pytest.raises(ValueError):
+        part = vPartition(columns=tiles, partition_id=0)
+
+
+def test_vpartition_not_same_partition() -> None:
+    tiles = {}
+    for i in range(4):
+        block = DataBlock.make_block(np.ones(10) * i)
+        tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=i, block=block)
+
+    with pytest.raises(ValueError):
+        part = vPartition(columns=tiles, partition_id=0)
