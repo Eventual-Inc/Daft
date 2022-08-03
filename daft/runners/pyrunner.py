@@ -396,7 +396,7 @@ class PyRunner(Runner):
         node_id = proj.id()
 
         for i in range(proj.num_partitions()):
-            child_id = proj._children()[i].id()
+            child_id = proj._children()[0].id()
             for expr in output:
                 col_id = expr.get_id()
                 output_name = expr.name()
