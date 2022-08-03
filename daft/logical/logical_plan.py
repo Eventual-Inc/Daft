@@ -180,6 +180,7 @@ class Sort(UnaryNode):
             input.schema().to_column_expressions(), num_partitions=input.num_partitions(), op_level=OpLevel.GLOBAL
         )
         self._register_child(input)
+        assert len(sort_by.exprs) == 1, "we can only sort with 1 expression"
         self._sort_by = sort_by.resolve(input_schema=input.schema())
         self._desc = desc
 
@@ -249,7 +250,7 @@ class Repartition(UnaryNode):
     def __init__(
         self, input: LogicalPlan, partition_by: ExpressionList, num_partitions: int, scheme: PartitionScheme
     ) -> None:
-        super().__init__(input.schema(), num_partitions=num_partitions, op_level=OpLevel.GLOBAL)
+        super().__init__(input.schema().to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._partition_by = partition_by
         self._scheme = scheme
