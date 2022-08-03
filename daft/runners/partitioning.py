@@ -37,11 +37,12 @@ class vPartition:
                 size = len(tile)
             if len(tile) != size:
                 raise ValueError(f"mismatch of tile lengths: {len(tile)} vs {size}")
-        assert size is not None
-        self._size = size
+            if col_id != tile.column_id:
+                raise ValueError(f"mismatch of column id: {col_id} vs {tile.column_id}")
 
     def __len__(self) -> int:
-        return self._size
+        assert len(self.columns) > 0
+        return len(next(iter(self.columns.values())))
 
     def eval_expression(self, expr: Expression) -> PyListTile:
         required_cols = expr.required_columns()
