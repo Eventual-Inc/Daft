@@ -1,9 +1,10 @@
 import pytest
 
 from daft.expressions import col
-from tests.dataframe_cookbook.conftest import assert_df_equals
+from tests.dataframe_cookbook.conftest import assert_df_equals, partitioned_daft_df
 
 
+@partitioned_daft_df("daft_df")
 def test_get_sorted_top_n(daft_df, pd_df):
     """Sort by a column and retrieve the top N results"""
     daft_sorted_df = daft_df.sort(col("Created Date")).limit(10)
@@ -14,6 +15,7 @@ def test_get_sorted_top_n(daft_df, pd_df):
     )
 
 
+@partitioned_daft_df("daft_df")
 def test_sort_on_small_sample(daft_df, pd_df):
     """Sample the dataframe for N number of items and then sort it"""
     daft_df = daft_df.limit(10).sort(col("Created Date"))
@@ -24,6 +26,7 @@ def test_sort_on_small_sample(daft_df, pd_df):
     )
 
 
+@partitioned_daft_df("daft_df")
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
