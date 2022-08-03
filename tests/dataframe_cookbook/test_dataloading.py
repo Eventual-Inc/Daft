@@ -4,9 +4,14 @@ import pandas as pd
 import pytest
 
 from daft.dataframe import DataFrame
-from tests.dataframe_cookbook.conftest import IRIS_CSV, assert_df_equals
+from tests.dataframe_cookbook.conftest import (
+    IRIS_CSV,
+    assert_df_equals,
+    partitioned_daft_df,
+)
 
 
+@partitioned_daft_df("daft_df")
 def test_load_csv(daft_df, pd_df):
     """Loading data from a CSV works"""
     pd_slice = pd_df[:100]
@@ -14,7 +19,7 @@ def test_load_csv(daft_df, pd_df):
     assert_df_equals(daft_slice, pd_slice)
 
 
-@pytest.mark.skip(reason="TODO: Re-enable once Scan supports CSV headers")
+@pytest.mark.tdd_all
 def test_load_csv_no_headers(tmp_path: pathlib.Path):
     """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
@@ -25,7 +30,7 @@ def test_load_csv_no_headers(tmp_path: pathlib.Path):
     assert_df_equals(daft_df, pd_df)
 
 
-@pytest.mark.skip(reason="TODO: Re-enable once Scan supports CSV delimiters")
+@pytest.mark.tdd_all
 def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
     """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
@@ -35,7 +40,7 @@ def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
     assert_df_equals(daft_df, pd_df)
 
 
-@pytest.mark.skip(reason="TODO: Re-enable once Scan supports in-memory")
+@pytest.mark.tdd_all
 def test_load_pydict():
     data = {"foo": [1, 2, 3], "bar": [1.0, None, 3.0], "baz": ["a", "b", "c"]}
     daft_df = DataFrame.from_pydict(data)
@@ -43,7 +48,7 @@ def test_load_pydict():
     assert_df_equals(daft_df, pd_df)
 
 
-@pytest.mark.skip(reason="TODO: Re-enable once Scan supports in-memory")
+@pytest.mark.tdd_all
 def test_load_pylist():
     data = [
         {"foo": 1, "bar": 1.0, "baz": "a"},

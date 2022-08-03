@@ -392,34 +392,35 @@ class PyRunner(Runner):
                 )
 
     def _handle_projection(self, proj: Projection) -> None:
-        assert proj.num_partitions() == 1
         output = proj.schema()
         node_id = proj.id()
-        child_id = proj._children()[0].id()
-        for expr in output:
-            col_id = expr.get_id()
-            output_name = expr.name()
-            if not expr.has_call():
-                assert col_id is not None
-                prev_node_value = self._col_manager.get(node_id=child_id, partition_id=0, column_id=col_id)
-                self._col_manager.put(
-                    node_id=node_id,
-                    partition_id=0,
-                    column_id=col_id,
-                    column_name=output_name,
-                    block=prev_node_value.block,
-                )
-            else:
-                required_cols = expr.required_columns()
-                required_blocks = {}
-                for c in required_cols:
-                    block = self._col_manager.get(node_id=child_id, partition_id=0, column_id=c.get_id()).block
-                    required_blocks[c.name()] = block
-                result = expr.eval(**required_blocks)
 
-                self._col_manager.put(
-                    node_id=node_id, partition_id=0, column_id=col_id, column_name=output_name, block=result
-                )
+        for i in range(proj.num_partitions()):
+            child_id = proj._children()[i].id()
+            for expr in output:
+                col_id = expr.get_id()
+                output_name = expr.name()
+                if not expr.has_call():
+                    assert col_id is not None
+                    prev_node_value = self._col_manager.get(node_id=child_id, partition_id=i, column_id=col_id)
+                    self._col_manager.put(
+                        node_id=node_id,
+                        partition_id=i,
+                        column_id=col_id,
+                        column_name=output_name,
+                        block=prev_node_value.block,
+                    )
+                else:
+                    required_cols = expr.required_columns()
+                    required_blocks = {}
+                    for c in required_cols:
+                        block = self._col_manager.get(node_id=child_id, partition_id=i, column_id=c.get_id()).block
+                        required_blocks[c.name()] = block
+                    result = expr.eval(**required_blocks)
+
+                    self._col_manager.put(
+                        node_id=node_id, partition_id=i, column_id=col_id, column_name=output_name, block=result
+                    )
 
     def _handle_filter(self, filter: Filter) -> None:
         predicate = filter._predicate
