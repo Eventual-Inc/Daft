@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 from typing import Dict, Iterable, Iterator, List, Optional, Set, TypeVar, cast
 
-from daft.expressions import ColumnExpression, Expression
+from daft.expressions import ColID, ColumnExpression, Expression
 
 ExpressionType = TypeVar("ExpressionType", bound=Expression)
 
@@ -124,7 +124,7 @@ class ExpressionList(Iterable[ExpressionType]):
     def __iter__(self) -> Iterator[ExpressionType]:
         return iter(self.exprs)
 
-    def to_id_set(self) -> Set[int]:
+    def to_id_set(self) -> Set[ColID]:
         id_set = set()
         for c in self:
             id = c.get_id()

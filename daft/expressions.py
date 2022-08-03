@@ -5,7 +5,7 @@ import itertools
 import operator
 from abc import abstractmethod
 from functools import partialmethod
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, NewType, Optional, Tuple
 
 from daft.internal.treenode import TreeNode
 
@@ -15,12 +15,13 @@ def col(name: str) -> ColumnExpression:
 
 
 _COUNTER = itertools.count()
+ColID = NewType("ColID", int)
 
 
 class Expression(TreeNode["Expression"]):
     def __init__(self) -> None:
         super().__init__()
-        self._id: Optional[int] = None
+        self._id: Optional[ColID] = None
 
     def __repr__(self) -> str:
         if self.has_id():
@@ -51,9 +52,9 @@ class Expression(TreeNode["Expression"]):
                 return name
         return None
 
-    def _assign_id(self, strict: bool = True) -> int:
+    def _assign_id(self, strict: bool = True) -> ColID:
         if not self.has_id():
-            self._id = next(_COUNTER)
+            self._id = ColID(next(_COUNTER))
             return self._id
         else:
             if strict:
@@ -62,7 +63,7 @@ class Expression(TreeNode["Expression"]):
                 assert self._id is not None
                 return self._id
 
-    def get_id(self) -> Optional[int]:
+    def get_id(self) -> Optional[ColID]:
         return self._id
 
     def has_id(self) -> bool:
@@ -328,7 +329,7 @@ class ColumnExpression(Expression):
             return []
         return [self]
 
-    def assign_id_from_expression(self, other: Expression) -> int:
+    def assign_id_from_expression(self, other: Expression) -> ColID:
         assert self.name() == other.name()
         self._id = other.get_id()
         assert self._id is not None
@@ -356,10 +357,10 @@ class AliasExpression(Expression):
     def name(self) -> Optional[str]:
         return self._name
 
-    def get_id(self) -> Optional[int]:
+    def get_id(self) -> Optional[ColID]:
         return self._expr.get_id()
 
-    def _assign_id(self, strict: bool = True) -> int:
+    def _assign_id(self, strict: bool = True) -> ColID:
         return self._expr._assign_id(strict)
 
     def eval(self, **kwargs):
