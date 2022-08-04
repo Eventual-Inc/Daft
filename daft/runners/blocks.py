@@ -212,9 +212,9 @@ class PyListDataBlock(DataBlock[List]):
 class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
     operators: ClassVar[FunctionDispatch] = ArrowFunctionDispatch
 
-
     def to_pylist(self) -> List:
-        return self.data.to_pylist()
+        pylist: List = self.data.to_pylist()
+        return pylist
 
     def _argsort(self, desc: bool = False) -> DataBlock:
         order = "descending" if desc else "ascending"

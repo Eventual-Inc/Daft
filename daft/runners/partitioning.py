@@ -1,5 +1,4 @@
 from __future__ import annotations
-from collections import defaultdict
 
 import dataclasses
 from dataclasses import dataclass
@@ -35,6 +34,7 @@ class PyListTile:
         assert len(new_blocks) == num_partitions
         return [dataclasses.replace(self, block=nb, partition_id=i) for i, nb in enumerate(new_blocks)]
 
+
 @dataclass(frozen=True)
 class vPartition:
     columns: Dict[ColID, PyListTile]
@@ -57,6 +57,20 @@ class vPartition:
         return len(next(iter(self.columns.values())))
 
     def eval_expression(self, expr: Expression) -> PyListTile:
+        expr_col_id = expr.get_id()
+        expr_name = expr.name()
+
+        assert expr_col_id is not None
+        assert expr_name is not None
+
+        if not expr.has_call():
+            return PyListTile(
+                column_id=expr_col_id,
+                column_name=expr_name,
+                partition_id=self.partition_id,
+                block=self.columns[expr_col_id].block,
+            )
+
         required_cols = expr.required_columns()
         required_blocks = {}
         for c in required_cols:
@@ -109,6 +123,7 @@ class vPartition:
         return dataclasses.replace(self, columns={col_id: col.apply(func) for col_id, col in self.columns.items()})
 
     def head(self, num: int) -> vPartition:
+        # TODO make optimization for when num=0
         return self.for_each_column_block(partial(DataBlock.head, num=num))
 
     def sample(self, num: int) -> vPartition:
@@ -128,17 +143,33 @@ class vPartition:
         argsort_idx = sort_tile.apply(partial(DataBlock.argsort, desc=desc))
         return self.for_each_column_block(partial(DataBlock.take, indices=argsort_idx.block))
 
-
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:
         assert len(target_partition_indices) == len(self)
         new_partition_to_columns: List[Dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]
         for col_id, tile in self.columns.items():
-            new_tiles = tile.split_by_index(num_partitions=num_partitions, target_partition_indices=target_partition_indices)
+            new_tiles = tile.split_by_index(
+                num_partitions=num_partitions, target_partition_indices=target_partition_indices
+            )
             for part_id, nt in enumerate(new_tiles):
                 new_partition_to_columns[part_id][col_id] = nt
 
         return [vPartition(partition_id=i, columns=columns) for i, columns in enumerate(new_partition_to_columns)]
 
+
 @dataclass
 class PartitionSet:
     partitions: Dict[PartID, vPartition]
+
+    def to_arrow_table(self) -> pa.Table:
+        partition_ids = sorted(list(self.partitions.keys()))
+        assert partition_ids[0] == 0
+        assert partition_ids[-1] + 1 == len(partition_ids)
+        part_tables = [self.partitions[pid].to_arrow_table() for pid in partition_ids]
+        return pa.concat_tables(part_tables)
+
+    def __len__(self) -> int:
+        return sum(self.len_of_partitions())
+
+    def len_of_partitions(self) -> List[int]:
+        partition_ids = sorted(list(self.partitions.keys()))
+        return [len(self.partitions[pid]) for pid in partition_ids]

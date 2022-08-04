@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import StringIO
-from typing import List
+from typing import ClassVar, List
 
 from daft.logical.logical_plan import LogicalPlan, OpLevel
 
@@ -11,6 +11,7 @@ from daft.logical.logical_plan import LogicalPlan, OpLevel
 class ExecutionOp:
     logical_ops: List[LogicalPlan]
     num_partitions: int
+    is_global_op: ClassVar[bool] = False
 
     def __repr__(self) -> str:
         builder = StringIO()
@@ -27,6 +28,7 @@ class ForEachPartition(ExecutionOp):
 
 @dataclass(repr=False)
 class GlobalOp(ExecutionOp):
+    is_global_op: ClassVar[bool] = True
     ...
 
 

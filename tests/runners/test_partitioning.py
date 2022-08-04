@@ -222,7 +222,7 @@ def test_split_by_index_even(n) -> None:
     part = vPartition(columns=tiles, partition_id=0)
     new_parts = part.split_by_index(n, DataBlock.make_block(data=np.arange(0, 100, 1) % n))
     assert len(new_parts) == n
-    
+
     for i, new_part in enumerate(new_parts):
         expected_size = 100 // n
         remainder = 100 % n
@@ -232,9 +232,4 @@ def test_split_by_index_even(n) -> None:
         assert len(new_part) == expected_size
         for col in new_part.columns.values():
             pylist = col.block.to_pylist()
-            assert all(val % n == i for val in pylist)            
-
-
-
-
-        
+            assert all(val % n == i for val in pylist)
