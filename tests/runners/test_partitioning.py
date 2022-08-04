@@ -116,6 +116,7 @@ def test_vpartition_wrong_col_id() -> None:
     with pytest.raises(ValueError):
         part = vPartition(columns=tiles, partition_id=0)
 
+
 def test_vpartition_head() -> None:
     tiles = {}
     for i in range(4):
@@ -128,6 +129,7 @@ def test_vpartition_head() -> None:
 
     for i in range(4):
         assert np.all(arrow_table[i] == np.ones(3) * i)
+
 
 def test_vpartition_sample() -> None:
     tiles = {}
@@ -144,7 +146,7 @@ def test_vpartition_sample() -> None:
 
 
 def test_vpartition_filter() -> None:
-    expr = (col('x') < 4)
+    expr = col("x") < 4
     expr = resolve_expr(expr)
 
     tiles = {}
@@ -160,8 +162,9 @@ def test_vpartition_filter() -> None:
     for i in range(4):
         assert np.all(arrow_table[i].to_numpy() < 4)
 
+
 def test_vpartition_sort() -> None:
-    expr = (col('x'))
+    expr = col("x")
     expr = resolve_expr(expr)
 
     tiles = {}
@@ -172,7 +175,7 @@ def test_vpartition_sort() -> None:
             block = DataBlock.make_block(-np.arange(0, 10, 1))
         else:
             block = DataBlock.make_block(np.arange(0, 10, 1))
-    
+
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     part = part.sort(expr)
@@ -184,8 +187,9 @@ def test_vpartition_sort() -> None:
     for i in range(1, 4):
         assert is_sorted(arrow_table[i].to_numpy()[::-1])
 
+
 def test_vpartition_sort_desc() -> None:
-    expr = (col('x'))
+    expr = col("x")
     expr = resolve_expr(expr)
 
     tiles = {}
@@ -196,7 +200,7 @@ def test_vpartition_sort_desc() -> None:
             block = DataBlock.make_block(-np.arange(0, 10, 1))
         else:
             block = DataBlock.make_block(np.arange(0, 10, 1))
-    
+
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     part = part.sort(expr, desc=True)
@@ -207,3 +211,30 @@ def test_vpartition_sort_desc() -> None:
     assert is_sorted(arrow_table[0].to_numpy()[::-1])
     for i in range(1, 4):
         assert is_sorted(arrow_table[i].to_numpy())
+
+
+@pytest.mark.parametrize("n", [1, 2, 3, 4])
+def test_split_by_index_even(n) -> None:
+    tiles = {}
+    for i in range(0, 4):
+        block = DataBlock.make_block(np.arange(0, 100, 1))
+        tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
+    part = vPartition(columns=tiles, partition_id=0)
+    new_parts = part.split_by_index(n, DataBlock.make_block(data=np.arange(0, 100, 1) % n))
+    assert len(new_parts) == n
+    
+    for i, new_part in enumerate(new_parts):
+        expected_size = 100 // n
+        remainder = 100 % n
+        if remainder > 0 and i < remainder:
+            expected_size += 1
+        assert new_part.partition_id == i
+        assert len(new_part) == expected_size
+        for col in new_part.columns.values():
+            pylist = col.block.to_pylist()
+            assert all(val % n == i for val in pylist)            
+
+
+
+
+        

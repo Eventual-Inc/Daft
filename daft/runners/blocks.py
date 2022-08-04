@@ -86,6 +86,10 @@ class DataBlock(Generic[ArrType]):
     def __len__(self) -> int:
         return len(self.data)
 
+    @abstractmethod
+    def to_pylist(self) -> List:
+        raise NotImplementedError()
+
     @classmethod
     def make_block(cls, data: Any) -> DataBlock:
         # if isinstance(data, list):
@@ -140,6 +144,7 @@ class DataBlock(Generic[ArrType]):
     __mul__ = partialmethod(_binary_op, func="mul")
     __truediv__ = partialmethod(_binary_op, func="truediv")
     __pow__ = partialmethod(_binary_op, func="pow")
+    __mod__ = partialmethod(_binary_op, func="mod")
 
     # # Reverse Arithmetic
     __radd__ = partialmethod(_reverse_binary_op, func="add")
@@ -163,9 +168,8 @@ class DataBlock(Generic[ArrType]):
     __rand__ = partialmethod(_reverse_binary_op, func="and_")
     __ror__ = partialmethod(_reverse_binary_op, func="or_")
 
-
     def filter(self, mask: DataBlock) -> DataBlock:
-        return self._binary_op(mask, func='filter')
+        return self._binary_op(mask, func="filter")
 
     def take(self, indices: DataBlock) -> DataBlock:
         return self._binary_op(indices, func="take")
@@ -208,6 +212,10 @@ class PyListDataBlock(DataBlock[List]):
 class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
     operators: ClassVar[FunctionDispatch] = ArrowFunctionDispatch
 
+
+    def to_pylist(self) -> List:
+        return self.data.to_pylist()
+
     def _argsort(self, desc: bool = False) -> DataBlock:
         order = "descending" if desc else "ascending"
         sort_indices = pac.array_sort_indices(self.data, order=order)
@@ -225,7 +233,7 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
             ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type)) for _ in range(num)
         ]
         # We first argsort the targets to group the same partitions together
-        argsort_indices = ArrowDataBlock.argsort([targets])
+        argsort_indices = targets.argsort()
         # We now perform a gather to make items targeting the same partition together
         reordered = self.take(argsort_indices)
         sorted_targets = targets.take(argsort_indices)

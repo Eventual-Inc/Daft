@@ -1,17 +1,17 @@
 from __future__ import annotations
+from collections import defaultdict
 
-from dataclasses import dataclass
 import dataclasses
-from functools import cache, partial, partialmethod
+from dataclasses import dataclass
+from functools import partial
 from typing import Any, Callable, Dict, List
 
+import numpy as np
 import pyarrow as pa
 
 from daft.expressions import ColID, Expression
 from daft.logical.schema import ExpressionList
 from daft.runners.blocks import DataBlock
-
-import numpy as np
 
 PartID = int
 
@@ -29,6 +29,12 @@ class PyListTile:
     def apply(self, func: Callable[[DataBlock], DataBlock]) -> PyListTile:
         return dataclasses.replace(self, block=func(self.block))
 
+    def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[PyListTile]:
+        assert len(target_partition_indices) == len(self)
+        new_blocks = self.block.partition(num_partitions, targets=target_partition_indices)
+        assert len(new_blocks) == num_partitions
+        return [dataclasses.replace(self, block=nb, partition_id=i) for i, nb in enumerate(new_blocks)]
+
 @dataclass(frozen=True)
 class vPartition:
     columns: Dict[ColID, PyListTile]
@@ -45,7 +51,7 @@ class vPartition:
                 raise ValueError(f"mismatch of tile lengths: {len(tile)} vs {size}")
             if col_id != tile.column_id:
                 raise ValueError(f"mismatch of column id: {col_id} vs {tile.column_id}")
-    
+
     def __len__(self) -> int:
         assert len(self.columns) > 0
         return len(next(iter(self.columns.values())))
@@ -100,10 +106,7 @@ class vPartition:
         raise NotImplementedError()
 
     def for_each_column_block(self, func: Callable[[DataBlock], DataBlock]) -> vPartition:
-        return dataclasses.replace(
-            self,
-            columns={col_id: col.apply(func) for col_id, col in self.columns.items()}
-        )
+        return dataclasses.replace(self, columns={col_id: col.apply(func) for col_id, col in self.columns.items()})
 
     def head(self, num: int) -> vPartition:
         return self.for_each_column_block(partial(DataBlock.head, num=num))
@@ -120,10 +123,21 @@ class vPartition:
             mask &= to_and.block
         return self.for_each_column_block(partial(DataBlock.filter, mask=mask))
 
-    def sort(self, sort_key: Expression, desc:bool=False) -> vPartition:
+    def sort(self, sort_key: Expression, desc: bool = False) -> vPartition:
         sort_tile = self.eval_expression(sort_key)
         argsort_idx = sort_tile.apply(partial(DataBlock.argsort, desc=desc))
         return self.for_each_column_block(partial(DataBlock.take, indices=argsort_idx.block))
+
+
+    def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:
+        assert len(target_partition_indices) == len(self)
+        new_partition_to_columns: List[Dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]
+        for col_id, tile in self.columns.items():
+            new_tiles = tile.split_by_index(num_partitions=num_partitions, target_partition_indices=target_partition_indices)
+            for part_id, nt in enumerate(new_tiles):
+                new_partition_to_columns[part_id][col_id] = nt
+
+        return [vPartition(partition_id=i, columns=columns) for i, columns in enumerate(new_partition_to_columns)]
 
 @dataclass
 class PartitionSet:
