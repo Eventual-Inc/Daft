@@ -9,7 +9,7 @@ from tests.dataframe_cookbook.conftest import (
 COL_SUBSET = ["Unique Key", "Complaint Type", "Borough", "Descriptor"]
 
 
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
@@ -42,7 +42,7 @@ def test_filter(daft_df_ops, daft_df, pd_df):
     assert_df_equals(daft_noise_complaints, pd_noise_complaints)
 
 
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
@@ -83,7 +83,7 @@ def test_composite_filter(daft_df_ops, daft_df, pd_df):
     assert_df_equals(daft_noise_complaints_brooklyn, pd_noise_complaints_brooklyn)
 
 
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
