@@ -8,7 +8,7 @@ from tests.dataframe_cookbook.conftest import (
 )
 
 
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 @parametrize_sort_desc("sort_desc")
 def test_get_sorted_top_n(daft_df, sort_desc, pd_df):
     """Sort by a column and retrieve the top N results"""
@@ -21,7 +21,7 @@ def test_get_sorted_top_n(daft_df, sort_desc, pd_df):
     )
 
 
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 @parametrize_sort_desc("sort_desc")
 def test_sort_on_small_sample(daft_df, sort_desc, pd_df):
     """Sample the dataframe for N number of items and then sort it"""
@@ -34,7 +34,7 @@ def test_sort_on_small_sample(daft_df, sort_desc, pd_df):
     )
 
 
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 @pytest.mark.parametrize(
     "daft_df_ops",
     [

@@ -10,7 +10,7 @@ from tests.dataframe_cookbook.conftest import (
 
 
 @pytest.mark.tdd_all
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 def test_sum(daft_df, pd_df):
     """Sums across an entire column for the entire table"""
     daft_df = daft_df.select(col("Unique Key").sum().alias("unique_key_sum"))
@@ -19,7 +19,7 @@ def test_sum(daft_df, pd_df):
 
 
 @pytest.mark.tdd_all
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 def test_filtered_sum(daft_df, pd_df):
     """Sums across an entire column for the entire table filtered by a certain condition"""
     daft_df = daft_df.where(col("Borough") == "BROOKLYN").select(col("Unique Key").sum().alias("unique_key_sum"))
@@ -28,7 +28,7 @@ def test_filtered_sum(daft_df, pd_df):
 
 
 @pytest.mark.tdd_all
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 def test_limit_mean(daft_df, pd_df):
     """Averages across a column in a sampling of the table"""
     daft_df = daft_df.limit(100).select(col("Unique Key").mean().alias("unique_key_mean"))
@@ -37,7 +37,7 @@ def test_limit_mean(daft_df, pd_df):
 
 
 @pytest.mark.tdd_all
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 def test_sum_groupby(daft_df, pd_df):
     """Sums across groups"""
     daft_df = daft_df.group_by(col("Borough")).select(col("Unique Key").sum())
@@ -46,7 +46,7 @@ def test_sum_groupby(daft_df, pd_df):
 
 
 @pytest.mark.tdd_all
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 @parametrize_sort_desc("sort_desc")
 def test_sum_groupby_sorted(daft_df, sort_desc, pd_df):
     """Sums across groups"""
@@ -56,7 +56,7 @@ def test_sum_groupby_sorted(daft_df, sort_desc, pd_df):
 
 
 @pytest.mark.tdd_all
-@parametrize_partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df()
 @parametrize_sort_desc("sort_desc")
 def test_sort_sum_groupby_sorted(daft_df, sort_desc, pd_df):
     """Sums across groups"""

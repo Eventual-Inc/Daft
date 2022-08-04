@@ -1,3 +1,5 @@
+from typing import Any, Dict, List, Tuple, Union
+
 import pandas as pd
 import pytest
 
@@ -8,11 +10,7 @@ from tests.conftest import RUN_TDD_OPTION
 IRIS_CSV = "tests/assets/iris.csv"
 SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.1000.csv"
 COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
-
-
-@pytest.fixture(scope="function")
-def pd_df() -> pd.DataFrame:
-    return pd.read_csv(SERVICE_REQUESTS_CSV, keep_default_na=False)[COLUMNS]
+CsvPathAndColumns = Tuple[str, List[str]]
 
 
 def parametrize_sort_desc(arg_name: str):
@@ -27,26 +25,45 @@ def parametrize_sort_desc(arg_name: str):
     return _wrapper
 
 
-def parametrize_partitioned_daft_df(arg_name: str):
-    """Test case fixture to be used as a decorator that injects a DaFt dataframe with multiple different
-    partitioning schemes
+def parametrize_partitioned_daft_df(
+    source: Union[CsvPathAndColumns, Dict[str, List[Any]]] = (SERVICE_REQUESTS_CSV, COLUMNS)
+):
+    """Test case fixture to be used as a decorator that constructs and parametrizes a test with the appropriate DaFt/pandas DataFrames
 
     Usage:
 
-    @parametrize_partitioned_daft_df
-    def test_foo(daft_df):
+    >>> # To use default CSV at tests/assets/311-service-requests.1000.csv as the datasource
+    >>> @parametrize_partitioned_daft_df
+    >>> def test_foo(daft_df, pd_df):
+    >>>     ...
 
+    >>> # To use a dictionary as the datasource
+    >>> @parametrize_partitioned_daft_df(source={"foo": [i for i in range(1000)]})
+    >>> def test_foo(daft_df, pd_df):
+    >>>     ...
     """
 
+    if isinstance(source, tuple):
+        csv_path, columns = source
+        base_df = DataFrame.from_csv(csv_path).select(*[col(c) for c in columns])
+        pd_df = pd.read_csv(csv_path, keep_default_na=False)[columns]
+    elif isinstance(source, dict):
+        wrong_lengths = {key: len(source[key]) != 1000 for key in source}
+        if any(list(wrong_lengths.values())):
+            raise RuntimeError("@parametrize_partitioned_daft_df must be used with dataframes of 1,000 rows")
+        base_df = DataFrame.from_pydict(source)
+        pd_df = pd.DataFrame.from_dict(source)
+    else:
+        raise NotImplementedError(f"Datasource not supported: {source}")
+
     def _wrapper(test_case):
-        base_df = DataFrame.from_csv(SERVICE_REQUESTS_CSV).select(*[col(c) for c in COLUMNS])
-        parameters = [
+        daft_dfs = [
             base_df,
             base_df.repartition(1),
         ]
         # TODO(jay): Change this once partition behavior is fixed
         if RUN_TDD_OPTION:
-            parameters.extend(
+            daft_dfs.extend(
                 [
                     base_df.repartition(2),
                     base_df.repartition(10),
@@ -54,7 +71,9 @@ def parametrize_partitioned_daft_df(arg_name: str):
                     base_df.repartition(1001),
                 ]
             )
-        return pytest.mark.parametrize(arg_name, parameters)(test_case)
+        return pytest.mark.parametrize(["daft_df", "pd_df"], [(daft_df, pd_df.copy()) for daft_df in daft_dfs])(
+            test_case
+        )
 
     return _wrapper
 
