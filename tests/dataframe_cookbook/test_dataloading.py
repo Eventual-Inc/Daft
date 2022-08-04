@@ -7,11 +7,11 @@ from daft.dataframe import DataFrame
 from tests.dataframe_cookbook.conftest import (
     IRIS_CSV,
     assert_df_equals,
-    partitioned_daft_df,
+    parametrize_partitioned_daft_df,
 )
 
 
-@partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df("daft_df")
 def test_load_csv(daft_df, pd_df):
     """Loading data from a CSV works"""
     pd_slice = pd_df[:100]

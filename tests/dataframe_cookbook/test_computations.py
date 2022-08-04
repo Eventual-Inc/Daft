@@ -1,10 +1,13 @@
 import pytest
 
 from daft.expressions import col
-from tests.dataframe_cookbook.conftest import assert_df_equals, partitioned_daft_df
+from tests.dataframe_cookbook.conftest import (
+    assert_df_equals,
+    parametrize_partitioned_daft_df,
+)
 
 
-@partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df("daft_df")
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
@@ -18,7 +21,7 @@ def test_add_one_to_column(daft_df_ops, daft_df, pd_df):
     assert_df_equals(daft_df_ops(daft_df), pd_df.head(10))
 
 
-@partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df("daft_df")
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
