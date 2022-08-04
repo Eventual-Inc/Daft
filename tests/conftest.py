@@ -2,7 +2,7 @@ import pytest
 import ray
 
 # Global singleton marking whether to run TDD tests, needed just for our custom
-# decorator @partitioned_daft_df to know when to test more advanced partition schemes
+# decorator @parametrize_partitioned_daft_df to know when to test more advanced partition schemes
 RUN_TDD_OPTION = None
 
 

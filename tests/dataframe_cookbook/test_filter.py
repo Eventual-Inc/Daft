@@ -1,12 +1,15 @@
 import pytest
 
 from daft.expressions import col
-from tests.dataframe_cookbook.conftest import assert_df_equals, partitioned_daft_df
+from tests.dataframe_cookbook.conftest import (
+    assert_df_equals,
+    parametrize_partitioned_daft_df,
+)
 
 COL_SUBSET = ["Unique Key", "Complaint Type", "Borough", "Descriptor"]
 
 
-@partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df("daft_df")
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
@@ -39,7 +42,7 @@ def test_filter(daft_df_ops, daft_df, pd_df):
     assert_df_equals(daft_noise_complaints, pd_noise_complaints)
 
 
-@partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df("daft_df")
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
@@ -80,7 +83,7 @@ def test_composite_filter(daft_df_ops, daft_df, pd_df):
     assert_df_equals(daft_noise_complaints_brooklyn, pd_noise_complaints_brooklyn)
 
 
-@partitioned_daft_df("daft_df")
+@parametrize_partitioned_daft_df("daft_df")
 @pytest.mark.parametrize(
     "daft_df_ops",
     [

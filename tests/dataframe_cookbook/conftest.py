@@ -15,13 +15,25 @@ def pd_df() -> pd.DataFrame:
     return pd.read_csv(SERVICE_REQUESTS_CSV, keep_default_na=False)[COLUMNS]
 
 
-def partitioned_daft_df(arg_name: str):
+def parametrize_sort_desc(arg_name: str):
+    """Test case fixture to be used as a decorator that injects the sort ordering"""
+
+    def _wrapper(test_case):
+        parameters = [False]
+        if RUN_TDD_OPTION:
+            parameters.extend([True])
+        return pytest.mark.parametrize(arg_name, parameters)(test_case)
+
+    return _wrapper
+
+
+def parametrize_partitioned_daft_df(arg_name: str):
     """Test case fixture to be used as a decorator that injects a DaFt dataframe with multiple different
     partitioning schemes
 
     Usage:
 
-    @partitioned_daft_df
+    @parametrize_partitioned_daft_df
     def test_foo(daft_df):
 
     """
