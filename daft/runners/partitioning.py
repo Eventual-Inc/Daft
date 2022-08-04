@@ -173,3 +173,6 @@ class PartitionSet:
     def len_of_partitions(self) -> List[int]:
         partition_ids = sorted(list(self.partitions.keys()))
         return [len(self.partitions[pid]) for pid in partition_ids]
+
+    def num_partitions(self) -> int:
+        return len(self.partitions)

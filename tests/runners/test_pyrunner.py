@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
