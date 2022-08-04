@@ -13,7 +13,7 @@ from daft.runners.partitioning import PyListTile, vPartition
 def resolve_expr(expr: Expression) -> Expression:
     for c in expr.required_columns():
         c._assign_id(strict=False)
-    expr._assign_id()
+    expr._assign_id(strict=False)
     return expr
 
 
@@ -115,3 +115,95 @@ def test_vpartition_wrong_col_id() -> None:
 
     with pytest.raises(ValueError):
         part = vPartition(columns=tiles, partition_id=0)
+
+def test_vpartition_head() -> None:
+    tiles = {}
+    for i in range(4):
+        block = DataBlock.make_block(np.ones(10) * i)
+        tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
+    part = vPartition(columns=tiles, partition_id=0)
+    part = part.head(3)
+    arrow_table = part.to_arrow_table()
+    assert arrow_table.column_names == [f"col_{i}" for i in range(4)]
+
+    for i in range(4):
+        assert np.all(arrow_table[i] == np.ones(3) * i)
+
+def test_vpartition_sample() -> None:
+    tiles = {}
+    for i in range(4):
+        block = DataBlock.make_block(np.ones(10) * i)
+        tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
+    part = vPartition(columns=tiles, partition_id=0)
+    part = part.sample(3)
+    arrow_table = part.to_arrow_table()
+    assert arrow_table.column_names == [f"col_{i}" for i in range(4)]
+
+    for i in range(4):
+        assert np.all(arrow_table[i] == np.ones(3) * i)
+
+
+def test_vpartition_filter() -> None:
+    expr = (col('x') < 4)
+    expr = resolve_expr(expr)
+
+    tiles = {}
+    col_id = expr.required_columns()[0].get_id()
+    for i in range(col_id, col_id + 4):
+        block = DataBlock.make_block(np.arange(0, 10, 1))
+        tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
+    part = vPartition(columns=tiles, partition_id=0)
+    part = part.filter(ExpressionList([expr]))
+    arrow_table = part.to_arrow_table()
+    assert arrow_table.column_names == [f"col_{i}" for i in range(col_id, col_id + 4)]
+
+    for i in range(4):
+        assert np.all(arrow_table[i].to_numpy() < 4)
+
+def test_vpartition_sort() -> None:
+    expr = (col('x'))
+    expr = resolve_expr(expr)
+
+    tiles = {}
+    col_id = expr.required_columns()[0].get_id()
+
+    for i in range(col_id, col_id + 4):
+        if i == col_id:
+            block = DataBlock.make_block(-np.arange(0, 10, 1))
+        else:
+            block = DataBlock.make_block(np.arange(0, 10, 1))
+    
+        tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
+    part = vPartition(columns=tiles, partition_id=0)
+    part = part.sort(expr)
+    arrow_table = part.to_arrow_table()
+    assert arrow_table.column_names == [f"col_{i}" for i in range(col_id, col_id + 4)]
+
+    is_sorted = lambda a: np.all(a[:-1] <= a[1:])
+    assert is_sorted(arrow_table[0].to_numpy())
+    for i in range(1, 4):
+        assert is_sorted(arrow_table[i].to_numpy()[::-1])
+
+def test_vpartition_sort_desc() -> None:
+    expr = (col('x'))
+    expr = resolve_expr(expr)
+
+    tiles = {}
+    col_id = expr.required_columns()[0].get_id()
+
+    for i in range(col_id, col_id + 4):
+        if i == col_id:
+            block = DataBlock.make_block(-np.arange(0, 10, 1))
+        else:
+            block = DataBlock.make_block(np.arange(0, 10, 1))
+    
+        tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
+    part = vPartition(columns=tiles, partition_id=0)
+    part = part.sort(expr, desc=True)
+    arrow_table = part.to_arrow_table()
+    assert arrow_table.column_names == [f"col_{i}" for i in range(col_id, col_id + 4)]
+
+    is_sorted = lambda a: np.all(a[:-1] <= a[1:])
+    assert is_sorted(arrow_table[0].to_numpy()[::-1])
+    for i in range(1, 4):
+        assert is_sorted(arrow_table[i].to_numpy())

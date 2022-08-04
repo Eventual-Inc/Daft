@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+import dataclasses
+from functools import cache, partial, partialmethod
+from typing import Any, Callable, Dict, List
 
 import pyarrow as pa
 
 from daft.expressions import ColID, Expression
 from daft.logical.schema import ExpressionList
 from daft.runners.blocks import DataBlock
+
+import numpy as np
 
 PartID = int
 
@@ -22,6 +26,8 @@ class PyListTile:
     def __len__(self) -> int:
         return len(self.block)
 
+    def apply(self, func: Callable[[DataBlock], DataBlock]) -> PyListTile:
+        return dataclasses.replace(self, block=func(self.block))
 
 @dataclass(frozen=True)
 class vPartition:
@@ -39,7 +45,7 @@ class vPartition:
                 raise ValueError(f"mismatch of tile lengths: {len(tile)} vs {size}")
             if col_id != tile.column_id:
                 raise ValueError(f"mismatch of column id: {col_id} vs {tile.column_id}")
-
+    
     def __len__(self) -> int:
         assert len(self.columns) > 0
         return len(next(iter(self.columns.values())))
@@ -93,6 +99,31 @@ class vPartition:
     def to_pydict(self) -> Dict[str, List[Any]]:
         raise NotImplementedError()
 
+    def for_each_column_block(self, func: Callable[[DataBlock], DataBlock]) -> vPartition:
+        return dataclasses.replace(
+            self,
+            columns={col_id: col.apply(func) for col_id, col in self.columns.items()}
+        )
+
+    def head(self, num: int) -> vPartition:
+        return self.for_each_column_block(partial(DataBlock.head, num=num))
+
+    def sample(self, num: int) -> vPartition:
+        sample_idx = DataBlock.make_block(data=np.random.randint(0, len(self), num))
+        return self.for_each_column_block(partial(DataBlock.take, indices=sample_idx))
+
+    def filter(self, predicate: ExpressionList) -> vPartition:
+        mask_list = self.eval_expression_list(predicate)
+        assert len(mask_list) > 0
+        mask = next(iter(mask_list.columns.values())).block
+        for to_and in mask_list.columns.values():
+            mask &= to_and.block
+        return self.for_each_column_block(partial(DataBlock.filter, mask=mask))
+
+    def sort(self, sort_key: Expression, desc:bool=False) -> vPartition:
+        sort_tile = self.eval_expression(sort_key)
+        argsort_idx = sort_tile.apply(partial(DataBlock.argsort, desc=desc))
+        return self.for_each_column_block(partial(DataBlock.take, indices=argsort_idx.block))
 
 @dataclass
 class PartitionSet:

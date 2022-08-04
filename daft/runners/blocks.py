@@ -163,9 +163,12 @@ class DataBlock(Generic[ArrType]):
     __rand__ = partialmethod(_reverse_binary_op, func="and_")
     __ror__ = partialmethod(_reverse_binary_op, func="or_")
 
-    # DataFrame ops
-    filter = partialmethod(_binary_op, func="filter")
-    take = partialmethod(_binary_op, func="take")
+
+    def filter(self, mask: DataBlock) -> DataBlock:
+        return self._binary_op(mask, func='filter')
+
+    def take(self, indices: DataBlock) -> DataBlock:
+        return self._binary_op(indices, func="take")
 
     def head(self, num: int) -> DataBlock[ArrType]:
         return DataBlock.make_block(self.data[:num])
@@ -174,17 +177,12 @@ class DataBlock(Generic[ArrType]):
     def sample(self, num: int) -> DataBlock[ArrType]:
         raise NotImplementedError()
 
-    @staticmethod
     @abstractmethod
-    def _argsort(blocks: List[DataBlock], desc: bool = False) -> DataBlock:
+    def _argsort(self, desc: bool = False) -> DataBlock:
         raise NotImplementedError()
 
-    @classmethod
-    def argsort(cls, blocks: List[DataBlock[ArrType]], desc: bool = False) -> DataBlock[ArrType]:
-        assert len(blocks) > 0, "no blocks to sort"
-        first_type = type(blocks[0])
-        assert all(type(b) == first_type for b in blocks), "all block types must match"
-        return first_type._argsort(blocks, desc=desc)
+    def argsort(self, desc: bool = False) -> DataBlock:
+        return self._argsort(desc=desc)
 
     @abstractmethod
     def partition(self, num: int, targets: DataBlock[ArrType]) -> List[DataBlock[ArrType]]:
@@ -210,15 +208,9 @@ class PyListDataBlock(DataBlock[List]):
 class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
     operators: ClassVar[FunctionDispatch] = ArrowFunctionDispatch
 
-    @staticmethod
-    def _argsort(blocks: List[DataBlock], desc: bool = False) -> DataBlock:
+    def _argsort(self, desc: bool = False) -> DataBlock:
         order = "descending" if desc else "ascending"
-        to_convert = {}
-        cols = []
-        to_convert = {str(i + 1): o.data for i, o in enumerate(blocks)}
-        cols = [(str(i + 1), order) for i, _ in enumerate(blocks)]
-        table = pa.table(to_convert)
-        sort_indices = pac.sort_indices(table, sort_keys=cols)
+        sort_indices = pac.array_sort_indices(self.data, order=order)
         return ArrowDataBlock(data=sort_indices)
 
     @staticmethod
