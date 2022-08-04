@@ -14,6 +14,10 @@ def col(name: str) -> ColumnExpression:
     return ColumnExpression(name)
 
 
+def lit(val: Any) -> LiteralExpression:
+    return LiteralExpression(val)
+
+
 _COUNTER = itertools.count()
 ColID = NewType("ColID", int)
 
