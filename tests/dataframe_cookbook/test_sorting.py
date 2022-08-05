@@ -38,13 +38,17 @@ def test_get_sorted_top_n(sort_desc, daft_df, pd_df):
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
-        # Select after sort
-        lambda daft_df, sort_desc: daft_df.sort(col("Unique Key"), desc=sort_desc).select(
-            col("Unique Key"), col("Complaint Type")
+        pytest.param(
+            lambda daft_df, sort_desc: daft_df.sort(col("Unique Key"), desc=sort_desc).select(
+                col("Unique Key"), col("Complaint Type")
+            ),
+            id="sort..select",
         ),
-        # Select before the sort
-        lambda daft_df, sort_desc: daft_df.select(col("Unique Key"), col("Complaint Type")).sort(
-            col("Unique Key"), desc=sort_desc
+        pytest.param(
+            lambda daft_df, sort_desc: daft_df.select(col("Unique Key"), col("Complaint Type")).sort(
+                col("Unique Key"), desc=sort_desc
+            ),
+            id="select..sort",
         ),
     ],
 )
