@@ -48,16 +48,21 @@ class SortOp(ShuffleOp):
         output_partitions: int,
         expr: Optional[Expression] = None,
         boundaries: Optional[DataBlock] = None,
+        desc: Optional[bool] = None,
     ) -> List[vPartition]:
-        assert expr is not None and boundaries is not None
+        assert expr is not None and boundaries is not None and desc is not None
         sort_key = input.eval_expression(expr).block
         argsort_idx = sort_key.argsort()
         sorted_input = input.take(argsort_idx)
         sorted_keys = sort_key.take(argsort_idx)
         target_idx = sorted_keys.search_sorted(boundaries)
+        if desc:
+            target_idx = (output_partitions - 1) - target_idx
         return sorted_input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
 
     @staticmethod
-    def reduce_fn(mapped_outputs: List[vPartition], expr: Optional[Expression] = None) -> vPartition:
-        assert expr is not None
-        return vPartition.merge_partitions(mapped_outputs).sort(expr)
+    def reduce_fn(
+        mapped_outputs: List[vPartition], expr: Optional[Expression] = None, desc: Optional[bool] = None
+    ) -> vPartition:
+        assert expr is not None and desc is not None
+        return vPartition.merge_partitions(mapped_outputs).sort(expr, desc=desc)
