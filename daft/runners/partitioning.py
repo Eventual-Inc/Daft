@@ -34,6 +34,25 @@ class PyListTile:
         assert len(new_blocks) == num_partitions
         return [dataclasses.replace(self, block=nb, partition_id=i) for i, nb in enumerate(new_blocks)]
 
+    @classmethod
+    def merge_tiles(cls, to_merge: List[PyListTile]) -> PyListTile:
+        assert len(to_merge) > 0
+
+        if len(to_merge) == 1:
+            return to_merge[0]
+
+        column_id = to_merge[0].column_id
+        partition_id = to_merge[0].partition_id
+        column_name = to_merge[0].column_name
+        # first perform sanity check
+        for part in to_merge[1:]:
+            assert part.column_id == column_id
+            assert part.partition_id == partition_id
+            assert part.column_name == column_name
+
+        merged_block = DataBlock.merge_blocks([t.block for t in to_merge])
+        return dataclasses.replace(to_merge[0], block=merged_block)
+
 
 @dataclass(frozen=True)
 class vPartition:
@@ -154,6 +173,25 @@ class vPartition:
                 new_partition_to_columns[part_id][col_id] = nt
 
         return [vPartition(partition_id=i, columns=columns) for i, columns in enumerate(new_partition_to_columns)]
+
+    @classmethod
+    def merge_partitions(cls, to_merge: List[vPartition]) -> vPartition:
+        assert len(to_merge) > 0
+
+        if len(to_merge) == 1:
+            return to_merge[0]
+
+        pid = to_merge[0].partition_id
+        col_ids = set(to_merge[0].columns.keys())
+        # first perform sanity check
+        for part in to_merge[1:]:
+            assert part.partition_id == pid
+            assert set(part.columns.keys()) == col_ids
+
+        new_columns = {}
+        for col_id in to_merge[0].columns.keys():
+            new_columns[col_id] = PyListTile.merge_tiles([vp.columns[col_id] for vp in to_merge])
+        return dataclasses.replace(to_merge[0], columns=new_columns)
 
 
 @dataclass

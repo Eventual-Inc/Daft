@@ -1,43 +1,40 @@
 from abc import abstractmethod
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from daft.runners.partitioning import PartID, PartitionSet, vPartition
+import numpy as np
+
+from daft.runners.blocks import DataBlock
+from daft.runners.partitioning import vPartition
 
 
 class ShuffleOp:
-    def __init__(self, target_partitions: int, input: PartitionSet) -> None:
-        self._target_partitions = target_partitions
-        self._input = input
-        self._source_partitions = input.num_partitions()
-        self._mapped_partitions: Optional[List[List[vPartition]]] = None
+    def __init__(self, map_args: Optional[Dict[str, Any]] = None, reduce_args: Optional[Dict[str, Any]] = None) -> None:
+        self._map_args = map_args
+        self._reduce_args = reduce_args
 
-    @classmethod
+    @staticmethod
     @abstractmethod
-    def map_fn(cls, partition: vPartition) -> List[vPartition]:
-        raise NotImplementedError()
+    def map_fn(input: vPartition, output_partitions: int) -> List[vPartition]:
+        ...
 
-    @classmethod
+    @staticmethod
     @abstractmethod
-    def reduce_fn(cls, partitions: List[vPartition]) -> vPartition:
-        raise NotImplementedError()
+    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+        ...
 
-    def map(self) -> None:
-        assert self._mapped_partitions is None
-        map_fn = self.__class__.map_fn
-        mapped_partitions = []
-        for i in range(self._source_partitions):
-            map_output = map_fn(self._input.partitions[i])
-            assert len(map_output) == self._target_partitions
-            mapped_partitions.append(map_output)
 
-        self._mapped_partitions = mapped_partitions
+class RepartitionRandom(ShuffleOp):
+    @staticmethod
+    def map_fn(input: vPartition, output_partitions: int, seed: Optional[int] = None) -> List[vPartition]:
+        if seed is None:
+            seed = input.partition_id
+        else:
+            seed += input.partition_id
 
-    def reduce(self) -> PartitionSet:
-        assert self._mapped_partitions is not None
-        assert len(self._mapped_partitions) == self._source_partitions
-        reduce_fn = self.__class__.reduce_fn
-        new_partitions = []
-        for t in range(self._target_partitions):
-            to_reduce = [self._mapped_partitions[s][t] for s in range(self._source_partitions)]
-            new_partitions.append(reduce_fn(to_reduce))
-        return PartitionSet({PartID(i): part for i, part in enumerate(new_partitions)})
+        rng = np.random.default_rng(seed=seed)
+        target_idx = DataBlock.make_block(data=rng.integers(low=0, high=output_partitions, size=len(input)))
+        return input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
+
+    @staticmethod
+    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+        return vPartition.merge_partitions(mapped_outputs)

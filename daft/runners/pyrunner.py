@@ -14,10 +14,12 @@ from daft.logical.logical_plan import (
     LocalLimit,
     LogicalPlan,
     Projection,
+    Repartition,
     Scan,
 )
 from daft.runners.partitioning import PartitionSet, vPartition
 from daft.runners.runner import Runner
+from daft.runners.shuffle_ops import RepartitionRandom, ShuffleOp
 
 
 class PyRunnerPartitionManager:
@@ -49,6 +51,28 @@ class PyRunnerPartitionManager:
         ...
 
 
+class PyRunnerSimpleShuffler(ShuffleOp):
+    def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
+        map_args = self._map_args if self._map_args is not None else {}
+        reduce_args = self._reduce_args if self._reduce_args is not None else {}
+
+        source_partitions = input.num_partitions()
+        map_results = [
+            self.map_fn(input=input.partitions[i], output_partitions=num_target_partitions, **map_args)
+            for i in range(source_partitions)
+        ]
+        reduced_results = []
+        for t in range(num_target_partitions):
+            reduced_part = self.reduce_fn([map_results[i][t] for i in range(source_partitions)], **reduce_args)
+            reduced_results.append(reduced_part)
+
+        return PartitionSet({i: part for i, part in enumerate(reduced_results)})
+
+
+class PyRunnerRepartitionRandom(PyRunnerSimpleShuffler, RepartitionRandom):
+    ...
+
+
 class PyRunner(Runner):
     def __init__(self) -> None:
         self._part_manager = PyRunnerPartitionManager()
@@ -61,6 +85,8 @@ class PyRunner(Runner):
                 for node in exec_op.logical_ops:
                     if isinstance(node, GlobalLimit):
                         self._handle_global_limit(node)
+                    elif isinstance(node, Repartition):
+                        self._handle_repartition(node)
                     else:
                         raise NotImplementedError(f"{type(node)} not implemented")
             else:
@@ -76,7 +102,6 @@ class PyRunner(Runner):
                             self._handle_local_limit(node, partition_id=i)
                         else:
                             raise NotImplementedError(f"{type(node)} not implemented")
-
         return self._part_manager.get_partition_set(node.id())
 
     def _handle_scan(self, scan: Scan, partition_id: int) -> None:
@@ -132,9 +157,17 @@ class PyRunner(Runner):
         count_so_far = cum_sum[where_to_cut_idx - 1]
         remainder = num - count_so_far
         assert remainder >= 0
-        new_pset.partitions[where_to_cut_idx - 1] = new_pset.partitions[where_to_cut_idx - 1].head(remainder)
-        for i in range(where_to_cut_idx, limit.num_partitions()):
+        new_pset.partitions[where_to_cut_idx] = new_pset.partitions[where_to_cut_idx].head(remainder)
+        for i in range(where_to_cut_idx + 1, limit.num_partitions()):
             new_pset.partitions[i] = new_pset.partitions[i].head(0)
+        self._part_manager.put_partition_set(limit.id(), new_pset)
+
+    def _handle_repartition(self, repartition: Repartition) -> None:
+        child_id = repartition._children()[0].id()
+        prev_pset = self._part_manager.get_partition_set(child_id)
+        repartitioner = PyRunnerRepartitionRandom()
+        new_pset = repartitioner.run(input=prev_pset, num_target_partitions=repartition.num_partitions())
+        self._part_manager.put_partition_set(repartition.id(), new_pset)
 
     # def _handle_sort(self, sort: Sort) -> None:
     #     desc = sort._desc
