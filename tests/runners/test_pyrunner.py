@@ -1,11 +1,9 @@
 import pandas as pd
-import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
 
 
-@pytest.mark.tdd_all
 def test_pyrunner_with_pandas():
 
     # Pandas query
@@ -25,6 +23,7 @@ def test_pyrunner_with_pandas():
     df = df.sort(col("area"), desc=False)
     df = df.limit(10)
     df = df.collect()
-
     daft_pd_df = df.to_pandas()
+
+    assert len(daft_pd_df) == len(pd_df)
     assert daft_pd_df.reset_index(drop=True).equals(pd_df.reset_index(drop=True))

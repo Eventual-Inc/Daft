@@ -59,12 +59,12 @@ def parametrize_partitioned_daft_df(
     def _wrapper(test_case):
         daft_dfs = [
             base_df,
-            base_df.repartition(1),
         ]
         # TODO(jay): Change this once partition behavior is fixed
         if RUN_TDD_OPTION:
             daft_dfs.extend(
                 [
+                    base_df.repartition(1),
                     base_df.repartition(2),
                     base_df.repartition(10),
                     base_df.repartition(1000),

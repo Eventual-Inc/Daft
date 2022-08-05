@@ -9,7 +9,8 @@ from daft.expressions import Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
-from daft.runners.pyrunner import NodeOutput, PyRunner
+from daft.runners.partitioning import PartitionSet
+from daft.runners.pyrunner import PyRunner
 from daft.serving.endpoint import HTTPEndpoint
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
@@ -22,7 +23,7 @@ _RUNNER = PyRunner()
 class DataFrame:
     def __init__(self, plan: logical_plan.LogicalPlan) -> None:
         self._plan = plan
-        self._node_output: Optional[NodeOutput] = None
+        self._result: Optional[PartitionSet] = None
 
     def plan(self) -> logical_plan.LogicalPlan:
         return self._plan
@@ -133,7 +134,7 @@ class DataFrame:
 
     def repartition(self, num: int, partition_by: Optional[ColumnInputType] = None) -> DataFrame:
         if partition_by is None:
-            scheme = logical_plan.PartitionScheme.ROUND_ROBIN
+            scheme = logical_plan.PartitionScheme.RANDOM
             exprs: ExpressionList = ExpressionList([])
         else:
             raise NotImplementedError()
@@ -144,12 +145,12 @@ class DataFrame:
         return DataFrame(repartition_op)
 
     def collect(self) -> DataFrame:
-        if self._node_output is None:
-            self._node_output = _RUNNER.run(self._plan)
+        if self._result is None:
+            self._result = _RUNNER.run(self._plan)
         return self
 
     def to_pandas(self) -> pandas.DataFrame:
         self.collect()
-        assert self._node_output is not None
-        arrow_table = self._node_output.to_arrow_table()
+        assert self._result is not None
+        arrow_table = self._result.to_arrow_table()
         return arrow_table.to_pandas()
