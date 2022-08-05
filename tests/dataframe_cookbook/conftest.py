@@ -8,7 +8,7 @@ from daft.expressions import col
 from tests.conftest import run_tdd
 
 IRIS_CSV = "tests/assets/iris.csv"
-SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.1000.csv"
+SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.50.csv"
 COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
 CsvPathAndColumns = Tuple[str, List[str]]
 
@@ -59,18 +59,12 @@ def parametrize_partitioned_daft_df(
     def _wrapper(test_case):
         daft_dfs = [
             base_df,
+            base_df.repartition(1),  # Single partition
+            base_df.repartition(10),  # 5 partitions of 10 each
+            base_df.repartition(20),  # Uneven partitions
+            base_df.repartition(50),  # One row per parittion
+            base_df.repartition(51),  # One empty partition
         ]
-        # TODO(jay): Change this once partition behavior is fixed
-        if run_tdd():
-            daft_dfs.extend(
-                [
-                    base_df.repartition(1),
-                    base_df.repartition(2),
-                    base_df.repartition(10),
-                    base_df.repartition(1000),
-                    base_df.repartition(1001),
-                ]
-            )
         return pytest.mark.parametrize(["daft_df", "pd_df"], [(daft_df, pd_df.copy()) for daft_df in daft_dfs])(
             test_case
         )
