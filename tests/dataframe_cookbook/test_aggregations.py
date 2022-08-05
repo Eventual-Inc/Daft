@@ -31,8 +31,8 @@ def test_filtered_sum(daft_df, pd_df):
 @parametrize_partitioned_daft_df()
 def test_limit_mean(daft_df, pd_df):
     """Averages across a column in a sampling of the table"""
-    daft_df = daft_df.limit(100).agg(col("Unique Key").mean().alias("unique_key_mean"))
-    pd_df = pd.DataFrame.from_records[{"unique_key_mean": [pd_df.head(100)["Unique Key"].mean()]}]
+    daft_df = daft_df.agg(col("Unique Key").mean().alias("unique_key_mean"))
+    pd_df = pd.DataFrame.from_records[{"unique_key_mean": [pd_df["Unique Key"].mean()]}]
     assert_df_equals(daft_df, pd_df)
 
 

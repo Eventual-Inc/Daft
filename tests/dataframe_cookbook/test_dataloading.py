@@ -14,8 +14,8 @@ from tests.dataframe_cookbook.conftest import (
 @parametrize_partitioned_daft_df()
 def test_load_csv(daft_df, pd_df):
     """Loading data from a CSV works"""
-    pd_slice = pd_df[:100]
-    daft_slice = daft_df.limit(100)
+    pd_slice = pd_df
+    daft_slice = daft_df
     assert_df_equals(daft_slice, pd_slice)
 
 

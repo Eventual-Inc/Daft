@@ -5,7 +5,7 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
-from tests.conftest import RUN_TDD_OPTION
+from tests.conftest import run_tdd
 
 IRIS_CSV = "tests/assets/iris.csv"
 SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.1000.csv"
@@ -18,7 +18,7 @@ def parametrize_sort_desc(arg_name: str):
 
     def _wrapper(test_case):
         parameters = [False]
-        if RUN_TDD_OPTION:
+        if run_tdd():
             parameters.extend([True])
         return pytest.mark.parametrize(arg_name, parameters)(test_case)
 
@@ -61,7 +61,7 @@ def parametrize_partitioned_daft_df(
             base_df,
         ]
         # TODO(jay): Change this once partition behavior is fixed
-        if RUN_TDD_OPTION:
+        if run_tdd():
             daft_dfs.extend(
                 [
                     base_df.repartition(1),

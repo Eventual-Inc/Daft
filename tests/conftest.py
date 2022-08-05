@@ -1,9 +1,7 @@
+import argparse
+
 import pytest
 import ray
-
-# Global singleton marking whether to run TDD tests, needed just for our custom
-# decorator @parametrize_partitioned_daft_df to know when to test more advanced partition schemes
-RUN_TDD_OPTION = None
 
 
 @pytest.fixture(scope="session")
@@ -30,9 +28,8 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     config.addinivalue_line("markers", "conda: mark test as requiring conda to run")
     config.addinivalue_line("markers", "docker: mark test as requiring docker to run")
-
-    global RUN_TDD_OPTION
-    RUN_TDD_OPTION = config.getoption(f"--run_tdd") or config.getoption(f"--run_tdd_all")
+    config.addinivalue_line("markers", "tdd: mark test as for TDD in active development")
+    config.addinivalue_line("markers", "tdd_all: mark test as for TDD but not in active development")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -46,3 +43,10 @@ def pytest_collection_modifyitems(config, items):
         for keyword in marks:
             if keyword in item.keywords and not config.getoption(f"--run_{keyword}"):
                 item.add_marker(marks[keyword])
+
+
+def run_tdd():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run_tdd", action="store_true")
+    args, _ = parser.parse_known_args()
+    return args.run_tdd
