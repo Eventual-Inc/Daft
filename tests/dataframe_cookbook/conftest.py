@@ -17,7 +17,7 @@ def parametrize_sort_desc(arg_name: str):
 
     def _wrapper(test_case):
         parameters = [False, True]
-        return pytest.mark.parametrize(arg_name, parameters, ids=[f"Descending={v}" for v in parameters])(test_case)
+        return pytest.mark.parametrize(arg_name, parameters, ids=[f"Descending:{v}" for v in parameters])(test_case)
 
     return _wrapper
 
@@ -52,7 +52,7 @@ def parametrize_partitioned_daft_df(
         pd_df = pd.DataFrame.from_dict(source)
     else:
         raise NotImplementedError(f"Datasource not supported: {source}")
-    test_header = "Repartition="
+    test_header = "Repartition"
     n_partitions = [
         1,  # Single partition
         10,  # 5 partitions of 10 each
@@ -63,7 +63,7 @@ def parametrize_partitioned_daft_df(
 
     def _wrapper(test_case):
         daft_dfs = [base_df] + [base_df.repartition(i) for i in n_partitions]
-        ids = [f"{test_header}{num}" for num in ["None"] + n_partitions]
+        ids = [f"{test_header}:{num}" for num in ["None"] + n_partitions]
         return pytest.mark.parametrize(
             ["daft_df", "pd_df"], [(daft_df, pd_df.copy()) for daft_df in daft_dfs], ids=ids
         )(test_case)
