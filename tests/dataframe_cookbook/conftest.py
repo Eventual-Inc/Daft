@@ -63,9 +63,10 @@ def parametrize_partitioned_daft_df(
 
     def _wrapper(test_case):
         daft_dfs = [base_df] + [base_df.repartition(i) for i in partitioning]
-        ids = [f"Repartition:{num}" for num in ["None"] + partitioning]
+        ids = [f"Repartition:{num}" for num in ["None", *partitioning]]
         return pytest.mark.parametrize(
-            ["daft_df", "pd_df"], [(daft_df, pd_df.copy()) for daft_df in daft_dfs], ids=ids
+            ["daft_df", "pd_df"],
+            [pytest.param(daft_df, pd_df.copy(), id=test_id) for test_id, daft_df in zip(ids, daft_dfs)],
         )(test_case)
 
     return _wrapper

@@ -13,17 +13,21 @@ COL_SUBSET = ["Unique Key", "Complaint Type", "Borough", "Descriptor"]
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
-        # Select after where clause
-        lambda daft_df: (
-            daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk").select(
-                col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")
-            )
+        pytest.param(
+            lambda daft_df: (
+                daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk").select(
+                    col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")
+                )
+            ),
+            id="where..select",
         ),
-        # Select before where clause
-        lambda daft_df: (
-            daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
-                col("Complaint Type") == "Noise - Street/Sidewalk"
-            )
+        pytest.param(
+            lambda daft_df: (
+                daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
+                    col("Complaint Type") == "Noise - Street/Sidewalk"
+                )
+            ),
+            id="select..where",
         ),
     ],
 )
@@ -40,29 +44,41 @@ def test_filter(daft_df_ops, daft_df, pd_df):
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
-        # Select after the Where clause
-        lambda daft_df: (
-            daft_df.where(
-                ((col("Complaint Type") == "Noise - Street/Sidewalk") | (col("Complaint Type") == "Noise - Commercial"))
-                & (col("Borough") == "BROOKLYN")
-            ).select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
+        pytest.param(
+            lambda daft_df: (
+                daft_df.where(
+                    (
+                        (col("Complaint Type") == "Noise - Street/Sidewalk")
+                        | (col("Complaint Type") == "Noise - Commercial")
+                    )
+                    & (col("Borough") == "BROOKLYN")
+                ).select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
+            ),
+            id="where..select",
         ),
-        # Select before the Where clause
-        lambda daft_df: (
-            daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
-                ((col("Complaint Type") == "Noise - Street/Sidewalk") | (col("Complaint Type") == "Noise - Commercial"))
-                & (col("Borough") == "BROOKLYN")
-            )
-        ),
-        # Flipped ordering of complex boolean expression
-        lambda daft_df: (
-            daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
-                (col("Borough") == "BROOKLYN")
-                & (
-                    (col("Complaint Type") == "Noise - Street/Sidewalk")
-                    | (col("Complaint Type") == "Noise - Commercial")
+        pytest.param(
+            lambda daft_df: (
+                daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
+                    (
+                        (col("Complaint Type") == "Noise - Street/Sidewalk")
+                        | (col("Complaint Type") == "Noise - Commercial")
+                    )
+                    & (col("Borough") == "BROOKLYN")
                 )
-            )
+            ),
+            id="select..where",
+        ),
+        pytest.param(
+            lambda daft_df: (
+                daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
+                    (col("Borough") == "BROOKLYN")
+                    & (
+                        (col("Complaint Type") == "Noise - Street/Sidewalk")
+                        | (col("Complaint Type") == "Noise - Commercial")
+                    )
+                )
+            ),
+            id="select..where(flipped&)",
         ),
     ],
 )
@@ -81,23 +97,29 @@ def test_composite_filter(daft_df_ops, daft_df, pd_df):
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
-        # Select after the where clauses
-        lambda daft_df: (
-            daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
-            .where(col("Borough") == "BROOKLYN")
-            .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
+        pytest.param(
+            lambda daft_df: (
+                daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
+                .where(col("Borough") == "BROOKLYN")
+                .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
+            ),
+            id="where..where..select",
         ),
-        # Select in between the where clauses
-        lambda daft_df: (
-            daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
-            .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
-            .where(col("Borough") == "BROOKLYN")
+        pytest.param(
+            lambda daft_df: (
+                daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
+                .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
+                .where(col("Borough") == "BROOKLYN")
+            ),
+            id="where..select..where",
         ),
-        # Select before the where clauses
-        lambda daft_df: (
-            daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
-            .where(col("Complaint Type") == "Noise - Street/Sidewalk")
-            .where(col("Borough") == "BROOKLYN")
+        pytest.param(
+            lambda daft_df: (
+                daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
+                .where(col("Complaint Type") == "Noise - Street/Sidewalk")
+                .where(col("Borough") == "BROOKLYN")
+            ),
+            id="select..where..where",
         ),
     ],
 )
