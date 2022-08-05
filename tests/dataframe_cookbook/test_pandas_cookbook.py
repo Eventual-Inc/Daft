@@ -224,19 +224,12 @@ JOIN_DATA = {
 JOIN_DATA_PARTITIONING = [1, 3, 7, 8]
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans and complex Joins")
+@pytest.mark.tdd_all("Requires In-Memory scans and multi-column joins")
 @parametrize_partitioned_daft_df(source=JOIN_DATA, partitioning=JOIN_DATA_PARTITIONING)
 def test_self_join(daft_df, pd_df):
-    daft_df = daft_df.with_column("Test_1", col("Test_0") - 1)
-    daft_df_alias = daft_df.alias()
-    daft_df = daft_df.join(
-        daft_df,
-        on=(
-            (daft_df["Bins"] == daft_df["Bins"])
-            & (daft_df["Area"] == daft_df["Area"])
-            & (daft_df["Test_0"] == daft_df["Test_1"])
-        ),
-    )
+    daft_df = daft_df.with_column("Test_1", col("Test_0") - 1).with_column("key", col("Test_0"))
+    daft_df_right = daft_df.with_column("key", col("Test_1"))
+    daft_df = daft_df.join(daft_df_right, [col("Bins"), col("Area"), col("key")], left_suffix="_L", right_suffix="_R")
 
     pd_df["Test_1"] = pd_df["Test_0"] - 1
     pd_df = pd.merge(
