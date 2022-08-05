@@ -13,23 +13,17 @@ COL_SUBSET = ["Unique Key", "Complaint Type", "Borough", "Descriptor"]
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
-        # Select after the limit clause
+        # Select after where clause
         lambda daft_df: (
-            daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
-            .limit(10)
-            .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
+            daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk").select(
+                col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")
+            )
         ),
-        # Select before the limit clause
+        # Select before where clause
         lambda daft_df: (
-            daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
-            .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
-            .limit(10)
-        ),
-        # Select before the where clause
-        lambda daft_df: (
-            daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
-            .where(col("Complaint Type") == "Noise - Street/Sidewalk")
-            .limit(10)
+            daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
+                col("Complaint Type") == "Noise - Street/Sidewalk"
+            )
         ),
     ],
 )
@@ -38,7 +32,7 @@ def test_filter(daft_df_ops, daft_df, pd_df):
 
     daft_noise_complaints = daft_df_ops(daft_df)
 
-    pd_noise_complaints = pd_df[pd_df["Complaint Type"] == "Noise - Street/Sidewalk"].head(10)[COL_SUBSET]
+    pd_noise_complaints = pd_df[pd_df["Complaint Type"] == "Noise - Street/Sidewalk"][COL_SUBSET]
     assert_df_equals(daft_noise_complaints, pd_noise_complaints)
 
 
