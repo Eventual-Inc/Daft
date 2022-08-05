@@ -8,7 +8,7 @@ from daft.expressions import col
 from tests.conftest import run_tdd
 
 IRIS_CSV = "tests/assets/iris.csv"
-SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.1000.csv"
+SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.50.csv"
 COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
 CsvPathAndColumns = Tuple[str, List[str]]
 
@@ -65,10 +65,10 @@ def parametrize_partitioned_daft_df(
             daft_dfs.extend(
                 [
                     base_df.repartition(1),
-                    base_df.repartition(2),
                     base_df.repartition(10),
-                    base_df.repartition(1000),
-                    base_df.repartition(1001),
+                    base_df.repartition(20),
+                    base_df.repartition(50),
+                    base_df.repartition(51),
                 ]
             )
         return pytest.mark.parametrize(["daft_df", "pd_df"], [(daft_df, pd_df.copy()) for daft_df in daft_dfs])(
