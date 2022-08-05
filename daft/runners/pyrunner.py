@@ -127,7 +127,6 @@ class PyRunner(Runner):
             self._part_manager.put(scan.id(), partition_id=partition_id, partition=vpart)
 
     def _handle_projection(self, proj: Projection, partition_id: int) -> None:
-        assert proj.num_partitions() == 1
         child_id = proj._children()[0].id()
         prev_partition = self._part_manager.get(child_id, partition_id)
         new_partition = prev_partition.eval_expression_list(proj._projection)

@@ -146,12 +146,14 @@ class vPartition:
         return self.for_each_column_block(partial(DataBlock.head, num=num))
 
     def sample(self, num: int) -> vPartition:
+        if len(self) == 0:
+            return self
         sample_idx = DataBlock.make_block(data=np.random.randint(0, len(self), num))
         return self.for_each_column_block(partial(DataBlock.take, indices=sample_idx))
 
     def filter(self, predicate: ExpressionList) -> vPartition:
         mask_list = self.eval_expression_list(predicate)
-        assert len(mask_list) > 0
+        assert len(mask_list.columns) > 0
         mask = next(iter(mask_list.columns.values())).block
         for to_and in mask_list.columns.values():
             mask &= to_and.block
