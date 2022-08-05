@@ -243,7 +243,7 @@ class GlobalLimit(UnaryNode):
 class PartitionScheme(Enum):
     RANGE = "RANGE"
     HASH = "HASH"
-    ROUND_ROBIN = "ROUND_ROBIN"
+    RANDOM = "RANDOM"
 
 
 class Repartition(UnaryNode):
@@ -254,8 +254,8 @@ class Repartition(UnaryNode):
         self._register_child(input)
         self._partition_by = partition_by
         self._scheme = scheme
-        if scheme == PartitionScheme.ROUND_ROBIN and len(partition_by.names) > 0:
-            raise ValueError("Can not pass in round robin partitioning and partition_by args")
+        if scheme == PartitionScheme.RANDOM and len(partition_by.names) > 0:
+            raise ValueError("Can not pass in random partitioning and partition_by args")
 
     def __repr__(self) -> str:
         return (

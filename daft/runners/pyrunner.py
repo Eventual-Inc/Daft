@@ -16,10 +16,11 @@ from daft.logical.logical_plan import (
     Projection,
     Repartition,
     Scan,
+    Sort,
 )
 from daft.runners.partitioning import PartitionSet, vPartition
 from daft.runners.runner import Runner
-from daft.runners.shuffle_ops import RepartitionRandom, ShuffleOp
+from daft.runners.shuffle_ops import RepartitionRandomOp, ShuffleOp, SortOp
 
 
 class PyRunnerPartitionManager:
@@ -69,7 +70,11 @@ class PyRunnerSimpleShuffler(ShuffleOp):
         return PartitionSet({i: part for i, part in enumerate(reduced_results)})
 
 
-class PyRunnerRepartitionRandom(PyRunnerSimpleShuffler, RepartitionRandom):
+class PyRunnerRepartitionRandom(PyRunnerSimpleShuffler, RepartitionRandomOp):
+    ...
+
+
+class PyRunnerSortOp(PyRunnerSimpleShuffler, SortOp):
     ...
 
 
@@ -87,6 +92,8 @@ class PyRunner(Runner):
                         self._handle_global_limit(node)
                     elif isinstance(node, Repartition):
                         self._handle_repartition(node)
+                    elif isinstance(node, Sort):
+                        self._handle_sort(node)
                     else:
                         raise NotImplementedError(f"{type(node)} not implemented")
             else:
@@ -168,6 +175,22 @@ class PyRunner(Runner):
         repartitioner = PyRunnerRepartitionRandom()
         new_pset = repartitioner.run(input=prev_pset, num_target_partitions=repartition.num_partitions())
         self._part_manager.put_partition_set(repartition.id(), new_pset)
+
+    def _handle_sort(self, sort: Sort) -> None:
+        SAMPLES_PER_PARTITION = 20
+        num_partitions = sort.num_partitions()
+        child_id = sort._children()[0].id()
+        prev_pset = self._part_manager.get_partition_set(child_id)
+        sampled_partitions = [prev_pset.partitions[i].sample(SAMPLES_PER_PARTITION) for i in range(num_partitions)]
+        merged_samples = vPartition.merge_partitions(sampled_partitions, verify_partition_id=False)
+        assert len(sort._sort_by.exprs) == 1
+        expr = sort._sort_by.exprs[0]
+        sampled_sort_key = merged_samples.eval_expression(expr)
+        boundaries = sampled_sort_key.block.bucket(num_partitions)
+
+        sort_op = PyRunnerSortOp(map_args={"expr": expr, "boundaries": boundaries}, reduce_args={"expr": expr})
+        new_pset = sort_op.run(input=prev_pset, num_target_partitions=num_partitions)
+        self._part_manager.put_partition_set(sort.id(), new_pset)
 
     # def _handle_sort(self, sort: Sort) -> None:
     #     desc = sort._desc

@@ -134,7 +134,7 @@ class DataFrame:
 
     def repartition(self, num: int, partition_by: Optional[ColumnInputType] = None) -> DataFrame:
         if partition_by is None:
-            scheme = logical_plan.PartitionScheme.ROUND_ROBIN
+            scheme = logical_plan.PartitionScheme.RANDOM
             exprs: ExpressionList = ExpressionList([])
         else:
             raise NotImplementedError()

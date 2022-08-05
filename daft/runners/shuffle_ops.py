@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from daft.expressions import Expression
 from daft.runners.blocks import DataBlock
 from daft.runners.partitioning import vPartition
 
@@ -23,7 +24,7 @@ class ShuffleOp:
         ...
 
 
-class RepartitionRandom(ShuffleOp):
+class RepartitionRandomOp(ShuffleOp):
     @staticmethod
     def map_fn(input: vPartition, output_partitions: int, seed: Optional[int] = None) -> List[vPartition]:
         if seed is None:
@@ -38,3 +39,25 @@ class RepartitionRandom(ShuffleOp):
     @staticmethod
     def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
         return vPartition.merge_partitions(mapped_outputs)
+
+
+class SortOp(ShuffleOp):
+    @staticmethod
+    def map_fn(
+        input: vPartition,
+        output_partitions: int,
+        expr: Optional[Expression] = None,
+        boundaries: Optional[DataBlock] = None,
+    ) -> List[vPartition]:
+        assert expr is not None and boundaries is not None
+        sort_key = input.eval_expression(expr).block
+        argsort_idx = sort_key.argsort()
+        sorted_input = input.take(argsort_idx)
+        sorted_keys = sort_key.take(argsort_idx)
+        target_idx = sorted_keys.search_sorted(boundaries)
+        return sorted_input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
+
+    @staticmethod
+    def reduce_fn(mapped_outputs: List[vPartition], expr: Optional[Expression] = None) -> vPartition:
+        assert expr is not None
+        return vPartition.merge_partitions(mapped_outputs).sort(expr)

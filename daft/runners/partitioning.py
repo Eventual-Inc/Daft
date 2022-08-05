@@ -35,7 +35,7 @@ class PyListTile:
         return [dataclasses.replace(self, block=nb, partition_id=i) for i, nb in enumerate(new_blocks)]
 
     @classmethod
-    def merge_tiles(cls, to_merge: List[PyListTile]) -> PyListTile:
+    def merge_tiles(cls, to_merge: List[PyListTile], verify_partition_id: bool = True) -> PyListTile:
         assert len(to_merge) > 0
 
         if len(to_merge) == 1:
@@ -47,7 +47,7 @@ class PyListTile:
         # first perform sanity check
         for part in to_merge[1:]:
             assert part.column_id == column_id
-            assert part.partition_id == partition_id
+            assert not verify_partition_id or part.partition_id == partition_id
             assert part.column_name == column_name
 
         merged_block = DataBlock.merge_blocks([t.block for t in to_merge])
@@ -160,7 +160,10 @@ class vPartition:
     def sort(self, sort_key: Expression, desc: bool = False) -> vPartition:
         sort_tile = self.eval_expression(sort_key)
         argsort_idx = sort_tile.apply(partial(DataBlock.argsort, desc=desc))
-        return self.for_each_column_block(partial(DataBlock.take, indices=argsort_idx.block))
+        return self.take(argsort_idx.block)
+
+    def take(self, indices: DataBlock) -> vPartition:
+        return self.for_each_column_block(partial(DataBlock.take, indices=indices))
 
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:
         assert len(target_partition_indices) == len(self)
@@ -175,7 +178,7 @@ class vPartition:
         return [vPartition(partition_id=i, columns=columns) for i, columns in enumerate(new_partition_to_columns)]
 
     @classmethod
-    def merge_partitions(cls, to_merge: List[vPartition]) -> vPartition:
+    def merge_partitions(cls, to_merge: List[vPartition], verify_partition_id: bool = True) -> vPartition:
         assert len(to_merge) > 0
 
         if len(to_merge) == 1:
@@ -185,12 +188,14 @@ class vPartition:
         col_ids = set(to_merge[0].columns.keys())
         # first perform sanity check
         for part in to_merge[1:]:
-            assert part.partition_id == pid
+            assert not verify_partition_id or part.partition_id == pid
             assert set(part.columns.keys()) == col_ids
 
         new_columns = {}
         for col_id in to_merge[0].columns.keys():
-            new_columns[col_id] = PyListTile.merge_tiles([vp.columns[col_id] for vp in to_merge])
+            new_columns[col_id] = PyListTile.merge_tiles(
+                [vp.columns[col_id] for vp in to_merge], verify_partition_id=verify_partition_id
+            )
         return dataclasses.replace(to_merge[0], columns=new_columns)
 
 

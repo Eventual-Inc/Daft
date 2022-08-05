@@ -204,6 +204,14 @@ class DataBlock(Generic[ArrType]):
         assert all(type(b) == first_type for b in blocks), "all block types must match"
         return first_type._merge_blocks(blocks)
 
+    @abstractmethod
+    def search_sorted(self, pivots: DataBlock[ArrType]) -> DataBlock[ArrType]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def bucket(self, num: int) -> DataBlock[ArrType]:
+        raise NotImplementedError()
+
 
 class PyListDataBlock(DataBlock[List]):
     ...
@@ -251,7 +259,12 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
         sampled = np.random.choice(self.data, num, replace=replace)
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
 
-    def search_sorted(self, pivots: ArrowDataBlock) -> ArrowDataBlock:
+    def search_sorted(self, pivots: DataBlock) -> ArrowDataBlock:
         arr = self.data.to_numpy()
         indices = np.searchsorted(pivots.data.to_numpy(), arr)
         return ArrowDataBlock(data=pa.chunked_array([indices]))
+
+    def bucket(self, num: int) -> DataBlock:
+        quantiles = np.linspace(1.0 / num, 1.0, num)[:-1]
+        pivots = np.quantile(self.data.to_numpy(), quantiles, method="closest_observation")
+        return DataBlock.make_block(data=pivots)
