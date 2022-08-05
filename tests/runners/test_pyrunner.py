@@ -4,7 +4,6 @@ from daft.dataframe import DataFrame
 from daft.expressions import col
 
 
-# @pytest.mark.tdd_all
 def test_pyrunner_with_pandas():
 
     # Pandas query
