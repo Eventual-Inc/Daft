@@ -5,7 +5,6 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
-from tests.conftest import run_tdd
 
 IRIS_CSV = "tests/assets/iris.csv"
 SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.50.csv"
@@ -17,9 +16,7 @@ def parametrize_sort_desc(arg_name: str):
     """Test case fixture to be used as a decorator that injects the sort ordering"""
 
     def _wrapper(test_case):
-        parameters = [False]
-        if run_tdd():
-            parameters.extend([True])
+        parameters = [False, True]
         return pytest.mark.parametrize(arg_name, parameters)(test_case)
 
     return _wrapper

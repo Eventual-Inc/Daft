@@ -187,6 +187,9 @@ class PyRunner(Runner):
         sampled_sort_key = merged_samples.eval_expression(expr)
         boundaries = sampled_sort_key.block.bucket(num_partitions)
 
-        sort_op = PyRunnerSortOp(map_args={"expr": expr, "boundaries": boundaries}, reduce_args={"expr": expr})
+        sort_op = PyRunnerSortOp(
+            map_args={"expr": expr, "boundaries": boundaries, "desc": sort._desc},
+            reduce_args={"expr": expr, "desc": sort._desc},
+        )
         new_pset = sort_op.run(input=prev_pset, num_target_partitions=num_partitions)
         self._part_manager.put_partition_set(sort.id(), new_pset)
