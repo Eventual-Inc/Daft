@@ -51,6 +51,8 @@ class SortOp(ShuffleOp):
         desc: Optional[bool] = None,
     ) -> List[vPartition]:
         assert expr is not None and boundaries is not None and desc is not None
+        if output_partitions == 1:
+            return [input]
         sort_key = input.eval_expression(expr).block
         argsort_idx = sort_key.argsort()
         sorted_input = input.take(argsort_idx)
