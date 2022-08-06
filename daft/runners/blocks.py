@@ -4,6 +4,7 @@ import collections
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partialmethod
+from operator import is_
 from typing import Any, Callable, ClassVar, Generic, List, TypeVar, Union
 
 import numpy as np
@@ -209,8 +210,13 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @abstractmethod
-    def bucket(self, num: int) -> DataBlock[ArrType]:
+    def quantiles(self, num: int) -> DataBlock[ArrType]:
         raise NotImplementedError()
+
+    @abstractmethod
+    def array_hash(self) -> DataBlock[ArrType]:
+        raise NotImplementedError()
+
 
 
 class PyListDataBlock(DataBlock[List]):
@@ -264,7 +270,14 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
         indices = np.searchsorted(pivots.data.to_numpy(), arr)
         return ArrowDataBlock(data=pa.chunked_array([indices]))
 
-    def bucket(self, num: int) -> DataBlock:
+    def quantiles(self, num: int) -> DataBlock:
         quantiles = np.linspace(1.0 / num, 1.0, num)[:-1]
         pivots = np.quantile(self.data.to_numpy(), quantiles, method="closest_observation")
         return DataBlock.make_block(data=pivots)
+
+    def array_hash(self) -> ArrowDataBlock:
+        pa_type = self.data.type
+        if pa.types.is_integer(pa_type):
+
+        import ipdb
+        ipdb.set_trace()

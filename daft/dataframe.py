@@ -187,14 +187,13 @@ class DataFrame:
         global_limit = logical_plan.GlobalLimit(local_limit, num=num)
         return DataFrame(global_limit)
 
-    def repartition(self, num: int, partition_by: Optional[ColumnInputType] = None) -> DataFrame:
-        if partition_by is None:
+    def repartition(self, num: int, *partition_by: Optional[List[ColumnInputType]]) -> DataFrame:
+        if len(partition_by) == 0:
             scheme = logical_plan.PartitionScheme.RANDOM
             exprs: ExpressionList = ExpressionList([])
         else:
-            raise NotImplementedError()
             scheme = logical_plan.PartitionScheme.HASH
-            exprs = self.__column_input_to_expression((partition_by,))
+            exprs = self.__column_input_to_expression(partition_by)
 
         repartition_op = logical_plan.Repartition(self._plan, num_partitions=num, partition_by=exprs, scheme=scheme)
         return DataFrame(repartition_op)
