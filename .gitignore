@@ -7,3 +7,4 @@ dist
 requirements.txt
 
 **/node_modules/**
+data/**
