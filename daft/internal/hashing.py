@@ -6,7 +6,7 @@ import numpy as np
 
 # @numba.vectorize([numba.uint32(int_type) for int_type in numba.types.integer_domain], nopython=True)
 @numba.njit(numba.uint32(numba.uint32), locals={"h": numba.uint32})
-def murmur3_hash_32(h):
+def fmix_32(h):
     h ^= h >> 16
     h *= 0x85EBCA6B
     h ^= h >> 13
@@ -16,7 +16,7 @@ def murmur3_hash_32(h):
 
 
 # @numba.vectorize([numba.uint64(int_type) for int_type in numba.types.integer_domain], nopython=True)
-def murmur3_hash_64(h):
+def fmix_64(h):
     h ^= h >> 33
     h *= 0xFF51AFD7ED558CCD
     h ^= h >> 33
@@ -25,7 +25,7 @@ def murmur3_hash_64(h):
     return h
 
 
-@numba.njit(numba.uint32(numba.uint32, numba.int8), inline="always")
+@numba.njit(numba.uint32(numba.uint32, numba.int8))
 def rotl32(x, r):
     return (x << r) | (x >> (32 - r))
 
@@ -64,5 +64,5 @@ def murmur3_hash_32_buffer(buffer: np.ndarray) -> int:
 
     h1 ^= k1
     h1 ^= size
-    h1 = murmur3_hash_32(h1)
+    h1 = fmix_32(h1)
     return h1
