@@ -1,6 +1,8 @@
 import numba
 import numpy as np
 
+# Implements Murmur hashing
+# See: https://en.wikipedia.org/wiki/MurmurHash
 
 # @numba.vectorize([numba.uint32(int_type) for int_type in numba.types.integer_domain], nopython=True)
 @numba.njit(numba.uint32(numba.uint32), locals={"h": numba.uint32})
