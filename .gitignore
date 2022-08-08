@@ -5,6 +5,8 @@ venv
 dist
 **/__pycache__/
 requirements.txt
+build
+.cython_build
 
 **/node_modules/**
 data/**
