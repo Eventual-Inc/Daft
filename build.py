@@ -7,7 +7,7 @@ import numpy as np
 import pyarrow as pa
 from Cython.Build import cythonize
 from Cython.Distutils.build_ext import new_build_ext as cython_build_ext
-from setuptools import Extension
+from setuptools import Distribution, Extension
 
 SOURCE_DIR = Path("daft")
 BUILD_DIR = Path(".cython_build")
@@ -83,3 +83,12 @@ def build(setup_kwargs: Dict[str, Any]) -> None:
             "zip_safe": False,
         }
     )
+
+
+if __name__ == "__main__":
+    setup = {}
+    build(setup)
+    distribution = Distribution(setup)
+    distribution.run_command("build_ext")
+    build_ext_cmd = distribution.get_command_obj("build_ext")
+    build_ext_cmd.copy_extensions_to_source()
