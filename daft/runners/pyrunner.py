@@ -7,6 +7,7 @@ from typing import Dict
 
 from pyarrow import csv
 
+from daft.datasources import CSVSourceInfo, ScanType
 from daft.execution.execution_plan import ExecutionPlan
 from daft.logical.logical_plan import (
     Filter,
@@ -115,20 +116,20 @@ class PyRunner(Runner):
         n_partitions = scan.num_partitions()
         assert n_partitions == 1
         assert partition_id == 0
-        if scan._source_info.scan_type == Scan.ScanType.IN_MEMORY:
+        if scan._source_info.scan_type() == ScanType.IN_MEMORY:
             assert n_partitions == 1
             raise NotImplementedError()
-        elif scan._source_info.scan_type == Scan.ScanType.CSV:
-            assert isinstance(scan._source_info.source, Scan.CSVScanConfig)
+        elif scan._source_info.scan_type() == ScanType.CSV:
+            assert isinstance(scan._source_info, CSVSourceInfo)
             schema = scan.schema()
             table = csv.read_csv(
-                scan._source_info.source.path,
+                scan._source_info.filepaths[0],
                 parse_options=csv.ParseOptions(
-                    delimiter=scan._source_info.source.delimiter,
+                    delimiter=scan._source_info.delimiter,
                 ),
                 read_options=csv.ReadOptions(
                     column_names=[expr.name() for expr in schema],
-                    skip_rows_after_names=1 if scan._source_info.source.headers else 0,
+                    skip_rows_after_names=1 if scan._source_info.has_headers else 0,
                 ),
             )
             column_ids = [col.get_id() for col in schema.to_column_expressions()]

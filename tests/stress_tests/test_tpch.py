@@ -89,7 +89,7 @@ SCHEMA = {
 @pytest.fixture(scope="function")
 def lineitem():
     return DataFrame.from_csv(
-        "data/tpch/lineitem.tbl", headers=False, column_names=SCHEMA["lineitem"] + [""], delimiter="|"
+        "data/tpch/lineitem.tbl", has_headers=False, column_names=SCHEMA["lineitem"] + [""], delimiter="|"
     )
 
 

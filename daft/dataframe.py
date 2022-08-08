@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, TypeVar, Union
 
 import pandas
 
+from daft.datasources import CSVSourceInfo, InMemorySourceInfo
 from daft.expressions import Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
@@ -47,7 +48,7 @@ class DataFrame:
             schema=schema,
             predicate=None,
             columns=None,
-            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.IN_MEMORY, source=data),
+            source_info=InMemorySourceInfo(data={header: [row[header] for row in data] for header in data[0]}),
         )
         return cls(plan)
 
@@ -58,19 +59,19 @@ class DataFrame:
             schema=schema,
             predicate=None,
             columns=None,
-            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.IN_MEMORY, source=data),
+            source_info=InMemorySourceInfo(data=data),
         )
         return cls(plan)
 
     @classmethod
     def from_csv(
-        cls, path: str, headers: bool = True, column_names: Optional[List[str]] = None, delimiter: str = ","
+        cls, path: str, has_headers: bool = True, column_names: Optional[List[str]] = None, delimiter: str = ","
     ) -> DataFrame:
         """Creates a DataFrame from a CSV
 
         Args:
             path (str): Path to CSV
-            headers (bool): Whether the CSV has a header or not, defaults to True
+            has_headers (bool): Whether the CSV has a header or not, defaults to True
             column_names (Optional[List[str]]): Custom column names to assign to the DataFrame, defaults to None
             delimiter (Str): Delimiter used in the CSV, defaults to ","
 
@@ -89,7 +90,7 @@ class DataFrame:
                 for row in reader:
                     schema = (
                         ExpressionList([col(header) for header in row])
-                        if headers
+                        if has_headers
                         else ExpressionList([col(f"col_{i}") for i in range(len(row))])
                     )
                     break
@@ -99,13 +100,10 @@ class DataFrame:
             schema=schema,
             predicate=None,
             columns=None,
-            source_info=logical_plan.Scan.SourceInfo(
-                scan_type=logical_plan.Scan.ScanType.CSV,
-                source=logical_plan.Scan.CSVScanConfig(
-                    path=path,
-                    delimiter=delimiter,
-                    headers=headers,
-                ),
+            source_info=CSVSourceInfo(
+                filepaths=[path],
+                delimiter=delimiter,
+                has_headers=has_headers,
             ),
         )
         return cls(plan)

@@ -3,10 +3,11 @@ from typing import Dict, List
 import pytest
 
 from daft.dataframe import DataFrame
+from daft.datasources import InMemorySourceInfo
 from daft.expressions import col
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
-from daft.logical.logical_plan import LogicalPlan, Scan
+from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import (
     FoldProjections,
     PushDownClausesIntoScan,
@@ -34,7 +35,7 @@ def test_filter_scan_pushdown(valid_data: List[Dict[str, float]], optimizer) -> 
         schema=original_schema,
         predicate=ExpressionList([predicate_expr]),
         columns=None,
-        source_info=Scan.SourceInfo(scan_type=Scan.ScanType.IN_MEMORY, source=valid_data),
+        source_info=InMemorySourceInfo(data={header: [row[header] for row in valid_data] for header in valid_data[0]}),
     )
     assert isinstance(optimized, logical_plan.Scan)
     assert optimized.is_eq(expected)
@@ -52,6 +53,6 @@ def test_projection_scan_pushdown(valid_data: List[Dict[str, float]], optimizer)
         schema=original_schema,
         predicate=None,
         columns=selected_columns,
-        source_info=Scan.SourceInfo(scan_type=Scan.ScanType.IN_MEMORY, source=valid_data),
+        source_info=InMemorySourceInfo(data={header: [row[header] for row in valid_data] for header in valid_data[0]}),
     )
     assert optimized.is_eq(expected)

@@ -22,7 +22,7 @@ def test_load_csv_no_headers(tmp_path: pathlib.Path):
     """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
     csv.write_text("\n".join(pathlib.Path(IRIS_CSV).read_text().split("\n")[1:]))
-    daft_df = DataFrame.from_csv(str(csv), headers=False)
+    daft_df = DataFrame.from_csv(str(csv), has_headers=False)
     pd_df = pd.read_csv(csv, header=None)
     pd_df.columns = [f"col_{i}" for i in range(5)]
     assert_df_equals(daft_df, pd_df, assert_ordering=True)
