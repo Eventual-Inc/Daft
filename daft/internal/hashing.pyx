@@ -1,12 +1,6 @@
 # distutils: language=c++
-# distutils: sources = daft/internal/xxhash.cc
 
-from libc cimport stdint
 from pyarrow.lib cimport CArray, pyarrow_unwrap_array, shared_ptr
-
-
-cdef extern from "xxhash.h":
-    stdint.uint64_t XXH3_64bits(const void* input, size_t length);
 
 
 def get_array_length(obj):
