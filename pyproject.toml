@@ -62,7 +62,7 @@ mmh3 = "^3.0.0"
 [tool.mypy]
 python_version = "3.8"
 # WE NEED TO ENABLE THIS FOR eventual-hub
-files = ["daft/**/*.py", "tests/**/*.py"]
+files = ["daft/**/*.py", "daft/**/*.pyx", "tests/**/*.py"]
 warn_return_any = true
 warn_unused_configs = true
 
