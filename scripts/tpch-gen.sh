@@ -12,6 +12,3 @@ fi
 
 make
 ./dbgen -s 1 -f
-
-for I in *.tbl; do sed 's/|$//' $I > ${I/tbl/csv}; done;
-for I in *.csv; do sed -i '' 's/|/,/g' $I ; done;

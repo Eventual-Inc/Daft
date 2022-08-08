@@ -3,6 +3,7 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
+from tests.conftest import assert_df_equals
 
 SCHEMA = {
     "part": [
@@ -87,28 +88,44 @@ SCHEMA = {
 
 @pytest.fixture(scope="function")
 def lineitem():
-    return DataFrame.from_csv("data/tpch/lineitem.csv", headers=SCHEMA["lineitem"])
+    return DataFrame.from_csv(
+        "data/tpch/lineitem.tbl", headers=False, column_names=SCHEMA["lineitem"] + [""], delimiter="|"
+    )
 
 
 @pytest.mark.tpch
 def test_tpch_q1(lineitem):
-    discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
-    discounted_price * (1 + col("L_TAX"))
-    # daft_df = (
-    #     lineitem.where(col("L_SHIPDATE") <= "1998-09-02")
-    #             .groupby(col("L_RETURNFLAG"), col("L_LINESTATUS"))
-    #             .agg(
-    #                 col("L_QUANTITY").agg.sum(),
-    #                 col("L_EXTENDEDPRICE").agg.sum(),
-    #                 discounted_price.agg.sum(),
-    #                 taxed_discounted_price.agg.sum(),
-    #                 col("L_QUANTITY").agg.mean(),
-    #                 col("L_EXTENDEDPRICE").agg.mean(),
-    #                 col("L_DISCOUNT").agg.mean(),
-    #                 col("L_QUANTITY").agg.count(),
-    #             ).sort(col("L_RETURNFLAG"), col("L_LINESTATUS"))
-    # )
-    answer = pd.read_csv("data/tpch/answers/q1.out", delimiter="|")
     import pdb
 
     pdb.set_trace()
+    discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
+    taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
+    daft_df = (
+        lineitem.where(col("L_SHIPDATE") <= "1998-09-02")
+        .groupby(col("L_RETURNFLAG"), col("L_LINESTATUS"))
+        .agg(
+            col("L_QUANTITY").agg.sum().alias("sum_qty"),
+            col("L_EXTENDEDPRICE").agg.sum().alias("sum_base_price"),
+            discounted_price.agg.sum().alias("sum_disc_price"),
+            taxed_discounted_price.agg.sum().alias("sum_charge"),
+            col("L_QUANTITY").agg.mean().alias("avg_qty"),
+            col("L_EXTENDEDPRICE").agg.mean().alias("avg_price"),
+            col("L_DISCOUNT").agg.mean().alias("avg_disc"),
+            col("L_QUANTITY").agg.count().alias("count_order"),
+        )
+        .sort(col("L_RETURNFLAG"), col("L_LINESTATUS"))
+    )
+    answer = pd.read_csv("data/tpch/answers/q1.out", delimiter="|")
+    answer.columns = [
+        "L_RETURNFLAG",
+        "L_LINESTATUS",
+        "sum_qty",
+        "sum_base_price",
+        "sum_disc_price",
+        "sum_charge",
+        "avg_qty",
+        "avg_price",
+        "avg_disc",
+        "count_order",
+    ]
+    assert_df_equals(daft_df, answer)

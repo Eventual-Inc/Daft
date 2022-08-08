@@ -2,8 +2,8 @@ import pandas as pd
 import pytest
 
 from daft.expressions import col
+from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
-    assert_df_equals,
     parametrize_partitioned_daft_df,
     parametrize_sort_desc,
 )
