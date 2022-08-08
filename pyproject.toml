@@ -11,6 +11,10 @@ build = "build.py"
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
+[tool.poetry.scripts]
+build_inplace = 'build:build_inplace'
+
+
 [tool.poetry.dependencies]
 python = "^3.8"
 ray = "1.13.0"

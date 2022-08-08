@@ -85,10 +85,14 @@ def build(setup_kwargs: Dict[str, Any]) -> None:
     )
 
 
-if __name__ == "__main__":
+def build_inplace() -> None:
     setup = {}
     build(setup)
     distribution = Distribution(setup)
     distribution.run_command("build_ext")
     build_ext_cmd = distribution.get_command_obj("build_ext")
     build_ext_cmd.copy_extensions_to_source()
+
+
+if __name__ == "__main__":
+    build_inplace()
