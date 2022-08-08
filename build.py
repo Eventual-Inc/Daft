@@ -66,13 +66,6 @@ def cythonize_helper(extension_modules: List[Extension]) -> List[Extension]:
     )
 
 
-import os
-
-import numpy as np
-import pyarrow as pa
-from Cython.Build import cythonize
-
-
 def build(setup_kwargs: Dict[str, Any]) -> None:
     extension_modules = cythonize_helper(get_extension_modules())
 
