@@ -26,7 +26,9 @@ def get_extension_modules() -> List[Extension]:
         # Convert path to module name
         module_path = str(module_path).replace("/", ".")
 
-        extension_module = Extension(name=module_path, sources=[str(py_file)])
+        extension_module = Extension(
+            name=module_path, sources=[str(py_file)], extra_compile_args=["-Wno-unused-variable"]
+        )
         extension_module.include_dirs.append(np.get_include())
         extension_module.include_dirs.append(pa.get_include())
         extension_module.libraries.extend(pa.get_libraries())
@@ -81,4 +83,3 @@ def build(setup_kwargs: Dict[str, Any]) -> None:
             "zip_safe": False,
         }
     )
-    print(setup_kwargs)
