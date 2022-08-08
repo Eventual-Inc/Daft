@@ -16,10 +16,11 @@ def test_load_csv(daft_df, pd_df):
     """Loading data from a CSV works"""
     pd_slice = pd_df
     daft_slice = daft_df
+    print(pd_slice)
+    print(daft_slice.to_pandas())
     assert_df_equals(daft_slice, pd_slice)
 
 
-@pytest.mark.tdd_all
 def test_load_csv_no_headers(tmp_path: pathlib.Path):
     """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
@@ -27,17 +28,16 @@ def test_load_csv_no_headers(tmp_path: pathlib.Path):
     daft_df = DataFrame.from_csv(str(csv), headers=False)
     pd_df = pd.read_csv(csv, header=None)
     pd_df.columns = [f"col_{i}" for i in range(5)]
-    assert_df_equals(daft_df, pd_df)
+    assert_df_equals(daft_df, pd_df, assert_ordering=True)
 
 
-@pytest.mark.tdd_all
 def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
     """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
     csv.write_text(pathlib.Path(IRIS_CSV).read_text().replace(",", "\t"))
     daft_df = DataFrame.from_csv(str(csv), delimiter="\t")
     pd_df = pd.read_csv(csv, delimiter="\t")
-    assert_df_equals(daft_df, pd_df)
+    assert_df_equals(daft_df, pd_df, assert_ordering=True)
 
 
 @pytest.mark.tdd_all

@@ -119,9 +119,18 @@ class PyRunner(Runner):
             assert n_partitions == 1
             raise NotImplementedError()
         elif scan._source_info.scan_type == Scan.ScanType.CSV:
-            assert isinstance(scan._source_info.source, str)
+            assert isinstance(scan._source_info.source, Scan.CSVScanConfig)
             schema = scan.schema()
-            table = csv.read_csv(scan._source_info.source)
+            table = csv.read_csv(
+                scan._source_info.source.path,
+                parse_options=csv.ParseOptions(
+                    delimiter=scan._source_info.source.delimiter,
+                ),
+                read_options=csv.ReadOptions(
+                    column_names=[expr.name() for expr in schema],
+                    skip_rows_after_names=1 if scan._source_info.source.headers else 0,
+                ),
+            )
             column_ids = [col.get_id() for col in schema.to_column_expressions()]
             vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
             self._part_manager.put(scan.id(), partition_id=partition_id, partition=vpart)

@@ -4,7 +4,7 @@ import itertools
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from daft.expressions import ColumnExpression
 from daft.internal.treenode import TreeNode
@@ -80,7 +80,13 @@ class Scan(LogicalPlan):
     @dataclass(frozen=True)
     class SourceInfo:
         scan_type: Scan.ScanType
-        source: Optional[Any] = None
+        source: Optional[Union[Scan.CSVScanConfig, List[Dict[str, Any]], Dict[str, List[Any]]]] = None
+
+    @dataclass(frozen=True)
+    class CSVScanConfig:
+        path: str
+        delimiter: str
+        headers: bool
 
     def __init__(
         self,

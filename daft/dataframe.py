@@ -83,7 +83,14 @@ class DataFrame:
             schema=schema,
             predicate=None,
             columns=None,
-            source_info=logical_plan.Scan.SourceInfo(scan_type=logical_plan.Scan.ScanType.CSV, source=path),
+            source_info=logical_plan.Scan.SourceInfo(
+                scan_type=logical_plan.Scan.ScanType.CSV,
+                source=logical_plan.Scan.CSVScanConfig(
+                    path=path,
+                    delimiter=delimiter,
+                    headers=headers,
+                ),
+            ),
         )
         return cls(plan)
 
