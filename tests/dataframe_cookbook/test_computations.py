@@ -1,8 +1,6 @@
 from daft.expressions import col
-from tests.dataframe_cookbook.conftest import (
-    assert_df_equals,
-    parametrize_partitioned_daft_df,
-)
+from tests.conftest import assert_df_equals
+from tests.dataframe_cookbook.conftest import parametrize_partitioned_daft_df
 
 
 @parametrize_partitioned_daft_df()

@@ -4,11 +4,8 @@ import pandas as pd
 import pytest
 
 from daft.dataframe import DataFrame
-from tests.dataframe_cookbook.conftest import (
-    IRIS_CSV,
-    assert_df_equals,
-    parametrize_partitioned_daft_df,
-)
+from tests.conftest import assert_df_equals
+from tests.dataframe_cookbook.conftest import IRIS_CSV, parametrize_partitioned_daft_df
 
 
 @parametrize_partitioned_daft_df()

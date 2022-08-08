@@ -63,20 +63,36 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
-    def from_csv(cls, path: str, headers: bool = True, delimiter: str = ",") -> DataFrame:
+    def from_csv(
+        cls, path: str, headers: bool = True, column_names: Optional[List[str]] = None, delimiter: str = ","
+    ) -> DataFrame:
+        """Creates a DataFrame from a CSV
+
+        Args:
+            path (str): Path to CSV
+            headers (bool): Whether the CSV has a header or not, defaults to True
+            column_names (Optional[List[str]]): Custom column names to assign to the DataFrame, defaults to None
+            delimiter (Str): Delimiter used in the CSV, defaults to ","
+
+        returns:
+            DataFrame: parsed DataFrame
+        """
         fs = get_filesystem_from_path(path)
 
         # Read first row to ascertain schema
         schema = None
-        with fs.open(path, "r") as f:
-            reader = csv.reader(f, delimiter=delimiter)
-            for row in reader:
-                schema = (
-                    ExpressionList([col(header) for header in row])
-                    if headers
-                    else ExpressionList([col(f"col_{i}") for i in range(len(row))])
-                )
-                break
+        if column_names:
+            schema = ExpressionList([col(header) for header in column_names])
+        else:
+            with fs.open(path, "r") as f:
+                reader = csv.reader(f, delimiter=delimiter)
+                for row in reader:
+                    schema = (
+                        ExpressionList([col(header) for header in row])
+                        if headers
+                        else ExpressionList([col(f"col_{i}") for i in range(len(row))])
+                    )
+                    break
         assert schema is not None, "Unable to read CSV file to determine schema"
 
         plan = logical_plan.Scan(

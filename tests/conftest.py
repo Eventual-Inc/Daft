@@ -1,7 +1,10 @@
 import argparse
 
+import pandas as pd
 import pytest
 import ray
+
+from daft.dataframe import DataFrame
 
 
 @pytest.fixture(scope="session")
@@ -23,6 +26,7 @@ def pytest_addoption(parser):
         default=False,
         help="run tests that are marked for Test Driven Development (including low priority)",
     )
+    parser.addoption("--run_tpch", action="store_true", default=False, help="run tcp-h tests")
 
 
 def pytest_configure(config):
@@ -30,6 +34,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "docker: mark test as requiring docker to run")
     config.addinivalue_line("markers", "tdd: mark test as for TDD in active development")
     config.addinivalue_line("markers", "tdd_all: mark test as for TDD but not in active development")
+    config.addinivalue_line("markers", "tpch: mark as a tpch test")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -38,6 +43,7 @@ def pytest_collection_modifyitems(config, items):
         "docker": pytest.mark.skip(reason="need --run_docker option to run"),
         "tdd": pytest.mark.skip(reason="need --run_tdd option to run"),
         "tdd_all": pytest.mark.skip(reason="need --run_tdd_all option to run"),
+        "tpch": pytest.mark.skip(reason="need --run_tpch option to run"),
     }
     for item in items:
         for keyword in marks:
@@ -50,3 +56,37 @@ def run_tdd():
     parser.add_argument("--run_tdd", action="store_true")
     args, _ = parser.parse_known_args()
     return args.run_tdd
+
+
+def assert_df_equals(
+    daft_df: DataFrame, pd_df: pd.DataFrame, sort_key: str = "Unique Key", assert_ordering: bool = False
+):
+    """Asserts that a Daft Dataframe is equal to a Pandas Dataframe.
+
+    By default, we do not assert that the ordering is equal and will sort dataframes according to `sort_key`.
+    However, if asserting on ordering is intended behavior, set `assert_ordering=True` and this function will
+    no longer run sorting before running the equality comparison.
+    """
+    daft_pd_df = daft_df.to_pandas().reset_index(drop=True).reindex(sorted(daft_df.column_names()), axis=1)
+    pd_df = pd_df.reset_index(drop=True).reindex(sorted(pd_df.columns), axis=1)
+
+    # If we are not asserting on the ordering being equal, we run a sort operation on both dataframes using the provided sort key
+    if not assert_ordering:
+        assert sort_key in daft_pd_df.columns, (
+            f"DaFt Dataframe missing key: {sort_key}\nNOTE: This doesn't necessarily mean your code is "
+            "breaking, but our testing utilities require sorting on this key in order to compare your "
+            "Dataframe against the expected Pandas Dataframe."
+        )
+        assert sort_key in pd_df.columns, (
+            f"Pandas Dataframe missing key: {sort_key}\nNOTE: This doesn't necessarily mean your code is "
+            "breaking, but our testing utilities require sorting on this key in order to compare your "
+            "Dataframe against the expected Pandas Dataframe."
+        )
+        daft_pd_df = daft_pd_df.sort_values(by=sort_key).reset_index(drop=True)
+        pd_df = pd_df.sort_values(by=sort_key).reset_index(drop=True)
+
+    assert sorted(daft_pd_df.columns) == sorted(pd_df.columns), f"Found {daft_pd_df.columns} expected {pd_df.columns}"
+    for col in pd_df.columns:
+        df_series = daft_pd_df[col]
+        pd_series = pd_df[col]
+        pd.testing.assert_series_equal(df_series, pd_series)
