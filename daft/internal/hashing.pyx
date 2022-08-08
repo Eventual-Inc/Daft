@@ -1,6 +1,11 @@
 # distutils: language=c++
+# distutils: sources = daft/internal/xxhash.cc
 
 from pyarrow.lib cimport *
+
+
+cdef extern from "xxhash.h":
+    uint64_t XXH3_64bits(const void* input, size_t length);
 
 
 def get_array_length(obj):
@@ -9,4 +14,5 @@ def get_array_length(obj):
     cdef shared_ptr[CArray] arr = pyarrow_unwrap_array(obj)
     if arr.get() == NULL:
         raise TypeError("not an array")
-    return arr.get().length()
+    return XXH3_64bits(arr.get(), 8)
+    # return arr.get().length()
