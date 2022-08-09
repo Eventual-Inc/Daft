@@ -37,7 +37,8 @@ cdef shared_ptr[CBuffer] _shift_valid_bits(
     const shared_ptr[CBuffer] valid_bits,
     const stdint.int64_t num_values,
     const stdint.int64_t offset):
-
+    if valid_bits.get() == NULL:
+        return valid_bits
     cdef const stdint.uint8_t* valid_bits_data_ptr = valid_bits.get().data()
     cdef stdint.int64_t result_valid_bits_buffer_size = <stdint.uint64_t> math.ceil(num_values / 8.)
     cdef shared_ptr[CBuffer] result_valid_bits_buffer = to_shared(GetResultValue(AllocateBuffer(result_valid_bits_buffer_size, NULL)))
@@ -76,16 +77,13 @@ cdef shared_ptr[CArray] _hash_integer_array(shared_ptr[CArray] arr):
     cdef stdint.uint64_t h_value = 0
 
     for i in range(length):
+        # TODO Skip nulls
         idx = (i + offset)
         h_value = XXH3_64bits(data_ptr + idx*byte_width, byte_width)
         buffer_data_ptr[i] = h_value
 
     cdef vector[shared_ptr[CBuffer]] result_buffer_vector
-    if valid_bits.get() != NULL:
-        result_buffer_vector.push_back(_shift_valid_bits(valid_bits, length, offset))
-    else:
-        result_buffer_vector.push_back(valid_bits)
-
+    result_buffer_vector.push_back(_shift_valid_bits(valid_bits, length, offset))
     result_buffer_vector.push_back(result_buffer)
 
     cdef shared_ptr[CArrayData] result_array_data = CArrayData.Make(
@@ -115,24 +113,26 @@ cdef shared_ptr[CArray] _hash_string_array(shared_ptr[CArray] arr):
     cdef shared_ptr[CBuffer] offsets = buffers.at(1)
     cdef shared_ptr[CBuffer] data = buffers.at(2)
 
-    cdef const stdint.uint8_t* data_ptr = data.get().data() + offset
-    cdef const stdint.uint8_t* offsets_ptr = offsets.get().data() + offset
+    cdef const stdint.uint8_t* data_ptr = data.get().data()
+    cdef const stdint.uint32_t* offsets_ptr = <const stdint.uint32_t*> offsets.get().data()
 
-    cdef stdint.int64_t i = 0
-    cdef stdint.uint64_t h_value = 0
 
     cdef stdint.uint64_t result_buffer_size = length * cython.sizeof(stdint.uint64_t)
     cdef shared_ptr[CBuffer] result_buffer = to_shared(GetResultValue(AllocateBuffer(result_buffer_size, NULL)))
     cdef stdint.uint64_t* buffer_data_ptr = <stdint.uint64_t*> result_buffer.get().mutable_data()
 
-    cdef stdint.uint64_t word_size
+    cdef stdint.int64_t i, idx, word_size
+    cdef stdint.uint64_t h_value
+
     for i in range(length):
-        word_size = offsets_ptr[i+1] - offsets_ptr[i]
-        #h_value = XXH3_64bits(data_ptr + offsets_ptr[i], word_size)
-        #buffer_data_ptr[i] = h_value
+        idx = i + offset
+        # TODO Skip nulls
+        word_size = offsets_ptr[idx+1] - offsets_ptr[idx]
+        h_value = XXH3_64bits(data_ptr + offsets_ptr[idx], word_size)
+        buffer_data_ptr[i] = h_value
 
     cdef vector[shared_ptr[CBuffer]] result_buffer_vector
-    result_buffer_vector.push_back(valid_bits)
+    result_buffer_vector.push_back(_shift_valid_bits(valid_bits, length, offset))
     result_buffer_vector.push_back(result_buffer)
 
     cdef shared_ptr[CArrayData] result_array_data = CArrayData.Make(
@@ -143,8 +143,6 @@ cdef shared_ptr[CArray] _hash_string_array(shared_ptr[CArray] arr):
         0,
     )
     return MakeArray(result_array_data)
-
-
 
 
 def hash_chunked_array(obj):
@@ -168,7 +166,11 @@ def hash_chunked_array(obj):
     cdef vector[shared_ptr[CArray]] hash_results
     for i in range(num_chunks):
         arr = carr.get().chunk(i)
-        hash_results.push_back(_hash_integer_array(arr))
+        if is_integer:
+            hash_results.push_back(_hash_integer_array(arr))
+        elif is_string:
+            hash_results.push_back(_hash_string_array(arr))
+
 
     cdef shared_ptr[CChunkedArray] result = make_shared[CChunkedArray](hash_results, GetPrimitiveType(Type._Type_UINT64))
     return pyarrow_wrap_chunked_array(result)
