@@ -9,24 +9,6 @@ from daft.dataframe import DataFrame
 from daft.expressions import col, lit
 from tests.conftest import assert_df_equals
 
-# def parametrize_daft_df_in_memory_source(
-#     source: Dict[str, List[Any]],
-#     partitioning: Optional[List[int]] = [],
-# ):
-#     base_df = DataFrame.from_pydict(source)
-#     pd_df = pd.DataFrame.from_dict(source)
-
-#     def _wrapper(test_case):
-#         daft_dfs = [base_df] + [base_df.repartition(i) for i in partitioning]
-#         ids = [f"Repartition:{num}" for num in ["None", *partitioning]]
-#         return pytest.mark.parametrize(
-#             ["daft_df", "pd_df"],
-#             [pytest.param(daft_df, pd_df.copy(), id=test_id) for test_id, daft_df in zip(ids, daft_dfs)],
-#         )(test_case)
-
-#     return _wrapper
-
-
 ###
 # Idioms: if-then
 ###
@@ -35,7 +17,7 @@ IF_THEN_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50, -
 IF_THEN_PARTITIONING = [1, 2, 3, 4, 5]
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans and Expression.where(...)")
+@pytest.mark.tdd_all("Expression.where(...)")
 @pytest.mark.parametrize("repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in IF_THEN_PARTITIONING])
 def test_if_then(repartition_nparts):
     daft_df = DataFrame.from_pydict(IF_THEN_DATA).repartition(repartition_nparts)
@@ -76,7 +58,6 @@ SPLITTING_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50,
 SPLITTING_DATA_PARTITIONING = [1, 2, 3, 4, 5]
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in SPLITTING_DATA_PARTITIONING]
 )
@@ -96,7 +77,6 @@ BUILDING_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50, 
 BUILDING_DATA_PARTITIONING = [1, 2, 3, 4, 5]
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in BUILDING_DATA_PARTITIONING]
 )
@@ -108,7 +88,6 @@ def test_multi_criteria_and(repartition_nparts):
     assert_df_equals(daft_df, pd_df, sort_key="AAA")
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in BUILDING_DATA_PARTITIONING]
 )
@@ -120,7 +99,7 @@ def test_multi_criteria_or(repartition_nparts):
     assert_df_equals(daft_df, pd_df, sort_key="AAA")
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans and Expression.where(...)")
+@pytest.mark.tdd_all("Requires Expression.where(...)")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in BUILDING_DATA_PARTITIONING]
 )
@@ -132,7 +111,7 @@ def test_multi_criteria_or_assignment(repartition_nparts):
     assert_df_equals(daft_df, pd_df, sort_key="AAA")
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans and Expression.abs()")
+@pytest.mark.tdd_all("Requires Expression.abs()")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in BUILDING_DATA_PARTITIONING]
 )
@@ -153,7 +132,7 @@ SELECTION_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50,
 SELECTION_DATA_PARTITIONING = [1, 2, 3, 4, 5]
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans, F.row_number() and Expression.is_in(...)")
+@pytest.mark.tdd_all("Requires F.row_number() and Expression.is_in(...)")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in SELECTION_DATA_PARTITIONING]
 )
@@ -165,7 +144,7 @@ def test_splitting_by_row_index(repartition_nparts):
     assert_df_equals(daft_df, pd_df, sort_key="AAA")
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans and F.row_number()")
+@pytest.mark.tdd_all("Requires F.row_number()")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in SELECTION_DATA_PARTITIONING]
 )
@@ -185,7 +164,7 @@ APPLYMAP_DATA = {"AAA": [1, 2, 1, 3], "BBB": [1, 1, 2, 2], "CCC": [2, 1, 3, 1]}
 APPLYMAP_DATA_PARTITIONING = [1, 2, 3, 4, 5]
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans and Expression.applymap((val) => result)")
+@pytest.mark.tdd_all("Requires Expression.applymap((val) => result)")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in APPLYMAP_DATA_PARTITIONING]
 )
@@ -208,7 +187,7 @@ MIN_WITH_GROUPBY_DATA = {"AAA": [1, 1, 1, 2, 2, 2, 3, 3], "BBB": [2, 1, 3, 4, 5,
 MIN_WITH_GROUPBY_DATA_PARTITIONING = [1, 2, 3, 8, 9]
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans, .groupby() and .min()")
+@pytest.mark.tdd_all("Requires .groupby() and .min()")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in APPLYMAP_DATA_PARTITIONING]
 )
@@ -249,7 +228,7 @@ GROUPBY_DATA_PARTITIONING = [1, 2, 7, 8]
 #     assert_df_equals(daft_df, pd_df, sort_key="animal")
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans, Expression.where(), .groupby(), .agg() and Expression.agg.*")
+@pytest.mark.tdd_all("Requires Expression.where(), .groupby(), .agg() and Expression.agg.*")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in GROUPBY_DATA_PARTITIONING]
 )
@@ -287,7 +266,7 @@ JOIN_DATA = {
 JOIN_DATA_PARTITIONING = [1, 3, 7, 8]
 
 
-@pytest.mark.tdd_all("Requires In-Memory scans and multi-column joins")
+@pytest.mark.tdd_all("Requires multi-column joins")
 @pytest.mark.parametrize("repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in JOIN_DATA_PARTITIONING])
 def test_self_join(repartition_nparts):
     daft_df = DataFrame.from_pydict(JOIN_DATA).repartition(repartition_nparts)

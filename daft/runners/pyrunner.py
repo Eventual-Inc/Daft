@@ -5,9 +5,9 @@ from bisect import bisect_right
 from itertools import accumulate
 from typing import Dict
 
-from pyarrow import csv
+from pyarrow import Table, csv
 
-from daft.datasources import CSVSourceInfo, ScanType
+from daft.datasources import CSVSourceInfo, InMemorySourceInfo, ScanType
 from daft.execution.execution_plan import ExecutionPlan
 from daft.logical.logical_plan import (
     Filter,
@@ -113,13 +113,18 @@ class PyRunner(Runner):
         return self._part_manager.get_partition_set(node.id())
 
     def _handle_scan(self, scan: Scan, partition_id: int) -> None:
-        n_partitions = scan.num_partitions()
+        schema = scan.schema()
+        column_ids = [col.get_id() for col in schema.to_column_expressions()]
         if scan._source_info.scan_type() == ScanType.IN_MEMORY:
-            assert n_partitions == 1
-            raise NotImplementedError()
+            assert isinstance(scan._source_info, InMemorySourceInfo)
+            table_len = [len(scan._source_info.data[key]) for key in scan._source_info.data][0]
+            partition_size = table_len // scan._source_info.num_partitions
+            start, end = (partition_size * partition_id, partition_size * (partition_id + 1))
+            table = Table.from_pydict({key: scan._source_info.data[key][start:end] for key in scan._source_info.data})
+            vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+            self._part_manager.put(scan.id(), partition_id=partition_id, partition=vpart)
         elif scan._source_info.scan_type() == ScanType.CSV:
             assert isinstance(scan._source_info, CSVSourceInfo)
-            schema = scan.schema()
             table = csv.read_csv(
                 scan._source_info.filepaths[partition_id],
                 parse_options=csv.ParseOptions(
@@ -130,7 +135,6 @@ class PyRunner(Runner):
                     skip_rows_after_names=1 if scan._source_info.has_headers else 0,
                 ),
             )
-            column_ids = [col.get_id() for col in schema.to_column_expressions()]
             vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
             self._part_manager.put(scan.id(), partition_id=partition_id, partition=vpart)
 

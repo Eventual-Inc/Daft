@@ -1,7 +1,6 @@
 import pathlib
 
 import pandas as pd
-import pytest
 
 from daft.dataframe import DataFrame
 from tests.conftest import assert_df_equals
@@ -40,15 +39,13 @@ def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
     assert_df_equals(daft_df, pd_df, assert_ordering=True)
 
 
-@pytest.mark.tdd_all
 def test_load_pydict():
     data = {"foo": [1, 2, 3], "bar": [1.0, None, 3.0], "baz": ["a", "b", "c"]}
     daft_df = DataFrame.from_pydict(data)
     pd_df = pd.DataFrame.from_dict(data)
-    assert_df_equals(daft_df, pd_df)
+    assert_df_equals(daft_df, pd_df, sort_key="foo")
 
 
-@pytest.mark.tdd_all
 def test_load_pylist():
     data = [
         {"foo": 1, "bar": 1.0, "baz": "a"},
@@ -57,4 +54,4 @@ def test_load_pylist():
     ]
     daft_df = DataFrame.from_pylist(data)
     pd_df = pd.DataFrame.from_records(data)
-    assert_df_equals(daft_df, pd_df)
+    assert_df_equals(daft_df, pd_df, sort_key="foo")

@@ -37,9 +37,10 @@ class CSVSourceInfo(SourceInfo):
 class InMemorySourceInfo(SourceInfo):
 
     data: Dict[str, List[Any]]
+    num_partitions: int = 1
 
     def scan_type(self):
         return ScanType.IN_MEMORY
 
     def get_num_partitions(self) -> int:
-        return 1
+        return self.num_partitions
