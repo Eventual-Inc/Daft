@@ -43,11 +43,16 @@ cdef shared_ptr[CBuffer] _shift_valid_bits(
     cdef stdint.int64_t result_valid_bits_buffer_size = <stdint.uint64_t> math.ceil(num_values / 8.)
     cdef shared_ptr[CBuffer] result_valid_bits_buffer = to_shared(GetResultValue(AllocateBuffer(result_valid_bits_buffer_size, NULL)))
     cdef stdint.uint8_t* result_valid_bits_data_ptr = <stdint.uint8_t*> result_valid_bits_buffer.get().mutable_data()
+    memset(result_valid_bits_data_ptr, 0, result_valid_bits_buffer_size )
     cdef stdint.int64_t byte_offset = offset // 8
     cdef stdint.uint8_t bit_offset = offset % 8
     cdef stdint.int64_t i, idx
-    for i in range(result_valid_bits_buffer_size):
-        result_valid_bits_data_ptr[i] = valid_bits_data_ptr[i + byte_offset] >> bit_offset
+    cdef stdint.uint8_t mask
+    for i in range(num_values):
+        idx = i + offset
+        is_valid = (valid_bits_data_ptr[idx // 8] & (1 << (idx & 0b111))) != 0
+        result_valid_bits_data_ptr[i // 8] |= (is_valid << (i & 0b111))
+
     return result_valid_bits_buffer
 
 

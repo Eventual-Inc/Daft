@@ -2554,6 +2554,14 @@ python-versions = ">=3.5"
 dev = ["black (>=19.3b0)", "pytest (>=4.6.2)"]
 
 [[package]]
+name = "xxhash"
+version = "3.0.0"
+description = "Python binding for xxHash"
+category = "dev"
+optional = false
+python-versions = ">=3.6"
+
+[[package]]
 name = "zipp"
 version = "3.8.1"
 description = "Backport of pathlib-compatible object wrapper for zip files"
@@ -2568,7 +2576,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytest-
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "e6c1c3260be35057ef5fe253c38b6bfeacc0e55f3c33f4f2ac212eba3f833cc5"
+content-hash = "a7be9a16e817cb873c093b6cb9a3e44ac1696f1cf57c5e23f563b9387ff33069"
 
 [metadata.files]
 aiosignal = [
@@ -3666,4 +3674,5 @@ widgetsnbextension = [
     {file = "widgetsnbextension-3.6.1.tar.gz", hash = "sha256:9c84ae64c2893c7cbe2eaafc7505221a795c27d68938454034ac487319a75b10"},
 ]
 win32-setctime = []
+xxhash = []
 zipp = []
