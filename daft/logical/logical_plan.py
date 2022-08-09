@@ -241,7 +241,7 @@ class Repartition(UnaryNode):
     ) -> None:
         super().__init__(input.schema().to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.GLOBAL)
         self._register_child(input)
-        self._partition_by = partition_by
+        self._partition_by = partition_by.resolve(self.schema())
         self._scheme = scheme
         if scheme == PartitionScheme.RANDOM and len(partition_by.names) > 0:
             raise ValueError("Can not pass in random partitioning and partition_by args")

@@ -10,6 +10,8 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pac
 
+from daft.internal.hashing import hash_chunked_array
+
 ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
 UnaryFuncType = Callable[[ArrType], ArrType]
 BinaryFuncType = Callable[[ArrType, ArrType], ArrType]
@@ -34,6 +36,7 @@ class FunctionDispatch:
     mul: BinaryFuncType
     truediv: BinaryFuncType
     pow: BinaryFuncType
+    mod: BinaryFuncType
 
     # Logical
     and_: BinaryFuncType
@@ -50,6 +53,10 @@ class FunctionDispatch:
     take: BinaryFuncType
 
 
+def arrow_mod(arr, m):
+    return np.mod(arr, m.as_py())
+
+
 ArrowFunctionDispatch = FunctionDispatch(
     neg=pac.negate,
     pos=lambda x: x,
@@ -60,6 +67,7 @@ ArrowFunctionDispatch = FunctionDispatch(
     mul=pac.multiply,
     truediv=pac.divide,
     pow=pac.power,
+    mod=arrow_mod,
     and_=pac.and_,
     or_=pac.or_,
     lt=pac.less,
@@ -209,7 +217,11 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @abstractmethod
-    def bucket(self, num: int) -> DataBlock[ArrType]:
+    def quantiles(self, num: int) -> DataBlock[ArrType]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def array_hash(self) -> DataBlock[ArrType]:
         raise NotImplementedError()
 
 
@@ -264,7 +276,14 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
         indices = np.searchsorted(pivots.data.to_numpy(), arr)
         return ArrowDataBlock(data=pa.chunked_array([indices]))
 
-    def bucket(self, num: int) -> DataBlock:
+    def quantiles(self, num: int) -> DataBlock:
         quantiles = np.linspace(1.0 / num, 1.0, num)[:-1]
         pivots = np.quantile(self.data.to_numpy(), quantiles, method="closest_observation")
         return DataBlock.make_block(data=pivots)
+
+    def array_hash(self) -> ArrowDataBlock:
+        assert isinstance(self.data, pa.ChunkedArray)
+        pa_type = self.data.type
+        if not (pa.types.is_integer(pa_type) or pa.types.is_string(pa_type)):
+            raise TypeError(f"can only hash ints or strings not {pa_type}")
+        return ArrowDataBlock(data=hash_chunked_array(self.data))

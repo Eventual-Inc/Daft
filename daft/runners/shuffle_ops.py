@@ -41,6 +41,17 @@ class RepartitionRandomOp(ShuffleOp):
         return vPartition.merge_partitions(mapped_outputs)
 
 
+class RepartitionHashOp(ShuffleOp):
+    @staticmethod
+    def map_fn(input: vPartition, output_partitions: int, expr: Optional[Expression] = None) -> List[vPartition]:
+        assert expr is not None
+        return input.split_by_hash(expr, num_partitions=output_partitions)
+
+    @staticmethod
+    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+        return vPartition.merge_partitions(mapped_outputs)
+
+
 class SortOp(ShuffleOp):
     @staticmethod
     def map_fn(

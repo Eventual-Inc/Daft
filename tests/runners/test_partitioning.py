@@ -233,3 +233,35 @@ def test_split_by_index_even(n) -> None:
         for col in new_part.columns.values():
             pylist = col.block.to_pylist()
             assert all(val % n == i for val in pylist)
+
+
+@pytest.mark.parametrize("n", [1, 2, 3, 4, 5, 10])
+def test_hash_partition(n) -> None:
+    expr = col("x")
+    expr = resolve_expr(expr)
+
+    tiles = {}
+    col_id = expr.required_columns()[0].get_id()
+
+    for i in range(col_id, col_id + 4):
+        block = DataBlock.make_block(np.arange(0, 2 * n, 1) % n)
+
+        tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
+
+    hashes = block.array_hash()
+    hashes % n
+
+    part = vPartition(columns=tiles, partition_id=0)
+    new_parts = part.split_by_hash(expr, n)
+    values_seen = set()
+    for i, new_part in enumerate(new_parts):
+        assert new_part.partition_id == i
+        values_expected = None
+        for ncol in new_part.columns.values():
+            pylist = ncol.block.to_pylist()
+            for val in pylist:
+                assert val not in values_seen
+            if values_expected is None:
+                values_expected = pylist
+            assert values_expected == pylist
+        values_seen.update(pylist)

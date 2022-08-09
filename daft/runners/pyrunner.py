@@ -19,6 +19,7 @@ from daft.logical.logical_plan import (
     GlobalLimit,
     LocalLimit,
     LogicalPlan,
+    PartitionScheme,
     Projection,
     Repartition,
     Scan,
@@ -26,7 +27,12 @@ from daft.logical.logical_plan import (
 )
 from daft.runners.partitioning import PartitionSet, vPartition
 from daft.runners.runner import Runner
-from daft.runners.shuffle_ops import RepartitionRandomOp, ShuffleOp, SortOp
+from daft.runners.shuffle_ops import (
+    RepartitionHashOp,
+    RepartitionRandomOp,
+    ShuffleOp,
+    SortOp,
+)
 
 
 class PyRunnerPartitionManager:
@@ -77,6 +83,10 @@ class PyRunnerSimpleShuffler(ShuffleOp):
 
 
 class PyRunnerRepartitionRandom(PyRunnerSimpleShuffler, RepartitionRandomOp):
+    ...
+
+
+class PyRunnerRepartitionHash(PyRunnerSimpleShuffler, RepartitionHashOp):
     ...
 
 
@@ -195,7 +205,13 @@ class PyRunner(Runner):
     def _handle_repartition(self, repartition: Repartition) -> None:
         child_id = repartition._children()[0].id()
         prev_pset = self._part_manager.get_partition_set(child_id)
-        repartitioner = PyRunnerRepartitionRandom()
+        repartitioner: PyRunnerSimpleShuffler
+        if repartition._scheme == PartitionScheme.RANDOM:
+            repartitioner = PyRunnerRepartitionRandom()
+        elif repartition._scheme == PartitionScheme.HASH:
+            repartitioner = PyRunnerRepartitionHash(map_args={"expr": repartition._partition_by.exprs[0]})
+        else:
+            raise NotImplementedError()
         new_pset = repartitioner.run(input=prev_pset, num_target_partitions=repartition.num_partitions())
         self._part_manager.put_partition_set(repartition.id(), new_pset)
 
@@ -209,7 +225,7 @@ class PyRunner(Runner):
         assert len(sort._sort_by.exprs) == 1
         expr = sort._sort_by.exprs[0]
         sampled_sort_key = merged_samples.eval_expression(expr)
-        boundaries = sampled_sort_key.block.bucket(num_partitions)
+        boundaries = sampled_sort_key.block.quantiles(num_partitions)
 
         sort_op = PyRunnerSortOp(
             map_args={"expr": expr, "boundaries": boundaries, "desc": sort._desc},
