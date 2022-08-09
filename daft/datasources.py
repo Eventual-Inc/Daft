@@ -15,6 +15,9 @@ class SourceInfo(Protocol):
     def scan_type(self) -> ScanType:
         ...
 
+    def get_num_partitions(self) -> int:
+        ...
+
 
 @dataclass(frozen=True)
 class CSVSourceInfo(SourceInfo):
@@ -26,6 +29,9 @@ class CSVSourceInfo(SourceInfo):
     def scan_type(self):
         return ScanType.CSV
 
+    def get_num_partitions(self) -> int:
+        return len(self.filepaths)
+
 
 @dataclass(frozen=True)
 class InMemorySourceInfo(SourceInfo):
@@ -34,3 +40,6 @@ class InMemorySourceInfo(SourceInfo):
 
     def scan_type(self):
         return ScanType.IN_MEMORY
+
+    def get_num_partitions(self) -> int:
+        return 1

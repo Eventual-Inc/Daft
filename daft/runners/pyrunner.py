@@ -114,8 +114,6 @@ class PyRunner(Runner):
 
     def _handle_scan(self, scan: Scan, partition_id: int) -> None:
         n_partitions = scan.num_partitions()
-        assert n_partitions == 1
-        assert partition_id == 0
         if scan._source_info.scan_type() == ScanType.IN_MEMORY:
             assert n_partitions == 1
             raise NotImplementedError()
@@ -123,7 +121,7 @@ class PyRunner(Runner):
             assert isinstance(scan._source_info, CSVSourceInfo)
             schema = scan.schema()
             table = csv.read_csv(
-                scan._source_info.filepaths[0],
+                scan._source_info.filepaths[partition_id],
                 parse_options=csv.ParseOptions(
                     delimiter=scan._source_info.delimiter,
                 ),

@@ -79,13 +79,17 @@ class DataFrame:
             DataFrame: parsed DataFrame
         """
         fs = get_filesystem_from_path(path)
+        filepaths = [path] if fs.isfile(path) else fs.ls(path)
+
+        if len(filepaths) == 0:
+            raise ValueError(f"No CSV files found at {path}")
 
         # Read first row to ascertain schema
         schema = None
         if column_names:
             schema = ExpressionList([col(header) for header in column_names])
         else:
-            with fs.open(path, "r") as f:
+            with fs.open(filepaths[0], "r") as f:
                 reader = csv.reader(f, delimiter=delimiter)
                 for row in reader:
                     schema = (
@@ -101,7 +105,7 @@ class DataFrame:
             predicate=None,
             columns=None,
             source_info=CSVSourceInfo(
-                filepaths=[path],
+                filepaths=filepaths,
                 delimiter=delimiter,
                 has_headers=has_headers,
             ),

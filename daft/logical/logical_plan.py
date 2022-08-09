@@ -81,7 +81,7 @@ class Scan(LogicalPlan):
         columns: Optional[List[str]] = None,
     ) -> None:
         schema = schema.resolve()
-        super().__init__(schema, num_partitions=1, op_level=OpLevel.PARTITION)
+        super().__init__(schema, num_partitions=source_info.get_num_partitions(), op_level=OpLevel.PARTITION)
 
         if predicate is not None:
             self._predicate = predicate.resolve(schema)
@@ -145,7 +145,6 @@ class Projection(UnaryNode):
     def __init__(self, input: LogicalPlan, projection: ExpressionList) -> None:
         projection = projection.resolve(input_schema=input.schema())
         super().__init__(projection, num_partitions=input.num_partitions(), op_level=OpLevel.ROW)
-
         self._register_child(input)
         self._projection = projection
 

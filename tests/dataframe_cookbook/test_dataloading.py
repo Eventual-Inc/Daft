@@ -1,11 +1,17 @@
+import os
 import pathlib
 
 import pandas as pd
 import pytest
 
 from daft.dataframe import DataFrame
+from daft.expressions import col
 from tests.conftest import assert_df_equals
-from tests.dataframe_cookbook.conftest import IRIS_CSV, parametrize_partitioned_daft_df
+from tests.dataframe_cookbook.conftest import (
+    COLUMNS,
+    IRIS_CSV,
+    parametrize_partitioned_daft_df,
+)
 
 
 @parametrize_partitioned_daft_df()
@@ -13,9 +19,19 @@ def test_load_csv(daft_df, pd_df):
     """Loading data from a CSV works"""
     pd_slice = pd_df
     daft_slice = daft_df
-    print(pd_slice)
-    print(daft_slice.to_pandas())
     assert_df_equals(daft_slice, pd_slice)
+
+
+def test_load_csv_multipart():
+    """Loading data from multiple CSVs in a folder works"""
+    CSV_FOLDER_PATH = "tests/assets/311-service-requests.100"
+    daft_df = DataFrame.from_csv(CSV_FOLDER_PATH).select(*[col(c) for c in COLUMNS])
+    dfs = [
+        pd.read_csv(os.path.join(CSV_FOLDER_PATH, csv_file), index_col=None, header=0, keep_default_na=False)
+        for csv_file in os.listdir(CSV_FOLDER_PATH)
+    ]
+    pd_df = pd.concat(dfs, axis=0, ignore_index=True)[COLUMNS]
+    assert_df_equals(daft_df, pd_df)
 
 
 def test_load_csv_no_headers(tmp_path: pathlib.Path):
