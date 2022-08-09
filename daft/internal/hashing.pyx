@@ -11,6 +11,7 @@ from pyarrow.lib cimport (
     CChunkedArray,
     CDataType,
     CResult,
+    CScalarFunction,
     GetPrimitiveType,
     GetResultValue,
     MakeArray,

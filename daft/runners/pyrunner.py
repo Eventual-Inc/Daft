@@ -205,6 +205,7 @@ class PyRunner(Runner):
     def _handle_repartition(self, repartition: Repartition) -> None:
         child_id = repartition._children()[0].id()
         prev_pset = self._part_manager.get_partition_set(child_id)
+        repartitioner: PyRunnerSimpleShuffler
         if repartition._scheme == PartitionScheme.RANDOM:
             repartitioner = PyRunnerRepartitionRandom()
         elif repartition._scheme == PartitionScheme.HASH:

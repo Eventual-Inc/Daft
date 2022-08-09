@@ -187,7 +187,7 @@ class DataFrame:
         global_limit = logical_plan.GlobalLimit(local_limit, num=num)
         return DataFrame(global_limit)
 
-    def repartition(self, num: int, *partition_by: Optional[List[ColumnInputType]]) -> DataFrame:
+    def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
         if len(partition_by) == 0:
             scheme = logical_plan.PartitionScheme.RANDOM
             exprs: ExpressionList = ExpressionList([])

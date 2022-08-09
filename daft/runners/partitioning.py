@@ -167,6 +167,11 @@ class vPartition:
     def take(self, indices: DataBlock) -> vPartition:
         return self.for_each_column_block(partial(DataBlock.take, indices=indices))
 
+    def split_by_hash(self, hash_expr: Expression, num_partitions: int) -> List[vPartition]:
+        hash_tile = self.eval_expression(hash_expr)
+        target_idx = hash_tile.block.array_hash() % num_partitions
+        return self.split_by_index(num_partitions, target_partition_indices=target_idx)
+
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:
         assert len(target_partition_indices) == len(self)
         new_partition_to_columns: List[Dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]

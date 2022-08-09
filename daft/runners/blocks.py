@@ -4,12 +4,13 @@ import collections
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partialmethod
-from operator import is_
 from typing import Any, Callable, ClassVar, Generic, List, TypeVar, Union
 
 import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pac
+
+from daft.internal.hashing import hash_chunked_array
 
 ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
 UnaryFuncType = Callable[[ArrType], ArrType]
@@ -35,6 +36,7 @@ class FunctionDispatch:
     mul: BinaryFuncType
     truediv: BinaryFuncType
     pow: BinaryFuncType
+    mod: BinaryFuncType
 
     # Logical
     and_: BinaryFuncType
@@ -51,6 +53,10 @@ class FunctionDispatch:
     take: BinaryFuncType
 
 
+def arrow_mod(arr, m):
+    return np.mod(arr, m.as_py())
+
+
 ArrowFunctionDispatch = FunctionDispatch(
     neg=pac.negate,
     pos=lambda x: x,
@@ -61,6 +67,7 @@ ArrowFunctionDispatch = FunctionDispatch(
     mul=pac.multiply,
     truediv=pac.divide,
     pow=pac.power,
+    mod=arrow_mod,
     and_=pac.and_,
     or_=pac.or_,
     lt=pac.less,
@@ -218,7 +225,6 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
 
-
 class PyListDataBlock(DataBlock[List]):
     ...
 
@@ -276,8 +282,8 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
         return DataBlock.make_block(data=pivots)
 
     def array_hash(self) -> ArrowDataBlock:
+        assert isinstance(self.data, pa.ChunkedArray)
         pa_type = self.data.type
-        if pa.types.is_integer(pa_type):
-
-        import ipdb
-        ipdb.set_trace()
+        if not (pa.types.is_integer(pa_type) or pa.types.is_string(pa_type)):
+            raise TypeError(f"can only hash ints or strings not {pa_type}")
+        return ArrowDataBlock(data=hash_chunked_array(self.data))
