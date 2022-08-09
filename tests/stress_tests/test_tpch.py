@@ -89,15 +89,12 @@ SCHEMA = {
 @pytest.fixture(scope="function")
 def lineitem():
     return DataFrame.from_csv(
-        "data/tpch/lineitem.tbl", headers=False, column_names=SCHEMA["lineitem"] + [""], delimiter="|"
+        "data/tpch/lineitem.tbl", has_headers=False, column_names=SCHEMA["lineitem"] + [""], delimiter="|"
     )
 
 
 @pytest.mark.tpch
 def test_tpch_q1(lineitem):
-    import pdb
-
-    pdb.set_trace()
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
     daft_df = (

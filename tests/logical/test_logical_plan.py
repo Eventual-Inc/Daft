@@ -1,5 +1,6 @@
 import pytest
 
+from daft.datasources import InMemorySourceInfo
 from daft.expressions import col
 from daft.logical.logical_plan import Filter, Projection, Scan
 from daft.logical.schema import ExpressionList
@@ -12,7 +13,7 @@ def schema():
 
 @pytest.fixture(scope="function")
 def source_info():
-    return Scan.SourceInfo(scan_type=Scan.ScanType.IN_MEMORY, source=None)
+    return InMemorySourceInfo(data={})
 
 
 def test_scan_predicates(schema, source_info) -> None:

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import itertools
 from abc import abstractmethod
-from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, List, Optional
 
+from daft.datasources import SourceInfo
 from daft.expressions import ColumnExpression
 from daft.internal.treenode import TreeNode
 from daft.logical.schema import ExpressionList
@@ -72,32 +72,16 @@ class UnaryNode(LogicalPlan):
 
 
 class Scan(LogicalPlan):
-    class ScanType(Enum):
-        CSV = "CSV"
-        PARQUET = "PARQUET"
-        IN_MEMORY = "IN_MEMORY"
-
-    @dataclass(frozen=True)
-    class SourceInfo:
-        scan_type: Scan.ScanType
-        source: Optional[Union[Scan.CSVScanConfig, List[Dict[str, Any]], Dict[str, List[Any]]]] = None
-
-    @dataclass(frozen=True)
-    class CSVScanConfig:
-        path: str
-        delimiter: str
-        headers: bool
-
     def __init__(
         self,
         *,
         schema: ExpressionList,
-        source_info: Scan.SourceInfo,
+        source_info: SourceInfo,
         predicate: Optional[ExpressionList] = None,
         columns: Optional[List[str]] = None,
     ) -> None:
         schema = schema.resolve()
-        super().__init__(schema, num_partitions=1, op_level=OpLevel.PARTITION)
+        super().__init__(schema, num_partitions=source_info.get_num_partitions(), op_level=OpLevel.PARTITION)
 
         if predicate is not None:
             self._predicate = predicate.resolve(schema)
@@ -161,7 +145,6 @@ class Projection(UnaryNode):
     def __init__(self, input: LogicalPlan, projection: ExpressionList) -> None:
         projection = projection.resolve(input_schema=input.schema())
         super().__init__(projection, num_partitions=input.num_partitions(), op_level=OpLevel.ROW)
-
         self._register_child(input)
         self._projection = projection
 
