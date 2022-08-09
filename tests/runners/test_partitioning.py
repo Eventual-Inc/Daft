@@ -235,8 +235,8 @@ def test_split_by_index_even(n) -> None:
             assert all(val % n == i for val in pylist)
 
 
-# @pytest.mark.parametrize("n", [1, 2, 3, 4])
-def test_hash_partition(n=10) -> None:
+@pytest.mark.parametrize("n", [1, 2, 3, 4, 5, 10])
+def test_hash_partition(n) -> None:
     expr = col("x")
     expr = resolve_expr(expr)
 
