@@ -1,4 +1,5 @@
 import argparse
+from typing import List, Union
 
 import pandas as pd
 import pytest
@@ -59,7 +60,10 @@ def run_tdd():
 
 
 def assert_df_equals(
-    daft_df: DataFrame, pd_df: pd.DataFrame, sort_key: str = "Unique Key", assert_ordering: bool = False
+    daft_df: DataFrame,
+    pd_df: pd.DataFrame,
+    sort_key: Union[str, List[str]] = "Unique Key",
+    assert_ordering: bool = False,
 ):
     """Asserts that a Daft Dataframe is equal to a Pandas Dataframe.
 
@@ -72,18 +76,20 @@ def assert_df_equals(
 
     # If we are not asserting on the ordering being equal, we run a sort operation on both dataframes using the provided sort key
     if not assert_ordering:
-        assert sort_key in daft_pd_df.columns, (
-            f"DaFt Dataframe missing key: {sort_key}\nNOTE: This doesn't necessarily mean your code is "
-            "breaking, but our testing utilities require sorting on this key in order to compare your "
-            "Dataframe against the expected Pandas Dataframe."
-        )
-        assert sort_key in pd_df.columns, (
-            f"Pandas Dataframe missing key: {sort_key}\nNOTE: This doesn't necessarily mean your code is "
-            "breaking, but our testing utilities require sorting on this key in order to compare your "
-            "Dataframe against the expected Pandas Dataframe."
-        )
-        daft_pd_df = daft_pd_df.sort_values(by=sort_key).reset_index(drop=True)
-        pd_df = pd_df.sort_values(by=sort_key).reset_index(drop=True)
+        sort_key_list: List[str] = [sort_key] if isinstance(sort_key, str) else sort_key
+        for key in sort_key_list:
+            assert key in daft_pd_df.columns, (
+                f"DaFt Dataframe missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
+                "breaking, but our testing utilities require sorting on this key in order to compare your "
+                "Dataframe against the expected Pandas Dataframe."
+            )
+            assert key in pd_df.columns, (
+                f"Pandas Dataframe missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
+                "breaking, but our testing utilities require sorting on this key in order to compare your "
+                "Dataframe against the expected Pandas Dataframe."
+            )
+        daft_pd_df = daft_pd_df.sort_values(by=sort_key_list).reset_index(drop=True)
+        pd_df = pd_df.sort_values(by=sort_key_list).reset_index(drop=True)
 
     assert sorted(daft_pd_df.columns) == sorted(pd_df.columns), f"Found {daft_pd_df.columns} expected {pd_df.columns}"
     for col in pd_df.columns:
