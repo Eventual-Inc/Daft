@@ -14,6 +14,7 @@ from daft.datasources import (
     ScanType,
 )
 from daft.execution.execution_plan import ExecutionPlan
+from daft.filesystem import get_filesystem_from_path
 from daft.logical.logical_plan import (
     Filter,
     GlobalLimit,
@@ -140,8 +141,10 @@ class PyRunner(Runner):
             self._part_manager.put(scan.id(), partition_id=partition_id, partition=vpart)
         elif scan._source_info.scan_type() == ScanType.CSV:
             assert isinstance(scan._source_info, CSVSourceInfo)
+            path = scan._source_info.filepaths[partition_id]
+            fs = get_filesystem_from_path(path)
             table = csv.read_csv(
-                scan._source_info.filepaths[partition_id],
+                fs.open(path),
                 parse_options=csv.ParseOptions(
                     delimiter=scan._source_info.delimiter,
                 ),
