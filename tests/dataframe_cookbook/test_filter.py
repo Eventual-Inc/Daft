@@ -2,12 +2,16 @@ import pytest
 
 from daft.expressions import col
 from tests.conftest import assert_df_equals
-from tests.dataframe_cookbook.conftest import parametrize_partitioned_daft_df
+from tests.dataframe_cookbook.conftest import (
+    parametrize_service_requests_csv_daft_df,
+    parametrize_service_requests_csv_repartition,
+)
 
 COL_SUBSET = ["Unique Key", "Complaint Type", "Borough", "Descriptor"]
 
 
-@parametrize_partitioned_daft_df()
+@parametrize_service_requests_csv_daft_df
+@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
@@ -29,16 +33,19 @@ COL_SUBSET = ["Unique Key", "Complaint Type", "Borough", "Descriptor"]
         ),
     ],
 )
-def test_filter(daft_df_ops, daft_df, pd_df):
+def test_sum(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Filter the dataframe, retrieve the top N results and select a subset of columns"""
 
-    daft_noise_complaints = daft_df_ops(daft_df)
+    daft_noise_complaints = daft_df_ops(daft_df.repartition(repartition_nparts))
 
-    pd_noise_complaints = pd_df[pd_df["Complaint Type"] == "Noise - Street/Sidewalk"][COL_SUBSET]
+    pd_noise_complaints = service_requests_csv_pd_df[
+        service_requests_csv_pd_df["Complaint Type"] == "Noise - Street/Sidewalk"
+    ][COL_SUBSET]
     assert_df_equals(daft_noise_complaints, pd_noise_complaints)
 
 
-@parametrize_partitioned_daft_df()
+@parametrize_service_requests_csv_daft_df
+@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
@@ -80,18 +87,24 @@ def test_filter(daft_df_ops, daft_df, pd_df):
         ),
     ],
 )
-def test_composite_filter(daft_df_ops, daft_df, pd_df):
+def test_sum(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Filter the dataframe with a complex filter and select a subset of columns"""
-    daft_noise_complaints_brooklyn = daft_df_ops(daft_df)
+    daft_noise_complaints_brooklyn = daft_df_ops(daft_df.repartition(repartition_nparts))
 
-    pd_noise_complaints_brooklyn = pd_df[
-        (((pd_df["Complaint Type"] == "Noise - Street/Sidewalk") | (pd_df["Complaint Type"] == "Noise - Commercial")))
-        & (pd_df["Borough"] == "BROOKLYN")
+    pd_noise_complaints_brooklyn = service_requests_csv_pd_df[
+        (
+            (
+                (service_requests_csv_pd_df["Complaint Type"] == "Noise - Street/Sidewalk")
+                | (service_requests_csv_pd_df["Complaint Type"] == "Noise - Commercial")
+            )
+        )
+        & (service_requests_csv_pd_df["Borough"] == "BROOKLYN")
     ][COL_SUBSET]
     assert_df_equals(daft_noise_complaints_brooklyn, pd_noise_complaints_brooklyn)
 
 
-@parametrize_partitioned_daft_df()
+@parametrize_service_requests_csv_daft_df
+@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
@@ -121,11 +134,11 @@ def test_composite_filter(daft_df_ops, daft_df, pd_df):
         ),
     ],
 )
-def test_chained_filter(daft_df_ops, daft_df, pd_df):
+def test_sum(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Filter the dataframe with a chain of filters and select a subset of columns"""
-    daft_noise_complaints_brooklyn = daft_df_ops(daft_df)
+    daft_noise_complaints_brooklyn = daft_df_ops(daft_df.repartition(repartition_nparts))
 
-    pd_noise_complaints_brooklyn = pd_df
+    pd_noise_complaints_brooklyn = service_requests_csv_pd_df
     pd_noise_complaints_brooklyn = pd_noise_complaints_brooklyn[
         pd_noise_complaints_brooklyn["Complaint Type"] == "Noise - Street/Sidewalk"
     ]

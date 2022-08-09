@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import List, Tuple
 
 import pandas as pd
 import pytest
@@ -7,7 +7,8 @@ from daft.dataframe import DataFrame
 from daft.expressions import col
 
 IRIS_CSV = "tests/assets/iris.csv"
-SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.50.csv"
+SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.100.csv"
+SERVICE_REQUESTS_CSV_FOLDER = "tests/assets/311-service-requests.100"
 COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
 CsvPathAndColumns = Tuple[str, List[str]]
 
@@ -22,51 +23,28 @@ def parametrize_sort_desc(arg_name: str):
     return _wrapper
 
 
-def parametrize_partitioned_daft_df(
-    source: Union[CsvPathAndColumns, Dict[str, List[Any]]] = (SERVICE_REQUESTS_CSV, COLUMNS),
-    partitioning: Optional[List[int]] = [],
-):
-    """Test case fixture to be used as a decorator that constructs and parametrizes a test with the appropriate DaFt/pandas DataFrames
-
-    Usage:
-
-    >>> # To use default CSV at tests/assets/311-service-requests.1000.csv as the datasource
-    >>> @parametrize_partitioned_daft_df
-    >>> def test_foo(daft_df, pd_df):
-    >>>     ...
-
-    >>> # To use a dictionary as the datasource
-    >>> @parametrize_partitioned_daft_df(source={"foo": [i for i in range(1000)]})
-    >>> def test_foo(daft_df, pd_df):
-    >>>     ...
+def parametrize_service_requests_csv_daft_df(test_case):
+    """Adds a `daft_df` parameter to test cases which is provided as a DataFrame of 100 rows
+    from the 311-service-requests dataset, in various loaded partition configurations.
     """
+    one_partition = DataFrame.from_csv(SERVICE_REQUESTS_CSV).select(*[col(c) for c in COLUMNS])
+    two_partitions = DataFrame.from_csv(SERVICE_REQUESTS_CSV_FOLDER).select(*[col(c) for c in COLUMNS])
+    return pytest.mark.parametrize(
+        ["daft_df"],
+        [pytest.param(one_partition, id="NumCSVFiles:1"), pytest.param(two_partitions, id="NumCSVFiles:2")],
+    )(test_case)
 
-    if isinstance(source, tuple):
-        csv_path, columns = source
-        base_df = DataFrame.from_csv(csv_path).select(*[col(c) for c in columns])
-        pd_df = pd.read_csv(csv_path, keep_default_na=False)[columns]
-        if pd_df.shape[0] != 49:
-            raise NotImplementedError("Only supports CSVs of 50 rows")
-        if not partitioning:
-            partitioning = [
-                1,  # Single partition
-                10,  # 5 partitions of 10 each
-                20,  # Uneven partitions
-                50,  # One row per parittion
-                51,  # One empty partition
-            ]
-    elif isinstance(source, dict):
-        base_df = DataFrame.from_pydict(source)
-        pd_df = pd.DataFrame.from_dict(source)
-    else:
-        raise NotImplementedError(f"Datasource not supported: {source}")
 
-    def _wrapper(test_case):
-        daft_dfs = [base_df] + [base_df.repartition(i) for i in partitioning]
-        ids = [f"Repartition:{num}" for num in ["None", *partitioning]]
-        return pytest.mark.parametrize(
-            ["daft_df", "pd_df"],
-            [pytest.param(daft_df, pd_df.copy(), id=test_id) for test_id, daft_df in zip(ids, daft_dfs)],
-        )(test_case)
+@pytest.fixture(scope="function")
+def service_requests_csv_pd_df():
+    return pd.read_csv(SERVICE_REQUESTS_CSV, keep_default_na=False)[COLUMNS]
 
-    return _wrapper
+
+def parametrize_service_requests_csv_repartition(test_case):
+    """Adds a `n_repartitions` parameter to test cases which provides the number of
+    partitions that the test case should repartition its dataset into for testing
+    """
+    return pytest.mark.parametrize(
+        ["repartition_nparts"],
+        [pytest.param(n, id=f"NumRepartitionParts:{n}") for n in [1, 30, 50, 100, 101]],
+    )(test_case)

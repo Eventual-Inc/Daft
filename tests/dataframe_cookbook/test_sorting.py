@@ -3,38 +3,44 @@ import pytest
 from daft.expressions import col
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
-    parametrize_partitioned_daft_df,
+    parametrize_service_requests_csv_daft_df,
+    parametrize_service_requests_csv_repartition,
     parametrize_sort_desc,
 )
 
 
-@parametrize_partitioned_daft_df()
+@parametrize_service_requests_csv_daft_df
+@parametrize_service_requests_csv_repartition
 @parametrize_sort_desc("sort_desc")
-def test_get_sorted(sort_desc, daft_df, pd_df):
+def test_get_sorted(sort_desc, daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Sort by a column"""
+    daft_df = daft_df.repartition(repartition_nparts)
     daft_sorted_df = daft_df.sort(col("Unique Key"), desc=sort_desc)
 
     assert_df_equals(
         daft_sorted_df,
-        pd_df.sort_values(by="Unique Key", ascending=not sort_desc),
+        service_requests_csv_pd_df.sort_values(by="Unique Key", ascending=not sort_desc),
         assert_ordering=True,
     )
 
 
-@parametrize_partitioned_daft_df()
+@parametrize_service_requests_csv_daft_df
+@parametrize_service_requests_csv_repartition
 @parametrize_sort_desc("sort_desc")
-def test_get_sorted_top_n(sort_desc, daft_df, pd_df):
+def test_get_sorted_top_n(sort_desc, daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Sort by a column"""
+    daft_df = daft_df.repartition(repartition_nparts)
     daft_sorted_df = daft_df.sort(col("Unique Key"), desc=sort_desc).limit(100)
 
     assert_df_equals(
         daft_sorted_df,
-        pd_df.sort_values(by="Unique Key", ascending=not sort_desc).head(100),
+        service_requests_csv_pd_df.sort_values(by="Unique Key", ascending=not sort_desc).head(100),
         assert_ordering=True,
     )
 
 
-@parametrize_partitioned_daft_df()
+@parametrize_service_requests_csv_daft_df
+@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
@@ -53,9 +59,12 @@ def test_get_sorted_top_n(sort_desc, daft_df, pd_df):
     ],
 )
 @parametrize_sort_desc("sort_desc")
-def test_get_sorted_top_n_projected(daft_df_ops, sort_desc, daft_df, pd_df):
+def test_get_sorted_top_n_projected(daft_df_ops, sort_desc, daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Sort by a column and retrieve specific columns from the top N results"""
-    expected = pd_df.sort_values(by="Unique Key", ascending=not sort_desc)[["Unique Key", "Complaint Type"]]
+    daft_df = daft_df.repartition(repartition_nparts)
+    expected = service_requests_csv_pd_df.sort_values(by="Unique Key", ascending=not sort_desc)[
+        ["Unique Key", "Complaint Type"]
+    ]
     assert_df_equals(
         daft_df_ops(daft_df, sort_desc),
         expected,
