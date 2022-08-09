@@ -4,6 +4,15 @@ version = "0.1.0"
 description = "Eventual daft"
 authors = ["Eventual Inc <founders@eventualcomputing.com>"]
 license = "Copyright Eventual Inc 2022"
+build = "build.py"
+
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+build_inplace = 'build:build_inplace'
 
 [tool.poetry.dependencies]
 python = "^3.8"
@@ -25,6 +34,7 @@ uvicorn = "^0.18.2"
 cloudpickle = "^2.1.0"
 loguru = "^0.6.0"
 PyYAML = "^6.0"
+Cython = "^0.29.32"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"
@@ -43,16 +53,13 @@ pre-commit = "^2.20.0"
 types-requests = "^2.28.4"
 types-PyYAML = "^6.0.11"
 pandas = "^1.4.3"
-
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+xxhash = "^3.0.0"
 
 
 [tool.mypy]
 python_version = "3.8"
 # WE NEED TO ENABLE THIS FOR eventual-hub
-files = ["daft/**/*.py", "tests/**/*.py"]
+files = ["daft/**/*.py", "daft/**/*.pyx", "tests/**/*.py"]
 warn_return_any = true
 warn_unused_configs = true
 
@@ -64,7 +71,8 @@ module = [
     "icebridge.*",
     "cloudpickle.*",
     "docker.*",
-    "uvicorn.*"
+    "uvicorn.*",
+    "numba.*"
 ]
 ignore_missing_imports = true
 

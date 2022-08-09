@@ -1,0 +1,8 @@
+# distutils: language=c++
+# distutils: sources = daft/internal/xxhash.cc
+
+
+from libc cimport stdint
+
+cdef extern from "xxhash.h":
+    stdint.uint64_t XXH3_64bits(const void* input, size_t length);

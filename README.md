@@ -3,13 +3,15 @@
 1. [Install Poetry](https://python-poetry.org/docs/#installation)
 2. Init your python environment
     - `poetry install`
-3. Run tests
+3. Build Extensions locally
+    - `poetry run build_inplace`
+4. Run tests
     - `poetry run pytest`
-4. Run type checking
+5. Run type checking
     - `poetry run mypy`
-5. Run any other script
+6. Run any other script
     - `poetry run CMD`
-6. Add package
+7. Add package
     - `poetry add PACKAGE`
-7. Lock env
+8. Lock env
     - `poetry lock`
