@@ -67,7 +67,7 @@ cdef shared_ptr[CArray] _hash_integer_array(shared_ptr[CArray] arr):
     cdef shared_ptr[CBuffer] data = buffers.at(1)
     cdef const stdint.uint8_t* data_ptr = data.get().data()
 
-    cdef stdint.int64_t byte_width =  data.get().size() // length
+    cdef stdint.int64_t byte_width =  data.get().size() // (length + offset)
 
     cdef stdint.uint64_t result_buffer_size = length * cython.sizeof(stdint.uint64_t)
     cdef shared_ptr[CBuffer] result_buffer = to_shared(GetResultValue(AllocateBuffer(result_buffer_size, NULL)))
@@ -75,7 +75,6 @@ cdef shared_ptr[CArray] _hash_integer_array(shared_ptr[CArray] arr):
 
     cdef stdint.int64_t i, idx
     cdef stdint.uint64_t h_value = 0
-
     for i in range(length):
         # TODO Skip nulls
         idx = (i + offset)
