@@ -5,9 +5,14 @@ from bisect import bisect_right
 from itertools import accumulate
 from typing import Dict
 
-from pyarrow import Table, csv
+from pyarrow import Table, csv, parquet
 
-from daft.datasources import CSVSourceInfo, InMemorySourceInfo, ScanType
+from daft.datasources import (
+    CSVSourceInfo,
+    InMemorySourceInfo,
+    ParquetSourceInfo,
+    ScanType,
+)
 from daft.execution.execution_plan import ExecutionPlan
 from daft.logical.logical_plan import (
     Filter,
@@ -137,6 +142,13 @@ class PyRunner(Runner):
             )
             vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
             self._part_manager.put(scan.id(), partition_id=partition_id, partition=vpart)
+        elif scan._source_info.scan_type() == ScanType.PARQUET:
+            assert isinstance(scan._source_info, ParquetSourceInfo)
+            table = parquet.read_table(scan._source_info.filepaths[partition_id])
+            vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+            self._part_manager.put(scan.id(), partition_id=partition_id, partition=vpart)
+        else:
+            raise NotImplementedError(f"PyRunner has not implemented scan: {scan._source_info.scan_type()}")
 
     def _handle_projection(self, proj: Projection, partition_id: int) -> None:
         child_id = proj._children()[0].id()

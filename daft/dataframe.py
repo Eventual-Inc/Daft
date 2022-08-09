@@ -4,8 +4,9 @@ import csv
 from typing import Any, Dict, List, Optional, Tuple, TypeVar, Union
 
 import pandas
+import pyarrow.parquet as papq
 
-from daft.datasources import CSVSourceInfo, InMemorySourceInfo
+from daft.datasources import CSVSourceInfo, InMemorySourceInfo, ParquetSourceInfo
 from daft.expressions import Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
@@ -67,10 +68,10 @@ class DataFrame:
     def from_csv(
         cls, path: str, has_headers: bool = True, column_names: Optional[List[str]] = None, delimiter: str = ","
     ) -> DataFrame:
-        """Creates a DataFrame from a CSV
+        """Creates a DataFrame from CSV file(s)
 
         Args:
-            path (str): Path to CSV
+            path (str): Path to CSV or to a folder containing CSV files
             has_headers (bool): Whether the CSV has a header or not, defaults to True
             column_names (Optional[List[str]]): Custom column names to assign to the DataFrame, defaults to None
             delimiter (Str): Delimiter used in the CSV, defaults to ","
@@ -108,6 +109,35 @@ class DataFrame:
                 filepaths=filepaths,
                 delimiter=delimiter,
                 has_headers=has_headers,
+            ),
+        )
+        return cls(plan)
+
+    @classmethod
+    def from_parquet(cls, path: str) -> DataFrame:
+        """Creates a DataFrame from Parquet file(s)
+
+        Args:
+            path (str): Path to Parquet file or to a folder containing Parquet files
+
+        returns:
+            DataFrame: parsed DataFrame
+        """
+        fs = get_filesystem_from_path(path)
+        filepaths = [path] if fs.isfile(path) else fs.ls(path)
+
+        if len(filepaths) == 0:
+            raise ValueError(f"No Parquet files found at {path}")
+
+        # Read first Parquet file to ascertain schema
+        schema = ExpressionList([col(field.name) for field in papq.ParquetFile(fs.open(filepaths[0])).metadata.schema])
+
+        plan = logical_plan.Scan(
+            schema=schema,
+            predicate=None,
+            columns=None,
+            source_info=ParquetSourceInfo(
+                filepaths=filepaths,
             ),
         )
         return cls(plan)

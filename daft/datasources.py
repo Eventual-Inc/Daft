@@ -44,3 +44,15 @@ class InMemorySourceInfo(SourceInfo):
 
     def get_num_partitions(self) -> int:
         return self.num_partitions
+
+
+@dataclass(frozen=True)
+class ParquetSourceInfo(SourceInfo):
+
+    filepaths: List[str]
+
+    def scan_type(self):
+        return ScanType.PARQUET
+
+    def get_num_partitions(self) -> int:
+        return len(self.filepaths)

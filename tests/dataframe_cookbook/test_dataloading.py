@@ -13,8 +13,8 @@ from tests.dataframe_cookbook.conftest import (
 
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
-def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Loading data from a CSV works"""
+def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    """Loading data from a CSV or Parquet works"""
     pd_slice = service_requests_csv_pd_df
     daft_slice = daft_df.repartition(repartition_nparts)
     assert_df_equals(daft_slice, pd_slice)

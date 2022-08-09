@@ -9,6 +9,8 @@ from daft.expressions import col
 IRIS_CSV = "tests/assets/iris.csv"
 SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.100.csv"
 SERVICE_REQUESTS_CSV_FOLDER = "tests/assets/311-service-requests.100"
+SERVICE_REQUESTS_PARQUET = "tests/assets/311-service-requests.100.parquet"
+SERVICE_REQUESTS_PARQUET_FOLDER = "tests/assets/311-service-requests.100.parquet_folder"
 COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
 CsvPathAndColumns = Tuple[str, List[str]]
 
@@ -27,11 +29,18 @@ def parametrize_service_requests_csv_daft_df(test_case):
     """Adds a `daft_df` parameter to test cases which is provided as a DataFrame of 100 rows
     from the 311-service-requests dataset, in various loaded partition configurations.
     """
-    one_partition = DataFrame.from_csv(SERVICE_REQUESTS_CSV).select(*[col(c) for c in COLUMNS])
-    two_partitions = DataFrame.from_csv(SERVICE_REQUESTS_CSV_FOLDER).select(*[col(c) for c in COLUMNS])
+    one_partition_csv = DataFrame.from_csv(SERVICE_REQUESTS_CSV).select(*[col(c) for c in COLUMNS])
+    two_partitions_csv = DataFrame.from_csv(SERVICE_REQUESTS_CSV_FOLDER).select(*[col(c) for c in COLUMNS])
+    one_partition_pq = DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET).select(*[col(c) for c in COLUMNS])
+    two_partitions_pq = DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET_FOLDER).select(*[col(c) for c in COLUMNS])
     return pytest.mark.parametrize(
         ["daft_df"],
-        [pytest.param(one_partition, id="NumCSVFiles:1"), pytest.param(two_partitions, id="NumCSVFiles:2")],
+        [
+            pytest.param(one_partition_csv, id="Source:CSV,NumFiles:1"),
+            pytest.param(two_partitions_csv, id="Source:CSV,NumFiles:2"),
+            pytest.param(one_partition_pq, id="Source:Parquet,NumFiles:1"),
+            pytest.param(two_partitions_pq, id="Source:Parquet,NumFiles:2"),
+        ],
     )(test_case)
 
 
