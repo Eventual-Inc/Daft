@@ -24,6 +24,5 @@ def test_pyrunner_with_pandas():
     df = df.limit(10)
     df = df.collect()
     daft_pd_df = df.to_pandas()
-
     assert len(daft_pd_df) == len(pd_df)
     assert daft_pd_df.reset_index(drop=True).equals(pd_df.reset_index(drop=True))

@@ -192,6 +192,7 @@ class DataFrame:
             scheme = logical_plan.PartitionScheme.RANDOM
             exprs: ExpressionList = ExpressionList([])
         else:
+            assert len(partition_by) == 1
             scheme = logical_plan.PartitionScheme.HASH
             exprs = self.__column_input_to_expression(partition_by)
 

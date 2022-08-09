@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from daft.expressions import Expression
-from daft.logical.schema import ExpressionList
 from daft.runners.blocks import DataBlock
 from daft.runners.partitioning import vPartition
 
@@ -44,12 +43,9 @@ class RepartitionRandomOp(ShuffleOp):
 
 class RepartitionHashOp(ShuffleOp):
     @staticmethod
-    def map_fn(input: vPartition, output_partitions: int, exprs: Optional[ExpressionList] = None) -> List[vPartition]:
-        assert exprs is not None
-        to_hash = input.eval_expression_list(exprs)
-        to_hash.columns[4].block.array_hash()
-        # target_idx = DataBlock.make_block(data=rng.integers(low=0, high=output_partitions, size=len(input)))
-        # return input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
+    def map_fn(input: vPartition, output_partitions: int, expr: Optional[Expression] = None) -> List[vPartition]:
+        assert expr is not None
+        return input.split_by_hash(expr, num_partitions=output_partitions)
 
     @staticmethod
     def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
