@@ -53,14 +53,14 @@ def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
 
 
-@pytest.mark.tdd
+# @pytest.mark.tdd
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 @pytest.mark.parametrize(
     "keys",
     [
         pytest.param(["Borough"], id="NumGroupByKeys:1"),
-        pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
+        # pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
     ],
 )
 def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):

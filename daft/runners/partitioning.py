@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pyarrow as pa
@@ -167,12 +167,15 @@ class vPartition:
     def take(self, indices: DataBlock) -> vPartition:
         return self.for_each_column_block(partial(DataBlock.take, indices=indices))
 
-    def agg(self, to_agg: List[Tuple[Expression, str]]) -> vPartition:
+    def agg(self, to_agg: List[Tuple[Expression, str]], group_by: Optional[ExpressionList] = None) -> vPartition:
         evaled_expressions = self.eval_expression_list(ExpressionList([e for e, _ in to_agg]))
-        agged = {}
-        for (_, op), (col_id, tile) in zip(to_agg, evaled_expressions.columns.items()):
-            agged[col_id] = tile.apply(func=partial(tile.block.__class__.agg, op=op))
-        return vPartition(partition_id=self.partition_id, columns=agged)
+        if group_by is None:
+            agged = {}
+            for (_, op), (col_id, tile) in zip(to_agg, evaled_expressions.columns.items()):
+                agged[col_id] = tile.apply(func=partial(tile.block.__class__.agg, op=op))
+            return vPartition(partition_id=self.partition_id, columns=agged)
+        else:
+            raise NotImplementedError()
 
     def split_by_hash(self, hash_expr: Expression, num_partitions: int) -> List[vPartition]:
         hash_tile = self.eval_expression(hash_expr)

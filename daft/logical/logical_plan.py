@@ -298,18 +298,20 @@ class LocalAggregate(UnaryNode):
         self,
         input: LogicalPlan,
         agg: List[Tuple[Expression, str]],
-        group_by: Optional[Expression] = None,
+        group_by: Optional[ExpressionList] = None,
     ) -> None:
-        assert group_by is None
+
         cols_to_agg = ExpressionList([e for e, _ in agg]).resolve(input.schema())
-        super().__init__(
-            cols_to_agg.to_column_expressions(), num_partitions=input.num_partitions(), op_level=OpLevel.PARTITION
-        )
+        schema = cols_to_agg.to_column_expressions()
+        self._group_by = group_by
+
+        if group_by is not None:
+            self._group_by = group_by.resolve(input.schema())
+            schema = self._group_by.union(schema)
+
+        super().__init__(schema, num_partitions=input.num_partitions(), op_level=OpLevel.PARTITION)
         self._register_child(input)
         self._agg = [(e, op) for e, (_, op) in zip(cols_to_agg, agg)]
-        self._group_by = group_by
-        if self._group_by is not None:
-            self._group_by = self._group_by.resolve(input.schema())
 
     def __repr__(self) -> str:
         return f"LocalAggregate\n\toutput={self.schema()}\n\tgroup_by={self._group_by}"

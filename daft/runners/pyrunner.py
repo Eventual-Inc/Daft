@@ -197,7 +197,7 @@ class PyRunner(Runner):
     def _handle_local_aggregate(self, agg: LocalAggregate, partition_id: int) -> None:
         child_id = agg._children()[0].id()
         prev_partition = self._part_manager.get(child_id, partition_id)
-        new_partition = prev_partition.agg(agg._agg)
+        new_partition = prev_partition.agg(agg._agg, group_by=agg._group_by)
         self._part_manager.put(agg.id(), partition_id=partition_id, partition=new_partition)
 
     def _handle_global_limit(self, limit: GlobalLimit) -> None:

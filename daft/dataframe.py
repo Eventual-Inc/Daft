@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, TypeVar, Union
 
 import pandas
@@ -199,24 +200,27 @@ class DataFrame:
         repartition_op = logical_plan.Repartition(self._plan, num_partitions=num, partition_by=exprs, scheme=scheme)
         return DataFrame(repartition_op)
 
-    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
+    def _agg(self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionList] = None) -> DataFrame:
         exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))
         ops = [op for _, op in to_agg]
 
         lagg_op = logical_plan.LocalAggregate(
-            self._plan, agg=[(e, op) for e, op in zip(exprs_to_agg, ops)], group_by=None
+            self._plan, agg=[(e, op) for e, op in zip(exprs_to_agg, ops)], group_by=group_by
         )
         coal_op = logical_plan.Coalesce(lagg_op, 1)
         gagg_op = logical_plan.LocalAggregate(
-            coal_op, agg=[(c, op) for c, op in zip(lagg_op.schema(), ops)], group_by=None
+            coal_op, agg=[(c, op) for c, op in zip(lagg_op.schema(), ops)], group_by=group_by
         )
         return DataFrame(gagg_op)
 
-    def sum(self, *partition_by: ColumnInputType) -> DataFrame:
-        return self.agg([(c, "sum") for c in self.__column_input_to_expression(partition_by)])
+    def sum(self, *cols: ColumnInputType) -> DataFrame:
+        return self._agg([(c, "sum") for c in cols])
 
-    def mean(self, *partition_by: ColumnInputType) -> DataFrame:
-        return self.agg([(c, "mean") for c in self.__column_input_to_expression(partition_by)])
+    def mean(self, *cols: ColumnInputType) -> DataFrame:
+        return self._agg([(c, "mean") for c in cols])
+
+    def groupby(self, *group_by: ColumnInputType) -> GroupedDataFrame:
+        return GroupedDataFrame(self, self.__column_input_to_expression(group_by))
 
     def collect(self) -> DataFrame:
         if self._result is None:
@@ -228,3 +232,15 @@ class DataFrame:
         assert self._result is not None
         arrow_table = self._result.to_arrow_table()
         return arrow_table.to_pandas()
+
+
+@dataclass
+class GroupedDataFrame:
+    df: DataFrame
+    group_by: ExpressionList
+
+    def sum(self, *cols: ColumnInputType) -> DataFrame:
+        return self.df._agg([(c, "sum") for c in cols], group_by=self.group_by)
+
+    def mean(self, *cols: ColumnInputType) -> DataFrame:
+        return self.df._agg([(c, "mean") for c in cols], group_by=self.group_by)
