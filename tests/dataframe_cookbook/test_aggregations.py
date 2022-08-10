@@ -10,28 +10,26 @@ from tests.dataframe_cookbook.conftest import (
 )
 
 
-@pytest.mark.tdd
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Sums across an entire column for the entire table"""
     daft_df = daft_df.repartition(repartition_nparts).sum(col("Unique Key").alias("unique_key_sum"))
-    service_requests_csv_pd_df = pd.DataFrame.from_records[
-        {"unique_key_sum": [service_requests_csv_pd_df["Unique Key"].sum()]}
-    ]
-    assert_df_equals(daft_df, service_requests_csv_pd_df)
+    service_requests_csv_pd_df = pd.DataFrame.from_records(
+        [{"unique_key_sum": service_requests_csv_pd_df["Unique Key"].sum()}]
+    )
+    assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
 
 
-@pytest.mark.tdd
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Averages across a column for entire table"""
     daft_df = daft_df.repartition(repartition_nparts).mean(col("Unique Key").alias("unique_key_mean"))
-    service_requests_csv_pd_df = pd.DataFrame.from_records[
-        {"unique_key_mean": [service_requests_csv_pd_df["Unique Key"].mean()]}
-    ]
-    assert_df_equals(daft_df, service_requests_csv_pd_df)
+    service_requests_csv_pd_df = pd.DataFrame.from_records(
+        [{"unique_key_mean": service_requests_csv_pd_df["Unique Key"].mean()}]
+    )
+    assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key="unique_key_mean")
 
 
 @parametrize_service_requests_csv_repartition

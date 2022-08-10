@@ -293,10 +293,14 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
         return ArrowDataBlock(data=hash_chunked_array(self.data))
 
     def agg(self, op: str) -> ArrowDataBlock:
-        assert op == "sum"
-        if len(self) == 0:
-            return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
+
         if op == "sum":
+            if len(self) == 0:
+                return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
             return ArrowDataBlock(data=pa.chunked_array([[pac.sum(self.data).as_py()]]))
+        elif op == "mean":
+            if len(self) == 0:
+                return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.float64()))
+            return ArrowDataBlock(data=pa.chunked_array([[pac.mean(self.data).as_py()]]))
         else:
             raise NotImplementedError(op)

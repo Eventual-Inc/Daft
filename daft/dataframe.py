@@ -215,6 +215,9 @@ class DataFrame:
     def sum(self, *partition_by: ColumnInputType) -> DataFrame:
         return self.agg([(c, "sum") for c in self.__column_input_to_expression(partition_by)])
 
+    def mean(self, *partition_by: ColumnInputType) -> DataFrame:
+        return self.agg([(c, "mean") for c in self.__column_input_to_expression(partition_by)])
+
     def collect(self) -> DataFrame:
         if self._result is None:
             self._result = _RUNNER.run(self._plan)
