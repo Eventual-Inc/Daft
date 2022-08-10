@@ -224,6 +224,10 @@ class DataBlock(Generic[ArrType]):
     def array_hash(self) -> DataBlock[ArrType]:
         raise NotImplementedError()
 
+    @abstractmethod
+    def agg(self, op: str) -> DataBlock[ArrType]:
+        raise NotImplementedError()
+
 
 class PyListDataBlock(DataBlock[List]):
     ...
@@ -287,3 +291,12 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
         if not (pa.types.is_integer(pa_type) or pa.types.is_string(pa_type)):
             raise TypeError(f"can only hash ints or strings not {pa_type}")
         return ArrowDataBlock(data=hash_chunked_array(self.data))
+
+    def agg(self, op: str) -> ArrowDataBlock:
+        assert op == "sum"
+        if len(self) == 0:
+            return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.float64()))
+        if op == "sum":
+            return ArrowDataBlock(data=pa.chunked_array([[pac.sum(self.data).as_py()]]))
+        else:
+            raise NotImplementedError(op)

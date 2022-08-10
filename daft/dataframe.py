@@ -199,6 +199,12 @@ class DataFrame:
         repartition_op = logical_plan.Repartition(self._plan, num_partitions=num, partition_by=exprs, scheme=scheme)
         return DataFrame(repartition_op)
 
+    def agg(self, to_agg: Dict[str, str]) -> DataFrame:
+        lagg_op = logical_plan.LocalAggregate(self._plan, agg=to_agg, group_by=None)
+        coal_op = logical_plan.Coalesce(lagg_op, 1)
+        gagg_op = logical_plan.LocalAggregate(coal_op, agg=to_agg, group_by=None)
+        return DataFrame(gagg_op)
+
     def collect(self) -> DataFrame:
         if self._result is None:
             self._result = _RUNNER.run(self._plan)

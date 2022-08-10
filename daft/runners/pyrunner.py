@@ -15,8 +15,10 @@ from daft.datasources import (
 )
 from daft.execution.execution_plan import ExecutionPlan
 from daft.logical.logical_plan import (
+    Coalesce,
     Filter,
     GlobalLimit,
+    LocalAggregate,
     LocalLimit,
     LogicalPlan,
     PartitionScheme,
@@ -28,6 +30,7 @@ from daft.logical.logical_plan import (
 from daft.runners.partitioning import PartitionSet, vPartition
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
+    CoalesceOp,
     RepartitionHashOp,
     RepartitionRandomOp,
     ShuffleOp,
@@ -76,7 +79,9 @@ class PyRunnerSimpleShuffler(ShuffleOp):
         ]
         reduced_results = []
         for t in range(num_target_partitions):
-            reduced_part = self.reduce_fn([map_results[i][t] for i in range(source_partitions)], **reduce_args)
+            reduced_part = self.reduce_fn(
+                [map_results[i][t] for i in range(source_partitions) if t in map_results[i]], **reduce_args
+            )
             reduced_results.append(reduced_part)
 
         return PartitionSet({i: part for i, part in enumerate(reduced_results)})
@@ -87,6 +92,10 @@ class PyRunnerRepartitionRandom(PyRunnerSimpleShuffler, RepartitionRandomOp):
 
 
 class PyRunnerRepartitionHash(PyRunnerSimpleShuffler, RepartitionHashOp):
+    ...
+
+
+class PyRunnerCoalesceOp(PyRunnerSimpleShuffler, CoalesceOp):
     ...
 
 
@@ -110,6 +119,9 @@ class PyRunner(Runner):
                         self._handle_repartition(node)
                     elif isinstance(node, Sort):
                         self._handle_sort(node)
+                    elif isinstance(node, Coalesce):
+                        self._handle_coalesce(node)
+
                     else:
                         raise NotImplementedError(f"{type(node)} not implemented")
             else:
@@ -123,6 +135,8 @@ class PyRunner(Runner):
                             self._handle_filter(node, partition_id=i)
                         elif isinstance(node, LocalLimit):
                             self._handle_local_limit(node, partition_id=i)
+                        elif isinstance(node, LocalAggregate):
+                            self._handle_local_aggregate(node, partition_id=i)
                         else:
                             raise NotImplementedError(f"{type(node)} not implemented")
         return self._part_manager.get_partition_set(node.id())
@@ -180,6 +194,12 @@ class PyRunner(Runner):
         new_partition = prev_partition.head(num)
         self._part_manager.put(limit.id(), partition_id=partition_id, partition=new_partition)
 
+    def _handle_local_aggregate(self, agg: LocalAggregate, partition_id: int) -> None:
+        child_id = agg._children()[0].id()
+        prev_partition = self._part_manager.get(child_id, partition_id)
+        new_partition = prev_partition.agg(agg.schema(), list(agg._agg.values()))
+        self._part_manager.put(agg.id(), partition_id=partition_id, partition=new_partition)
+
     def _handle_global_limit(self, limit: GlobalLimit) -> None:
         num = limit._num
         child_id = limit._children()[0].id()
@@ -233,3 +253,13 @@ class PyRunner(Runner):
         )
         new_pset = sort_op.run(input=prev_pset, num_target_partitions=num_partitions)
         self._part_manager.put_partition_set(sort.id(), new_pset)
+
+    def _handle_coalesce(self, coal: Coalesce) -> None:
+        num_partitions = coal.num_partitions()
+        child_id = coal._children()[0].id()
+        prev_pset = self._part_manager.get_partition_set(child_id)
+        coalesce_op = PyRunnerCoalesceOp(
+            map_args={"num_input_partitions": prev_pset.num_partitions()},
+        )
+        new_pset = coalesce_op.run(input=prev_pset, num_target_partitions=num_partitions)
+        self._part_manager.put_partition_set(coal.id(), new_pset)

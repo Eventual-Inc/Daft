@@ -3,10 +3,10 @@ from __future__ import annotations
 import itertools
 from abc import abstractmethod
 from enum import Enum, IntEnum
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from daft.datasources import SourceInfo
-from daft.expressions import ColumnExpression
+from daft.expressions import ColumnExpression, Expression
 from daft.internal.treenode import TreeNode
 from daft.logical.schema import ExpressionList
 
@@ -264,6 +264,104 @@ class Repartition(UnaryNode):
             and self.schema() == other.schema()
             and self._partition_by == other._partition_by
             and self._scheme == other._scheme
+        )
+
+
+class Coalesce(UnaryNode):
+    def __init__(self, input: LogicalPlan, num_partitions: int) -> None:
+        super().__init__(input.schema().to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.GLOBAL)
+        self._register_child(input)
+        if num_partitions > input.num_partitions():
+            raise ValueError(
+                f"Coalesce can only reduce the number of partitions: {num_partitions} vs {input.num_partitions()}"
+            )
+
+    def __repr__(self) -> str:
+        return f"Coalesce\n\toutput={self.schema()}" f"\n\tnum_partitions={self.num_partitions()}"
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> Coalesce:
+        raise NotImplementedError()
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, Coalesce)
+            and self.schema() == other.schema()
+            and self.num_partitions() == other.num_partitions()
+        )
+
+
+class LocalAggregate(UnaryNode):
+    def __init__(
+        self,
+        input: LogicalPlan,
+        agg: Dict[str, str],
+        group_by: Optional[Expression] = None,
+    ) -> None:
+        assert group_by is None
+        cols_to_agg = ExpressionList([ColumnExpression(k) for k, _ in agg.items()]).resolve(input.schema())
+        super().__init__(
+            cols_to_agg.to_column_expressions(), num_partitions=input.num_partitions(), op_level=OpLevel.PARTITION
+        )
+        self._register_child(input)
+        self._agg = agg
+        self._group_by = group_by
+        if self._group_by is not None:
+            self._group_by = self._group_by.resolve(input.schema())
+
+    def __repr__(self) -> str:
+        return f"LocalAggregate\n\toutput={self.schema()}\n\tgroup_by={self._group_by}"
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> LocalAggregate:
+        raise NotImplementedError()
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, LocalAggregate)
+            and self.schema() == other.schema()
+            and self._agg == other._agg
+            and self._group_by == other._group_by
+        )
+
+
+class GlobalAggregate(UnaryNode):
+    def __init__(
+        self,
+        input: LogicalPlan,
+        agg: Dict[str, str],
+        group_by: Optional[ExpressionList] = None,
+    ) -> None:
+        cols_to_agg = ExpressionList([ColumnExpression(k).alias(f"{k}_{v}") for k, v in agg.items()]).resolve(
+            input.schema()
+        )
+        super().__init__(cols_to_agg.to_column_expressions(), num_partitions=1, op_level=OpLevel.GLOBAL)
+        self._register_child(input)
+        self._agg = agg
+        self._group_by = group_by
+        if self._group_by is not None:
+            self._group_by = self._group_by.resolve(input.schema())
+
+    def __repr__(self) -> str:
+        return f"GlobalAggregate\n\toutput={self.schema()}\n\tgroup_by={self._group_by}"
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> GlobalAggregate:
+        raise NotImplementedError()
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, GlobalAggregate)
+            and self._agg == other._agg
+            and self.schema() == other.schema()
+            and type(self._group_by) == type(other._group_by)
+            and self._group_by == other._group_by
         )
 
 

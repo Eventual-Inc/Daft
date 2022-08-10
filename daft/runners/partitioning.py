@@ -167,6 +167,14 @@ class vPartition:
     def take(self, indices: DataBlock) -> vPartition:
         return self.for_each_column_block(partial(DataBlock.take, indices=indices))
 
+    def agg(self, cols: ExpressionList, ops: List[str]) -> vPartition:
+        assert len(cols.exprs) == len(ops)
+        to_agg = self.eval_expression_list(cols)
+        agged = {}
+        for op, (col_id, tile) in zip(ops, to_agg.columns.items()):
+            agged[col_id] = tile.apply(func=partial(tile.block.__class__.agg, op=op))
+        return vPartition(partition_id=self.partition_id, columns=agged)
+
     def split_by_hash(self, hash_expr: Expression, num_partitions: int) -> List[vPartition]:
         hash_tile = self.eval_expression(hash_expr)
         target_idx = hash_tile.block.array_hash() % num_partitions
