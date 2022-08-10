@@ -199,11 +199,21 @@ class DataFrame:
         repartition_op = logical_plan.Repartition(self._plan, num_partitions=num, partition_by=exprs, scheme=scheme)
         return DataFrame(repartition_op)
 
-    def agg(self, to_agg: Dict[str, str]) -> DataFrame:
-        lagg_op = logical_plan.LocalAggregate(self._plan, agg=to_agg, group_by=None)
+    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
+        exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))
+        ops = [op for _, op in to_agg]
+
+        lagg_op = logical_plan.LocalAggregate(
+            self._plan, agg=[(e, op) for e, op in zip(exprs_to_agg, ops)], group_by=None
+        )
         coal_op = logical_plan.Coalesce(lagg_op, 1)
-        gagg_op = logical_plan.LocalAggregate(coal_op, agg=to_agg, group_by=None)
+        gagg_op = logical_plan.LocalAggregate(
+            coal_op, agg=[(c, op) for c, op in zip(lagg_op.schema(), ops)], group_by=None
+        )
         return DataFrame(gagg_op)
+
+    def sum(self, *partition_by: ColumnInputType) -> DataFrame:
+        return self.agg([(c, "sum") for c in self.__column_input_to_expression(partition_by)])
 
     def collect(self) -> DataFrame:
         if self._result is None:

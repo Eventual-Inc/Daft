@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Tuple
 
 import numpy as np
 import pyarrow as pa
@@ -167,11 +167,10 @@ class vPartition:
     def take(self, indices: DataBlock) -> vPartition:
         return self.for_each_column_block(partial(DataBlock.take, indices=indices))
 
-    def agg(self, cols: ExpressionList, ops: List[str]) -> vPartition:
-        assert len(cols.exprs) == len(ops)
-        to_agg = self.eval_expression_list(cols)
+    def agg(self, to_agg: List[Tuple[Expression, str]]) -> vPartition:
+        evaled_expressions = self.eval_expression_list(ExpressionList([e for e, _ in to_agg]))
         agged = {}
-        for op, (col_id, tile) in zip(ops, to_agg.columns.items()):
+        for (_, op), (col_id, tile) in zip(to_agg, evaled_expressions.columns.items()):
             agged[col_id] = tile.apply(func=partial(tile.block.__class__.agg, op=op))
         return vPartition(partition_id=self.partition_id, columns=agged)
 

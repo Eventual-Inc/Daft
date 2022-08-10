@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 from abc import abstractmethod
 from enum import Enum, IntEnum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from daft.datasources import SourceInfo
 from daft.expressions import ColumnExpression, Expression
@@ -297,16 +297,16 @@ class LocalAggregate(UnaryNode):
     def __init__(
         self,
         input: LogicalPlan,
-        agg: Dict[str, str],
+        agg: List[Tuple[Expression, str]],
         group_by: Optional[Expression] = None,
     ) -> None:
         assert group_by is None
-        cols_to_agg = ExpressionList([ColumnExpression(k) for k, _ in agg.items()]).resolve(input.schema())
+        cols_to_agg = ExpressionList([e for e, _ in agg]).resolve(input.schema())
         super().__init__(
             cols_to_agg.to_column_expressions(), num_partitions=input.num_partitions(), op_level=OpLevel.PARTITION
         )
         self._register_child(input)
-        self._agg = agg
+        self._agg = [(e, op) for e, (_, op) in zip(cols_to_agg, agg)]
         self._group_by = group_by
         if self._group_by is not None:
             self._group_by = self._group_by.resolve(input.schema())

@@ -34,7 +34,6 @@ def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_df, service_requests_csv_pd_df)
 
 
-@pytest.mark.tdd
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
@@ -44,14 +43,16 @@ def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
         .where(col("Borough") == "BROOKLYN")
         .sum(col("Unique Key").alias("unique_key_sum"))
     )
-    service_requests_csv_pd_df = pd.DataFrame.from_records[
-        {
-            "unique_key_sum": [
-                service_requests_csv_pd_df[service_requests_csv_pd_df["Borough"] == "BROOKLYN"]["Unique Key"].sum()
-            ]
-        }
-    ]
-    assert_df_equals(daft_df, service_requests_csv_pd_df)
+    service_requests_csv_pd_df = pd.DataFrame.from_records(
+        [
+            {
+                "unique_key_sum": service_requests_csv_pd_df[service_requests_csv_pd_df["Borough"] == "BROOKLYN"][
+                    "Unique Key"
+                ].sum()
+            }
+        ]
+    )
+    assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
 
 
 @pytest.mark.tdd

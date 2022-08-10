@@ -295,7 +295,7 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
     def agg(self, op: str) -> ArrowDataBlock:
         assert op == "sum"
         if len(self) == 0:
-            return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.float64()))
+            return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
         if op == "sum":
             return ArrowDataBlock(data=pa.chunked_array([[pac.sum(self.data).as_py()]]))
         else:
