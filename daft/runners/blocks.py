@@ -4,7 +4,7 @@ import collections
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partialmethod
-from typing import Any, Callable, ClassVar, Generic, List, TypeVar, Union
+from typing import Any, Callable, ClassVar, Generic, List, Tuple, TypeVar, Union
 
 import numpy as np
 import pyarrow as pa
@@ -228,6 +228,26 @@ class DataBlock(Generic[ArrType]):
     def agg(self, op: str) -> DataBlock[ArrType]:
         raise NotImplementedError()
 
+    @staticmethod
+    @abstractmethod
+    def _group_by_agg(
+        group_by: List[DataBlock[ArrType]], to_agg: List[DataBlock[ArrType]], agg_ops: List[str]
+    ) -> Tuple[List[DataBlock[ArrType]], List[DataBlock[ArrType]]]:
+        raise NotImplementedError()
+
+    @classmethod
+    def group_by_agg(
+        cls, group_by: List[DataBlock[ArrType]], to_agg: List[DataBlock[ArrType]], agg_ops: List[str]
+    ) -> Tuple[List[DataBlock[ArrType]], List[DataBlock[ArrType]]]:
+        assert len(group_by) > 0, "no blocks"
+        assert len(to_agg) > 0, "no blocks"
+        assert len(to_agg) == len(agg_ops)
+        first_type = type(to_agg[0])
+        assert all(type(b) == first_type for b in group_by), "all block types must match"
+        assert all(type(b) == first_type for b in to_agg), "all block types must match"
+
+        return first_type._group_by_agg(group_by, to_agg, agg_ops)
+
 
 class PyListDataBlock(DataBlock[List]):
     ...
@@ -304,3 +324,17 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
             return ArrowDataBlock(data=pa.chunked_array([[pac.mean(self.data).as_py()]]))
         else:
             raise NotImplementedError(op)
+
+    @staticmethod
+    def _group_by_agg(
+        group_by: List[DataBlock], to_agg: List[DataBlock], agg_ops: List[str]
+    ) -> Tuple[List[DataBlock], List[DataBlock]]:
+        arrs = [a.data for a in group_by]
+        arrs.extend([a.data for a in to_agg])
+        group_names = [f"g_{i}" for i in range(len(group_by))]
+        agg_names = [f"a_{i}" for i in range(len(to_agg))]
+        table = pa.table(arrs, names=group_names + agg_names)
+        agged = table.group_by(group_names).aggregate([(a_name, op) for a_name, op in zip(agg_names, agg_ops)])
+        gcols: List[DataBlock] = [ArrowDataBlock(agged[g_name]) for g_name in group_names]
+        acols: List[DataBlock] = [ArrowDataBlock(agged[f"{a_name}_{op}"]) for a_name, op in zip(agg_names, agg_ops)]
+        return gcols, acols

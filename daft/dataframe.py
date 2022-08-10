@@ -208,9 +208,7 @@ class DataFrame:
             self._plan, agg=[(e, op) for e, op in zip(exprs_to_agg, ops)], group_by=group_by
         )
         coal_op = logical_plan.Coalesce(lagg_op, 1)
-        gagg_op = logical_plan.LocalAggregate(
-            coal_op, agg=[(c, op) for c, op in zip(lagg_op.schema(), ops)], group_by=group_by
-        )
+        gagg_op = logical_plan.LocalAggregate(coal_op, agg=lagg_op._agg, group_by=group_by)
         return DataFrame(gagg_op)
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
