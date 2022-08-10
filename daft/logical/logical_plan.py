@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 from abc import abstractmethod
 from enum import Enum, IntEnum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from daft.datasources import SourceInfo
 from daft.expressions import ColumnExpression, Expression
@@ -327,42 +327,6 @@ class LocalAggregate(UnaryNode):
             isinstance(other, LocalAggregate)
             and self.schema() == other.schema()
             and self._agg == other._agg
-            and self._group_by == other._group_by
-        )
-
-
-class GlobalAggregate(UnaryNode):
-    def __init__(
-        self,
-        input: LogicalPlan,
-        agg: Dict[str, str],
-        group_by: Optional[ExpressionList] = None,
-    ) -> None:
-        cols_to_agg = ExpressionList([ColumnExpression(k).alias(f"{k}_{v}") for k, v in agg.items()]).resolve(
-            input.schema()
-        )
-        super().__init__(cols_to_agg.to_column_expressions(), num_partitions=1, op_level=OpLevel.GLOBAL)
-        self._register_child(input)
-        self._agg = agg
-        self._group_by = group_by
-        if self._group_by is not None:
-            self._group_by = self._group_by.resolve(input.schema())
-
-    def __repr__(self) -> str:
-        return f"GlobalAggregate\n\toutput={self.schema()}\n\tgroup_by={self._group_by}"
-
-    def copy_with_new_input(self, new_input: LogicalPlan) -> GlobalAggregate:
-        raise NotImplementedError()
-
-    def required_columns(self) -> ExpressionList:
-        return ExpressionList([])
-
-    def _local_eq(self, other: Any) -> bool:
-        return (
-            isinstance(other, GlobalAggregate)
-            and self._agg == other._agg
-            and self.schema() == other.schema()
-            and type(self._group_by) == type(other._group_by)
             and self._group_by == other._group_by
         )
 
