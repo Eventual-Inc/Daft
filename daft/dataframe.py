@@ -207,8 +207,18 @@ class DataFrame:
         lagg_op = logical_plan.LocalAggregate(
             self._plan, agg=[(e, op) for e, op in zip(exprs_to_agg, ops)], group_by=group_by
         )
-        coal_op = logical_plan.Coalesce(lagg_op, 1)
-        gagg_op = logical_plan.LocalAggregate(coal_op, agg=lagg_op._agg, group_by=group_by)
+        repart_op: logical_plan.LogicalPlan
+        if group_by is None:
+            repart_op = logical_plan.Coalesce(lagg_op, 1)
+        else:
+            repart_op = logical_plan.Repartition(
+                self._plan,
+                num_partitions=self._plan.num_partitions(),
+                partition_by=group_by,
+                scheme=logical_plan.PartitionScheme.HASH,
+            )
+
+        gagg_op = logical_plan.LocalAggregate(repart_op, agg=lagg_op._agg, group_by=group_by)
         return DataFrame(gagg_op)
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
