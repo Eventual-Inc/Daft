@@ -233,7 +233,7 @@ class LiteralExpression(Expression):
         self._assign_id()
 
     def resolved_type(self) -> Optional[ExpressionType]:
-        return ExpressionType.UNKNOWN
+        return ExpressionType.from_py_obj(self._value)
 
     def _display_str(self) -> str:
         return f"lit({self._value})"

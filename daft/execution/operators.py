@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
 from types import MappingProxyType
 from typing import Optional, Tuple
+
+import pyarrow as pa
 
 
 class ExpressionType(Enum):
@@ -12,6 +16,52 @@ class ExpressionType(Enum):
     STRING = 3
     PYTHON = 4
 
+    @staticmethod
+    def from_py_obj(obj: object) -> ExpressionType:
+        """Gets the appropriate ExpressionType from a Python object, or ExpressionType.UNKNOWN
+        if unable to find the appropriate type. ExpressionType.PYTHON is never returned.
+        """
+        obj_type = type(obj)
+        if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
+            return ExpressionType.UNKNOWN
+        return _PY_TYPE_TO_EXPRESSION_TYPE[obj_type]
+
+    @staticmethod
+    def from_arrow_type(datatype: pa.DataType) -> ExpressionType:
+        if datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
+            return ExpressionType.UNKNOWN
+        return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
+
+
+_PYARROW_TYPE_TO_EXPRESSION_TYPE = {
+    pa.null(): ExpressionType.UNKNOWN,
+    pa.bool_(): ExpressionType.LOGICAL,
+    pa.int8(): ExpressionType.UNKNOWN,
+    pa.int16(): ExpressionType.NUMBER,
+    pa.int32(): ExpressionType.NUMBER,
+    pa.int64(): ExpressionType.NUMBER,
+    pa.uint8(): ExpressionType.NUMBER,
+    pa.uint16(): ExpressionType.NUMBER,
+    pa.uint32(): ExpressionType.NUMBER,
+    pa.uint64(): ExpressionType.NUMBER,
+    pa.float16(): ExpressionType.NUMBER,
+    pa.float32(): ExpressionType.NUMBER,
+    pa.float64(): ExpressionType.NUMBER,
+    pa.date32(): ExpressionType.UNKNOWN,
+    pa.date64(): ExpressionType.UNKNOWN,
+    pa.string(): ExpressionType.STRING,
+    pa.utf8(): ExpressionType.STRING,
+    pa.large_binary(): ExpressionType.UNKNOWN,
+    pa.large_string(): ExpressionType.STRING,
+    pa.large_utf8(): ExpressionType.STRING,
+}
+
+_PY_TYPE_TO_EXPRESSION_TYPE = {
+    int: ExpressionType.NUMBER,
+    float: ExpressionType.NUMBER,
+    str: ExpressionType.STRING,
+    bool: ExpressionType.LOGICAL,
+}
 
 TypeMatrix = MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]
 
