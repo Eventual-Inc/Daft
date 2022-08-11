@@ -8,7 +8,8 @@ import pandas
 import pyarrow.parquet as papq
 
 from daft.datasources import CSVSourceInfo, InMemorySourceInfo, ParquetSourceInfo
-from daft.expressions import Expression, col
+from daft.execution.operators import ExpressionType
+from daft.expressions import ColumnExpression, Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
@@ -35,7 +36,13 @@ class DataFrame:
         return self._plan.schema()
 
     def column_names(self) -> List[str]:
-        return [expr.name() for expr in self._plan.schema()]
+        col_names = []
+        for expr in self._plan.schema():
+            name = expr.name()
+            if name is None:
+                raise RuntimeError(f"Schema has expression with name None: {expr}")
+            col_names.append(name)
+        return col_names
 
     ###
     # Creation methods
@@ -45,7 +52,9 @@ class DataFrame:
     def from_pylist(cls, data: List[Dict[str, Any]]) -> DataFrame:
         if not data:
             raise ValueError("Unable to create DataFrame from empty list")
-        schema = ExpressionList([col(header) for header in data[0]])
+        schema = ExpressionList(
+            [ColumnExpression(header, assign_id=True, expr_type=ExpressionType.UNKNOWN) for header in data[0]]
+        )
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
@@ -56,7 +65,9 @@ class DataFrame:
 
     @classmethod
     def from_pydict(cls, data: Dict[str, Any]) -> DataFrame:
-        schema = ExpressionList([col(header) for header in data])
+        schema = ExpressionList(
+            [ColumnExpression(header, assign_id=True, expr_type=ExpressionType.UNKNOWN) for header in data]
+        )
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
@@ -89,15 +100,27 @@ class DataFrame:
         # Read first row to ascertain schema
         schema = None
         if column_names:
-            schema = ExpressionList([col(header) for header in column_names])
+            schema = ExpressionList(
+                [ColumnExpression(header, assign_id=True, expr_type=ExpressionType.UNKNOWN) for header in column_names]
+            )
         else:
             with fs.open(filepaths[0], "r") as f:
                 reader = csv.reader(f, delimiter=delimiter)
                 for row in reader:
                     schema = (
-                        ExpressionList([col(header) for header in row])
+                        ExpressionList(
+                            [
+                                ColumnExpression(header, assign_id=True, expr_type=ExpressionType.UNKNOWN)
+                                for header in row
+                            ]
+                        )
                         if has_headers
-                        else ExpressionList([col(f"col_{i}") for i in range(len(row))])
+                        else ExpressionList(
+                            [
+                                ColumnExpression(f"col_{i}", assign_id=True, expr_type=ExpressionType.UNKNOWN)
+                                for i in range(len(row))
+                            ]
+                        )
                     )
                     break
         assert schema is not None, "Unable to read CSV file to determine schema"
@@ -131,7 +154,12 @@ class DataFrame:
             raise ValueError(f"No Parquet files found at {path}")
 
         # Read first Parquet file to ascertain schema
-        schema = ExpressionList([col(field.name) for field in papq.ParquetFile(fs.open(filepaths[0])).metadata.schema])
+        schema = ExpressionList(
+            [
+                ColumnExpression(field.name, assign_id=True, expr_type=ExpressionType.UNKNOWN)
+                for field in papq.ParquetFile(fs.open(filepaths[0])).metadata.schema
+            ]
+        )
 
         plan = logical_plan.Scan(
             schema=schema,

@@ -8,6 +8,7 @@ import requests
 
 from daft.dataframe import DataFrame
 from daft.env import DaftEnv, get_docker_client
+from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression
 from daft.logical.schema import ExpressionList
 from daft.serving import HTTPEndpoint
@@ -20,7 +21,7 @@ TEST_BACKEND_CONFIG = {
 }
 
 FAKE_ENDPOINT_NAME = "test-endpoint"
-SCHEMA = ExpressionList([ColumnExpression("foo")])
+SCHEMA = ExpressionList([ColumnExpression("foo", assign_id=True, expr_type=ExpressionType.UNKNOWN)])
 
 
 @pytest.fixture(scope="function")

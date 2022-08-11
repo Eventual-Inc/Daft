@@ -22,6 +22,7 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
 
     def __init__(self, schema: ExpressionList, num_partitions: int, op_level: OpLevel) -> None:
         super().__init__()
+        assert schema.resolved()
         self._schema = schema
         self._op_level = op_level
         self._num_partitions = num_partitions
@@ -80,7 +81,6 @@ class Scan(LogicalPlan):
         predicate: Optional[ExpressionList] = None,
         columns: Optional[List[str]] = None,
     ) -> None:
-        schema = schema.resolve()
         super().__init__(schema, num_partitions=source_info.get_num_partitions(), op_level=OpLevel.PARTITION)
 
         if predicate is not None:
@@ -143,7 +143,7 @@ class Projection(UnaryNode):
     """Which columns to keep"""
 
     def __init__(self, input: LogicalPlan, projection: ExpressionList) -> None:
-        projection = projection.resolve(input_schema=input.schema())
+        projection = projection.resolve(input.schema())
         super().__init__(projection, num_partitions=input.num_partitions(), op_level=OpLevel.ROW)
         self._register_child(input)
         self._projection = projection
@@ -336,11 +336,7 @@ class HTTPRequest(LogicalPlan):
         self,
         schema: ExpressionList,
     ) -> None:
-        self._output_schema = schema.resolve()
         super().__init__(schema, num_partitions=1, op_level=OpLevel.ROW)
-
-    def schema(self) -> ExpressionList:
-        return self._output_schema
 
     def __repr__(self) -> str:
         return f"HTTPRequest\n\toutput={self.schema()}"
@@ -357,11 +353,7 @@ class HTTPResponse(UnaryNode):
         self,
         input: LogicalPlan,
     ) -> None:
-        self._schema = input.schema()
-        super().__init__(self._schema, num_partitions=input.num_partitions(), op_level=OpLevel.ROW)
-
-    def schema(self) -> ExpressionList:
-        return self._schema
+        super().__init__(input.schema(), num_partitions=input.num_partitions(), op_level=OpLevel.ROW)
 
     def __repr__(self) -> str:
         return f"HTTPResponse\n\toutput={self.schema()}"

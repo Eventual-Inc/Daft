@@ -144,7 +144,13 @@ class PyRunner(Runner):
 
     def _handle_scan(self, scan: Scan, partition_id: int) -> None:
         schema = scan.schema()
-        column_ids = [col.get_id() for col in schema.to_column_expressions()]
+
+        column_ids = []
+        for col in schema.to_column_expressions():
+            col_id = col.get_id()
+            assert col_id is not None
+            column_ids.append(col_id)
+
         if scan._source_info.scan_type() == ScanType.IN_MEMORY:
             assert isinstance(scan._source_info, InMemorySourceInfo)
             table_len = [len(scan._source_info.data[key]) for key in scan._source_info.data][0]

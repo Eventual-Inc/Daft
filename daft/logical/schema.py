@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import copy
-from typing import Dict, Iterable, Iterator, List, Optional, Set, TypeVar, cast
+from typing import Dict, Iterable, Iterator, List, Optional, Set, cast
 
 from daft.expressions import ColID, ColumnExpression, Expression
 
-ExpressionType = TypeVar("ExpressionType", bound=Expression)
 
-
-class ExpressionList(Iterable[ExpressionType]):
-    def __init__(self, exprs: List[ExpressionType]) -> None:
+class ExpressionList(Iterable[Expression]):
+    def __init__(self, exprs: List[Expression]) -> None:
         self.exprs = copy.deepcopy(exprs)
         self.names: List[str] = []
         name_set = set()
@@ -21,7 +19,6 @@ class ExpressionList(Iterable[ExpressionType]):
                 raise ValueError(f"duplicate name found {e_name}")
             self.names.append(e_name)
             name_set.add(e_name)
-        # self.is_resolved = all(e.required_columns(unresolved_only=True) == [] for e in exprs)
 
     def contains(self, column: ColumnExpression) -> bool:
         for e in self.exprs:
@@ -29,36 +26,35 @@ class ExpressionList(Iterable[ExpressionType]):
                 return True
         return False
 
-    def get_expression_by_name(self, name: str) -> Optional[ExpressionType]:
+    def get_expression_by_name(self, name: str) -> Optional[Expression]:
         for i, n in enumerate(self.names):
             if n == name:
                 return self.exprs[i]
         return None
 
-    def get_expression_by_id(self, id: int) -> Optional[ExpressionType]:
+    def get_expression_by_id(self, id: int) -> Optional[Expression]:
         for e in self.exprs:
             if e.get_id() == id:
                 return e
         return None
 
-    def resolve(self, input_schema: Optional[ExpressionList] = None) -> ExpressionList:
-        if input_schema is None:
-            for e in self.exprs:
-                assert isinstance(e, ColumnExpression), "we can only resolve ColumnExpression without an input_schema"
-                e._assign_id(strict=False)
-        else:
-            for e in self.exprs:
-                for col_expr in e.required_columns(unresolved_only=True):
-                    col_expr_name = col_expr.name()
-                    assert col_expr_name is not None
-                    match_output_expr = input_schema.get_expression_by_name(col_expr_name)
-                    if match_output_expr is not None:
-                        col_expr.assign_id_from_expression(match_output_expr)
-                    else:
-                        raise ValueError(f"Could not find expr by name {col_expr_name}")
+    def resolved(self) -> bool:
+        return all([e.resolved() for e in self.exprs])
+
+    def resolve(self, input_schema: ExpressionList) -> ExpressionList:
         for e in self.exprs:
-            e._assign_id(strict=False)
-        # self.is_resolved = True
+            for col_expr in e.required_columns(unresolved_only=True):
+                col_expr_name = col_expr.name()
+                assert col_expr_name is not None
+                match_output_expr = input_schema.get_expression_by_name(col_expr_name)
+                if match_output_expr is None:
+                    raise ValueError(f"Could not find expr by name {col_expr_name}")
+                col_expr.assign_id_from_expression(match_output_expr)
+            if not e.resolved():
+                import pdb
+
+                pdb.set_trace()
+            assert e.resolved()
         return self
 
     def keep(self, to_keep: List[str]) -> ExpressionList:
@@ -74,9 +70,9 @@ class ExpressionList(Iterable[ExpressionType]):
     def __repr__(self) -> str:
         return repr(self.exprs)
 
-    def union(self, other: ExpressionList, strict: bool = True):
+    def union(self, other: ExpressionList, strict: bool = True) -> ExpressionList:
         deduped = self.exprs.copy()
-        seen: Dict[str, ExpressionType] = {}
+        seen: Dict[str, Expression] = {}
         for e in self.exprs:
             name = e.name()
             if name is not None:
@@ -97,7 +93,7 @@ class ExpressionList(Iterable[ExpressionType]):
                     )
                 else:
                     name = f"right.{name}"
-                    e = cast(ExpressionType, e.alias(name))
+                    e = cast(Expression, e.alias(name))
             deduped.append(e)
             seen[name] = e
 
@@ -121,7 +117,7 @@ class ExpressionList(Iterable[ExpressionType]):
                 name_to_expr[name] = c
         return ExpressionList([e for e in name_to_expr.values()])
 
-    def __iter__(self) -> Iterator[ExpressionType]:
+    def __iter__(self) -> Iterator[Expression]:
         return iter(self.exprs)
 
     def to_id_set(self) -> Set[ColID]:

@@ -4,22 +4,19 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft.expressions import ColID, Expression, col
+from daft.execution.operators import ExpressionType
+from daft.expressions import ColID, ColumnExpression, Expression
 from daft.logical.schema import ExpressionList
 from daft.runners.blocks import DataBlock
 from daft.runners.partitioning import PyListTile, vPartition
 
 
-def resolve_expr(expr: Expression) -> Expression:
-    for c in expr.required_columns():
-        c._assign_id(strict=False)
-    expr._assign_id(strict=False)
-    return expr
+def resolved_col(name) -> ColumnExpression:
+    return ColumnExpression(name, assign_id=True, expr_type=ExpressionType.UNKNOWN)
 
 
 def test_vpartition_eval_expression() -> None:
-    expr = (col("a") + col("b")).alias("c")
-    expr = resolve_expr(expr)
+    expr = (resolved_col("a") + resolved_col("b")).alias("c")
     tiles = {}
     for c in expr.required_columns():
         block = DataBlock.make_block(np.ones(10))
@@ -35,11 +32,9 @@ def test_vpartition_eval_expression() -> None:
 def test_vpartition_eval_expression_list() -> None:
     list_of_expr: List[Expression] = []
     # we do this to have the same col ids for column access
-    base_expr = col("a") + col("b")
-    base_expr = resolve_expr(base_expr)
+    base_expr = resolved_col("a") + resolved_col("b")
     for i in range(4):
         expr = (base_expr + i).alias(f"c_{i}")
-        expr = resolve_expr(expr)
         list_of_expr.append(expr)
     expr_list = ExpressionList(list_of_expr)
     tiles = {}
@@ -146,8 +141,7 @@ def test_vpartition_sample() -> None:
 
 
 def test_vpartition_filter() -> None:
-    expr = col("x") < 4
-    expr = resolve_expr(expr)
+    expr = resolved_col("x") < 4
 
     tiles = {}
     col_id = expr.required_columns()[0].get_id()
@@ -164,8 +158,7 @@ def test_vpartition_filter() -> None:
 
 
 def test_vpartition_sort() -> None:
-    expr = col("x")
-    expr = resolve_expr(expr)
+    expr = resolved_col("x")
 
     tiles = {}
     col_id = expr.required_columns()[0].get_id()
@@ -189,8 +182,7 @@ def test_vpartition_sort() -> None:
 
 
 def test_vpartition_sort_desc() -> None:
-    expr = col("x")
-    expr = resolve_expr(expr)
+    expr = resolved_col("x")
 
     tiles = {}
     col_id = expr.required_columns()[0].get_id()
@@ -237,8 +229,7 @@ def test_split_by_index_even(n) -> None:
 
 @pytest.mark.parametrize("n", [1, 2, 3, 4, 5, 10])
 def test_hash_partition(n) -> None:
-    expr = col("x")
-    expr = resolve_expr(expr)
+    expr = resolved_col("x")
 
     tiles = {}
     col_id = expr.required_columns()[0].get_id()
