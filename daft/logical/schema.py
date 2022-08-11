@@ -49,11 +49,7 @@ class ExpressionList(Iterable[Expression]):
                 match_output_expr = input_schema.get_expression_by_name(col_expr_name)
                 if match_output_expr is None:
                     raise ValueError(f"Could not find expr by name {col_expr_name}")
-                col_expr.assign_id_from_expression(match_output_expr)
-            if not e.resolved():
-                import pdb
-
-                pdb.set_trace()
+                col_expr.resolve_to_expression(match_output_expr)
             assert e.resolved()
         return self
 

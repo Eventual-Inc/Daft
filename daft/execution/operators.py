@@ -15,6 +15,9 @@ class ExpressionType(Enum):
     STRING = 3
     PYTHON = 4
 
+    def __str__(self) -> str:
+        return self.name
+
     @staticmethod
     def from_py_obj(obj: object) -> ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or ExpressionType.UNKNOWN

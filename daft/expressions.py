@@ -138,7 +138,7 @@ class Expression(TreeNode["Expression"]):
         if name is None:
             raise ValueError("we can only convert expressions to ColumnExpressions if they have a name")
         ce = ColumnExpression(name)
-        ce.assign_id_from_expression(self)
+        ce.resolve_to_expression(self)
         return ce
 
     def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
@@ -162,45 +162,45 @@ class Expression(TreeNode["Expression"]):
     # UnaryOps
 
     # Arithmetic
-    __neg__ = partialmethod(_unary_op, Operators.NEGATE, func=operator.neg, symbol="-")
-    __pos__ = partialmethod(_unary_op, Operators.POSITIVE, func=operator.pos, symbol="+")
-    __abs__ = partialmethod(_unary_op, Operators.ABS, func=operator.abs)
+    __neg__ = partialmethod(_unary_op, Operators.NEGATE.value, func=operator.neg, symbol="-")
+    __pos__ = partialmethod(_unary_op, Operators.POSITIVE.value, func=operator.pos, symbol="+")
+    __abs__ = partialmethod(_unary_op, Operators.ABS.value, func=operator.abs)
 
     # Logical
-    __invert__ = partialmethod(_unary_op, Operators.INVERT, func=operator.not_, symbol="~")
+    __invert__ = partialmethod(_unary_op, Operators.INVERT.value, func=operator.not_, symbol="~")
 
     # BinaryOps
 
     # Arithmetic
-    __add__ = partialmethod(_binary_op, Operators.ADD, func=operator.add, symbol="+")
-    __sub__ = partialmethod(_binary_op, Operators.SUB, func=operator.sub, symbol="-")
-    __mul__ = partialmethod(_binary_op, Operators.MUL, func=operator.mul, symbol="*")
-    __floordiv__ = partialmethod(_binary_op, Operators.FLOORDIV, func=operator.floordiv, symbol="//")
-    __truediv__ = partialmethod(_binary_op, Operators.TRUEDIV, func=operator.truediv, symbol="/")
-    __pow__ = partialmethod(_binary_op, Operators.POW, func=operator.pow, symbol="**")
+    __add__ = partialmethod(_binary_op, Operators.ADD.value, func=operator.add, symbol="+")
+    __sub__ = partialmethod(_binary_op, Operators.SUB.value, func=operator.sub, symbol="-")
+    __mul__ = partialmethod(_binary_op, Operators.MUL.value, func=operator.mul, symbol="*")
+    __floordiv__ = partialmethod(_binary_op, Operators.FLOORDIV.value, func=operator.floordiv, symbol="//")
+    __truediv__ = partialmethod(_binary_op, Operators.TRUEDIV.value, func=operator.truediv, symbol="/")
+    __pow__ = partialmethod(_binary_op, Operators.POW.value, func=operator.pow, symbol="**")
 
     # Reverse Arithmetic
-    __radd__ = partialmethod(_reverse_binary_op, Operators.ADD, func=operator.add, symbol="+")
-    __rsub__ = partialmethod(_reverse_binary_op, Operators.SUB, func=operator.sub, symbol="-")
-    __rmul__ = partialmethod(_reverse_binary_op, Operators.MUL, func=operator.mul, symbol="*")
-    __rfloordiv__ = partialmethod(_reverse_binary_op, Operators.FLOORDIV, func=operator.floordiv, symbol="//")
-    __rtruediv__ = partialmethod(_reverse_binary_op, Operators.TRUEDIV, func=operator.truediv, symbol="/")
-    __rpow__ = partialmethod(_reverse_binary_op, Operators.POW, func=operator.pow, symbol="**")
+    __radd__ = partialmethod(_reverse_binary_op, Operators.ADD.value, func=operator.add, symbol="+")
+    __rsub__ = partialmethod(_reverse_binary_op, Operators.SUB.value, func=operator.sub, symbol="-")
+    __rmul__ = partialmethod(_reverse_binary_op, Operators.MUL.value, func=operator.mul, symbol="*")
+    __rfloordiv__ = partialmethod(_reverse_binary_op, Operators.FLOORDIV.value, func=operator.floordiv, symbol="//")
+    __rtruediv__ = partialmethod(_reverse_binary_op, Operators.TRUEDIV.value, func=operator.truediv, symbol="/")
+    __rpow__ = partialmethod(_reverse_binary_op, Operators.POW.value, func=operator.pow, symbol="**")
 
     # Logical
-    __and__ = partialmethod(_binary_op, Operators.AND, func=operator.and_, symbol="&")
-    __or__ = partialmethod(_binary_op, Operators.OR, func=operator.or_, symbol="|")
+    __and__ = partialmethod(_binary_op, Operators.AND.value, func=operator.and_, symbol="&")
+    __or__ = partialmethod(_binary_op, Operators.OR.value, func=operator.or_, symbol="|")
 
-    __lt__ = partialmethod(_binary_op, Operators.LT, func=operator.lt, symbol="<")
-    __le__ = partialmethod(_binary_op, Operators.LE, func=operator.le, symbol="<=")
-    __eq__ = partialmethod(_binary_op, Operators.EQ, func=operator.eq, symbol="=")  # type: ignore
-    __ne__ = partialmethod(_binary_op, Operators.NEQ, func=operator.ne, symbol="!=")  # type: ignore
-    __gt__ = partialmethod(_binary_op, Operators.GT, func=operator.gt, symbol=">")
-    __ge__ = partialmethod(_binary_op, Operators.GE, func=operator.ge, symbol=">=")
+    __lt__ = partialmethod(_binary_op, Operators.LT.value, func=operator.lt, symbol="<")
+    __le__ = partialmethod(_binary_op, Operators.LE.value, func=operator.le, symbol="<=")
+    __eq__ = partialmethod(_binary_op, Operators.EQ.value, func=operator.eq, symbol="=")  # type: ignore
+    __ne__ = partialmethod(_binary_op, Operators.NEQ.value, func=operator.ne, symbol="!=")  # type: ignore
+    __gt__ = partialmethod(_binary_op, Operators.GT.value, func=operator.gt, symbol=">")
+    __ge__ = partialmethod(_binary_op, Operators.GE.value, func=operator.ge, symbol=">=")
 
     # Reverse Logical
-    __rand__ = partialmethod(_reverse_binary_op, Operators.AND, func=operator.and_, symbol="&")
-    __ror__ = partialmethod(_reverse_binary_op, Operators.OR, func=operator.or_, symbol="|")
+    __rand__ = partialmethod(_reverse_binary_op, Operators.AND.value, func=operator.and_, symbol="&")
+    __ror__ = partialmethod(_reverse_binary_op, Operators.OR.value, func=operator.or_, symbol="|")
 
     @abstractmethod
     def eval(self, **kwargs):
@@ -402,10 +402,13 @@ class ColumnExpression(Expression):
         return self._type
 
     def _display_str(self) -> str:
-        if not self.has_id():
-            return f"col({self._name})"
-        else:
-            return f"col({self._name}#{self._id})"
+        s = f"col({self._name}"
+        if self.has_id():
+            s += f"#{self._id}"
+        if self.resolved():
+            s += f": {self.resolved_type()}"
+        s = s + ")"
+        return s
 
     def __repr__(self) -> str:
         return self._display_str()
@@ -423,10 +426,15 @@ class ColumnExpression(Expression):
             return []
         return [self]
 
-    def assign_id_from_expression(self, other: Expression) -> ColID:
+    def resolve_to_expression(self, other: Expression) -> ColID:
+        # TODO(jay): Could be a bug if `other` is not yet resolved but will be allocated a type later, so we
+        # assert that it is resolved (guaranteed to have an ID and a Type)
+        assert other.resolved(), "we do not allow resolving to unresolved Expressions"
         assert self.name() == other.name()
         self._id = other.get_id()
         assert self._id is not None
+        self._type = other.resolved_type()
+        assert self._type is not None
         return self._id
 
     def resolved(self) -> bool:

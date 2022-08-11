@@ -212,9 +212,9 @@ class DataFrame:
 
     def with_column(self, column_name: str, expr: Expression) -> DataFrame:
         prev_schema_as_cols = self.schema().to_column_expressions()
-        projection = logical_plan.Projection(
-            self._plan, prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]))
-        )
+        new_cols = ExpressionList([expr.alias(column_name)])
+        new_cols = new_cols.resolve(self.schema())
+        projection = logical_plan.Projection(self._plan, prev_schema_as_cols.union(new_cols))
         return DataFrame(projection)
 
     def sort(self, column: ColumnInputType, desc: bool = False) -> DataFrame:
