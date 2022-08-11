@@ -178,6 +178,7 @@ class Expression(TreeNode["Expression"]):
     __floordiv__ = partialmethod(_binary_op, Operators.FLOORDIV.value, func=operator.floordiv, symbol="//")
     __truediv__ = partialmethod(_binary_op, Operators.TRUEDIV.value, func=operator.truediv, symbol="/")
     __pow__ = partialmethod(_binary_op, Operators.POW.value, func=operator.pow, symbol="**")
+    __mod__ = partialmethod(_binary_op, Operators.MOD.value, func=operator.mod, symbol="%")
 
     # Reverse Arithmetic
     __radd__ = partialmethod(_reverse_binary_op, Operators.ADD.value, func=operator.add, symbol="+")
