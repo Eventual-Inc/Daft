@@ -1,14 +1,22 @@
 import pytest
 
 from daft.datasources import InMemorySourceInfo
-from daft.expressions import col
+from daft.execution.operators import ExpressionType
+from daft.expressions import ColumnExpression, col
 from daft.logical.logical_plan import Filter, Projection, Scan
 from daft.logical.schema import ExpressionList
 
 
 @pytest.fixture(scope="function")
 def schema():
-    return ExpressionList(list(map(col, ["a", "b", "c"])))
+    return ExpressionList(
+        list(
+            map(
+                lambda col_name: ColumnExpression(col_name, expr_type=ExpressionType.UNKNOWN),
+                ["a", "b", "c"],
+            )
+        )
+    )
 
 
 @pytest.fixture(scope="function")

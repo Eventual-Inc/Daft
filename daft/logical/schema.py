@@ -53,7 +53,7 @@ class ExpressionList(Iterable[ExpressionType]):
                     assert col_expr_name is not None
                     match_output_expr = input_schema.get_expression_by_name(col_expr_name)
                     if match_output_expr is not None:
-                        col_expr.assign_id_from_expression(match_output_expr)
+                        col_expr.resolve_to_expression(match_output_expr)
                     else:
                         raise ValueError(f"Could not find expr by name {col_expr_name}")
         for e in self.exprs:
