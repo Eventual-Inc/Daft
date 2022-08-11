@@ -5,10 +5,17 @@ import itertools
 import operator
 from abc import abstractmethod
 from functools import partialmethod
-from typing import Any, Callable, Dict, List, NewType, Optional, Tuple
+from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, TypeVar
 
-from daft.execution.operators import ExpressionType
+from daft.execution.operators import ExpressionOperator, ExpressionType, Operators
 from daft.internal.treenode import TreeNode
+
+T = TypeVar("T")
+
+
+def _assert_not_none(obj: Optional[T]) -> T:
+    assert obj is not None
+    return obj
 
 
 def col(name: str) -> ColumnExpression:
@@ -57,16 +64,36 @@ class Expression(TreeNode["Expression"]):
             return LiteralExpression(input)
         return input
 
-    def _unary_op(self, func: Callable, symbol: Optional[str] = None) -> Expression:
-        return CallExpression(func, func_args=(self,), symbol=symbol)
+    def _unary_op(
+        self,
+        operator: ExpressionOperator,
+        # TODO: deprecate func and symbol in favor of just operator
+        func: Callable,
+        symbol: Optional[str] = None,
+    ) -> Expression:
+        return CallExpression(operator, func, func_args=(self,), symbol=symbol)
 
-    def _binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
+    def _binary_op(
+        self,
+        operator: ExpressionOperator,
+        other: Any,
+        # TODO: deprecate func and symbol in favor of just operator
+        func: Callable,
+        symbol: Optional[str] = None,
+    ) -> Expression:
         other_expr = self._to_expression(other)
-        return CallExpression(func, func_args=(self, other_expr), symbol=symbol)
+        return CallExpression(operator, func, func_args=(self, other_expr), symbol=symbol)
 
-    def _reverse_binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
+    def _reverse_binary_op(
+        self,
+        operator: ExpressionOperator,
+        other: Any,
+        # TODO: deprecate func and symbol in favor of just operator
+        func: Callable,
+        symbol: Optional[str] = None,
+    ) -> Expression:
         other_expr = self._to_expression(other)
-        return other_expr._binary_op(self, func, symbol=symbol)
+        return other_expr._binary_op(operator, self, func, symbol=symbol)
 
     def name(self) -> Optional[str]:
         """Expressions can have a `name` which is a user-facing identifier for the expression so that
@@ -135,49 +162,45 @@ class Expression(TreeNode["Expression"]):
     # UnaryOps
 
     # Arithmetic
-    __neg__ = partialmethod(_unary_op, func=operator.neg, symbol="-")
-    __pos__ = partialmethod(_unary_op, func=operator.pos, symbol="+")
-    __abs__ = partialmethod(_unary_op, func=operator.abs)
+    __neg__ = partialmethod(_unary_op, Operators.NEGATE, func=operator.neg, symbol="-")
+    __pos__ = partialmethod(_unary_op, Operators.POSITIVE, func=operator.pos, symbol="+")
+    __abs__ = partialmethod(_unary_op, Operators.ABS, func=operator.abs)
 
     # Logical
-    __invert__ = partialmethod(_unary_op, func=operator.not_, symbol="~")
-
-    # function
-    def map(self, func: Callable) -> Expression:
-        return self._unary_op(func)
+    __invert__ = partialmethod(_unary_op, Operators.INVERT, func=operator.not_, symbol="~")
 
     # BinaryOps
 
     # Arithmetic
-    __add__ = partialmethod(_binary_op, func=operator.add, symbol="+")
-    __sub__ = partialmethod(_binary_op, func=operator.sub, symbol="-")
-    __mul__ = partialmethod(_binary_op, func=operator.mul, symbol="*")
-    __floordiv__ = partialmethod(_binary_op, func=operator.floordiv, symbol="//")
-    __truediv__ = partialmethod(_binary_op, func=operator.truediv, symbol="/")
-    __pow__ = partialmethod(_binary_op, func=operator.pow, symbol="**")
+    __add__ = partialmethod(_binary_op, Operators.ADD, func=operator.add, symbol="+")
+    __sub__ = partialmethod(_binary_op, Operators.SUB, func=operator.sub, symbol="-")
+    __mul__ = partialmethod(_binary_op, Operators.MUL, func=operator.mul, symbol="*")
+    __floordiv__ = partialmethod(_binary_op, Operators.FLOORDIV, func=operator.floordiv, symbol="//")
+    __truediv__ = partialmethod(_binary_op, Operators.TRUEDIV, func=operator.truediv, symbol="/")
+    __pow__ = partialmethod(_binary_op, Operators.POW, func=operator.pow, symbol="**")
 
     # Reverse Arithmetic
-    __radd__ = partialmethod(_reverse_binary_op, func=operator.add, symbol="+")
-    __rsub__ = partialmethod(_reverse_binary_op, func=operator.sub, symbol="-")
-    __rmul__ = partialmethod(_reverse_binary_op, func=operator.mul, symbol="*")
-    __rfloordiv__ = partialmethod(_reverse_binary_op, func=operator.floordiv, symbol="//")
-    __rtruediv__ = partialmethod(_reverse_binary_op, func=operator.truediv, symbol="/")
-    __rpow__ = partialmethod(_reverse_binary_op, func=operator.pow, symbol="**")
+    __radd__ = partialmethod(_reverse_binary_op, Operators.ADD, func=operator.add, symbol="+")
+    __rsub__ = partialmethod(_reverse_binary_op, Operators.SUB, func=operator.sub, symbol="-")
+    __rmul__ = partialmethod(_reverse_binary_op, Operators.MUL, func=operator.mul, symbol="*")
+    __rfloordiv__ = partialmethod(_reverse_binary_op, Operators.FLOORDIV, func=operator.floordiv, symbol="//")
+    __rtruediv__ = partialmethod(_reverse_binary_op, Operators.TRUEDIV, func=operator.truediv, symbol="/")
+    __rpow__ = partialmethod(_reverse_binary_op, Operators.POW, func=operator.pow, symbol="**")
 
     # Logical
-    __and__ = partialmethod(_binary_op, func=operator.and_, symbol="&")
-    __or__ = partialmethod(_binary_op, func=operator.or_, symbol="|")
+    __and__ = partialmethod(_binary_op, Operators.AND, func=operator.and_, symbol="&")
+    __or__ = partialmethod(_binary_op, Operators.OR, func=operator.or_, symbol="|")
 
-    __lt__ = partialmethod(_binary_op, func=operator.lt, symbol="<")
-    __le__ = partialmethod(_binary_op, func=operator.le, symbol="<=")
-    __eq__ = partialmethod(_binary_op, func=operator.eq, symbol="=")  # type: ignore
-    __ne__ = partialmethod(_binary_op, func=operator.ne, symbol="!=")  # type: ignore
-    __gt__ = partialmethod(_binary_op, func=operator.gt, symbol=">")
-    __ge__ = partialmethod(_binary_op, func=operator.ge, symbol=">=")
+    __lt__ = partialmethod(_binary_op, Operators.LT, func=operator.lt, symbol="<")
+    __le__ = partialmethod(_binary_op, Operators.LE, func=operator.le, symbol="<=")
+    __eq__ = partialmethod(_binary_op, Operators.EQ, func=operator.eq, symbol="=")  # type: ignore
+    __ne__ = partialmethod(_binary_op, Operators.NEQ, func=operator.ne, symbol="!=")  # type: ignore
+    __gt__ = partialmethod(_binary_op, Operators.GT, func=operator.gt, symbol=">")
+    __ge__ = partialmethod(_binary_op, Operators.GE, func=operator.ge, symbol=">=")
 
     # Reverse Logical
-    __rand__ = partialmethod(_reverse_binary_op, func=operator.and_, symbol="&")
-    __ror__ = partialmethod(_reverse_binary_op, func=operator.or_, symbol="|")
+    __rand__ = partialmethod(_reverse_binary_op, Operators.AND, func=operator.and_, symbol="&")
+    __ror__ = partialmethod(_reverse_binary_op, Operators.OR, func=operator.or_, symbol="|")
 
     @abstractmethod
     def eval(self, **kwargs):
@@ -275,6 +298,8 @@ class MultipleReturnSelectExpression(Expression):
 class CallExpression(Expression):
     def __init__(
         self,
+        operator: ExpressionOperator,
+        # TODO: deprecate func and symbol in favor of operator
         func: Callable,
         func_args: Tuple,
         func_kwargs: Optional[Dict[str, Any]] = None,
@@ -288,9 +313,13 @@ class CallExpression(Expression):
         self._kwargs_ids = {k: self._register_child(self._to_expression(v)) for k, v in func_kwargs.items()}
         self._func = func
         self._symbol = symbol
+        self._operator = operator
 
     def resolved_type(self) -> Optional[ExpressionType]:
-        return ExpressionType.UNKNOWN
+        if not self.resolved():
+            return None
+        arg_types = tuple(_assert_not_none(arg.resolved_type()) for arg in self._args)
+        return self._operator.type_matrix.get(arg_types, ExpressionType.UNKNOWN)
 
     @property
     def _args(self) -> Tuple[Expression, ...]:
@@ -334,7 +363,7 @@ def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
             if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargs.values()):
-                out_expr = CallExpression(func, func_args=args, func_kwargs=kwargs)
+                out_expr = CallExpression(None, func, func_args=args, func_kwargs=kwargs)
                 if num_returns == 1:
                     return out_expr
                 else:

@@ -3,8 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
-from types import MappingProxyType
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import pyarrow as pa
 
@@ -63,7 +62,7 @@ _PY_TYPE_TO_EXPRESSION_TYPE = {
     bool: ExpressionType.LOGICAL,
 }
 
-TypeMatrix = MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]
+TypeMatrix = Dict[Tuple[ExpressionType, ...], ExpressionType]
 
 
 @dataclass(frozen=True)
@@ -85,33 +84,27 @@ class ExpressionOperator:
             assert v != ExpressionType.UNKNOWN
 
 
-_UnaryNumericalTM = TypeMatrix({(ExpressionType.NUMBER,): ExpressionType.NUMBER})
+_UnaryNumericalTM = {(ExpressionType.NUMBER,): ExpressionType.NUMBER}
 
-_UnaryLogicalTM = TypeMatrix({(ExpressionType.LOGICAL,): ExpressionType.LOGICAL})
+_UnaryLogicalTM = {(ExpressionType.LOGICAL,): ExpressionType.LOGICAL}
 
 
-_BinaryNumericalTM = TypeMatrix({(ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.NUMBER})
+_BinaryNumericalTM = {(ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.NUMBER}
 
-_ComparisionTM = TypeMatrix(
-    {
-        (ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.LOGICAL,
-        (ExpressionType.STRING, ExpressionType.STRING): ExpressionType.LOGICAL,
-    }
-)
+_ComparisionTM = {
+    (ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.LOGICAL,
+    (ExpressionType.STRING, ExpressionType.STRING): ExpressionType.LOGICAL,
+}
 
-_BinaryLogicalTM = TypeMatrix(
-    {
-        (ExpressionType.LOGICAL, ExpressionType.LOGICAL): ExpressionType.LOGICAL,
-    }
-)
+_BinaryLogicalTM = {
+    (ExpressionType.LOGICAL, ExpressionType.LOGICAL): ExpressionType.LOGICAL,
+}
 
-_CountLogicalTM = TypeMatrix(
-    {
-        (ExpressionType.NUMBER,): ExpressionType.NUMBER,
-        (ExpressionType.LOGICAL,): ExpressionType.NUMBER,
-        (ExpressionType.STRING,): ExpressionType.NUMBER,
-    }
-)
+_CountLogicalTM = {
+    (ExpressionType.NUMBER,): ExpressionType.NUMBER,
+    (ExpressionType.LOGICAL,): ExpressionType.NUMBER,
+    (ExpressionType.STRING,): ExpressionType.NUMBER,
+}
 
 
 _UOp = partial(ExpressionOperator, nargs=1, accepts_kwargs=False)
@@ -154,7 +147,8 @@ class Operators(Enum):
     ADD = _NBop(name="add", symbol="+")
     SUB = _NBop(name="subtract", symbol="-")
     MUL = _NBop(name="multiply", symbol="*")
-    TRUEDIV = _NBop(name="true_divide", symbol="//")
+    FLOORDIV = _NBop(name="floor_divide", symbol="//")
+    TRUEDIV = _NBop(name="true_divide", symbol="/")
     POW = _NBop(name="power", symbol="**")
     MOD = _NBop(name="mod", symbol="%")
 
