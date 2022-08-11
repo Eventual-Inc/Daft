@@ -243,10 +243,6 @@ class DataBlock(Generic[ArrType]):
     ) -> Tuple[List[DataBlock[ArrType]], List[DataBlock[ArrType]]]:
         assert len(group_by) > 0, "no blocks"
         assert len(to_agg) > 0, "no blocks"
-        if len(to_agg) != len(agg_ops):
-            import ipdb
-
-            ipdb.set_trace()
         assert len(to_agg) == len(agg_ops)
         first_type = type(to_agg[0])
         assert all(type(b) == first_type for b in group_by), "all block types must match"
