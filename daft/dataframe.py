@@ -252,3 +252,6 @@ class GroupedDataFrame:
 
     def mean(self, *cols: ColumnInputType) -> DataFrame:
         return self.df._agg([(c, "mean") for c in cols], group_by=self.group_by)
+
+    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
+        return self.df._agg(to_agg, group_by=self.group_by)

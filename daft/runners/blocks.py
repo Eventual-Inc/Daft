@@ -102,7 +102,9 @@ class DataBlock(Generic[ArrType]):
     def make_block(cls, data: Any) -> DataBlock:
         # if isinstance(data, list):
         #     return PyListDataBlock(data=data)
-        if isinstance(data, pa.ChunkedArray):
+        if isinstance(data, pa.Scalar):
+            return ArrowDataBlock(data=data)
+        elif isinstance(data, pa.ChunkedArray):
             return ArrowDataBlock(data=data)
         elif isinstance(data, np.ndarray):
             return ArrowDataBlock(data=pa.chunked_array([data]))
@@ -112,7 +114,7 @@ class DataBlock(Generic[ArrType]):
             except pa.lib.ArrowInvalid:
                 arrow_type = None
             if arrow_type is None or pa.types.is_nested(arrow_type):
-                raise ValueError("Don't know what block {data} should be")
+                raise ValueError(f"Don't know what block {data} should be")
             return ArrowDataBlock(data=pa.scalar(data))
 
     def _unary_op(self, func) -> DataBlock[ArrType]:
@@ -241,6 +243,10 @@ class DataBlock(Generic[ArrType]):
     ) -> Tuple[List[DataBlock[ArrType]], List[DataBlock[ArrType]]]:
         assert len(group_by) > 0, "no blocks"
         assert len(to_agg) > 0, "no blocks"
+        if len(to_agg) != len(agg_ops):
+            import ipdb
+
+            ipdb.set_trace()
         assert len(to_agg) == len(agg_ops)
         first_type = type(to_agg[0])
         assert all(type(b) == first_type for b in group_by), "all block types must match"

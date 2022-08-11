@@ -177,6 +177,7 @@ class vPartition:
             return vPartition(partition_id=self.partition_id, columns=agged)
         else:
             grouped_blocked = self.eval_expression_list(group_by)
+            assert len(evaled_expressions.columns) == len(ops)
             gcols, acols = DataBlock.group_by_agg(
                 list(tile.block for tile in grouped_blocked.columns.values()),
                 list(tile.block for tile in evaled_expressions.columns.values()),
