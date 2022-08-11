@@ -1,42 +1,83 @@
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
+from types import MappingProxyType
 from typing import Optional, Tuple
 
 
 class ExpressionType(Enum):
+    UNKNOWN = 0
     NUMBER = 1
     LOGICAL = 2
     STRING = 3
     PYTHON = 4
 
 
+TypeMatrix = MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]
+
+
 @dataclass(frozen=True)
 class ExpressionOperator:
     name: str
     nargs: int
-    output_type: ExpressionType
-    input_types: Tuple[ExpressionType, ...]
+    type_matrix: TypeMatrix
     accepts_kwargs: bool = False
     symbol: Optional[str] = None
 
+    def __post_init__(self) -> None:
+        for k, v in self.type_matrix.items():
+            assert len(k) == self.nargs, f"all keys in type matrix must have {self.nargs}"
+            for sub_k in k:
+                assert isinstance(sub_k, ExpressionType)
+                assert sub_k != ExpressionType.UNKNOWN
 
-_ET = ExpressionType
+            assert isinstance(v, ExpressionType)
+            assert v != ExpressionType.UNKNOWN
+
+
+_UnaryNumericalTM = TypeMatrix({(ExpressionType.NUMBER,): ExpressionType.NUMBER})
+
+_UnaryLogicalTM = TypeMatrix({(ExpressionType.LOGICAL,): ExpressionType.LOGICAL})
+
+
+_BinaryNumericalTM = TypeMatrix({(ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.NUMBER})
+
+_ComparisionTM = TypeMatrix(
+    {
+        (ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.LOGICAL,
+        (ExpressionType.STRING, ExpressionType.STRING): ExpressionType.LOGICAL,
+    }
+)
+
+_BinaryLogicalTM = TypeMatrix(
+    {
+        (ExpressionType.LOGICAL, ExpressionType.LOGICAL): ExpressionType.LOGICAL,
+    }
+)
+
+_CountLogicalTM = TypeMatrix(
+    {
+        (ExpressionType.NUMBER,): ExpressionType.NUMBER,
+        (ExpressionType.LOGICAL,): ExpressionType.NUMBER,
+        (ExpressionType.STRING,): ExpressionType.NUMBER,
+    }
+)
+
 
 _UOp = partial(ExpressionOperator, nargs=1, accepts_kwargs=False)
 # Numerical Unary Ops
-_NUop = partial(_UOp, input_types=(_ET.NUMBER,), output_type=_ET.NUMBER)
+_NUop = partial(_UOp, type_matrix=_UnaryNumericalTM)
 
 _BOp = partial(ExpressionOperator, nargs=2, accepts_kwargs=False)
 
 # Numerical Binary Ops
-_NBop = partial(_BOp, input_types=(_ET.NUMBER,), output_type=_ET.NUMBER)
+_NBop = partial(_BOp, type_matrix=_BinaryNumericalTM)
 
 # Comparison Binary Ops
-_CBop = partial(_BOp, input_types=(_ET.NUMBER, _ET.STRING), output_type=_ET.LOGICAL)
+_CBop = partial(_BOp, type_matrix=_ComparisionTM)
 
 # Logical Binary Ops
-_LBop = partial(_BOp, input_types=(_ET.LOGICAL,), output_type=_ET.LOGICAL)
+_LBop = partial(_BOp, type_matrix=_BinaryLogicalTM)
 
 
 class Operators(Enum):
@@ -52,12 +93,10 @@ class Operators(Enum):
     MIN = _NUop(name="min", symbol="min")
     MAX = _NUop(name="max", symbol="max")
 
-    COUNT = _UOp(
-        name="count", symbol="count", input_types=(_ET.NUMBER, _ET.LOGICAL, _ET.STRING), output_type=_ET.NUMBER
-    )
+    COUNT = _UOp(name="count", symbol="count", type_matrix=_CountLogicalTM)
 
     # Logical
-    INVERT = _UOp(name="invert", symbol="~", input_types=(_ET.LOGICAL,), output_type=_ET.LOGICAL)
+    INVERT = _UOp(name="invert", symbol="~", type_matrix=_UnaryLogicalTM)
 
     # BinaryOps
 
