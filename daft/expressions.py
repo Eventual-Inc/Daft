@@ -24,6 +24,22 @@ ColID = NewType("ColID", int)
 
 
 class Expression(TreeNode["Expression"]):
+    """Expressions are TreeNodes. They have a few notable properties.
+
+    Name: a user-facing identifier for the expression, used for human-readable schemas and for referring
+        to an expression with a human-readable name when users want to run computations on it.
+
+    ID: every Expression that represents a new value is assigned an ID. Expressions that are **references**
+        to existing Expressions (e.g. AliasExpression or ColumnExpression) are not assigned an ID.
+
+    Resolved: Expressions are "resolved" iff they have an ID and all their children are "resolved" as well.
+        Expressions are usually unresolved when they have a leaf ColumnExpression that has not yet been assigned
+        as ID. All resolved Expressions have a resolved_type.
+
+        Resolving an Expression involves looking up all the leaf ColumnExpressions, using their Names to find
+        the appropriate Expression that they refer to and having them inherit that Expression's ID.
+    """
+
     def __init__(self) -> None:
         super().__init__()
         self._id: Optional[ColID] = None
@@ -36,26 +52,39 @@ class Expression(TreeNode["Expression"]):
             s = s + f": {self.resolved_type()}"
         return s
 
-    ###
-    # Names: Expressions can have a `name` which is a user-facing identifier for the expression so that
-    #        users can refer to them when specifying queries/computation. Names are not unique in the tree.
-    ###
+    def _to_expression(self, input: Any) -> Expression:
+        if not isinstance(input, Expression):
+            return LiteralExpression(input)
+        return input
+
+    def _unary_op(self, func: Callable, symbol: Optional[str] = None) -> Expression:
+        return CallExpression(func, func_args=(self,), symbol=symbol)
+
+    def _binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
+        other_expr = self._to_expression(other)
+        return CallExpression(func, func_args=(self, other_expr), symbol=symbol)
+
+    def _reverse_binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
+        other_expr = self._to_expression(other)
+        return other_expr._binary_op(self, func, symbol=symbol)
 
     def name(self) -> Optional[str]:
+        """Expressions can have a `name` which is a user-facing identifier for the expression so that
+        users can refer to them when specifying queries/computation. Names are not unique in the tree
+        and are used during resolution of ColumnExpressions.
+        """
         for child in self._children():
             name = child.name()
             if name is not None:
                 return name
         return None
 
-    ###
-    # IDs: Expressions are assigned IDs whenever a new expression is computed. Creating new **references** to
-    #      existing expressions (e.g. using AliasExpression or ColumnExpression) should not create a new ID, and
-    #      instead these Expression nodes will inherit the IDs of whatever Expression they refer to.
-    #
-    #      Expressions are "resolved" iff all children expressions have assigned IDs and are also resolved.
-    #      Resolved expressions will have an associated Type that is recursively evaluated from its children.
-    ###
+    def _assign_id(self) -> ColID:
+        """Subclasses should call this on creation if they compute a new expression rather than hold a reference to one"""
+        if self.has_id():
+            raise ValueError(f"We have already assigned an id, {self.get_id()}")
+        self._id = ColID(next(_COUNTER))
+        return self._id
 
     def resolved(self) -> bool:
         """Expressions are "resolved" iff all children ColumnExpressions have assigned IDs."""
@@ -74,20 +103,6 @@ class Expression(TreeNode["Expression"]):
     def has_id(self) -> bool:
         return self.get_id() is not None
 
-    def _assign_id(self) -> ColID:
-        """Subclasses should call this on creation if they compute a new expression rather than hold a reference to one"""
-        if self.has_id():
-            raise ValueError(f"We have already assigned an id, {self.get_id()}")
-        self._id = ColID(next(_COUNTER))
-        return self._id
-
-    def is_same(self, other: Expression) -> bool:
-        """An Expression is SAME as another Expression iff they have IDs and they share the same ID"""
-        if self is other:
-            return True
-        ids_match = self.has_id() and self.get_id() == other.get_id()
-        return ids_match
-
     def to_column_expression(self) -> ColumnExpression:
         """Creates a new ColumnExpression that refers to the current Expression - it inherits the current Expression's ID"""
         if not self.has_id():
@@ -99,20 +114,12 @@ class Expression(TreeNode["Expression"]):
         ce.assign_id_from_expression(self)
         return ce
 
-    def alias(self, name: str) -> Expression:
-        """Creates a new AliasExpression that refers to the current Expression - it inherits the current Expression's ID"""
-        return AliasExpression(self, name)
-
     def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
         """Returns all the leaf nodes of the tree that are ColumnExpressions"""
         to_rtn: List[ColumnExpression] = []
         for child in self._children():
             to_rtn.extend(child.required_columns(unresolved_only))
         return to_rtn
-
-    ###
-    # Manipulation utilities: Helpers to mutate expression trees
-    ###
 
     def _replace_column_with_expression(self, col_expr: ColumnExpression, new_expr: Expression) -> Expression:
         """For expressions in the subtree where self is the root, replace all `col_expr` with `new_expr`"""
@@ -124,27 +131,6 @@ class Expression(TreeNode["Expression"]):
                 col_expr, new_expr
             )
         return self
-
-    ###
-    # Operations: Expressions can be created from other expressions by running operations on them, such as
-    #             a unary operation like `.map`, or binary operators such as `+`, `-` etc.
-    ###
-
-    def _to_expression(self, input: Any) -> Expression:
-        if not isinstance(input, Expression):
-            return LiteralExpression(input)
-        return input
-
-    def _unary_op(self, func: Callable, symbol: Optional[str] = None) -> Expression:
-        return CallExpression(func, func_args=(self,), symbol=symbol)
-
-    def _binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
-        other_expr = self._to_expression(other)
-        return CallExpression(func, func_args=(self, other_expr), symbol=symbol)
-
-    def _reverse_binary_op(self, other: Any, func: Callable, symbol: Optional[str] = None) -> Expression:
-        other_expr = self._to_expression(other)
-        return other_expr._binary_op(self, func, symbol=symbol)
 
     # UnaryOps
 
@@ -201,12 +187,23 @@ class Expression(TreeNode["Expression"]):
     def _display_str(self) -> str:
         raise NotImplementedError()
 
+    def alias(self, name: str) -> Expression:
+        """Creates a new AliasExpression that refers to the current Expression - it inherits the current Expression's ID"""
+        return AliasExpression(self, name)
+
     def has_call(self) -> bool:
         if isinstance(self, CallExpression):
             return True
         if len(self._children()) > 0:
             return any(c.has_call() for c in self._children())
         return False
+
+    def is_same(self, other: Expression) -> bool:
+        """An Expression is_same as another Expression iff they have IDs and they share the same ID"""
+        if self is other:
+            return True
+        ids_match = self.has_id() and self.get_id() == other.get_id()
+        return ids_match
 
     @abstractmethod
     def _is_eq_local(self, other: Expression) -> bool:
@@ -227,63 +224,6 @@ class Expression(TreeNode["Expression"]):
                 return False
 
         return True
-
-
-class ColumnExpression(Expression):
-    """ColumnExpressions are special Expressions that are pointers to other Expressions
-
-    1. They have no children
-    2. They always have a name
-    3. When they are resolved, they are assigned an ID and Type
-    """
-
-    def __init__(self, name: str, assign_id: bool = False, expr_type: Optional[ExpressionType] = None) -> None:
-        super().__init__()
-        if not isinstance(name, str):
-            raise TypeError(f"Expected name to be type str, is {type(name)}")
-        self._name = name
-
-        if assign_id:
-            assert expr_type is not None, "Expression type must be provided if assigning ID to ColumnExpression"
-            self._assign_id()
-        self._type = expr_type
-
-    def resolved_type(self) -> Optional[ExpressionType]:
-        return self._type
-
-    def _display_str(self) -> str:
-        if not self.has_id():
-            return f"col({self._name})"
-        else:
-            return f"col({self._name}#{self._id})"
-
-    def __repr__(self) -> str:
-        return self._display_str()
-
-    def eval(self, **kwargs):
-        if self._name not in kwargs:
-            raise ValueError(f"expected column `{self._name}` to be passed into eval")
-        return kwargs[self._name]
-
-    def name(self) -> Optional[str]:
-        return self._name
-
-    def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
-        if unresolved_only and self.has_id():
-            return []
-        return [self]
-
-    def assign_id_from_expression(self, other: Expression) -> ColID:
-        assert self.name() == other.name()
-        self._id = other.get_id()
-        assert self._id is not None
-        return self._id
-
-    def resolved(self) -> bool:
-        return self.has_id()
-
-    def _is_eq_local(self, other: Expression) -> bool:
-        return isinstance(other, ColumnExpression) and self._name == other._name and self.get_id() == other.get_id()
 
 
 class LiteralExpression(Expression):
@@ -408,6 +348,63 @@ def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
     if f is None:
         return udf_decorator
     return udf_decorator(f)
+
+
+class ColumnExpression(Expression):
+    """ColumnExpressions are special Expressions that are either pointers to other Expressions or
+    that can represent a scan operation.
+
+    They have no children, always have an explicitly defined name and by default do not have an ID/type.
+    When they are resolved, they inherit the ID and Type of the Expression that they resolve to.
+    """
+
+    def __init__(self, name: str, assign_id: bool = False, expr_type: Optional[ExpressionType] = None) -> None:
+        super().__init__()
+        if not isinstance(name, str):
+            raise TypeError(f"Expected name to be type str, is {type(name)}")
+        self._name = name
+
+        if assign_id:
+            assert expr_type is not None, "Expression type must be provided if assigning ID to ColumnExpression"
+            self._assign_id()
+        self._type = expr_type
+
+    def resolved_type(self) -> Optional[ExpressionType]:
+        return self._type
+
+    def _display_str(self) -> str:
+        if not self.has_id():
+            return f"col({self._name})"
+        else:
+            return f"col({self._name}#{self._id})"
+
+    def __repr__(self) -> str:
+        return self._display_str()
+
+    def eval(self, **kwargs):
+        if self._name not in kwargs:
+            raise ValueError(f"expected column `{self._name}` to be passed into eval")
+        return kwargs[self._name]
+
+    def name(self) -> Optional[str]:
+        return self._name
+
+    def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
+        if unresolved_only and self.has_id():
+            return []
+        return [self]
+
+    def assign_id_from_expression(self, other: Expression) -> ColID:
+        assert self.name() == other.name()
+        self._id = other.get_id()
+        assert self._id is not None
+        return self._id
+
+    def resolved(self) -> bool:
+        return self.has_id()
+
+    def _is_eq_local(self, other: Expression) -> bool:
+        return isinstance(other, ColumnExpression) and self._name == other._name and self.get_id() == other.get_id()
 
 
 class AliasExpression(Expression):
