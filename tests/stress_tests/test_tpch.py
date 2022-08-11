@@ -1,4 +1,7 @@
+import datetime
+
 import pandas as pd
+import pyarrow as pa
 import pytest
 
 from daft.dataframe import DataFrame
@@ -98,17 +101,27 @@ def test_tpch_q1(lineitem):
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
     daft_df = (
-        lineitem.where(col("L_SHIPDATE") <= "1998-09-02")
+        lineitem.where(col("L_SHIPDATE") <= pa.scalar(datetime.date(1998, 9, 13)))
         .groupby(col("L_RETURNFLAG"), col("L_LINESTATUS"))
         .agg(
-            col("L_QUANTITY").agg.sum().alias("sum_qty"),
-            col("L_EXTENDEDPRICE").agg.sum().alias("sum_base_price"),
-            discounted_price.agg.sum().alias("sum_disc_price"),
-            taxed_discounted_price.agg.sum().alias("sum_charge"),
-            col("L_QUANTITY").agg.mean().alias("avg_qty"),
-            col("L_EXTENDEDPRICE").agg.mean().alias("avg_price"),
-            col("L_DISCOUNT").agg.mean().alias("avg_disc"),
-            col("L_QUANTITY").agg.count().alias("count_order"),
+            [
+                (col("L_QUANTITY").alias("sum_qty"), "sum"),
+                (col("L_EXTENDEDPRICE").alias("sum_base_price"), "sum"),
+                (discounted_price.alias("sum_disc_price"), "sum"),
+                (taxed_discounted_price.alias("sum_charge"), "sum"),
+                (col("L_QUANTITY").alias("avg_qty"), "mean"),
+                (col("L_EXTENDEDPRICE").alias("avg_price"), "mean"),
+                (col("L_DISCOUNT").alias("avg_disc"), "mean"),
+                # (col("L_QUANTITY").alias("count_order"), 'count'),
+                # col("L_QUANTITY").agg.sum().alias("sum_qty"),
+                # col("L_EXTENDEDPRICE").agg.sum().alias("sum_base_price"),
+                # discounted_price.agg.sum().alias("sum_disc_price"),
+                # taxed_discounted_price.agg.sum().alias("sum_charge"),
+                # col("L_QUANTITY").agg.mean().alias("avg_qty"),
+                # col("L_EXTENDEDPRICE").agg.mean().alias("avg_price"),
+                # col("L_DISCOUNT").agg.mean().alias("avg_disc"),
+                # col("L_QUANTITY").agg.count().alias("count_order"),
+            ]
         )
         .sort(col("L_RETURNFLAG"), col("L_LINESTATUS"))
     )

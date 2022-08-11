@@ -3,10 +3,10 @@ from __future__ import annotations
 import itertools
 from abc import abstractmethod
 from enum import Enum, IntEnum
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 from daft.datasources import SourceInfo
-from daft.expressions import ColumnExpression
+from daft.expressions import ColumnExpression, Expression
 from daft.internal.treenode import TreeNode
 from daft.logical.schema import ExpressionList
 
@@ -264,6 +264,70 @@ class Repartition(UnaryNode):
             and self.schema() == other.schema()
             and self._partition_by == other._partition_by
             and self._scheme == other._scheme
+        )
+
+
+class Coalesce(UnaryNode):
+    def __init__(self, input: LogicalPlan, num_partitions: int) -> None:
+        super().__init__(input.schema().to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.GLOBAL)
+        self._register_child(input)
+        if num_partitions > input.num_partitions():
+            raise ValueError(
+                f"Coalesce can only reduce the number of partitions: {num_partitions} vs {input.num_partitions()}"
+            )
+
+    def __repr__(self) -> str:
+        return f"Coalesce\n\toutput={self.schema()}" f"\n\tnum_partitions={self.num_partitions()}"
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> Coalesce:
+        raise NotImplementedError()
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, Coalesce)
+            and self.schema() == other.schema()
+            and self.num_partitions() == other.num_partitions()
+        )
+
+
+class LocalAggregate(UnaryNode):
+    def __init__(
+        self,
+        input: LogicalPlan,
+        agg: List[Tuple[Expression, str]],
+        group_by: Optional[ExpressionList] = None,
+    ) -> None:
+
+        cols_to_agg = ExpressionList([e for e, _ in agg]).resolve(input.schema())
+        schema = cols_to_agg.to_column_expressions()
+        self._group_by = group_by
+
+        if group_by is not None:
+            self._group_by = group_by.resolve(input.schema())
+            schema = self._group_by.union(schema)
+
+        super().__init__(schema, num_partitions=input.num_partitions(), op_level=OpLevel.PARTITION)
+        self._register_child(input)
+        self._agg = [(e, op) for e, (_, op) in zip(cols_to_agg, agg)]
+
+    def __repr__(self) -> str:
+        return f"LocalAggregate\n\toutput={self.schema()}\n\tgroup_by={self._group_by}"
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> LocalAggregate:
+        raise NotImplementedError()
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, LocalAggregate)
+            and self.schema() == other.schema()
+            and self._agg == other._agg
+            and self._group_by == other._group_by
         )
 
 

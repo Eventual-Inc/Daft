@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pyarrow as pa
@@ -166,6 +166,31 @@ class vPartition:
 
     def take(self, indices: DataBlock) -> vPartition:
         return self.for_each_column_block(partial(DataBlock.take, indices=indices))
+
+    def agg(self, to_agg: List[Tuple[Expression, str]], group_by: Optional[ExpressionList] = None) -> vPartition:
+        evaled_expressions = self.eval_expression_list(ExpressionList([e for e, _ in to_agg]))
+        ops = [op for _, op in to_agg]
+        if group_by is None:
+            agged = {}
+            for op, (col_id, tile) in zip(ops, evaled_expressions.columns.items()):
+                agged[col_id] = tile.apply(func=partial(tile.block.__class__.agg, op=op))
+            return vPartition(partition_id=self.partition_id, columns=agged)
+        else:
+            grouped_blocked = self.eval_expression_list(group_by)
+            assert len(evaled_expressions.columns) == len(ops)
+            gcols, acols = DataBlock.group_by_agg(
+                list(tile.block for tile in grouped_blocked.columns.values()),
+                list(tile.block for tile in evaled_expressions.columns.values()),
+                agg_ops=ops,
+            )
+            new_columns = {}
+
+            for block, (col_id, tile) in zip(gcols, grouped_blocked.columns.items()):
+                new_columns[col_id] = dataclasses.replace(tile, block=block)
+
+            for block, (col_id, tile) in zip(acols, evaled_expressions.columns.items()):
+                new_columns[col_id] = dataclasses.replace(tile, block=block)
+            return vPartition(partition_id=self.partition_id, columns=new_columns)
 
     def split_by_hash(self, hash_expr: Expression, num_partitions: int) -> List[vPartition]:
         hash_tile = self.eval_expression(hash_expr)

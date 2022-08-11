@@ -1,3 +1,4 @@
+import math
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional
 
@@ -5,7 +6,7 @@ import numpy as np
 
 from daft.expressions import Expression
 from daft.runners.blocks import DataBlock
-from daft.runners.partitioning import vPartition
+from daft.runners.partitioning import PartID, vPartition
 
 
 class ShuffleOp:
@@ -15,7 +16,7 @@ class ShuffleOp:
 
     @staticmethod
     @abstractmethod
-    def map_fn(input: vPartition, output_partitions: int) -> List[vPartition]:
+    def map_fn(input: vPartition, output_partitions: int) -> Dict[PartID, vPartition]:
         ...
 
     @staticmethod
@@ -26,7 +27,7 @@ class ShuffleOp:
 
 class RepartitionRandomOp(ShuffleOp):
     @staticmethod
-    def map_fn(input: vPartition, output_partitions: int, seed: Optional[int] = None) -> List[vPartition]:
+    def map_fn(input: vPartition, output_partitions: int, seed: Optional[int] = None) -> Dict[PartID, vPartition]:
         if seed is None:
             seed = input.partition_id
         else:
@@ -34,7 +35,8 @@ class RepartitionRandomOp(ShuffleOp):
 
         rng = np.random.default_rng(seed=seed)
         target_idx = DataBlock.make_block(data=rng.integers(low=0, high=output_partitions, size=len(input)))
-        return input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
+        new_parts = input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
+        return {PartID(i): part for i, part in enumerate(new_parts)}
 
     @staticmethod
     def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
@@ -43,13 +45,33 @@ class RepartitionRandomOp(ShuffleOp):
 
 class RepartitionHashOp(ShuffleOp):
     @staticmethod
-    def map_fn(input: vPartition, output_partitions: int, expr: Optional[Expression] = None) -> List[vPartition]:
+    def map_fn(
+        input: vPartition, output_partitions: int, expr: Optional[Expression] = None
+    ) -> Dict[PartID, vPartition]:
         assert expr is not None
-        return input.split_by_hash(expr, num_partitions=output_partitions)
+        new_parts = input.split_by_hash(expr, num_partitions=output_partitions)
+        return {PartID(i): part for i, part in enumerate(new_parts)}
 
     @staticmethod
     def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
         return vPartition.merge_partitions(mapped_outputs)
+
+
+class CoalesceOp(ShuffleOp):
+    @staticmethod
+    def map_fn(
+        input: vPartition, output_partitions: int, num_input_partitions: Optional[int] = None
+    ) -> Dict[PartID, vPartition]:
+        assert num_input_partitions is not None
+        assert output_partitions <= num_input_partitions
+
+        tgt_idx = math.floor((output_partitions / num_input_partitions) * input.partition_id)
+        return {PartID(tgt_idx): input}
+        # return input.split_by_hash(expr, num_partitions=output_partitions)
+
+    @staticmethod
+    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+        return vPartition.merge_partitions(mapped_outputs, verify_partition_id=False)
 
 
 class SortOp(ShuffleOp):
@@ -60,10 +82,10 @@ class SortOp(ShuffleOp):
         expr: Optional[Expression] = None,
         boundaries: Optional[DataBlock] = None,
         desc: Optional[bool] = None,
-    ) -> List[vPartition]:
+    ) -> Dict[PartID, vPartition]:
         assert expr is not None and boundaries is not None and desc is not None
         if output_partitions == 1:
-            return [input]
+            return {PartID(0): input}
         sort_key = input.eval_expression(expr).block
         argsort_idx = sort_key.argsort()
         sorted_input = input.take(argsort_idx)
@@ -71,7 +93,8 @@ class SortOp(ShuffleOp):
         target_idx = sorted_keys.search_sorted(boundaries)
         if desc:
             target_idx = (output_partitions - 1) - target_idx
-        return sorted_input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
+        new_parts = sorted_input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
+        return {PartID(i): part for i, part in enumerate(new_parts)}
 
     @staticmethod
     def reduce_fn(

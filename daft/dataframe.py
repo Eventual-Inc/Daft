@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, TypeVar, Union
 
 import pandas
@@ -199,6 +200,36 @@ class DataFrame:
         repartition_op = logical_plan.Repartition(self._plan, num_partitions=num, partition_by=exprs, scheme=scheme)
         return DataFrame(repartition_op)
 
+    def _agg(self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionList] = None) -> DataFrame:
+        exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))
+        ops = [op for _, op in to_agg]
+
+        lagg_op = logical_plan.LocalAggregate(
+            self._plan, agg=[(e, op) for e, op in zip(exprs_to_agg, ops)], group_by=group_by
+        )
+        repart_op: logical_plan.LogicalPlan
+        if group_by is None:
+            repart_op = logical_plan.Coalesce(lagg_op, 1)
+        else:
+            repart_op = logical_plan.Repartition(
+                self._plan,
+                num_partitions=self._plan.num_partitions(),
+                partition_by=group_by,
+                scheme=logical_plan.PartitionScheme.HASH,
+            )
+
+        gagg_op = logical_plan.LocalAggregate(repart_op, agg=lagg_op._agg, group_by=group_by)
+        return DataFrame(gagg_op)
+
+    def sum(self, *cols: ColumnInputType) -> DataFrame:
+        return self._agg([(c, "sum") for c in cols])
+
+    def mean(self, *cols: ColumnInputType) -> DataFrame:
+        return self._agg([(c, "mean") for c in cols])
+
+    def groupby(self, *group_by: ColumnInputType) -> GroupedDataFrame:
+        return GroupedDataFrame(self, self.__column_input_to_expression(group_by))
+
     def collect(self) -> DataFrame:
         if self._result is None:
             self._result = _RUNNER.run(self._plan)
@@ -209,3 +240,18 @@ class DataFrame:
         assert self._result is not None
         arrow_table = self._result.to_arrow_table()
         return arrow_table.to_pandas()
+
+
+@dataclass
+class GroupedDataFrame:
+    df: DataFrame
+    group_by: ExpressionList
+
+    def sum(self, *cols: ColumnInputType) -> DataFrame:
+        return self.df._agg([(c, "sum") for c in cols], group_by=self.group_by)
+
+    def mean(self, *cols: ColumnInputType) -> DataFrame:
+        return self.df._agg([(c, "mean") for c in cols], group_by=self.group_by)
+
+    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
+        return self.df._agg(to_agg, group_by=self.group_by)

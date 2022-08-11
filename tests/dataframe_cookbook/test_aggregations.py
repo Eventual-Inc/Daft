@@ -10,31 +10,28 @@ from tests.dataframe_cookbook.conftest import (
 )
 
 
-@pytest.mark.tdd
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Sums across an entire column for the entire table"""
     daft_df = daft_df.repartition(repartition_nparts).sum(col("Unique Key").alias("unique_key_sum"))
-    service_requests_csv_pd_df = pd.DataFrame.from_records[
-        {"unique_key_sum": [service_requests_csv_pd_df["Unique Key"].sum()]}
-    ]
-    assert_df_equals(daft_df, service_requests_csv_pd_df)
+    service_requests_csv_pd_df = pd.DataFrame.from_records(
+        [{"unique_key_sum": service_requests_csv_pd_df["Unique Key"].sum()}]
+    )
+    assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
 
 
-@pytest.mark.tdd
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Averages across a column for entire table"""
     daft_df = daft_df.repartition(repartition_nparts).mean(col("Unique Key").alias("unique_key_mean"))
-    service_requests_csv_pd_df = pd.DataFrame.from_records[
-        {"unique_key_mean": [service_requests_csv_pd_df["Unique Key"].mean()]}
-    ]
-    assert_df_equals(daft_df, service_requests_csv_pd_df)
+    service_requests_csv_pd_df = pd.DataFrame.from_records(
+        [{"unique_key_mean": service_requests_csv_pd_df["Unique Key"].mean()}]
+    )
+    assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key="unique_key_mean")
 
 
-@pytest.mark.tdd
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
@@ -44,34 +41,34 @@ def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
         .where(col("Borough") == "BROOKLYN")
         .sum(col("Unique Key").alias("unique_key_sum"))
     )
-    service_requests_csv_pd_df = pd.DataFrame.from_records[
-        {
-            "unique_key_sum": [
-                service_requests_csv_pd_df[service_requests_csv_pd_df["Borough"] == "BROOKLYN"]["Unique Key"].sum()
-            ]
-        }
-    ]
-    assert_df_equals(daft_df, service_requests_csv_pd_df)
+    service_requests_csv_pd_df = pd.DataFrame.from_records(
+        [
+            {
+                "unique_key_sum": service_requests_csv_pd_df[service_requests_csv_pd_df["Borough"] == "BROOKLYN"][
+                    "Unique Key"
+                ].sum()
+            }
+        ]
+    )
+    assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
 
 
-@pytest.mark.tdd
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 @pytest.mark.parametrize(
     "keys",
     [
         pytest.param(["Borough"], id="NumGroupByKeys:1"),
-        pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
+        # pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
     ],
 )
 def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
     """Sums across groups"""
     daft_df = daft_df.repartition(repartition_nparts).groupby(*[col(k) for k in keys]).sum(col("Unique Key"))
-    service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).sum("Unique Key")
+    service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).sum("Unique Key").reset_index()
     assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key=keys)
 
 
-@pytest.mark.tdd
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 @parametrize_sort_desc("sort_desc")
@@ -79,7 +76,7 @@ def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
     "keys",
     [
         pytest.param(["Borough"], id="NumGroupSortKeys:1"),
-        pytest.param(["Borough", "Complaint Type"], id="NumGroupSortKeys:2"),
+        #        pytest.param(["Borough", "Complaint Type"], id="NumGroupSortKeys:2"),
     ],
 )
 def test_sum_groupby_sorted(daft_df, sort_desc, service_requests_csv_pd_df, repartition_nparts, keys):
@@ -92,5 +89,5 @@ def test_sum_groupby_sorted(daft_df, sort_desc, service_requests_csv_pd_df, repa
     )
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df.groupby(keys).sum("Unique Key").sort_values(by=keys, ascending=not sort_desc)
-    )
+    ).reset_index()
     assert_df_equals(daft_df, service_requests_csv_pd_df, assert_ordering=True)
