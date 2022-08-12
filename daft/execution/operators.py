@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from functools import partial
-from typing import Dict, Optional, Tuple
+from functools import lru_cache, partial
+from types import MappingProxyType
+from typing import FrozenSet, Optional, Tuple
 
 import pyarrow as pa
 
@@ -65,7 +66,8 @@ _PY_TYPE_TO_EXPRESSION_TYPE = {
     bool: ExpressionType.LOGICAL,
 }
 
-TypeMatrix = Dict[Tuple[ExpressionType, ...], ExpressionType]
+
+TypeMatrix = FrozenSet[Tuple[Tuple[ExpressionType, ...], ExpressionType]]
 
 
 @dataclass(frozen=True)
@@ -77,7 +79,7 @@ class ExpressionOperator:
     symbol: Optional[str] = None
 
     def __post_init__(self) -> None:
-        for k, v in self.type_matrix.items():
+        for k, v in self.type_matrix:
             assert len(k) == self.nargs, f"all keys in type matrix must have {self.nargs}"
             for sub_k in k:
                 assert isinstance(sub_k, ExpressionType)
@@ -86,28 +88,38 @@ class ExpressionOperator:
             assert isinstance(v, ExpressionType)
             assert v != ExpressionType.UNKNOWN
 
+    @lru_cache
+    def type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
+        return MappingProxyType(dict(self.type_matrix))
 
-_UnaryNumericalTM = {(ExpressionType.NUMBER,): ExpressionType.NUMBER}
 
-_UnaryLogicalTM = {(ExpressionType.LOGICAL,): ExpressionType.LOGICAL}
+_UnaryNumericalTM = frozenset({(ExpressionType.NUMBER,): ExpressionType.NUMBER}.items())
+
+_UnaryLogicalTM = frozenset({(ExpressionType.LOGICAL,): ExpressionType.LOGICAL}.items())
 
 
-_BinaryNumericalTM = {(ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.NUMBER}
+_BinaryNumericalTM = frozenset({(ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.NUMBER}.items())
 
-_ComparisionTM = {
-    (ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.LOGICAL,
-    (ExpressionType.STRING, ExpressionType.STRING): ExpressionType.LOGICAL,
-}
+_ComparisionTM = frozenset(
+    {
+        (ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.LOGICAL,
+        (ExpressionType.STRING, ExpressionType.STRING): ExpressionType.LOGICAL,
+    }.items()
+)
 
-_BinaryLogicalTM = {
-    (ExpressionType.LOGICAL, ExpressionType.LOGICAL): ExpressionType.LOGICAL,
-}
+_BinaryLogicalTM = frozenset(
+    {
+        (ExpressionType.LOGICAL, ExpressionType.LOGICAL): ExpressionType.LOGICAL,
+    }.items()
+)
 
-_CountLogicalTM = {
-    (ExpressionType.NUMBER,): ExpressionType.NUMBER,
-    (ExpressionType.LOGICAL,): ExpressionType.NUMBER,
-    (ExpressionType.STRING,): ExpressionType.NUMBER,
-}
+_CountLogicalTM = frozenset(
+    {
+        (ExpressionType.NUMBER,): ExpressionType.NUMBER,
+        (ExpressionType.LOGICAL,): ExpressionType.NUMBER,
+        (ExpressionType.STRING,): ExpressionType.NUMBER,
+    }.items()
+)
 
 
 _UOp = partial(ExpressionOperator, nargs=1, accepts_kwargs=False)

@@ -299,8 +299,7 @@ class CallExpression(Expression):
         if any(t is None for t in arg_types):
             return None
         arg_types_not_none = tuple(_assert_not_none(t) for t in arg_types)
-        print(arg_types_not_none)
-        return self._operator.type_matrix.get(arg_types_not_none, ExpressionType.UNKNOWN)
+        return self._operator.type_matrix_dict().get(arg_types_not_none, ExpressionType.UNKNOWN)
 
     @property
     def _args(self) -> Tuple[Expression, ...]:
