@@ -5,8 +5,6 @@ import pandas as pd
 import pytest
 import ray
 
-from daft.dataframe import DataFrame
-
 
 @pytest.fixture(scope="session")
 def ray_cluster():
@@ -60,7 +58,7 @@ def run_tdd():
 
 
 def assert_df_equals(
-    daft_df: DataFrame,
+    daft_df: pd.DataFrame,
     pd_df: pd.DataFrame,
     sort_key: Union[str, List[str]] = "Unique Key",
     assert_ordering: bool = False,
@@ -71,7 +69,7 @@ def assert_df_equals(
     However, if asserting on ordering is intended behavior, set `assert_ordering=True` and this function will
     no longer run sorting before running the equality comparison.
     """
-    daft_pd_df = daft_df.to_pandas().reset_index(drop=True).reindex(sorted(daft_df.column_names()), axis=1)
+    daft_pd_df = daft_df.reset_index(drop=True).reindex(sorted(daft_df.columns), axis=1)
     pd_df = pd_df.reset_index(drop=True).reindex(sorted(pd_df.columns), axis=1)
 
     # If we are not asserting on the ordering being equal, we run a sort operation on both dataframes using the provided sort key

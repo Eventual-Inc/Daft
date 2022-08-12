@@ -18,7 +18,8 @@ def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_sum": service_requests_csv_pd_df["Unique Key"].sum()}]
     )
-    assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
 
 
 @parametrize_service_requests_csv_repartition
@@ -29,7 +30,8 @@ def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_mean": service_requests_csv_pd_df["Unique Key"].mean()}]
     )
-    assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key="unique_key_mean")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_mean")
 
 
 @parametrize_service_requests_csv_repartition
@@ -50,7 +52,8 @@ def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
             }
         ]
     )
-    assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
 
 
 @parametrize_service_requests_csv_repartition
@@ -66,7 +69,8 @@ def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
     """Sums across groups"""
     daft_df = daft_df.repartition(repartition_nparts).groupby(*[col(k) for k in keys]).sum(col("Unique Key"))
     service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).sum("Unique Key").reset_index()
-    assert_df_equals(daft_df, service_requests_csv_pd_df, sort_key=keys)
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
 
 
 @parametrize_service_requests_csv_repartition
@@ -90,4 +94,5 @@ def test_sum_groupby_sorted(daft_df, sort_desc, service_requests_csv_pd_df, repa
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df.groupby(keys).sum("Unique Key").sort_values(by=keys, ascending=not sort_desc)
     ).reset_index()
-    assert_df_equals(daft_df, service_requests_csv_pd_df, assert_ordering=True)
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, assert_ordering=True)

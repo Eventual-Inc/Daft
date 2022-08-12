@@ -7,10 +7,8 @@ from daft.dataframe import DataFrame
 from daft.expressions import col
 
 IRIS_CSV = "tests/assets/iris.csv"
-SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.100.csv"
-SERVICE_REQUESTS_CSV_FOLDER = "tests/assets/311-service-requests.100"
-SERVICE_REQUESTS_PARQUET = "tests/assets/311-service-requests.100.parquet"
-SERVICE_REQUESTS_PARQUET_FOLDER = "tests/assets/311-service-requests.100.parquet_folder"
+SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.50.csv"
+SERVICE_REQUESTS_CSV_FOLDER = "tests/assets/311-service-requests.50"
 COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
 CsvPathAndColumns = Tuple[str, List[str]]
 
@@ -31,15 +29,11 @@ def parametrize_service_requests_csv_daft_df(test_case):
     """
     one_partition_csv = DataFrame.from_csv(SERVICE_REQUESTS_CSV).select(*[col(c) for c in COLUMNS])
     two_partitions_csv = DataFrame.from_csv(SERVICE_REQUESTS_CSV_FOLDER).select(*[col(c) for c in COLUMNS])
-    one_partition_pq = DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET).select(*[col(c) for c in COLUMNS])
-    two_partitions_pq = DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET_FOLDER).select(*[col(c) for c in COLUMNS])
     return pytest.mark.parametrize(
         ["daft_df"],
         [
             pytest.param(one_partition_csv, id="Source:CSV,NumFiles:1"),
             pytest.param(two_partitions_csv, id="Source:CSV,NumFiles:2"),
-            pytest.param(one_partition_pq, id="Source:Parquet,NumFiles:1"),
-            pytest.param(two_partitions_pq, id="Source:Parquet,NumFiles:2"),
         ],
     )(test_case)
 
@@ -55,5 +49,5 @@ def parametrize_service_requests_csv_repartition(test_case):
     """
     return pytest.mark.parametrize(
         ["repartition_nparts"],
-        [pytest.param(n, id=f"NumRepartitionParts:{n}") for n in [1, 30, 50, 100, 101]],
+        [pytest.param(n, id=f"NumRepartitionParts:{n}") for n in [1, 15, 25, 50, 51]],
     )(test_case)
