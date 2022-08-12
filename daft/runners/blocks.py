@@ -293,6 +293,7 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
         return new_partitions
 
     def sample(self, num: int, replace=False) -> ArrowDataBlock:
+        num = max(num, len(self))
         sampled = np.random.choice(self.data, num, replace=replace)
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
 

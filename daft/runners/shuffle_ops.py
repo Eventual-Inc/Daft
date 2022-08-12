@@ -86,6 +86,8 @@ class SortOp(ShuffleOp):
         assert expr is not None and boundaries is not None and desc is not None
         if output_partitions == 1:
             return {PartID(0): input}
+        if input.size() == 0:
+            return {}
         sort_key = input.eval_expression(expr).block
         argsort_idx = sort_key.argsort()
         sorted_input = input.take(argsort_idx)

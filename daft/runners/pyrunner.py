@@ -6,11 +6,13 @@ import io
 import multiprocessing as mp
 import pickle
 from bisect import bisect_right
-from functools import partial
+from functools import partial, wraps
 from itertools import accumulate
 from multiprocessing.reduction import AbstractReducer
+from time import time
 from typing import Dict
 
+import tqdm
 from pyarrow import Table, csv, parquet
 
 from daft.datasources import (
@@ -115,7 +117,19 @@ class PyRunnerPartitionManager:
         ...
 
 
+def timing(f):
+    @wraps(f)
+    def wrap(*args, **kw):
+        ts = time()
+        result = f(*args, **kw)
+        time() - ts
+        return result
+
+    return wrap
+
+
 class PyRunnerSimpleShuffler(ShuffleOp):
+    @timing
     def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
         map_args = self._map_args if self._map_args is not None else {}
         reduce_args = self._reduce_args if self._reduce_args is not None else {}
@@ -135,54 +149,72 @@ class PyRunnerSimpleShuffler(ShuffleOp):
         return PartitionSet({i: part for i, part in enumerate(reduced_results)})
 
 
+DISABLE_PBAR = True
+
+
 class PyRunnerMPSimpleShuffler(ShuffleOp):
     def _map_wrapper(self, partition, num_target_partitions, **map_args):
         return partition.partition_id, self.map_fn(partition, output_partitions=num_target_partitions, **map_args)
 
+    @timing
     def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
         map_args = self._map_args if self._map_args is not None else {}
         reduce_args = self._reduce_args if self._reduce_args is not None else {}
         source_partitions = input.num_partitions()
         with mp.Pool(10) as pool:
             if source_partitions > 1:
-                to_map = [input.partitions[i] for i in range(source_partitions)]
+                to_map = [input.partitions[i] for i in range(source_partitions) if input.partitions[i].size() > 0]
                 map_results = list(
-                    pool.imap_unordered(
-                        partial(self._map_wrapper, num_target_partitions=num_target_partitions, **map_args), to_map
+                    tqdm.tqdm(
+                        pool.imap_unordered(
+                            partial(self._map_wrapper, num_target_partitions=num_target_partitions, **map_args),
+                            to_map,
+                            chunksize=2,
+                        ),
+                        total=source_partitions,
+                        desc=f"{self.__class__.__name__}:Map",
+                        disable=DISABLE_PBAR,
                     )
                 )
-                map_results.sort(key=lambda r: r[0])
-                map_results = list(map(lambda x: x[1], map_results))
+                to_fill = [dict() for _ in range(source_partitions)]
+                for i, part in map_results:
+                    to_fill[i] = part
+                map_results = to_fill
             else:
                 map_results = [
                     partial(self.map_fn, output_partitions=num_target_partitions, **map_args)(input.partitions[0])
                 ]
 
             reduced_results = list(
-                pool.imap_unordered(
-                    partial(self.reduce_fn, **reduce_args),
-                    [
-                        [map_results[i][t] for i in range(source_partitions) if t in map_results[i]]
-                        for t in range(num_target_partitions)
-                    ],
+                tqdm.tqdm(
+                    pool.imap_unordered(
+                        partial(self.reduce_fn, **reduce_args),
+                        [
+                            [map_results[i][t] for i in range(source_partitions) if t in map_results[i]]
+                            for t in range(num_target_partitions)
+                        ],
+                    ),
+                    total=num_target_partitions,
+                    desc=f"{self.__class__.__name__}:Reduce",
+                    disable=DISABLE_PBAR,
                 )
             )
         return PartitionSet({part.partition_id: part for part in reduced_results})
 
 
-class PyRunnerRepartitionRandom(PyRunnerSimpleShuffler, RepartitionRandomOp):
+class PyRunnerRepartitionRandom(PyRunnerMPSimpleShuffler, RepartitionRandomOp):
     ...
 
 
-class PyRunnerRepartitionHash(PyRunnerSimpleShuffler, RepartitionHashOp):
+class PyRunnerRepartitionHash(PyRunnerMPSimpleShuffler, RepartitionHashOp):
     ...
 
 
-class PyRunnerCoalesceOp(PyRunnerSimpleShuffler, CoalesceOp):
+class PyRunnerCoalesceOp(PyRunnerMPSimpleShuffler, CoalesceOp):
     ...
 
 
-class PyRunnerSortOp(PyRunnerSimpleShuffler, SortOp):
+class PyRunnerSortOp(PyRunnerMPSimpleShuffler, SortOp):
     ...
 
 
