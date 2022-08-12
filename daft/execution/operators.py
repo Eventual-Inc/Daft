@@ -4,71 +4,99 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import FrozenSet, Optional, Tuple, Type, Union
+from typing import Dict, FrozenSet, Optional, Tuple, Type
 
 import pyarrow as pa
 
 
-class ExpressionType(Enum):
-    UNKNOWN = 0
-    NUMBER = 1
-    LOGICAL = 2
-    STRING = 3
-    PYTHON = 4
-    MULTIRETURN_TUPLE = 5
-
-    def __str__(self) -> str:
-        return self.name
+class ExpressionType:
+    @staticmethod
+    def unknown() -> ExpressionType:
+        return _TYPE_REGISTRY["unknown"]
 
     @staticmethod
     def from_py_type(obj_type: Type) -> ExpressionType:
-        """Gets the appropriate ExpressionType from a Python object, or ExpressionType.UNKNOWN
-        if unable to find the appropriate type. ExpressionType.PYTHON is never returned.
+        """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
+        if unable to find the appropriate type. ExpressionTypes.Python is never returned.
         """
+        global _TYPE_REGISTRY
+        if hasattr(obj_type, "__origin__") and hasattr(obj_type, "__args__") and obj_type.__origin__ is tuple:
+            type_registry_key = f"Tuple[{', '.join(arg.__name__ for arg in obj_type.__args__)}]"
+            if type_registry_key in _TYPE_REGISTRY:
+                return _TYPE_REGISTRY[type_registry_key]
+            _TYPE_REGISTRY[type_registry_key] = CompositeExpressionType(
+                tuple(ExpressionType.from_py_type(arg) for arg in obj_type.__args__)
+            )
+            return _TYPE_REGISTRY[type_registry_key]
         if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
-            return ExpressionType.UNKNOWN
+            return _TYPE_REGISTRY["unknown"]
         return _PY_TYPE_TO_EXPRESSION_TYPE[obj_type]
 
     @staticmethod
     def from_arrow_type(datatype: pa.DataType) -> ExpressionType:
         if datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
-            return ExpressionType.UNKNOWN
+            return _TYPE_REGISTRY["unknown"]
         return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
 
 
+@dataclass(frozen=True)
+class PrimitiveExpressionType(ExpressionType):
+    class TypeEnum(Enum):
+
+        UNKNOWN = 1
+        NUMBER = 2
+        LOGICAL = 3
+        STRING = 4
+        PYTHON = 5
+
+    enum: PrimitiveExpressionType.TypeEnum
+
+
+@dataclass(frozen=True)
+class CompositeExpressionType(ExpressionType):
+    args: Tuple[ExpressionType, ...]
+
+
+_TYPE_REGISTRY: Dict[str, ExpressionType] = {
+    "unknown": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.UNKNOWN),
+    "number": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.NUMBER),
+    "logical": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.LOGICAL),
+    "string": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.STRING),
+}
+
+
 _PYARROW_TYPE_TO_EXPRESSION_TYPE = {
-    pa.null(): ExpressionType.UNKNOWN,
-    pa.bool_(): ExpressionType.LOGICAL,
-    pa.int8(): ExpressionType.UNKNOWN,
-    pa.int16(): ExpressionType.NUMBER,
-    pa.int32(): ExpressionType.NUMBER,
-    pa.int64(): ExpressionType.NUMBER,
-    pa.uint8(): ExpressionType.NUMBER,
-    pa.uint16(): ExpressionType.NUMBER,
-    pa.uint32(): ExpressionType.NUMBER,
-    pa.uint64(): ExpressionType.NUMBER,
-    pa.float16(): ExpressionType.NUMBER,
-    pa.float32(): ExpressionType.NUMBER,
-    pa.float64(): ExpressionType.NUMBER,
-    pa.date32(): ExpressionType.UNKNOWN,
-    pa.date64(): ExpressionType.UNKNOWN,
-    pa.string(): ExpressionType.STRING,
-    pa.utf8(): ExpressionType.STRING,
-    pa.large_binary(): ExpressionType.UNKNOWN,
-    pa.large_string(): ExpressionType.STRING,
-    pa.large_utf8(): ExpressionType.STRING,
+    pa.null(): _TYPE_REGISTRY["unknown"],
+    pa.bool_(): _TYPE_REGISTRY["logical"],
+    pa.int8(): _TYPE_REGISTRY["unknown"],
+    pa.int16(): _TYPE_REGISTRY["number"],
+    pa.int32(): _TYPE_REGISTRY["number"],
+    pa.int64(): _TYPE_REGISTRY["number"],
+    pa.uint8(): _TYPE_REGISTRY["number"],
+    pa.uint16(): _TYPE_REGISTRY["number"],
+    pa.uint32(): _TYPE_REGISTRY["number"],
+    pa.uint64(): _TYPE_REGISTRY["number"],
+    pa.float16(): _TYPE_REGISTRY["number"],
+    pa.float32(): _TYPE_REGISTRY["number"],
+    pa.float64(): _TYPE_REGISTRY["number"],
+    pa.date32(): _TYPE_REGISTRY["unknown"],
+    pa.date64(): _TYPE_REGISTRY["unknown"],
+    pa.string(): _TYPE_REGISTRY["string"],
+    pa.utf8(): _TYPE_REGISTRY["string"],
+    pa.large_binary(): _TYPE_REGISTRY["unknown"],
+    pa.large_string(): _TYPE_REGISTRY["string"],
+    pa.large_utf8(): _TYPE_REGISTRY["string"],
 }
 
 _PY_TYPE_TO_EXPRESSION_TYPE = {
-    int: ExpressionType.NUMBER,
-    float: ExpressionType.NUMBER,
-    str: ExpressionType.STRING,
-    bool: ExpressionType.LOGICAL,
+    int: _TYPE_REGISTRY["number"],
+    float: _TYPE_REGISTRY["number"],
+    str: _TYPE_REGISTRY["string"],
+    bool: _TYPE_REGISTRY["logical"],
 }
 
 
-OperatorReturnType = Union[ExpressionType, Tuple[ExpressionType, ...]]
-TypeMatrix = FrozenSet[Tuple[Tuple[ExpressionType, ...], OperatorReturnType]]
+TypeMatrix = FrozenSet[Tuple[Tuple[ExpressionType, ...], ExpressionType]]
 
 
 @dataclass(frozen=True)
@@ -84,46 +112,41 @@ class ExpressionOperator:
             assert len(k) == self.nargs, f"all keys in type matrix must have {self.nargs}"
             for sub_k in k:
                 assert isinstance(sub_k, ExpressionType)
-                assert sub_k != ExpressionType.UNKNOWN
+                assert sub_k != _TYPE_REGISTRY["unknown"]
 
-            if isinstance(v, tuple):
-                for return_type in v:
-                    assert isinstance(return_type, ExpressionType)
-                    assert return_type != ExpressionType.UNKNOWN
-            else:
-                assert isinstance(v, ExpressionType)
-                assert v != ExpressionType.UNKNOWN
+            assert isinstance(v, ExpressionType), f"{v} is not an ExpressionType"
+            assert v != _TYPE_REGISTRY["unknown"]
 
     @lru_cache
-    def type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], OperatorReturnType]:
+    def type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
         return MappingProxyType(dict(self.type_matrix))
 
 
-_UnaryNumericalTM = frozenset({(ExpressionType.NUMBER,): ExpressionType.NUMBER}.items())
+_UnaryNumericalTM = frozenset({(_TYPE_REGISTRY["number"],): _TYPE_REGISTRY["number"]}.items())
 
-_UnaryLogicalTM = frozenset({(ExpressionType.LOGICAL,): ExpressionType.LOGICAL}.items())
+_UnaryLogicalTM = frozenset({(_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["logical"]}.items())
 
 
-_BinaryNumericalTM = frozenset({(ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.NUMBER}.items())
+_BinaryNumericalTM = frozenset({(_TYPE_REGISTRY["number"], _TYPE_REGISTRY["number"]): _TYPE_REGISTRY["number"]}.items())
 
 _ComparisionTM = frozenset(
     {
-        (ExpressionType.NUMBER, ExpressionType.NUMBER): ExpressionType.LOGICAL,
-        (ExpressionType.STRING, ExpressionType.STRING): ExpressionType.LOGICAL,
+        (_TYPE_REGISTRY["number"], _TYPE_REGISTRY["number"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["logical"],
     }.items()
 )
 
 _BinaryLogicalTM = frozenset(
     {
-        (ExpressionType.LOGICAL, ExpressionType.LOGICAL): ExpressionType.LOGICAL,
+        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["logical"]): _TYPE_REGISTRY["logical"],
     }.items()
 )
 
 _CountLogicalTM = frozenset(
     {
-        (ExpressionType.NUMBER,): ExpressionType.NUMBER,
-        (ExpressionType.LOGICAL,): ExpressionType.NUMBER,
-        (ExpressionType.STRING,): ExpressionType.NUMBER,
+        (_TYPE_REGISTRY["number"],): _TYPE_REGISTRY["number"],
+        (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["number"],
+        (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["number"],
     }.items()
 )
 
@@ -140,7 +163,7 @@ _NBop = partial(_BOp, type_matrix=_BinaryNumericalTM)
 # Comparison Binary Ops
 _CBop = partial(_BOp, type_matrix=_ComparisionTM)
 
-# Logical Binary Ops
+# _TYPE_REGISTRY["logical"] Binary Ops
 _LBop = partial(_BOp, type_matrix=_BinaryLogicalTM)
 
 
@@ -159,7 +182,7 @@ class Operators(Enum):
 
     COUNT = _UOp(name="count", symbol="count", type_matrix=_CountLogicalTM)
 
-    # Logical
+    # _TYPE_REGISTRY["logical"]
     INVERT = _UOp(name="invert", symbol="~", type_matrix=_UnaryLogicalTM)
 
     # BinaryOps
@@ -173,7 +196,7 @@ class Operators(Enum):
     POW = _NBop(name="power", symbol="**")
     MOD = _NBop(name="mod", symbol="%")
 
-    # Logical
+    # _TYPE_REGISTRY["logical"]
     AND = _LBop(name="and", symbol="&")
     OR = _LBop(name="or", symbol="|")
     LT = _CBop(name="less_than", symbol="<")

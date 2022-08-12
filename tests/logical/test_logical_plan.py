@@ -12,7 +12,7 @@ def schema():
     return ExpressionList(
         list(
             map(
-                lambda col_name: ColumnExpression(col_name, expr_type=ExpressionType.UNKNOWN),
+                lambda col_name: ColumnExpression(col_name, expr_type=ExpressionType.unknown()),
                 ["a", "b", "c"],
             )
         )

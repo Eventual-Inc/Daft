@@ -9,9 +9,9 @@ from inspect import signature
 from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, cast
 
 from daft.execution.operators import (
+    CompositeExpressionType,
     ExpressionOperator,
     ExpressionType,
-    OperatorReturnType,
     Operators,
 )
 from daft.internal.treenode import TreeNode
@@ -253,7 +253,11 @@ class MultipleReturnSelectExpression(Expression):
         self._n = n
 
     def resolved_type(self) -> Optional[ExpressionType]:
-        return self._expr.get_nth_resolved_type(self._n)
+        call_resolved_type = self._expr.resolved_type()
+        if call_resolved_type is None:
+            return None
+        assert isinstance(call_resolved_type, CompositeExpressionType)
+        return call_resolved_type.args[self._n]  # type: ignore
 
     @property
     def _expr(self) -> CallExpression:
@@ -292,29 +296,13 @@ class CallExpression(Expression):
         self._symbol = symbol
         self._operator = operator
 
-    def _get_operator_return_type(self) -> Optional[OperatorReturnType]:
-        arg_types = tuple(arg.resolved_type() for arg in self._args)
-        if any(t is None for t in arg_types):
-            return None
-        assert all(not isinstance(t, tuple) for t in arg_types)
-
-        arg_types_as_expr_types = cast(Tuple[ExpressionType], arg_types)
-
-        return self._operator.type_matrix_dict().get(arg_types_as_expr_types, ExpressionType.UNKNOWN)
-
     def resolved_type(self) -> Optional[ExpressionType]:
-        ret_type = self._get_operator_return_type()
-        if isinstance(ret_type, tuple):
-            return ExpressionType.MULTIRETURN_TUPLE
+        args_resolved_types = tuple(arg.resolved_type() for arg in self._args)
+        if any([arg_type is None for arg_type in args_resolved_types]):
+            return None
+        args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
+        ret_type = self._operator.type_matrix_dict().get(args_resolved_types_non_none, ExpressionType.unknown())
         return ret_type
-
-    def get_nth_resolved_type(self, n: int) -> Optional[ExpressionType]:
-        ret_type = self._get_operator_return_type()
-        assert isinstance(
-            ret_type, tuple
-        ), "get_nth_resolved_type should only be called when operator return type is a tuple"
-        assert len(ret_type) > n
-        return ret_type[n]
 
     @property
     def _args(self) -> Tuple[Expression, ...]:
@@ -363,11 +351,7 @@ def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
         ]
         if unannotated_params:
             raise ValueError(f"Function params {unannotated_params} need to have type annotations")
-        operator_return_type: OperatorReturnType = (
-            tuple(ExpressionType.from_py_type(arg) for arg in sig.return_annotation.__args__)
-            if hasattr(sig.return_annotation, "__origin__") and sig.return_annotation.__origin__ is tuple
-            else ExpressionType.from_py_type(sig.return_annotation)
-        )
+        operator_return_type: ExpressionType = ExpressionType.from_py_type(sig.return_annotation)
         expr_operator = ExpressionOperator(
             name=func.__name__,
             nargs=len(sig.parameters),

@@ -21,28 +21,28 @@ def daft_df():
 
     schema_fields = {e.name(): e for e in daft_df.schema()}
     assert schema_fields.keys() == {"floatcol", "intcol", "stringcol", "boolcol"}
-    assert schema_fields["floatcol"].resolved_type() == ExpressionType.NUMBER
-    assert schema_fields["intcol"].resolved_type() == ExpressionType.NUMBER
-    assert schema_fields["stringcol"].resolved_type() == ExpressionType.STRING
-    assert schema_fields["boolcol"].resolved_type() == ExpressionType.LOGICAL
+    assert schema_fields["floatcol"].resolved_type() == ExpressionType.from_py_type(float)
+    assert schema_fields["intcol"].resolved_type() == ExpressionType.from_py_type(int)
+    assert schema_fields["stringcol"].resolved_type() == ExpressionType.from_py_type(str)
+    assert schema_fields["boolcol"].resolved_type() == ExpressionType.from_py_type(bool)
     return daft_df
 
 
 UNARY_OPS_RESULT_TYPE_MAPPING = {
     "__abs__": {
-        "floatcol": ExpressionType.NUMBER,
-        "intcol": ExpressionType.NUMBER,
+        "floatcol": ExpressionType.from_py_type(float),
+        "intcol": ExpressionType.from_py_type(int),
     },
     "__neg__": {
-        "floatcol": ExpressionType.NUMBER,
-        "intcol": ExpressionType.NUMBER,
+        "floatcol": ExpressionType.from_py_type(float),
+        "intcol": ExpressionType.from_py_type(int),
     },
     "__pos__": {
-        "floatcol": ExpressionType.NUMBER,
-        "intcol": ExpressionType.NUMBER,
+        "floatcol": ExpressionType.from_py_type(float),
+        "intcol": ExpressionType.from_py_type(int),
     },
     "__invert__": {
-        "boolcol": ExpressionType.LOGICAL,
+        "boolcol": ExpressionType.from_py_type(bool),
     },
     # TODO: add when ready
     # "count",
@@ -59,7 +59,7 @@ UNARY_OPS_RESULT_TYPE_MAPPING = {
         pytest.param(
             colname,
             op,
-            UNARY_OPS_RESULT_TYPE_MAPPING[op].get(colname, ExpressionType.UNKNOWN),
+            UNARY_OPS_RESULT_TYPE_MAPPING[op].get(colname, ExpressionType.unknown()),
             id=f"Op:{op},Col:{colname}",
         )
         for op in UNARY_OPS_RESULT_TYPE_MAPPING
@@ -77,10 +77,12 @@ def test_unary_ops_select_types(daft_df, colname, op, expected_result_type):
 
 
 number_cols = ["floatcol", "intcol"]
-number_number_number = {(col1, col2): ExpressionType.NUMBER for col1 in number_cols for col2 in number_cols}
-bool_bool_logical = {("boolcol", "boolcol"): ExpressionType.LOGICAL}
-number_number_logical = {(col1, col2): ExpressionType.LOGICAL for col1 in number_cols for col2 in number_cols}
-string_string_logical = {("stringcol", "stringcol"): ExpressionType.LOGICAL}
+number_number_number = {(col1, col2): ExpressionType.from_py_type(int) for col1 in number_cols for col2 in number_cols}
+bool_bool_logical = {("boolcol", "boolcol"): ExpressionType.from_py_type(bool)}
+number_number_logical = {
+    (col1, col2): ExpressionType.from_py_type(bool) for col1 in number_cols for col2 in number_cols
+}
+string_string_logical = {("stringcol", "stringcol"): ExpressionType.from_py_type(bool)}
 
 BINARY_OPS_RESULT_TYPE_MAPPING = {
     "__add__": number_number_number,
@@ -108,7 +110,7 @@ BINARY_OPS_RESULT_TYPE_MAPPING = {
             col1,
             col2,
             op,
-            BINARY_OPS_RESULT_TYPE_MAPPING[op].get((col1, col2), ExpressionType.UNKNOWN),
+            BINARY_OPS_RESULT_TYPE_MAPPING[op].get((col1, col2), ExpressionType.unknown()),
             id=f"Op:{op},Cols:{(col1, col2)}",
         )
         for op in BINARY_OPS_RESULT_TYPE_MAPPING
@@ -136,7 +138,7 @@ def test_udf(daft_df):
     assert len(exprs) == 1
     expr = exprs[0]
     assert expr.name() == "floatcol"
-    assert expr.resolved_type() == ExpressionType.STRING
+    assert expr.resolved_type() == ExpressionType.from_py_type(str)
 
 
 def test_multi_return_udf(daft_df):
@@ -151,4 +153,4 @@ def test_multi_return_udf(daft_df):
 
     for i, expr in enumerate(exprs):
         assert expr.name() == f"c{i}"
-        assert expr.resolved_type() == ExpressionType.STRING
+        assert expr.resolved_type() == ExpressionType.from_py_type(str)
