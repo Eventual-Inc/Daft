@@ -2,7 +2,7 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.execution.operators import ExpressionType
-from daft.expressions import col
+from daft.expressions import col, udf
 
 COLS = ["floatcol", "intcol", "stringcol", "boolcol"]
 
@@ -122,3 +122,16 @@ def test_unary_ops_select_types(daft_df, col1, col2, op, expected_result_type):
     expr = exprs[0]
     assert expr.name() == col1
     assert expr.resolved_type() == expected_result_type
+
+
+def test_udf(daft_df):
+    @udf
+    def my_udf(x: float, y: bool) -> str:
+        return str(x)
+
+    df = daft_df.select(my_udf(col("floatcol"), col("boolcol")))
+    exprs = [e for e in df.schema()]
+    assert len(exprs) == 1
+    expr = exprs[0]
+    assert expr.name() == "floatcol"
+    assert expr.resolved_type() == ExpressionType.STRING

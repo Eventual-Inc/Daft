@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import FrozenSet, Optional, Tuple
+from typing import FrozenSet, Optional, Tuple, Type
 
 import pyarrow as pa
 
@@ -20,11 +20,10 @@ class ExpressionType(Enum):
         return self.name
 
     @staticmethod
-    def from_py_obj(obj: object) -> ExpressionType:
+    def from_py_type(obj_type: Type) -> ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or ExpressionType.UNKNOWN
         if unable to find the appropriate type. ExpressionType.PYTHON is never returned.
         """
-        obj_type = type(obj)
         if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
             return ExpressionType.UNKNOWN
         return _PY_TYPE_TO_EXPRESSION_TYPE[obj_type]
