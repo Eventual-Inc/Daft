@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import csv
+import io
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, TypeVar, Union
 
 import pandas
 import pyarrow.parquet as papq
+from pyarrow import csv
 
 from daft.datasources import CSVSourceInfo, InMemorySourceInfo, ParquetSourceInfo
-from daft.expressions import Expression, col
+from daft.execution.operators import ExpressionType
+from daft.expressions import ColumnExpression, Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
@@ -45,7 +47,9 @@ class DataFrame:
     def from_pylist(cls, data: List[Dict[str, Any]]) -> DataFrame:
         if not data:
             raise ValueError("Unable to create DataFrame from empty list")
-        schema = ExpressionList([col(header) for header in data[0]])
+        schema = ExpressionList(
+            [ColumnExpression(header, expr_type=ExpressionType.from_py_obj(data[0][header])) for header in data[0]]
+        )
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
@@ -56,7 +60,9 @@ class DataFrame:
 
     @classmethod
     def from_pydict(cls, data: Dict[str, Any]) -> DataFrame:
-        schema = ExpressionList([col(header) for header in data])
+        schema = ExpressionList(
+            [ColumnExpression(header, expr_type=ExpressionType.from_py_obj(data[header][0])) for header in data]
+        )
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
@@ -86,20 +92,32 @@ class DataFrame:
         if len(filepaths) == 0:
             raise ValueError(f"No CSV files found at {path}")
 
-        # Read first row to ascertain schema
-        schema = None
-        if column_names:
-            schema = ExpressionList([col(header) for header in column_names])
-        else:
-            with fs.open(filepaths[0], "r") as f:
-                reader = csv.reader(f, delimiter=delimiter)
-                for row in reader:
-                    schema = (
-                        ExpressionList([col(header) for header in row])
-                        if has_headers
-                        else ExpressionList([col(f"col_{i}") for i in range(len(row))])
-                    )
+        # Read first N rows with PyArrow to ascertain schema
+        sampled_bytes = io.BytesIO()
+        with fs.open(filepaths[0]) as f:
+            for _ in range(20):
+                line = f.readline()
+                if not line:
                     break
+                sampled_bytes.write(line)
+        sampled_bytes.seek(0)
+        sampled_tbl = csv.read_csv(
+            sampled_bytes,
+            parse_options=csv.ParseOptions(
+                delimiter=delimiter,
+            ),
+            read_options=csv.ReadOptions(
+                # Column names will be read from the first CSV row if column_names is None/empty and has_headers
+                autogenerate_column_names=False if has_headers else True,
+                column_names=column_names,
+                # If user specifies that CSV has headers, and also provides column names, we skip the header row
+                skip_rows_after_names=1 if has_headers and column_names is not None else 0,
+            ),
+        )
+        fields = [(field.name, field.type) for field in sampled_tbl.schema]
+        schema = ExpressionList(
+            [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
+        )
         assert schema is not None, "Unable to read CSV file to determine schema"
 
         plan = logical_plan.Scan(
@@ -131,7 +149,12 @@ class DataFrame:
             raise ValueError(f"No Parquet files found at {path}")
 
         # Read first Parquet file to ascertain schema
-        schema = ExpressionList([col(field.name) for field in papq.ParquetFile(fs.open(filepaths[0])).metadata.schema])
+        schema = ExpressionList(
+            [
+                ColumnExpression(field.name, expr_type=ExpressionType.from_arrow_type(field.type))
+                for field in papq.ParquetFile(fs.open(filepaths[0])).metadata.schema.to_arrow_schema()
+            ]
+        )
 
         plan = logical_plan.Scan(
             schema=schema,
