@@ -5,6 +5,7 @@ import itertools
 import operator
 from abc import abstractmethod
 from functools import partialmethod
+from inspect import signature
 from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, TypeVar
 
 from daft.execution.operators import ExpressionOperator, ExpressionType, Operators
@@ -235,7 +236,7 @@ class LiteralExpression(Expression):
         self._value = value
 
     def resolved_type(self) -> Optional[ExpressionType]:
-        return ExpressionType.from_py_obj(self._value)
+        return ExpressionType.from_py_type(type(self._value))
 
     def _display_str(self) -> str:
         return f"lit({self._value})"
@@ -340,12 +341,33 @@ class CallExpression(Expression):
 
 def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
     def udf_decorator(func: Callable) -> Callable:
+        sig = signature(func)
+        if sig.return_annotation == sig.empty:
+            raise ValueError(f"Function {func.__name__} needs to have return type annotation")
+        unannotated_params = [
+            param_name for param_name, param_sig in sig.parameters.items() if param_sig.annotation == param_sig.empty
+        ]
+        if unannotated_params:
+            raise ValueError(f"Function params {unannotated_params} need to have type annotations")
+        expr_operator = ExpressionOperator(
+            name=func.__name__,
+            nargs=len(sig.parameters),
+            type_matrix=frozenset(
+                [
+                    (
+                        tuple(ExpressionType.from_py_type(param.annotation) for _, param in sig.parameters.items()),
+                        ExpressionType.from_py_type(sig.return_annotation),
+                    )
+                ]
+            ),
+            symbol=f"udf[{func.__name__}]",
+        )
+
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
             if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargs.values()):
                 out_expr = CallExpression(
-                    # TODO(jay): Fix with UDF fixes
-                    None,
+                    expr_operator,
                     func,
                     func_args=args,
                     func_kwargs=kwargs,

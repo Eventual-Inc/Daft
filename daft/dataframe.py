@@ -48,7 +48,10 @@ class DataFrame:
         if not data:
             raise ValueError("Unable to create DataFrame from empty list")
         schema = ExpressionList(
-            [ColumnExpression(header, expr_type=ExpressionType.from_py_obj(data[0][header])) for header in data[0]]
+            [
+                ColumnExpression(header, expr_type=ExpressionType.from_py_type(type(data[0][header])))
+                for header in data[0]
+            ]
         )
         plan = logical_plan.Scan(
             schema=schema,
@@ -61,7 +64,7 @@ class DataFrame:
     @classmethod
     def from_pydict(cls, data: Dict[str, Any]) -> DataFrame:
         schema = ExpressionList(
-            [ColumnExpression(header, expr_type=ExpressionType.from_py_obj(data[header][0])) for header in data]
+            [ColumnExpression(header, expr_type=ExpressionType.from_py_type(type(data[header][0]))) for header in data]
         )
         plan = logical_plan.Scan(
             schema=schema,
