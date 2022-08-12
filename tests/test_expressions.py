@@ -1,7 +1,5 @@
 from typing import Tuple
 
-import pytest
-
 from daft.expressions import ColumnExpression, Expression, col, udf
 
 
@@ -29,7 +27,6 @@ def test_udf_single_return() -> None:
     assert output.has_call()
 
 
-@pytest.mark.skip(reason="Multi-returns not implemented correctly with expression typing")
 def test_udf_multiple_return() -> None:
     @udf(num_returns=2)
     def f(x: int, y: int) -> Tuple[int, int]:
