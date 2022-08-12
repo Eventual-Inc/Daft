@@ -6,17 +6,15 @@ import operator
 from abc import abstractmethod
 from functools import partialmethod
 from inspect import signature
-from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, TypeVar
+from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, cast
 
-from daft.execution.operators import ExpressionOperator, ExpressionType, Operators
+from daft.execution.operators import (
+    ExpressionOperator,
+    ExpressionType,
+    OperatorReturnType,
+    Operators,
+)
 from daft.internal.treenode import TreeNode
-
-T = TypeVar("T")
-
-
-def _assert_not_none(obj: Optional[T]) -> T:
-    assert obj is not None
-    return obj
 
 
 def col(name: str) -> ColumnExpression:
@@ -249,18 +247,17 @@ class LiteralExpression(Expression):
 
 
 class MultipleReturnSelectExpression(Expression):
-    def __init__(self, expr: Expression, n: int) -> None:
+    def __init__(self, expr: CallExpression, n: int) -> None:
         super().__init__()
         self._register_child(expr)
         self._n = n
 
     def resolved_type(self) -> Optional[ExpressionType]:
-        # TODO(jay): Figure out how to resolve correct type here from the previous expression
-        return ExpressionType.UNKNOWN
+        return self._expr.get_nth_resolved_type(self._n)
 
     @property
-    def _expr(self) -> Expression:
-        return self._children()[0]
+    def _expr(self) -> CallExpression:
+        return cast(CallExpression, self._children()[0])
 
     def _display_str(self) -> str:
         return f"{self._expr}[{self._n}]"
@@ -295,12 +292,29 @@ class CallExpression(Expression):
         self._symbol = symbol
         self._operator = operator
 
-    def resolved_type(self) -> Optional[ExpressionType]:
+    def _get_operator_return_type(self) -> Optional[OperatorReturnType]:
         arg_types = tuple(arg.resolved_type() for arg in self._args)
         if any(t is None for t in arg_types):
             return None
-        arg_types_not_none = tuple(_assert_not_none(t) for t in arg_types)
-        return self._operator.type_matrix_dict().get(arg_types_not_none, ExpressionType.UNKNOWN)
+        assert all(not isinstance(t, tuple) for t in arg_types)
+
+        arg_types_as_expr_types = cast(Tuple[ExpressionType], arg_types)
+
+        return self._operator.type_matrix_dict().get(arg_types_as_expr_types, ExpressionType.UNKNOWN)
+
+    def resolved_type(self) -> Optional[ExpressionType]:
+        ret_type = self._get_operator_return_type()
+        if isinstance(ret_type, tuple):
+            return ExpressionType.MULTIRETURN_TUPLE
+        return ret_type
+
+    def get_nth_resolved_type(self, n: int) -> Optional[ExpressionType]:
+        ret_type = self._get_operator_return_type()
+        assert isinstance(
+            ret_type, tuple
+        ), "get_nth_resolved_type should only be called when operator return type is a tuple"
+        assert len(ret_type) > n
+        return ret_type[n]
 
     @property
     def _args(self) -> Tuple[Expression, ...]:
@@ -349,6 +363,11 @@ def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
         ]
         if unannotated_params:
             raise ValueError(f"Function params {unannotated_params} need to have type annotations")
+        operator_return_type: OperatorReturnType = (
+            tuple(ExpressionType.from_py_type(arg) for arg in sig.return_annotation.__args__)
+            if hasattr(sig.return_annotation, "__origin__") and sig.return_annotation.__origin__ is tuple
+            else ExpressionType.from_py_type(sig.return_annotation)
+        )
         expr_operator = ExpressionOperator(
             name=func.__name__,
             nargs=len(sig.parameters),
@@ -356,7 +375,7 @@ def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
                 [
                     (
                         tuple(ExpressionType.from_py_type(param.annotation) for _, param in sig.parameters.items()),
-                        ExpressionType.from_py_type(sig.return_annotation),
+                        operator_return_type,
                     )
                 ]
             ),

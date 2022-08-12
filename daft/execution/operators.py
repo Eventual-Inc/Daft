@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import FrozenSet, Optional, Tuple, Type
+from typing import FrozenSet, Optional, Tuple, Type, Union
 
 import pyarrow as pa
 
@@ -15,6 +15,7 @@ class ExpressionType(Enum):
     LOGICAL = 2
     STRING = 3
     PYTHON = 4
+    MULTIRETURN_TUPLE = 5
 
     def __str__(self) -> str:
         return self.name
@@ -66,7 +67,8 @@ _PY_TYPE_TO_EXPRESSION_TYPE = {
 }
 
 
-TypeMatrix = FrozenSet[Tuple[Tuple[ExpressionType, ...], ExpressionType]]
+OperatorReturnType = Union[ExpressionType, Tuple[ExpressionType, ...]]
+TypeMatrix = FrozenSet[Tuple[Tuple[ExpressionType, ...], OperatorReturnType]]
 
 
 @dataclass(frozen=True)
@@ -84,11 +86,16 @@ class ExpressionOperator:
                 assert isinstance(sub_k, ExpressionType)
                 assert sub_k != ExpressionType.UNKNOWN
 
-            assert isinstance(v, ExpressionType)
-            assert v != ExpressionType.UNKNOWN
+            if isinstance(v, tuple):
+                for return_type in v:
+                    assert isinstance(return_type, ExpressionType)
+                    assert return_type != ExpressionType.UNKNOWN
+            else:
+                assert isinstance(v, ExpressionType)
+                assert v != ExpressionType.UNKNOWN
 
     @lru_cache
-    def type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
+    def type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], OperatorReturnType]:
         return MappingProxyType(dict(self.type_matrix))
 
 

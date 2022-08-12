@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import pytest
 
 from daft.dataframe import DataFrame
@@ -135,3 +137,18 @@ def test_udf(daft_df):
     expr = exprs[0]
     assert expr.name() == "floatcol"
     assert expr.resolved_type() == ExpressionType.STRING
+
+
+def test_multi_return_udf(daft_df):
+    @udf(num_returns=2)
+    def my_udf(x: float, y: bool) -> Tuple[str, str]:
+        return str(x)
+
+    c0, c1 = my_udf(col("floatcol"), col("boolcol"))
+    df = daft_df.select(c0.alias("c0"), c1.alias("c1"))
+    exprs = [e for e in df.schema()]
+    assert len(exprs) == 2
+
+    for i, expr in enumerate(exprs):
+        assert expr.name() == f"c{i}"
+        assert expr.resolved_type() == ExpressionType.STRING
