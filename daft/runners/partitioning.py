@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 import pyarrow as pa
@@ -15,24 +14,26 @@ from daft.runners.blocks import DataBlock
 PartID = int
 
 
-@dataclass(frozen=True)
-class PyListTile:
+# @dataclass(frozen=True)
+class PyListTile(NamedTuple):
     column_id: ColID
     column_name: str
     partition_id: PartID
     block: DataBlock
 
-    def __len__(self) -> int:
+    def size(self) -> int:
         return len(self.block)
 
     def apply(self, func: Callable[[DataBlock], DataBlock]) -> PyListTile:
-        return dataclasses.replace(self, block=func(self.block))
+        return self.replace_block(block=func(self.block))
 
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[PyListTile]:
-        assert len(target_partition_indices) == len(self)
+        assert len(target_partition_indices) == self.size()
         new_blocks = self.block.partition(num_partitions, targets=target_partition_indices)
         assert len(new_blocks) == num_partitions
-        return [dataclasses.replace(self, block=nb, partition_id=i) for i, nb in enumerate(new_blocks)]
+        col_id = self.column_id
+        col_name = self.column_name
+        return [PyListTile(col_id, col_name, i, nb) for i, nb in enumerate(new_blocks)]
 
     @classmethod
     def merge_tiles(cls, to_merge: List[PyListTile], verify_partition_id: bool = True) -> PyListTile:
@@ -51,29 +52,35 @@ class PyListTile:
             assert part.column_name == column_name
 
         merged_block = DataBlock.merge_blocks([t.block for t in to_merge])
-        return dataclasses.replace(to_merge[0], block=merged_block)
+        return to_merge[0].replace_block(block=merged_block)
+
+    def replace_block(self, block: DataBlock) -> PyListTile:
+        return PyListTile(self.column_id, self.column_name, self.partition_id, block)
 
 
-@dataclass(frozen=True)
-class vPartition:
+# @dataclass(frozen=True)
+class vPartition(NamedTuple):
     columns: Dict[ColID, PyListTile]
     partition_id: PartID
 
-    def __post_init__(self) -> None:
-        size = None
-        for col_id, tile in self.columns.items():
-            if tile.partition_id != self.partition_id:
-                raise ValueError(f"mismatch of partition id: {tile.partition_id} vs {self.partition_id}")
-            if size is None:
-                size = len(tile)
-            if len(tile) != size:
-                raise ValueError(f"mismatch of tile lengths: {len(tile)} vs {size}")
-            if col_id != tile.column_id:
-                raise ValueError(f"mismatch of column id: {col_id} vs {tile.column_id}")
+    # def __post_init__(self) -> None:
+    #     size = None
+    #     for col_id, tile in self.columns.items():
+    #         if tile.partition_id != self.partition_id:
+    #             raise ValueError(f"mismatch of partition id: {tile.partition_id} vs {self.partition_id}")
+    #         if size is None:
+    #             size = tile.size()
+    #         if tile.size() != size:
+    #             raise ValueError(f"mismatch of tile lengths: {tile.size()} vs {size}")
+    #         if col_id != tile.column_id:
+    #             raise ValueError(f"mismatch of column id: {col_id} vs {tile.column_id}")
 
-    def __len__(self) -> int:
+    def size(self) -> int:
         assert len(self.columns) > 0
-        return len(next(iter(self.columns.values())))
+        return next(iter(self.columns.values())).size()
+
+    def replace(self, **kwargs) -> vPartition:
+        return self._replace(**kwargs)
 
     def eval_expression(self, expr: Expression) -> PyListTile:
         expr_col_id = expr.get_id()
@@ -139,16 +146,16 @@ class vPartition:
         raise NotImplementedError()
 
     def for_each_column_block(self, func: Callable[[DataBlock], DataBlock]) -> vPartition:
-        return dataclasses.replace(self, columns={col_id: col.apply(func) for col_id, col in self.columns.items()})
+        return self.replace(columns={col_id: col.apply(func) for col_id, col in self.columns.items()})
 
     def head(self, num: int) -> vPartition:
         # TODO make optimization for when num=0
         return self.for_each_column_block(partial(DataBlock.head, num=num))
 
     def sample(self, num: int) -> vPartition:
-        if len(self) == 0:
+        if self.size() == 0:
             return self
-        sample_idx = DataBlock.make_block(data=np.random.randint(0, len(self), num))
+        sample_idx = DataBlock.make_block(data=np.random.randint(0, self.size(), num))
         return self.for_each_column_block(partial(DataBlock.take, indices=sample_idx))
 
     def filter(self, predicate: ExpressionList) -> vPartition:
@@ -186,10 +193,11 @@ class vPartition:
             new_columns = {}
 
             for block, (col_id, tile) in zip(gcols, grouped_blocked.columns.items()):
-                new_columns[col_id] = dataclasses.replace(tile, block=block)
+                new_columns[col_id] = tile.replace_block(block=block)
 
             for block, (col_id, tile) in zip(acols, evaled_expressions.columns.items()):
-                new_columns[col_id] = dataclasses.replace(tile, block=block)
+                new_columns[col_id] = tile.replace_block(block=block)
+
             return vPartition(partition_id=self.partition_id, columns=new_columns)
 
     def split_by_hash(self, hash_expr: Expression, num_partitions: int) -> List[vPartition]:
@@ -198,7 +206,7 @@ class vPartition:
         return self.split_by_index(num_partitions, target_partition_indices=target_idx)
 
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:
-        assert len(target_partition_indices) == len(self)
+        assert len(target_partition_indices) == self.size()
         new_partition_to_columns: List[Dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]
         for col_id, tile in self.columns.items():
             new_tiles = tile.split_by_index(
@@ -228,7 +236,7 @@ class vPartition:
             new_columns[col_id] = PyListTile.merge_tiles(
                 [vp.columns[col_id] for vp in to_merge], verify_partition_id=verify_partition_id
             )
-        return dataclasses.replace(to_merge[0], columns=new_columns)
+        return to_merge[0].replace(columns=new_columns)
 
 
 @dataclass
@@ -247,7 +255,7 @@ class PartitionSet:
 
     def len_of_partitions(self) -> List[int]:
         partition_ids = sorted(list(self.partitions.keys()))
-        return [len(self.partitions[pid]) for pid in partition_ids]
+        return [self.partitions[pid].size() for pid in partition_ids]
 
     def num_partitions(self) -> int:
         return len(self.partitions)

@@ -275,9 +275,8 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
         return ArrowDataBlock(data=pa.chunked_array(all_chunks))
 
     def partition(self, num: int, targets: DataBlock) -> List[DataBlock]:
-        new_partitions: List[DataBlock] = [
-            ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type)) for _ in range(num)
-        ]
+        empty_block = ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
+        new_partitions: List[DataBlock] = [empty_block for _ in range(num)]
         # We first argsort the targets to group the same partitions together
         argsort_indices = targets.argsort()
         # We now perform a gather to make items targeting the same partition together

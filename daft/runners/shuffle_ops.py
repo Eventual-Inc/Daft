@@ -34,7 +34,7 @@ class RepartitionRandomOp(ShuffleOp):
             seed += input.partition_id
 
         rng = np.random.default_rng(seed=seed)
-        target_idx = DataBlock.make_block(data=rng.integers(low=0, high=output_partitions, size=len(input)))
+        target_idx = DataBlock.make_block(data=rng.integers(low=0, high=output_partitions, size=input.size()))
         new_parts = input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
         return {PartID(i): part for i, part in enumerate(new_parts)}
 
