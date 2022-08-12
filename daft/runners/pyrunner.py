@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import copy
+import copyreg
+import io
+import multiprocessing as mp
+import pickle
 from bisect import bisect_right
+from functools import partial
 from itertools import accumulate
+from multiprocessing.reduction import AbstractReducer
 from typing import Dict
 
 from pyarrow import Table, csv, parquet
@@ -36,6 +42,48 @@ from daft.runners.shuffle_ops import (
     ShuffleOp,
     SortOp,
 )
+
+
+class ForkingPickler5(pickle.Pickler):
+    """Pickler subclass used by multiprocessing."""
+
+    _extra_reducers = {}
+    _copyreg_dispatch_table = copyreg.dispatch_table
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.dispatch_table = self._copyreg_dispatch_table.copy()
+        self.dispatch_table.update(self._extra_reducers)
+
+    @classmethod
+    def register(cls, type, reduce):
+        """Register a reduce function for a type."""
+        cls._extra_reducers[type] = reduce
+
+    @classmethod
+    def dumps(cls, obj, protocol=5):
+        buf = io.BytesIO()
+        cls(buf, protocol).dump(obj)
+        return buf.getbuffer()
+
+    loads = pickle.loads
+
+
+register = ForkingPickler5.register
+
+
+def dump(obj, file, protocol=5):
+    """Replacement for pickle.dump() using ForkingPickler."""
+    ForkingPickler5(file, protocol).dump(obj)
+
+
+class Pickle5Reducer(AbstractReducer):
+    ForkingPickler = ForkingPickler5
+    register = ForkingPickler5.register
+    dump = staticmethod(dump)
+
+
+mp.get_context().reducer = Pickle5Reducer
 
 
 class PyRunnerPartitionManager:
@@ -85,6 +133,41 @@ class PyRunnerSimpleShuffler(ShuffleOp):
             reduced_results.append(reduced_part)
 
         return PartitionSet({i: part for i, part in enumerate(reduced_results)})
+
+
+class PyRunnerMPSimpleShuffler(ShuffleOp):
+    def _map_wrapper(self, partition, num_target_partitions, **map_args):
+        return partition.partition_id, self.map_fn(partition, output_partitions=num_target_partitions, **map_args)
+
+    def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
+        map_args = self._map_args if self._map_args is not None else {}
+        reduce_args = self._reduce_args if self._reduce_args is not None else {}
+        source_partitions = input.num_partitions()
+        with mp.Pool(10) as pool:
+            if source_partitions > 1:
+                to_map = [input.partitions[i] for i in range(source_partitions)]
+                map_results = list(
+                    pool.imap_unordered(
+                        partial(self._map_wrapper, num_target_partitions=num_target_partitions, **map_args), to_map
+                    )
+                )
+                map_results.sort(key=lambda r: r[0])
+                map_results = list(map(lambda x: x[1], map_results))
+            else:
+                map_results = [
+                    partial(self.map_fn, output_partitions=num_target_partitions, **map_args)(input.partitions[0])
+                ]
+
+            reduced_results = list(
+                pool.imap_unordered(
+                    partial(self.reduce_fn, **reduce_args),
+                    [
+                        [map_results[i][t] for i in range(source_partitions) if t in map_results[i]]
+                        for t in range(num_target_partitions)
+                    ],
+                )
+            )
+        return PartitionSet({part.partition_id: part for part in reduced_results})
 
 
 class PyRunnerRepartitionRandom(PyRunnerSimpleShuffler, RepartitionRandomOp):
