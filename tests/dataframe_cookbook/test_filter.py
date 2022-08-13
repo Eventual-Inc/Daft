@@ -41,7 +41,8 @@ def test_sum(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_npart
     pd_noise_complaints = service_requests_csv_pd_df[
         service_requests_csv_pd_df["Complaint Type"] == "Noise - Street/Sidewalk"
     ][COL_SUBSET]
-    assert_df_equals(daft_noise_complaints, pd_noise_complaints)
+    daft_pd_df = daft_noise_complaints.to_pandas()
+    assert_df_equals(daft_pd_df, pd_noise_complaints)
 
 
 @parametrize_service_requests_csv_daft_df
@@ -100,7 +101,8 @@ def test_sum(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_npart
         )
         & (service_requests_csv_pd_df["Borough"] == "BROOKLYN")
     ][COL_SUBSET]
-    assert_df_equals(daft_noise_complaints_brooklyn, pd_noise_complaints_brooklyn)
+    daft_pd_df = daft_noise_complaints_brooklyn.to_pandas()
+    assert_df_equals(daft_pd_df, pd_noise_complaints_brooklyn)
 
 
 @parametrize_service_requests_csv_daft_df
@@ -145,4 +147,5 @@ def test_sum(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_npart
     pd_noise_complaints_brooklyn = pd_noise_complaints_brooklyn[pd_noise_complaints_brooklyn["Borough"] == "BROOKLYN"][
         COL_SUBSET
     ]
-    assert_df_equals(daft_noise_complaints_brooklyn, pd_noise_complaints_brooklyn)
+    daft_pd_df = daft_noise_complaints_brooklyn.to_pandas()
+    assert_df_equals(daft_pd_df, pd_noise_complaints_brooklyn)

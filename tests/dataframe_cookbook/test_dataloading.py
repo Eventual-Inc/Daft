@@ -1,14 +1,20 @@
 import pathlib
 
 import pandas as pd
+import pytest
 
 from daft.dataframe import DataFrame
+from daft.expressions import col
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
+    COLUMNS,
     IRIS_CSV,
     parametrize_service_requests_csv_daft_df,
     parametrize_service_requests_csv_repartition,
 )
+
+SERVICE_REQUESTS_PARQUET = "tests/assets/311-service-requests.50.parquet"
+SERVICE_REQUESTS_PARQUET_FOLDER = "tests/assets/311-service-requests.50.parquet_folder"
 
 
 @parametrize_service_requests_csv_daft_df
@@ -17,7 +23,24 @@ def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Loading data from a CSV or Parquet works"""
     pd_slice = service_requests_csv_pd_df
     daft_slice = daft_df.repartition(repartition_nparts)
-    assert_df_equals(daft_slice, pd_slice)
+    daft_pd_df = daft_slice.to_pandas()
+    assert_df_equals(daft_pd_df, pd_slice)
+
+
+@pytest.mark.parametrize(
+    "daft_df",
+    [
+        DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET).select(*[col(c) for c in COLUMNS]),
+        DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET_FOLDER).select(*[col(c) for c in COLUMNS]),
+    ],
+)
+@parametrize_service_requests_csv_repartition
+def test_load_parquet(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    """Loading data from a CSV or Parquet works"""
+    pd_slice = service_requests_csv_pd_df
+    daft_slice = daft_df.repartition(repartition_nparts)
+    daft_pd_df = daft_slice.to_pandas()
+    assert_df_equals(daft_pd_df, pd_slice)
 
 
 def test_load_csv_no_headers(tmp_path: pathlib.Path):
@@ -27,7 +50,8 @@ def test_load_csv_no_headers(tmp_path: pathlib.Path):
     daft_df = DataFrame.from_csv(str(csv), has_headers=False)
     pd_df = pd.read_csv(csv, header=None)
     pd_df.columns = [f"f{i}" for i in range(5)]
-    assert_df_equals(daft_df, pd_df, assert_ordering=True)
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, assert_ordering=True)
 
 
 def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
@@ -36,14 +60,16 @@ def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
     csv.write_text(pathlib.Path(IRIS_CSV).read_text().replace(",", "\t"))
     daft_df = DataFrame.from_csv(str(csv), delimiter="\t")
     pd_df = pd.read_csv(csv, delimiter="\t")
-    assert_df_equals(daft_df, pd_df, assert_ordering=True)
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, assert_ordering=True)
 
 
 def test_load_pydict():
     data = {"foo": [1, 2, 3], "bar": [1.0, None, 3.0], "baz": ["a", "b", "c"]}
     daft_df = DataFrame.from_pydict(data)
     pd_df = pd.DataFrame.from_dict(data)
-    assert_df_equals(daft_df, pd_df, sort_key="foo")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="foo")
 
 
 def test_load_pylist():
@@ -54,4 +80,5 @@ def test_load_pylist():
     ]
     daft_df = DataFrame.from_pylist(data)
     pd_df = pd.DataFrame.from_records(data)
-    assert_df_equals(daft_df, pd_df, sort_key="foo")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="foo")

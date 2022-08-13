@@ -138,4 +138,5 @@ def test_tpch_q1(lineitem):
         "avg_disc",
         "count_order",
     ]
-    assert_df_equals(daft_df, answer)
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, answer)

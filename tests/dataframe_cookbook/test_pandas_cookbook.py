@@ -24,7 +24,8 @@ def test_if_then(repartition_nparts):
     pd_df = pd.DataFrame.from_dict(IF_THEN_DATA)
     daft_df = daft_df.with_column("BBB", col("BBB").where(col("AAA") >= 5, -1))
     pd_df.loc[pd_df.AAA >= 5, "BBB"] = -1
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 @pytest.mark.tdd_all("Requires In-Memory scans and Expression.where(...)")
@@ -37,7 +38,8 @@ def test_if_then_2_cols(repartition_nparts):
         col("CCC").where(col("AAA") >= 5, 2000),
     )
     pd_df.loc[pd_df.AAA >= 5, ["BBB", "CCC"]] = 2000
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 @pytest.mark.tdd_all("Requires In-Memory scans and Expression.where(...)")
@@ -47,7 +49,8 @@ def test_if_then_numpy_where(repartition_nparts):
     pd_df = pd.DataFrame.from_dict(IF_THEN_DATA)
     daft_df = daft_df.with_column("logic", lit("low").where(col("AAA") > 5, "high"))
     pd_df["logic"] = np.where(pd_df["AAA"] > 5, "high", "low")
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 ###
@@ -66,7 +69,8 @@ def test_split_frame_boolean_criterion(repartition_nparts):
     pd_df = pd.DataFrame.from_dict(SPLITTING_DATA)
     daft_df = daft_df.where(col("AAA") <= 5)
     pd_df = pd_df[pd_df.AAA <= 5]
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 ###
@@ -85,7 +89,8 @@ def test_multi_criteria_and(repartition_nparts):
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
     daft_df = daft_df.where((col("BBB") < 25) & (col("CCC") >= -40)).select(col("AAA"))
     pd_df = pd.DataFrame({"AAA": pd_df.loc[(pd_df["BBB"] < 25) & (pd_df["CCC"] >= -40), "AAA"]})
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 @pytest.mark.parametrize(
@@ -96,7 +101,8 @@ def test_multi_criteria_or(repartition_nparts):
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
     daft_df = daft_df.where((col("BBB") > 25) | (col("CCC") >= -40)).select(col("AAA"))
     pd_df = pd.DataFrame({"AAA": pd_df.loc[(pd_df["BBB"] > 25) | (pd_df["CCC"] >= -40), "AAA"]})
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 @pytest.mark.tdd_all("Requires Expression.where(...)")
@@ -108,7 +114,8 @@ def test_multi_criteria_or_assignment(repartition_nparts):
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
     daft_df = daft_df.with_column("AAA", col("AAA").where((col("BBB") > 25) | (col("CCC") >= 75), 0.1))
     pd_df.loc[(pd_df["BBB"] > 25) | (pd_df["CCC"] >= 75), "AAA"] = 0.1
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 @pytest.mark.tdd_all("Requires Expression.abs()")
@@ -121,7 +128,8 @@ def test_select_rows_closest_to_certain_value_using_argsort(repartition_nparts):
     aValue = 43.0
     daft_df = daft_df.sort((col("CCC") - aValue).abs())
     pd_df = pd_df.loc[(pd_df.CCC - aValue).abs().argsort()]
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 ###
@@ -141,7 +149,8 @@ def test_splitting_by_row_index(repartition_nparts):
     pd_df = pd.DataFrame.from_dict(SELECTION_DATA)
     daft_df = daft_df.where((col("AAA") <= 6) & F.row_number().is_in([0, 2, 4]))
     pd_df = pd_df[(pd_df.AAA <= 6) & (pd_df.index.isin([0, 2, 4]))]
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 @pytest.mark.tdd_all("Requires F.row_number()")
@@ -153,7 +162,8 @@ def test_splitting_by_row_range(repartition_nparts):
     pd_df = pd.DataFrame.from_dict(SELECTION_DATA)
     daft_df = daft_df.where((F.row_number() >= 0) & (F.row_number() < 3))
     pd_df = pd_df[0:3]
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 ###
@@ -180,7 +190,8 @@ def test_efficiently_and_dynamically_creating_new_columns_using_applymap(reparti
 
     pd_df[new_cols] = pd_df[source_cols].applymap(categories.get)
 
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 MIN_WITH_GROUPBY_DATA = {"AAA": [1, 1, 1, 2, 2, 2, 3, 3], "BBB": [2, 1, 3, 4, 5, 1, 2, 3]}
@@ -196,7 +207,8 @@ def test_keep_other_columns_when_using_min_with_groupby(repartition_nparts):
     pd_df = pd.DataFrame.from_dict(APPLYMAP_DATA)
     daft_df = daft_df.groupby(col("AAA")).min(col("BBB"))
     pd_df = pd_df.sort_values(by="BBB").groupby("AAA", as_index=False).first()
-    assert_df_equals(daft_df, pd_df, sort_key="AAA")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
 ###
@@ -250,7 +262,8 @@ def test_applying_to_different_items_in_group(repartition_nparts):
         return pd.Series(["L", avg_weight, True], index=["size", "weight", "adult"])
 
     pd_df = pd_df.groupby("animal").apply(GrowUp)
-    assert_df_equals(daft_df, pd_df, sort_key="animal")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="animal")
 
 
 ###
@@ -288,4 +301,4 @@ def test_self_join(repartition_nparts):
     # 1    A   160         0  0.744434        -1         1  1.754213         0
     # 2    A   160         1  1.754213         0         2  0.000850         1
     # 3    C    40         0  0.342243        -1         1  1.070599         0
-    assert_df_equals(daft_df, pd_df, sort_key="Data_L")
+    assert_df_equals(daft_pd_df, pd_df, sort_key="Data_L")

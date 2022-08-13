@@ -24,7 +24,8 @@ def test_simple_join(daft_df, service_requests_csv_pd_df, repartition_nparts):
         .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="left")
         .reset_index()
     )
-    assert_df_equals(daft_df, service_requests_csv_pd_df)
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
 @pytest.mark.tdd
@@ -45,7 +46,8 @@ def test_simple_join_missing_rvalues(daft_df, service_requests_csv_pd_df, repart
         .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="left")
         .reset_index()
     )
-    assert_df_equals(daft_df, service_requests_csv_pd_df)
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
 @pytest.mark.tdd
@@ -66,4 +68,5 @@ def test_simple_join_missing_lvalues(daft_df, service_requests_csv_pd_df, repart
         .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="left")
         .reset_index()
     )
-    assert_df_equals(daft_df, service_requests_csv_pd_df)
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
