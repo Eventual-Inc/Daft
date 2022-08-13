@@ -51,10 +51,16 @@ class PrimitiveExpressionType(ExpressionType):
 
     enum: PrimitiveExpressionType.TypeEnum
 
+    def __repr__(self) -> str:
+        return self.enum.name
+
 
 @dataclass(frozen=True)
 class CompositeExpressionType(ExpressionType):
     args: Tuple[ExpressionType, ...]
+
+    def __repr__(self) -> str:
+        return f"({', '.join([str(arg) for arg in self.args])})"
 
 
 _TYPE_REGISTRY: Dict[str, ExpressionType] = {

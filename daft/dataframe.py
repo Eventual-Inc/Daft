@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, TypeVar, Union
 
 import pandas
 import pyarrow.parquet as papq
@@ -25,6 +25,41 @@ ColumnInputType = Union[Expression, str]
 _RUNNER = PyRunner()
 
 
+@dataclass(frozen=True)
+class DataFrameSchemaField:
+    name: str
+    daft_type: ExpressionType
+
+
+class DataFrameSchema:
+    def __init__(self, fields: List[DataFrameSchemaField]):
+        self._fields = fields
+
+    @classmethod
+    def from_expression_list(cls, exprs: ExpressionList) -> DataFrameSchema:
+        fields = []
+        for e in exprs:
+            if e.resolved_type() is None:
+                raise ValueError(f"Unable to parse schema from expression without type: {e}")
+            if e.name() is None:
+                raise ValueError(f"Unable to parse schema from expression without name: {e}")
+            fields.append(DataFrameSchemaField(e.name(), e.resolved_type()))
+        return cls(fields)
+
+    def __iter__(self) -> Iterator[DataFrameSchemaField]:
+        yield from self._fields
+
+    def _repr_html_(self) -> str:
+        rows = ["<tr><th>Name</th><th>Type</th></tr>"]
+        rows += [f"<tr><td>{field.name}</td><td>{field.daft_type}</td></tr>" for field in self._fields]
+        nl = "\n"
+        return f"""
+            <table>
+                {nl.join(rows)}
+            </table>
+        """
+
+
 class DataFrame:
     def __init__(self, plan: logical_plan.LogicalPlan) -> None:
         self._plan = plan
@@ -33,8 +68,8 @@ class DataFrame:
     def plan(self) -> logical_plan.LogicalPlan:
         return self._plan
 
-    def schema(self) -> ExpressionList:
-        return self._plan.schema()
+    def schema(self) -> DataFrameSchema:
+        return DataFrameSchema.from_expression_list(self._plan.schema())
 
     def column_names(self) -> List[str]:
         return [expr.name() for expr in self._plan.schema()]
@@ -199,7 +234,7 @@ class DataFrame:
         return DataFrame(plan)
 
     def with_column(self, column_name: str, expr: Expression) -> DataFrame:
-        prev_schema_as_cols = self.schema().to_column_expressions()
+        prev_schema_as_cols = self._plan.schema().to_column_expressions()
         projection = logical_plan.Projection(
             self._plan, prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]))
         )
