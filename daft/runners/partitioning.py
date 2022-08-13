@@ -8,9 +8,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 import pyarrow as pa
 
-from daft.expressions import ColID, Expression
+from daft.expressions import ColID, Expression, ExpressionExecutor
 from daft.logical.schema import ExpressionList
-from daft.runners.blocks import DataBlock
+from daft.runners.blocks import ArrowEvaluator, DataBlock
 
 PartID = int
 
@@ -99,7 +99,8 @@ class vPartition:
             name = c.name()
             assert name is not None
             required_blocks[name] = block
-        result = expr.eval(**required_blocks)
+        exec = ExpressionExecutor(ArrowEvaluator)
+        result = exec.eval(expr, required_blocks)
         expr_col_id = expr.get_id()
         expr_name = expr.name()
         assert expr_col_id is not None

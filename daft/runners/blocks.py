@@ -3,7 +3,7 @@ from __future__ import annotations
 import collections
 from abc import abstractmethod
 from dataclasses import dataclass
-from functools import partialmethod
+from functools import partial, partialmethod
 from typing import Any, Callable, ClassVar, Generic, List, Tuple, TypeVar, Union
 
 import numpy as np
@@ -11,6 +11,8 @@ import pyarrow as pa
 import pyarrow.compute as pac
 
 from daft.internal.hashing import hash_chunked_array
+
+from ..execution.operators import OperatorEvaluator
 
 ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
 UnaryFuncType = Callable[[ArrType], ArrType]
@@ -340,3 +342,31 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
         gcols: List[DataBlock] = [ArrowDataBlock(agged[g_name]) for g_name in group_names]
         acols: List[DataBlock] = [ArrowDataBlock(agged[f"{a_name}_{op}"]) for a_name, op in zip(agg_names, agg_ops)]
         return gcols, acols
+
+
+class ArrowEvaluator(OperatorEvaluator[ArrowDataBlock]):
+    NEGATE = ArrowDataBlock.__neg__
+    POSITIVE = ArrowDataBlock.__pos__
+    ABS = ArrowDataBlock.__abs__
+    SUM = partial(ArrowDataBlock.agg, op="sum")
+    MEAN: partial(ArrowDataBlock.agg, op="mean")
+    MIN = partial(ArrowDataBlock.agg, op="min")
+    MAX = partial(ArrowDataBlock.agg, op="max")
+    COUNT = partial(ArrowDataBlock.agg, op="count")
+    INVERT = ArrowDataBlock.__invert__
+
+    ADD = ArrowDataBlock.__add__
+    SUB = ArrowDataBlock.__sub__
+    MUL = ArrowDataBlock.__mul__
+    FLOORDIV = None
+    TRUEDIV = ArrowDataBlock.__truediv__
+    POW = ArrowDataBlock.__pow__
+    MOD = ArrowDataBlock.__mod__
+    AND = ArrowDataBlock.__and__
+    OR = ArrowDataBlock.__or__
+    LT = ArrowDataBlock.__lt__
+    LE = ArrowDataBlock.__le__
+    EQ = ArrowDataBlock.__eq__
+    NEQ = ArrowDataBlock.__ne__
+    GT = ArrowDataBlock.__gt__
+    GE = ArrowDataBlock.__ge__

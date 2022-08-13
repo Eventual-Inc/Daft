@@ -32,8 +32,8 @@ def parametrize_service_requests_csv_daft_df(test_case):
     return pytest.mark.parametrize(
         ["daft_df"],
         [
-            pytest.param(one_partition_csv, id="Source:CSV,NumFiles:1"),
-            pytest.param(two_partitions_csv, id="Source:CSV,NumFiles:2"),
+            pytest.param(one_partition_csv, id="Source:CSV-NumFiles:1"),
+            pytest.param(two_partitions_csv, id="Source:CSV-NumFiles:2"),
         ],
     )(test_case)
 

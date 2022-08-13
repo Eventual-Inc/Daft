@@ -1,5 +1,7 @@
 from typing import Tuple
 
+import pytest
+
 from daft.expressions import ColumnExpression, Expression, col, udf
 
 
@@ -15,6 +17,7 @@ def test_col_expr_add() -> None:
     assert new_id.has_call()
 
 
+@pytest.mark.skip
 def test_udf_single_return() -> None:
     @udf(num_returns=1)
     def f(x: int, y: int) -> int:
@@ -27,6 +30,7 @@ def test_udf_single_return() -> None:
     assert output.has_call()
 
 
+@pytest.mark.skip
 def test_udf_multiple_return() -> None:
     @udf(num_returns=2)
     def f(x: int, y: int) -> Tuple[int, int]:
