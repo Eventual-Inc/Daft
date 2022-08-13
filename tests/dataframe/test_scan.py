@@ -27,7 +27,7 @@ def test_filter_scan_pushdown(valid_data: List[Dict[str, float]], optimizer) -> 
     predicate_expr = col("sepal_length") > 4.8
     df = DataFrame.from_pylist(valid_data)
 
-    original_schema = df.schema()
+    original_schema = df._plan.schema()
     df = df.where(predicate_expr)
 
     optimized = optimizer(df.plan())
@@ -44,7 +44,7 @@ def test_filter_scan_pushdown(valid_data: List[Dict[str, float]], optimizer) -> 
 def test_projection_scan_pushdown(valid_data: List[Dict[str, float]], optimizer) -> None:
     selected_columns = ["sepal_length", "sepal_width"]
     df = DataFrame.from_pylist(valid_data)
-    original_schema = df.schema()
+    original_schema = df._plan.schema()
     df = df.select(*selected_columns)
     assert df.column_names() == selected_columns
 

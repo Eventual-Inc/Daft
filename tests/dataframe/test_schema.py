@@ -19,12 +19,12 @@ def daft_df():
         (col("sepal.length") < 5.0).alias("boolcol"),
     )
 
-    schema_fields = {e.name(): e for e in daft_df.schema()}
+    schema_fields = {e.name: e for e in daft_df.schema()}
     assert schema_fields.keys() == {"floatcol", "intcol", "stringcol", "boolcol"}
-    assert schema_fields["floatcol"].resolved_type() == ExpressionType.from_py_type(float)
-    assert schema_fields["intcol"].resolved_type() == ExpressionType.from_py_type(int)
-    assert schema_fields["stringcol"].resolved_type() == ExpressionType.from_py_type(str)
-    assert schema_fields["boolcol"].resolved_type() == ExpressionType.from_py_type(bool)
+    assert schema_fields["floatcol"].daft_type == ExpressionType.from_py_type(float)
+    assert schema_fields["intcol"].daft_type == ExpressionType.from_py_type(int)
+    assert schema_fields["stringcol"].daft_type == ExpressionType.from_py_type(str)
+    assert schema_fields["boolcol"].daft_type == ExpressionType.from_py_type(bool)
     return daft_df
 
 
@@ -69,11 +69,11 @@ UNARY_OPS_RESULT_TYPE_MAPPING = {
 def test_unary_ops_select_types(daft_df, colname, op, expected_result_type):
     df = daft_df.select(getattr(col(colname), op)())
 
-    exprs = [e for e in df.schema()]
-    assert len(exprs) == 1
-    expr = exprs[0]
-    assert expr.name() == colname
-    assert expr.resolved_type() == expected_result_type
+    fields = [field for field in df.schema()]
+    assert len(fields) == 1
+    field = fields[0]
+    assert field.name == colname
+    assert field.daft_type == expected_result_type
 
 
 number_cols = ["floatcol", "intcol"]
@@ -121,11 +121,11 @@ BINARY_OPS_RESULT_TYPE_MAPPING = {
 def test_unary_ops_select_types(daft_df, col1, col2, op, expected_result_type):
     df = daft_df.select(getattr(col(col1), op)(col(col2)))
 
-    exprs = [e for e in df.schema()]
-    assert len(exprs) == 1
-    expr = exprs[0]
-    assert expr.name() == col1
-    assert expr.resolved_type() == expected_result_type
+    fields = [field for field in df.schema()]
+    assert len(fields) == 1
+    field = fields[0]
+    assert field.name == col1
+    assert field.daft_type == expected_result_type
 
 
 def test_udf(daft_df):
@@ -134,11 +134,12 @@ def test_udf(daft_df):
         return str(x)
 
     df = daft_df.select(my_udf(col("floatcol"), col("boolcol")))
-    exprs = [e for e in df.schema()]
-    assert len(exprs) == 1
-    expr = exprs[0]
-    assert expr.name() == "floatcol"
-    assert expr.resolved_type() == ExpressionType.from_py_type(str)
+
+    fields = [field for field in df.schema()]
+    assert len(fields) == 1
+    field = fields[0]
+    assert field.name == "floatcol"
+    assert field.daft_type == ExpressionType.from_py_type(str)
 
 
 def test_multi_return_udf(daft_df):
@@ -148,9 +149,9 @@ def test_multi_return_udf(daft_df):
 
     c0, c1 = my_udf(col("floatcol"), col("boolcol"))
     df = daft_df.select(c0.alias("c0"), c1.alias("c1"))
-    exprs = [e for e in df.schema()]
-    assert len(exprs) == 2
+    fields = [field for field in df.schema()]
+    assert len(fields) == 2
 
-    for i, expr in enumerate(exprs):
-        assert expr.name() == f"c{i}"
-        assert expr.resolved_type() == ExpressionType.from_py_type(str)
+    for i, field in enumerate(fields):
+        assert field.name == f"c{i}"
+        assert field.daft_type == ExpressionType.from_py_type(str)
