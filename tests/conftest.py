@@ -93,4 +93,4 @@ def assert_df_equals(
     for col in pd_df.columns:
         df_series = daft_pd_df[col]
         pd_series = pd_df[col]
-        pd.testing.assert_series_equal(df_series, pd_series)
+        pd.testing.assert_series_equal(df_series, pd_series, rtol=1e-4)
