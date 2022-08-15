@@ -1,5 +1,3 @@
-from typing import Tuple
-
 from daft.expressions import ColumnExpression, Expression, col, udf
 
 
@@ -16,8 +14,8 @@ def test_col_expr_add() -> None:
 
 
 def test_udf_single_return() -> None:
-    @udf(num_returns=1)
-    def f(x: int, y: int) -> int:
+    @udf(return_type=int)
+    def f(x, y):
         return x + y
 
     assert f(10, 20) == 30
@@ -28,8 +26,8 @@ def test_udf_single_return() -> None:
 
 
 def test_udf_multiple_return() -> None:
-    @udf(num_returns=2)
-    def f(x: int, y: int) -> Tuple[int, int]:
+    @udf(return_type=[int, int])
+    def f(x, y):
         return y, x
 
     assert f(10, 20) == (20, 10)
