@@ -105,7 +105,10 @@ def lineitem(gen_tpch):
     )
 
 
-def test_tpch_q1(lineitem, tmp_path):
+@pytest.mark.parametrize("num_partitions", [None, 3])
+def test_tpch_q1(lineitem, tmp_path, num_partitions):
+    if num_partitions is not None:
+        lineitem = lineitem.repartition(num_partitions)
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
     daft_df = (
