@@ -23,6 +23,7 @@ from typing import (
 import pyarrow as pa
 
 from daft.execution.operators import (
+    EXPRESSION_TYPE_TO_PYARROW_TYPE,
     CompositeExpressionType,
     ExpressionOperator,
     ExpressionType,
@@ -378,9 +379,17 @@ def udf(f: Callable | None = None, *, return_type: Union[Type, Sequence[Type]]) 
                     kw: arg.data.to_pandas() if isinstance(arg, ArrowDataBlock) else arg for kw, arg in kwargs.items()
                 }
                 results = func(*converted_args, **converted_kwargs)
-                if isinstance(return_type, list):
-                    return tuple(DataBlock.make_block(pa.Array.from_pandas(result)) for result in results)
-                return DataBlock.make_block(pa.Array.from_pandas(results))
+                if isinstance(return_type, Sequence):
+                    assert isinstance(operator_return_type, CompositeExpressionType)
+                    return tuple(
+                        DataBlock.make_block(
+                            pa.Array.from_pandas(result, type=EXPRESSION_TYPE_TO_PYARROW_TYPE[result_type])
+                        )
+                        for result, result_type in zip(results, operator_return_type.args)
+                    )
+                return DataBlock.make_block(
+                    pa.Array.from_pandas(results, type=EXPRESSION_TYPE_TO_PYARROW_TYPE[operator_return_type])
+                )
 
             if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargs.values()):
                 out_expr = CallExpression(
@@ -389,7 +398,7 @@ def udf(f: Callable | None = None, *, return_type: Union[Type, Sequence[Type]]) 
                     func_args=args,
                     func_kwargs=kwargs,
                 )
-                if not isinstance(return_type, list):
+                if not isinstance(return_type, Sequence):
                     return out_expr
                 else:
                     return tuple(MultipleReturnSelectExpression(out_expr, i) for i in range(len(return_type)))

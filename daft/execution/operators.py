@@ -44,10 +44,11 @@ class PrimitiveExpressionType(ExpressionType):
     class TypeEnum(Enum):
 
         UNKNOWN = 1
-        NUMBER = 2
-        LOGICAL = 3
-        STRING = 4
-        PYTHON = 5
+        INTEGER = 2
+        FLOAT = 3
+        LOGICAL = 4
+        STRING = 5
+        PYTHON = 6
 
     enum: PrimitiveExpressionType.TypeEnum
 
@@ -59,26 +60,35 @@ class CompositeExpressionType(ExpressionType):
 
 _TYPE_REGISTRY: Dict[str, ExpressionType] = {
     "unknown": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.UNKNOWN),
-    "number": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.NUMBER),
+    "integer": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.INTEGER),
+    "float": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.FLOAT),
     "logical": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.LOGICAL),
     "string": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.STRING),
+}
+
+
+EXPRESSION_TYPE_TO_PYARROW_TYPE = {
+    _TYPE_REGISTRY["logical"]: pa.bool_(),
+    _TYPE_REGISTRY["integer"]: pa.int64(),
+    _TYPE_REGISTRY["float"]: pa.float64(),
+    _TYPE_REGISTRY["string"]: pa.string(),
 }
 
 
 _PYARROW_TYPE_TO_EXPRESSION_TYPE = {
     pa.null(): _TYPE_REGISTRY["unknown"],
     pa.bool_(): _TYPE_REGISTRY["logical"],
-    pa.int8(): _TYPE_REGISTRY["unknown"],
-    pa.int16(): _TYPE_REGISTRY["number"],
-    pa.int32(): _TYPE_REGISTRY["number"],
-    pa.int64(): _TYPE_REGISTRY["number"],
-    pa.uint8(): _TYPE_REGISTRY["number"],
-    pa.uint16(): _TYPE_REGISTRY["number"],
-    pa.uint32(): _TYPE_REGISTRY["number"],
-    pa.uint64(): _TYPE_REGISTRY["number"],
-    pa.float16(): _TYPE_REGISTRY["number"],
-    pa.float32(): _TYPE_REGISTRY["number"],
-    pa.float64(): _TYPE_REGISTRY["number"],
+    pa.int8(): _TYPE_REGISTRY["integer"],
+    pa.int16(): _TYPE_REGISTRY["integer"],
+    pa.int32(): _TYPE_REGISTRY["integer"],
+    pa.int64(): _TYPE_REGISTRY["integer"],
+    pa.uint8(): _TYPE_REGISTRY["integer"],
+    pa.uint16(): _TYPE_REGISTRY["integer"],
+    pa.uint32(): _TYPE_REGISTRY["integer"],
+    pa.uint64(): _TYPE_REGISTRY["integer"],
+    pa.float16(): _TYPE_REGISTRY["float"],
+    pa.float32(): _TYPE_REGISTRY["float"],
+    pa.float64(): _TYPE_REGISTRY["float"],
     pa.date32(): _TYPE_REGISTRY["unknown"],
     pa.date64(): _TYPE_REGISTRY["unknown"],
     pa.string(): _TYPE_REGISTRY["string"],
@@ -89,8 +99,8 @@ _PYARROW_TYPE_TO_EXPRESSION_TYPE = {
 }
 
 _PY_TYPE_TO_EXPRESSION_TYPE = {
-    int: _TYPE_REGISTRY["number"],
-    float: _TYPE_REGISTRY["number"],
+    int: _TYPE_REGISTRY["integer"],
+    float: _TYPE_REGISTRY["float"],
     str: _TYPE_REGISTRY["string"],
     bool: _TYPE_REGISTRY["logical"],
 }
@@ -129,16 +139,27 @@ class ExpressionOperator:
         return default if found_return_type is None else found_return_type
 
 
-_UnaryNumericalTM = frozenset({(_TYPE_REGISTRY["number"],): _TYPE_REGISTRY["number"]}.items())
+_UnaryNumericalTM = frozenset(
+    {
+        (_TYPE_REGISTRY["integer"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["float"],
+    }.items()
+)
 
 _UnaryLogicalTM = frozenset({(_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["logical"]}.items())
 
 
-_BinaryNumericalTM = frozenset({(_TYPE_REGISTRY["number"], _TYPE_REGISTRY["number"]): _TYPE_REGISTRY["number"]}.items())
+_BinaryNumericalTM = frozenset(
+    {
+        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
+    }.items()
+)
 
 _ComparisionTM = frozenset(
     {
-        (_TYPE_REGISTRY["number"], _TYPE_REGISTRY["number"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["logical"],
     }.items()
 )
@@ -151,9 +172,10 @@ _BinaryLogicalTM = frozenset(
 
 _CountLogicalTM = frozenset(
     {
-        (_TYPE_REGISTRY["number"],): _TYPE_REGISTRY["number"],
-        (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["number"],
-        (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["number"],
+        (_TYPE_REGISTRY["integer"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["integer"],
     }.items()
 )
 

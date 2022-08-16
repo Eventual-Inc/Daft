@@ -1,5 +1,3 @@
-import pytest
-
 from daft.expressions import col, udf
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
@@ -22,7 +20,6 @@ def int_and_str(x):
     return (x, x.astype(str))
 
 
-@pytest.mark.tdd
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
 def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
@@ -34,7 +31,6 @@ def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_npar
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
-@pytest.mark.tdd
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
 def test_multi_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
@@ -42,7 +38,7 @@ def test_multi_return_udf(daft_df, service_requests_csv_pd_df, repartition_npart
     daft_df = (
         daft_df.repartition(repartition_nparts)
         .with_column("unique_key_identity", int_col)
-        .with_column("unique_key_str", str_col)
+        .with_column("unique_key_identity_str", str_col)
     )
     service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"]
     service_requests_csv_pd_df["unique_key_identity_str"] = service_requests_csv_pd_df["Unique Key"].astype(str)
