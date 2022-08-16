@@ -95,7 +95,6 @@ class Expression(TreeNode["Expression"]):
         self,
         operator: OperatorEnum,
         other: Any,
-        # TODO: deprecate func and symbol in favor of just operator
     ) -> Expression:
         other_expr = self._to_expression(other)
         return CallExpression(operator, func_args=(self, other_expr))
@@ -220,10 +219,6 @@ class Expression(TreeNode["Expression"]):
     __rand__ = partialmethod(_reverse_binary_op, OperatorEnum.AND)
     __ror__ = partialmethod(_reverse_binary_op, OperatorEnum.OR)
 
-    # @abstractmethod
-    # def eval(self, **kwargs):
-    #     raise NotImplementedError()
-
     @abstractmethod
     def _display_str(self) -> str:
         raise NotImplementedError()
@@ -276,9 +271,6 @@ class LiteralExpression(Expression):
     def _display_str(self) -> str:
         return f"lit({self._value})"
 
-    # def eval(self, **kwargs):
-    #     return self._value
-
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, LiteralExpression) and self._value == other._value
 
@@ -302,13 +294,6 @@ class MultipleReturnSelectExpression(Expression):
 
     def _display_str(self) -> str:
         return f"{self._expr}[{self._n}]"
-
-    # def eval(self, **kwargs):
-    #     all_values = self._expr.eval(**kwargs)
-    #     assert isinstance(all_values, tuple), f"expected multiple returns from {self._expr}"
-    #     assert len(all_values) > self._n
-    #     value = all_values[self._n]
-    #     return value
 
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, MultipleReturnSelectExpression) and self._n == other._n
@@ -357,11 +342,6 @@ class CallExpression(Expression):
 
         kwargs = ", ".join(f"{k}={v._display_str()}" for k, v in self._kwargs.items())
         return f"{symbol}({args}, {kwargs})"
-
-    # def eval(self, **kwargs):
-    #     eval_args = tuple(a.eval(**kwargs) for a in self._args)
-    #     eval_kwargs = {k: self.eval(**kwargs) for k, v in self._kwargs.items()}
-    #     return self._func(*eval_args, **eval_kwargs)
 
     def _is_eq_local(self, other: Expression) -> bool:
         return (
@@ -443,11 +423,6 @@ class ColumnExpression(Expression):
     def __repr__(self) -> str:
         return self._display_str()
 
-    # def eval(self, **kwargs):
-    #     if self._name not in kwargs:
-    #         raise ValueError(f"expected column `{self._name}` to be passed into eval")
-    #     return kwargs[self._name]
-
     def name(self) -> Optional[str]:
         return self._name
 
@@ -494,9 +469,6 @@ class AliasExpression(Expression):
 
     def _assign_id(self, strict: bool = True) -> ColID:
         return self._expr._assign_id(strict)
-
-    # def eval(self, **kwargs):
-    #     return self._expr.eval(**kwargs)
 
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, AliasExpression) and self._name == other._name

@@ -268,10 +268,10 @@ class DataFrame:
         function_lookup = {"sum": Expression._sum, "count": Expression._count}
         intermediate_ops = {
             "sum": ("sum",),
-            # 'count': ('count',),
+            "count": ("count",),
             "mean": ("sum", "count"),
-            # 'min': ('min',),
-            # 'max': ('max', )
+            "min": ("min",),
+            "max": ("max",),
         }
 
         reduction_ops = {"sum": ("sum",), "count": ("sum",), "mean": ("sum", "sum"), "min": ("min",), "max": ("max",)}
