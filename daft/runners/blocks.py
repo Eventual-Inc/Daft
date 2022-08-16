@@ -38,7 +38,7 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @classmethod
-    def make_block(cls, data: Any) -> DataBlock:
+    def make_block(cls, data: Any) -> DataBlock[ArrType]:
         # if isinstance(data, list):
         #     return PyListDataBlock(data=data)
         if isinstance(data, pa.Scalar):
@@ -108,12 +108,12 @@ class DataBlock(Generic[ArrType]):
         return self._argsort(desc=desc)
 
     @abstractmethod
-    def partition(self, num: int, targets: DataBlock[ArrType]) -> List[DataBlock[ArrType]]:
+    def partition(self, num: int, targets: DataBlock[ArrowArrType]) -> List[DataBlock[ArrType]]:
         raise NotImplementedError()
 
     @staticmethod
     @abstractmethod
-    def _merge_blocks(blocks: List[DataBlock]) -> DataBlock:
+    def _merge_blocks(blocks: List[DataBlock[ArrType]]) -> DataBlock[ArrType]:
         raise NotImplementedError()
 
     @classmethod
@@ -167,24 +167,27 @@ class PyListDataBlock(DataBlock[List]):
     ...
 
 
-class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
+ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
+
+
+class ArrowDataBlock(DataBlock[ArrowArrType]):
     def to_pylist(self) -> List:
         pylist: List = self.data.to_pylist()
         return pylist
 
-    def _argsort(self, desc: bool = False) -> DataBlock:
+    def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
         order = "descending" if desc else "ascending"
         sort_indices = pac.array_sort_indices(self.data, order=order)
         return ArrowDataBlock(data=sort_indices)
 
     @staticmethod
-    def _merge_blocks(blocks: List[DataBlock]) -> DataBlock:
+    def _merge_blocks(blocks: List[DataBlock[ArrowArrType]]) -> DataBlock[ArrowArrType]:
         all_chunks = []
         for block in blocks:
             all_chunks.extend(block.data.chunks)
         return ArrowDataBlock(data=pa.chunked_array(all_chunks))
 
-    def partition(self, num: int, targets: DataBlock) -> List[DataBlock]:
+    def partition(self, num: int, targets: DataBlock[ArrowArrType]) -> List[DataBlock[ArrowArrType]]:
         new_partitions: List[DataBlock] = [
             ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type)) for _ in range(num)
         ]
@@ -203,30 +206,30 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
             new_partitions[target_idx] = ArrowDataBlock(data=pa.chunked_array([unmatched_partitions[i]]))
         return new_partitions
 
-    def sample(self, num: int, replace=False) -> ArrowDataBlock:
+    def sample(self, num: int, replace=False) -> DataBlock[ArrowArrType]:
         sampled = np.random.choice(self.data, num, replace=replace)
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
 
-    def search_sorted(self, pivots: DataBlock, reverse: bool = False) -> ArrowDataBlock:
+    def search_sorted(self, pivots: DataBlock, reverse: bool = False) -> DataBlock[ArrowArrType]:
         arr = self.data.to_numpy()
         indices = np.searchsorted(pivots.data.to_numpy(), arr)
         if reverse:
             indices = len(pivots) - indices
         return ArrowDataBlock(data=pa.chunked_array([indices]))
 
-    def quantiles(self, num: int) -> DataBlock:
+    def quantiles(self, num: int) -> DataBlock[ArrowArrType]:
         quantiles = np.linspace(1.0 / num, 1.0, num)[:-1]
         pivots = np.quantile(self.data.to_numpy(), quantiles, method="closest_observation")
         return DataBlock.make_block(data=pivots)
 
-    def array_hash(self) -> ArrowDataBlock:
+    def array_hash(self) -> DataBlock[ArrowArrType]:
         assert isinstance(self.data, pa.ChunkedArray)
         pa_type = self.data.type
         if not (pa.types.is_integer(pa_type) or pa.types.is_string(pa_type)):
             raise TypeError(f"can only hash ints or strings not {pa_type}")
         return ArrowDataBlock(data=hash_chunked_array(self.data))
 
-    def agg(self, op: str) -> ArrowDataBlock:
+    def agg(self, op: str) -> DataBlock[ArrowArrType]:
 
         if op == "sum":
             if len(self) == 0:
@@ -246,8 +249,8 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
 
     @staticmethod
     def _group_by_agg(
-        group_by: List[DataBlock], to_agg: List[DataBlock], agg_ops: List[str]
-    ) -> Tuple[List[DataBlock], List[DataBlock]]:
+        group_by: List[DataBlock[ArrowArrType]], to_agg: List[DataBlock[ArrowArrType]], agg_ops: List[str]
+    ) -> Tuple[List[DataBlock[ArrowArrType]], List[DataBlock[ArrowArrType]]]:
         arrs = [a.data for a in group_by]
         arrs.extend([a.data for a in to_agg])
         group_names = [f"g_{i}" for i in range(len(group_by))]
@@ -267,13 +270,15 @@ def arrow_floordiv(arr, m):
     return pac.floor(pac.divide(arr, m))
 
 
-def _arr_unary_op(fn: Callable[[pa.ChunkedArray], pa.ChunkedArray]) -> Callable[[ArrowDataBlock], ArrowDataBlock]:
+def _arr_unary_op(
+    fn: Callable[[pa.ChunkedArray], pa.ChunkedArray]
+) -> Callable[[DataBlock[ArrowArrType]], DataBlock[ArrowArrType]]:
     return partial(ArrowDataBlock._unary_op, fn=fn)  # type: ignore
 
 
 def _arr_bin_op(
     fn: Callable[[pa.ChunkedArray, pa.ChunkedArray], pa.ChunkedArray]
-) -> Callable[[ArrowDataBlock, ArrowDataBlock], ArrowDataBlock]:
+) -> Callable[[DataBlock[ArrowArrType], DataBlock[ArrowArrType]], DataBlock[ArrowArrType]]:
     return partial(ArrowDataBlock._binary_op, fn=fn)  # type: ignore
 
 

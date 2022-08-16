@@ -10,7 +10,7 @@ import pyarrow as pa
 
 from daft.expressions import ColID, Expression, ExpressionExecutor
 from daft.logical.schema import ExpressionList
-from daft.runners.blocks import ArrowEvaluator, DataBlock
+from daft.runners.blocks import ArrowArrType, ArrowEvaluator, DataBlock
 
 from ..execution.operators import OperatorEnum
 
@@ -120,7 +120,7 @@ class vPartition:
         tiles = {}
         for i, (col_id, name) in enumerate(zip(column_ids, names)):
             arr = table[i]
-            block = DataBlock.make_block(arr)
+            block: DataBlock[ArrowArrType] = DataBlock.make_block(arr)
             tiles[col_id] = PyListTile(column_id=col_id, column_name=name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
@@ -150,7 +150,7 @@ class vPartition:
     def sample(self, num: int) -> vPartition:
         if len(self) == 0:
             return self
-        sample_idx = DataBlock.make_block(data=np.random.randint(0, len(self), num))
+        sample_idx: DataBlock[ArrowArrType] = DataBlock.make_block(data=np.random.randint(0, len(self), num))
         return self.for_each_column_block(partial(DataBlock.take, indices=sample_idx))
 
     def filter(self, predicate: ExpressionList) -> vPartition:
