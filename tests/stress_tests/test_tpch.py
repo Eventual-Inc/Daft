@@ -1,4 +1,5 @@
 import datetime
+import os
 import shlex
 import subprocess
 
@@ -91,13 +92,19 @@ SCHEMA = {
 
 
 @pytest.fixture(scope="function")
-def lineitem():
+def gen_tpch():
+    script = "scripts/tpch-gen.sh"
+    if not os.path.exists("data/tpch"):
+        subprocess.check_output(shlex.split(f"{script}"))
+
+
+@pytest.fixture(scope="function")
+def lineitem(gen_tpch):
     return DataFrame.from_csv(
         "data/tpch/lineitem.tbl", has_headers=False, column_names=SCHEMA["lineitem"] + [""], delimiter="|"
     )
 
 
-@pytest.mark.tpch
 def test_tpch_q1(lineitem, tmp_path):
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))

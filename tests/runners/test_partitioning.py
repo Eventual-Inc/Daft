@@ -249,7 +249,7 @@ def test_hash_partition(n) -> None:
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
 
     part = vPartition(columns=tiles, partition_id=0)
-    new_parts = part.split_by_hash(expr, n)
+    new_parts = part.split_by_hash(ExpressionList([expr]), n)
     values_seen = set()
     for i, new_part in enumerate(new_parts):
         assert new_part.partition_id == i
