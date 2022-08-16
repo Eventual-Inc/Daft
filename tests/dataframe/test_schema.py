@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import pytest
 
 from daft.dataframe import DataFrame
@@ -129,9 +127,9 @@ def test_unary_ops_select_types(daft_df, col1, col2, op, expected_result_type):
 
 
 def test_udf(daft_df):
-    @udf
-    def my_udf(x: float, y: bool) -> str:
-        return str(x)
+    @udf(return_type=str)
+    def my_udf(x, y):
+        pass
 
     df = daft_df.select(my_udf(col("floatcol"), col("boolcol")))
     exprs = [e for e in df.schema()]
@@ -142,9 +140,9 @@ def test_udf(daft_df):
 
 
 def test_multi_return_udf(daft_df):
-    @udf(num_returns=2)
-    def my_udf(x: float, y: bool) -> Tuple[str, str]:
-        return str(x)
+    @udf(return_type=[str, str])
+    def my_udf(x, y):
+        pass
 
     c0, c1 = my_udf(col("floatcol"), col("boolcol"))
     df = daft_df.select(c0.alias("c0"), c1.alias("c1"))

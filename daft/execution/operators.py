@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import Dict, FrozenSet, Optional, Tuple, Type
+from typing import Dict, FrozenSet, Optional, Sequence, Tuple, Type, Union
 
 import pyarrow as pa
 
@@ -15,17 +15,17 @@ class ExpressionType:
         return _TYPE_REGISTRY["unknown"]
 
     @staticmethod
-    def from_py_type(obj_type: Type) -> ExpressionType:
+    def from_py_type(obj_type: Union[Type, Sequence[Type]]) -> ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
         if unable to find the appropriate type. ExpressionTypes.Python is never returned.
         """
         global _TYPE_REGISTRY
-        if hasattr(obj_type, "__origin__") and hasattr(obj_type, "__args__") and obj_type.__origin__ is tuple:
-            type_registry_key = f"Tuple[{', '.join(arg.__name__ for arg in obj_type.__args__)}]"
+        if isinstance(obj_type, Sequence):
+            type_registry_key = f"Tuple[{', '.join(arg.__name__ for arg in obj_type)}]"
             if type_registry_key in _TYPE_REGISTRY:
                 return _TYPE_REGISTRY[type_registry_key]
             _TYPE_REGISTRY[type_registry_key] = CompositeExpressionType(
-                tuple(ExpressionType.from_py_type(arg) for arg in obj_type.__args__)
+                tuple(ExpressionType.from_py_type(arg) for arg in obj_type)
             )
             return _TYPE_REGISTRY[type_registry_key]
         if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
@@ -106,6 +106,8 @@ class ExpressionOperator:
     type_matrix: TypeMatrix
     accepts_kwargs: bool = False
     symbol: Optional[str] = None
+    # Overrides the type_matrix with a return type for all input permutations
+    explicit_return_type: Optional[ExpressionType] = None
 
     def __post_init__(self) -> None:
         for k, v in self.type_matrix:
@@ -118,8 +120,13 @@ class ExpressionOperator:
             assert v != _TYPE_REGISTRY["unknown"]
 
     @lru_cache
-    def type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
-        return MappingProxyType(dict(self.type_matrix))
+    def get_return_type(
+        self, input_types: Tuple[ExpressionType, ...] = tuple(), default: ExpressionType = ExpressionType.unknown()
+    ) -> ExpressionType:
+        if self.explicit_return_type is not None:
+            return self.explicit_return_type
+        found_return_type = MappingProxyType(dict(self.type_matrix)).get(input_types)
+        return default if found_return_type is None else found_return_type
 
 
 _UnaryNumericalTM = frozenset({(_TYPE_REGISTRY["number"],): _TYPE_REGISTRY["number"]}.items())

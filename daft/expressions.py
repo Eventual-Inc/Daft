@@ -6,7 +6,21 @@ import operator
 from abc import abstractmethod
 from functools import partialmethod
 from inspect import signature
-from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, cast
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    NewType,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+    cast,
+)
+
+import pyarrow as pa
 
 from daft.execution.operators import (
     CompositeExpressionType,
@@ -15,6 +29,7 @@ from daft.execution.operators import (
     Operators,
 )
 from daft.internal.treenode import TreeNode
+from daft.runners.blocks import ArrowDataBlock, DataBlock
 
 
 def col(name: str) -> ColumnExpression:
@@ -301,7 +316,7 @@ class CallExpression(Expression):
         if any([arg_type is None for arg_type in args_resolved_types]):
             return None
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
-        ret_type = self._operator.type_matrix_dict().get(args_resolved_types_non_none, ExpressionType.unknown())
+        ret_type = self._operator.get_return_type(args_resolved_types_non_none, ExpressionType.unknown())
         return ret_type
 
     @property
@@ -341,45 +356,43 @@ class CallExpression(Expression):
         )
 
 
-def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
+def udf(f: Callable | None = None, *, return_type: Union[Type, Sequence[Type]]) -> Callable:
     def udf_decorator(func: Callable) -> Callable:
+
+        # Parse the function signature and udf params to build an ExpressionOperator
         sig = signature(func)
-        if sig.return_annotation == sig.empty:
-            raise ValueError(f"Function {func.__name__} needs to have return type annotation")
-        unannotated_params = [
-            param_name for param_name, param_sig in sig.parameters.items() if param_sig.annotation == param_sig.empty
-        ]
-        if unannotated_params:
-            raise ValueError(f"Function params {unannotated_params} need to have type annotations")
-        operator_return_type: ExpressionType = ExpressionType.from_py_type(sig.return_annotation)
+        operator_return_type = ExpressionType.from_py_type(return_type)
         expr_operator = ExpressionOperator(
             name=func.__name__,
             nargs=len(sig.parameters),
-            type_matrix=frozenset(
-                [
-                    (
-                        tuple(ExpressionType.from_py_type(param.annotation) for _, param in sig.parameters.items()),
-                        operator_return_type,
-                    )
-                ]
-            ),
+            type_matrix=frozenset(),
+            explicit_return_type=operator_return_type,
             symbol=f"udf[{func.__name__}]",
         )
 
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
+            def internal_block_func(*args, **kwargs):
+                converted_args = tuple(arg.data.to_pandas() if isinstance(arg, ArrowDataBlock) else arg for arg in args)
+                converted_kwargs = {
+                    kw: arg.data.to_pandas() if isinstance(arg, ArrowDataBlock) else arg for kw, arg in kwargs.items()
+                }
+                results = func(*converted_args, **converted_kwargs)
+                if isinstance(return_type, list):
+                    return tuple(DataBlock.make_block(pa.Array.from_pandas(result)) for result in results)
+                return DataBlock.make_block(pa.Array.from_pandas(results))
+
             if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargs.values()):
                 out_expr = CallExpression(
                     expr_operator,
-                    func,
+                    internal_block_func,
                     func_args=args,
                     func_kwargs=kwargs,
                 )
-                if num_returns == 1:
+                if not isinstance(return_type, list):
                     return out_expr
                 else:
-                    assert num_returns > 1
-                    return tuple(MultipleReturnSelectExpression(out_expr, i) for i in range(num_returns))
+                    return tuple(MultipleReturnSelectExpression(out_expr, i) for i in range(len(return_type)))
             else:
                 return func(*args, **kwargs)
 
