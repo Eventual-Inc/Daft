@@ -15,6 +15,7 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    TypeVar,
     Union,
     cast,
 )
@@ -27,7 +28,6 @@ from daft.execution.operators import (
     ExpressionType,
     OperatorEnum,
     OperatorEvaluator,
-    ValueType,
 )
 from daft.internal.treenode import TreeNode
 from daft.runners.blocks import ArrowDataBlock, DataBlock
@@ -43,14 +43,15 @@ def lit(val: Any) -> LiteralExpression:
 
 _COUNTER = itertools.count()
 ColID = NewType("ColID", int)
+DataBlockValueType = TypeVar("DataBlockValueType", bound=DataBlock)
 
 
-class ExpressionExecutor(Generic[ValueType]):
-    def __init__(self, op_eval: Type[OperatorEvaluator[ValueType]]) -> None:
+class ExpressionExecutor(Generic[DataBlockValueType]):
+    def __init__(self, op_eval: Type[OperatorEvaluator[DataBlockValueType]]) -> None:
         self.op_eval = op_eval
 
-    def eval(self, expr: Expression, operands: Dict[str, Any]) -> ValueType:
-        result: ValueType
+    def eval(self, expr: Expression, operands: Dict[str, Any]) -> DataBlockValueType:
+        result: DataBlockValueType
         if isinstance(expr, ColumnExpression):
             name = expr.name()
             assert name is not None
@@ -73,13 +74,14 @@ class ExpressionExecutor(Generic[ValueType]):
             eval_kwargs = {kw: self.eval(a, operands) for kw, a in expr._kwargs.items()}
             result = expr.eval_blocks(*eval_args, **eval_kwargs)
             return result
-        elif isinstance(expr, MultipleReturnSelectExpression):
-            result = self.eval(expr._expr, operands)
-            assert isinstance(
-                result, tuple
-            ), "MultipleReturnSelectExpression is always preceded by a UdfExpression returning a tuple"
-            result_tuple = cast(Tuple[ValueType, ...], result)
-            return result_tuple[expr._n]
+        # TODO: We can't support this at the moment
+        # elif isinstance(expr, MultipleReturnSelectExpression):
+        #     result = self.eval(expr._expr, operands)
+        #     assert isinstance(
+        #         result, tuple
+        #     ), "MultipleReturnSelectExpression is always preceded by a UdfExpression returning a tuple"
+        #     result_tuple = cast(Tuple[DataBlockValueType, ...], result)
+        #     return result_tuple[expr._n]
         else:
             raise NotImplementedError(f"Not implemented for expression type {type(expr)}: {expr}")
 
@@ -354,10 +356,10 @@ class CallExpression(Expression):
         )
 
 
-class UdfExpression(Expression):
+class UdfExpression(Expression, Generic[DataBlockValueType]):
     def __init__(
         self,
-        func: Callable,
+        func: Callable[..., DataBlockValueType],
         func_ret_type: ExpressionType,
         func_args: Tuple,
         func_kwargs: Dict[str, Any],
@@ -386,7 +388,7 @@ class UdfExpression(Expression):
             return f"{self._func.__name__}({args}, {kwargs})"
         return f"{self._func.__name__}({args})"
 
-    def eval_blocks(self, *args: DataBlock, **kwargs: DataBlock):
+    def eval_blocks(self, *args: DataBlockValueType, **kwargs: DataBlockValueType) -> DataBlockValueType:
         return self._func(*args, **kwargs)
 
     def _is_eq_local(self, other: Expression) -> bool:

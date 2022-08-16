@@ -1,3 +1,5 @@
+import pytest
+
 from daft.expressions import col, udf
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
@@ -31,6 +33,7 @@ def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_npar
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
+@pytest.mark.skip(reason="Multi-return UDFs not supported")
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
 def test_multi_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
