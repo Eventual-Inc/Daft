@@ -4,7 +4,18 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import Callable, Dict, FrozenSet, Optional, Protocol, Tuple, Type, TypeVar
+from typing import (
+    Callable,
+    Dict,
+    FrozenSet,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import pyarrow as pa
 
@@ -15,17 +26,17 @@ class ExpressionType:
         return _TYPE_REGISTRY["unknown"]
 
     @staticmethod
-    def from_py_type(obj_type: Type) -> ExpressionType:
+    def from_py_type(obj_type: Union[Type, Sequence[Type]]) -> ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
         if unable to find the appropriate type. ExpressionTypes.Python is never returned.
         """
         global _TYPE_REGISTRY
-        if hasattr(obj_type, "__origin__") and hasattr(obj_type, "__args__") and obj_type.__origin__ is tuple:
-            type_registry_key = f"Tuple[{', '.join(arg.__name__ for arg in obj_type.__args__)}]"
+        if isinstance(obj_type, Sequence):
+            type_registry_key = f"Tuple[{', '.join(arg.__name__ for arg in obj_type)}]"
             if type_registry_key in _TYPE_REGISTRY:
                 return _TYPE_REGISTRY[type_registry_key]
             _TYPE_REGISTRY[type_registry_key] = CompositeExpressionType(
-                tuple(ExpressionType.from_py_type(arg) for arg in obj_type.__args__)
+                tuple(ExpressionType.from_py_type(arg) for arg in obj_type)
             )
             return _TYPE_REGISTRY[type_registry_key]
         if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
@@ -44,10 +55,11 @@ class PrimitiveExpressionType(ExpressionType):
     class TypeEnum(Enum):
 
         UNKNOWN = 1
-        NUMBER = 2
-        LOGICAL = 3
-        STRING = 4
-        PYTHON = 5
+        INTEGER = 2
+        FLOAT = 3
+        LOGICAL = 4
+        STRING = 5
+        PYTHON = 6
 
     enum: PrimitiveExpressionType.TypeEnum
 
@@ -65,26 +77,35 @@ class CompositeExpressionType(ExpressionType):
 
 _TYPE_REGISTRY: Dict[str, ExpressionType] = {
     "unknown": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.UNKNOWN),
-    "number": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.NUMBER),
+    "integer": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.INTEGER),
+    "float": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.FLOAT),
     "logical": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.LOGICAL),
     "string": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.STRING),
+}
+
+
+EXPRESSION_TYPE_TO_PYARROW_TYPE = {
+    _TYPE_REGISTRY["logical"]: pa.bool_(),
+    _TYPE_REGISTRY["integer"]: pa.int64(),
+    _TYPE_REGISTRY["float"]: pa.float64(),
+    _TYPE_REGISTRY["string"]: pa.string(),
 }
 
 
 _PYARROW_TYPE_TO_EXPRESSION_TYPE = {
     pa.null(): _TYPE_REGISTRY["unknown"],
     pa.bool_(): _TYPE_REGISTRY["logical"],
-    pa.int8(): _TYPE_REGISTRY["unknown"],
-    pa.int16(): _TYPE_REGISTRY["number"],
-    pa.int32(): _TYPE_REGISTRY["number"],
-    pa.int64(): _TYPE_REGISTRY["number"],
-    pa.uint8(): _TYPE_REGISTRY["number"],
-    pa.uint16(): _TYPE_REGISTRY["number"],
-    pa.uint32(): _TYPE_REGISTRY["number"],
-    pa.uint64(): _TYPE_REGISTRY["number"],
-    pa.float16(): _TYPE_REGISTRY["number"],
-    pa.float32(): _TYPE_REGISTRY["number"],
-    pa.float64(): _TYPE_REGISTRY["number"],
+    pa.int8(): _TYPE_REGISTRY["integer"],
+    pa.int16(): _TYPE_REGISTRY["integer"],
+    pa.int32(): _TYPE_REGISTRY["integer"],
+    pa.int64(): _TYPE_REGISTRY["integer"],
+    pa.uint8(): _TYPE_REGISTRY["integer"],
+    pa.uint16(): _TYPE_REGISTRY["integer"],
+    pa.uint32(): _TYPE_REGISTRY["integer"],
+    pa.uint64(): _TYPE_REGISTRY["integer"],
+    pa.float16(): _TYPE_REGISTRY["float"],
+    pa.float32(): _TYPE_REGISTRY["float"],
+    pa.float64(): _TYPE_REGISTRY["float"],
     pa.date32(): _TYPE_REGISTRY["unknown"],
     pa.date64(): _TYPE_REGISTRY["unknown"],
     pa.string(): _TYPE_REGISTRY["string"],
@@ -95,8 +116,8 @@ _PYARROW_TYPE_TO_EXPRESSION_TYPE = {
 }
 
 _PY_TYPE_TO_EXPRESSION_TYPE = {
-    int: _TYPE_REGISTRY["number"],
-    float: _TYPE_REGISTRY["number"],
+    int: _TYPE_REGISTRY["integer"],
+    float: _TYPE_REGISTRY["float"],
     str: _TYPE_REGISTRY["string"],
     bool: _TYPE_REGISTRY["logical"],
 }
@@ -128,16 +149,31 @@ class ExpressionOperator:
         return MappingProxyType(dict(self.type_matrix))
 
 
-_UnaryNumericalTM = frozenset({(_TYPE_REGISTRY["number"],): _TYPE_REGISTRY["number"]}.items())
+_UnaryNumericalTM = frozenset(
+    {
+        (_TYPE_REGISTRY["integer"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["float"],
+    }.items()
+)
 
 _UnaryLogicalTM = frozenset({(_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["logical"]}.items())
 
 
-_BinaryNumericalTM = frozenset({(_TYPE_REGISTRY["number"], _TYPE_REGISTRY["number"]): _TYPE_REGISTRY["number"]}.items())
+_BinaryNumericalTM = frozenset(
+    {
+        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
+        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["float"],
+        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
+    }.items()
+)
 
 _ComparisionTM = frozenset(
     {
-        (_TYPE_REGISTRY["number"], _TYPE_REGISTRY["number"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["logical"],
     }.items()
 )
@@ -150,9 +186,10 @@ _BinaryLogicalTM = frozenset(
 
 _CountLogicalTM = frozenset(
     {
-        (_TYPE_REGISTRY["number"],): _TYPE_REGISTRY["number"],
-        (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["number"],
-        (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["number"],
+        (_TYPE_REGISTRY["integer"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["integer"],
     }.items()
 )
 
@@ -197,7 +234,17 @@ class OperatorEnum(Enum):
     ADD = _NBop(name="add", symbol="+")
     SUB = _NBop(name="subtract", symbol="-")
     MUL = _NBop(name="multiply", symbol="*")
-    FLOORDIV = _NBop(name="floor_divide", symbol="//")
+    FLOORDIV = partial(
+        _BOp,
+        type_matrix=frozenset(
+            {
+                (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
+                (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["integer"],
+                (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
+                (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["integer"],
+            }.items()
+        ),
+    )(name="floor_divide", symbol="//")
     TRUEDIV = _NBop(name="true_divide", symbol="/")
     POW = _NBop(name="power", symbol="**")
     MOD = _NBop(name="mod", symbol="%")

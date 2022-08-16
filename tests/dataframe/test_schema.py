@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import pytest
 
 from daft.dataframe import DataFrame
@@ -76,11 +74,18 @@ def test_unary_ops_select_types(daft_df, colname, op, expected_result_type):
     assert field.daft_type == expected_result_type
 
 
-number_cols = ["floatcol", "intcol"]
-number_number_number = {(col1, col2): ExpressionType.from_py_type(int) for col1 in number_cols for col2 in number_cols}
+number_number_number = {
+    ("intcol", "intcol"): ExpressionType.from_py_type(int),
+    ("intcol", "floatcol"): ExpressionType.from_py_type(float),
+    ("floatcol", "floatcol"): ExpressionType.from_py_type(float),
+    ("floatcol", "intcol"): ExpressionType.from_py_type(float),
+}
 bool_bool_logical = {("boolcol", "boolcol"): ExpressionType.from_py_type(bool)}
 number_number_logical = {
-    (col1, col2): ExpressionType.from_py_type(bool) for col1 in number_cols for col2 in number_cols
+    ("intcol", "intcol"): ExpressionType.from_py_type(bool),
+    ("floatcol", "floatcol"): ExpressionType.from_py_type(bool),
+    ("floatcol", "intcol"): ExpressionType.from_py_type(bool),
+    ("intcol", "floatcol"): ExpressionType.from_py_type(bool),
 }
 string_string_logical = {("stringcol", "stringcol"): ExpressionType.from_py_type(bool)}
 
@@ -88,7 +93,7 @@ BINARY_OPS_RESULT_TYPE_MAPPING = {
     "__add__": number_number_number,
     "__sub__": number_number_number,
     "__mul__": number_number_number,
-    "__floordiv__": number_number_number,
+    "__floordiv__": {k: ExpressionType.from_py_type(int) for k in number_number_number},
     "__truediv__": number_number_number,
     "__pow__": number_number_number,
     "__mod__": number_number_number,
@@ -128,11 +133,10 @@ def test_unary_ops_select_types(daft_df, col1, col2, op, expected_result_type):
     assert field.daft_type == expected_result_type
 
 
-@pytest.mark.skip
 def test_udf(daft_df):
-    @udf
-    def my_udf(x: float, y: bool) -> str:
-        return str(x)
+    @udf(return_type=str)
+    def my_udf(x, y):
+        pass
 
     df = daft_df.select(my_udf(col("floatcol"), col("boolcol")))
 
@@ -143,11 +147,10 @@ def test_udf(daft_df):
     assert field.daft_type == ExpressionType.from_py_type(str)
 
 
-@pytest.mark.skip
 def test_multi_return_udf(daft_df):
-    @udf(num_returns=2)
-    def my_udf(x: float, y: bool) -> Tuple[str, str]:
-        return str(x)
+    @udf(return_type=[str, str])
+    def my_udf(x, y):
+        pass
 
     c0, c1 = my_udf(col("floatcol"), col("boolcol"))
     df = daft_df.select(c0.alias("c0"), c1.alias("c1"))

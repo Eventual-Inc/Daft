@@ -47,6 +47,8 @@ class DataBlock(Generic[ArrType]):
             return ArrowDataBlock(data=data)
         elif isinstance(data, np.ndarray):
             return ArrowDataBlock(data=pa.chunked_array([data]))
+        elif isinstance(data, pa.Array):
+            return ArrowDataBlock(data=pa.chunked_array([data]))
         else:
             try:
                 arrow_type = pa.infer_type([data])

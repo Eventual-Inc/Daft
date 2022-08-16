@@ -83,7 +83,7 @@ class vPartition:
 
         assert expr_col_id is not None
         assert expr_name is not None
-
+        print(expr_name, expr_col_id)
         if not expr.has_call():
             return PyListTile(
                 column_id=expr_col_id,
@@ -107,6 +107,7 @@ class vPartition:
         expr_name = expr.name()
         assert expr_col_id is not None
         assert expr_name is not None
+        print(expr_name, expr_col_id, result)
         return PyListTile(column_id=expr_col_id, column_name=expr_name, partition_id=self.partition_id, block=result)
 
     def eval_expression_list(self, exprs: ExpressionList) -> vPartition:
