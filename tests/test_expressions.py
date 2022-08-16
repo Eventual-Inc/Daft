@@ -1,8 +1,4 @@
-from typing import Tuple
-
-import pytest
-
-from daft.expressions import ColumnExpression, Expression, col, udf
+from daft.expressions import ColumnExpression, Expression, col
 
 
 def test_column_expression_creation() -> None:
@@ -15,37 +11,6 @@ def test_col_expr_add() -> None:
     assert isinstance(id, ColumnExpression)
     new_id = id + 1
     assert new_id.has_call()
-
-
-@pytest.mark.skip
-def test_udf_single_return() -> None:
-    @udf(num_returns=1)
-    def f(x: int, y: int) -> int:
-        return x + y
-
-    assert f(10, 20) == 30
-
-    output = f(10, col("y"))
-    assert isinstance(output, Expression)
-    assert output.has_call()
-
-
-@pytest.mark.skip
-def test_udf_multiple_return() -> None:
-    @udf(num_returns=2)
-    def f(x: int, y: int) -> Tuple[int, int]:
-        return y, x
-
-    assert f(10, 20) == (20, 10)
-
-    output = f(10, col("y"))
-    assert isinstance(output, tuple)
-    assert len(output) == 2
-
-    out1, out2 = output
-
-    assert out1.has_call()
-    assert out2.has_call()
 
 
 def test_name() -> None:

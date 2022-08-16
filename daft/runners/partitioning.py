@@ -83,7 +83,6 @@ class vPartition:
 
         assert expr_col_id is not None
         assert expr_name is not None
-
         if not expr.has_call():
             return PyListTile(
                 column_id=expr_col_id,

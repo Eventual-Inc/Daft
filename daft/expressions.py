@@ -4,7 +4,6 @@ import functools
 import itertools
 from abc import abstractmethod
 from functools import partialmethod
-from inspect import signature
 from typing import (
     Any,
     Callable,
@@ -13,20 +12,25 @@ from typing import (
     List,
     NewType,
     Optional,
+    Sequence,
     Tuple,
     Type,
+    TypeVar,
+    Union,
     cast,
 )
 
+import pyarrow as pa
+
 from daft.execution.operators import (
+    EXPRESSION_TYPE_TO_PYARROW_TYPE,
     CompositeExpressionType,
-    ExpressionOperator,
     ExpressionType,
     OperatorEnum,
     OperatorEvaluator,
-    ValueType,
 )
 from daft.internal.treenode import TreeNode
+from daft.runners.blocks import ArrowDataBlock, DataBlock
 
 
 def col(name: str) -> ColumnExpression:
@@ -39,14 +43,15 @@ def lit(val: Any) -> LiteralExpression:
 
 _COUNTER = itertools.count()
 ColID = NewType("ColID", int)
+DataBlockValueType = TypeVar("DataBlockValueType", bound=DataBlock)
 
 
-class ExpressionExecutor(Generic[ValueType]):
-    def __init__(self, op_eval: Type[OperatorEvaluator[ValueType]]) -> None:
+class ExpressionExecutor(Generic[DataBlockValueType]):
+    def __init__(self, op_eval: Type[OperatorEvaluator[DataBlockValueType]]) -> None:
         self.op_eval = op_eval
 
-    def eval(self, expr: Expression, operands: Dict[str, Any]) -> ValueType:
-        result: ValueType
+    def eval(self, expr: Expression, operands: Dict[str, Any]) -> DataBlockValueType:
+        result: DataBlockValueType
         if isinstance(expr, ColumnExpression):
             name = expr.name()
             assert name is not None
@@ -60,13 +65,25 @@ class ExpressionExecutor(Generic[ValueType]):
             return result
         elif isinstance(expr, CallExpression):
             eval_args = tuple(self.eval(a, operands) for a in expr._args)
-            eval_kwargs = {k: self.eval(v, operands) for k, v in expr._kwargs.items()}
             op = expr._operator
             func = getattr(self.op_eval, op.name)
-            result = func(*eval_args, **eval_kwargs)
+            result = func(*eval_args)
             return result
+        elif isinstance(expr, UdfExpression):
+            eval_args = tuple(self.eval(a, operands) for a in expr._args)
+            eval_kwargs = {kw: self.eval(a, operands) for kw, a in expr._kwargs.items()}
+            result = expr.eval_blocks(*eval_args, **eval_kwargs)
+            return result
+        # TODO: We can't support this at the moment
+        # elif isinstance(expr, MultipleReturnSelectExpression):
+        #     result = self.eval(expr._expr, operands)
+        #     assert isinstance(
+        #         result, tuple
+        #     ), "MultipleReturnSelectExpression is always preceded by a UdfExpression returning a tuple"
+        #     result_tuple = cast(Tuple[DataBlockValueType, ...], result)
+        #     return result_tuple[expr._n]
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(f"Not implemented for expression type {type(expr)}: {expr}")
 
 
 class Expression(TreeNode["Expression"]):
@@ -227,7 +244,7 @@ class Expression(TreeNode["Expression"]):
         return AliasExpression(self, name)
 
     def has_call(self) -> bool:
-        if isinstance(self, CallExpression):
+        if isinstance(self, CallExpression) or isinstance(self, UdfExpression):
             return True
         if len(self._children()) > 0:
             return any(c.has_call() for c in self._children())
@@ -276,7 +293,7 @@ class LiteralExpression(Expression):
 
 
 class MultipleReturnSelectExpression(Expression):
-    def __init__(self, expr: CallExpression, n: int) -> None:
+    def __init__(self, expr: UdfExpression, n: int) -> None:
         super().__init__()
         self._register_child(expr)
         self._n = n
@@ -289,8 +306,8 @@ class MultipleReturnSelectExpression(Expression):
         return call_resolved_type.args[self._n]  # type: ignore
 
     @property
-    def _expr(self) -> CallExpression:
-        return cast(CallExpression, self._children()[0])
+    def _expr(self) -> UdfExpression:
+        return cast(UdfExpression, self._children()[0])
 
     def _display_str(self) -> str:
         return f"{self._expr}[{self._n}]"
@@ -304,13 +321,9 @@ class CallExpression(Expression):
         self,
         operator: OperatorEnum,
         func_args: Tuple,
-        func_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__()
         self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
-        if func_kwargs is None:
-            func_kwargs = dict()
-        self._kwargs_ids = {k: self._register_child(self._to_expression(v)) for k, v in func_kwargs.items()}
         self._operator = operator
 
     def resolved_type(self) -> Optional[ExpressionType]:
@@ -325,73 +338,103 @@ class CallExpression(Expression):
     def _args(self) -> Tuple[Expression, ...]:
         return tuple(self._children()[i] for i in self._args_ids)
 
-    @property
-    def _kwargs(self) -> Dict[str, Expression]:
-        return {k: self._children()[i] for k, i in self._kwargs_ids.items()}
-
     def _display_str(self) -> str:
         symbol = self._operator.value.symbol or self._operator.value.name
 
         # Handle Binary Case:
-        if len(self._kwargs) == 0 and len(self._args) == 2:
+        if len(self._args) == 2:
             return f"[{self._args[0]._display_str()} {symbol} {self._args[1]._display_str()}]"
 
         args = ", ".join(a._display_str() for a in self._args)
-        if len(self._kwargs) == 0:
-            return f"{symbol}({args})"
-
-        kwargs = ", ".join(f"{k}={v._display_str()}" for k, v in self._kwargs.items())
-        return f"{symbol}({args}, {kwargs})"
+        return f"{symbol}({args})"
 
     def _is_eq_local(self, other: Expression) -> bool:
         return (
             isinstance(other, CallExpression)
             and self._operator == other._operator
             and self._args_ids == other._args_ids
+        )
+
+
+class UdfExpression(Expression, Generic[DataBlockValueType]):
+    def __init__(
+        self,
+        func: Callable[..., DataBlockValueType],
+        func_ret_type: ExpressionType,
+        func_args: Tuple,
+        func_kwargs: Dict[str, Any],
+    ) -> None:
+        super().__init__()
+        self._func = func
+        self._func_ret_type = func_ret_type
+        self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
+        self._kwargs_ids = {kw: self._register_child(self._to_expression(arg)) for kw, arg in func_kwargs.items()}
+
+    @property
+    def _args(self) -> Tuple[Expression, ...]:
+        return tuple(self._children()[i] for i in self._args_ids)
+
+    @property
+    def _kwargs(self) -> Dict[str, Expression]:
+        return {kw: self._children()[i] for kw, i in self._kwargs_ids.items()}
+
+    def resolved_type(self) -> Optional[ExpressionType]:
+        return self._func_ret_type
+
+    def _display_str(self) -> str:
+        args = ", ".join(a._display_str() for a in self._args)
+        kwargs = ", ".join(f"{kw}={a._display_str()}" for kw, a in self._kwargs.items())
+        if kwargs:
+            return f"{self._func.__name__}({args}, {kwargs})"
+        return f"{self._func.__name__}({args})"
+
+    def eval_blocks(self, *args: DataBlockValueType, **kwargs: DataBlockValueType) -> DataBlockValueType:
+        return self._func(*args, **kwargs)
+
+    def _is_eq_local(self, other: Expression) -> bool:
+        return (
+            isinstance(other, UdfExpression)
+            and self._func == other._func
+            and self._func_ret_type == other._func_ret_type
+            and self._args_ids == other._args_ids
             and self._kwargs_ids == other._kwargs_ids
         )
 
 
-def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
-    def udf_decorator(func: Callable) -> Callable:
-        sig = signature(func)
-        if sig.return_annotation == sig.empty:
-            raise ValueError(f"Function {func.__name__} needs to have return type annotation")
-        unannotated_params = [
-            param_name for param_name, param_sig in sig.parameters.items() if param_sig.annotation == param_sig.empty
-        ]
-        if unannotated_params:
-            raise ValueError(f"Function params {unannotated_params} need to have type annotations")
-        operator_return_type: ExpressionType = ExpressionType.from_py_type(sig.return_annotation)
-        expr_operator = ExpressionOperator(
-            name=func.__name__,
-            nargs=len(sig.parameters),
-            type_matrix=frozenset(
-                [
-                    (
-                        tuple(ExpressionType.from_py_type(param.annotation) for _, param in sig.parameters.items()),
-                        operator_return_type,
-                    )
-                ]
-            ),
-            symbol=f"udf[{func.__name__}]",
-        )
+def udf(f: Callable | None = None, *, return_type: Union[Type, Sequence[Type]]) -> Callable:
+    func_ret_type = ExpressionType.from_py_type(return_type)
 
+    def udf_decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
-            if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargss()):
-                out_expr = CallExpression(
-                    expr_operator,
-                    func_args=args,
-                    func_kwargs=kwargs,
+            @functools.wraps(func)
+            def block_to_pandas_func(*args, **kwargs):
+                converted_args = tuple(arg.data.to_pandas() if isinstance(arg, ArrowDataBlock) else arg for arg in args)
+                converted_kwargs = {
+                    kw: arg.data.to_pandas() if isinstance(arg, ArrowDataBlock) else arg for kw, arg in kwargs.items()
+                }
+                results = func(*converted_args, **converted_kwargs)
+                if isinstance(return_type, Sequence):
+                    assert isinstance(func_ret_type, CompositeExpressionType)
+                    return tuple(
+                        DataBlock.make_block(
+                            pa.Array.from_pandas(result, type=EXPRESSION_TYPE_TO_PYARROW_TYPE[result_type])
+                        )
+                        for result, result_type in zip(results, func_ret_type.args)
+                    )
+                return DataBlock.make_block(
+                    pa.Array.from_pandas(results, type=EXPRESSION_TYPE_TO_PYARROW_TYPE[func_ret_type])
                 )
-                if num_returns == 1:
-                    return out_expr
-                else:
-                    assert num_returns > 1
-                    return tuple(MultipleReturnSelectExpression(out_expr, i) for i in range(num_returns))
-            else:
-                return func(*args, **kwargs)
+
+            out_expr = UdfExpression(
+                func=block_to_pandas_func,
+                func_ret_type=func_ret_type,
+                func_args=args,
+                func_kwargs=kwargs,
+            )
+            if isinstance(return_type, Sequence):
+                return tuple(MultipleReturnSelectExpression(out_expr, i) for i in range(len(return_type)))
+            return out_expr
 
         return wrapped_func
 
