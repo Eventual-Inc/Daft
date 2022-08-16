@@ -60,7 +60,7 @@ UNARY_OPS_RESULT_TYPE_MAPPING = {
             colname,
             op,
             UNARY_OPS_RESULT_TYPE_MAPPING[op].get(colname, ExpressionType.unknown()),
-            id=f"Op:{op},Col:{colname}",
+            id=f"Op:{op}-Col:{colname}",
         )
         for op in UNARY_OPS_RESULT_TYPE_MAPPING
         for colname in COLS
@@ -128,6 +128,7 @@ def test_unary_ops_select_types(daft_df, col1, col2, op, expected_result_type):
     assert field.daft_type == expected_result_type
 
 
+@pytest.mark.skip
 def test_udf(daft_df):
     @udf
     def my_udf(x: float, y: bool) -> str:
@@ -142,6 +143,7 @@ def test_udf(daft_df):
     assert field.daft_type == ExpressionType.from_py_type(str)
 
 
+@pytest.mark.skip
 def test_multi_return_udf(daft_df):
     @udf(num_returns=2)
     def my_udf(x: float, y: bool) -> Tuple[str, str]:

@@ -56,7 +56,8 @@ class ExpressionExecutor(Generic[ValueType]):
             result = expr._value
             return result
         elif isinstance(expr, AliasExpression):
-            return self.eval(expr._expr, operands)
+            result = self.eval(expr._expr, operands)
+            return result
         elif isinstance(expr, CallExpression):
             eval_args = tuple(self.eval(a, operands) for a in expr._args)
             eval_kwargs = {k: self.eval(v, operands) for k, v in expr._kwargs.items()}
@@ -87,7 +88,7 @@ class Expression(TreeNode["Expression"]):
     def _unary_op(
         self,
         operator: OperatorEnum,
-    ) -> CallExpression:
+    ) -> Expression:
         return CallExpression(operator, func_args=(self,))
 
     def _binary_op(
@@ -95,7 +96,7 @@ class Expression(TreeNode["Expression"]):
         operator: OperatorEnum,
         other: Any,
         # TODO: deprecate func and symbol in favor of just operator
-    ) -> CallExpression:
+    ) -> Expression:
         other_expr = self._to_expression(other)
         return CallExpression(operator, func_args=(self, other_expr))
 
@@ -103,7 +104,7 @@ class Expression(TreeNode["Expression"]):
         self,
         operator: OperatorEnum,
         other: Any,
-    ) -> CallExpression:
+    ) -> Expression:
         other_expr = self._to_expression(other)
         return other_expr._binary_op(operator, self)
 
@@ -171,9 +172,9 @@ class Expression(TreeNode["Expression"]):
 
     _sum = partialmethod(_unary_op, OperatorEnum.SUM)
     _count = partialmethod(_unary_op, OperatorEnum.COUNT)
-
     _mean = partialmethod(_unary_op, OperatorEnum.MEAN)
-
+    _min = partialmethod(_unary_op, OperatorEnum.MIN)
+    _max = partialmethod(_unary_op, OperatorEnum.MAX)
     # Logical
     __invert__ = partialmethod(_unary_op, OperatorEnum.INVERT)
 
@@ -332,7 +333,7 @@ class CallExpression(Expression):
         if any([arg_type is None for arg_type in args_resolved_types]):
             return None
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
-        ret_type = self._operator.type_matrix_dict().get(args_resolved_types_non_none, ExpressionType.unknown())
+        ret_type = self._operator.value.type_matrix_dict().get(args_resolved_types_non_none, ExpressionType.unknown())
         return ret_type
 
     @property
@@ -344,7 +345,7 @@ class CallExpression(Expression):
         return {k: self._children()[i] for k, i in self._kwargs_ids.items()}
 
     def _display_str(self) -> str:
-        symbol = self._operator.value.symbol or self._operator.name
+        symbol = self._operator.value.symbol or self._operator.value.name
 
         # Handle Binary Case:
         if len(self._kwargs) == 0 and len(self._args) == 2:
@@ -401,7 +402,6 @@ def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
             if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargss()):
                 out_expr = CallExpression(
                     expr_operator,
-                    func,
                     func_args=args,
                     func_kwargs=kwargs,
                 )

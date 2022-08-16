@@ -9,9 +9,8 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pac
 
+from daft.execution.operators import OperatorEnum, OperatorEvaluator
 from daft.internal.hashing import hash_chunked_array
-
-from ..execution.operators import OperatorEnum, OperatorEvaluator
 
 ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
 UnaryFuncType = Callable[[ArrType], ArrType]
@@ -30,6 +29,9 @@ class DataBlock(Generic[ArrType]):
 
     def __len__(self) -> int:
         return len(self.data)
+
+    def __eq__(self, o: object) -> bool:
+        return isinstance(o, DataBlock) and self.data == o.data
 
     @abstractmethod
     def to_pylist(self) -> List:
