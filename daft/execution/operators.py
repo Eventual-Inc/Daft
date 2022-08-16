@@ -153,6 +153,8 @@ _BinaryNumericalTM = frozenset(
     {
         (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
+        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["float"],
+        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
     }.items()
 )
 
@@ -160,6 +162,8 @@ _ComparisionTM = frozenset(
     {
         (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["logical"],
     }.items()
 )
@@ -220,7 +224,17 @@ class Operators(Enum):
     ADD = _NBop(name="add", symbol="+")
     SUB = _NBop(name="subtract", symbol="-")
     MUL = _NBop(name="multiply", symbol="*")
-    FLOORDIV = _NBop(name="floor_divide", symbol="//")
+    FLOORDIV = partial(
+        _BOp,
+        type_matrix=frozenset(
+            {
+                (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
+                (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["integer"],
+                (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
+                (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["integer"],
+            }.items()
+        ),
+    )(name="floor_divide", symbol="//")
     TRUEDIV = _NBop(name="true_divide", symbol="/")
     POW = _NBop(name="power", symbol="**")
     MOD = _NBop(name="mod", symbol="%")

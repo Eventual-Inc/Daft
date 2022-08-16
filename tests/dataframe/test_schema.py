@@ -58,7 +58,7 @@ UNARY_OPS_RESULT_TYPE_MAPPING = {
             colname,
             op,
             UNARY_OPS_RESULT_TYPE_MAPPING[op].get(colname, ExpressionType.unknown()),
-            id=f"Op:{op},Col:{colname}",
+            id=f"Op:{op}-Col:{colname}",
         )
         for op in UNARY_OPS_RESULT_TYPE_MAPPING
         for colname in COLS
@@ -74,11 +74,18 @@ def test_unary_ops_select_types(daft_df, colname, op, expected_result_type):
     assert expr.resolved_type() == expected_result_type
 
 
-number_cols = ["floatcol", "intcol"]
-number_number_number = {(col1, col2): ExpressionType.from_py_type(int) for col1 in number_cols for col2 in number_cols}
+number_number_number = {
+    ("intcol", "intcol"): ExpressionType.from_py_type(int),
+    ("intcol", "floatcol"): ExpressionType.from_py_type(float),
+    ("floatcol", "floatcol"): ExpressionType.from_py_type(float),
+    ("floatcol", "intcol"): ExpressionType.from_py_type(float),
+}
 bool_bool_logical = {("boolcol", "boolcol"): ExpressionType.from_py_type(bool)}
 number_number_logical = {
-    (col1, col2): ExpressionType.from_py_type(bool) for col1 in number_cols for col2 in number_cols
+    ("intcol", "intcol"): ExpressionType.from_py_type(bool),
+    ("floatcol", "floatcol"): ExpressionType.from_py_type(bool),
+    ("floatcol", "intcol"): ExpressionType.from_py_type(bool),
+    ("intcol", "floatcol"): ExpressionType.from_py_type(bool),
 }
 string_string_logical = {("stringcol", "stringcol"): ExpressionType.from_py_type(bool)}
 
@@ -86,7 +93,7 @@ BINARY_OPS_RESULT_TYPE_MAPPING = {
     "__add__": number_number_number,
     "__sub__": number_number_number,
     "__mul__": number_number_number,
-    "__floordiv__": number_number_number,
+    "__floordiv__": {k: ExpressionType.from_py_type(int) for k in number_number_number},
     "__truediv__": number_number_number,
     "__pow__": number_number_number,
     "__mod__": number_number_number,
@@ -109,7 +116,7 @@ BINARY_OPS_RESULT_TYPE_MAPPING = {
             col2,
             op,
             BINARY_OPS_RESULT_TYPE_MAPPING[op].get((col1, col2), ExpressionType.unknown()),
-            id=f"Op:{op},Cols:{(col1, col2)}",
+            id=f"Op:{op}-Cols:{(col1, col2)}",
         )
         for op in BINARY_OPS_RESULT_TYPE_MAPPING
         for col1 in COLS
