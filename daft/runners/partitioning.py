@@ -194,9 +194,17 @@ class vPartition:
                 new_columns[col_id] = dataclasses.replace(tile, block=block)
             return vPartition(partition_id=self.partition_id, columns=new_columns)
 
-    def split_by_hash(self, hash_expr: Expression, num_partitions: int) -> List[vPartition]:
-        hash_tile = self.eval_expression(hash_expr)
-        target_idx = hash_tile.block.array_hash().run_binary_operator(num_partitions, OperatorEnum.MOD)
+    def split_by_hash(self, exprs: ExpressionList, num_partitions: int) -> List[vPartition]:
+        values_to_hash = self.eval_expression_list(exprs)
+        keys = list(values_to_hash.columns.keys())
+        keys.sort()
+        hsf = None
+        assert len(keys) > 0
+        for k in keys:
+            block = values_to_hash.columns[k].block
+            hsf = block.array_hash(seed=hsf)
+        assert hsf is not None
+        target_idx = hsf.run_binary_operator(num_partitions, OperatorEnum.MOD)
         return self.split_by_index(num_partitions, target_partition_indices=target_idx)
 
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:

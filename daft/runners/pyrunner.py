@@ -232,7 +232,7 @@ class PyRunner(Runner):
         if repartition._scheme == PartitionScheme.RANDOM:
             repartitioner = PyRunnerRepartitionRandom()
         elif repartition._scheme == PartitionScheme.HASH:
-            repartitioner = PyRunnerRepartitionHash(map_args={"expr": repartition._partition_by.exprs[0]})
+            repartitioner = PyRunnerRepartitionHash(map_args={"exprs": repartition._partition_by.exprs})
         else:
             raise NotImplementedError()
         new_pset = repartitioner.run(input=prev_pset, num_target_partitions=repartition.num_partitions())

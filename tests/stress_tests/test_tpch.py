@@ -1,4 +1,7 @@
 import datetime
+import os
+import shlex
+import subprocess
 
 import pandas as pd
 import pyarrow as pa
@@ -6,7 +9,6 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
-from tests.conftest import assert_df_equals
 
 SCHEMA = {
     "part": [
@@ -90,18 +92,27 @@ SCHEMA = {
 
 
 @pytest.fixture(scope="function")
-def lineitem():
+def gen_tpch():
+    script = "scripts/tpch-gen.sh"
+    if not os.path.exists("data/tpch"):
+        subprocess.check_output(shlex.split(f"{script}"))
+
+
+@pytest.fixture(scope="function")
+def lineitem(gen_tpch):
     return DataFrame.from_csv(
         "data/tpch/lineitem.tbl", has_headers=False, column_names=SCHEMA["lineitem"] + [""], delimiter="|"
     )
 
 
-@pytest.mark.tpch
-def test_tpch_q1(lineitem):
+@pytest.mark.parametrize("num_partitions", [None, 3])
+def test_tpch_q1(lineitem, tmp_path, num_partitions):
+    if num_partitions is not None:
+        lineitem = lineitem.repartition(num_partitions)
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
     daft_df = (
-        lineitem.where(col("L_SHIPDATE") <= pa.scalar(datetime.date(1998, 9, 13)))
+        lineitem.where(col("L_SHIPDATE") <= pa.scalar(datetime.date(1998, 9, 2)))
         .groupby(col("L_RETURNFLAG"), col("L_LINESTATUS"))
         .agg(
             [
@@ -113,17 +124,9 @@ def test_tpch_q1(lineitem):
                 (col("L_EXTENDEDPRICE").alias("avg_price"), "mean"),
                 (col("L_DISCOUNT").alias("avg_disc"), "mean"),
                 (col("L_QUANTITY").alias("count_order"), "count"),
-                # col("L_QUANTITY").agg.sum().alias("sum_qty"),
-                # col("L_EXTENDEDPRICE").agg.sum().alias("sum_base_price"),
-                # discounted_price.agg.sum().alias("sum_disc_price"),
-                # taxed_discounted_price.agg.sum().alias("sum_charge"),
-                # col("L_QUANTITY").agg.mean().alias("avg_qty"),
-                # col("L_EXTENDEDPRICE").agg.mean().alias("avg_price"),
-                # col("L_DISCOUNT").agg.mean().alias("avg_disc"),
-                # col("L_QUANTITY").agg.count().alias("count_order"),
             ]
         )
-        .sort(col("L_RETURNFLAG"), col("L_LINESTATUS"))
+        .sort(col("L_RETURNFLAG"))
     )
     answer = pd.read_csv("data/tpch/answers/q1.out", delimiter="|")
     answer.columns = [
@@ -139,4 +142,18 @@ def test_tpch_q1(lineitem):
         "count_order",
     ]
     daft_pd_df = daft_df.to_pandas()
-    assert_df_equals(daft_pd_df, answer, sort_key=["L_RETURNFLAG", "L_LINESTATUS"])
+    daft_pd_df = daft_pd_df.sort_values(by=["L_RETURNFLAG", "L_LINESTATUS"])  # WE don't have multicolumn sort
+    csv_out = f"{tmp_path}/q1.out"
+    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
+
+    assert run_tpch_checker(1, csv_out)
+
+
+def run_tpch_checker(q_num: int, result_file: str) -> bool:
+    script = "./cmpq.pl"
+    answer = f"../answers/q{q_num}.out"
+
+    output = subprocess.check_output(
+        shlex.split(f"{script} {q_num} {result_file} {answer}"), cwd="data/tpch/check_answers"
+    )
+    return output.decode() == f"Query {q_num} 0 unacceptable missmatches\n"

@@ -3,7 +3,18 @@ from __future__ import annotations
 import collections
 from abc import abstractmethod
 from functools import partial
-from typing import Any, Callable, ClassVar, Generic, List, Tuple, Type, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Generic,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import numpy as np
 import pyarrow as pa
@@ -132,7 +143,7 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @abstractmethod
-    def array_hash(self) -> DataBlock[ArrType]:
+    def array_hash(self, seed: Optional[DataBlock[ArrType]] = None) -> DataBlock[ArrType]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -222,12 +233,24 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         pivots = np.quantile(self.data.to_numpy(), quantiles, method="closest_observation")
         return DataBlock.make_block(data=pivots)
 
-    def array_hash(self) -> DataBlock[ArrowArrType]:
+    def array_hash(self, seed: Optional[DataBlock[ArrowArrType]] = None) -> DataBlock[ArrowArrType]:
         assert isinstance(self.data, pa.ChunkedArray)
+        assert seed is None or isinstance(seed.data, pa.ChunkedArray)
+
         pa_type = self.data.type
         if not (pa.types.is_integer(pa_type) or pa.types.is_string(pa_type)):
             raise TypeError(f"can only hash ints or strings not {pa_type}")
-        return ArrowDataBlock(data=hash_chunked_array(self.data))
+        hashed = hash_chunked_array(self.data)
+        if seed is None:
+            return ArrowDataBlock(data=hashed)
+        else:
+            seed_pa_type = seed.data.type
+            if not (pa.types.is_uint64(seed_pa_type)):
+                raise TypeError(f"can only seed hash uint64 not {seed_pa_type}")
+
+            seed_arr = seed.data.to_numpy()
+            seed_arr = seed_arr ^ (hashed.to_numpy() + 0x9E3779B9 + (seed_arr << 6) + (seed_arr >> 2))
+            return ArrowDataBlock(data=seed_arr)
 
     def agg(self, op: str) -> DataBlock[ArrowArrType]:
 
