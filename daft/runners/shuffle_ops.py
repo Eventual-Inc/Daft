@@ -8,6 +8,8 @@ from daft.expressions import Expression
 from daft.runners.blocks import ArrowArrType, DataBlock
 from daft.runners.partitioning import PartID, vPartition
 
+from ..logical.schema import ExpressionList
+
 
 class ShuffleOp:
     def __init__(self, map_args: Optional[Dict[str, Any]] = None, reduce_args: Optional[Dict[str, Any]] = None) -> None:
@@ -48,10 +50,10 @@ class RepartitionRandomOp(ShuffleOp):
 class RepartitionHashOp(ShuffleOp):
     @staticmethod
     def map_fn(
-        input: vPartition, output_partitions: int, expr: Optional[Expression] = None
+        input: vPartition, output_partitions: int, exprs: Optional[ExpressionList] = None
     ) -> Dict[PartID, vPartition]:
-        assert expr is not None
-        new_parts = input.split_by_hash(expr, num_partitions=output_partitions)
+        assert exprs is not None
+        new_parts = input.split_by_hash(exprs, num_partitions=output_partitions)
         return {PartID(i): part for i, part in enumerate(new_parts)}
 
     @staticmethod

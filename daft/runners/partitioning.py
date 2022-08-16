@@ -179,6 +179,7 @@ class vPartition:
             return vPartition(partition_id=self.partition_id, columns=agged)
         else:
             grouped_blocked = self.eval_expression_list(group_by)
+            print(f"grouping by {group_by}")
             assert len(evaled_expressions.columns) == len(ops)
             gcols, acols = DataBlock.group_by_agg(
                 list(tile.block for tile in grouped_blocked.columns.values()),
@@ -194,9 +195,16 @@ class vPartition:
                 new_columns[col_id] = dataclasses.replace(tile, block=block)
             return vPartition(partition_id=self.partition_id, columns=new_columns)
 
-    def split_by_hash(self, hash_expr: Expression, num_partitions: int) -> List[vPartition]:
-        hash_tile = self.eval_expression(hash_expr)
-        target_idx = hash_tile.block.array_hash().run_binary_operator(num_partitions, OperatorEnum.MOD)
+    def split_by_hash(self, exprs: ExpressionList, num_partitions: int) -> List[vPartition]:
+        values_to_hash = self.eval_expression_list(exprs)
+        keys = list(values_to_hash.columns.keys())
+        keys.sort()
+        hsf = None
+        assert len(keys) > 0
+        for k in keys:
+            block = values_to_hash.columns[k].block
+            hsf = block.array_hash(seed=hsf)
+        target_idx = hsf.run_binary_operator(num_partitions, OperatorEnum.MOD)
         return self.split_by_index(num_partitions, target_partition_indices=target_idx)
 
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:

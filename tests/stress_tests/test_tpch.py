@@ -101,7 +101,7 @@ def test_tpch_q1(lineitem):
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
     daft_df = (
-        lineitem.where(col("L_SHIPDATE") <= pa.scalar(datetime.date(1998, 9, 13)))
+        lineitem.where(col("L_SHIPDATE") <= pa.scalar(datetime.date(1998, 9, 2)))
         .groupby(col("L_RETURNFLAG"), col("L_LINESTATUS"))
         .agg(
             [
@@ -123,7 +123,7 @@ def test_tpch_q1(lineitem):
                 # col("L_QUANTITY").agg.count().alias("count_order"),
             ]
         )
-        .sort(col("L_RETURNFLAG"), col("L_LINESTATUS"))
+        .sort(col("L_RETURNFLAG"))
     )
     answer = pd.read_csv("data/tpch/answers/q1.out", delimiter="|")
     answer.columns = [
@@ -139,4 +139,9 @@ def test_tpch_q1(lineitem):
         "count_order",
     ]
     daft_pd_df = daft_df.to_pandas()
+    print(answer["sum_base_price"][[0, 1, 2, 3]] - daft_pd_df["sum_base_price"])
+    import ipdb
+
+    ipdb.set_trace()
+
     assert_df_equals(daft_pd_df, answer, sort_key=["L_RETURNFLAG", "L_LINESTATUS"])

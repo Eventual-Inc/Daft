@@ -153,6 +153,7 @@ class DataFrame:
             ),
         )
         fields = [(field.name, field.type) for field in sampled_tbl.schema]
+        print(fields)
         schema = ExpressionList(
             [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
         )
