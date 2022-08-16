@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import collections
 from abc import abstractmethod
-from dataclasses import dataclass
-from functools import partialmethod
-from typing import Any, Callable, ClassVar, Generic, List, Tuple, TypeVar, Union
+from functools import partial
+from typing import Any, Callable, ClassVar, Generic, List, Tuple, Type, TypeVar, Union
 
 import numpy as np
 import pyarrow as pa
@@ -12,80 +11,16 @@ import pyarrow.compute as pac
 
 from daft.internal.hashing import hash_chunked_array
 
-from ..execution.operators import OperatorEvaluator
+from ..execution.operators import OperatorEnum, OperatorEvaluator
 
 ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
 UnaryFuncType = Callable[[ArrType], ArrType]
 BinaryFuncType = Callable[[ArrType, ArrType], ArrType]
 
 
-@dataclass
-class FunctionDispatch:
-    # UnaryOps
-    # Arithmetic
-
-    neg: UnaryFuncType
-    pos: UnaryFuncType
-    abs: UnaryFuncType
-
-    # Logical
-    invert: UnaryFuncType
-
-    # BinaryOps
-    # Arithmetic
-    add: BinaryFuncType
-    sub: BinaryFuncType
-    mul: BinaryFuncType
-    truediv: BinaryFuncType
-    pow: BinaryFuncType
-    mod: BinaryFuncType
-
-    # Logical
-    and_: BinaryFuncType
-    or_: BinaryFuncType
-    lt: BinaryFuncType
-    le: BinaryFuncType
-    eq: BinaryFuncType
-    ne: BinaryFuncType
-    gt: BinaryFuncType
-    ge: BinaryFuncType
-
-    # Dataframe ops
-    filter: BinaryFuncType
-    take: BinaryFuncType
-
-
-def arrow_mod(arr, m):
-    return np.mod(arr, m.as_py())
-
-
-ArrowFunctionDispatch = FunctionDispatch(
-    neg=pac.negate,
-    pos=lambda x: x,
-    abs=pac.abs,
-    invert=pac.invert,
-    add=pac.add,
-    sub=pac.subtract,
-    mul=pac.multiply,
-    truediv=pac.divide,
-    pow=pac.power,
-    mod=arrow_mod,
-    and_=pac.and_,
-    or_=pac.or_,
-    lt=pac.less,
-    le=pac.less_equal,
-    eq=pac.equal,
-    ne=pac.not_equal,
-    gt=pac.greater,
-    ge=pac.greater_equal,
-    filter=pac.array_filter,
-    take=pac.take,
-)
-
-
 class DataBlock(Generic[ArrType]):
     data: ArrType
-    operators: ClassVar[FunctionDispatch]
+    evaluator: ClassVar[Type[OperatorEvaluator]]
 
     def __init__(self, data: ArrType) -> None:
         self.data = data
@@ -119,8 +54,7 @@ class DataBlock(Generic[ArrType]):
                 raise ValueError(f"Don't know what block {data} should be")
             return ArrowDataBlock(data=pa.scalar(data))
 
-    def _unary_op(self, func) -> DataBlock[ArrType]:
-        fn = getattr(self.__class__.operators, func)
+    def _unary_op(self, fn: Callable[[ArrType], ArrType]) -> DataBlock[ArrType]:
         return DataBlock.make_block(data=fn(self.data))
 
     def _convert_to_block(self, input: Any) -> DataBlock[ArrType]:
@@ -129,62 +63,29 @@ class DataBlock(Generic[ArrType]):
         else:
             return DataBlock.make_block(input)
 
-    def _binary_op(self, other: Any, func) -> DataBlock[ArrType]:
+    def _binary_op(self, other: Any, fn: Callable[[ArrType, ArrType], ArrType]) -> DataBlock[ArrType]:
         other = self._convert_to_block(other)
-        fn = getattr(self.__class__.operators, func)
         return DataBlock.make_block(data=fn(self.data, other.data))
 
-    def _reverse_binary_op(self, other: Any, func) -> DataBlock[ArrType]:
+    def _reverse_binary_op(self, other: Any, fn) -> DataBlock[ArrType]:
         other_block: DataBlock[ArrType] = self._convert_to_block(other)
-        return other_block._binary_op(self, func=func)
+        return other_block._binary_op(self, fn=fn)
 
-    # UnaryOps
+    def run_unary_operator(self, op: OperatorEnum) -> DataBlock[ArrType]:
+        op_name = op.name
+        fn: Callable[[DataBlock[ArrType]], DataBlock[ArrType]] = getattr(self.evaluator, op_name)
+        return fn(self)
 
-    # Arithmetic
-    __neg__ = partialmethod(_unary_op, func="neg")
-    __pos__ = partialmethod(_unary_op, func="pos")
-    __abs__ = partialmethod(_unary_op, func="abs")
-
-    # # Logical
-    __invert__ = partialmethod(_unary_op, func="invert")
-
-    # # BinaryOps
-
-    # # Arithmetic
-    __add__ = partialmethod(_binary_op, func="add")
-    __sub__ = partialmethod(_binary_op, func="sub")
-    __mul__ = partialmethod(_binary_op, func="mul")
-    __truediv__ = partialmethod(_binary_op, func="truediv")
-    __pow__ = partialmethod(_binary_op, func="pow")
-    __mod__ = partialmethod(_binary_op, func="mod")
-
-    # # Reverse Arithmetic
-    __radd__ = partialmethod(_reverse_binary_op, func="add")
-    __rsub__ = partialmethod(_reverse_binary_op, func="sub")
-    __rmul__ = partialmethod(_reverse_binary_op, func="mul")
-    __rtruediv__ = partialmethod(_reverse_binary_op, func="truediv")
-    __rpow__ = partialmethod(_reverse_binary_op, func="pow")
-
-    # # Logical
-    __and__ = partialmethod(_binary_op, func="and_")
-    __or__ = partialmethod(_binary_op, func="or_")
-
-    __lt__ = partialmethod(_binary_op, func="lt")
-    __le__ = partialmethod(_binary_op, func="le")
-    __eq__ = partialmethod(_binary_op, func="eq")  # type: ignore
-    __ne__ = partialmethod(_binary_op, func="ne")  # type: ignore
-    __gt__ = partialmethod(_binary_op, func="gt")
-    __ge__ = partialmethod(_binary_op, func="ge")
-
-    # # Reverse Logical
-    __rand__ = partialmethod(_reverse_binary_op, func="and_")
-    __ror__ = partialmethod(_reverse_binary_op, func="or_")
+    def run_binary_operator(self, other: Any, op: OperatorEnum) -> DataBlock[ArrType]:
+        op_name = op.name
+        fn: Callable[[DataBlock[ArrType], DataBlock[ArrType]], DataBlock[ArrType]] = getattr(self.evaluator, op_name)
+        return fn(self, other)
 
     def filter(self, mask: DataBlock) -> DataBlock:
-        return self._binary_op(mask, func="filter")
+        return self._binary_op(mask, fn=pac.array_filter)
 
     def take(self, indices: DataBlock) -> DataBlock:
-        return self._binary_op(indices, func="take")
+        return self._binary_op(indices, fn=pac.take)
 
     def head(self, num: int) -> DataBlock[ArrType]:
         return DataBlock.make_block(self.data[:num])
@@ -217,7 +118,7 @@ class DataBlock(Generic[ArrType]):
         return first_type._merge_blocks(blocks)
 
     @abstractmethod
-    def search_sorted(self, pivots: DataBlock[ArrType]) -> DataBlock[ArrType]:
+    def search_sorted(self, pivots: DataBlock[ArrType], reverse: bool = False) -> DataBlock[ArrType]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -261,8 +162,6 @@ class PyListDataBlock(DataBlock[List]):
 
 
 class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
-    operators: ClassVar[FunctionDispatch] = ArrowFunctionDispatch
-
     def to_pylist(self) -> List:
         pylist: List = self.data.to_pylist()
         return pylist
@@ -302,9 +201,11 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
         sampled = np.random.choice(self.data, num, replace=replace)
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
 
-    def search_sorted(self, pivots: DataBlock) -> ArrowDataBlock:
+    def search_sorted(self, pivots: DataBlock, reverse: bool = False) -> ArrowDataBlock:
         arr = self.data.to_numpy()
         indices = np.searchsorted(pivots.data.to_numpy(), arr)
+        if reverse:
+            indices = len(pivots) - indices
         return ArrowDataBlock(data=pa.chunked_array([indices]))
 
     def quantiles(self, num: int) -> DataBlock:
@@ -352,29 +253,49 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
         return gcols, acols
 
 
-class ArrowEvaluator(OperatorEvaluator[ArrowDataBlock]):
-    NEGATE = ArrowDataBlock.__neg__
-    POSITIVE = ArrowDataBlock.__pos__
-    ABS = ArrowDataBlock.__abs__
+def arrow_mod(arr, m):
+    return np.mod(arr, m.as_py())
+
+
+def arrow_floordiv(arr, m):
+    return pac.floor(pac.divide(arr, m))
+
+
+def _arr_unary_op(fn: Callable[[pa.ChunkedArray], pa.ChunkedArray]) -> Callable[[ArrowDataBlock], ArrowDataBlock]:
+    return partial(ArrowDataBlock._unary_op, fn=fn)  # type: ignore
+
+
+def _arr_bin_op(
+    fn: Callable[[pa.ChunkedArray, pa.ChunkedArray], pa.ChunkedArray]
+) -> Callable[[ArrowDataBlock, ArrowDataBlock], ArrowDataBlock]:
+    return partial(ArrowDataBlock._binary_op, fn=fn)  # type: ignore
+
+
+class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
+    NEGATE = _arr_unary_op(pac.negate)
+    POSITIVE = ArrowDataBlock.identity
+    ABS = _arr_unary_op(pac.abs)
     SUM = ArrowDataBlock.identity
-    MEAN: ArrowDataBlock.identity
+    MEAN = ArrowDataBlock.identity
     MIN = ArrowDataBlock.identity
     MAX = ArrowDataBlock.identity
     COUNT = ArrowDataBlock.identity
-    INVERT = ArrowDataBlock.__invert__
+    INVERT = _arr_unary_op(pac.invert)
+    ADD = _arr_bin_op(pac.add)
+    SUB = _arr_bin_op(pac.subtract)
+    MUL = _arr_bin_op(pac.multiply)
+    FLOORDIV = _arr_bin_op(arrow_floordiv)
+    TRUEDIV = _arr_bin_op(pac.divide)
+    POW = _arr_bin_op(pac.power)
+    MOD = _arr_bin_op(arrow_mod)
+    AND = _arr_bin_op(pac.and_)
+    OR = _arr_bin_op(pac.or_)
+    LT = _arr_bin_op(pac.less)
+    LE = _arr_bin_op(pac.less_equal)
+    EQ = _arr_bin_op(pac.equal)
+    NEQ = _arr_bin_op(pac.not_equal)
+    GT = _arr_bin_op(pac.greater)
+    GE = _arr_bin_op(pac.greater_equal)
 
-    ADD = ArrowDataBlock.__add__
-    SUB = ArrowDataBlock.__sub__
-    MUL = ArrowDataBlock.__mul__
-    FLOORDIV = None
-    TRUEDIV = ArrowDataBlock.__truediv__
-    POW = ArrowDataBlock.__pow__
-    MOD = ArrowDataBlock.__mod__
-    AND = ArrowDataBlock.__and__
-    OR = ArrowDataBlock.__or__
-    LT = ArrowDataBlock.__lt__
-    LE = ArrowDataBlock.__le__
-    EQ = ArrowDataBlock.__eq__
-    NEQ = ArrowDataBlock.__ne__
-    GT = ArrowDataBlock.__gt__
-    GE = ArrowDataBlock.__ge__
+
+ArrowDataBlock.evaluator = ArrowEvaluator

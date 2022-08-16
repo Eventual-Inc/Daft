@@ -67,7 +67,6 @@ class CoalesceOp(ShuffleOp):
 
         tgt_idx = math.floor((output_partitions / num_input_partitions) * input.partition_id)
         return {PartID(tgt_idx): input}
-        # return input.split_by_hash(expr, num_partitions=output_partitions)
 
     @staticmethod
     def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
@@ -84,15 +83,14 @@ class SortOp(ShuffleOp):
         desc: Optional[bool] = None,
     ) -> Dict[PartID, vPartition]:
         assert expr is not None and boundaries is not None and desc is not None
+        assert len(boundaries) == (output_partitions - 1)
         if output_partitions == 1:
             return {PartID(0): input}
         sort_key = input.eval_expression(expr).block
         argsort_idx = sort_key.argsort()
         sorted_input = input.take(argsort_idx)
         sorted_keys = sort_key.take(argsort_idx)
-        target_idx = sorted_keys.search_sorted(boundaries)
-        if desc:
-            target_idx = (output_partitions - 1) - target_idx
+        target_idx = sorted_keys.search_sorted(boundaries, reverse=desc)
         new_parts = sorted_input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
         return {PartID(i): part for i, part in enumerate(new_parts)}
 

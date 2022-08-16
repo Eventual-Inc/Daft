@@ -278,9 +278,10 @@ class DataFrame:
 
         finalizer_ops_funcs = {"mean": lambda x, y: (x + 0.0) / (y + 0.0)}
 
-        first_phase_ops = []
-        second_phase_ops = []
-        finalizer_phase_ops = []
+        first_phase_ops: List[Tuple[Expression, str]] = []
+        second_phase_ops: List[Tuple[Expression, str]] = []
+        finalizer_phase_ops: List[Expression] = []
+        need_final_projection = False
         for e, op in zip(exprs_to_agg, ops):
             assert op in intermediate_ops
             ops_to_add = intermediate_ops[op]
@@ -297,9 +298,10 @@ class DataFrame:
             ops_to_add = reduction_ops[op]
             added_exprs = []
             for agg_op, result_name in zip(ops_to_add, e_intermediate_name):
+                assert result_name is not None
                 col_e = col(result_name)
                 f = function_lookup[agg_op]
-                added = f(col_e)
+                added: Expression = f(col_e)
                 if op in finalizer_ops_funcs:
                     name = f"{result_name}_{agg_op}"
                     added = added.alias(name)
@@ -310,10 +312,21 @@ class DataFrame:
 
             if op in finalizer_ops_funcs:
                 f = finalizer_ops_funcs[op]
-                new_e = f(*[col(ae.name()) for ae in added_exprs]).alias(e.name())
+                operand_args = []
+                for ae in added_exprs:
+                    col_name = ae.name()
+                    assert col_name is not None
+                    operand_args.append(col(col_name))
+                final_name = e.name()
+                assert final_name is not None
+                new_e = f(*operand_args).alias(final_name)
                 finalizer_phase_ops.append(new_e)
+                need_final_projection = True
             else:
-                finalizer_phase_ops.extend([col(ae.name()) for ae in added_exprs])
+                for ae in added_exprs:
+                    col_name = ae.name()
+                    assert col_name is not None
+                    finalizer_phase_ops.append(col(col_name))
 
         first_phase_lagg_op = logical_plan.LocalAggregate(self._plan, agg=first_phase_ops, group_by=group_by)
         repart_op: logical_plan.LogicalPlan
@@ -333,8 +346,14 @@ class DataFrame:
 
         if group_by is not None:
             final_schema = group_by.union(final_schema)
-        finalizer_op = logical_plan.Projection(gagg_op, final_schema)
-        return DataFrame(finalizer_op)
+
+        final_op: logical_plan.LogicalPlan
+        if need_final_projection:
+            final_op = logical_plan.Projection(gagg_op, final_schema)
+        else:
+            final_op = gagg_op
+
+        return DataFrame(final_op)
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
         return self._agg([(c, "sum") for c in cols])

@@ -213,12 +213,15 @@ class OperatorEnum(Enum):
     GE = _CBop(name="greater_than_equal", symbol=">=")
 
 
-ValueType = TypeVar("ValueType")
+ValueType = TypeVar("ValueType", covariant=True)
 UnaryFunction = Callable[[ValueType], ValueType]
-BinaryFunction = Callable[[ValueType], ValueType]
+BinaryFunction = Callable[[ValueType, ValueType], ValueType]
 
 
 class OperatorEvaluator(Protocol[ValueType]):
+    def __new__(cls):
+        raise TypeError("Evaluator classes cannot be instantiated")
+
     NEGATE: UnaryFunction
     POSITIVE: UnaryFunction
     ABS: UnaryFunction

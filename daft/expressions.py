@@ -45,13 +45,16 @@ class ExpressionExecutor(Generic[ValueType]):
     def __init__(self, op_eval: Type[OperatorEvaluator[ValueType]]) -> None:
         self.op_eval = op_eval
 
-    def eval(self, expr: Expression, operands: Dict[str, ValueType]) -> ValueType:
+    def eval(self, expr: Expression, operands: Dict[str, Any]) -> ValueType:
+        result: ValueType
         if isinstance(expr, ColumnExpression):
             name = expr.name()
             assert name is not None
-            return operands[name]
+            result = operands[name]
+            return result
         elif isinstance(expr, LiteralExpression):
-            return expr._value
+            result = expr._value
+            return result
         elif isinstance(expr, AliasExpression):
             return self.eval(expr._expr, operands)
         elif isinstance(expr, CallExpression):
@@ -59,7 +62,8 @@ class ExpressionExecutor(Generic[ValueType]):
             eval_kwargs = {k: self.eval(v, operands) for k, v in expr._kwargs.items()}
             op = expr._operator
             func = getattr(self.op_eval, op.name)
-            return func(*eval_args, **eval_kwargs)
+            result = func(*eval_args, **eval_kwargs)
+            return result
         else:
             raise NotImplementedError()
 

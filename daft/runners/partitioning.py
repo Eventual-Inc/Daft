@@ -12,6 +12,8 @@ from daft.expressions import ColID, Expression, ExpressionExecutor
 from daft.logical.schema import ExpressionList
 from daft.runners.blocks import ArrowEvaluator, DataBlock
 
+from ..execution.operators import OperatorEnum
+
 PartID = int
 
 
@@ -157,7 +159,7 @@ class vPartition:
         assert len(mask_list.columns) > 0
         mask = next(iter(mask_list.columns.values())).block
         for to_and in mask_list.columns.values():
-            mask &= to_and.block
+            mask = mask.run_binary_operator(to_and.block, OperatorEnum.AND)
         return self.for_each_column_block(partial(DataBlock.filter, mask=mask))
 
     def sort(self, sort_key: Expression, desc: bool = False) -> vPartition:
@@ -195,7 +197,7 @@ class vPartition:
 
     def split_by_hash(self, hash_expr: Expression, num_partitions: int) -> List[vPartition]:
         hash_tile = self.eval_expression(hash_expr)
-        target_idx = hash_tile.block.array_hash() % num_partitions
+        target_idx = hash_tile.block.array_hash().run_binary_operator(num_partitions, OperatorEnum.MOD)
         return self.split_by_index(num_partitions, target_partition_indices=target_idx)
 
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:
