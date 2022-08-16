@@ -146,7 +146,7 @@ class DataFrame:
             ),
             read_options=csv.ReadOptions(
                 # Column names will be read from the first CSV row if column_names is None/empty and has_headers
-                autogenerate_column_names=False if has_headers else True,
+                autogenerate_column_names=(not has_headers) and (column_names is None),
                 column_names=column_names,
                 # If user specifies that CSV has headers, and also provides column names, we skip the header row
                 skip_rows_after_names=1 if has_headers and column_names is not None else 0,

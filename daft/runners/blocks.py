@@ -59,18 +59,20 @@ class DataBlock(Generic[ArrType]):
     def _unary_op(self, fn: Callable[[ArrType], ArrType]) -> DataBlock[ArrType]:
         return DataBlock.make_block(data=fn(self.data))
 
-    def _convert_to_block(self, input: Any) -> DataBlock[ArrType]:
+    @classmethod
+    def _convert_to_block(cls, input: Any) -> DataBlock[ArrType]:
         if isinstance(input, DataBlock):
             return input
         else:
             return DataBlock.make_block(input)
 
     def _binary_op(self, other: Any, fn: Callable[[ArrType, ArrType], ArrType]) -> DataBlock[ArrType]:
-        other = self._convert_to_block(other)
+        self = DataBlock._convert_to_block(self)
+        other = DataBlock._convert_to_block(other)
         return DataBlock.make_block(data=fn(self.data, other.data))
 
     def _reverse_binary_op(self, other: Any, fn) -> DataBlock[ArrType]:
-        other_block: DataBlock[ArrType] = self._convert_to_block(other)
+        other_block: DataBlock[ArrType] = DataBlock._convert_to_block(other)
         return other_block._binary_op(self, fn=fn)
 
     def run_unary_operator(self, op: OperatorEnum) -> DataBlock[ArrType]:
