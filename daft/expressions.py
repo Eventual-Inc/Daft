@@ -2,17 +2,29 @@ from __future__ import annotations
 
 import functools
 import itertools
-import operator
 from abc import abstractmethod
 from functools import partialmethod
 from inspect import signature
-from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, cast
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    NewType,
+    Optional,
+    Tuple,
+    Type,
+    cast,
+)
 
 from daft.execution.operators import (
     CompositeExpressionType,
     ExpressionOperator,
     ExpressionType,
-    Operators,
+    OperatorEnum,
+    OperatorEvaluator,
+    ValueType,
 )
 from daft.internal.treenode import TreeNode
 
@@ -27,6 +39,34 @@ def lit(val: Any) -> LiteralExpression:
 
 _COUNTER = itertools.count()
 ColID = NewType("ColID", int)
+
+
+class ExpressionExecutor(Generic[ValueType]):
+    def __init__(self, op_eval: Type[OperatorEvaluator[ValueType]]) -> None:
+        self.op_eval = op_eval
+
+    def eval(self, expr: Expression, operands: Dict[str, Any]) -> ValueType:
+        result: ValueType
+        if isinstance(expr, ColumnExpression):
+            name = expr.name()
+            assert name is not None
+            result = operands[name]
+            return result
+        elif isinstance(expr, LiteralExpression):
+            result = expr._value
+            return result
+        elif isinstance(expr, AliasExpression):
+            result = self.eval(expr._expr, operands)
+            return result
+        elif isinstance(expr, CallExpression):
+            eval_args = tuple(self.eval(a, operands) for a in expr._args)
+            eval_kwargs = {k: self.eval(v, operands) for k, v in expr._kwargs.items()}
+            op = expr._operator
+            func = getattr(self.op_eval, op.name)
+            result = func(*eval_args, **eval_kwargs)
+            return result
+        else:
+            raise NotImplementedError()
 
 
 class Expression(TreeNode["Expression"]):
@@ -47,34 +87,25 @@ class Expression(TreeNode["Expression"]):
 
     def _unary_op(
         self,
-        operator: ExpressionOperator,
-        # TODO: deprecate func and symbol in favor of just operator
-        func: Callable,
-        symbol: Optional[str] = None,
+        operator: OperatorEnum,
     ) -> Expression:
-        return CallExpression(operator, func, func_args=(self,), symbol=symbol)
+        return CallExpression(operator, func_args=(self,))
 
     def _binary_op(
         self,
-        operator: ExpressionOperator,
+        operator: OperatorEnum,
         other: Any,
-        # TODO: deprecate func and symbol in favor of just operator
-        func: Callable,
-        symbol: Optional[str] = None,
     ) -> Expression:
         other_expr = self._to_expression(other)
-        return CallExpression(operator, func, func_args=(self, other_expr), symbol=symbol)
+        return CallExpression(operator, func_args=(self, other_expr))
 
     def _reverse_binary_op(
         self,
-        operator: ExpressionOperator,
+        operator: OperatorEnum,
         other: Any,
-        # TODO: deprecate func and symbol in favor of just operator
-        func: Callable,
-        symbol: Optional[str] = None,
     ) -> Expression:
         other_expr = self._to_expression(other)
-        return other_expr._binary_op(operator, self, func, symbol=symbol)
+        return other_expr._binary_op(operator, self)
 
     @abstractmethod
     def resolved_type(self) -> Optional[ExpressionType]:
@@ -134,58 +165,59 @@ class Expression(TreeNode["Expression"]):
     # UnaryOps
 
     # Arithmetic
-    __neg__ = partialmethod(_unary_op, Operators.NEGATE.value, func=operator.neg, symbol="-")
-    __pos__ = partialmethod(_unary_op, Operators.POSITIVE.value, func=operator.pos, symbol="+")
-    __abs__ = partialmethod(_unary_op, Operators.ABS.value, func=operator.abs)
+    __neg__ = partialmethod(_unary_op, OperatorEnum.NEGATE)
+    __pos__ = partialmethod(_unary_op, OperatorEnum.POSITIVE)
+    __abs__ = partialmethod(_unary_op, OperatorEnum.ABS)
 
+    _sum = partialmethod(_unary_op, OperatorEnum.SUM)
+    _count = partialmethod(_unary_op, OperatorEnum.COUNT)
+    _mean = partialmethod(_unary_op, OperatorEnum.MEAN)
+    _min = partialmethod(_unary_op, OperatorEnum.MIN)
+    _max = partialmethod(_unary_op, OperatorEnum.MAX)
     # Logical
-    __invert__ = partialmethod(_unary_op, Operators.INVERT.value, func=operator.not_, symbol="~")
+    __invert__ = partialmethod(_unary_op, OperatorEnum.INVERT)
 
-    # function
-    def map(self, func: Callable) -> Expression:
-        return self._unary_op(
-            # TODO(jay): Figure out how to do this operator correctly, we use a placeholder here for now
-            None,  # type: ignore
-            func,
-        )
+    # # function
+    # def map(self, func: Callable) -> Expression:
+    #     return self._unary_op(
+    #         # TODO(jay): Figure out how to do this operator correctly, we use a placeholder here for now
+    #         None,  # type: ignore
+    #         func,
+    #     )
 
     # BinaryOps
 
     # Arithmetic
-    __add__ = partialmethod(_binary_op, Operators.ADD.value, func=operator.add, symbol="+")
-    __sub__ = partialmethod(_binary_op, Operators.SUB.value, func=operator.sub, symbol="-")
-    __mul__ = partialmethod(_binary_op, Operators.MUL.value, func=operator.mul, symbol="*")
-    __floordiv__ = partialmethod(_binary_op, Operators.FLOORDIV.value, func=operator.floordiv, symbol="//")
-    __truediv__ = partialmethod(_binary_op, Operators.TRUEDIV.value, func=operator.truediv, symbol="/")
-    __pow__ = partialmethod(_binary_op, Operators.POW.value, func=operator.pow, symbol="**")
-    __mod__ = partialmethod(_binary_op, Operators.MOD.value, func=operator.mod, symbol="%")
+    __add__ = partialmethod(_binary_op, OperatorEnum.ADD)
+    __sub__ = partialmethod(_binary_op, OperatorEnum.SUB)
+    __mul__ = partialmethod(_binary_op, OperatorEnum.MUL)
+    __floordiv__ = partialmethod(_binary_op, OperatorEnum.FLOORDIV)
+    __truediv__ = partialmethod(_binary_op, OperatorEnum.TRUEDIV)
+    __pow__ = partialmethod(_binary_op, OperatorEnum.POW)
+    __mod__ = partialmethod(_binary_op, OperatorEnum.MOD)
 
     # Reverse Arithmetic
-    __radd__ = partialmethod(_reverse_binary_op, Operators.ADD.value, func=operator.add, symbol="+")
-    __rsub__ = partialmethod(_reverse_binary_op, Operators.SUB.value, func=operator.sub, symbol="-")
-    __rmul__ = partialmethod(_reverse_binary_op, Operators.MUL.value, func=operator.mul, symbol="*")
-    __rfloordiv__ = partialmethod(_reverse_binary_op, Operators.FLOORDIV.value, func=operator.floordiv, symbol="//")
-    __rtruediv__ = partialmethod(_reverse_binary_op, Operators.TRUEDIV.value, func=operator.truediv, symbol="/")
-    __rpow__ = partialmethod(_reverse_binary_op, Operators.POW.value, func=operator.pow, symbol="**")
+    __radd__ = partialmethod(_reverse_binary_op, OperatorEnum.ADD)
+    __rsub__ = partialmethod(_reverse_binary_op, OperatorEnum.SUB)
+    __rmul__ = partialmethod(_reverse_binary_op, OperatorEnum.MUL)
+    __rfloordiv__ = partialmethod(_reverse_binary_op, OperatorEnum.FLOORDIV)
+    __rtruediv__ = partialmethod(_reverse_binary_op, OperatorEnum.TRUEDIV)
+    __rpow__ = partialmethod(_reverse_binary_op, OperatorEnum.POW)
 
     # Logical
-    __and__ = partialmethod(_binary_op, Operators.AND.value, func=operator.and_, symbol="&")
-    __or__ = partialmethod(_binary_op, Operators.OR.value, func=operator.or_, symbol="|")
+    __and__ = partialmethod(_binary_op, OperatorEnum.AND)
+    __or__ = partialmethod(_binary_op, OperatorEnum.OR)
 
-    __lt__ = partialmethod(_binary_op, Operators.LT.value, func=operator.lt, symbol="<")
-    __le__ = partialmethod(_binary_op, Operators.LE.value, func=operator.le, symbol="<=")
-    __eq__ = partialmethod(_binary_op, Operators.EQ.value, func=operator.eq, symbol="=")  # type: ignore
-    __ne__ = partialmethod(_binary_op, Operators.NEQ.value, func=operator.ne, symbol="!=")  # type: ignore
-    __gt__ = partialmethod(_binary_op, Operators.GT.value, func=operator.gt, symbol=">")
-    __ge__ = partialmethod(_binary_op, Operators.GE.value, func=operator.ge, symbol=">=")
+    __lt__ = partialmethod(_binary_op, OperatorEnum.LT)
+    __le__ = partialmethod(_binary_op, OperatorEnum.LE)
+    __eq__ = partialmethod(_binary_op, OperatorEnum.EQ)  # type: ignore
+    __ne__ = partialmethod(_binary_op, OperatorEnum.NEQ)  # type: ignore
+    __gt__ = partialmethod(_binary_op, OperatorEnum.GT)
+    __ge__ = partialmethod(_binary_op, OperatorEnum.GE)
 
     # Reverse Logical
-    __rand__ = partialmethod(_reverse_binary_op, Operators.AND.value, func=operator.and_, symbol="&")
-    __ror__ = partialmethod(_reverse_binary_op, Operators.OR.value, func=operator.or_, symbol="|")
-
-    @abstractmethod
-    def eval(self, **kwargs):
-        raise NotImplementedError()
+    __rand__ = partialmethod(_reverse_binary_op, OperatorEnum.AND)
+    __ror__ = partialmethod(_reverse_binary_op, OperatorEnum.OR)
 
     @abstractmethod
     def _display_str(self) -> str:
@@ -239,9 +271,6 @@ class LiteralExpression(Expression):
     def _display_str(self) -> str:
         return f"lit({self._value})"
 
-    def eval(self, **kwargs):
-        return self._value
-
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, LiteralExpression) and self._value == other._value
 
@@ -266,13 +295,6 @@ class MultipleReturnSelectExpression(Expression):
     def _display_str(self) -> str:
         return f"{self._expr}[{self._n}]"
 
-    def eval(self, **kwargs):
-        all_values = self._expr.eval(**kwargs)
-        assert isinstance(all_values, tuple), f"expected multiple returns from {self._expr}"
-        assert len(all_values) > self._n
-        value = all_values[self._n]
-        return value
-
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, MultipleReturnSelectExpression) and self._n == other._n
 
@@ -280,20 +302,15 @@ class MultipleReturnSelectExpression(Expression):
 class CallExpression(Expression):
     def __init__(
         self,
-        operator: ExpressionOperator,
-        # TODO: deprecate func and symbol in favor of operator
-        func: Callable,
+        operator: OperatorEnum,
         func_args: Tuple,
         func_kwargs: Optional[Dict[str, Any]] = None,
-        symbol: Optional[str] = None,
     ) -> None:
         super().__init__()
         self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         if func_kwargs is None:
             func_kwargs = dict()
         self._kwargs_ids = {k: self._register_child(self._to_expression(v)) for k, v in func_kwargs.items()}
-        self._func = func
-        self._symbol = symbol
         self._operator = operator
 
     def resolved_type(self) -> Optional[ExpressionType]:
@@ -301,7 +318,7 @@ class CallExpression(Expression):
         if any([arg_type is None for arg_type in args_resolved_types]):
             return None
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
-        ret_type = self._operator.type_matrix_dict().get(args_resolved_types_non_none, ExpressionType.unknown())
+        ret_type = self._operator.value.type_matrix_dict().get(args_resolved_types_non_none, ExpressionType.unknown())
         return ret_type
 
     @property
@@ -313,7 +330,7 @@ class CallExpression(Expression):
         return {k: self._children()[i] for k, i in self._kwargs_ids.items()}
 
     def _display_str(self) -> str:
-        symbol = self._func.__name__ if self._symbol is None else self._symbol
+        symbol = self._operator.value.symbol or self._operator.value.name
 
         # Handle Binary Case:
         if len(self._kwargs) == 0 and len(self._args) == 2:
@@ -326,18 +343,12 @@ class CallExpression(Expression):
         kwargs = ", ".join(f"{k}={v._display_str()}" for k, v in self._kwargs.items())
         return f"{symbol}({args}, {kwargs})"
 
-    def eval(self, **kwargs):
-        eval_args = tuple(a.eval(**kwargs) for a in self._args)
-        eval_kwargs = {k: self.eval(**kwargs) for k, v in self._kwargs.items()}
-        return self._func(*eval_args, **eval_kwargs)
-
     def _is_eq_local(self, other: Expression) -> bool:
         return (
             isinstance(other, CallExpression)
+            and self._operator == other._operator
             and self._args_ids == other._args_ids
             and self._kwargs_ids == other._kwargs_ids
-            and self._func == other._func
-            and self._symbol == other._symbol
         )
 
 
@@ -368,10 +379,9 @@ def udf(f: Callable | None = None, num_returns: int = 1) -> Callable:
 
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
-            if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargs.values()):
+            if any(isinstance(a, Expression) for a in args) or any(isinstance(a, Expression) for a in kwargss()):
                 out_expr = CallExpression(
                     expr_operator,
-                    func,
                     func_args=args,
                     func_kwargs=kwargs,
                 )
@@ -412,11 +422,6 @@ class ColumnExpression(Expression):
 
     def __repr__(self) -> str:
         return self._display_str()
-
-    def eval(self, **kwargs):
-        if self._name not in kwargs:
-            raise ValueError(f"expected column `{self._name}` to be passed into eval")
-        return kwargs[self._name]
 
     def name(self) -> Optional[str]:
         return self._name
@@ -464,9 +469,6 @@ class AliasExpression(Expression):
 
     def _assign_id(self, strict: bool = True) -> ColID:
         return self._expr._assign_id(strict)
-
-    def eval(self, **kwargs):
-        return self._expr.eval(**kwargs)
 
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, AliasExpression) and self._name == other._name

@@ -248,9 +248,6 @@ def test_hash_partition(n) -> None:
 
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
 
-    hashes = block.array_hash()
-    hashes % n
-
     part = vPartition(columns=tiles, partition_id=0)
     new_parts = part.split_by_hash(expr, n)
     values_seen = set()

@@ -146,7 +146,7 @@ class DataFrame:
             ),
             read_options=csv.ReadOptions(
                 # Column names will be read from the first CSV row if column_names is None/empty and has_headers
-                autogenerate_column_names=False if has_headers else True,
+                autogenerate_column_names=(not has_headers) and (column_names is None),
                 column_names=column_names,
                 # If user specifies that CSV has headers, and also provides column names, we skip the header row
                 skip_rows_after_names=1 if has_headers and column_names is not None else 0,
@@ -265,22 +265,95 @@ class DataFrame:
         exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))
         ops = [op for _, op in to_agg]
 
-        lagg_op = logical_plan.LocalAggregate(
-            self._plan, agg=[(e, op) for e, op in zip(exprs_to_agg, ops)], group_by=group_by
-        )
+        function_lookup = {"sum": Expression._sum, "count": Expression._count}
+        intermediate_ops = {
+            "sum": ("sum",),
+            "count": ("count",),
+            "mean": ("sum", "count"),
+            "min": ("min",),
+            "max": ("max",),
+        }
+
+        reduction_ops = {"sum": ("sum",), "count": ("sum",), "mean": ("sum", "sum"), "min": ("min",), "max": ("max",)}
+
+        finalizer_ops_funcs = {"mean": lambda x, y: (x + 0.0) / (y + 0.0)}
+
+        first_phase_ops: List[Tuple[Expression, str]] = []
+        second_phase_ops: List[Tuple[Expression, str]] = []
+        finalizer_phase_ops: List[Expression] = []
+        need_final_projection = False
+        for e, op in zip(exprs_to_agg, ops):
+            assert op in intermediate_ops
+            ops_to_add = intermediate_ops[op]
+
+            e_intermediate_name = []
+            for agg_op in ops_to_add:
+                name = f"{e.name()}_{agg_op}"
+                f = function_lookup[agg_op]
+                new_e = f(e).alias(name)
+                first_phase_ops.append((new_e, agg_op))
+                e_intermediate_name.append(new_e.name())
+
+            assert op in reduction_ops
+            ops_to_add = reduction_ops[op]
+            added_exprs = []
+            for agg_op, result_name in zip(ops_to_add, e_intermediate_name):
+                assert result_name is not None
+                col_e = col(result_name)
+                f = function_lookup[agg_op]
+                added: Expression = f(col_e)
+                if op in finalizer_ops_funcs:
+                    name = f"{result_name}_{agg_op}"
+                    added = added.alias(name)
+                else:
+                    added = added.alias(e.name())
+                second_phase_ops.append((added, agg_op))
+                added_exprs.append(added)
+
+            if op in finalizer_ops_funcs:
+                f = finalizer_ops_funcs[op]
+                operand_args = []
+                for ae in added_exprs:
+                    col_name = ae.name()
+                    assert col_name is not None
+                    operand_args.append(col(col_name))
+                final_name = e.name()
+                assert final_name is not None
+                new_e = f(*operand_args).alias(final_name)
+                finalizer_phase_ops.append(new_e)
+                need_final_projection = True
+            else:
+                for ae in added_exprs:
+                    col_name = ae.name()
+                    assert col_name is not None
+                    finalizer_phase_ops.append(col(col_name))
+
+        first_phase_lagg_op = logical_plan.LocalAggregate(self._plan, agg=first_phase_ops, group_by=group_by)
         repart_op: logical_plan.LogicalPlan
         if group_by is None:
-            repart_op = logical_plan.Coalesce(lagg_op, 1)
+            repart_op = logical_plan.Coalesce(first_phase_lagg_op, 1)
         else:
             repart_op = logical_plan.Repartition(
-                self._plan,
+                first_phase_lagg_op,
                 num_partitions=self._plan.num_partitions(),
                 partition_by=group_by,
                 scheme=logical_plan.PartitionScheme.HASH,
             )
 
-        gagg_op = logical_plan.LocalAggregate(repart_op, agg=lagg_op._agg, group_by=group_by)
-        return DataFrame(gagg_op)
+        gagg_op = logical_plan.LocalAggregate(repart_op, agg=second_phase_ops, group_by=group_by)
+
+        final_schema = ExpressionList(finalizer_phase_ops)
+
+        if group_by is not None:
+            final_schema = group_by.union(final_schema)
+
+        final_op: logical_plan.LogicalPlan
+        if need_final_projection:
+            final_op = logical_plan.Projection(gagg_op, final_schema)
+        else:
+            final_op = gagg_op
+
+        return DataFrame(final_op)
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
         return self._agg([(c, "sum") for c in cols])

@@ -112,7 +112,7 @@ def test_tpch_q1(lineitem):
                 (col("L_QUANTITY").alias("avg_qty"), "mean"),
                 (col("L_EXTENDEDPRICE").alias("avg_price"), "mean"),
                 (col("L_DISCOUNT").alias("avg_disc"), "mean"),
-                # (col("L_QUANTITY").alias("count_order"), 'count'),
+                (col("L_QUANTITY").alias("count_order"), "count"),
                 # col("L_QUANTITY").agg.sum().alias("sum_qty"),
                 # col("L_EXTENDEDPRICE").agg.sum().alias("sum_base_price"),
                 # discounted_price.agg.sum().alias("sum_disc_price"),
@@ -139,4 +139,4 @@ def test_tpch_q1(lineitem):
         "count_order",
     ]
     daft_pd_df = daft_df.to_pandas()
-    assert_df_equals(daft_pd_df, answer)
+    assert_df_equals(daft_pd_df, answer, sort_key=["L_RETURNFLAG", "L_LINESTATUS"])

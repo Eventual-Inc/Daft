@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import Dict, FrozenSet, Optional, Tuple, Type
+from typing import Callable, Dict, FrozenSet, Optional, Protocol, Tuple, Type, TypeVar
 
 import pyarrow as pa
 
@@ -173,7 +173,7 @@ _CBop = partial(_BOp, type_matrix=_ComparisionTM)
 _LBop = partial(_BOp, type_matrix=_BinaryLogicalTM)
 
 
-class Operators(Enum):
+class OperatorEnum(Enum):
     # UnaryOps
     # Arithmetic
     NEGATE = _NUop(name="negate", symbol="-")
@@ -211,3 +211,39 @@ class Operators(Enum):
     NEQ = _CBop(name="not_equal", symbol="!=")
     GT = _CBop(name="greater_than", symbol=">")
     GE = _CBop(name="greater_than_equal", symbol=">=")
+
+
+ValueType = TypeVar("ValueType", covariant=True)
+UnaryFunction = Callable[[ValueType], ValueType]
+BinaryFunction = Callable[[ValueType, ValueType], ValueType]
+
+
+class OperatorEvaluator(Protocol[ValueType]):
+    def __new__(cls):
+        raise TypeError("Evaluator classes cannot be instantiated")
+
+    NEGATE: UnaryFunction
+    POSITIVE: UnaryFunction
+    ABS: UnaryFunction
+    SUM: UnaryFunction
+    MEAN: UnaryFunction
+    MIN: UnaryFunction
+    MAX: UnaryFunction
+    COUNT: UnaryFunction
+    INVERT: UnaryFunction
+
+    ADD: BinaryFunction
+    SUB: BinaryFunction
+    MUL: BinaryFunction
+    FLOORDIV: BinaryFunction
+    TRUEDIV: BinaryFunction
+    POW: BinaryFunction
+    MOD: BinaryFunction
+    AND: BinaryFunction
+    OR: BinaryFunction
+    LT: BinaryFunction
+    LE: BinaryFunction
+    EQ: BinaryFunction
+    NEQ: BinaryFunction
+    GT: BinaryFunction
+    GE: BinaryFunction
