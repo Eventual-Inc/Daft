@@ -243,8 +243,6 @@ class Repartition(UnaryNode):
         self._register_child(input)
         self._partition_by = partition_by.resolve(self.schema())
         self._scheme = scheme
-        # if len(partition_by.names) > 1:
-        #     raise ValueError(f'we can only partition by hash for 1 column, passed: {partition_by}')
         if scheme == PartitionScheme.RANDOM and len(partition_by.names) > 0:
             raise ValueError("Can not pass in random partitioning and partition_by args")
 
