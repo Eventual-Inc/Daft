@@ -1,4 +1,6 @@
 import datetime
+import shlex
+import subprocess
 
 import pandas as pd
 import pyarrow as pa
@@ -6,7 +8,6 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
-from tests.conftest import assert_df_equals
 
 SCHEMA = {
     "part": [
@@ -97,7 +98,7 @@ def lineitem():
 
 
 @pytest.mark.tpch
-def test_tpch_q1(lineitem):
+def test_tpch_q1(lineitem, tmp_path):
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
     daft_df = (
@@ -113,14 +114,6 @@ def test_tpch_q1(lineitem):
                 (col("L_EXTENDEDPRICE").alias("avg_price"), "mean"),
                 (col("L_DISCOUNT").alias("avg_disc"), "mean"),
                 (col("L_QUANTITY").alias("count_order"), "count"),
-                # col("L_QUANTITY").agg.sum().alias("sum_qty"),
-                # col("L_EXTENDEDPRICE").agg.sum().alias("sum_base_price"),
-                # discounted_price.agg.sum().alias("sum_disc_price"),
-                # taxed_discounted_price.agg.sum().alias("sum_charge"),
-                # col("L_QUANTITY").agg.mean().alias("avg_qty"),
-                # col("L_EXTENDEDPRICE").agg.mean().alias("avg_price"),
-                # col("L_DISCOUNT").agg.mean().alias("avg_disc"),
-                # col("L_QUANTITY").agg.count().alias("count_order"),
             ]
         )
         .sort(col("L_RETURNFLAG"))
@@ -139,9 +132,18 @@ def test_tpch_q1(lineitem):
         "count_order",
     ]
     daft_pd_df = daft_df.to_pandas()
-    print(answer["sum_base_price"][[0, 1, 2, 3]] - daft_pd_df["sum_base_price"])
-    import ipdb
+    daft_pd_df = daft_pd_df.sort_values(by=["L_RETURNFLAG", "L_LINESTATUS"])  # WE don't have multicolumn sort
+    csv_out = f"{tmp_path}/q1.out"
+    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
 
-    ipdb.set_trace()
+    assert run_tpch_checker(1, csv_out)
 
-    assert_df_equals(daft_pd_df, answer, sort_key=["L_RETURNFLAG", "L_LINESTATUS"])
+
+def run_tpch_checker(q_num: int, result_file: str) -> bool:
+    script = "./cmpq.pl"
+    answer = f"../answers/q{q_num}.out"
+
+    output = subprocess.check_output(
+        shlex.split(f"{script} {q_num} {result_file} {answer}"), cwd="data/tpch/check_answers"
+    )
+    return output.decode() == f"Query {q_num} 0 unacceptable missmatches\n"

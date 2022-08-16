@@ -179,7 +179,6 @@ class vPartition:
             return vPartition(partition_id=self.partition_id, columns=agged)
         else:
             grouped_blocked = self.eval_expression_list(group_by)
-            print(f"grouping by {group_by}")
             assert len(evaled_expressions.columns) == len(ops)
             gcols, acols = DataBlock.group_by_agg(
                 list(tile.block for tile in grouped_blocked.columns.values()),
@@ -204,6 +203,7 @@ class vPartition:
         for k in keys:
             block = values_to_hash.columns[k].block
             hsf = block.array_hash(seed=hsf)
+        assert hsf is not None
         target_idx = hsf.run_binary_operator(num_partitions, OperatorEnum.MOD)
         return self.split_by_index(num_partitions, target_partition_indices=target_idx)
 
