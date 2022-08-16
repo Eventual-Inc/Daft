@@ -83,7 +83,7 @@ class Expression(TreeNode["Expression"]):
     def _unary_op(
         self,
         operator: OperatorEnum,
-    ) -> Expression:
+    ) -> CallExpression:
         return CallExpression(operator, func_args=(self,))
 
     def _binary_op(
@@ -91,7 +91,7 @@ class Expression(TreeNode["Expression"]):
         operator: OperatorEnum,
         other: Any,
         # TODO: deprecate func and symbol in favor of just operator
-    ) -> Expression:
+    ) -> CallExpression:
         other_expr = self._to_expression(other)
         return CallExpression(operator, func_args=(self, other_expr))
 
@@ -99,7 +99,7 @@ class Expression(TreeNode["Expression"]):
         self,
         operator: OperatorEnum,
         other: Any,
-    ) -> Expression:
+    ) -> CallExpression:
         other_expr = self._to_expression(other)
         return other_expr._binary_op(operator, self)
 
@@ -165,8 +165,10 @@ class Expression(TreeNode["Expression"]):
     __pos__ = partialmethod(_unary_op, OperatorEnum.POSITIVE)
     __abs__ = partialmethod(_unary_op, OperatorEnum.ABS)
 
-    sum = partialmethod(_unary_op, OperatorEnum.SUM)
-    mean = partialmethod(_unary_op, OperatorEnum.MEAN)
+    _sum = partialmethod(_unary_op, OperatorEnum.SUM)
+    _count = partialmethod(_unary_op, OperatorEnum.COUNT)
+
+    _mean = partialmethod(_unary_op, OperatorEnum.MEAN)
 
     # Logical
     __invert__ = partialmethod(_unary_op, OperatorEnum.INVERT)

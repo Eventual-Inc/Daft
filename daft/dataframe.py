@@ -265,22 +265,76 @@ class DataFrame:
         exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))
         ops = [op for _, op in to_agg]
 
-        lagg_op = logical_plan.LocalAggregate(
-            self._plan, agg=[(e, op) for e, op in zip(exprs_to_agg, ops)], group_by=group_by
-        )
+        function_lookup = {"sum": Expression._sum, "count": Expression._count}
+        intermediate_ops = {
+            "sum": ("sum",),
+            # 'count': ('count',),
+            "mean": ("sum", "count"),
+            # 'min': ('min',),
+            # 'max': ('max', )
+        }
+
+        reduction_ops = {"sum": ("sum",), "count": ("sum",), "mean": ("sum", "sum"), "min": ("min",), "max": ("max",)}
+
+        finalizer_ops_funcs = {"mean": lambda x, y: (x + 0.0) / (y + 0.0)}
+
+        first_phase_ops = []
+        second_phase_ops = []
+        finalizer_phase_ops = []
+        for e, op in zip(exprs_to_agg, ops):
+            assert op in intermediate_ops
+            ops_to_add = intermediate_ops[op]
+
+            e_intermediate_name = []
+            for agg_op in ops_to_add:
+                name = f"{e.name()}_{agg_op}"
+                f = function_lookup[agg_op]
+                new_e = f(e).alias(name)
+                first_phase_ops.append((new_e, agg_op))
+                e_intermediate_name.append(new_e.name())
+
+            assert op in reduction_ops
+            ops_to_add = reduction_ops[op]
+            added_exprs = []
+            for agg_op, result_name in zip(ops_to_add, e_intermediate_name):
+                col_e = col(result_name)
+                f = function_lookup[agg_op]
+                added = f(col_e)
+                if op in finalizer_ops_funcs:
+                    name = f"{result_name}_{agg_op}"
+                    added = added.alias(name)
+                else:
+                    added = added.alias(e.name())
+                second_phase_ops.append((added, agg_op))
+                added_exprs.append(added)
+
+            if op in finalizer_ops_funcs:
+                f = finalizer_ops_funcs[op]
+                new_e = f(*[col(ae.name()) for ae in added_exprs]).alias(e.name())
+                finalizer_phase_ops.append(new_e)
+            else:
+                finalizer_phase_ops.extend([col(ae.name()) for ae in added_exprs])
+
+        first_phase_lagg_op = logical_plan.LocalAggregate(self._plan, agg=first_phase_ops, group_by=group_by)
         repart_op: logical_plan.LogicalPlan
         if group_by is None:
-            repart_op = logical_plan.Coalesce(lagg_op, 1)
+            repart_op = logical_plan.Coalesce(first_phase_lagg_op, 1)
         else:
             repart_op = logical_plan.Repartition(
-                self._plan,
+                first_phase_lagg_op,
                 num_partitions=self._plan.num_partitions(),
                 partition_by=group_by,
                 scheme=logical_plan.PartitionScheme.HASH,
             )
 
-        gagg_op = logical_plan.LocalAggregate(repart_op, agg=lagg_op._agg, group_by=group_by)
-        return DataFrame(gagg_op)
+        gagg_op = logical_plan.LocalAggregate(repart_op, agg=second_phase_ops, group_by=group_by)
+
+        final_schema = ExpressionList(finalizer_phase_ops)
+
+        if group_by is not None:
+            final_schema = group_by.union(final_schema)
+        finalizer_op = logical_plan.Projection(gagg_op, final_schema)
+        return DataFrame(finalizer_op)
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
         return self._agg([(c, "sum") for c in cols])

@@ -3,7 +3,7 @@ from __future__ import annotations
 import collections
 from abc import abstractmethod
 from dataclasses import dataclass
-from functools import partial, partialmethod
+from functools import partialmethod
 from typing import Any, Callable, ClassVar, Generic, List, Tuple, TypeVar, Union
 
 import numpy as np
@@ -252,6 +252,9 @@ class DataBlock(Generic[ArrType]):
 
         return first_type._group_by_agg(group_by, to_agg, agg_ops)
 
+    def identity(self) -> DataBlock[ArrType]:
+        return self
+
 
 class PyListDataBlock(DataBlock[List]):
     ...
@@ -326,6 +329,11 @@ class ArrowDataBlock(DataBlock[Union[pa.ChunkedArray, pa.Scalar]]):
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.float64()))
             return ArrowDataBlock(data=pa.chunked_array([[pac.mean(self.data).as_py()]]))
+        elif op == "count":
+            if len(self) == 0:
+                return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.int64()))
+            return ArrowDataBlock(data=pa.chunked_array([[pac.count(self.data).as_py()]]))
+
         else:
             raise NotImplementedError(op)
 
@@ -348,11 +356,11 @@ class ArrowEvaluator(OperatorEvaluator[ArrowDataBlock]):
     NEGATE = ArrowDataBlock.__neg__
     POSITIVE = ArrowDataBlock.__pos__
     ABS = ArrowDataBlock.__abs__
-    SUM = partial(ArrowDataBlock.agg, op="sum")
-    MEAN: partial(ArrowDataBlock.agg, op="mean")
-    MIN = partial(ArrowDataBlock.agg, op="min")
-    MAX = partial(ArrowDataBlock.agg, op="max")
-    COUNT = partial(ArrowDataBlock.agg, op="count")
+    SUM = ArrowDataBlock.identity
+    MEAN: ArrowDataBlock.identity
+    MIN = ArrowDataBlock.identity
+    MAX = ArrowDataBlock.identity
+    COUNT = ArrowDataBlock.identity
     INVERT = ArrowDataBlock.__invert__
 
     ADD = ArrowDataBlock.__add__
