@@ -27,7 +27,6 @@ from daft.execution.operators import (
     CompositeExpressionType,
     ExpressionType,
     OperatorEnum,
-    OperatorEvaluator,
 )
 from daft.internal.treenode import TreeNode
 from daft.runners.blocks import ArrowDataBlock, DataBlock
@@ -46,12 +45,9 @@ ColID = NewType("ColID", int)
 DataBlockValueType = TypeVar("DataBlockValueType", bound=DataBlock)
 
 
-class ExpressionExecutor(Generic[DataBlockValueType]):
-    def __init__(self, op_eval: Type[OperatorEvaluator[DataBlockValueType]]) -> None:
-        self.op_eval = op_eval
-
-    def eval(self, expr: Expression, operands: Dict[str, Any]) -> DataBlockValueType:
-        result: DataBlockValueType
+class ExpressionExecutor:
+    def eval(self, expr: Expression, operands: Dict[str, Any]) -> DataBlock:
+        result: DataBlock
         if isinstance(expr, ColumnExpression):
             name = expr.name()
             assert name is not None
@@ -64,9 +60,15 @@ class ExpressionExecutor(Generic[DataBlockValueType]):
             result = self.eval(expr._expr, operands)
             return result
         elif isinstance(expr, CallExpression):
-            eval_args = tuple(self.eval(a, operands) for a in expr._args)
+            eval_args: Tuple[DataBlock, ...] = tuple(self.eval(a, operands) for a in expr._args)
+
+            # Dynamically choose the correct OperatorEvaluator based on the types of the arguments
+            block_types = {type(eval_arg) for eval_arg in eval_args}
+            assert len(block_types) == 1, f"Unable to run operations on different block types {block_types}"
             op = expr._operator
-            func = getattr(self.op_eval, op.name)
+            op_eval = type(eval_args[0]).evaluator
+
+            func = getattr(op_eval, op.name)
             result = func(*eval_args)
             return result
         elif isinstance(expr, UdfExpression):

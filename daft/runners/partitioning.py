@@ -11,7 +11,7 @@ import pyarrow as pa
 
 from daft.expressions import ColID, Expression, ExpressionExecutor
 from daft.logical.schema import ExpressionList
-from daft.runners.blocks import ArrowArrType, ArrowEvaluator, DataBlock, PyListDataBlock
+from daft.runners.blocks import ArrowArrType, DataBlock, PyListDataBlock
 
 from ..execution.operators import OperatorEnum, PythonExpressionType
 
@@ -101,7 +101,7 @@ class vPartition:
             name = c.name()
             assert name is not None
             required_blocks[name] = block
-        exec = ExpressionExecutor(ArrowEvaluator)
+        exec = ExpressionExecutor()
         result = exec.eval(expr, required_blocks)
         expr_col_id = expr.get_id()
         expr_name = expr.name()

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import collections
+import operator
 import random
 from abc import abstractmethod
 from functools import partial
+from itertools import starmap
 from typing import (
     Any,
     Callable,
@@ -388,3 +390,53 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
 
 
 ArrowDataBlock.evaluator = ArrowEvaluator
+
+IN_1 = TypeVar("IN_1")
+IN_2 = TypeVar("IN_2")
+OUT = TypeVar("OUT")
+
+
+def make_map_unary(f: Callable[[IN_1], OUT]) -> Callable[[PyListDataBlock[IN_1]], PyListDataBlock[OUT]]:
+    def map_f(values: PyListDataBlock[IN_1]) -> PyListDataBlock[OUT]:
+        return PyListDataBlock(data=list(map(f, values.data)))
+
+    return map_f
+
+
+def make_map_binary(
+    f: Callable[[IN_1, IN_2], OUT]
+) -> Callable[[PyListDataBlock[IN_1], PyListDataBlock[IN_2]], PyListDataBlock[OUT]]:
+    def map_f(values: PyListDataBlock[IN_1], others: PyListDataBlock[IN_2]) -> PyListDataBlock[OUT]:
+        return PyListDataBlock(data=list(starmap(f, zip(values.data, others.data))))
+
+    return map_f
+
+
+class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
+    NEGATE = partial(PyListDataBlock._unary_op, fn=make_map_unary(operator.neg))
+    POSITIVE = PyListDataBlock.identity
+    ABS = partial(PyListDataBlock._unary_op, fn=make_map_unary(operator.abs))
+    SUM = PyListDataBlock.identity
+    MEAN = PyListDataBlock.identity
+    MIN = PyListDataBlock.identity
+    MAX = PyListDataBlock.identity
+    COUNT = PyListDataBlock.identity
+    INVERT = partial(PyListDataBlock._unary_op, fn=make_map_unary(operator.invert))
+    ADD = make_map_binary(operator.add)
+    SUB = make_map_binary(operator.sub)
+    MUL = make_map_binary(operator.mul)
+    FLOORDIV = make_map_binary(operator.floordiv)
+    TRUEDIV = make_map_binary(operator.truediv)
+    POW = make_map_binary(operator.pow)
+    MOD = make_map_binary(operator.pow)
+    AND = make_map_binary(operator.and_)
+    OR = make_map_binary(operator.or_)
+    LT = make_map_binary(operator.lt)
+    LE = make_map_binary(operator.le)
+    EQ = make_map_binary(operator.eq)
+    NEQ = make_map_binary(operator.ne)
+    GT = make_map_binary(operator.gt)
+    GE = make_map_binary(operator.ge)
+
+
+PyListDataBlock.evaluator = PyListEvaluator

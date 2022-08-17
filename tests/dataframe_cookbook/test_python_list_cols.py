@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
-import pytest
 
 from daft.dataframe import DataFrame
 from daft.execution.operators import ExpressionType
-from daft.expressions import col, lit
+from daft.expressions import col
 from tests.conftest import assert_df_equals
 
 
@@ -15,6 +16,11 @@ class MyObj:
 
     def __add__(self, other: MyObj) -> MyObj:
         return MyObj(self._x + other._x)
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, MyObj):
+            return False
+        return self._x == other._x
 
 
 def test_load_pydict_with_obj():
@@ -36,7 +42,6 @@ def test_load_pydict_with_obj():
     assert_df_equals(daft_pd_df, pd_df, sort_key="foo")
 
 
-@pytest.mark.skip(reason="ops on Python types not yet implemented")
 def test_pyobj_addition():
     data = {
         "foo": [1, 2, 3],
@@ -44,8 +49,8 @@ def test_pyobj_addition():
         "baz": ["a", "b", "c"],
         "obj": [MyObj(i) for i in range(3)],
     }
-    daft_df = DataFrame.from_pydict(data).with_column("obj_plus_one", col("obj") + lit(MyObj(1)))
+    daft_df = DataFrame.from_pydict(data).with_column("obj_doubled", col("obj") + col("obj"))
     daft_pd_df = daft_df.to_pandas()
     pd_df = pd.DataFrame.from_dict(data)
-    pd_df["obj_plus_one"] = pd_df["obj"] + MyObj(1)
+    pd_df["obj_doubled"] = pd_df["obj"] + pd_df["obj"]
     assert_df_equals(daft_pd_df, pd_df, sort_key="foo")
