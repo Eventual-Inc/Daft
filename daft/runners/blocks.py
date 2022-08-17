@@ -13,6 +13,7 @@ from typing import (
     Generic,
     List,
     Optional,
+    Sequence,
     Tuple,
     Type,
     TypeVar,
@@ -101,14 +102,49 @@ class DataBlock(Generic[ArrType]):
         fn: Callable[[DataBlock[ArrType], DataBlock[ArrType]], DataBlock[ArrType]] = getattr(self.evaluator, op_name)
         return fn(self, other)
 
+    def partition(self, num: int, targets: DataBlock[ArrowArrType]) -> List[DataBlock[ArrType]]:
+        # We first argsort the targets to group the same partitions together
+        argsort_indices = targets.argsort()
+
+        # We now perform a gather to make items targeting the same partition together
+        reordered = self.take(argsort_indices)
+        sorted_targets = targets.take(argsort_indices)
+
+        pivots = np.where(np.diff(sorted_targets.data, prepend=np.nan))[0]
+
+        # We now split in the num partitions
+        unmatched_partitions = reordered._split(pivots)
+        target_partitions = sorted_targets.data.to_numpy()[pivots]
+
+        target_partition_idx_to_match_idx = {target_idx: idx for idx, target_idx in enumerate(target_partitions)}
+
+        return [
+            DataBlock.make_block(unmatched_partitions[target_partition_idx_to_match_idx[i]])
+            if i in target_partition_idx_to_match_idx
+            else self._make_empty()
+            for i in range(num)
+        ]
+
     def head(self, num: int) -> DataBlock[ArrType]:
         return DataBlock.make_block(self.data[:num])
 
     def filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
+        """Filters elements of the Datablock using the provided mask"""
         return self._filter(mask)
 
     def take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
+        """Takes elements of the DataBlock in the order specified by `indices`"""
         return self._take(indices)
+
+    @abstractmethod
+    def _split(self, pivots: np.ndarray) -> Sequence[ArrType]:
+        """Splits the data at the given pivots. First element of the pivot should be a NaN"""
+        raise NotImplementedError()
+
+    @abstractmethod
+    def _make_empty(self) -> DataBlock[ArrType]:
+        """Makes an empty DataBlock of the same type as the current one"""
+        raise NotImplementedError()
 
     @abstractmethod
     def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
@@ -128,10 +164,6 @@ class DataBlock(Generic[ArrType]):
 
     def argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
         return self._argsort(desc=desc)
-
-    @abstractmethod
-    def partition(self, num: int, targets: DataBlock[ArrowArrType]) -> List[DataBlock[ArrType]]:
-        raise NotImplementedError()
 
     @staticmethod
     @abstractmethod
@@ -204,22 +236,11 @@ class PyListDataBlock(DataBlock[List[T]]):
     def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
         raise NotImplementedError("Sorting by Python objects is not implemented")
 
-    def partition(self, num: int, targets: DataBlock[ArrowArrType]) -> List[DataBlock[List[T]]]:
-        new_partitions: List[DataBlock] = [PyListDataBlock(data=[]) for _ in range(num)]
-        # We first argsort the targets to group the same partitions together
-        argsort_indices = targets.argsort()
-        # We now perform a gather to make items targeting the same partition together
-        reordered = self.take(argsort_indices)
-        sorted_targets = targets.take(argsort_indices)
+    def _make_empty(self) -> DataBlock[List[T]]:
+        return PyListDataBlock(data=[])
 
-        pivots = np.where(np.diff(sorted_targets.data, prepend=np.nan))[0]
-
-        # We now split in the num partitions
-        unmatched_partitions = np.split(reordered.data, pivots)[1:]
-        target_partitions = sorted_targets.data.to_numpy()[pivots]
-        for i, target_idx in enumerate(target_partitions):
-            new_partitions[target_idx] = PyListDataBlock(data=unmatched_partitions[i])
-        return new_partitions
+    def _split(self, pivots: np.ndarray) -> Sequence[List[T]]:
+        return [list(chunk) for chunk in np.split(self.data, pivots)[1:]]
 
     @staticmethod
     def _merge_blocks(blocks: List[DataBlock[List[T]]]) -> DataBlock[List[T]]:
@@ -268,6 +289,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
     def _take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[ArrowArrType]:
         return self._binary_op(indices, fn=pac.take)
 
+    def _split(self, pivots: np.ndarray) -> Sequence[ArrowArrType]:
+        splitted: Sequence[np.ndarray] = np.split(self.data, pivots)[1:]
+        return splitted
+
     @staticmethod
     def _merge_blocks(blocks: List[DataBlock[ArrowArrType]]) -> DataBlock[ArrowArrType]:
         all_chunks = []
@@ -275,24 +300,8 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             all_chunks.extend(block.data.chunks)
         return ArrowDataBlock(data=pa.chunked_array(all_chunks))
 
-    def partition(self, num: int, targets: DataBlock[ArrowArrType]) -> List[DataBlock[ArrowArrType]]:
-        new_partitions: List[DataBlock] = [
-            ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type)) for _ in range(num)
-        ]
-        # We first argsort the targets to group the same partitions together
-        argsort_indices = targets.argsort()
-        # We now perform a gather to make items targeting the same partition together
-        reordered = self.take(argsort_indices)
-        sorted_targets = targets.take(argsort_indices)
-
-        pivots = np.where(np.diff(sorted_targets.data, prepend=np.nan))[0]
-
-        # We now split in the num partitions
-        unmatched_partitions = np.split(reordered.data, pivots)[1:]
-        target_partitions = sorted_targets.data.to_numpy()[pivots]
-        for i, target_idx in enumerate(target_partitions):
-            new_partitions[target_idx] = ArrowDataBlock(data=pa.chunked_array([unmatched_partitions[i]]))
-        return new_partitions
+    def _make_empty(self) -> DataBlock[ArrowArrType]:
+        return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
 
     def sample(self, num: int) -> DataBlock[ArrowArrType]:
         sampled = np.random.choice(self.data, num, replace=False)
