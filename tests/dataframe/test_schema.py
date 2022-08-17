@@ -147,6 +147,7 @@ def test_udf(daft_df):
     assert field.daft_type == ExpressionType.from_py_type(str)
 
 
+@pytest.mark.skip(reason="multi-return UDF not implemented")
 def test_multi_return_udf(daft_df):
     @udf(return_type=[str, str])
     def my_udf(x, y):

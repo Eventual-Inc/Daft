@@ -101,14 +101,22 @@ class DataBlock(Generic[ArrType]):
         fn: Callable[[DataBlock[ArrType], DataBlock[ArrType]], DataBlock[ArrType]] = getattr(self.evaluator, op_name)
         return fn(self, other)
 
-    def filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
-        return self._binary_op(mask, fn=pac.array_filter)
-
-    def take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
-        return self._binary_op(indices, fn=pac.take)
-
     def head(self, num: int) -> DataBlock[ArrType]:
         return DataBlock.make_block(self.data[:num])
+
+    def filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
+        return self._filter(mask)
+
+    def take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
+        return self._take(indices)
+
+    @abstractmethod
+    def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def _take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
+        raise NotImplementedError()
 
     @abstractmethod
     def sample(self, num: int) -> DataBlock[ArrType]:
@@ -184,6 +192,12 @@ class PyListDataBlock(DataBlock[List[T]]):
     def to_pylist(self) -> List[T]:
         return self.data
 
+    def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[List[T]]:
+        return PyListDataBlock(data=[item for keep, item in zip(mask.data.to_pylist(), self.data) if keep])
+
+    def _take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[List[T]]:
+        return PyListDataBlock(data=[self.data[i] for i in indices.data.to_pylist()])
+
     def sample(self, num: int) -> DataBlock[List[T]]:
         return PyListDataBlock(data=random.sample(self.data, num))
 
@@ -247,6 +261,12 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         order = "descending" if desc else "ascending"
         sort_indices = pac.array_sort_indices(self.data, order=order)
         return ArrowDataBlock(data=sort_indices)
+
+    def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrowArrType]:
+        return self._binary_op(mask, fn=pac.array_filter)
+
+    def _take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[ArrowArrType]:
+        return self._binary_op(indices, fn=pac.take)
 
     @staticmethod
     def _merge_blocks(blocks: List[DataBlock[ArrowArrType]]) -> DataBlock[ArrowArrType]:

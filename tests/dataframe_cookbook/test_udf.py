@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from daft.expressions import col, udf
@@ -6,6 +8,17 @@ from tests.dataframe_cookbook.conftest import (
     parametrize_service_requests_csv_daft_df,
     parametrize_service_requests_csv_repartition,
 )
+
+
+class MyObj:
+    def __init__(self, x: int):
+        self._x = x
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, MyObj):
+            return False
+        return self._x == other._x
+
 
 ###
 # Simple UDFs with one or two return types
