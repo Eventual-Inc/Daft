@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from daft.dataframe import DataFrame
+from daft.execution.operators import ExpressionType
 from daft.expressions import col, lit
 from tests.conftest import assert_df_equals
 
@@ -24,6 +25,12 @@ def test_load_pydict_with_obj():
         "obj": [MyObj(i) for i in range(3)],
     }
     daft_df = DataFrame.from_pydict(data)
+    assert [field.daft_type for field in daft_df.schema()] == [
+        ExpressionType.from_py_type(int),
+        ExpressionType.from_py_type(float),
+        ExpressionType.from_py_type(str),
+        ExpressionType.from_py_type(MyObj),
+    ]
     pd_df = pd.DataFrame.from_dict(data)
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="foo")

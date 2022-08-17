@@ -64,14 +64,10 @@ class DataBlock(Generic[ArrType]):
         else:
             try:
                 arrow_type = pa.infer_type([data])
-                if pa.types.is_nested(arrow_type):
-                    raise ValueError(f"Don't know what block {data} should be")
             except pa.lib.ArrowInvalid:
                 arrow_type = None
-            # `data` is some kind of arbitrary Python object that arrow doesnt recognize
-            if arrow_type is None:
-                return PyListDataBlock(data=[data])
-            # `data` is an Arrow Scalar
+            if arrow_type is None or pa.types.is_nested(arrow_type):
+                raise ValueError(f"Don't know what block {data} should be")
             return ArrowDataBlock(data=pa.scalar(data))
 
     def _unary_op(self, fn: Callable[[ArrType], ArrType]) -> DataBlock[ArrType]:
