@@ -20,6 +20,7 @@ from typing import (
     cast,
 )
 
+import pandas as pd
 import pyarrow as pa
 
 from daft.execution.operators import (
@@ -27,10 +28,11 @@ from daft.execution.operators import (
     CompositeExpressionType,
     ExpressionType,
     OperatorEnum,
-    OperatorEvaluator,
+    PrimitiveExpressionType,
+    PythonExpressionType,
 )
 from daft.internal.treenode import TreeNode
-from daft.runners.blocks import ArrowDataBlock, DataBlock
+from daft.runners.blocks import ArrowDataBlock, DataBlock, PyListDataBlock
 
 
 def col(name: str) -> ColumnExpression:
@@ -46,12 +48,9 @@ ColID = NewType("ColID", int)
 DataBlockValueType = TypeVar("DataBlockValueType", bound=DataBlock)
 
 
-class ExpressionExecutor(Generic[DataBlockValueType]):
-    def __init__(self, op_eval: Type[OperatorEvaluator[DataBlockValueType]]) -> None:
-        self.op_eval = op_eval
-
-    def eval(self, expr: Expression, operands: Dict[str, Any]) -> DataBlockValueType:
-        result: DataBlockValueType
+class ExpressionExecutor:
+    def eval(self, expr: Expression, operands: Dict[str, Any]) -> DataBlock:
+        result: DataBlock
         if isinstance(expr, ColumnExpression):
             name = expr.name()
             assert name is not None
@@ -64,9 +63,15 @@ class ExpressionExecutor(Generic[DataBlockValueType]):
             result = self.eval(expr._expr, operands)
             return result
         elif isinstance(expr, CallExpression):
-            eval_args = tuple(self.eval(a, operands) for a in expr._args)
+            eval_args: Tuple[DataBlock, ...] = tuple(self.eval(a, operands) for a in expr._args)
+
+            # Dynamically choose the correct OperatorEvaluator based on the types of the arguments
+            block_types = {type(eval_arg) for eval_arg in eval_args if isinstance(eval_arg, DataBlock)}
+            assert len(block_types) == 1, f"Unable to run operations on different block types {block_types}"
             op = expr._operator
-            func = getattr(self.op_eval, op.name)
+            op_eval = block_types.pop().evaluator
+
+            func = getattr(op_eval, op.name)
             result = func(*eval_args)
             return result
         elif isinstance(expr, UdfExpression):
@@ -401,6 +406,9 @@ class UdfExpression(Expression, Generic[DataBlockValueType]):
         )
 
 
+T = TypeVar("T")
+
+
 def udf(f: Callable | None = None, *, return_type: Union[Type, Sequence[Type]]) -> Callable:
     func_ret_type = ExpressionType.from_py_type(return_type)
 
@@ -408,32 +416,50 @@ def udf(f: Callable | None = None, *, return_type: Union[Type, Sequence[Type]]) 
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
             @functools.wraps(func)
-            def block_to_pandas_func(*args, **kwargs):
-                converted_args = tuple(arg.data.to_pandas() if isinstance(arg, ArrowDataBlock) else arg for arg in args)
-                converted_kwargs = {
-                    kw: arg.data.to_pandas() if isinstance(arg, ArrowDataBlock) else arg for kw, arg in kwargs.items()
-                }
+            def prepost_process_data_block_func(*args, **kwargs):
+
+                # Preprocess args to a Pandas series for arrow types and lists of Python objects for Python types
+                converted_args: Tuple[Union[pd.Series, List[T]], ...] = tuple()
+                converted_kwargs: Dict[str, Union[pd.Series, List[T]]] = {}
+                for arg in args:
+                    if isinstance(arg, ArrowDataBlock):
+                        converted_args += (arg.data.to_pandas(),)
+                    elif isinstance(arg, PyListDataBlock):
+                        converted_args += (arg.data,)
+                    else:
+                        raise NotImplementedError(f"Block conversion not implemented for {type(arg)}")
+                for kw, arg in kwargs.items():
+                    if isinstance(arg, ArrowDataBlock):
+                        converted_kwargs[kw] = arg.data.to_pandas()
+                    elif isinstance(arg, PyListDataBlock):
+                        converted_kwargs[kw] = arg.data
+                    else:
+                        raise NotImplementedError(f"Block conversion not implemented for {type(arg)}")
+
                 results = func(*converted_args, **converted_kwargs)
-                if isinstance(return_type, Sequence):
-                    assert isinstance(func_ret_type, CompositeExpressionType)
-                    return tuple(
-                        DataBlock.make_block(
-                            pa.Array.from_pandas(result, type=EXPRESSION_TYPE_TO_PYARROW_TYPE[result_type])
+
+                # Postprocess results into a DataBlock
+                if isinstance(func_ret_type, PrimitiveExpressionType):
+                    if not isinstance(results, pd.Series):
+                        raise ValueError(
+                            f"Expected function to return a Pandas series of type {func_ret_type}, received instead: {type(results)}"
                         )
-                        for result, result_type in zip(results, func_ret_type.args)
+                    return DataBlock.make_block(
+                        pa.Array.from_pandas(results, type=EXPRESSION_TYPE_TO_PYARROW_TYPE[func_ret_type])
                     )
-                return DataBlock.make_block(
-                    pa.Array.from_pandas(results, type=EXPRESSION_TYPE_TO_PYARROW_TYPE[func_ret_type])
-                )
+                elif isinstance(func_ret_type, PythonExpressionType):
+                    if not isinstance(results, list):
+                        raise ValueError(
+                            f"Expected function to return a list of type {func_ret_type}, received instead: {type(results)}"
+                        )
+                    return DataBlock.make_block(results)
 
             out_expr = UdfExpression(
-                func=block_to_pandas_func,
+                func=prepost_process_data_block_func,
                 func_ret_type=func_ret_type,
                 func_args=args,
                 func_kwargs=kwargs,
             )
-            if isinstance(return_type, Sequence):
-                return tuple(MultipleReturnSelectExpression(out_expr, i) for i in range(len(return_type)))
             return out_expr
 
         return wrapped_func
