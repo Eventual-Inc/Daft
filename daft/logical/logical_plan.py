@@ -413,12 +413,16 @@ class Join(BinaryNode):
             num_partitions = min(left.num_partitions(), right.num_partitions())
 
         assert left.is_disjoint(right), "self joins are currently not allowed"
-        self._left_on = left_on.resolve(left_on)
-        self._right_on = right_on.resolve(right_on)
+
+        left = Repartition(left, partition_by=left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH)
+        right = Repartition(right, partition_by=right_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH)
+
+        self._left_on = left_on.resolve(left.schema())
+        self._right_on = right_on.resolve(right.schema())
 
         schema = left.schema().union(right.schema(), strict=False, rename_dup="right.")
 
-        super().__init__(schema.to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.GLOBAL)
+        super().__init__(schema.to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.PARTITION)
         self._register_child(left)
         self._register_child(right)
 
