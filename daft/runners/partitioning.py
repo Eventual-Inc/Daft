@@ -6,6 +6,7 @@ from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 
 from daft.expressions import ColID, Expression, ExpressionExecutor
@@ -140,13 +141,15 @@ class vPartition:
             tiles[col_id] = PyListTile(column_id=col_id, column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
-    def to_pydict(self) -> Dict[str, List[Any]]:
-        return {
-            tile.column_name: tile.block.data
-            if isinstance(tile.block, PyListDataBlock)
-            else tile.block.data.to_pylist()
-            for tile in self.columns.values()
-        }
+    def to_pandas(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                tile.column_name: pd.Series(tile.block.data)
+                if isinstance(tile.block, PyListDataBlock)
+                else tile.block.data.to_pandas()
+                for tile in self.columns.values()
+            }
+        )
 
     def for_each_column_block(self, func: Callable[[DataBlock], DataBlock]) -> vPartition:
         return dataclasses.replace(self, columns={col_id: col.apply(func) for col_id, col in self.columns.items()})
@@ -253,12 +256,12 @@ class vPartition:
 class PartitionSet:
     partitions: Dict[PartID, vPartition]
 
-    def to_pydict(self) -> Dict[str, List[Any]]:
+    def to_pandas(self) -> pd.DataFrame:
         partition_ids = sorted(list(self.partitions.keys()))
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
-        part_tables = [self.partitions[pid].to_pydict() for pid in partition_ids]
-        return {key: [item for tbl in part_tables for item in tbl[key]] for key in part_tables[0]}
+        part_dfs = [self.partitions[pid].to_pandas() for pid in partition_ids]
+        return pd.concat(part_dfs, ignore_index=True)
 
     def __len__(self) -> int:
         return sum(self.len_of_partitions())

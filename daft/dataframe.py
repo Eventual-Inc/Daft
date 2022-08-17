@@ -372,8 +372,7 @@ class DataFrame:
     def to_pandas(self) -> pandas.DataFrame:
         self.collect()
         assert self._result is not None
-        data = self._result.to_pydict()
-        return pandas.DataFrame.from_dict(data)
+        return self._result.to_pandas()
 
 
 @dataclass
