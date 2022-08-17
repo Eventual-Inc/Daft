@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections
+import random
 from abc import abstractmethod
 from functools import partial
 from typing import (
@@ -49,9 +50,7 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @classmethod
-    def make_block(cls, data: Any) -> DataBlock[ArrType]:
-        # if isinstance(data, list):
-        #     return PyListDataBlock(data=data)
+    def make_block(cls, data: Any) -> DataBlock:
         if isinstance(data, pa.Scalar):
             return ArrowDataBlock(data=data)
         elif isinstance(data, pa.ChunkedArray):
@@ -60,6 +59,8 @@ class DataBlock(Generic[ArrType]):
             return ArrowDataBlock(data=pa.chunked_array([data]))
         elif isinstance(data, pa.Array):
             return ArrowDataBlock(data=pa.chunked_array([data]))
+        elif isinstance(data, list):
+            return PyListDataBlock(data=data)
         else:
             try:
                 arrow_type = pa.infer_type([data])
@@ -98,10 +99,10 @@ class DataBlock(Generic[ArrType]):
         fn: Callable[[DataBlock[ArrType], DataBlock[ArrType]], DataBlock[ArrType]] = getattr(self.evaluator, op_name)
         return fn(self, other)
 
-    def filter(self, mask: DataBlock) -> DataBlock:
+    def filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
         return self._binary_op(mask, fn=pac.array_filter)
 
-    def take(self, indices: DataBlock) -> DataBlock:
+    def take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
         return self._binary_op(indices, fn=pac.take)
 
     def head(self, num: int) -> DataBlock[ArrType]:
@@ -112,10 +113,10 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @abstractmethod
-    def _argsort(self, desc: bool = False) -> DataBlock:
+    def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
         raise NotImplementedError()
 
-    def argsort(self, desc: bool = False) -> DataBlock:
+    def argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
         return self._argsort(desc=desc)
 
     @abstractmethod
@@ -143,7 +144,7 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @abstractmethod
-    def array_hash(self, seed: Optional[DataBlock[ArrType]] = None) -> DataBlock[ArrType]:
+    def array_hash(self, seed: Optional[DataBlock[ArrType]] = None) -> DataBlock[ArrowArrType]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -174,8 +175,62 @@ class DataBlock(Generic[ArrType]):
         return self
 
 
-class PyListDataBlock(DataBlock[List]):
-    ...
+T = TypeVar("T")
+
+
+class PyListDataBlock(DataBlock[List[T]]):
+    def to_pylist(self) -> List[T]:
+        return self.data
+
+    def sample(self, num: int) -> DataBlock[List[T]]:
+        return PyListDataBlock(data=random.sample(self.data, num))
+
+    def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
+        raise NotImplementedError("Sorting by Python objects is not implemented")
+
+    def partition(self, num: int, targets: DataBlock[ArrowArrType]) -> List[DataBlock[List[T]]]:
+        new_partitions: List[DataBlock] = [PyListDataBlock(data=[]) for _ in range(num)]
+        # We first argsort the targets to group the same partitions together
+        argsort_indices = targets.argsort()
+        # We now perform a gather to make items targeting the same partition together
+        reordered = self.take(argsort_indices)
+        sorted_targets = targets.take(argsort_indices)
+
+        pivots = np.where(np.diff(sorted_targets.data, prepend=np.nan))[0]
+
+        # We now split in the num partitions
+        unmatched_partitions = np.split(reordered.data, pivots)[1:]
+        target_partitions = sorted_targets.data.to_numpy()[pivots]
+        for i, target_idx in enumerate(target_partitions):
+            new_partitions[target_idx] = PyListDataBlock(data=unmatched_partitions[i])
+        return new_partitions
+
+    @staticmethod
+    def _merge_blocks(blocks: List[DataBlock[List[T]]]) -> DataBlock[List[T]]:
+        concatted_data = []
+        for block in blocks:
+            concatted_data.extend(block.data)
+        return PyListDataBlock(data=concatted_data)
+
+    def search_sorted(self, pivots: DataBlock[List[T]], reverse: bool = False) -> DataBlock[ArrowArrType]:
+        raise NotImplementedError("Sorting by Python objects is not implemented")
+
+    def quantiles(self, num: int) -> DataBlock[List[T]]:
+        raise NotImplementedError("Sorting by Python objects is not implemented")
+
+    def array_hash(self, seed: Optional[DataBlock[ArrType]] = None) -> DataBlock[ArrowArrType]:
+        # TODO(jay): seed is ignored here, but perhaps we need to set it in PYTHONHASHSEED?
+        hashes = [hash(x) for x in self.data]
+        return DataBlock.make_block(np.array(hashes))
+
+    def agg(self, op: str) -> DataBlock[ArrowArrType]:
+        raise NotImplementedError("Aggregations on Python objects is not implemented yet")
+
+    @staticmethod
+    def _group_by_agg(
+        group_by: List[DataBlock[List[T]]], to_agg: List[DataBlock[List[T]]], agg_ops: List[str]
+    ) -> Tuple[List[DataBlock[List[T]]], List[DataBlock[List[T]]]]:
+        raise NotImplementedError("Aggregations on Python objects is not implemented yet")
 
 
 ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
@@ -217,8 +272,8 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             new_partitions[target_idx] = ArrowDataBlock(data=pa.chunked_array([unmatched_partitions[i]]))
         return new_partitions
 
-    def sample(self, num: int, replace=False) -> DataBlock[ArrowArrType]:
-        sampled = np.random.choice(self.data, num, replace=replace)
+    def sample(self, num: int) -> DataBlock[ArrowArrType]:
+        sampled = np.random.choice(self.data, num, replace=False)
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
 
     def search_sorted(self, pivots: DataBlock, reverse: bool = False) -> DataBlock[ArrowArrType]:

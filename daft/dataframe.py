@@ -372,8 +372,7 @@ class DataFrame:
     def to_pandas(self) -> pandas.DataFrame:
         self.collect()
         assert self._result is not None
-        arrow_table = self._result.to_arrow_table()
-        return arrow_table.to_pandas()
+        return self._result.to_pandas()
 
 
 @dataclass
