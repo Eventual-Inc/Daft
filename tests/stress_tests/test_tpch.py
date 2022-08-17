@@ -2,6 +2,7 @@ import datetime
 import os
 import shlex
 import subprocess
+from typing import Optional
 
 import pandas as pd
 import pyarrow as pa
@@ -98,23 +99,18 @@ def gen_tpch():
         subprocess.check_output(shlex.split(f"{script}"))
 
 
-@pytest.fixture(scope="function")
-def tables(gen_tpch):
-    return {
-        tbl_name: DataFrame.from_csv(
-            f"data/tpch/{tbl_name}.tbl", has_headers=False, column_names=SCHEMA[tbl_name] + [""], delimiter="|"
-        )
-        for tbl_name in SCHEMA
-    }
+def get_df(tbl_name: str, num_partitions: Optional[int] = None):
+    df = DataFrame.from_csv(
+        f"data/tpch/{tbl_name}.tbl", has_headers=False, column_names=SCHEMA[tbl_name] + [""], delimiter="|"
+    )
+    if num_partitions is not None:
+        df = df.repartition(num_partitions)
+    return df
 
 
 @pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q1(tables, tmp_path, num_partitions):
-    if num_partitions is not None:
-        for key in tables:
-            tables[key] = tables[key].repartition(num_partitions)
-
-    lineitem = tables["lineitem"]
+def test_tpch_q1(tmp_path, num_partitions):
+    lineitem = get_df("lineitem", num_partitions=num_partitions)
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
     daft_df = (
@@ -157,20 +153,16 @@ def test_tpch_q1(tables, tmp_path, num_partitions):
 
 @pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q2(tables, tmp_path, num_partitions):
-    if num_partitions is not None:
-        for key in tables:
-            tables[key] = tables[key].repartition(num_partitions)
-
+def test_tpch_q2(tmp_path, num_partitions):
     @udf(return_type=bool)
     def ends_with(column, suffix):
         return column.str.endswith(suffix)
 
-    region = tables["region"]
-    nation = tables["nation"]
-    supplier = tables["supplier"]
-    partsupp = tables["partsupp"]
-    part = tables["part"]
+    region = get_df("region", num_partitions=num_partitions)
+    nation = get_df("nation", num_partitions=num_partitions)
+    supplier = get_df("supplier", num_partitions=num_partitions)
+    partsupp = get_df("partsupp", num_partitions=num_partitions)
+    part = get_df("part", num_partitions=num_partitions)
 
     europe = (
         region.where(col("R_NAME") == "EUROPE")
