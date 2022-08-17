@@ -92,7 +92,7 @@ SCHEMA = {
 }
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="function", autouse=True)
 def gen_tpch():
     script = "scripts/tpch-gen.sh"
     if not os.path.exists("data/tpch"):
