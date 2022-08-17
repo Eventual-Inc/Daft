@@ -1,7 +1,5 @@
 from typing import Any
 
-import pytest
-
 from daft.expressions import col, udf
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
@@ -26,38 +24,42 @@ class MyObj:
 
 
 @udf(return_type=int)
-def multiply_two(x):
-    return x * 2
+def multiply_kwarg(x, num=2):
+    return x * num
 
 
-@udf(return_type=[int, str])
-def int_and_str(x):
-    return (x, x.astype(str))
+@udf(return_type=int)
+def multiply(x, num):
+    return x * num
 
 
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
 def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df = daft_df.repartition(repartition_nparts).with_column(
-        "unique_key_identity", multiply_two(col("Unique Key"))
+        "unique_key_identity", multiply_kwarg(col("Unique Key"))
     )
     service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"] * 2
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
-@pytest.mark.skip(reason="Multi-return UDFs not supported")
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
-def test_multi_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    int_col, str_col = int_and_str(col("Unique Key"))
-    daft_df = (
-        daft_df.repartition(repartition_nparts)
-        .with_column("unique_key_identity", int_col)
-        .with_column("unique_key_identity_str", str_col)
+def test_udf_args(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    daft_df = daft_df.repartition(repartition_nparts).with_column("unique_key_identity", multiply(col("Unique Key"), 2))
+    service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"] * 2
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
+
+
+@parametrize_service_requests_csv_daft_df
+@parametrize_service_requests_csv_repartition
+def test_udf_kwargs(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    daft_df = daft_df.repartition(repartition_nparts).with_column(
+        "unique_key_identity", multiply_kwarg(col("Unique Key"), num=2)
     )
-    service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"]
-    service_requests_csv_pd_df["unique_key_identity_str"] = service_requests_csv_pd_df["Unique Key"].astype(str)
+    service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"] * 2
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 

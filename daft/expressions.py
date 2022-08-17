@@ -427,14 +427,14 @@ def udf(f: Callable | None = None, *, return_type: Union[Type, Sequence[Type]]) 
                     elif isinstance(arg, PyListDataBlock):
                         converted_args += (arg.data,)
                     else:
-                        raise NotImplementedError(f"Block conversion not implemented for {type(arg)}")
+                        converted_args += (arg,)
                 for kw, arg in kwargs.items():
                     if isinstance(arg, ArrowDataBlock):
                         converted_kwargs[kw] = arg.data.to_pandas()
                     elif isinstance(arg, PyListDataBlock):
                         converted_kwargs[kw] = arg.data
                     else:
-                        raise NotImplementedError(f"Block conversion not implemented for {type(arg)}")
+                        converted_kwargs[kw] = arg
 
                 results = func(*converted_args, **converted_kwargs)
 
