@@ -64,11 +64,20 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
     def op_level(self) -> OpLevel:
         return self._op_level
 
+    def is_disjoint(self, other: LogicalPlan) -> bool:
+        self_node_ids = set(map(LogicalPlan.id, self.post_order()))
+        other_node_ids = set(map(LogicalPlan.id, other.post_order()))
+        return self_node_ids.isdisjoint(other_node_ids)
+
 
 class UnaryNode(LogicalPlan):
     @abstractmethod
     def copy_with_new_input(self, new_input: UnaryNode) -> UnaryNode:
         raise NotImplementedError()
+
+
+class BinaryNode(LogicalPlan):
+    ...
 
 
 class Scan(LogicalPlan):
@@ -374,3 +383,64 @@ class HTTPResponse(UnaryNode):
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> HTTPResponse:
         raise NotImplementedError()
+
+
+class JoinType(Enum):
+    INNER = "inner"
+    LEFT = "left"
+    RIGHT = "right"
+
+
+class Join(BinaryNode):
+    def __init__(
+        self,
+        left: LogicalPlan,
+        right: LogicalPlan,
+        left_on: ExpressionList,
+        right_on: ExpressionList,
+        how: JoinType = JoinType.INNER,
+    ) -> None:
+        assert len(left_on) == len(right_on), "left_on and right_on must match size"
+        num_partitions: int
+        schema: ExpressionList
+        if how == JoinType.LEFT:
+            num_partitions = left.num_partitions()
+            raise NotImplementedError()
+        elif how == JoinType.RIGHT:
+            num_partitions = right.num_partitions()
+            raise NotImplementedError()
+        elif how == JoinType.INNER:
+            num_partitions = min(left.num_partitions(), right.num_partitions())
+
+        assert left.is_disjoint(right), "self joins are currently not allowed"
+        self._left_on = left_on.resolve(left_on)
+        self._right_on = right_on.resolve(right_on)
+
+        schema = left.schema().union(right.schema(), strict=False, rename_dup="right.")
+
+        super().__init__(schema.to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.GLOBAL)
+        self._register_child(left)
+        self._register_child(right)
+
+    def __repr__(self) -> str:
+        return (
+            f"Join\n\toutput={self.schema()}"
+            f"\n\tnum_partitions={self.num_partitions()}"
+            f"\n\tleft_on={self._left_on}"
+            f"\n\tright_on={self._right_on}"
+        )
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> Coalesce:
+        raise NotImplementedError()
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, Join)
+            and self.schema() == other.schema()
+            and self._left_on == other._left_on
+            and self._right_on == other._right_on
+            and self.num_partitions() == other.num_partitions()
+        )

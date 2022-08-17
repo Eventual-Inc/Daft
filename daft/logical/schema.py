@@ -23,6 +23,9 @@ class ExpressionList(Iterable[ExpressionType]):
             name_set.add(e_name)
         # self.is_resolved = all(e.required_columns(unresolved_only=True) == [] for e in exprs)
 
+    def __len__(self) -> int:
+        return len(self.exprs)
+
     def contains(self, column: ColumnExpression) -> bool:
         for e in self.exprs:
             if e.is_same(column):
@@ -74,7 +77,7 @@ class ExpressionList(Iterable[ExpressionType]):
     def __repr__(self) -> str:
         return repr(self.exprs)
 
-    def union(self, other: ExpressionList, strict: bool = True):
+    def union(self, other: ExpressionList, strict: bool = True, rename_dup: str = "right."):
         deduped = self.exprs.copy()
         seen: Dict[str, ExpressionType] = {}
         for e in self.exprs:
@@ -96,7 +99,7 @@ class ExpressionList(Iterable[ExpressionType]):
                         f"Duplicate name found with different expression. name: {name}, seen: {seen[name]}, current: {e}"
                     )
                 else:
-                    name = f"right.{name}"
+                    name = f"{rename_dup}{name}"
                     e = cast(ExpressionType, e.alias(name))
             deduped.append(e)
             seen[name] = e
