@@ -5,7 +5,7 @@ from bisect import bisect_right
 from itertools import accumulate
 from typing import Dict
 
-from pyarrow import Table, csv, parquet
+from pyarrow import csv, parquet
 
 from daft.datasources import (
     CSVSourceInfo,
@@ -150,8 +150,8 @@ class PyRunner(Runner):
             table_len = [len(scan._source_info.data[key]) for key in scan._source_info.data][0]
             partition_size = table_len // scan._source_info.num_partitions
             start, end = (partition_size * partition_id, partition_size * (partition_id + 1))
-            table = Table.from_pydict({key: scan._source_info.data[key][start:end] for key in scan._source_info.data})
-            vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+            data = {key: scan._source_info.data[key][start:end] for key in scan._source_info.data}
+            vpart = vPartition.from_pydict(data, schema=schema, partition_id=partition_id)
             self._part_manager.put(scan.id(), partition_id=partition_id, partition=vpart)
         elif scan._source_info.scan_type() == ScanType.CSV:
             assert isinstance(scan._source_info, CSVSourceInfo)

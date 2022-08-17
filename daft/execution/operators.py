@@ -39,8 +39,12 @@ class ExpressionType:
                 tuple(ExpressionType.from_py_type(arg) for arg in obj_type)
             )
             return _TYPE_REGISTRY[type_registry_key]
-        if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
-            return _TYPE_REGISTRY["unknown"]
+        elif obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
+            type_registry_key = f"PyObj[{obj_type.__name__}]"
+            if type_registry_key in _TYPE_REGISTRY:
+                return _TYPE_REGISTRY[type_registry_key]
+            _TYPE_REGISTRY[type_registry_key] = PythonExpressionType(obj_type)
+            return _TYPE_REGISTRY[type_registry_key]
         return _PY_TYPE_TO_EXPRESSION_TYPE[obj_type]
 
     @staticmethod
@@ -59,7 +63,6 @@ class PrimitiveExpressionType(ExpressionType):
         FLOAT = 3
         LOGICAL = 4
         STRING = 5
-        PYTHON = 6
 
     enum: PrimitiveExpressionType.TypeEnum
 
@@ -73,6 +76,14 @@ class CompositeExpressionType(ExpressionType):
 
     def __repr__(self) -> str:
         return f"({', '.join([str(arg) for arg in self.args])})"
+
+
+@dataclass(frozen=True)
+class PythonExpressionType(ExpressionType):
+    python_cls: Type
+
+    def __repr__(self) -> str:
+        return f"PyObj[{self.python_cls.__name__}]"
 
 
 _TYPE_REGISTRY: Dict[str, ExpressionType] = {
