@@ -22,7 +22,6 @@ def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
 
 
-@pytest.mark.skip(reason="Mean aggregates are broken right now (EVE-406)")
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
