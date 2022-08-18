@@ -156,7 +156,6 @@ def test_tpch_q1(tmp_path, num_partitions):
     assert run_tpch_checker(1, csv_out)
 
 
-@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q2(tmp_path, num_partitions):
     @udf(return_type=bool)
@@ -201,9 +200,6 @@ def test_tpch_q2(tmp_path, num_partitions):
             col("S_COMMENT"),
         )
     )
-    import ipdb
-
-    ipdb.set_trace()
     # Multicol sorts not implemented yet
     daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(
