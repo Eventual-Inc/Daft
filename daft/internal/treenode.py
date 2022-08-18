@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 import typing
 from typing import TYPE_CHECKING, Generic, List, Optional, TypeVar, cast
+
+from loguru import logger
 
 if TYPE_CHECKING:
     from daft.internal.rule import Rule
@@ -54,6 +57,17 @@ class TreeNode(Generic[TreeNodeType]):
             return root
         else:
             return None
+
+    def to_dot_file(self, filename: Optional[str] = None) -> str:
+        dot_data = self.to_dot()
+        base_path = "log"
+        if filename is None:
+            os.makedirs(base_path, exist_ok=True)
+            filename = f"{base_path}/{hash(dot_data)}.dot"
+        with open(filename, "w") as f:
+            f.write(dot_data)
+        logger.info(f"Wrote Dot file to {filename}")
+        return filename
 
     def to_dot(self) -> str:
         graph: pydot.Graph = pydot.Dot("TreeNode", graph_type="digraph", bgcolor="white")  # type: ignore

@@ -101,8 +101,12 @@ def gen_tpch():
 
 def get_df(tbl_name: str, num_partitions: Optional[int] = None):
     df = DataFrame.from_csv(
-        f"data/tpch/{tbl_name}.tbl", has_headers=False, column_names=SCHEMA[tbl_name] + [""], delimiter="|"
+        f"data/tpch/{tbl_name}.tbl",
+        has_headers=False,
+        column_names=SCHEMA[tbl_name] + [""],
+        delimiter="|",
     )
+    df = df.exclude("")
     if num_partitions is not None:
         df = df.repartition(num_partitions)
     return df
@@ -151,7 +155,6 @@ def test_tpch_q1(tmp_path, num_partitions):
     assert run_tpch_checker(1, csv_out)
 
 
-@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q2(tmp_path, num_partitions):
     @udf(return_type=bool)
@@ -171,20 +174,19 @@ def test_tpch_q2(tmp_path, num_partitions):
         .join(partsupp, left_on=col("S_SUPPKEY"), right_on=col("PS_SUPPKEY"))
     )
 
-    brass = part.where((col("P_SIZE") == 15) and (ends_with(col("p_type"), "BRASS"))).join(
+    brass = part.where((col("P_SIZE") == 15) & (ends_with(col("P_TYPE"), "BRASS"))).join(
         europe,
         left_on=col("P_PARTKEY"),
         right_on=col("PS_PARTKEY"),
     )
-
-    min_cost = brass.groupby(col("PS_PARTKEY")).agg(
+    min_cost = brass.groupby(col("P_PARTKEY")).agg(
         [
             (col("PS_SUPPLYCOST").alias("min"), "min"),
         ]
     )
 
     daft_df = (
-        brass.join(min_cost, on=col("PS_PARTKEY"))
+        brass.join(min_cost, on=col("P_PARTKEY"))
         .where(col("PS_SUPPLYCOST") == col("min"))
         .select(
             col("S_ACCTBAL"),
@@ -197,7 +199,6 @@ def test_tpch_q2(tmp_path, num_partitions):
             col("S_COMMENT"),
         )
     )
-
     # Multicol sorts not implemented yet
     daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(

@@ -19,6 +19,7 @@ from daft.logical.logical_plan import (
     Coalesce,
     Filter,
     GlobalLimit,
+    Join,
     LocalAggregate,
     LocalLimit,
     LogicalPlan,
@@ -138,6 +139,8 @@ class PyRunner(Runner):
                             self._handle_local_limit(node, partition_id=i)
                         elif isinstance(node, LocalAggregate):
                             self._handle_local_aggregate(node, partition_id=i)
+                        elif isinstance(node, Join):
+                            self._handle_join(node, partition_id=i)
                         else:
                             raise NotImplementedError(f"{type(node)} not implemented")
         return self._part_manager.get_partition_set(node.id())
@@ -202,6 +205,21 @@ class PyRunner(Runner):
         prev_partition = self._part_manager.get(child_id, partition_id)
         new_partition = prev_partition.agg(agg._agg, group_by=agg._group_by)
         self._part_manager.put(agg.id(), partition_id=partition_id, partition=new_partition)
+
+    def _handle_join(self, join: Join, partition_id: int) -> None:
+        left_id = join._children()[0].id()
+        right_id = join._children()[1].id()
+
+        left_partition = self._part_manager.get(left_id, partition_id)
+        right_partition = self._part_manager.get(right_id, partition_id)
+        result = left_partition.join(
+            right_partition,
+            left_on=join._left_on,
+            right_on=join._right_on,
+            output_schema=join.schema(),
+            how=join._how.value,
+        )
+        self._part_manager.put(join.id(), partition_id=partition_id, partition=result)
 
     def _handle_global_limit(self, limit: GlobalLimit) -> None:
         num = limit._num

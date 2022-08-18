@@ -64,11 +64,24 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
     def op_level(self) -> OpLevel:
         return self._op_level
 
+    def is_disjoint(self, other: LogicalPlan) -> bool:
+        self_node_ids = set(map(LogicalPlan.id, self.post_order()))
+        other_node_ids = set(map(LogicalPlan.id, other.post_order()))
+        return self_node_ids.isdisjoint(other_node_ids)
+
+    @abstractmethod
+    def rebuild(self) -> LogicalPlan:
+        raise NotImplementedError()
+
 
 class UnaryNode(LogicalPlan):
     @abstractmethod
     def copy_with_new_input(self, new_input: UnaryNode) -> UnaryNode:
         raise NotImplementedError()
+
+
+class BinaryNode(LogicalPlan):
+    ...
 
 
 class Scan(LogicalPlan):
@@ -93,7 +106,7 @@ class Scan(LogicalPlan):
             self._output_schema = new_schema.resolve(schema)
         else:
             self._output_schema = schema
-
+        self._column_names = columns
         self._columns = self._schema
         self._source_info = source_info
 
@@ -113,6 +126,14 @@ class Scan(LogicalPlan):
             and self._predicate == other._predicate
             and self._columns == other._columns
             and self._source_info == other._source_info
+        )
+
+    def rebuild(self) -> LogicalPlan:
+        return Scan(
+            schema=self.schema().unresolve(),
+            source_info=self._source_info,
+            predicate=self._predicate.unresolve() if self._predicate is not None else None,
+            columns=self._column_names,
         )
 
 
@@ -138,6 +159,9 @@ class Filter(UnaryNode):
     def copy_with_new_input(self, new_input: LogicalPlan) -> Filter:
         raise NotImplementedError()
 
+    def rebuild(self) -> LogicalPlan:
+        return Filter(input=self._children()[0].rebuild(), predicate=self._predicate.unresolve())
+
 
 class Projection(UnaryNode):
     """Which columns to keep"""
@@ -161,6 +185,9 @@ class Projection(UnaryNode):
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> Projection:
         raise NotImplementedError()
+
+    def rebuild(self) -> LogicalPlan:
+        return Projection(input=self._children()[0].rebuild(), projection=self._projection.unresolve())
 
 
 class Sort(UnaryNode):
@@ -190,6 +217,9 @@ class Sort(UnaryNode):
             and self._desc == self._desc
         )
 
+    def rebuild(self) -> LogicalPlan:
+        return Sort(input=self._children()[0].rebuild(), sort_by=self._sort_by.unresolve(), desc=self._desc)
+
 
 class LocalLimit(UnaryNode):
     def __init__(self, input: LogicalPlan, num: int) -> None:
@@ -209,6 +239,9 @@ class LocalLimit(UnaryNode):
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, LocalLimit) and self.schema() == other.schema() and self._num == self._num
 
+    def rebuild(self) -> LogicalPlan:
+        return LocalLimit(input=self._children()[0].rebuild(), num=self._num)
+
 
 class GlobalLimit(UnaryNode):
     def __init__(self, input: LogicalPlan, num: int) -> None:
@@ -227,6 +260,9 @@ class GlobalLimit(UnaryNode):
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, GlobalLimit) and self.schema() == other.schema() and self._num == self._num
+
+    def rebuild(self) -> LogicalPlan:
+        return GlobalLimit(input=self._children()[0].rebuild(), num=self._num)
 
 
 class PartitionScheme(Enum):
@@ -266,6 +302,14 @@ class Repartition(UnaryNode):
             and self._scheme == other._scheme
         )
 
+    def rebuild(self) -> LogicalPlan:
+        return Repartition(
+            input=self._children()[0].rebuild(),
+            partition_by=self._partition_by.unresolve(),
+            num_partitions=self.num_partitions(),
+            scheme=self._scheme,
+        )
+
 
 class Coalesce(UnaryNode):
     def __init__(self, input: LogicalPlan, num_partitions: int) -> None:
@@ -290,6 +334,12 @@ class Coalesce(UnaryNode):
             isinstance(other, Coalesce)
             and self.schema() == other.schema()
             and self.num_partitions() == other.num_partitions()
+        )
+
+    def rebuild(self) -> LogicalPlan:
+        return Coalesce(
+            input=self._children()[0].rebuild(),
+            num_partitions=self.num_partitions(),
         )
 
 
@@ -330,6 +380,13 @@ class LocalAggregate(UnaryNode):
             and self._group_by == other._group_by
         )
 
+    def rebuild(self) -> LogicalPlan:
+        return LocalAggregate(
+            input=self._children()[0].rebuild(),
+            agg=[(e._unresolve(), op) for e, op in self._agg],
+            group_by=self._group_by.unresolve() if self._group_by is not None else None,
+        )
+
 
 class HTTPRequest(LogicalPlan):
     def __init__(
@@ -350,6 +407,9 @@ class HTTPRequest(LogicalPlan):
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, HTTPRequest) and self.schema() == other.schema()
+
+    def rebuild(self) -> LogicalPlan:
+        return HTTPRequest(schema=self.schema().unresolve())
 
 
 class HTTPResponse(UnaryNode):
@@ -374,3 +434,87 @@ class HTTPResponse(UnaryNode):
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> HTTPResponse:
         raise NotImplementedError()
+
+    def rebuild(self) -> LogicalPlan:
+        return HTTPResponse(
+            input=self._children()[0].rebuild(),
+        )
+
+
+class JoinType(Enum):
+    INNER = "inner"
+    LEFT = "left"
+    RIGHT = "right"
+
+
+class Join(BinaryNode):
+    def __init__(
+        self,
+        left: LogicalPlan,
+        right: LogicalPlan,
+        left_on: ExpressionList,
+        right_on: ExpressionList,
+        how: JoinType = JoinType.INNER,
+    ) -> None:
+        assert len(left_on) == len(right_on), "left_on and right_on must match size"
+
+        if not left.is_disjoint(right):
+            right = right.rebuild()
+            assert left.is_disjoint(right)
+        num_partitions: int
+        self._left_on = left_on.resolve(left.schema())
+        self._right_on = right_on.resolve(right.schema())
+        self._how = how
+        schema: ExpressionList
+        if how == JoinType.LEFT:
+            num_partitions = left.num_partitions()
+            raise NotImplementedError()
+        elif how == JoinType.RIGHT:
+            num_partitions = right.num_partitions()
+            raise NotImplementedError()
+        elif how == JoinType.INNER:
+            num_partitions = min(left.num_partitions(), right.num_partitions())
+            right_id_set = self._right_on.to_id_set()
+            filtered_right = [e for e in right.schema() if e.get_id() not in right_id_set]
+            schema = left.schema().union(ExpressionList(filtered_right), strict=False, rename_dup="right.")
+
+        left = Repartition(left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH)
+        right = Repartition(
+            right, partition_by=self._right_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
+        )
+
+        super().__init__(schema.to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.PARTITION)
+        self._register_child(left)
+        self._register_child(right)
+
+    def __repr__(self) -> str:
+        return (
+            f"Join\n\toutput={self.schema()}"
+            f"\n\tnum_partitions={self.num_partitions()}"
+            f"\n\tleft_on={self._left_on}"
+            f"\n\tright_on={self._right_on}"
+        )
+
+    def copy_with_new_input(self, new_input: LogicalPlan) -> Coalesce:
+        raise NotImplementedError()
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, Join)
+            and self.schema() == other.schema()
+            and self._left_on == other._left_on
+            and self._right_on == other._right_on
+            and self.num_partitions() == other.num_partitions()
+        )
+
+    def rebuild(self) -> LogicalPlan:
+        return Join(
+            left=self._children()[0].rebuild(),
+            right=self._children()[1].rebuild(),
+            left_on=self._left_on.unresolve(),
+            right_on=self._right_on.unresolve(),
+            how=self._how,
+        )

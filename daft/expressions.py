@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import itertools
 from abc import abstractmethod
+from copy import deepcopy
 from functools import partialmethod
 from typing import (
     Any,
@@ -183,6 +184,17 @@ class Expression(TreeNode["Expression"]):
                 col_expr, new_expr
             )
         return self
+
+    def _unresolve(self) -> Expression:
+        expr = deepcopy(self)
+
+        def helper(e: Expression) -> None:
+            e._id = None
+            for child in e._children():
+                helper(child)
+
+        helper(expr)
+        return expr
 
     # UnaryOps
 

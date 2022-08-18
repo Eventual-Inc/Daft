@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple, TypeVar, Union
 import pandas
 import pyarrow.parquet as papq
 from pyarrow import csv
+from tabulate import tabulate
 
 from daft.datasources import CSVSourceInfo, InMemorySourceInfo, ParquetSourceInfo
 from daft.execution.operators import ExpressionType
@@ -59,6 +60,9 @@ class DataFrameSchema:
             </table>
         """
 
+    def __repr__(self) -> str:
+        return tabulate([[field.name for field in self._fields], [field.daft_type for field in self._fields]])
+
 
 class DataFrame:
     def __init__(self, plan: logical_plan.LogicalPlan) -> None:
@@ -73,6 +77,9 @@ class DataFrame:
 
     def column_names(self) -> List[str]:
         return [expr.name() for expr in self._plan.schema()]
+
+    def __repr__(self) -> str:
+        return f"DataFrame\n{self.schema()}"
 
     ###
     # Creation methods
@@ -111,7 +118,11 @@ class DataFrame:
 
     @classmethod
     def from_csv(
-        cls, path: str, has_headers: bool = True, column_names: Optional[List[str]] = None, delimiter: str = ","
+        cls,
+        path: str,
+        has_headers: bool = True,
+        column_names: Optional[List[str]] = None,
+        delimiter: str = ",",
     ) -> DataFrame:
         """Creates a DataFrame from CSV file(s)
 
@@ -229,6 +240,11 @@ class DataFrame:
         projection = logical_plan.Projection(self._plan, self.__column_input_to_expression(columns))
         return DataFrame(projection)
 
+    def exclude(self, *names: str) -> DataFrame:
+        names_to_skip = set(names)
+        el = ExpressionList([e for e in self._plan.schema() if e.name() not in names_to_skip])
+        return DataFrame(logical_plan.Projection(self._plan, el))
+
     def where(self, expr: Expression) -> DataFrame:
         plan = logical_plan.Filter(self._plan, ExpressionList([expr]))
         return DataFrame(plan)
@@ -261,11 +277,42 @@ class DataFrame:
         repartition_op = logical_plan.Repartition(self._plan, num_partitions=num, partition_by=exprs, scheme=scheme)
         return DataFrame(repartition_op)
 
+    def join(
+        self,
+        other: DataFrame,
+        on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
+        left_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
+        right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
+        how: str = "inner",
+    ) -> DataFrame:
+        if on is None:
+            if left_on is None or right_on is None:
+                raise ValueError("If `on` is None then both `left_on` and `right_on` must not be None")
+        else:
+            if left_on is not None or right_on is not None:
+                raise ValueError("If `on` is not None then both `left_on` and `right_on` must be None")
+            left_on = on
+            right_on = on
+        assert how == "inner", "only inner joins are currently supported"
+
+        left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
+        right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))
+        join_op = logical_plan.Join(
+            self._plan, other._plan, left_on=left_exprs, right_on=right_exprs, how=logical_plan.JoinType.INNER
+        )
+        return DataFrame(join_op)
+
     def _agg(self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionList] = None) -> DataFrame:
         exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))
         ops = [op for _, op in to_agg]
 
-        function_lookup = {"sum": Expression._sum, "count": Expression._count}
+        function_lookup = {
+            "sum": Expression._sum,
+            "count": Expression._count,
+            "min": Expression._min,
+            "max": Expression._max,
+            "count": Expression._count,
+        }
         intermediate_ops = {
             "sum": ("sum",),
             "count": ("count",),
