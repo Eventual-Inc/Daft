@@ -402,6 +402,11 @@ class Join(BinaryNode):
     ) -> None:
         assert len(left_on) == len(right_on), "left_on and right_on must match size"
         num_partitions: int
+
+        self._left_on = left_on.resolve(left.schema())
+        self._right_on = right_on.resolve(right.schema())
+        self._how = how
+
         schema: ExpressionList
         if how == JoinType.LEFT:
             num_partitions = left.num_partitions()
@@ -411,18 +416,16 @@ class Join(BinaryNode):
             raise NotImplementedError()
         elif how == JoinType.INNER:
             num_partitions = min(left.num_partitions(), right.num_partitions())
-            right_id_set = right.schema().to_id_set()
+            right_id_set = self._right_on.to_id_set()
             filtered_right = [e for e in right.schema() if e.get_id() not in right_id_set]
             schema = left.schema().union(ExpressionList(filtered_right), strict=False, rename_dup="right.")
 
         assert left.is_disjoint(right), "self joins are currently not allowed"
 
-        left = Repartition(left, partition_by=left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH)
-        right = Repartition(right, partition_by=right_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH)
-
-        self._left_on = left_on.resolve(left.schema())
-        self._right_on = right_on.resolve(right.schema())
-        self._how = how
+        left = Repartition(left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH)
+        right = Repartition(
+            right, partition_by=self._right_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
+        )
 
         super().__init__(schema.to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.PARTITION)
         self._register_child(left)

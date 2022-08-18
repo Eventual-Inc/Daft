@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple, TypeVar, Union
 import pandas
 import pyarrow.parquet as papq
 from pyarrow import csv
+from tabulate import tabulate
 
 from daft.datasources import CSVSourceInfo, InMemorySourceInfo, ParquetSourceInfo
 from daft.execution.operators import ExpressionType
@@ -58,6 +59,9 @@ class DataFrameSchema:
                 {nl.join(rows)}
             </table>
         """
+
+    def __repr__(self) -> str:
+        return tabulate([[field.name for field in self._fields], [field.daft_type for field in self._fields]])
 
 
 class DataFrame:
@@ -111,7 +115,12 @@ class DataFrame:
 
     @classmethod
     def from_csv(
-        cls, path: str, has_headers: bool = True, column_names: Optional[List[str]] = None, delimiter: str = ","
+        cls,
+        path: str,
+        has_headers: bool = True,
+        column_names: Optional[List[str]] = None,
+        include_columns: Optional[List[str]] = None,
+        delimiter: str = ",",
     ) -> DataFrame:
         """Creates a DataFrame from CSV file(s)
 
@@ -151,6 +160,9 @@ class DataFrame:
                 # If user specifies that CSV has headers, and also provides column names, we skip the header row
                 skip_rows_after_names=1 if has_headers and column_names is not None else 0,
             ),
+            # convert_options=csv.ConvertOptions(
+            #     include_columns=include_columns
+            # )
         )
         fields = [(field.name, field.type) for field in sampled_tbl.schema]
         schema = ExpressionList(
@@ -228,6 +240,11 @@ class DataFrame:
         assert len(columns) > 0
         projection = logical_plan.Projection(self._plan, self.__column_input_to_expression(columns))
         return DataFrame(projection)
+
+    def exclude(self, *names: str) -> DataFrame:
+        names_to_skip = set(names)
+        el = ExpressionList([e for e in self._plan.schema() if e.name() not in names_to_skip])
+        return DataFrame(logical_plan.Projection(self._plan, el))
 
     def where(self, expr: Expression) -> DataFrame:
         plan = logical_plan.Filter(self._plan, ExpressionList([expr]))
