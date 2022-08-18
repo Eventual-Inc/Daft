@@ -105,7 +105,6 @@ def get_df(tbl_name: str, num_partitions: Optional[int] = None):
         has_headers=False,
         column_names=SCHEMA[tbl_name] + [""],
         delimiter="|",
-        include_columns=SCHEMA[tbl_name],
     )
     df = df.exclude("")
     if num_partitions is not None:

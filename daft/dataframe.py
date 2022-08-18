@@ -122,7 +122,6 @@ class DataFrame:
         path: str,
         has_headers: bool = True,
         column_names: Optional[List[str]] = None,
-        include_columns: Optional[List[str]] = None,
         delimiter: str = ",",
     ) -> DataFrame:
         """Creates a DataFrame from CSV file(s)
@@ -163,9 +162,6 @@ class DataFrame:
                 # If user specifies that CSV has headers, and also provides column names, we skip the header row
                 skip_rows_after_names=1 if has_headers and column_names is not None else 0,
             ),
-            # convert_options=csv.ConvertOptions(
-            #     include_columns=include_columns
-            # )
         )
         fields = [(field.name, field.type) for field in sampled_tbl.schema]
         schema = ExpressionList(
