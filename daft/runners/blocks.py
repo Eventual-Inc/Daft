@@ -216,6 +216,41 @@ class DataBlock(Generic[ArrType]):
     def identity(self) -> DataBlock[ArrType]:
         return self
 
+    @staticmethod
+    @abstractmethod
+    def _join_keys(
+        left_keys: List[DataBlock[ArrType]], right_keys: List[DataBlock[ArrType]]
+    ) -> Tuple[DataBlock[ArrType], DataBlock[ArrType]]:
+        raise NotImplementedError()
+
+    @classmethod
+    def join(
+        cls,
+        left_keys: List[DataBlock],
+        right_keys: List[DataBlock],
+        left_columns: List[DataBlock],
+        right_columns: List[DataBlock],
+    ) -> List[DataBlock]:
+        assert len(left_keys) > 0
+        assert len(left_keys) == len(right_keys)
+        last_type = None
+        for l, r in zip(left_keys, right_keys):
+            assert type(l) == type(r), f"type mismatch in keys, {type(l)} vs {type(r)}"
+            if last_type is not None:
+                assert type(l) == last_type
+            last_type = type(l)
+        first_type = type(left_keys[0])
+        left_indices, right_indices = first_type._join_keys(left_keys=left_keys, right_keys=right_keys)
+        to_rtn = []
+        for blockset in (left_keys, left_columns):
+            for b in blockset:
+                to_rtn.append(b.take(left_indices))
+
+        for b in right_columns:
+            to_rtn.append(b.take(right_indices))
+
+        return to_rtn
+
 
 T = TypeVar("T")
 
@@ -268,6 +303,12 @@ class PyListDataBlock(DataBlock[List[T]]):
         group_by: List[DataBlock[List[T]]], to_agg: List[DataBlock[List[T]]], agg_ops: List[str]
     ) -> Tuple[List[DataBlock[List[T]]], List[DataBlock[List[T]]]]:
         raise NotImplementedError("Aggregations on Python objects is not implemented yet")
+
+    @staticmethod
+    def _join_keys(
+        left_keys: List[DataBlock[List[T]]], right_keys: List[DataBlock[List[T]]]
+    ) -> Tuple[DataBlock[List[T]], DataBlock[List[T]]]:
+        raise NotImplementedError()
 
 
 ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
@@ -369,6 +410,38 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         gcols: List[DataBlock] = [ArrowDataBlock(agged[g_name]) for g_name in group_names]
         acols: List[DataBlock] = [ArrowDataBlock(agged[f"{a_name}_{op}"]) for a_name, op in zip(agg_names, agg_ops)]
         return gcols, acols
+
+    @staticmethod
+    def _join_keys(
+        left_keys: List[DataBlock[ArrowArrType]], right_keys: List[DataBlock[ArrowArrType]]
+    ) -> Tuple[DataBlock[ArrowArrType], DataBlock[ArrowArrType]]:
+        assert len(left_keys) == len(right_keys)
+        last_size = None
+        for l in left_keys:
+            if last_size is not None:
+                assert len(l) == last_size
+            last_size = len(l)
+        left_arange = np.arange(0, last_size, 1, dtype=np.int64)
+        left_table = pa.table(
+            [l.data for l in left_keys] + [left_arange], names=[f"k_{i}" for i in range(len(left_keys))] + ["l_idx"]
+        )
+
+        last_size = None
+        for l in right_keys:
+            if last_size is not None:
+                assert len(l) == last_size
+            last_size = len(l)
+        right_arange = np.arange(0, last_size, 1, dtype=np.int64)
+        right_table = pa.table(
+            [r.data for r in right_keys] + [right_arange], names=[f"k_{i}" for i in range(len(right_keys))] + ["r_idx"]
+        )
+
+        joined_table = left_table.join(right_table, [f"k_{i}" for i in range(len(left_keys))], join_type="inner")
+
+        l_idx = joined_table["l_idx"]
+        r_idx = joined_table["r_idx"]
+
+        return ArrowDataBlock(l_idx), ArrowDataBlock(r_idx)
 
 
 def arrow_mod(arr, m):

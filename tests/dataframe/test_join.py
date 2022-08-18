@@ -8,6 +8,7 @@ def test_projection_scan_pushdown(valid_data: List[Dict[str, float]]) -> None:
 
     df2 = DataFrame.from_pylist(valid_data)
 
-    df1.join(df2, "variety")
+    df3 = df1.join(df2, "variety")
+    df3.collect()
     # import ipdb
     # ipdb.set_trace()

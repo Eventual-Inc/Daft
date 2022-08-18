@@ -56,6 +56,9 @@ class PyListTile:
         merged_block = DataBlock.merge_blocks([t.block for t in to_merge])
         return dataclasses.replace(to_merge[0], block=merged_block)
 
+    def replace_block(self, block: DataBlock) -> PyListTile:
+        return dataclasses.replace(self, block=block)
+
 
 @dataclass(frozen=True)
 class vPartition:
@@ -229,6 +232,52 @@ class vPartition:
                 new_partition_to_columns[part_id][col_id] = nt
 
         return [vPartition(partition_id=i, columns=columns) for i, columns in enumerate(new_partition_to_columns)]
+
+    def join(
+        self,
+        right: vPartition,
+        left_on: ExpressionList,
+        right_on: ExpressionList,
+        output_schema: ExpressionList,
+        how: str = "inner",
+    ) -> vPartition:
+        assert how == "inner"
+        left_key_part = self.eval_expression_list(left_on)
+        left_key_ids = list(left_key_part.columns.keys())
+
+        right_key_part = right.eval_expression_list(right_on)
+        left_key_list = [left_key_part.columns[le.get_id()].block for le in left_on]
+        right_key_list = [right_key_part.columns[re.get_id()].block for re in right_on]
+
+        left_nonjoin_ids = [i for i in self.columns.keys() if i not in left_key_part.columns]
+        right_nonjoin_ids = [i for i in right.columns.keys() if i not in right_key_part.columns]
+
+        left_nonjoin_blocks = [self.columns[i].block for i in left_nonjoin_ids]
+        right_nonjoin_blocks = [right.columns[i].block for i in right_nonjoin_ids]
+
+        joined_blocks = DataBlock.join(left_key_list, right_key_list, left_nonjoin_blocks, right_nonjoin_blocks)
+
+        result_keys = left_key_ids + left_nonjoin_ids + right_nonjoin_ids
+
+        assert len(joined_blocks) == len(result_keys)
+        joined_block_idx = 0
+        result_columns = {}
+        for k in left_key_ids:
+            result_columns[k] = left_key_part.columns[k].replace_block(block=joined_blocks[joined_block_idx])
+            joined_block_idx += 1
+
+        for k in left_nonjoin_ids:
+            result_columns[k] = self.columns[k].replace_block(block=joined_blocks[joined_block_idx])
+            joined_block_idx += 1
+
+        for k in right_nonjoin_ids:
+            result_columns[k] = right.columns[k].replace_block(block=joined_blocks[joined_block_idx])
+            joined_block_idx += 1
+
+        assert joined_block_idx == len(result_keys)
+
+        output = vPartition(columns=result_columns, partition_id=self.partition_id)
+        return output.eval_expression_list(output_schema)
 
     @classmethod
     def merge_partitions(cls, to_merge: List[vPartition], verify_partition_id: bool = True) -> vPartition:

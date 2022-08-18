@@ -411,6 +411,9 @@ class Join(BinaryNode):
             raise NotImplementedError()
         elif how == JoinType.INNER:
             num_partitions = min(left.num_partitions(), right.num_partitions())
+            right_id_set = right.schema().to_id_set()
+            filtered_right = [e for e in right.schema() if e.get_id() not in right_id_set]
+            schema = left.schema().union(ExpressionList(filtered_right), strict=False, rename_dup="right.")
 
         assert left.is_disjoint(right), "self joins are currently not allowed"
 
@@ -419,8 +422,7 @@ class Join(BinaryNode):
 
         self._left_on = left_on.resolve(left.schema())
         self._right_on = right_on.resolve(right.schema())
-
-        schema = left.schema().union(right.schema(), strict=False, rename_dup="right.")
+        self._how = how
 
         super().__init__(schema.to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.PARTITION)
         self._register_child(left)
