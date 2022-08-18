@@ -18,7 +18,7 @@ def test_simple_join(daft_df, service_requests_csv_pd_df, repartition_nparts):
     service_requests_csv_pd_df_right = service_requests_csv_pd_df[["Unique Key", "Created Date"]]
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df_left.set_index("Unique Key")
-        .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="left")
+        .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="inner")
         .reset_index()
     )
     daft_pd_df = daft_df.to_pandas()
@@ -62,7 +62,7 @@ def test_simple_join_missing_lvalues(daft_df, service_requests_csv_pd_df, repart
     service_requests_csv_pd_df_right = service_requests_csv_pd_df[["Unique Key", "Created Date"]]
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df_left.set_index("Unique Key")
-        .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="left")
+        .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="inner")
         .reset_index()
     )
     daft_pd_df = daft_df.to_pandas()
