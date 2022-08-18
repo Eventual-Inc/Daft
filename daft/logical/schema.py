@@ -64,6 +64,9 @@ class ExpressionList(Iterable[ExpressionType]):
         # self.is_resolved = True
         return self
 
+    def unresolve(self) -> ExpressionList:
+        return ExpressionList([e._unresolve() for e in self.exprs])
+
     def keep(self, to_keep: List[str]) -> ExpressionList:
         # is_resolved = True
         exprs_to_keep: List[Expression] = []

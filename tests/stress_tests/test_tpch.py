@@ -181,38 +181,36 @@ def test_tpch_q2(tmp_path, num_partitions):
         left_on=col("P_PARTKEY"),
         right_on=col("PS_PARTKEY"),
     )
-    brass.to_pandas()
-    # min_cost = brass.groupby(col("PS_PARTKEY")).agg(
-    #     [
-    #         (col("PS_SUPPLYCOST").alias("min"), "min"),
-    #     ]
-    # )
+    min_cost = brass.groupby(col("P_PARTKEY")).agg(
+        [
+            (col("PS_SUPPLYCOST").alias("min"), "min"),
+        ]
+    )
 
-    # daft_df = (
-    #     brass.join(min_cost, on=col("PS_PARTKEY"))
-    #     .where(col("PS_SUPPLYCOST") == col("min"))
-    #     .select(
-    #         col("S_ACCTBAL"),
-    #         col("S_NAME"),
-    #         col("N_NAME"),
-    #         col("P_PARTKEY"),
-    #         col("P_MFGR"),
-    #         col("S_ADDRESS"),
-    #         col("S_PHONE"),
-    #         col("S_COMMENT"),
-    #     )
-    # )
+    daft_df = (
+        brass.join(min_cost, on=col("P_PARTKEY"))
+        .where(col("PS_SUPPLYCOST") == col("min"))
+        .select(
+            col("S_ACCTBAL"),
+            col("S_NAME"),
+            col("N_NAME"),
+            col("P_PARTKEY"),
+            col("P_MFGR"),
+            col("S_ADDRESS"),
+            col("S_PHONE"),
+            col("S_COMMENT"),
+        )
+    )
+    # Multicol sorts not implemented yet
+    daft_pd_df = daft_df.to_pandas()
+    daft_pd_df = daft_pd_df.sort_values(
+        by=["S_ACCTBAL", "N_NAME", "S_NAME", "P_PARTKEY"], ascending=[False, True, True, True]
+    )
+    daft_pd_df = daft_pd_df.head(100)
+    csv_out = f"{tmp_path}/q2.out"
+    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
 
-    # # Multicol sorts not implemented yet
-    # daft_pd_df = daft_df.to_pandas()
-    # daft_pd_df = daft_pd_df.sort_values(
-    #     by=["S_ACCTBAL", "N_NAME", "S_NAME", "P_PARTKEY"], ascending=[False, True, True, True]
-    # )
-    # daft_pd_df = daft_pd_df.head(100)
-    # csv_out = f"{tmp_path}/q2.out"
-    # daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-
-    # assert run_tpch_checker(2, csv_out)
+    assert run_tpch_checker(2, csv_out)
 
 
 def run_tpch_checker(q_num: int, result_file: str) -> bool:

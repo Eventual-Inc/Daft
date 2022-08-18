@@ -307,7 +307,13 @@ class DataFrame:
         exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))
         ops = [op for _, op in to_agg]
 
-        function_lookup = {"sum": Expression._sum, "count": Expression._count}
+        function_lookup = {
+            "sum": Expression._sum,
+            "count": Expression._count,
+            "min": Expression._min,
+            "max": Expression._max,
+            "count": Expression._count,
+        }
         intermediate_ops = {
             "sum": ("sum",),
             "count": ("count",),
