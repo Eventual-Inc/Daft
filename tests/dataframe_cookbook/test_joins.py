@@ -1,5 +1,3 @@
-import pytest
-
 from daft.expressions import col
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
@@ -8,7 +6,7 @@ from tests.dataframe_cookbook.conftest import (
 )
 
 
-@pytest.mark.tdd
+# TODO parameterize other join types [left, right, outer]
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 def test_simple_join(daft_df, service_requests_csv_pd_df, repartition_nparts):
@@ -20,14 +18,14 @@ def test_simple_join(daft_df, service_requests_csv_pd_df, repartition_nparts):
     service_requests_csv_pd_df_right = service_requests_csv_pd_df[["Unique Key", "Created Date"]]
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df_left.set_index("Unique Key")
-        .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="left")
+        .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="inner")
         .reset_index()
     )
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
-@pytest.mark.tdd
+# TODO parameterize other join types [left, right, outer]
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 def test_simple_join_missing_rvalues(daft_df, service_requests_csv_pd_df, repartition_nparts):
@@ -42,14 +40,14 @@ def test_simple_join_missing_rvalues(daft_df, service_requests_csv_pd_df, repart
     )
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df_left.set_index("Unique Key")
-        .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="left")
+        .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="inner")
         .reset_index()
     )
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
-@pytest.mark.tdd
+# TODO parameterize other join types [left, right, outer]
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
 def test_simple_join_missing_lvalues(daft_df, service_requests_csv_pd_df, repartition_nparts):
@@ -64,7 +62,7 @@ def test_simple_join_missing_lvalues(daft_df, service_requests_csv_pd_df, repart
     service_requests_csv_pd_df_right = service_requests_csv_pd_df[["Unique Key", "Created Date"]]
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df_left.set_index("Unique Key")
-        .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="left")
+        .join(service_requests_csv_pd_df_right.set_index("Unique Key"), how="inner")
         .reset_index()
     )
     daft_pd_df = daft_df.to_pandas()

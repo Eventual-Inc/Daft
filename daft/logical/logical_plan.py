@@ -460,7 +460,7 @@ class Join(BinaryNode):
 
         if not left.is_disjoint(right):
             right = right.rebuild()
-
+            assert left.is_disjoint(right)
         num_partitions: int
         self._left_on = left_on.resolve(left.schema())
         self._right_on = right_on.resolve(right.schema())

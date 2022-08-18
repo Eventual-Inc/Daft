@@ -78,6 +78,9 @@ class DataFrame:
     def column_names(self) -> List[str]:
         return [expr.name() for expr in self._plan.schema()]
 
+    def __repr__(self) -> str:
+        return f"DataFrame\n{self.schema()}"
+
     ###
     # Creation methods
     ###
