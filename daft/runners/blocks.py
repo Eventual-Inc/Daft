@@ -377,7 +377,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
             seed_arr = seed.data.to_numpy()
             seed_arr = seed_arr ^ (hashed.to_numpy() + 0x9E3779B9 + (seed_arr << 6) + (seed_arr >> 2))
-            return ArrowDataBlock(data=seed_arr)
+            return ArrowDataBlock(data=pa.chunked_array([seed_arr]))
 
     def agg(self, op: str) -> DataBlock[ArrowArrType]:
 
