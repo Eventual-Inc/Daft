@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 from abc import abstractmethod
+from dataclasses import dataclass
 from enum import Enum, IntEnum
 from typing import Any, List, Optional, Tuple
 
@@ -20,11 +21,11 @@ class OpLevel(IntEnum):
 class LogicalPlan(TreeNode["LogicalPlan"]):
     id_iter = itertools.count()
 
-    def __init__(self, schema: ExpressionList, num_partitions: int, op_level: OpLevel) -> None:
+    def __init__(self, schema: ExpressionList, partition_spec: PartitionSpec, op_level: OpLevel) -> None:
         super().__init__()
         self._schema = schema
         self._op_level = op_level
-        self._num_partitions = num_partitions
+        self._partition_spec = partition_spec
         self._id = next(LogicalPlan.id_iter)
 
     def schema(self) -> ExpressionList:
@@ -56,7 +57,10 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         )
 
     def num_partitions(self) -> int:
-        return self._num_partitions
+        return self._partition_spec.num_partitions
+
+    def partition_spec(self) -> PartitionSpec:
+        return self._partition_spec
 
     def id(self) -> int:
         return self._id
@@ -94,7 +98,8 @@ class Scan(LogicalPlan):
         columns: Optional[List[str]] = None,
     ) -> None:
         schema = schema.resolve()
-        super().__init__(schema, num_partitions=source_info.get_num_partitions(), op_level=OpLevel.PARTITION)
+        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=source_info.get_num_partitions())
+        super().__init__(schema, partition_spec=pspec, op_level=OpLevel.PARTITION)
 
         if predicate is not None:
             self._predicate = predicate.resolve(schema)
@@ -142,7 +147,7 @@ class Filter(UnaryNode):
 
     def __init__(self, input: LogicalPlan, predicate: ExpressionList) -> None:
         super().__init__(
-            input.schema().to_column_expressions(), num_partitions=input.num_partitions(), op_level=OpLevel.PARTITION
+            input.schema().to_column_expressions(), partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION
         )
         self._register_child(input)
         self._predicate = predicate.resolve(input.schema())
@@ -168,7 +173,7 @@ class Projection(UnaryNode):
 
     def __init__(self, input: LogicalPlan, projection: ExpressionList) -> None:
         projection = projection.resolve(input_schema=input.schema())
-        super().__init__(projection, num_partitions=input.num_partitions(), op_level=OpLevel.ROW)
+        super().__init__(projection, partition_spec=input.partition_spec(), op_level=OpLevel.ROW)
         self._register_child(input)
         self._projection = projection
 
@@ -192,9 +197,8 @@ class Projection(UnaryNode):
 
 class Sort(UnaryNode):
     def __init__(self, input: LogicalPlan, sort_by: ExpressionList, desc: bool = False) -> None:
-        super().__init__(
-            input.schema().to_column_expressions(), num_partitions=input.num_partitions(), op_level=OpLevel.GLOBAL
-        )
+        pspec = PartitionSpec(scheme=PartitionScheme.RANGE, num_partitions=input.num_partitions(), by=sort_by)
+        super().__init__(input.schema().to_column_expressions(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
         assert len(sort_by.exprs) == 1, "we can only sort with 1 expression"
         self._sort_by = sort_by.resolve(input_schema=input.schema())
@@ -223,7 +227,7 @@ class Sort(UnaryNode):
 
 class LocalLimit(UnaryNode):
     def __init__(self, input: LogicalPlan, num: int) -> None:
-        super().__init__(input.schema(), num_partitions=input.num_partitions(), op_level=OpLevel.PARTITION)
+        super().__init__(input.schema(), partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
         self._num = num
 
@@ -245,7 +249,7 @@ class LocalLimit(UnaryNode):
 
 class GlobalLimit(UnaryNode):
     def __init__(self, input: LogicalPlan, num: int) -> None:
-        super().__init__(input.schema(), num_partitions=input.num_partitions(), op_level=OpLevel.GLOBAL)
+        super().__init__(input.schema(), partition_spec=input.partition_spec(), op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._num = num
 
@@ -266,16 +270,27 @@ class GlobalLimit(UnaryNode):
 
 
 class PartitionScheme(Enum):
+    UNKNOWN = "UNKNOWN"
     RANGE = "RANGE"
     HASH = "HASH"
     RANDOM = "RANDOM"
+
+
+@dataclass(frozen=True)
+class PartitionSpec:
+    scheme: PartitionScheme
+    num_partitions: int
+    by: Optional[ExpressionList] = None
 
 
 class Repartition(UnaryNode):
     def __init__(
         self, input: LogicalPlan, partition_by: ExpressionList, num_partitions: int, scheme: PartitionScheme
     ) -> None:
-        super().__init__(input.schema().to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.GLOBAL)
+        pspec = PartitionSpec(
+            scheme=scheme, num_partitions=num_partitions, by=partition_by if len(partition_by) > 0 else None
+        )
+        super().__init__(input.schema().to_column_expressions(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._partition_by = partition_by.resolve(self.schema())
         self._scheme = scheme
@@ -313,7 +328,11 @@ class Repartition(UnaryNode):
 
 class Coalesce(UnaryNode):
     def __init__(self, input: LogicalPlan, num_partitions: int) -> None:
-        super().__init__(input.schema().to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.GLOBAL)
+        pspec = PartitionSpec(
+            scheme=PartitionScheme.UNKNOWN,
+            num_partitions=num_partitions,
+        )
+        super().__init__(input.schema().to_column_expressions(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
         if num_partitions > input.num_partitions():
             raise ValueError(
@@ -359,7 +378,7 @@ class LocalAggregate(UnaryNode):
             self._group_by = group_by.resolve(input.schema())
             schema = self._group_by.union(schema)
 
-        super().__init__(schema, num_partitions=input.num_partitions(), op_level=OpLevel.PARTITION)
+        super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
         self._agg = [(e, op) for e, (_, op) in zip(cols_to_agg, agg)]
 
@@ -394,7 +413,8 @@ class HTTPRequest(LogicalPlan):
         schema: ExpressionList,
     ) -> None:
         self._output_schema = schema.resolve()
-        super().__init__(schema, num_partitions=1, op_level=OpLevel.ROW)
+        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=1)
+        super().__init__(schema, partition_spec=pspec, op_level=OpLevel.ROW)
 
     def schema(self) -> ExpressionList:
         return self._output_schema
@@ -418,7 +438,7 @@ class HTTPResponse(UnaryNode):
         input: LogicalPlan,
     ) -> None:
         self._schema = input.schema()
-        super().__init__(self._schema, num_partitions=input.num_partitions(), op_level=OpLevel.ROW)
+        super().__init__(self._schema, partition_spec=input.partition_spec(), op_level=OpLevel.ROW)
 
     def schema(self) -> ExpressionList:
         return self._schema
@@ -483,7 +503,9 @@ class Join(BinaryNode):
             right, partition_by=self._right_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
         )
 
-        super().__init__(schema.to_column_expressions(), num_partitions=num_partitions, op_level=OpLevel.PARTITION)
+        super().__init__(
+            schema.to_column_expressions(), partition_spec=left.partition_spec(), op_level=OpLevel.PARTITION
+        )
         self._register_child(left)
         self._register_child(right)
 

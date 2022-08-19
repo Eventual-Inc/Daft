@@ -79,7 +79,7 @@ class DataFrame:
         return [expr.name() for expr in self._plan.schema()]
 
     def __repr__(self) -> str:
-        return f"DataFrame\n{self.schema()}"
+        return f"DataFrame({self._plan.partition_spec()})\n{self.schema()}"
 
     ###
     # Creation methods
