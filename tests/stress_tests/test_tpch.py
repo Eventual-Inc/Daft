@@ -211,6 +211,124 @@ def test_tpch_q2(tmp_path, num_partitions):
     assert run_tpch_checker(2, csv_out)
 
 
+@pytest.mark.parametrize("num_partitions", [None, 3])
+def test_tpch_q3(tmp_path, num_partitions):
+    @udf(return_type=float)
+    def decrease(x, y):
+        return x * (1 - y)
+
+    customer = get_df("customer", num_partitions=num_partitions).where(col("C_MKTSEGMENT") == "BUILDING")
+    orders = get_df("orders", num_partitions=num_partitions).where(col("O_ORDERDATE") < datetime.date(1995, 3, 15))
+    lineitem = get_df("lineitem", num_partitions=num_partitions).where(col("L_SHIPDATE") > datetime.date(1995, 3, 15))
+
+    daft_df = (
+        customer.join(orders, left_on=col("C_CUSTKEY"), right_on=col("O_CUSTKEY"))
+        .select(col("O_ORDERKEY"), col("O_ORDERDATE"), col("O_SHIPPRIORITY"))
+        .join(lineitem, left_on=col("O_ORDERKEY"), right_on=col("L_ORDERKEY"))
+        .select(
+            col("O_ORDERKEY"),
+            decrease(col("L_EXTENDEDPRICE"), col("L_DISCOUNT")).alias("volume"),
+            col("O_ORDERDATE"),
+            col("O_SHIPPRIORITY"),
+        )
+        .groupby(col("O_ORDERKEY"), col("O_ORDERDATE"), col("O_SHIPPRIORITY"))
+        .agg([(col("volume").alias("revenue"), "sum")])
+    )
+
+    # Multicol sorts not implemented yet
+    daft_pd_df = daft_df.to_pandas()
+    daft_pd_df = daft_pd_df.sort_values(by=["revenue", "O_ORDERDATE"], ascending=[False, True])
+    daft_pd_df = daft_pd_df.head(10)
+    csv_out = f"{tmp_path}/q3.out"
+    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
+
+    assert run_tpch_checker(3, csv_out)
+
+
+@pytest.mark.parametrize("num_partitions", [None, 3])
+def test_tpch_q4(tmp_path, num_partitions):
+    orders = get_df("orders", num_partitions=num_partitions).where(
+        (col("O_ORDERDATE") >= datetime.date(1993, 7, 1)) & (col("O_ORDERDATE") < datetime.date(1993, 10, 1))
+    )
+
+    # TODO: Needs implementation of .distinct() - we could maybe just do a groupby with no-op aggs?
+    lineitems = (
+        get_df("lineitem", num_partitions=num_partitions)
+        .where(col("L_COMMITDATE") < col("L_RECEIPTDATE"))
+        .select(col("L_ORDERKEY"))
+        .distinct()
+    )
+
+    daft_df = (
+        lineitems.join(orders, left_on=col("L_ORDERKEY"), right_on=col("O_ORDERKEY"))
+        .groupby(col("O_ORDERPRIORITY"))
+        .agg([(col("L_ORDERKEY").alias("order_count"), "count")])
+        .sort(col("O_ORDERPRIORITY"))
+    )
+
+    daft_pd_df = daft_df.to_pandas()
+    csv_out = f"{tmp_path}/q4.out"
+    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
+
+    assert run_tpch_checker(4, csv_out)
+
+
+@pytest.mark.tpch
+@pytest.mark.parametrize("num_partitions", [None, 3])
+def test_tpch_q5(tmp_path, num_partitions):
+    @udf(return_type=float)
+    def decrease(x, y):
+        return x * (1 - y)
+
+    orders = get_df("orders", num_partitions=num_partitions).where(
+        (col("O_ORDERDATE") >= datetime.date(1994, 1, 1)) and (col("O_ORDERDATE") < datetime.date(1995, 1, 1))
+    )
+    region = get_df("region", num_partitions=num_partitions).where(col("R_NAME") == "ASIA")
+    nation = get_df("nation", num_partitions=num_partitions)
+    supplier = get_df("supplier", num_partitions=num_partitions)
+    lineitem = get_df("lineitem", num_partitions=num_partitions)
+    customer = get_df("customer", num_partitions=num_partitions)
+
+    daft_df = (
+        region.join(nation, left_on=col("R_REGIONKEY"), right_on=col("N_REGIONKEY"))
+        .join(supplier, left_on=col("N_NATIONKEY"), right_on=col("S_NATIONKEY"))
+        .join(lineitem, left_on=col("S_SUPPKEY"), right_on=col("L_SUPPKEY"))
+        .select(col("N_NAME"), col("L_EXTENDEDPRICE"), col("L_DISCOUNT"), col("L_ORDERKEY"), col("N_NATIONKEY"))
+        .join(orders, left_on=col("L_ORDERKEY"), right_on=col("O_ORDERKEY"))
+        # Multiple && join conditions expressed as a JOIN and a WHERE instead
+        .join(customer, left_on=col("O_CUSTKEY"), right_on=col("C_CUSTKEY"))
+        .where(col("N_NATIONKEY") == col("C_NATIONKEY"))
+        .select(col("N_NAME"), decrease(col("L_EXTENDEDPRICE"), col("L_DISCOUNT")).alias("value"))
+        .groupby(col("N_NAME"))
+        .agg([(col("value").alias("revenue"), "sum")])
+        .sort(col("revenue"), desc=True)
+    )
+
+    daft_pd_df = daft_df.to_pandas()
+    csv_out = f"{tmp_path}/q5.out"
+    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
+
+    assert run_tpch_checker(5, csv_out)
+
+
+@pytest.mark.parametrize("num_partitions", [None, 3])
+def test_tpch_q6(tmp_path, num_partitions):
+    lineitem = get_df("lineitem", num_partitions=num_partitions)
+    daft_df = lineitem.where(
+        (col("L_SHIPDATE") >= datetime.date(1994, 1, 1))
+        & (col("L_SHIPDATE") < datetime.date(1995, 1, 1))
+        & (col("L_DISCOUNT") >= 0.05)
+        & (col("L_DISCOUNT") <= 0.07)
+        & (col("L_QUANTITY") < 24)
+    ).sum(col("L_EXTENDEDPRICE") * col("L_DISCOUNT"))
+
+    daft_pd_df = daft_df.to_pandas()
+    csv_out = f"{tmp_path}/q6.out"
+    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
+
+    assert run_tpch_checker(6, csv_out)
+
+
 def run_tpch_checker(q_num: int, result_file: str) -> bool:
     script = "./cmpq.pl"
     answer = f"../answers/q{q_num}.out"

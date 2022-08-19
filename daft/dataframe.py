@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Iterator, List, Optional, Tuple, TypeVar, Union
 
@@ -239,6 +240,13 @@ class DataFrame:
         assert len(columns) > 0
         projection = logical_plan.Projection(self._plan, self.__column_input_to_expression(columns))
         return DataFrame(projection)
+
+    def distinct(self) -> DataFrame:
+        all_exprs = self._plan.schema()
+        gb = self.groupby(*[col(e.name()) for e in all_exprs])
+        first_e_name = [e.name() for e in all_exprs][0]
+        dummy_col_name = str(uuid.uuid4())
+        return gb.agg([(col(first_e_name).alias(dummy_col_name), "min")]).exclude(dummy_col_name)
 
     def exclude(self, *names: str) -> DataFrame:
         names_to_skip = set(names)
