@@ -1,3 +1,5 @@
+import pytest
+
 from daft.expressions import ColumnExpression, Expression, col
 
 
@@ -16,11 +18,11 @@ def test_col_expr_add() -> None:
 def test_name() -> None:
     expr = col("a") + col("b")
     assert expr.name() == "a"
-    assert expr.required_columns() == [col("a"), col("b")]
+    assert all(l.is_eq(r) for l, r in zip(expr.required_columns(), [col("a"), col("b")]))
 
     new_expr = col("c") + expr
     new_expr.name() == "c"
-    assert new_expr.required_columns() == [col("c"), col("a"), col("b")]
+    assert all(l.is_eq(r) for l, r in zip(new_expr.required_columns(), [col("c"), col("a"), col("b")]))
 
 
 def test_alias() -> None:
@@ -29,12 +31,11 @@ def test_alias() -> None:
 
     alias_expr = expr.alias("ab")
     assert alias_expr.name() == "ab"
+    assert all(l.is_eq(r) for l, r in zip(alias_expr.required_columns(), [col("a"), col("b")]))
+    assert (alias_expr + col("c")).name() == "ab"
+    assert (col("c") + alias_expr).name() == "c"
 
-    assert alias_expr.required_columns() == [col("a"), col("b")]
-    assert (alias_expr + col("c")) == "ab"
-    assert (col("c") + alias_expr) == "c"
-
-    assert (col("c") + alias_expr).required_columns() == [col("c"), col("a"), col("b")]
+    assert all(l.is_eq(r) for l, r in zip((col("c") + alias_expr).required_columns(), [col("c"), col("a"), col("b")]))
 
 
 def test_column_expr_eq() -> None:
@@ -66,3 +67,36 @@ def test_binary_op_eq() -> None:
     assert (col("a") + col("b")).alias("c").is_eq((col("a") + col("b")).alias("c"))
 
     assert not col("c").is_eq((col("a") + col("b")).alias("c"))
+
+
+def test_expression_bool() -> None:
+    c = col("c")
+    with pytest.raises(ValueError):
+        if c:
+            pass
+
+
+def test_expression_bool_or() -> None:
+    a = col("a")
+    b = col("b")
+    with pytest.raises(ValueError):
+        a or b
+
+
+def test_expression_bool_or_value() -> None:
+    a = col("a")
+    with pytest.raises(ValueError):
+        a or 1
+
+
+def test_expression_bool_and() -> None:
+    a = col("a")
+    b = col("b")
+    with pytest.raises(ValueError):
+        a and b
+
+
+def test_expression_bool_and_value() -> None:
+    a = col("a")
+    with pytest.raises(ValueError):
+        a and 1

@@ -108,6 +108,14 @@ class Expression(TreeNode["Expression"]):
             return LiteralExpression(input)
         return input
 
+    def __bool__(self) -> bool:
+        raise ValueError(
+            (
+                "Expressions don't have a truth value until executed. "
+                "If you reached this error using `and` / `or`, use `&` / `|` instead."
+            )
+        )
+
     def _unary_op(
         self,
         operator: OperatorEnum,
