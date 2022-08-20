@@ -405,7 +405,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         arrs.extend([a.data for a in to_agg])
         group_names = [f"g_{i}" for i in range(len(group_by))]
         agg_names = [f"a_{i}" for i in range(len(to_agg))]
-        table = pa.table(arrs, names=group_names + agg_names)
+        table = pa.table(arrs, names=group_names + agg_names).combine_chunks()
         agged = table.group_by(group_names).aggregate([(a_name, op) for a_name, op in zip(agg_names, agg_ops)])
         gcols: List[DataBlock] = [ArrowDataBlock(agged[g_name]) for g_name in group_names]
         acols: List[DataBlock] = [ArrowDataBlock(agged[f"{a_name}_{op}"]) for a_name, op in zip(agg_names, agg_ops)]
