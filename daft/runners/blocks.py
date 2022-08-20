@@ -365,9 +365,17 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         assert seed is None or isinstance(seed.data, pa.ChunkedArray)
 
         pa_type = self.data.type
-        if not (pa.types.is_integer(pa_type) or pa.types.is_string(pa_type)):
-            raise TypeError(f"can only hash ints or strings not {pa_type}")
-        hashed = hash_chunked_array(self.data)
+        data_to_hash = self.data
+        if pa.types.is_date32(pa_type):
+            data_to_hash = data_to_hash.cast(pa.int32())
+        elif pa.types.is_date64(pa_type):
+            data_to_hash = data_to_hash.cast(pa.int64())
+        elif pa.types.is_floating(pa_type):
+            data_to_hash = data_to_hash.cast(pa.string())
+        elif not (pa.types.is_integer(pa_type) or pa.types.is_string(pa_type)):
+            raise TypeError(f"cannot hash {pa_type}")
+
+        hashed = hash_chunked_array(data_to_hash)
         if seed is None:
             return ArrowDataBlock(data=hashed)
         else:

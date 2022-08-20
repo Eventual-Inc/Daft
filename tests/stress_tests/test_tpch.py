@@ -238,6 +238,7 @@ def test_tpch_q3(tmp_path, num_partitions):
     daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["revenue", "O_ORDERDATE"], ascending=[False, True])
     daft_pd_df = daft_pd_df.head(10)
+    daft_pd_df = daft_pd_df[["O_ORDERKEY", "revenue", "O_ORDERDATE", "O_SHIPPRIORITY"]]
     csv_out = f"{tmp_path}/q3.out"
     daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
 
@@ -291,7 +292,7 @@ def test_tpch_q5(tmp_path, num_partitions):
         .join(orders, left_on=col("L_ORDERKEY"), right_on=col("O_ORDERKEY"))
         # Multiple && join conditions expressed as a JOIN and a WHERE instead
         .join(customer, left_on=col("O_CUSTKEY"), right_on=col("C_CUSTKEY"))
-        .where(col("S_NATIONKEY") == col("C_NATIONKEY"))
+        .where(col("N_NATIONKEY") == col("C_NATIONKEY"))
         .select(col("N_NAME"), (col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))).alias("value"))
         .groupby(col("N_NAME"))
         .agg([(col("value").alias("revenue"), "sum")])
@@ -501,14 +502,6 @@ def test_tpch_q10(tmp_path, num_partitions):
     def decrease(x, y):
         return x * (1 - y)
 
-    @udf(return_type=str)
-    def float_to_str(acctbal):
-        return acctbal.astype(str)
-
-    @udf(return_type=float)
-    def str_to_float(acctbal_round_100):
-        return acctbal_round_100.astype(float)
-
     @udf(return_type=float)
     def round_2dp(revenue):
         return revenue.round(decimals=2)
@@ -534,13 +527,11 @@ def test_tpch_q10(tmp_path, num_partitions):
             col("C_ADDRESS"),
             col("C_PHONE"),
             col("C_COMMENT"),
-            # HACK: we do not allow groupby on float columns, so we "cast" to str here
-            float_to_str(col("C_ACCTBAL")).alias("c_acctbal_100_rounded"),
         )
         .groupby(
             col("O_CUSTKEY"),
             col("C_NAME"),
-            col("c_acctbal_100_rounded"),
+            col("C_ACCTBAL"),
             col("C_PHONE"),
             col("N_NAME"),
             col("C_ADDRESS"),
@@ -551,8 +542,8 @@ def test_tpch_q10(tmp_path, num_partitions):
         .select(
             col("O_CUSTKEY"),
             col("C_NAME"),
-            round_2dp(col("revenue")),
-            (str_to_float(col("c_acctbal_100_rounded"))).alias("C_ACCTBAL"),
+            col("revenue"),
+            col("C_ACCTBAL"),
             col("N_NAME"),
             col("C_ADDRESS"),
             col("C_PHONE"),
