@@ -53,9 +53,14 @@ class ExecutionPlan:
         for lop in post_order:
             if lop.op_level() == OpLevel.ROW or lop.op_level() == OpLevel.PARTITION:
                 if len(for_each_so_far) > 0:
-                    assert for_each_so_far[-1].num_partitions() == lop.num_partitions()
+                    if for_each_so_far[-1].num_partitions() != lop.num_partitions():
+                        exec_plan.append(
+                            ForEachPartition(for_each_so_far, num_partitions=for_each_so_far[-1].num_partitions())
+                        )
+                        for_each_so_far = []
+                        # assert for_each_so_far[-1].num_partitions() == lop.num_partitions()
                 for_each_so_far.append(lop)
-                assert for_each_so_far[-1]
+                # assert for_each_so_far[-1]
             elif lop.op_level() == OpLevel.GLOBAL:
                 if len(for_each_so_far) > 0:
                     exec_plan.append(

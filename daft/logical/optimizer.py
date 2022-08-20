@@ -2,11 +2,15 @@ import copy
 from functools import cached_property
 from typing import Optional, Set, Type
 
+from loguru import logger
+
 from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
     Filter,
     LogicalPlan,
+    PartitionScheme,
     Projection,
+    Repartition,
     Scan,
     Sort,
     UnaryNode,
@@ -67,6 +71,32 @@ class CombineFilters(Rule[LogicalPlan]):
         new_predicate = parent._predicate.union(child._predicate, strict=False)
         grand_child = child._children()[0]
         return Filter(grand_child, new_predicate)
+
+
+class DropRepartition(Rule[LogicalPlan]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_fn(Repartition, LogicalPlan, self._drop_repartition_if_same_spec)
+        self.register_fn(Repartition, Repartition, self._drop_double_repartition, override=True)
+
+    def _drop_repartition_if_same_spec(self, parent: Repartition, child: LogicalPlan) -> Optional[LogicalPlan]:
+        if (
+            parent.partition_spec() == child.partition_spec()
+            and parent.partition_spec().scheme != PartitionScheme.RANGE
+        ):
+            logger.debug(f"Dropping: {parent}")
+            return child
+        return None
+
+    def _drop_double_repartition(self, parent: Repartition, child: Repartition) -> Repartition:
+        grandchild = child._children()[0]
+        logger.debug(f"Dropping: {child}")
+        return Repartition(
+            grandchild,
+            partition_by=parent._partition_by,
+            num_partitions=parent.num_partitions(),
+            scheme=parent.partition_spec().scheme,
+        )
 
 
 class PushDownClausesIntoScan(Rule[LogicalPlan]):
