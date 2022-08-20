@@ -1,3 +1,5 @@
+import pytest
+
 from daft.expressions import ColumnExpression, Expression, col
 
 
@@ -65,3 +67,24 @@ def test_binary_op_eq() -> None:
     assert (col("a") + col("b")).alias("c").is_eq((col("a") + col("b")).alias("c"))
 
     assert not col("c").is_eq((col("a") + col("b")).alias("c"))
+
+
+def test_expression_bool() -> None:
+    c = col("c")
+    with pytest.raises(ValueError):
+        if c:
+            pass
+
+
+def test_expression_bool_or() -> None:
+    a = col("a")
+    b = col("b")
+    with pytest.raises(ValueError):
+        a or b
+
+
+def test_expression_bool_and() -> None:
+    a = col("a")
+    b = col("b")
+    with pytest.raises(ValueError):
+        a and b
