@@ -83,8 +83,20 @@ def test_expression_bool_or() -> None:
         a or b
 
 
+def test_expression_bool_or_value() -> None:
+    a = col("a")
+    with pytest.raises(ValueError):
+        a or 1
+
+
 def test_expression_bool_and() -> None:
     a = col("a")
     b = col("b")
     with pytest.raises(ValueError):
         a and b
+
+
+def test_expression_bool_and_value() -> None:
+    a = col("a")
+    with pytest.raises(ValueError):
+        a and 1
