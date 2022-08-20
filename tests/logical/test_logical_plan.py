@@ -53,7 +53,9 @@ def test_projection_logical_plan(schema, source_info) -> None:
 
     project = Projection(scan, ExpressionList([col("b") * 2]))
     assert project.schema() != schema.keep(["b"])
-    assert project.schema().get_expression_by_name("b").required_columns() == [schema.get_expression_by_name("b")]
+    assert (
+        project.schema().get_expression_by_name("b").required_columns()[0].is_same(schema.get_expression_by_name("b"))
+    )
 
 
 def test_projection_logical_plan_bad_input(schema, source_info) -> None:
@@ -100,17 +102,23 @@ def test_projection_new_columns_logical_plan(schema, source_info) -> None:
     )
 
     assert hstacked_on_proj.schema().names == ["b", "a", "c"]
-    assert hstacked_on_proj.schema().get_expression_by_name("b") == schema.get_expression_by_name("b")
+    assert hstacked_on_proj.schema().get_expression_by_name("b").is_same(schema.get_expression_by_name("b"))
 
-    assert hstacked_on_proj.schema().get_expression_by_name("a") != schema.get_expression_by_name("a")
-    assert hstacked_on_proj.schema().get_expression_by_name("a").required_columns() == [
-        schema.get_expression_by_name("a")
-    ]
+    assert not hstacked_on_proj.schema().get_expression_by_name("a").is_same(schema.get_expression_by_name("a"))
+    assert (
+        hstacked_on_proj.schema()
+        .get_expression_by_name("a")
+        .required_columns()[0]
+        .is_same(schema.get_expression_by_name("b"))
+    )
 
-    assert hstacked_on_proj.schema().get_expression_by_name("c") != schema.get_expression_by_name("c")
-    assert hstacked_on_proj.schema().get_expression_by_name("c").required_columns() == [
-        schema.get_expression_by_name("b")
-    ]
+    assert not hstacked_on_proj.schema().get_expression_by_name("c").is_same(schema.get_expression_by_name("c"))
+    assert (
+        hstacked_on_proj.schema()
+        .get_expression_by_name("c")
+        .required_columns()[0]
+        .is_same(schema.get_expression_by_name("b"))
+    )
 
     projection_reorder = Projection(hstacked_on_proj, ExpressionList([col("a"), col("b"), col("c")]))
     assert projection_reorder.schema().names == ["a", "b", "c"]
