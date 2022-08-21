@@ -6,6 +6,7 @@ from loguru import logger
 
 from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
+    Coalesce,
     Filter,
     LogicalPlan,
     PartitionScheme,
@@ -59,7 +60,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
 
     @cached_property
     def _supported_unary_nodes(self) -> Set[Type[UnaryNode]]:
-        return {Sort}
+        return {Sort, Repartition, Coalesce}
 
 
 class CombineFilters(Rule[LogicalPlan]):

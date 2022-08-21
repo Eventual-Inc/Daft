@@ -304,7 +304,12 @@ class Repartition(UnaryNode):
         )
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> Repartition:
-        raise NotImplementedError()
+        return Repartition(
+            input=new_input,
+            partition_by=self._partition_by.unresolve(),
+            num_partitions=self.num_partitions(),
+            scheme=self._scheme,
+        )
 
     def required_columns(self) -> ExpressionList:
         return ExpressionList([])
@@ -343,7 +348,10 @@ class Coalesce(UnaryNode):
         return f"Coalesce\n\toutput={self.schema()}" f"\n\tnum_partitions={self.num_partitions()}"
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> Coalesce:
-        raise NotImplementedError()
+        return Coalesce(
+            input=new_input,
+            num_partitions=self.num_partitions(),
+        )
 
     def required_columns(self) -> ExpressionList:
         return ExpressionList([])
