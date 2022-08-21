@@ -83,7 +83,7 @@ class DropRepartition(Rule[LogicalPlan]):
         if (
             parent.partition_spec() == child.partition_spec()
             and parent.partition_spec().scheme != PartitionScheme.RANGE
-        ):
+        ) or ((parent.num_partitions() == 1 and child.num_partitions() == 1)):
             logger.debug(f"Dropping: {parent}")
             return child
         return None
