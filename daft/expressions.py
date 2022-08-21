@@ -181,7 +181,19 @@ class Expression(TreeNode["Expression"]):
         to_rtn: List[ColumnExpression] = []
         for child in self._children():
             to_rtn.extend(child.required_columns(unresolved_only))
-        return to_rtn
+
+        seen_ids = set()
+        seen_names = set()
+        deduped: List[ColumnExpression] = []
+        for col in to_rtn:
+            cid = col.get_id()
+            cname = col.name()
+            if cid not in seen_ids and cname not in seen_names:
+                deduped.append(col)
+            seen_ids.add(cid) if cid is not None else None
+            seen_names.add(cname) if cname is not None else None
+
+        return deduped
 
     def _replace_column_with_expression(self, col_expr: ColumnExpression, new_expr: Expression) -> Expression:
         assert col_expr.is_same(new_expr)
