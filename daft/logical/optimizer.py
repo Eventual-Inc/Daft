@@ -43,7 +43,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
                 can_not_push_down.append(pred)
         if len(can_push_down) == 0:
             return None
-
+        logger.debug(f"Pushing down Filter predicate {can_push_down} into {child}")
         pushed_down_filter = Projection(
             input=Filter(grandchild, predicate=ExpressionList(can_push_down)), projection=child._projection
         )
@@ -56,6 +56,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
     def _filter_through_unary_node(self, parent: Filter, child: UnaryNode) -> Optional[UnaryNode]:
         assert type(child) in self._supported_unary_nodes
         grandchild = child._children()[0]
+        logger.debug(f"Pushing Filter {parent} through {child}")
         return child.copy_with_new_input(Filter(grandchild, parent._predicate))
 
     @cached_property
@@ -69,6 +70,7 @@ class CombineFilters(Rule[LogicalPlan]):
         self.register_fn(Filter, Filter, self._combine_filters)
 
     def _combine_filters(self, parent: Filter, child: Filter) -> Filter:
+        logger.debug(f"combining {parent} into {child}")
         new_predicate = parent._predicate.union(child._predicate, strict=False)
         grand_child = child._children()[0]
         return Filter(grand_child, new_predicate)
