@@ -211,6 +211,7 @@ def test_tpch_q2(tmp_path, num_partitions):
     assert run_tpch_checker(2, csv_out)
 
 
+@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q3(tmp_path, num_partitions):
     def decrease(x, y):
@@ -245,6 +246,7 @@ def test_tpch_q3(tmp_path, num_partitions):
     assert run_tpch_checker(3, csv_out)
 
 
+@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q4(tmp_path, num_partitions):
     orders = get_df("orders", num_partitions=num_partitions).where(
@@ -273,6 +275,7 @@ def test_tpch_q4(tmp_path, num_partitions):
     assert run_tpch_checker(4, csv_out)
 
 
+@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q5(tmp_path, num_partitions):
     orders = get_df("orders", num_partitions=num_partitions).where(
@@ -306,6 +309,7 @@ def test_tpch_q5(tmp_path, num_partitions):
     assert run_tpch_checker(5, csv_out)
 
 
+@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q6(tmp_path, num_partitions):
     lineitem = get_df("lineitem", num_partitions=num_partitions)
@@ -324,6 +328,7 @@ def test_tpch_q6(tmp_path, num_partitions):
     assert run_tpch_checker(6, csv_out)
 
 
+@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q7(tmp_path, num_partitions):
     def decrease(x, y):
@@ -384,6 +389,7 @@ def test_tpch_q7(tmp_path, num_partitions):
     assert run_tpch_checker(7, csv_out)
 
 
+@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q8(tmp_path, num_partitions):
     lineitem = get_df("lineitem", num_partitions=num_partitions)
@@ -449,6 +455,7 @@ def test_tpch_q8(tmp_path, num_partitions):
     assert run_tpch_checker(8, csv_out)
 
 
+@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q9(tmp_path, num_partitions):
     lineitem = get_df("lineitem", num_partitions=num_partitions)
@@ -497,6 +504,7 @@ def test_tpch_q9(tmp_path, num_partitions):
     assert run_tpch_checker(9, csv_out)
 
 
+@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q10(tmp_path, num_partitions):
     def decrease(x, y):
