@@ -23,6 +23,7 @@ from typing import (
 import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pac
+from pandas.core.reshape.merge import get_join_indexers
 
 from daft.execution.operators import OperatorEnum, OperatorEvaluator
 from daft.internal.hashing import hash_chunked_array
@@ -424,32 +425,13 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         left_keys: List[DataBlock[ArrowArrType]], right_keys: List[DataBlock[ArrowArrType]]
     ) -> Tuple[DataBlock[ArrowArrType], DataBlock[ArrowArrType]]:
         assert len(left_keys) == len(right_keys)
-        last_size = None
-        for l in left_keys:
-            if last_size is not None:
-                assert len(l) == last_size
-            last_size = len(l)
-        left_arange = np.arange(0, last_size, 1, dtype=np.int64)
-        left_table = pa.table(
-            [l.data for l in left_keys] + [left_arange], names=[f"k_{i}" for i in range(len(left_keys))] + ["l_idx"]
-        )
 
-        last_size = None
-        for l in right_keys:
-            if last_size is not None:
-                assert len(l) == last_size
-            last_size = len(l)
-        right_arange = np.arange(0, last_size, 1, dtype=np.int64)
-        right_table = pa.table(
-            [r.data for r in right_keys] + [right_arange], names=[f"k_{i}" for i in range(len(right_keys))] + ["r_idx"]
-        )
+        pd_left_keys = [k.data.to_pandas() for k in left_keys]
 
-        joined_table = left_table.join(right_table, [f"k_{i}" for i in range(len(left_keys))], join_type="inner")
+        pd_right_keys = [k.data.to_pandas() for k in right_keys]
+        left_index, right_index = get_join_indexers(pd_left_keys, pd_right_keys, how="inner")
 
-        l_idx = joined_table["l_idx"]
-        r_idx = joined_table["r_idx"]
-
-        return ArrowDataBlock(l_idx), ArrowDataBlock(r_idx)
+        return DataBlock.make_block(left_index), DataBlock.make_block(right_index)
 
 
 def arrow_mod(arr, m):
