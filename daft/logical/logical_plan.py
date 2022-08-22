@@ -238,7 +238,7 @@ class LocalLimit(UnaryNode):
         raise NotImplementedError()
 
     def required_columns(self) -> ExpressionList:
-        return ExpressionList([])
+        raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, LocalLimit) and self.schema() == other.schema() and self._num == self._num
@@ -260,7 +260,7 @@ class GlobalLimit(UnaryNode):
         raise NotImplementedError()
 
     def required_columns(self) -> ExpressionList:
-        return ExpressionList([])
+        raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, GlobalLimit) and self.schema() == other.schema() and self._num == self._num
@@ -304,10 +304,15 @@ class Repartition(UnaryNode):
         )
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> Repartition:
-        raise NotImplementedError()
+        return Repartition(
+            input=new_input,
+            partition_by=self._partition_by.unresolve(),
+            num_partitions=self.num_partitions(),
+            scheme=self._scheme,
+        )
 
     def required_columns(self) -> ExpressionList:
-        return ExpressionList([])
+        raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -343,10 +348,13 @@ class Coalesce(UnaryNode):
         return f"Coalesce\n\toutput={self.schema()}" f"\n\tnum_partitions={self.num_partitions()}"
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> Coalesce:
-        raise NotImplementedError()
+        return Coalesce(
+            input=new_input,
+            num_partitions=self.num_partitions(),
+        )
 
     def required_columns(self) -> ExpressionList:
-        return ExpressionList([])
+        raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -389,7 +397,7 @@ class LocalAggregate(UnaryNode):
         raise NotImplementedError()
 
     def required_columns(self) -> ExpressionList:
-        return ExpressionList([])
+        raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -423,7 +431,7 @@ class HTTPRequest(LogicalPlan):
         return f"HTTPRequest\n\toutput={self.schema()}"
 
     def required_columns(self) -> ExpressionList:
-        return ExpressionList([])
+        raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, HTTPRequest) and self.schema() == other.schema()
@@ -447,7 +455,7 @@ class HTTPResponse(UnaryNode):
         return f"HTTPResponse\n\toutput={self.schema()}"
 
     def required_columns(self) -> ExpressionList:
-        return ExpressionList([])
+        raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, HTTPResponse) and self.schema() == other.schema()
@@ -521,7 +529,7 @@ class Join(BinaryNode):
         raise NotImplementedError()
 
     def required_columns(self) -> ExpressionList:
-        return ExpressionList([])
+        raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
         return (
