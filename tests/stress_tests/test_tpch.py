@@ -443,6 +443,7 @@ def test_tpch_q8(tmp_path, num_partitions):
     check_answer(daft_pd_df, 8, tmp_path)
 
 
+@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q9(tmp_path, num_partitions):
     lineitem = get_df("lineitem", num_partitions=num_partitions)
