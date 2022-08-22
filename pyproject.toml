@@ -36,6 +36,7 @@ loguru = "^0.6.0"
 PyYAML = "^6.0"
 Cython = "^0.29.32"
 tabulate = "^0.8.10"
+viztracer = "^0.15.4"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"

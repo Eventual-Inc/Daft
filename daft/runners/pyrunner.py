@@ -30,6 +30,7 @@ from daft.logical.logical_plan import (
     Sort,
 )
 from daft.runners.partitioning import PartitionSet, vPartition
+from daft.runners.profiler import log_event, profiler
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
     CoalesceOp,
@@ -111,38 +112,44 @@ class PyRunner(Runner):
 
     def run(self, plan: LogicalPlan) -> PartitionSet:
         exec_plan = ExecutionPlan.plan_from_logical(plan)
+        tracer = profiler("output.json")
+        tracer.start()
         for exec_op in exec_plan.execution_ops:
 
             if exec_op.is_global_op:
                 for node in exec_op.logical_ops:
-                    if isinstance(node, GlobalLimit):
-                        self._handle_global_limit(node)
-                    elif isinstance(node, Repartition):
-                        self._handle_repartition(node)
-                    elif isinstance(node, Sort):
-                        self._handle_sort(node)
-                    elif isinstance(node, Coalesce):
-                        self._handle_coalesce(node)
-
-                    else:
-                        raise NotImplementedError(f"{type(node)} not implemented")
-            else:
-                for i in range(exec_op.num_partitions):
-                    for node in exec_op.logical_ops:
-                        if isinstance(node, Scan):
-                            self._handle_scan(node, partition_id=i)
-                        elif isinstance(node, Projection):
-                            self._handle_projection(node, partition_id=i)
-                        elif isinstance(node, Filter):
-                            self._handle_filter(node, partition_id=i)
-                        elif isinstance(node, LocalLimit):
-                            self._handle_local_limit(node, partition_id=i)
-                        elif isinstance(node, LocalAggregate):
-                            self._handle_local_aggregate(node, partition_id=i)
-                        elif isinstance(node, Join):
-                            self._handle_join(node, partition_id=i)
+                    with log_event(f"{node.__class__.__name__}:node_id={node.id()}"):
+                        if isinstance(node, GlobalLimit):
+                            self._handle_global_limit(node)
+                        elif isinstance(node, Repartition):
+                            self._handle_repartition(node)
+                        elif isinstance(node, Sort):
+                            self._handle_sort(node)
+                        elif isinstance(node, Coalesce):
+                            self._handle_coalesce(node)
                         else:
                             raise NotImplementedError(f"{type(node)} not implemented")
+            else:
+                for i in range(exec_op.num_partitions):
+
+                    for node in exec_op.logical_ops:
+                        with log_event(f"{node.__class__.__name__}:node_id={node.id()}:partition={i}"):
+                            if isinstance(node, Scan):
+                                self._handle_scan(node, partition_id=i)
+                            elif isinstance(node, Projection):
+                                self._handle_projection(node, partition_id=i)
+                            elif isinstance(node, Filter):
+                                self._handle_filter(node, partition_id=i)
+                            elif isinstance(node, LocalLimit):
+                                self._handle_local_limit(node, partition_id=i)
+                            elif isinstance(node, LocalAggregate):
+                                self._handle_local_aggregate(node, partition_id=i)
+                            elif isinstance(node, Join):
+                                self._handle_join(node, partition_id=i)
+                            else:
+                                raise NotImplementedError(f"{type(node)} not implemented")
+        tracer.stop()
+        tracer.save()
         return self._part_manager.get_partition_set(node.id())
 
     def _handle_scan(self, scan: Scan, partition_id: int) -> None:
@@ -212,6 +219,10 @@ class PyRunner(Runner):
 
         left_partition = self._part_manager.get(left_id, partition_id)
         right_partition = self._part_manager.get(right_id, partition_id)
+        if join.id() == 22:
+            import ipdb
+
+            ipdb.set_trace()
         result = left_partition.join(
             right_partition,
             left_on=join._left_on,

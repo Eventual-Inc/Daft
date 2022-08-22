@@ -443,7 +443,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         right_table = pa.table(
             [r.data for r in right_keys] + [right_arange], names=[f"k_{i}" for i in range(len(right_keys))] + ["r_idx"]
         )
-
         joined_table = left_table.join(right_table, [f"k_{i}" for i in range(len(left_keys))], join_type="inner")
 
         l_idx = joined_table["l_idx"]
