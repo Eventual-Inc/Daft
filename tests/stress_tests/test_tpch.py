@@ -1,8 +1,11 @@
 import datetime
 import os
+import pathlib
+import re
 import shlex
 import subprocess
 from typing import Optional
+import sqlite3
 
 import pandas as pd
 import pyarrow as pa
@@ -10,6 +13,11 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col, udf
+
+from tests.conftest import assert_df_equals
+
+# If running in github, we use smaller-scale data
+SQLITE_DB_FILE_PATH = "data/tpch-sqlite/TPC-H.db"
 
 SCHEMA = {
     "part": [
@@ -95,13 +103,17 @@ SCHEMA = {
 @pytest.fixture(scope="function", autouse=True)
 def gen_tpch():
     script = "scripts/tpch-gen.sh"
-    if not os.path.exists("data/tpch"):
-        subprocess.check_output(shlex.split(f"{script}"))
+    if not os.path.exists("data/tpch-sqlite"):
+        # If running in CI, use a scale factor of 0.2
+        # Otherwise, check for TPCH_SCALE_FACTOR env variable or default to 1
+        scale_factor = float(os.getenv("TPCH_SCALE_FACTOR", "1"))
+        scale_factor = 0.2 if os.getenv("CI") else scale_factor
+        subprocess.check_output(shlex.split(f"{script} {scale_factor}"))
 
 
 def get_df(tbl_name: str, num_partitions: Optional[int] = None):
     df = DataFrame.from_csv(
-        f"data/tpch/{tbl_name}.tbl",
+        f"data/tpch-sqlite/tpch-dbgen/{tbl_name}.tbl",
         has_headers=False,
         column_names=SCHEMA[tbl_name] + [""],
         delimiter="|",
@@ -110,6 +122,27 @@ def get_df(tbl_name: str, num_partitions: Optional[int] = None):
     if num_partitions is not None:
         df = df.repartition(num_partitions)
     return df
+
+
+def get_data_size_gb():
+    # Check the size of the sqlite db
+    return os.path.getsize(SQLITE_DB_FILE_PATH) / (1024 ** 3)
+
+
+def check_answer(daft_pd_df: pd.DataFrame, tpch_question: int, tmp_path: str):
+    # If comparing data smaller than 1GB, we fall back onto using SQLite for checking correctness
+    if get_data_size_gb() < 1.0:
+        query = pathlib.Path(f"tests/assets/tpch-sqlite-queries/{tpch_question}.sql").read_text()
+        conn = sqlite3.connect(SQLITE_DB_FILE_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
+        cursor = conn.cursor()
+        res = cursor.execute(query)
+        sqlite_results = res.fetchall()
+        sqlite_pd_results = pd.DataFrame.from_records(sqlite_results, columns=daft_pd_df.columns)
+        assert_df_equals(daft_pd_df, sqlite_pd_results, assert_ordering=True)
+    else:
+        csv_out = f"{tmp_path}/q{tpch_question}.out"
+        daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
+        assert run_tpch_checker(tpch_question, csv_out)
 
 
 @pytest.mark.parametrize("num_partitions", [None, 3])
@@ -134,25 +167,10 @@ def test_tpch_q1(tmp_path, num_partitions):
         )
         .sort(col("L_RETURNFLAG"))
     )
-    answer = pd.read_csv("data/tpch/answers/q1.out", delimiter="|")
-    answer.columns = [
-        "L_RETURNFLAG",
-        "L_LINESTATUS",
-        "sum_qty",
-        "sum_base_price",
-        "sum_disc_price",
-        "sum_charge",
-        "avg_qty",
-        "avg_price",
-        "avg_disc",
-        "count_order",
-    ]
+
     daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["L_RETURNFLAG", "L_LINESTATUS"])  # WE don't have multicolumn sort
-    csv_out = f"{tmp_path}/q1.out"
-    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-
-    assert run_tpch_checker(1, csv_out)
+    check_answer(daft_pd_df, 1, tmp_path)
 
 
 @pytest.mark.parametrize("num_partitions", [None, 3])
@@ -205,10 +223,7 @@ def test_tpch_q2(tmp_path, num_partitions):
         by=["S_ACCTBAL", "N_NAME", "S_NAME", "P_PARTKEY"], ascending=[False, True, True, True]
     )
     daft_pd_df = daft_pd_df.head(100)
-    csv_out = f"{tmp_path}/q2.out"
-    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-
-    assert run_tpch_checker(2, csv_out)
+    check_answer(daft_pd_df, 2, tmp_path)
 
 
 @pytest.mark.tpch
@@ -240,10 +255,7 @@ def test_tpch_q3(tmp_path, num_partitions):
     daft_pd_df = daft_pd_df.sort_values(by=["revenue", "O_ORDERDATE"], ascending=[False, True])
     daft_pd_df = daft_pd_df.head(10)
     daft_pd_df = daft_pd_df[["O_ORDERKEY", "revenue", "O_ORDERDATE", "O_SHIPPRIORITY"]]
-    csv_out = f"{tmp_path}/q3.out"
-    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-
-    assert run_tpch_checker(3, csv_out)
+    check_answer(daft_pd_df, 3, tmp_path)
 
 
 @pytest.mark.tpch
@@ -253,7 +265,6 @@ def test_tpch_q4(tmp_path, num_partitions):
         (col("O_ORDERDATE") >= datetime.date(1993, 7, 1)) & (col("O_ORDERDATE") < datetime.date(1993, 10, 1))
     )
 
-    # TODO: Needs implementation of .distinct() - we could maybe just do a groupby with no-op aggs?
     lineitems = (
         get_df("lineitem", num_partitions=num_partitions)
         .where(col("L_COMMITDATE") < col("L_RECEIPTDATE"))
@@ -269,10 +280,7 @@ def test_tpch_q4(tmp_path, num_partitions):
     )
 
     daft_pd_df = daft_df.to_pandas()
-    csv_out = f"{tmp_path}/q4.out"
-    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-
-    assert run_tpch_checker(4, csv_out)
+    check_answer(daft_pd_df, 4, tmp_path)
 
 
 @pytest.mark.tpch
@@ -303,10 +311,7 @@ def test_tpch_q5(tmp_path, num_partitions):
     )
 
     daft_pd_df = daft_df.to_pandas()
-    csv_out = f"{tmp_path}/q5.out"
-    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-
-    assert run_tpch_checker(5, csv_out)
+    check_answer(daft_pd_df, 5, tmp_path)
 
 
 @pytest.mark.tpch
@@ -322,10 +327,7 @@ def test_tpch_q6(tmp_path, num_partitions):
     ).sum(col("L_EXTENDEDPRICE") * col("L_DISCOUNT"))
 
     daft_pd_df = daft_df.to_pandas()
-    csv_out = f"{tmp_path}/q6.out"
-    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-
-    assert run_tpch_checker(6, csv_out)
+    check_answer(daft_pd_df, 6, tmp_path)
 
 
 @pytest.mark.tpch
@@ -383,10 +385,7 @@ def test_tpch_q7(tmp_path, num_partitions):
     # Multicol sorts not implemented yet
     daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["supp_nation", "cust_nation", "l_year"])
-    csv_out = f"{tmp_path}/q7.out"
-    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-
-    assert run_tpch_checker(7, csv_out)
+    check_answer(daft_pd_df, 7, tmp_path)
 
 
 @pytest.mark.tpch
@@ -449,10 +448,7 @@ def test_tpch_q8(tmp_path, num_partitions):
     )
 
     daft_pd_df = daft_df.to_pandas()
-    csv_out = f"{tmp_path}/q8.out"
-    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-
-    assert run_tpch_checker(8, csv_out)
+    check_answer(daft_pd_df, 8, tmp_path)
 
 
 @pytest.mark.tpch
@@ -498,10 +494,7 @@ def test_tpch_q9(tmp_path, num_partitions):
 
     daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["N_NAME", "o_year"], ascending=[True, False])
-    csv_out = f"{tmp_path}/q9.out"
-    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-
-    assert run_tpch_checker(9, csv_out)
+    check_answer(daft_pd_df, 9, tmp_path)
 
 
 @pytest.mark.tpch
@@ -509,10 +502,6 @@ def test_tpch_q9(tmp_path, num_partitions):
 def test_tpch_q10(tmp_path, num_partitions):
     def decrease(x, y):
         return x * (1 - y)
-
-    @udf(return_type=float)
-    def round_2dp(revenue):
-        return revenue.round(decimals=2)
 
     lineitem = get_df("lineitem", num_partitions=num_partitions).where(col("L_RETURNFLAG") == "R")
     orders = get_df("orders", num_partitions=num_partitions)
@@ -561,10 +550,7 @@ def test_tpch_q10(tmp_path, num_partitions):
     )
 
     daft_pd_df = daft_df.to_pandas()
-    csv_out = f"{tmp_path}/q10.out"
-    daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-
-    assert run_tpch_checker(10, csv_out)
+    check_answer(daft_pd_df, 10, tmp_path)
 
 
 def run_tpch_checker(q_num: int, result_file: str) -> bool:
@@ -572,6 +558,6 @@ def run_tpch_checker(q_num: int, result_file: str) -> bool:
     answer = f"../answers/q{q_num}.out"
 
     output = subprocess.check_output(
-        shlex.split(f"{script} {q_num} {result_file} {answer}"), cwd="data/tpch/check_answers"
+        shlex.split(f"{script} {q_num} {result_file} {answer}"), cwd="data/tpch-sqlite/tpch-dbgen/check_answers"
     )
     return output.decode() == f"Query {q_num} 0 unacceptable missmatches\n"
