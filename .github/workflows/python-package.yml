@@ -37,6 +37,15 @@ jobs:
     - name: Build Extensions Locally
       run: |
         poetry run build_inplace
+    - name: Clone TPCH SQlite repository
+      uses: actions/checkout@v2
+      with:
+        repository: lovasoa/TPCH-sqlite
+        path: data/tpch-sqlite
+        submodules: recursive
+    - name: Build TPCH data
+      working-directory: data/tpch-sqlite
+      run: SCALE_FACTOR=0.2 make
     - name: Test with pytest
       run: |
         poetry run pytest
