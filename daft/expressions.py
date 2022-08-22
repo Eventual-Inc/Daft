@@ -309,6 +309,7 @@ class LiteralExpression(Expression):
         self._value = value
 
     def resolved_type(self) -> Optional[ExpressionType]:
+        print(type(self._value))
         return ExpressionType.from_py_type(type(self._value))
 
     def _display_str(self) -> str:

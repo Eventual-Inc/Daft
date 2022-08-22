@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
@@ -31,6 +32,7 @@ class ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
         if unable to find the appropriate type. ExpressionTypes.Python is never returned.
         """
+        print(obj_type, obj_type in _PY_TYPE_TO_EXPRESSION_TYPE)
         global _TYPE_REGISTRY
         if isinstance(obj_type, Sequence):
             type_registry_key = f"Tuple[{', '.join(arg.__name__ for arg in obj_type)}]"
@@ -64,6 +66,7 @@ class PrimitiveExpressionType(ExpressionType):
         FLOAT = 3
         LOGICAL = 4
         STRING = 5
+        DATE = 6
 
     enum: PrimitiveExpressionType.TypeEnum
 
@@ -108,6 +111,7 @@ _TYPE_REGISTRY: Dict[str, ExpressionType] = {
     "float": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.FLOAT),
     "logical": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.LOGICAL),
     "string": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.STRING),
+    "date": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.DATE),
 }
 
 
@@ -116,6 +120,7 @@ EXPRESSION_TYPE_TO_PYARROW_TYPE = {
     _TYPE_REGISTRY["integer"]: pa.int64(),
     _TYPE_REGISTRY["float"]: pa.float64(),
     _TYPE_REGISTRY["string"]: pa.string(),
+    _TYPE_REGISTRY["date"]: pa.date32(),
 }
 
 
@@ -133,7 +138,7 @@ _PYARROW_TYPE_TO_EXPRESSION_TYPE = {
     pa.float16(): _TYPE_REGISTRY["float"],
     pa.float32(): _TYPE_REGISTRY["float"],
     pa.float64(): _TYPE_REGISTRY["float"],
-    pa.date32(): _TYPE_REGISTRY["unknown"],
+    pa.date32(): _TYPE_REGISTRY["date"],
     pa.date64(): _TYPE_REGISTRY["unknown"],
     pa.string(): _TYPE_REGISTRY["string"],
     pa.utf8(): _TYPE_REGISTRY["string"],
@@ -147,6 +152,7 @@ _PY_TYPE_TO_EXPRESSION_TYPE = {
     float: _TYPE_REGISTRY["float"],
     str: _TYPE_REGISTRY["string"],
     bool: _TYPE_REGISTRY["logical"],
+    datetime.date: _TYPE_REGISTRY["date"],
 }
 
 
@@ -202,6 +208,7 @@ _ComparisionTM = frozenset(
         (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["date"], _TYPE_REGISTRY["date"]): _TYPE_REGISTRY["logical"],
     }.items()
 )
 
@@ -217,6 +224,7 @@ _CountLogicalTM = frozenset(
         (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["integer"],
     }.items()
 )
 

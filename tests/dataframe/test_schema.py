@@ -1,8 +1,10 @@
+import datetime
+
 import pytest
 
 from daft.dataframe import DataFrame
 from daft.execution.operators import ExpressionType
-from daft.expressions import col, udf
+from daft.expressions import col, lit, udf
 
 COLS = ["floatcol", "intcol", "stringcol", "boolcol"]
 
@@ -15,14 +17,16 @@ def daft_df():
         (col("sepal.length") // 1).alias("intcol"),
         col("variety").alias("stringcol"),
         (col("sepal.length") < 5.0).alias("boolcol"),
+        lit(datetime.date(1994, 1, 1)).alias("datecol"),
     )
 
     schema_fields = {e.name: e for e in daft_df.schema()}
-    assert schema_fields.keys() == {"floatcol", "intcol", "stringcol", "boolcol"}
+    assert schema_fields.keys() == {"floatcol", "intcol", "stringcol", "boolcol", "datecol"}
     assert schema_fields["floatcol"].daft_type == ExpressionType.from_py_type(float)
     assert schema_fields["intcol"].daft_type == ExpressionType.from_py_type(int)
     assert schema_fields["stringcol"].daft_type == ExpressionType.from_py_type(str)
     assert schema_fields["boolcol"].daft_type == ExpressionType.from_py_type(bool)
+    assert schema_fields["datecol"].daft_type == ExpressionType.from_py_type(datetime.date)
     return daft_df
 
 
@@ -69,7 +73,7 @@ def test_unary_ops_select_types(daft_df, colname, op, expected_result_type):
         with pytest.raises(TypeError):
             df = daft_df.select(getattr(col(colname), op)())
         return
-    
+
     df = daft_df.select(getattr(col(colname), op)())
     fields = [field for field in df.schema()]
     assert len(fields) == 1
@@ -92,6 +96,7 @@ number_number_logical = {
     ("intcol", "floatcol"): ExpressionType.from_py_type(bool),
 }
 string_string_logical = {("stringcol", "stringcol"): ExpressionType.from_py_type(bool)}
+date_date_logical = {("datecol", "datecol"): ExpressionType.from_py_type(bool)}
 
 BINARY_OPS_RESULT_TYPE_MAPPING = {
     "__add__": number_number_number,
@@ -103,12 +108,12 @@ BINARY_OPS_RESULT_TYPE_MAPPING = {
     "__mod__": number_number_number,
     "__and__": bool_bool_logical,
     "__or__": bool_bool_logical,
-    "__lt__": {**number_number_logical, **string_string_logical},
-    "__le__": {**number_number_logical, **string_string_logical},
-    "__eq__": {**number_number_logical, **string_string_logical},
-    "__ne__": {**number_number_logical, **string_string_logical},
-    "__gt__": {**number_number_logical, **string_string_logical},
-    "__ge__": {**number_number_logical, **string_string_logical},
+    "__lt__": {**number_number_logical, **string_string_logical, **date_date_logical},
+    "__le__": {**number_number_logical, **string_string_logical, **date_date_logical},
+    "__eq__": {**number_number_logical, **string_string_logical, **date_date_logical},
+    "__ne__": {**number_number_logical, **string_string_logical, **date_date_logical},
+    "__gt__": {**number_number_logical, **string_string_logical, **date_date_logical},
+    "__ge__": {**number_number_logical, **string_string_logical, **date_date_logical},
 }
 
 
