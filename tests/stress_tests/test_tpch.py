@@ -7,7 +7,6 @@ import subprocess
 from typing import Optional
 
 import pandas as pd
-import pyarrow as pa
 import pytest
 
 from daft.dataframe import DataFrame
@@ -149,7 +148,7 @@ def test_tpch_q1(tmp_path, num_partitions):
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
     daft_df = (
-        lineitem.where(col("L_SHIPDATE") <= pa.scalar(datetime.date(1998, 9, 2)))
+        lineitem.where(col("L_SHIPDATE") <= datetime.date(1998, 9, 2))
         .groupby(col("L_RETURNFLAG"), col("L_LINESTATUS"))
         .agg(
             [

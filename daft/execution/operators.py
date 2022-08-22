@@ -1,22 +1,23 @@
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
 from typing import (
+    Any,
     Callable,
     Dict,
     FrozenSet,
     Optional,
     Protocol,
-    Sequence,
     Tuple,
     Type,
     TypeVar,
-    Union,
 )
 
+import numpy as np
 import pyarrow as pa
 
 
@@ -26,25 +27,12 @@ class ExpressionType:
         return _TYPE_REGISTRY["unknown"]
 
     @staticmethod
-    def from_py_type(obj_type: Union[Type, Sequence[Type]]) -> ExpressionType:
+    def from_py_type(obj_type: Type) -> ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
         if unable to find the appropriate type. ExpressionTypes.Python is never returned.
         """
-        global _TYPE_REGISTRY
-        if isinstance(obj_type, Sequence):
-            type_registry_key = f"Tuple[{', '.join(arg.__name__ for arg in obj_type)}]"
-            if type_registry_key in _TYPE_REGISTRY:
-                return _TYPE_REGISTRY[type_registry_key]
-            _TYPE_REGISTRY[type_registry_key] = CompositeExpressionType(
-                tuple(ExpressionType.from_py_type(arg) for arg in obj_type)
-            )
-            return _TYPE_REGISTRY[type_registry_key]
-        elif obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
-            type_registry_key = f"PyObj[{obj_type.__name__}]"
-            if type_registry_key in _TYPE_REGISTRY:
-                return _TYPE_REGISTRY[type_registry_key]
-            _TYPE_REGISTRY[type_registry_key] = PythonExpressionType(obj_type)
-            return _TYPE_REGISTRY[type_registry_key]
+        if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
+            return PythonExpressionType(obj_type)
         return _PY_TYPE_TO_EXPRESSION_TYPE[obj_type]
 
     @staticmethod
@@ -63,11 +51,17 @@ class PrimitiveExpressionType(ExpressionType):
         FLOAT = 3
         LOGICAL = 4
         STRING = 5
+        DATE = 6
 
     enum: PrimitiveExpressionType.TypeEnum
 
     def __repr__(self) -> str:
         return self.enum.name
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, PrimitiveExpressionType):
+            return False
+        return self.enum == other.enum
 
 
 @dataclass(frozen=True)
@@ -77,6 +71,11 @@ class CompositeExpressionType(ExpressionType):
     def __repr__(self) -> str:
         return f"({', '.join([str(arg) for arg in self.args])})"
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, CompositeExpressionType):
+            return False
+        return self.args == other.args
+
 
 @dataclass(frozen=True)
 class PythonExpressionType(ExpressionType):
@@ -85,6 +84,11 @@ class PythonExpressionType(ExpressionType):
     def __repr__(self) -> str:
         return f"PyObj[{self.python_cls.__name__}]"
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, PythonExpressionType):
+            return False
+        return self.python_cls == other.python_cls
+
 
 _TYPE_REGISTRY: Dict[str, ExpressionType] = {
     "unknown": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.UNKNOWN),
@@ -92,6 +96,10 @@ _TYPE_REGISTRY: Dict[str, ExpressionType] = {
     "float": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.FLOAT),
     "logical": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.LOGICAL),
     "string": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.STRING),
+    "date": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.DATE),
+    # These are "known Python types" which are some common PyObjs that users may use
+    # We register them so that we can hardcode the return types for operators on these types
+    "numpy": PythonExpressionType(np.ndarray),
 }
 
 
@@ -100,6 +108,7 @@ EXPRESSION_TYPE_TO_PYARROW_TYPE = {
     _TYPE_REGISTRY["integer"]: pa.int64(),
     _TYPE_REGISTRY["float"]: pa.float64(),
     _TYPE_REGISTRY["string"]: pa.string(),
+    _TYPE_REGISTRY["date"]: pa.date32(),
 }
 
 
@@ -117,7 +126,7 @@ _PYARROW_TYPE_TO_EXPRESSION_TYPE = {
     pa.float16(): _TYPE_REGISTRY["float"],
     pa.float32(): _TYPE_REGISTRY["float"],
     pa.float64(): _TYPE_REGISTRY["float"],
-    pa.date32(): _TYPE_REGISTRY["unknown"],
+    pa.date32(): _TYPE_REGISTRY["date"],
     pa.date64(): _TYPE_REGISTRY["unknown"],
     pa.string(): _TYPE_REGISTRY["string"],
     pa.utf8(): _TYPE_REGISTRY["string"],
@@ -131,6 +140,7 @@ _PY_TYPE_TO_EXPRESSION_TYPE = {
     float: _TYPE_REGISTRY["float"],
     str: _TYPE_REGISTRY["string"],
     bool: _TYPE_REGISTRY["logical"],
+    datetime.date: _TYPE_REGISTRY["date"],
 }
 
 
@@ -156,18 +166,37 @@ class ExpressionOperator:
             assert v != _TYPE_REGISTRY["unknown"]
 
     @lru_cache
-    def type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
+    def _type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
         return MappingProxyType(dict(self.type_matrix))
+
+    def get_return_type(
+        self, args: Tuple[ExpressionType, ...], default: Optional[ExpressionType] = None
+    ) -> Optional[ExpressionType]:
+        # Unknown types cascade
+        if any([arg == ExpressionType.unknown() for arg in args]):
+            return ExpressionType.unknown()
+        # Return unknown if any of the args are types which we don't explicitly recognize
+        # We explicitly register operator return types for common types such as numpy arrays
+        if any([arg not in _TYPE_REGISTRY.values() for arg in args]):
+            return ExpressionType.unknown()
+        res = self._type_matrix_dict().get(args)
+        return default if res is None else res
 
 
 _UnaryNumericalTM = frozenset(
     {
         (_TYPE_REGISTRY["integer"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["float"],
+        (_TYPE_REGISTRY["numpy"],): _TYPE_REGISTRY["numpy"],
     }.items()
 )
 
-_UnaryLogicalTM = frozenset({(_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["logical"]}.items())
+_UnaryLogicalTM = frozenset(
+    {
+        (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["numpy"],): _TYPE_REGISTRY["numpy"],
+    }.items()
+)
 
 
 _BinaryNumericalTM = frozenset(
@@ -176,6 +205,9 @@ _BinaryNumericalTM = frozenset(
         (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
         (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["float"],
         (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
+        (_TYPE_REGISTRY["numpy"], _TYPE_REGISTRY["numpy"]): _TYPE_REGISTRY["numpy"],
+        (_TYPE_REGISTRY["numpy"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["numpy"],
+        (_TYPE_REGISTRY["numpy"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["numpy"],
     }.items()
 )
 
@@ -186,6 +218,7 @@ _ComparisionTM = frozenset(
         (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["date"], _TYPE_REGISTRY["date"]): _TYPE_REGISTRY["logical"],
     }.items()
 )
 
@@ -201,6 +234,8 @@ _CountLogicalTM = frozenset(
         (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["numpy"],): _TYPE_REGISTRY["integer"],
     }.items()
 )
 
@@ -245,17 +280,7 @@ class OperatorEnum(Enum):
     ADD = _NBop(name="add", symbol="+")
     SUB = _NBop(name="subtract", symbol="-")
     MUL = _NBop(name="multiply", symbol="*")
-    FLOORDIV = partial(
-        _BOp,
-        type_matrix=frozenset(
-            {
-                (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
-                (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["integer"],
-                (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
-                (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["integer"],
-            }.items()
-        ),
-    )(name="floor_divide", symbol="//")
+    FLOORDIV = _NBop(name="floor_divide", symbol="//")
     TRUEDIV = _NBop(name="true_divide", symbol="/")
     POW = _NBop(name="power", symbol="**")
     MOD = _NBop(name="mod", symbol="%")

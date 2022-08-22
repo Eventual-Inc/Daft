@@ -505,15 +505,15 @@ def make_map_binary(
 
 
 class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
-    NEGATE = partial(PyListDataBlock._unary_op, fn=make_map_unary(operator.neg))
+    NEGATE = make_map_unary(operator.neg)
     POSITIVE = PyListDataBlock.identity
-    ABS = partial(PyListDataBlock._unary_op, fn=make_map_unary(operator.abs))
+    ABS = make_map_unary(operator.abs)
     SUM = PyListDataBlock.identity
     MEAN = PyListDataBlock.identity
     MIN = PyListDataBlock.identity
     MAX = PyListDataBlock.identity
     COUNT = PyListDataBlock.identity
-    INVERT = partial(PyListDataBlock._unary_op, fn=make_map_unary(operator.invert))
+    INVERT = make_map_unary(operator.invert)
     ADD = make_map_binary(operator.add)
     SUB = make_map_binary(operator.sub)
     MUL = make_map_binary(operator.mul)
