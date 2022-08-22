@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 from bisect import bisect_right
 from itertools import accumulate
-from typing import Dict
+from typing import Dict, Optional
 
 from pyarrow import csv, parquet
 
@@ -65,8 +65,13 @@ class PyRunnerPartitionManager:
     def put_partition_set(self, node_id: int, pset: PartitionSet) -> None:
         self._nid_to_partition_set[node_id] = pset
 
-    def rm(self, id: int):
-        ...
+    def rm(self, node_id: int, partition_id: Optional[int] = None):
+        if partition_id is None:
+            del self._nid_to_partition_set[node_id]
+        else:
+            del self._nid_to_partition_set[node_id].partitions[partition_id]
+            if len(self._nid_to_partition_set[node_id].partitions) == 0:
+                del self._nid_to_partition_set[node_id]
 
 
 class PyRunnerSimpleShuffler(ShuffleOp):
@@ -112,7 +117,6 @@ class PyRunner(Runner):
     def run(self, plan: LogicalPlan) -> PartitionSet:
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         for exec_op in exec_plan.execution_ops:
-
             if exec_op.is_global_op:
                 for node in exec_op.logical_ops:
                     if isinstance(node, GlobalLimit):
@@ -123,9 +127,10 @@ class PyRunner(Runner):
                         self._handle_sort(node)
                     elif isinstance(node, Coalesce):
                         self._handle_coalesce(node)
-
                     else:
                         raise NotImplementedError(f"{type(node)} not implemented")
+                    for child in node._children():
+                        self._part_manager.rm(child.id())
             else:
                 for i in range(exec_op.num_partitions):
                     for node in exec_op.logical_ops:
@@ -143,6 +148,9 @@ class PyRunner(Runner):
                             self._handle_join(node, partition_id=i)
                         else:
                             raise NotImplementedError(f"{type(node)} not implemented")
+                        for child in node._children():
+                            self._part_manager.rm(child.id(), partition_id=i)
+
         return self._part_manager.get_partition_set(node.id())
 
     def _handle_scan(self, scan: Scan, partition_id: int) -> None:
