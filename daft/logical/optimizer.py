@@ -1,4 +1,3 @@
-import copy
 from functools import cached_property
 from typing import Optional, Set, Type
 
@@ -147,22 +146,9 @@ class FoldProjections(Rule[LogicalPlan]):
         grandchild_ids = grandchild_output.to_id_set()
 
         can_skip_child = required_columns.to_id_set().issubset(grandchild_ids)
+
         if can_skip_child:
+            logger.debug(f"Folding: {parent} into {child}")
             return Projection(grandchild, parent._projection)
-
-        child_output = child.schema()
-        ids_needed = required_columns.to_id_set() - grandchild_ids
-
-        to_sub = {i: child_output.get_expression_by_id(i) for i in ids_needed}
-
-        new_projection = []
-        for e in parent._projection:
-            for req_col in e.required_columns():
-                rid = req_col.get_id()
-                assert rid is not None
-                if rid in ids_needed:
-                    e = copy.deepcopy(e)
-                    e._replace_column_with_expression(req_col, to_sub[rid])
-            new_projection.append(e)
-
-        return Projection(grandchild, ExpressionList(new_projection))
+        else:
+            return None
