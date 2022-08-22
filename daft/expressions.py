@@ -308,7 +308,6 @@ class LiteralExpression(Expression):
         self._value = value
 
     def resolved_type(self) -> Optional[ExpressionType]:
-        print(type(self._value))
         return ExpressionType.from_py_type(type(self._value))
 
     def _display_str(self) -> str:
@@ -357,7 +356,7 @@ class CallExpression(Expression):
         if any([arg_type is None for arg_type in args_resolved_types]):
             return None
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
-        ret_type = self._operator.value.type_matrix_dict().get(args_resolved_types_non_none, None)
+        ret_type = self._operator.value.get_return_type(args_resolved_types_non_none, None)
 
         if ret_type is None:
             operator: ExpressionOperator = self._operator.value

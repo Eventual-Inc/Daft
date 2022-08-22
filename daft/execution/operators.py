@@ -17,6 +17,7 @@ from typing import (
     TypeVar,
 )
 
+import numpy as np
 import pyarrow as pa
 
 
@@ -30,13 +31,8 @@ class ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
         if unable to find the appropriate type. ExpressionTypes.Python is never returned.
         """
-        global _TYPE_REGISTRY
         if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
-            type_registry_key = f"PyObj[{obj_type.__name__}]"
-            if type_registry_key in _TYPE_REGISTRY:
-                return _TYPE_REGISTRY[type_registry_key]
-            _TYPE_REGISTRY[type_registry_key] = PythonExpressionType(obj_type)
-            return _TYPE_REGISTRY[type_registry_key]
+            return PythonExpressionType(obj_type)
         return _PY_TYPE_TO_EXPRESSION_TYPE[obj_type]
 
     @staticmethod
@@ -101,6 +97,9 @@ _TYPE_REGISTRY: Dict[str, ExpressionType] = {
     "logical": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.LOGICAL),
     "string": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.STRING),
     "date": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.DATE),
+    # These are "known Python types" which are some common PyObjs that users may use
+    # We register them so that we can hardcode the return types for operators on these types
+    "numpy": PythonExpressionType(np.ndarray),
 }
 
 
@@ -167,18 +166,37 @@ class ExpressionOperator:
             assert v != _TYPE_REGISTRY["unknown"]
 
     @lru_cache
-    def type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
+    def _type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
         return MappingProxyType(dict(self.type_matrix))
+
+    def get_return_type(
+        self, args: Tuple[ExpressionType, ...], default: Optional[ExpressionType] = None
+    ) -> Optional[ExpressionType]:
+        # Unknown types cascade
+        if any([arg == ExpressionType.unknown() for arg in args]):
+            return ExpressionType.unknown()
+        # Return unknown if any of the args are types which we don't explicitly recognize
+        # We explicitly register operator return types for common types such as numpy arrays
+        if any([arg not in _TYPE_REGISTRY.values() for arg in args]):
+            return ExpressionType.unknown()
+        res = self._type_matrix_dict().get(args)
+        return default if res is None else res
 
 
 _UnaryNumericalTM = frozenset(
     {
         (_TYPE_REGISTRY["integer"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["float"],
+        (_TYPE_REGISTRY["numpy"],): _TYPE_REGISTRY["numpy"],
     }.items()
 )
 
-_UnaryLogicalTM = frozenset({(_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["logical"]}.items())
+_UnaryLogicalTM = frozenset(
+    {
+        (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["numpy"],): _TYPE_REGISTRY["numpy"],
+    }.items()
+)
 
 
 _BinaryNumericalTM = frozenset(
@@ -187,6 +205,9 @@ _BinaryNumericalTM = frozenset(
         (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
         (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["float"],
         (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
+        (_TYPE_REGISTRY["numpy"], _TYPE_REGISTRY["numpy"]): _TYPE_REGISTRY["numpy"],
+        (_TYPE_REGISTRY["numpy"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["numpy"],
+        (_TYPE_REGISTRY["numpy"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["numpy"],
     }.items()
 )
 
@@ -214,6 +235,7 @@ _CountLogicalTM = frozenset(
         (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["numpy"],): _TYPE_REGISTRY["integer"],
     }.items()
 )
 
@@ -258,17 +280,7 @@ class OperatorEnum(Enum):
     ADD = _NBop(name="add", symbol="+")
     SUB = _NBop(name="subtract", symbol="-")
     MUL = _NBop(name="multiply", symbol="*")
-    FLOORDIV = partial(
-        _BOp,
-        type_matrix=frozenset(
-            {
-                (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
-                (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["integer"],
-                (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
-                (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["integer"],
-            }.items()
-        ),
-    )(name="floor_divide", symbol="//")
+    FLOORDIV = _NBop(name="floor_divide", symbol="//")
     TRUEDIV = _NBop(name="true_divide", symbol="/")
     POW = _NBop(name="power", symbol="**")
     MOD = _NBop(name="mod", symbol="%")
