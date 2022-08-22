@@ -5,6 +5,7 @@ from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
 from typing import (
+    Any,
     Callable,
     Dict,
     FrozenSet,
@@ -69,6 +70,11 @@ class PrimitiveExpressionType(ExpressionType):
     def __repr__(self) -> str:
         return self.enum.name
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, PrimitiveExpressionType):
+            return False
+        return self.enum == other.enum
+
 
 @dataclass(frozen=True)
 class CompositeExpressionType(ExpressionType):
@@ -77,6 +83,11 @@ class CompositeExpressionType(ExpressionType):
     def __repr__(self) -> str:
         return f"({', '.join([str(arg) for arg in self.args])})"
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, CompositeExpressionType):
+            return False
+        return self.args == other.args
+
 
 @dataclass(frozen=True)
 class PythonExpressionType(ExpressionType):
@@ -84,6 +95,11 @@ class PythonExpressionType(ExpressionType):
 
     def __repr__(self) -> str:
         return f"PyObj[{self.python_cls.__name__}]"
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, PythonExpressionType):
+            return False
+        return self.python_cls == other.python_cls
 
 
 _TYPE_REGISTRY: Dict[str, ExpressionType] = {

@@ -65,8 +65,12 @@ UNARY_OPS_RESULT_TYPE_MAPPING = {
     ],
 )
 def test_unary_ops_select_types(daft_df, colname, op, expected_result_type):
+    if expected_result_type == ExpressionType.unknown():
+        with pytest.raises(TypeError):
+            df = daft_df.select(getattr(col(colname), op)())
+        return
+    
     df = daft_df.select(getattr(col(colname), op)())
-
     fields = [field for field in df.schema()]
     assert len(fields) == 1
     field = fields[0]
@@ -124,8 +128,12 @@ BINARY_OPS_RESULT_TYPE_MAPPING = {
     ],
 )
 def test_unary_ops_select_types(daft_df, col1, col2, op, expected_result_type):
-    df = daft_df.select(getattr(col(col1), op)(col(col2)))
+    if expected_result_type == ExpressionType.unknown():
+        with pytest.raises(TypeError):
+            df = daft_df.select(getattr(col(col1), op)(col(col2)))
+        return
 
+    df = daft_df.select(getattr(col(col1), op)(col(col2)))
     fields = [field for field in df.schema()]
     assert len(fields) == 1
     field = fields[0]

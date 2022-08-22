@@ -59,6 +59,8 @@ class ExpressionList(Iterable[ExpressionType]):
                         col_expr.resolve_to_expression(match_output_expr)
                     else:
                         raise ValueError(f"Could not find expr by name {col_expr_name}")
+                # Validate that types are able to be resolved, or throw a TypeError if not
+                e.resolved_type()
         for e in self.exprs:
             e._assign_id(strict=False)
         # self.is_resolved = True

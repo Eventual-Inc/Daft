@@ -27,6 +27,7 @@ import pyarrow as pa
 from daft.execution.operators import (
     EXPRESSION_TYPE_TO_PYARROW_TYPE,
     CompositeExpressionType,
+    ExpressionOperator,
     ExpressionType,
     OperatorEnum,
     PrimitiveExpressionType,
@@ -357,6 +358,18 @@ class CallExpression(Expression):
             return None
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
         ret_type = self._operator.value.type_matrix_dict().get(args_resolved_types_non_none, ExpressionType.unknown())
+
+        if ret_type == ExpressionType.unknown():
+            operator: ExpressionOperator = self._operator.value
+            op_pretty_print = ""
+            operator_symbol = operator.symbol or operator.name
+            op_pretty_print = (
+                f"{self._args[0]} {operator_symbol} {self._args[1]}"
+                if operator.nargs == 2
+                else f"{operator_symbol}({', '.join([str(arg) for arg in self._args])})"
+            )
+            raise TypeError(f"Unable to resolve type for operation: {op_pretty_print}")
+
         return ret_type
 
     @property
