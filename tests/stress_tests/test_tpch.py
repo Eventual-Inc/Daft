@@ -1,11 +1,10 @@
 import datetime
 import os
 import pathlib
-import re
 import shlex
+import sqlite3
 import subprocess
 from typing import Optional
-import sqlite3
 
 import pandas as pd
 import pyarrow as pa
@@ -13,7 +12,6 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col, udf
-
 from tests.conftest import assert_df_equals
 
 # If running in github, we use smaller-scale data
@@ -126,7 +124,7 @@ def get_df(tbl_name: str, num_partitions: Optional[int] = None):
 
 def get_data_size_gb():
     # Check the size of the sqlite db
-    return os.path.getsize(SQLITE_DB_FILE_PATH) / (1024 ** 3)
+    return os.path.getsize(SQLITE_DB_FILE_PATH) / (1024**3)
 
 
 def check_answer(daft_pd_df: pd.DataFrame, tpch_question: int, tmp_path: str):
@@ -226,7 +224,6 @@ def test_tpch_q2(tmp_path, num_partitions):
     check_answer(daft_pd_df, 2, tmp_path)
 
 
-@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q3(tmp_path, num_partitions):
     def decrease(x, y):
@@ -258,7 +255,6 @@ def test_tpch_q3(tmp_path, num_partitions):
     check_answer(daft_pd_df, 3, tmp_path)
 
 
-@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q4(tmp_path, num_partitions):
     orders = get_df("orders", num_partitions=num_partitions).where(
@@ -283,7 +279,6 @@ def test_tpch_q4(tmp_path, num_partitions):
     check_answer(daft_pd_df, 4, tmp_path)
 
 
-@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q5(tmp_path, num_partitions):
     orders = get_df("orders", num_partitions=num_partitions).where(
@@ -314,7 +309,6 @@ def test_tpch_q5(tmp_path, num_partitions):
     check_answer(daft_pd_df, 5, tmp_path)
 
 
-@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q6(tmp_path, num_partitions):
     lineitem = get_df("lineitem", num_partitions=num_partitions)
@@ -330,7 +324,6 @@ def test_tpch_q6(tmp_path, num_partitions):
     check_answer(daft_pd_df, 6, tmp_path)
 
 
-@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q7(tmp_path, num_partitions):
     def decrease(x, y):
@@ -388,7 +381,6 @@ def test_tpch_q7(tmp_path, num_partitions):
     check_answer(daft_pd_df, 7, tmp_path)
 
 
-@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q8(tmp_path, num_partitions):
     lineitem = get_df("lineitem", num_partitions=num_partitions)
@@ -451,7 +443,6 @@ def test_tpch_q8(tmp_path, num_partitions):
     check_answer(daft_pd_df, 8, tmp_path)
 
 
-@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q9(tmp_path, num_partitions):
     lineitem = get_df("lineitem", num_partitions=num_partitions)
@@ -497,7 +488,6 @@ def test_tpch_q9(tmp_path, num_partitions):
     check_answer(daft_pd_df, 9, tmp_path)
 
 
-@pytest.mark.tpch
 @pytest.mark.parametrize("num_partitions", [None, 3])
 def test_tpch_q10(tmp_path, num_partitions):
     def decrease(x, y):
