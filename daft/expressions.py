@@ -13,7 +13,6 @@ from typing import (
     List,
     NewType,
     Optional,
-    Sequence,
     Tuple,
     Type,
     TypeVar,
@@ -358,9 +357,9 @@ class CallExpression(Expression):
         if any([arg_type is None for arg_type in args_resolved_types]):
             return None
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
-        ret_type = self._operator.value.type_matrix_dict().get(args_resolved_types_non_none, ExpressionType.unknown())
+        ret_type = self._operator.value.type_matrix_dict().get(args_resolved_types_non_none, None)
 
-        if ret_type == ExpressionType.unknown():
+        if ret_type is None:
             operator: ExpressionOperator = self._operator.value
             op_pretty_print = ""
             operator_symbol = operator.symbol or operator.name
@@ -443,7 +442,7 @@ class UdfExpression(Expression, Generic[DataBlockValueType]):
 T = TypeVar("T")
 
 
-def udf(f: Callable | None = None, *, return_type: Union[Type, Sequence[Type]]) -> Callable:
+def udf(f: Callable | None = None, *, return_type: Type) -> Callable:
     func_ret_type = ExpressionType.from_py_type(return_type)
 
     def udf_decorator(func: Callable) -> Callable:

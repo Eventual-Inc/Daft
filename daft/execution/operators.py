@@ -12,11 +12,9 @@ from typing import (
     FrozenSet,
     Optional,
     Protocol,
-    Sequence,
     Tuple,
     Type,
     TypeVar,
-    Union,
 )
 
 import pyarrow as pa
@@ -28,21 +26,12 @@ class ExpressionType:
         return _TYPE_REGISTRY["unknown"]
 
     @staticmethod
-    def from_py_type(obj_type: Union[Type, Sequence[Type]]) -> ExpressionType:
+    def from_py_type(obj_type: Type) -> ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
         if unable to find the appropriate type. ExpressionTypes.Python is never returned.
         """
-        print(obj_type, obj_type in _PY_TYPE_TO_EXPRESSION_TYPE)
         global _TYPE_REGISTRY
-        if isinstance(obj_type, Sequence):
-            type_registry_key = f"Tuple[{', '.join(arg.__name__ for arg in obj_type)}]"
-            if type_registry_key in _TYPE_REGISTRY:
-                return _TYPE_REGISTRY[type_registry_key]
-            _TYPE_REGISTRY[type_registry_key] = CompositeExpressionType(
-                tuple(ExpressionType.from_py_type(arg) for arg in obj_type)
-            )
-            return _TYPE_REGISTRY[type_registry_key]
-        elif obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
+        if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
             type_registry_key = f"PyObj[{obj_type.__name__}]"
             if type_registry_key in _TYPE_REGISTRY:
                 return _TYPE_REGISTRY[type_registry_key]
