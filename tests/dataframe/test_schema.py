@@ -116,7 +116,7 @@ BINARY_OPS_RESULT_TYPE_MAPPING = {
             col2,
             op,
             BINARY_OPS_RESULT_TYPE_MAPPING[op].get((col1, col2), ExpressionType.unknown()),
-            id=f"Op:{op},Cols:{(col1, col2)}",
+            id=f"Op:{op}:Cols:{(col1, col2)}",
         )
         for op in BINARY_OPS_RESULT_TYPE_MAPPING
         for col1 in COLS

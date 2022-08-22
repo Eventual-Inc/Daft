@@ -36,7 +36,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
         can_push_down = []
         can_not_push_down = []
         for pred in filter_predicate:
-            id_set = ExpressionList(pred.required_columns()).to_id_set()
+            id_set = {e.get_id() for e in pred.required_columns()}
             if id_set.issubset(ids_produced_by_grandchild):
                 can_push_down.append(pred)
             else:

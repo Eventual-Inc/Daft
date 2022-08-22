@@ -121,7 +121,7 @@ class PyRunner(Runner):
 
     def run(self, plan: LogicalPlan) -> PartitionSet:
         plan = self._optimizer.optimize(plan)
-        plan.to_dot_file()
+        # plan.to_dot_file()
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         for exec_op in exec_plan.execution_ops:
             if exec_op.is_global_op:
