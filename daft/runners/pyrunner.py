@@ -15,7 +15,7 @@ from daft.datasources import (
 )
 from daft.execution.execution_plan import ExecutionPlan
 from daft.filesystem import get_filesystem_from_path
-from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
+from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import (
     Coalesce,
     Filter,
@@ -30,7 +30,12 @@ from daft.logical.logical_plan import (
     Scan,
     Sort,
 )
-from daft.logical.optimizer import DropRepartition, FoldProjections, PushDownPredicates
+from daft.logical.optimizer import (
+    DropRepartition,
+    FoldProjections,
+    PushDownLimit,
+    PushDownPredicates,
+)
 from daft.runners.partitioning import PartitionSet, vPartition
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
@@ -116,7 +121,18 @@ class PyRunner(Runner):
     def __init__(self) -> None:
         self._part_manager = PyRunnerPartitionManager()
         self._optimizer = RuleRunner(
-            [RuleBatch("push_down_predicates", Once, [PushDownPredicates(), FoldProjections(), DropRepartition()])]
+            [
+                RuleBatch(
+                    "SinglePassPushDowns",
+                    Once,
+                    [PushDownPredicates(), FoldProjections(), DropRepartition()],
+                ),
+                RuleBatch(
+                    "PushDownLimits",
+                    FixedPointPolicy(3),
+                    [PushDownLimit()],
+                ),
+            ]
         )
 
     def run(self, plan: LogicalPlan) -> PartitionSet:

@@ -189,7 +189,7 @@ class Projection(UnaryNode):
         )
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> Projection:
-        raise NotImplementedError()
+        return Projection(new_input, self._projection.unresolve())
 
     def rebuild(self) -> LogicalPlan:
         return Projection(input=self._children()[0].rebuild(), projection=self._projection.unresolve())
