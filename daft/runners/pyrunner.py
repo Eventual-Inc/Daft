@@ -30,7 +30,12 @@ from daft.logical.logical_plan import (
     Scan,
     Sort,
 )
-from daft.logical.optimizer import DropRepartition, FoldProjections, PushDownPredicates
+from daft.logical.optimizer import (
+    DropRepartition,
+    FoldProjections,
+    PushDownLimit,
+    PushDownPredicates,
+)
 from daft.runners.partitioning import PartitionSet, vPartition
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
@@ -116,7 +121,13 @@ class PyRunner(Runner):
     def __init__(self) -> None:
         self._part_manager = PyRunnerPartitionManager()
         self._optimizer = RuleRunner(
-            [RuleBatch("push_down_predicates", Once, [PushDownPredicates(), FoldProjections(), DropRepartition()])]
+            [
+                RuleBatch(
+                    "push_down_predicates",
+                    Once,
+                    [PushDownPredicates(), FoldProjections(), DropRepartition(), PushDownLimit()],
+                )
+            ]
         )
 
     def run(self, plan: LogicalPlan) -> PartitionSet:

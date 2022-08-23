@@ -1,5 +1,5 @@
 from functools import cached_property
-from typing import Optional, Set, Type
+from typing import Optional, Set, Type, Union
 
 from loguru import logger
 
@@ -7,6 +7,8 @@ from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
     Coalesce,
     Filter,
+    GlobalLimit,
+    LocalLimit,
     LogicalPlan,
     PartitionScheme,
     Projection,
@@ -152,3 +154,21 @@ class FoldProjections(Rule[LogicalPlan]):
             return Projection(grandchild, parent._projection)
         else:
             return None
+
+
+class PushDownLimit(Rule[LogicalPlan]):
+    def __init__(self) -> None:
+        super().__init__()
+        for op in self._supported_unary_nodes:
+            self.register_fn(LocalLimit, op, self._push_down_limit_into_unary_node)
+            self.register_fn(GlobalLimit, op, self._push_down_limit_into_unary_node)
+
+    def _push_down_limit_into_unary_node(
+        self, parent: Union[LocalLimit, GlobalLimit], child: UnaryNode
+    ) -> Optional[UnaryNode]:
+        grandchild = child._children()[0]
+        return child.copy_with_new_input(LocalLimit(grandchild, num=parent._num))
+
+    @cached_property
+    def _supported_unary_nodes(self) -> Set[Type[UnaryNode]]:
+        return {Repartition, Coalesce, Projection}
