@@ -4,7 +4,7 @@ import collections
 import operator
 import random
 from abc import abstractmethod
-from functools import partial
+from functools import partial, wraps
 from itertools import starmap
 from typing import (
     Any,
@@ -499,13 +499,18 @@ def make_map_binary(
     f: Callable[[IN_1, IN_2], OUT]
 ) -> Callable[[PyListDataBlock[IN_1], PyListDataBlock[IN_2]], PyListDataBlock[OUT]]:
     def map_f(values: PyListDataBlock[IN_1], others: PyListDataBlock[IN_2]) -> PyListDataBlock[OUT]:
-        if isinstance(others, DataBlock):
+        assert isinstance(values, PyListDataBlock) or isinstance(others, PyListDataBlock)
+
+        if isinstance(values, PyListDataBlock) and isinstance(others, PyListDataBlock):
             return PyListDataBlock(data=list(starmap(f, zip(values.data, others.data))))
+        elif isinstance(values, PyListDataBlock):
 
-        def run(obj):
-            return f(obj, others)
+            @wraps(f)
+            def wrap_f_for_partial(v, o):
+                return f(v, o)
 
-        return PyListDataBlock(data=list(map(run, values.data)))
+            return PyListDataBlock(data=list(map(partial(wrap_f_for_partial, o=others), values.data)))
+        return PyListDataBlock(data=list(map(partial(f, values), others.data)))
 
     return map_f
 
