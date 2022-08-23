@@ -8,7 +8,7 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.execution.operators import ExpressionType
-from daft.expressions import col, udf
+from daft.expressions import col, lit, udf
 from tests.conftest import assert_df_equals
 
 
@@ -26,7 +26,7 @@ def test_load_pydict_with_obj(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
-def test_pyobj_addition(repartition_nparts):
+def test_pyobj_add_2_cols(repartition_nparts):
     data = {"id": [i for i in range(10)], "features": [np.ones(i) for i in range(10)]}
     daft_df = (
         DataFrame.from_pydict(data)
@@ -36,6 +36,32 @@ def test_pyobj_addition(repartition_nparts):
     daft_pd_df = daft_df.to_pandas()
     pd_df = pd.DataFrame.from_dict(data)
     pd_df["features_doubled"] = pd_df["features"] + pd_df["features"]
+    assert_df_equals(daft_pd_df, pd_df, sort_key="id")
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        1 + col("features"),
+        col("features") + 1,
+        col("features") + lit(np.int64(1)),
+        lit(np.int64(1)) + col("features"),
+        # TODO: We do not allow operations on PyList blocks and Arrow blocks
+        # col("ones") + col("features"),
+        # col("features") + col("ones"),
+    ],
+)
+@pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
+def test_pyobj_add(repartition_nparts, op):
+    data = {
+        "id": [i for i in range(10)],
+        "features": [np.ones(i) for i in range(10)],
+        "ones": [1 for i in range(10)],
+    }
+    daft_df = DataFrame.from_pydict(data).repartition(repartition_nparts).with_column("features_plus_one", op)
+    daft_pd_df = daft_df.to_pandas()
+    pd_df = pd.DataFrame.from_dict(data)
+    pd_df["features_plus_one"] = pd_df["features"] + 1
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
 
 

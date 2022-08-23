@@ -17,7 +17,6 @@ from typing import (
     TypeVar,
 )
 
-import numpy as np
 import pyarrow as pa
 
 
@@ -25,6 +24,10 @@ class ExpressionType:
     @staticmethod
     def unknown() -> ExpressionType:
         return _TYPE_REGISTRY["unknown"]
+
+    @staticmethod
+    def python_object() -> ExpressionType:
+        return _TYPE_REGISTRY["pyobj"]
 
     @staticmethod
     def from_py_type(obj_type: Type) -> ExpressionType:
@@ -97,9 +100,8 @@ _TYPE_REGISTRY: Dict[str, ExpressionType] = {
     "logical": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.LOGICAL),
     "string": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.STRING),
     "date": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.DATE),
-    # These are "known Python types" which are some common PyObjs that users may use
-    # We register them so that we can hardcode the return types for operators on these types
-    "numpy": PythonExpressionType(np.ndarray),
+    # Represents a generic Python object that we have no further information about
+    "pyobj": PythonExpressionType(object),
 }
 
 
@@ -161,40 +163,29 @@ class ExpressionOperator:
             for sub_k in k:
                 assert isinstance(sub_k, ExpressionType)
                 assert sub_k != _TYPE_REGISTRY["unknown"]
-
             assert isinstance(v, ExpressionType), f"{v} is not an ExpressionType"
-            assert v != _TYPE_REGISTRY["unknown"]
 
     @lru_cache
     def _type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
         return MappingProxyType(dict(self.type_matrix))
 
-    def get_return_type(
-        self, args: Tuple[ExpressionType, ...], default: Optional[ExpressionType] = None
-    ) -> Optional[ExpressionType]:
-        # Unknown types cascade
-        if any([arg == ExpressionType.unknown() for arg in args]):
-            return ExpressionType.unknown()
-        # Return unknown if any of the args are types which we don't explicitly recognize
-        # We explicitly register operator return types for common types such as numpy arrays
-        if any([arg not in _TYPE_REGISTRY.values() for arg in args]):
-            return ExpressionType.unknown()
-        res = self._type_matrix_dict().get(args)
-        return default if res is None else res
+    def get_return_type(self, args: Tuple[ExpressionType, ...]) -> Optional[ExpressionType]:
+        # Any operation on a Python type will just return a generic Python type
+        if any([isinstance(arg, PythonExpressionType) for arg in args]):
+            return ExpressionType.python_object()
+        return self._type_matrix_dict().get(args, ExpressionType.unknown())
 
 
 _UnaryNumericalTM = frozenset(
     {
         (_TYPE_REGISTRY["integer"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["float"],
-        (_TYPE_REGISTRY["numpy"],): _TYPE_REGISTRY["numpy"],
     }.items()
 )
 
 _UnaryLogicalTM = frozenset(
     {
         (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["numpy"],): _TYPE_REGISTRY["numpy"],
     }.items()
 )
 
@@ -205,9 +196,6 @@ _BinaryNumericalTM = frozenset(
         (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
         (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["float"],
         (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
-        (_TYPE_REGISTRY["numpy"], _TYPE_REGISTRY["numpy"]): _TYPE_REGISTRY["numpy"],
-        (_TYPE_REGISTRY["numpy"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["numpy"],
-        (_TYPE_REGISTRY["numpy"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["numpy"],
     }.items()
 )
 
@@ -235,7 +223,6 @@ _CountLogicalTM = frozenset(
         (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["integer"],
-        (_TYPE_REGISTRY["numpy"],): _TYPE_REGISTRY["integer"],
     }.items()
 )
 

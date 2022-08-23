@@ -1,13 +1,12 @@
 import datetime
 
-import numpy as np
 import pytest
 
 from daft.dataframe import DataFrame
 from daft.execution.operators import ExpressionType
 from daft.expressions import col, lit, udf
 
-COLS = ["floatcol", "intcol", "stringcol", "boolcol", "datecol", "numpycol", "myobjcol"]
+COLS = ["floatcol", "intcol", "stringcol", "boolcol", "datecol", "myobjcol"]
 
 
 class MyObj:
@@ -23,7 +22,6 @@ def daft_df():
         col("variety").alias("stringcol"),
         (col("sepal.length") < 5.0).alias("boolcol"),
         lit(datetime.date(1994, 1, 1)).alias("datecol"),
-        lit(np.ones((10,))).alias("numpycol"),
         lit(MyObj()).alias("myobjcol"),
     )
 
@@ -34,36 +32,31 @@ def daft_df():
     assert schema_fields["stringcol"].daft_type == ExpressionType.from_py_type(str)
     assert schema_fields["boolcol"].daft_type == ExpressionType.from_py_type(bool)
     assert schema_fields["datecol"].daft_type == ExpressionType.from_py_type(datetime.date)
-    assert schema_fields["numpycol"].daft_type == ExpressionType.from_py_type(np.ndarray)
     return daft_df
 
 
-unknown_obj_unary = {"myobjcol": ExpressionType.unknown()}
+generic_python_object_unary = {"myobjcol": ExpressionType.python_object()}
 
 
 UNARY_OPS_RESULT_TYPE_MAPPING = {
     "__abs__": {
         "floatcol": ExpressionType.from_py_type(float),
         "intcol": ExpressionType.from_py_type(int),
-        "numpycol": ExpressionType.from_py_type(np.ndarray),
-        **unknown_obj_unary,
+        **generic_python_object_unary,
     },
     "__neg__": {
         "floatcol": ExpressionType.from_py_type(float),
         "intcol": ExpressionType.from_py_type(int),
-        "numpycol": ExpressionType.from_py_type(np.ndarray),
-        **unknown_obj_unary,
+        **generic_python_object_unary,
     },
     "__pos__": {
         "floatcol": ExpressionType.from_py_type(float),
         "intcol": ExpressionType.from_py_type(int),
-        "numpycol": ExpressionType.from_py_type(np.ndarray),
-        "myobjcol": ExpressionType.unknown(),
+        **generic_python_object_unary,
     },
     "__invert__": {
         "boolcol": ExpressionType.from_py_type(bool),
-        "numpycol": ExpressionType.from_py_type(np.ndarray),
-        **unknown_obj_unary,
+        **generic_python_object_unary,
     },
     # TODO: add when ready
     # "count",
@@ -106,9 +99,6 @@ number_number_number = {
     ("intcol", "floatcol"): ExpressionType.from_py_type(float),
     ("floatcol", "floatcol"): ExpressionType.from_py_type(float),
     ("floatcol", "intcol"): ExpressionType.from_py_type(float),
-    ("numpycol", "numpycol"): ExpressionType.from_py_type(np.ndarray),
-    ("numpycol", "intcol"): ExpressionType.from_py_type(np.ndarray),
-    ("numpycol", "floatcol"): ExpressionType.from_py_type(np.ndarray),
 }
 bool_bool_logical = {("boolcol", "boolcol"): ExpressionType.from_py_type(bool)}
 number_number_logical = {
@@ -119,27 +109,27 @@ number_number_logical = {
 }
 string_string_logical = {("stringcol", "stringcol"): ExpressionType.from_py_type(bool)}
 date_date_logical = {("datecol", "datecol"): ExpressionType.from_py_type(bool)}
-unknown_obj_binary = {
-    **{("myobjcol", c): ExpressionType.unknown() for c in COLS},
-    **{(c, "myobjcol"): ExpressionType.unknown() for c in COLS},
+generic_python_object_binary = {
+    **{("myobjcol", c): ExpressionType.python_object() for c in COLS},
+    **{(c, "myobjcol"): ExpressionType.python_object() for c in COLS},
 }
 
 BINARY_OPS_RESULT_TYPE_MAPPING = {
-    "__add__": {**number_number_number, **unknown_obj_binary},
-    "__sub__": {**number_number_number, **unknown_obj_binary},
-    "__mul__": {**number_number_number, **unknown_obj_binary},
-    "__floordiv__": {**number_number_number, **unknown_obj_binary},
-    "__truediv__": {**number_number_number, **unknown_obj_binary},
-    "__pow__": {**number_number_number, **unknown_obj_binary},
-    "__mod__": {**number_number_number, **unknown_obj_binary},
-    "__and__": {**bool_bool_logical, **unknown_obj_binary},
-    "__or__": {**bool_bool_logical, **unknown_obj_binary},
-    "__lt__": {**number_number_logical, **string_string_logical, **date_date_logical, **unknown_obj_binary},
-    "__le__": {**number_number_logical, **string_string_logical, **date_date_logical, **unknown_obj_binary},
-    "__eq__": {**number_number_logical, **string_string_logical, **date_date_logical, **unknown_obj_binary},
-    "__ne__": {**number_number_logical, **string_string_logical, **date_date_logical, **unknown_obj_binary},
-    "__gt__": {**number_number_logical, **string_string_logical, **date_date_logical, **unknown_obj_binary},
-    "__ge__": {**number_number_logical, **string_string_logical, **date_date_logical, **unknown_obj_binary},
+    "__add__": {**number_number_number, **generic_python_object_binary},
+    "__sub__": {**number_number_number, **generic_python_object_binary},
+    "__mul__": {**number_number_number, **generic_python_object_binary},
+    "__floordiv__": {**number_number_number, **generic_python_object_binary},
+    "__truediv__": {**number_number_number, **generic_python_object_binary},
+    "__pow__": {**number_number_number, **generic_python_object_binary},
+    "__mod__": {**number_number_number, **generic_python_object_binary},
+    "__and__": {**bool_bool_logical, **generic_python_object_binary},
+    "__or__": {**bool_bool_logical, **generic_python_object_binary},
+    "__lt__": {**number_number_logical, **string_string_logical, **date_date_logical, **generic_python_object_binary},
+    "__le__": {**number_number_logical, **string_string_logical, **date_date_logical, **generic_python_object_binary},
+    "__eq__": {**number_number_logical, **string_string_logical, **date_date_logical, **generic_python_object_binary},
+    "__ne__": {**number_number_logical, **string_string_logical, **date_date_logical, **generic_python_object_binary},
+    "__gt__": {**number_number_logical, **string_string_logical, **date_date_logical, **generic_python_object_binary},
+    "__ge__": {**number_number_logical, **string_string_logical, **date_date_logical, **generic_python_object_binary},
 }
 
 

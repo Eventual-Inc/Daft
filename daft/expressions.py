@@ -356,9 +356,8 @@ class CallExpression(Expression):
         if any([arg_type is None for arg_type in args_resolved_types]):
             return None
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
-        ret_type = self._operator.value.get_return_type(args_resolved_types_non_none, None)
-
-        if ret_type is None:
+        ret_type = self._operator.value.get_return_type(args_resolved_types_non_none)
+        if ret_type == ExpressionType.unknown():
             operator: ExpressionOperator = self._operator.value
             op_pretty_print = ""
             operator_symbol = operator.symbol or operator.name
