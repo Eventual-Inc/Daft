@@ -499,7 +499,13 @@ def make_map_binary(
     f: Callable[[IN_1, IN_2], OUT]
 ) -> Callable[[PyListDataBlock[IN_1], PyListDataBlock[IN_2]], PyListDataBlock[OUT]]:
     def map_f(values: PyListDataBlock[IN_1], others: PyListDataBlock[IN_2]) -> PyListDataBlock[OUT]:
-        return PyListDataBlock(data=list(starmap(f, zip(values.data, others.data))))
+        if isinstance(others, DataBlock):
+            return PyListDataBlock(data=list(starmap(f, zip(values.data, others.data))))
+
+        def run(obj):
+            return f(obj, others)
+
+        return PyListDataBlock(data=list(map(run, values.data)))
 
     return map_f
 
