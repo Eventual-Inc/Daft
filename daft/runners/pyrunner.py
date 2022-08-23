@@ -15,7 +15,7 @@ from daft.datasources import (
 )
 from daft.execution.execution_plan import ExecutionPlan
 from daft.filesystem import get_filesystem_from_path
-from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
+from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import (
     Coalesce,
     Filter,
@@ -123,10 +123,15 @@ class PyRunner(Runner):
         self._optimizer = RuleRunner(
             [
                 RuleBatch(
-                    "push_down_predicates",
+                    "SinglePassPushDowns",
                     Once,
-                    [PushDownPredicates(), FoldProjections(), DropRepartition(), PushDownLimit()],
-                )
+                    [PushDownPredicates(), FoldProjections(), DropRepartition()],
+                ),
+                RuleBatch(
+                    "PushDownLimits",
+                    FixedPointPolicy(3),
+                    [PushDownLimit()],
+                ),
             ]
         )
 

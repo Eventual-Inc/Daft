@@ -1,5 +1,5 @@
 from functools import cached_property
-from typing import Optional, Set, Type, Union
+from typing import Optional, Set, Type
 
 from loguru import logger
 
@@ -160,14 +160,18 @@ class PushDownLimit(Rule[LogicalPlan]):
     def __init__(self) -> None:
         super().__init__()
         for op in self._supported_unary_nodes:
-            self.register_fn(LocalLimit, op, self._push_down_limit_into_unary_node)
-            self.register_fn(GlobalLimit, op, self._push_down_limit_into_unary_node)
+            self.register_fn(LocalLimit, op, self._push_down_local_limit_into_unary_node)
+            self.register_fn(GlobalLimit, op, self._push_down_global_limit_into_unary_node)
 
-    def _push_down_limit_into_unary_node(
-        self, parent: Union[LocalLimit, GlobalLimit], child: UnaryNode
-    ) -> Optional[UnaryNode]:
+    def _push_down_local_limit_into_unary_node(self, parent: LocalLimit, child: UnaryNode) -> Optional[UnaryNode]:
+        logger.debug(f"pushing {parent} into {child}")
         grandchild = child._children()[0]
         return child.copy_with_new_input(LocalLimit(grandchild, num=parent._num))
+
+    def _push_down_global_limit_into_unary_node(self, parent: GlobalLimit, child: UnaryNode) -> Optional[UnaryNode]:
+        logger.debug(f"pushing {parent} into {child}")
+        grandchild = child._children()[0]
+        return child.copy_with_new_input(GlobalLimit(grandchild, num=parent._num))
 
     @cached_property
     def _supported_unary_nodes(self) -> Set[Type[UnaryNode]]:
