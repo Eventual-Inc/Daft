@@ -144,13 +144,17 @@ class vPartition:
             tiles[col_id] = PyListTile(column_id=col_id, column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
-    def to_pandas(self) -> pd.DataFrame:
+    def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
+        if schema is not None:
+            output_schema = [(expr.name(), expr.get_id()) for expr in schema]
+        else:
+            output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
         return pd.DataFrame(
             {
-                tile.column_name: pd.Series(tile.block.data)
-                if isinstance(tile.block, PyListDataBlock)
-                else tile.block.data.to_pandas()
-                for tile in self.columns.values()
+                name: pd.Series(self.columns[id].block.data)
+                if isinstance(self.columns[id].block, PyListDataBlock)
+                else self.columns[id].block.data.to_pandas()
+                for name, id in output_schema
             }
         )
 
@@ -305,11 +309,11 @@ class vPartition:
 class PartitionSet:
     partitions: Dict[PartID, vPartition]
 
-    def to_pandas(self) -> pd.DataFrame:
+    def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
         partition_ids = sorted(list(self.partitions.keys()))
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
-        part_dfs = [self.partitions[pid].to_pandas() for pid in partition_ids]
+        part_dfs = [self.partitions[pid].to_pandas(schema=schema) for pid in partition_ids]
         return pd.concat(part_dfs, ignore_index=True)
 
     def __len__(self) -> int:

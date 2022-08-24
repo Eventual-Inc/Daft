@@ -427,7 +427,7 @@ class DataFrame:
     def to_pandas(self) -> pandas.DataFrame:
         self.collect()
         assert self._result is not None
-        return self._result.to_pandas()
+        return self._result.to_pandas(schema=self._plan.schema())
 
 
 @dataclass
