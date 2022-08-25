@@ -1,7 +1,8 @@
+from abc import abstractmethod
 from bisect import bisect_right
 from functools import partial
 from itertools import accumulate
-from typing import Callable, Dict, List
+from typing import Callable, ClassVar, Dict, List, Type
 
 from pyarrow import csv, parquet
 
@@ -33,6 +34,7 @@ from daft.runners.shuffle_ops import (
     RepartitionHashOp,
     RepartitionRandomOp,
     ShuffleOp,
+    Shuffler,
     SortOp,
 )
 
@@ -136,43 +138,9 @@ class LogicalPartitionOpRunner:
         )
 
 
-class PyRunnerSimpleShuffler(ShuffleOp):
-    def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
-        map_args = self._map_args if self._map_args is not None else {}
-        reduce_args = self._reduce_args if self._reduce_args is not None else {}
-
-        source_partitions = input.num_partitions()
-        map_results = [
-            self.map_fn(input=input.partitions[i], output_partitions=num_target_partitions, **map_args)
-            for i in range(source_partitions)
-        ]
-        reduced_results = []
-        for t in range(num_target_partitions):
-            reduced_part = self.reduce_fn(
-                [map_results[i][t] for i in range(source_partitions) if t in map_results[i]], **reduce_args
-            )
-            reduced_results.append(reduced_part)
-
-        return PartitionSet({i: part for i, part in enumerate(reduced_results)})
-
-
-class PyRunnerRepartitionRandom(PyRunnerSimpleShuffler, RepartitionRandomOp):
-    ...
-
-
-class PyRunnerRepartitionHash(PyRunnerSimpleShuffler, RepartitionHashOp):
-    ...
-
-
-class PyRunnerCoalesceOp(PyRunnerSimpleShuffler, CoalesceOp):
-    ...
-
-
-class PyRunnerSortOp(PyRunnerSimpleShuffler, SortOp):
-    ...
-
-
 class LogicalGlobalOpRunner:
+    shuffle_ops: ClassVar[Dict[Type[ShuffleOp], Type[Shuffler]]]
+
     def run_node_list(self, inputs: Dict[int, PartitionSet], nodes: List[LogicalPlan]) -> PartitionSet:
         part_set = inputs.copy()
         for node in nodes:
@@ -194,12 +162,16 @@ class LogicalGlobalOpRunner:
         else:
             raise NotImplementedError(f"{type(node)} not implemented")
 
+    @abstractmethod
     def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition]) -> PartitionSet:
-        return PartitionSet({i: func(part) for i, part in pset.partitions.items()})
+        raise NotImplementedError()
 
+    @abstractmethod
     def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], vPartition]) -> vPartition:
-        data = list(pset.partitions.values())
-        return func(data)
+        raise NotImplementedError()
+
+    def _get_shuffle_op_klass(self, t: Type[ShuffleOp]) -> Type[Shuffler]:
+        return self.__class__.shuffle_ops[t]
 
     def _handle_global_limit(self, inputs: Dict[int, PartitionSet], limit: GlobalLimit) -> PartitionSet:
         child_id = limit._children()[0].id()
@@ -230,12 +202,13 @@ class LogicalGlobalOpRunner:
     def _handle_repartition(self, inputs: Dict[int, PartitionSet], repartition: Repartition) -> PartitionSet:
 
         child_id = repartition._children()[0].id()
-
-        repartitioner: PyRunnerSimpleShuffler
+        repartitioner: ShuffleOp
         if repartition._scheme == PartitionScheme.RANDOM:
-            repartitioner = PyRunnerRepartitionRandom()
+            repartitioner = self._get_shuffle_op_klass(RepartitionRandomOp)()
         elif repartition._scheme == PartitionScheme.HASH:
-            repartitioner = PyRunnerRepartitionHash(map_args={"exprs": repartition._partition_by.exprs})
+            repartitioner = self._get_shuffle_op_klass(RepartitionHashOp)(
+                map_args={"exprs": repartition._partition_by.exprs}
+            )
         else:
             raise NotImplementedError()
         prev_part = inputs[child_id]
@@ -262,7 +235,8 @@ class LogicalGlobalOpRunner:
         first_column = list(merged_samples.columns.values())[0]
         boundaries = first_column.block.quantiles(num_partitions)
         expr = exprs.exprs[0]
-        sort_op = PyRunnerSortOp(
+        sort_shuffle_op_klass = self._get_shuffle_op_klass(SortOp)
+        sort_op = sort_shuffle_op_klass(
             map_args={"expr": expr, "boundaries": boundaries, "desc": sort._desc},
             reduce_args={"expr": expr, "desc": sort._desc},
         )
@@ -273,7 +247,10 @@ class LogicalGlobalOpRunner:
         child_id = coal._children()[0].id()
         num_partitions = coal.num_partitions()
         prev_part = inputs[child_id]
-        coalesce_op = PyRunnerCoalesceOp(
+
+        coalesce_op_klass = self._get_shuffle_op_klass(CoalesceOp)
+
+        coalesce_op = coalesce_op_klass(
             map_args={"num_input_partitions": prev_part.num_partitions()},
         )
         return coalesce_op.run(input=prev_part, num_target_partitions=num_partitions)
