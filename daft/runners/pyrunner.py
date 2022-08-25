@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 from bisect import bisect_right
 from itertools import accumulate
-from typing import Dict, List, Optional
+from typing import ClassVar, Dict, List, Optional, Type
 
 from pyarrow import csv, parquet
 
@@ -36,7 +36,7 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
-from daft.runners.partitioning import PartitionSet, vPartition
+from daft.runners.partitioning import LocalPartitionSet, PartitionSet, vPartition
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
     CoalesceOp,
@@ -47,13 +47,20 @@ from daft.runners.shuffle_ops import (
 )
 
 
-class PyRunnerPartitionManager:
-    def __init__(self) -> None:
+class PartitionManager:
+    def __init__(self, is_ray: bool=False) -> None:
         self._nid_to_partition_set: Dict[int, PartitionSet] = {}
+        self._is_ray = is_ray
+
+    def new_partition_set(self) -> PartitionSet:
+        if self._is_ray:
+            ...
+        else:
+            return LocalPartitionSet({})
 
     def put(self, node_id: int, partition_id: int, partition: vPartition) -> None:
         if node_id not in self._nid_to_partition_set:
-            self._nid_to_partition_set[node_id] = PartitionSet({})
+            self._nid_to_partition_set[node_id] = self.new_partition_set()
 
         pset = self._nid_to_partition_set[node_id]
         pset.set_partition(partition_id, partition)
@@ -81,6 +88,7 @@ class PyRunnerPartitionManager:
                 del self._nid_to_partition_set[node_id]
 
 
+
 class PyRunnerSimpleShuffler(ShuffleOp):
     def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
         map_args = self._map_args if self._map_args is not None else {}
@@ -98,7 +106,7 @@ class PyRunnerSimpleShuffler(ShuffleOp):
             )
             reduced_results.append(reduced_part)
 
-        return PartitionSet({i: part for i, part in enumerate(reduced_results)})
+        return LocalPartitionSet({i: part for i, part in enumerate(reduced_results)})
 
 
 import ray
@@ -141,7 +149,7 @@ class RayRunnerSimpleShuffler(ShuffleOp):
             reduced_part = remote_reduce_fn.remote(map_subset)
             reduced_results.append(reduced_part)
         reduced_results = ray.get(reduced_results)
-        return PartitionSet({i: part for i, part in enumerate(reduced_results)})
+        return LocalPartitionSet({i: part for i, part in enumerate(reduced_results)})
 
 
 class PyRunnerRepartitionRandom(RayRunnerSimpleShuffler, RepartitionRandomOp):
@@ -162,7 +170,7 @@ class PyRunnerSortOp(RayRunnerSimpleShuffler, SortOp):
 
 class PyRunner(Runner):
     def __init__(self) -> None:
-        self._part_manager = PyRunnerPartitionManager()
+        self._part_manager = PartitionManager(is_ray=False)
         self._optimizer = RuleRunner(
             [
                 RuleBatch(

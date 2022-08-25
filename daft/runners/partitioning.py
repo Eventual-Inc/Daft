@@ -1,9 +1,10 @@
 from __future__ import annotations
+from abc import abstractmethod
 
 import dataclasses
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -304,9 +305,38 @@ class vPartition:
             )
         return dataclasses.replace(to_merge[0], columns=new_columns)
 
+import ray
+
+PartitionT = TypeVar('PartitionT', vPartition, ray.ObjectRef[vPartition])
+@dataclass
+class PartitionSet(Generic(PartitionT)):
+    @abstractmethod
+    def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
+        raise NotImplementedError()
+    @abstractmethod
+    def get_partition(self, idx: PartID) -> PartitionT:
+        raise NotImplementedError()
+    @abstractmethod
+    def set_partition(self, idx: PartID, part: PartitionT) -> None:
+        raise NotImplementedError()
+    @abstractmethod
+    def delete_partition(self, idx: PartID) -> None:
+        raise NotImplementedError()
+    @abstractmethod
+    def has_partition(self, idx: PartID) -> bool:
+        raise NotImplementedError()
+    @abstractmethod
+    def __len__(self) -> int:
+        return sum(self.len_of_partitions())
+    @abstractmethod
+    def len_of_partitions(self) -> List[int]:
+        raise NotImplementedError()
+    @abstractmethod
+    def num_partitions(self) -> int:
+        raise NotImplementedError()
 
 @dataclass
-class PartitionSet:
+class LocalPartitionSet(PartitionSet[vPartition]):
     _partitions: Dict[PartID, vPartition]
 
     def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
@@ -334,6 +364,36 @@ class PartitionSet:
     def len_of_partitions(self) -> List[int]:
         partition_ids = sorted(list(self._partitions.keys()))
         return [len(self._partitions[pid]) for pid in partition_ids]
+
+    def num_partitions(self) -> int:
+        return len(self._partitions)
+
+@dataclass
+class RayPartitionSet(PartitionSet[ray.ObjectRef[vPartition]]):
+    _partitions: Dict[PartID, ray.ObjectRef[vPartition]]
+
+    def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
+        raise NotImplementedError()
+    
+    def get_partition(self, idx: PartID) -> ray.ObjectRef[vPartition]:
+        return self._partitions[idx]
+
+    def set_partition(self, idx: PartID, part: ray.ObjectRef[vPartition]) -> None:
+        self._partitions[idx] = part
+
+    def delete_partition(self, idx: PartID) -> None:
+        del self._partitions[idx]
+
+    def has_partition(self, idx: PartID) -> bool:
+        return idx in self._partitions
+
+    def __len__(self) -> int:
+        return sum(self.len_of_partitions())
+
+    def len_of_partitions(self) -> List[int]:
+        partition_ids = sorted(list(self._partitions.keys()))
+        remote_len = ray.remote(len)
+        return ray.get([remote_len.remote(self._partitions[pid]) for pid in partition_ids])
 
     def num_partitions(self) -> int:
         return len(self._partitions)
