@@ -231,7 +231,7 @@ def test_split_by_index_even(n) -> None:
         assert new_part.partition_id == i
         assert len(new_part) == expected_size
         for col in new_part.columns.values():
-            pylist = col.block.to_pylist()
+            pylist = col.block.iter_py()
             assert all(val % n == i for val in pylist)
 
 
@@ -255,7 +255,7 @@ def test_hash_partition(n) -> None:
         assert new_part.partition_id == i
         values_expected = None
         for ncol in new_part.columns.values():
-            pylist = ncol.block.to_pylist()
+            pylist = list(ncol.block.iter_py())
             for val in pylist:
                 assert val not in values_seen
             if values_expected is None:

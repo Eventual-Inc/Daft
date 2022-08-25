@@ -314,7 +314,7 @@ class PartitionSet:
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
         part_dfs = [self.partitions[pid].to_pandas(schema=schema) for pid in partition_ids]
-        return pd.concat(part_dfs, ignore_index=True)
+        return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
 
     def __len__(self) -> int:
         return sum(self.len_of_partitions())

@@ -239,7 +239,7 @@ _NBop = partial(_BOp, type_matrix=_BinaryNumericalTM)
 # Comparison Binary Ops
 _CBop = partial(_BOp, type_matrix=_ComparisionTM)
 
-# _TYPE_REGISTRY["logical"] Binary Ops
+# Logical Binary Ops
 _LBop = partial(_BOp, type_matrix=_BinaryLogicalTM)
 
 
@@ -258,7 +258,7 @@ class OperatorEnum(Enum):
 
     COUNT = _UOp(name="count", symbol="count", type_matrix=_CountLogicalTM)
 
-    # _TYPE_REGISTRY["logical"]
+    # Logical
     INVERT = _UOp(name="invert", symbol="~", type_matrix=_UnaryLogicalTM)
 
     # BinaryOps
@@ -272,7 +272,7 @@ class OperatorEnum(Enum):
     POW = _NBop(name="power", symbol="**")
     MOD = _NBop(name="mod", symbol="%")
 
-    # _TYPE_REGISTRY["logical"]
+    # Logical
     AND = _LBop(name="and", symbol="&")
     OR = _LBop(name="or", symbol="|")
     LT = _CBop(name="less_than", symbol="<")
