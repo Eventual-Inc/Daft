@@ -127,3 +127,30 @@ def test_pyobj_filter_udf(repartition_nparts):
     pd_df["length"] = pd.Series([len(feature) for feature in pd_df["features"]])
     pd_df = pd_df[pd_df["length"] > 5].drop(columns=["length"])
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
+
+
+###
+# Using .as_py() to call python methods on your objects easily
+###
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
+def test_pyobj_aspy_method_call(repartition_nparts):
+    data = {"id": [i for i in range(10)], "features": [np.arange(i) for i in range(1, 11)]}
+    daft_df = DataFrame.from_pydict(data).repartition(repartition_nparts)
+    daft_df = daft_df.with_column("max", col("features").as_py(np.ndarray).max())
+    daft_pd_df = daft_df.to_pandas()
+    pd_df = pd.DataFrame.from_dict(data)
+    pd_df["max"] = pd.Series([feature.max() for feature in pd_df["features"]])
+    assert_df_equals(daft_pd_df, pd_df, sort_key="id")
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
+def test_pyobj_aspy_method_call_args(repartition_nparts):
+    data = {"id": [i for i in range(10)], "features": [np.arange(i) for i in range(1, 11)]}
+    daft_df = DataFrame.from_pydict(data).repartition(repartition_nparts)
+    daft_df = daft_df.with_column("clipped", col("features").as_py(np.ndarray).clip(0, 1))
+    daft_pd_df = daft_df.to_pandas()
+    pd_df = pd.DataFrame.from_dict(data)
+    pd_df["clipped"] = pd.Series([feature.clip(0, 1) for feature in pd_df["features"]])
+    assert_df_equals(daft_pd_df, pd_df, sort_key="id")

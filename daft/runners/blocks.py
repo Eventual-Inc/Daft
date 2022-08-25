@@ -4,13 +4,13 @@ import collections
 import operator
 import random
 from abc import abstractmethod
-from functools import partial, wraps
-from itertools import starmap
+from functools import partial
 from typing import (
     Any,
     Callable,
     ClassVar,
     Generic,
+    Iterator,
     List,
     Optional,
     Sequence,
@@ -33,6 +33,21 @@ UnaryFuncType = Callable[[ArrType], ArrType]
 BinaryFuncType = Callable[[ArrType, ArrType], ArrType]
 
 
+def zip_blocks(*blocks: DataBlock) -> Iterator[Tuple[Any, ...]]:
+    """Utility to zip the data of blocks together, returning a row-based iterator. This utility
+    accounts for special-cases such as blocks that contain a single value to be broadcasted,
+    differences in the underlying data representation etc.
+    """
+    block_lengths = tuple(len(b) for b in blocks)
+    nonzero_block_lengths = [b_len for b_len in block_lengths if b_len > 0]
+    if len(nonzero_block_lengths) == 0:
+        return
+    min_block_len = min(nonzero_block_lengths)
+    iterators = [b.iter_py() for b in blocks]
+    for _ in range(min_block_len):
+        yield tuple(next(gen) for gen in iterators)
+
+
 class DataBlock(Generic[ArrType]):
     data: ArrType
     evaluator: ClassVar[Type[OperatorEvaluator]]
@@ -50,7 +65,15 @@ class DataBlock(Generic[ArrType]):
         return isinstance(o, DataBlock) and self.data == o.data
 
     @abstractmethod
-    def to_pylist(self) -> List:
+    def iter_py(self) -> Iterator:
+        """Iterate through the DataBlock and yield Python objects (e.g. ints, floats etc)
+        Note that this is SLOW and should be used sparingly, mostly only in user-facing APIs
+        such as UDFs.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def cast_to_udf_api(self):
         raise NotImplementedError()
 
     @classmethod
@@ -257,14 +280,17 @@ T = TypeVar("T")
 
 
 class PyListDataBlock(DataBlock[List[T]]):
-    def to_pylist(self) -> List[T]:
+    def iter_py(self) -> Iterator:
+        return iter(self.data)
+
+    def cast_to_udf_api(self):
         return self.data
 
     def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[List[T]]:
-        return PyListDataBlock(data=[item for keep, item in zip(mask.data.to_pylist(), self.data) if keep])
+        return PyListDataBlock(data=[item for keep, item in zip(mask.iter_py(), self.data) if keep])
 
     def _take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[List[T]]:
-        return PyListDataBlock(data=[self.data[i] for i in indices.data.to_pylist()])
+        return PyListDataBlock(data=[self.data[i] for i in indices.iter_py()])
 
     def sample(self, num: int) -> DataBlock[List[T]]:
         return PyListDataBlock(data=random.sample(self.data, num))
@@ -316,9 +342,23 @@ ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
 
 
 class ArrowDataBlock(DataBlock[ArrowArrType]):
-    def to_pylist(self) -> List:
-        pylist: List = self.data.to_pylist()
-        return pylist
+    def cast_to_udf_api(self):
+        if isinstance(self.data, pa.Scalar):
+            return self.data.as_py()
+        return self.data.to_pandas()
+
+    def __len__(self) -> int:
+        if isinstance(self.data, pa.Scalar):
+            return 0
+        return len(self.data)
+
+    def iter_py(self) -> Iterator:
+        if isinstance(self.data, pa.Scalar):
+            py_scalar = self.data.as_py()
+            while True:
+                yield py_scalar
+        for scalar in self.data:
+            yield scalar.as_py()
 
     def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
         order = "descending" if desc else "ascending"
@@ -500,17 +540,7 @@ def make_map_binary(
 ) -> Callable[[PyListDataBlock[IN_1], PyListDataBlock[IN_2]], PyListDataBlock[OUT]]:
     def map_f(values: PyListDataBlock[IN_1], others: PyListDataBlock[IN_2]) -> PyListDataBlock[OUT]:
         assert isinstance(values, PyListDataBlock) or isinstance(others, PyListDataBlock)
-
-        if isinstance(values, PyListDataBlock) and isinstance(others, PyListDataBlock):
-            return PyListDataBlock(data=list(starmap(f, zip(values.data, others.data))))
-        elif isinstance(values, PyListDataBlock):
-
-            @wraps(f)
-            def wrap_f_for_partial(v, o):
-                return f(v, o)
-
-            return PyListDataBlock(data=list(map(partial(wrap_f_for_partial, o=others), values.data)))
-        return PyListDataBlock(data=list(map(partial(f, values), others.data)))
+        return PyListDataBlock(data=list(f(v, o) for v, o in zip_blocks(values, others)))
 
     return map_f
 

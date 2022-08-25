@@ -16,7 +16,6 @@ from typing import (
     Tuple,
     Type,
     TypeVar,
-    Union,
     cast,
 )
 
@@ -33,7 +32,7 @@ from daft.execution.operators import (
     PythonExpressionType,
 )
 from daft.internal.treenode import TreeNode
-from daft.runners.blocks import ArrowDataBlock, DataBlock, PyListDataBlock
+from daft.runners.blocks import ArrowDataBlock, DataBlock, PyListDataBlock, zip_blocks
 
 
 def col(name: str) -> ColumnExpression:
@@ -59,7 +58,7 @@ class ExpressionExecutor:
             return result
         elif isinstance(expr, LiteralExpression):
             result = expr._value
-            return result
+            return DataBlock.make_block(result)
         elif isinstance(expr, AliasExpression):
             result = self.eval(expr._expr, operands)
             return result
@@ -68,11 +67,10 @@ class ExpressionExecutor:
 
             # Dynamically choose the correct OperatorEvaluator based on the types of the arguments
             block_types = {type(eval_arg) for eval_arg in eval_args if isinstance(eval_arg, DataBlock)}
-            assert len(block_types) == 1, f"Unable to run operations on different block types {block_types}"
+            op_evaluator = PyListDataBlock.evaluator if PyListDataBlock in block_types else ArrowDataBlock.evaluator
             op = expr._operator
-            op_eval = block_types.pop().evaluator
 
-            func = getattr(op_eval, op.name)
+            func = getattr(op_evaluator, op.name)
             result = func(*eval_args)
             return result
         elif isinstance(expr, UdfExpression):
@@ -80,14 +78,8 @@ class ExpressionExecutor:
             eval_kwargs = {kw: self.eval(a, operands) for kw, a in expr._kwargs.items()}
             result = expr.eval_blocks(*eval_args, **eval_kwargs)
             return result
-        # TODO: We can't support this at the moment
-        # elif isinstance(expr, MultipleReturnSelectExpression):
-        #     result = self.eval(expr._expr, operands)
-        #     assert isinstance(
-        #         result, tuple
-        #     ), "MultipleReturnSelectExpression is always preceded by a UdfExpression returning a tuple"
-        #     result_tuple = cast(Tuple[DataBlockValueType, ...], result)
-        #     return result_tuple[expr._n]
+        elif isinstance(expr, AsPyExpression):
+            raise NotImplementedError("AsPyExpressions need to be evaluated with a method call")
         else:
             raise NotImplementedError(f"Not implemented for expression type {type(expr)}: {expr}")
 
@@ -267,6 +259,9 @@ class Expression(TreeNode["Expression"]):
 
     def alias(self, name: str) -> Expression:
         return AliasExpression(self, name)
+
+    def as_py(self, type_: Type) -> Expression:
+        return AsPyExpression(self, ExpressionType.from_py_type(type_))
 
     def has_call(self) -> bool:
         if isinstance(self, CallExpression) or isinstance(self, UdfExpression):
@@ -450,23 +445,8 @@ def udf(f: Callable | None = None, *, return_type: Type) -> Callable:
             def prepost_process_data_block_func(*args, **kwargs):
 
                 # Preprocess args to a Pandas series for arrow types and lists of Python objects for Python types
-                converted_args: Tuple[Union[pd.Series, List[T]], ...] = tuple()
-                converted_kwargs: Dict[str, Union[pd.Series, List[T]]] = {}
-                for arg in args:
-                    if isinstance(arg, ArrowDataBlock):
-                        converted_args += (arg.data.to_pandas(),)
-                    elif isinstance(arg, PyListDataBlock):
-                        converted_args += (arg.data,)
-                    else:
-                        converted_args += (arg,)
-                for kw, arg in kwargs.items():
-                    if isinstance(arg, ArrowDataBlock):
-                        converted_kwargs[kw] = arg.data.to_pandas()
-                    elif isinstance(arg, PyListDataBlock):
-                        converted_kwargs[kw] = arg.data
-                    else:
-                        converted_kwargs[kw] = arg
-
+                converted_args = tuple(arg.cast_to_udf_api() for arg in args)
+                converted_kwargs = {kw: arg.cast_to_udf_api() for kw, arg in kwargs.items()}
                 results = func(*converted_args, **converted_kwargs)
 
                 # Postprocess results into a DataBlock
@@ -484,6 +464,8 @@ def udf(f: Callable | None = None, *, return_type: Type) -> Callable:
                             f"Expected function to return a list of type {func_ret_type}, received instead: {type(results)}"
                         )
                     return DataBlock.make_block(results)
+                else:
+                    raise NotImplementedError(f"UDFs not implemented for {func_ret_type}")
 
             out_expr = UdfExpression(
                 func=prepost_process_data_block_func,
@@ -563,6 +545,81 @@ class AliasExpression(Expression):
 
     def name(self) -> Optional[str]:
         return self._name
+
+    def get_id(self) -> Optional[ColID]:
+        return self._expr.get_id()
+
+    def _assign_id(self, strict: bool = True) -> ColID:
+        return self._expr._assign_id(strict)
+
+    def _is_eq_local(self, other: Expression) -> bool:
+        return isinstance(other, AliasExpression) and self._name == other._name
+
+
+class AsPyExpression(Expression):
+    def __init__(
+        self,
+        expr: Expression,
+        type_: ExpressionType,
+        attr_name: Optional[str] = "__call__",
+    ) -> None:
+        super().__init__()
+        self._type = type_
+        self._register_child(expr)
+        self._attr_name = attr_name
+
+    def __getattr__(self, name: str):
+        return AsPyExpression(
+            self._expr,
+            type_=self._type,
+            attr_name=name,
+        )
+
+    def __call__(self, *args, **kwargs):
+        def f(expr, *args, **kwargs):
+            results = []
+            for vals in zip_blocks(expr, *args, *[arg for arg in kwargs.values()]):
+                method = getattr(self._type.python_cls, self._attr_name)
+                result = method(
+                    vals[0],  # self
+                    *vals[1 : len(args) + 1],
+                    **{kw: val for kw, val in zip(kwargs.keys(), *vals[len(args) + 1 :])},
+                )
+                results.append(result)
+            return DataBlock.make_block(results)
+
+        return UdfExpression(
+            f,
+            ExpressionType.python_object(),
+            func_args=(self._expr,) + args,
+            func_kwargs=kwargs,
+        )
+
+    def __getitem__(self, key):
+        self._attr_name = "__getitem__"
+
+        def f(expr, keys):
+            results = []
+            for expr_val, key_val in zip_blocks(expr, keys):
+                method = getattr(self._type.python_cls, self._attr_name)
+                result = method(expr_val, key_val)
+                results.append(result)
+
+        return UdfExpression(
+            f,
+            ExpressionType.python_object(),
+            func_args=(self._expr, key),
+        )
+
+    def _display_str(self) -> str:
+        return f"[{self._expr}] ({self._type})"
+
+    @property
+    def _expr(self) -> Expression:
+        return self._children()[0]
+
+    def resolved_type(self) -> Optional[ExpressionType]:
+        return self._type
 
     def get_id(self) -> Optional[ColID]:
         return self._expr.get_id()
