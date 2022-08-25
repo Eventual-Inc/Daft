@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 from bisect import bisect_right
 from itertools import accumulate
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from pyarrow import csv, parquet
 
@@ -56,14 +56,14 @@ class PyRunnerPartitionManager:
             self._nid_to_partition_set[node_id] = PartitionSet({})
 
         pset = self._nid_to_partition_set[node_id]
-        pset.partitions[partition_id] = partition
+        pset.set_partition(partition_id, partition)
 
     def get(self, node_id: int, partition_id: int) -> vPartition:
         assert node_id in self._nid_to_partition_set
         pset = self._nid_to_partition_set[node_id]
 
-        assert partition_id in pset.partitions
-        return pset.partitions[partition_id]
+        assert pset.has_partition(partition_id)
+        return pset.get_partition(partition_id)
 
     def get_partition_set(self, node_id: int) -> PartitionSet:
         assert node_id in self._nid_to_partition_set
@@ -76,8 +76,8 @@ class PyRunnerPartitionManager:
         if partition_id is None:
             del self._nid_to_partition_set[node_id]
         else:
-            del self._nid_to_partition_set[node_id].partitions[partition_id]
-            if len(self._nid_to_partition_set[node_id].partitions) == 0:
+            self._nid_to_partition_set[node_id].delete_partition(partition_id)
+            if self._nid_to_partition_set[node_id].num_partitions() == 0:
                 del self._nid_to_partition_set[node_id]
 
 
@@ -88,7 +88,7 @@ class PyRunnerSimpleShuffler(ShuffleOp):
 
         source_partitions = input.num_partitions()
         map_results = [
-            self.map_fn(input=input.partitions[i], output_partitions=num_target_partitions, **map_args)
+            self.map_fn(input=input.get_partition(i), output_partitions=num_target_partitions, **map_args)
             for i in range(source_partitions)
         ]
         reduced_results = []
@@ -101,19 +101,62 @@ class PyRunnerSimpleShuffler(ShuffleOp):
         return PartitionSet({i: part for i, part in enumerate(reduced_results)})
 
 
-class PyRunnerRepartitionRandom(PyRunnerSimpleShuffler, RepartitionRandomOp):
+import ray
+
+
+class RayRunnerSimpleShuffler(ShuffleOp):
+    def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
+        map_args = self._map_args if self._map_args is not None else {}
+        reduce_args = self._reduce_args if self._reduce_args is not None else {}
+        # map_args_ref = ray.put(map_args)
+        # reduce_args_ref = ray.put(reduce_args)
+
+        source_partitions = input.num_partitions()
+
+        def reduce_wrapper(to_reduce: List[vPartition]):
+            return self.reduce_fn(ray.get(to_reduce), **reduce_args)
+
+        def map_wrapper(input: vPartition):
+            output_dict = self.map_fn(input=input, output_partitions=num_target_partitions, **map_args)
+            output_list = [None for _ in range(num_target_partitions)]
+            for part_id, part in output_dict.items():
+                output_list[part_id] = part
+
+            if num_target_partitions == 1:
+                return part
+            else:
+                return output_list
+
+        remote_reduce_fn = ray.remote(reduce_wrapper)
+
+        remote_map_fn = ray.remote(map_wrapper).options(num_returns=num_target_partitions)
+
+        map_results = [remote_map_fn.remote(input=input.get_partition(i)) for i in range(source_partitions)]
+        reduced_results = []
+        for t in range(num_target_partitions):
+            if num_target_partitions == 1:
+                map_subset = map_results
+            else:
+                map_subset = [map_results[i][t] for i in range(source_partitions)]
+            reduced_part = remote_reduce_fn.remote(map_subset)
+            reduced_results.append(reduced_part)
+        reduced_results = ray.get(reduced_results)
+        return PartitionSet({i: part for i, part in enumerate(reduced_results)})
+
+
+class PyRunnerRepartitionRandom(RayRunnerSimpleShuffler, RepartitionRandomOp):
     ...
 
 
-class PyRunnerRepartitionHash(PyRunnerSimpleShuffler, RepartitionHashOp):
+class PyRunnerRepartitionHash(RayRunnerSimpleShuffler, RepartitionHashOp):
     ...
 
 
-class PyRunnerCoalesceOp(PyRunnerSimpleShuffler, CoalesceOp):
+class PyRunnerCoalesceOp(RayRunnerSimpleShuffler, CoalesceOp):
     ...
 
 
-class PyRunnerSortOp(PyRunnerSimpleShuffler, SortOp):
+class PyRunnerSortOp(RayRunnerSimpleShuffler, SortOp):
     ...
 
 
@@ -269,9 +312,10 @@ class PyRunner(Runner):
         count_so_far = cum_sum[where_to_cut_idx - 1]
         remainder = num - count_so_far
         assert remainder >= 0
-        new_pset.partitions[where_to_cut_idx] = new_pset.partitions[where_to_cut_idx].head(remainder)
+        new_pset.set_partition(where_to_cut_idx, new_pset.get_partition(where_to_cut_idx).head(remainder))
         for i in range(where_to_cut_idx + 1, limit.num_partitions()):
-            new_pset.partitions[i] = new_pset.partitions[i].head(0)
+            new_pset.set_partition(i, new_pset.get_partition(i).head(0))
+
         self._part_manager.put_partition_set(limit.id(), new_pset)
 
     def _handle_repartition(self, repartition: Repartition) -> None:
@@ -292,7 +336,7 @@ class PyRunner(Runner):
         num_partitions = sort.num_partitions()
         child_id = sort._children()[0].id()
         prev_pset = self._part_manager.get_partition_set(child_id)
-        sampled_partitions = [prev_pset.partitions[i].sample(SAMPLES_PER_PARTITION) for i in range(num_partitions)]
+        sampled_partitions = [prev_pset.get_partition(i).sample(SAMPLES_PER_PARTITION) for i in range(num_partitions)]
         merged_samples = vPartition.merge_partitions(sampled_partitions, verify_partition_id=False)
         assert len(sort._sort_by.exprs) == 1
         expr = sort._sort_by.exprs[0]

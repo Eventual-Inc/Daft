@@ -1,4 +1,5 @@
 import argparse
+import os
 from typing import List, Union
 
 import pandas as pd
@@ -8,7 +9,7 @@ import ray
 
 @pytest.fixture(scope="session")
 def ray_cluster():
-    ray.init(num_cpus=2)
+    ray.init(num_cpus=os.cpu_count())
     yield
     ray.shutdown()
 

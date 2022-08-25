@@ -286,7 +286,7 @@ class vPartition:
     @classmethod
     def merge_partitions(cls, to_merge: List[vPartition], verify_partition_id: bool = True) -> vPartition:
         assert len(to_merge) > 0
-
+        assert isinstance(to_merge[0], vPartition)
         if len(to_merge) == 1:
             return to_merge[0]
 
@@ -307,21 +307,33 @@ class vPartition:
 
 @dataclass
 class PartitionSet:
-    partitions: Dict[PartID, vPartition]
+    _partitions: Dict[PartID, vPartition]
 
     def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
-        partition_ids = sorted(list(self.partitions.keys()))
+        partition_ids = sorted(list(self._partitions.keys()))
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
-        part_dfs = [self.partitions[pid].to_pandas(schema=schema) for pid in partition_ids]
+        part_dfs = [self._partitions[pid].to_pandas(schema=schema) for pid in partition_ids]
         return pd.concat(part_dfs, ignore_index=True)
+
+    def get_partition(self, idx: PartID) -> vPartition:
+        return self._partitions[idx]
+
+    def set_partition(self, idx: PartID, part: vPartition) -> None:
+        self._partitions[idx] = part
+
+    def delete_partition(self, idx: PartID) -> None:
+        del self._partitions[idx]
+
+    def has_partition(self, idx: PartID) -> bool:
+        return idx in self._partitions
 
     def __len__(self) -> int:
         return sum(self.len_of_partitions())
 
     def len_of_partitions(self) -> List[int]:
-        partition_ids = sorted(list(self.partitions.keys()))
-        return [len(self.partitions[pid]) for pid in partition_ids]
+        partition_ids = sorted(list(self._partitions.keys()))
+        return [len(self._partitions[pid]) for pid in partition_ids]
 
     def num_partitions(self) -> int:
-        return len(self.partitions)
+        return len(self._partitions)
