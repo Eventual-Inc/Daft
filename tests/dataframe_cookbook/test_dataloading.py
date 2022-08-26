@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from daft.dataframe import DataFrame
+from daft.execution.operators import ExpressionType
 from daft.expressions import col
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
@@ -60,6 +61,25 @@ def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
     csv.write_text(pathlib.Path(IRIS_CSV).read_text().replace(",", "\t"))
     daft_df = DataFrame.from_csv(str(csv), delimiter="\t")
     pd_df = pd.read_csv(csv, delimiter="\t")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, assert_ordering=True)
+
+
+def test_load_json(tmp_path: pathlib.Path):
+    """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a JSON file"""
+    json_file = tmp_path / "iris.json"
+    pd_df = pd.read_csv(IRIS_CSV)
+
+    # Test that nested types like lists and dicts get loaded as Python objects
+    pd_df["dicts"] = pd.Series([{"foo": i} for i in range(len(pd_df))])
+    pd_df["lists"] = pd.Series([[1 for _ in range(i)] for i in range(len(pd_df))])
+
+    pd_df.to_json(json_file, lines=True, orient="records")
+    daft_df = DataFrame.from_json(str(json_file))
+
+    assert daft_df.schema()["dicts"].daft_type == ExpressionType.python_object()
+    assert daft_df.schema()["lists"].daft_type == ExpressionType.python_object()
+
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, assert_ordering=True)
 

@@ -4,11 +4,12 @@ from functools import partial
 from itertools import accumulate
 from typing import Callable, ClassVar, Dict, List, Type
 
-from pyarrow import csv, parquet
+from pyarrow import csv, json, parquet
 
 from daft.datasources import (
     CSVSourceInfo,
     InMemorySourceInfo,
+    JSONSourceInfo,
     ParquetSourceInfo,
     ScanType,
 )
@@ -81,7 +82,7 @@ class LogicalPartitionOpRunner:
             path = scan._source_info.filepaths[partition_id]
             fs = get_filesystem_from_path(path)
             table = csv.read_csv(
-                fs.open(path),
+                fs.open(path, compression="infer"),
                 parse_options=csv.ParseOptions(
                     delimiter=scan._source_info.delimiter,
                 ),
@@ -90,6 +91,13 @@ class LogicalPartitionOpRunner:
                     skip_rows_after_names=1 if scan._source_info.has_headers else 0,
                 ),
             )
+            vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+            return vpart
+        elif scan._source_info.scan_type() == ScanType.JSON:
+            assert isinstance(scan._source_info, JSONSourceInfo)
+            path = scan._source_info.filepaths[partition_id]
+            fs = get_filesystem_from_path(path)
+            table = json.read_json(fs.open(path, compression="infer")).select([col.name() for col in schema])
             vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
             return vpart
         elif scan._source_info.scan_type() == ScanType.PARQUET:

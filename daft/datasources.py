@@ -7,6 +7,7 @@ class ScanType(Enum):
     CSV = "CSV"
     PARQUET = "PARQUET"
     IN_MEMORY = "IN_MEMORY"
+    JSON = "JSON"
 
 
 class SourceInfo(Protocol):
@@ -28,6 +29,18 @@ class CSVSourceInfo(SourceInfo):
 
     def scan_type(self):
         return ScanType.CSV
+
+    def get_num_partitions(self) -> int:
+        return len(self.filepaths)
+
+
+@dataclass(frozen=True)
+class JSONSourceInfo(SourceInfo):
+
+    filepaths: List[str]
+
+    def scan_type(self):
+        return ScanType.JSON
 
     def get_num_partitions(self) -> int:
         return len(self.filepaths)

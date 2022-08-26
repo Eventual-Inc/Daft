@@ -431,6 +431,9 @@ class UdfExpression(Expression, Generic[DataBlockValueType]):
             and self._kwargs_ids == other._kwargs_ids
         )
 
+    def has_call(self) -> bool:
+        return True
+
 
 T = TypeVar("T")
 
@@ -598,17 +601,19 @@ class AsPyExpression(Expression):
     def __getitem__(self, key):
         self._attr_name = "__getitem__"
 
-        def f(expr, keys):
+        def __getitem__(expr, keys):
             results = []
             for expr_val, key_val in zip_blocks(expr, keys):
                 method = getattr(self._type.python_cls, self._attr_name)
                 result = method(expr_val, key_val)
                 results.append(result)
+            return DataBlock.make_block(results)
 
         return UdfExpression(
-            f,
+            __getitem__,
             ExpressionType.python_object(),
             func_args=(self._expr, key),
+            func_kwargs={},
         )
 
     def _display_str(self) -> str:
