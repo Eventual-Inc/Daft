@@ -9,6 +9,7 @@ from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
     LogicalGlobalOpRunner,
     LogicalPartitionOpRunner,
+    ReduceType,
 )
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan
@@ -124,7 +125,7 @@ class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
     def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition]) -> PartitionSet:
         return LocalPartitionSet({i: func(pset.get_partition(i)) for i in range(pset.num_partitions())})
 
-    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], vPartition]) -> vPartition:
+    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], ReduceType]) -> ReduceType:
         data = [pset.get_partition(i) for i in range(pset.num_partitions())]
         return func(data)
 

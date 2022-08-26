@@ -7,8 +7,8 @@ from viztracer import VizTracer, get_tracer
 
 
 def profiler(filename: str) -> VizTracer:
-    if os.environ.get("DAFT_PROFILING", 0) == 1:
-        return VizTracer(output_file=filename)
+    if int(os.environ.get("DAFT_PROFILING", 0)) == 1:
+        return VizTracer(output_file=filename, tracer_entries=10_000_000)
     else:
         return contextlib.nullcontext()
 
@@ -21,6 +21,7 @@ def timingcontext(name: str):
     tracer = get_tracer()
 
     try:
+        logger.debug(f"log_event:enter:{name}")
         start = time.time()
         if tracer is not None:
             with tracer.log_event(name) as event:

@@ -8,7 +8,7 @@ import ray
 
 @pytest.fixture(scope="module")
 def ray_cluster():
-    ray.init(num_cpus=4)
+    ray.init(local_mode=True)
     yield
     ray.shutdown()
 

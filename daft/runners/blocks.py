@@ -394,8 +394,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         all_chunks = []
         for block in blocks:
             all_chunks.extend(block.data.chunks)
-        merged = pa.chunked_array(all_chunks).combine_chunks()
-        return ArrowDataBlock(data=pa.chunked_array([merged]))
+        return ArrowDataBlock(data=pa.chunked_array(all_chunks))
 
     def _make_empty(self) -> DataBlock[ArrowArrType]:
         return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))

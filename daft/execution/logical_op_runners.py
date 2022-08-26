@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from bisect import bisect_right
 from itertools import accumulate
-from typing import Callable, ClassVar, Dict, List, Type
+from typing import Callable, ClassVar, Dict, List, Type, TypeVar
 
 from pyarrow import csv, json, parquet
 
@@ -28,6 +28,7 @@ from daft.logical.logical_plan import (
     Sort,
 )
 from daft.logical.schema import ExpressionList
+from daft.runners.blocks import DataBlock
 from daft.runners.partitioning import PartitionSet, vPartition
 from daft.runners.profiler import log_event
 from daft.runners.shuffle_ops import (
@@ -157,6 +158,9 @@ class LogicalPartitionOpRunner:
         )
 
 
+ReduceType = TypeVar("ReduceType")
+
+
 class LogicalGlobalOpRunner:
     shuffle_ops: ClassVar[Dict[Type[ShuffleOp], Type[Shuffler]]]
 
@@ -188,7 +192,7 @@ class LogicalGlobalOpRunner:
         raise NotImplementedError()
 
     @abstractmethod
-    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], vPartition]) -> vPartition:
+    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], ReduceType]) -> ReduceType:
         raise NotImplementedError()
 
     def _get_shuffle_op_klass(self, t: Type[ShuffleOp]) -> Type[Shuffler]:
@@ -246,7 +250,7 @@ class LogicalGlobalOpRunner:
         def sample_map_func(part: vPartition) -> vPartition:
             return part.sample(SAMPLES_PER_PARTITION).eval_expression_list(exprs)
 
-        def quantile_reduce_func(to_reduce: List[vPartition]) -> vPartition:
+        def quantile_reduce_func(to_reduce: List[vPartition]) -> DataBlock:
             merged = vPartition.merge_partitions(to_reduce, verify_partition_id=False)
             first_column = list(merged.columns.values())[0]
             return first_column.block.quantiles(num_partitions)

@@ -10,6 +10,7 @@ from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
     LogicalGlobalOpRunner,
     LogicalPartitionOpRunner,
+    ReduceType,
 )
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan
@@ -100,6 +101,10 @@ class RayRunnerSimpleShuffler(Shuffler):
                 return output_list
 
         map_results = [map_wrapper.remote(input=input.get_partition(i)) for i in range(source_partitions)]
+        if num_target_partitions == 1:
+            ray.wait(map_results)
+        else:
+            ray.wait([ref for output in map_results for ref in output])
         reduced_results = []
         for t in range(num_target_partitions):
             if num_target_partitions == 1:
@@ -152,7 +157,6 @@ class RayLogicalPartitionOpRunner(LogicalPartitionOpRunner):
                 *input_partitions, input_node_ids=node_ids, op_runner=self, nodes=nodes, partition_id=i
             )
             results.append(result_partition)
-
         return RayPartitionSet({i: part for i, part in enumerate(results)})
 
 
@@ -168,13 +172,13 @@ class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
         remote_func = ray.remote(func)
         return RayPartitionSet({i: remote_func.remote(pset.get_partition(i)) for i in range(pset.num_partitions())})
 
-    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], vPartition]) -> vPartition:
+    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], ReduceType]) -> ReduceType:
         @ray.remote
-        def remote_func(*parts: vPartition) -> vPartition:
+        def remote_func(*parts: vPartition) -> ReduceType:
             return func(list(parts))
 
         data = [pset.get_partition(i) for i in range(pset.num_partitions())]
-        result: vPartition = ray.get(remote_func.remote(*data))
+        result: ReduceType = ray.get(remote_func.remote(*data))
         return result
 
 
@@ -226,6 +230,4 @@ class RayRunner(Runner):
             last_id = exec_plan.execution_ops[-1].logical_ops[-1].id()
             last_pset = self._part_manager.get_partition_set(last_id)
             self._part_manager.clear()
-
-            # ray.timeline('raytimeline.json')
             return last_pset
