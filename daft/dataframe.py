@@ -485,7 +485,10 @@ class DataFrame:
     def to_pandas(self) -> pandas.DataFrame:
         self.collect()
         assert self._result is not None
-        return self._result.to_pandas(schema=self._plan.schema())
+        pd_df = self._result.to_pandas(schema=self._plan.schema())
+        del self._result
+        self._result = None
+        return pd_df
 
 
 @dataclass

@@ -6,7 +6,7 @@ import pytest
 import ray
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def ray_cluster():
     ray.init(address="auto")
     yield

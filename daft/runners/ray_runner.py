@@ -82,9 +82,11 @@ class RayRunnerSimpleShuffler(Shuffler):
 
         source_partitions = input.num_partitions()
 
-        def reduce_wrapper(to_reduce: List[vPartition]):
-            return self.reduce_fn(ray.get(to_reduce), **reduce_args)
+        @ray.remote
+        def reduce_wrapper(*to_reduce: vPartition):
+            return self.reduce_fn(list(to_reduce), **reduce_args)
 
+        @ray.remote(num_returns=num_target_partitions)
         def map_wrapper(input: vPartition):
             output_dict = self.map_fn(input=input, output_partitions=num_target_partitions, **map_args)
             output_list: List[Optional[vPartition]] = [None for _ in range(num_target_partitions)]
@@ -96,21 +98,20 @@ class RayRunnerSimpleShuffler(Shuffler):
             else:
                 return output_list
 
-        remote_reduce_fn = ray.remote(reduce_wrapper).options(scheduling_strategy="SPREAD")
-
-        remote_map_fn = ray.remote(map_wrapper).options(num_returns=num_target_partitions)
-
-        map_results = [remote_map_fn.remote(input=input.get_partition(i)) for i in range(source_partitions)]
+        map_results = [map_wrapper.remote(input=input.get_partition(i)) for i in range(source_partitions)]
+        if num_target_partitions == 1:
+            ray.wait(map_results)
+        else:
+            ray.wait([ref for block in map_results for ref in block])
         reduced_results = []
         for t in range(num_target_partitions):
             if num_target_partitions == 1:
                 map_subset = map_results
             else:
                 map_subset = [map_results[i][t] for i in range(source_partitions)]
-            reduced_part = remote_reduce_fn.remote(map_subset)
+            reduced_part = reduce_wrapper.remote(*map_subset)
             reduced_results.append(reduced_part)
 
-        # reduced_results = ray.get(reduced_results)
         return RayPartitionSet({i: part for i, part in enumerate(reduced_results)})
 
 
@@ -132,14 +133,13 @@ class RayRunnerSortOp(RayRunnerSimpleShuffler, SortOp):
 
 @ray.remote
 def _ray_partition_single_part_runner(
+    *input_parts: vPartition,
     op_runner: RayLogicalPartitionOpRunner,
-    input_refs: Dict[int, ray.ObjectRef],
+    input_node_ids: List[int],
     nodes: List[LogicalPlan],
     partition_id: int,
 ) -> vPartition:
-    ids = list(input_refs.keys())
-    values = ray.get([input_refs[id] for id in ids])
-    input_partitions = {id: val for id, val in zip(ids, values)}
+    input_partitions = {id: val for id, val in zip(input_node_ids, input_parts)}
     result: vPartition = op_runner.run_node_list_single_partition(
         input_partitions, nodes=nodes, partition_id=partition_id
     )
@@ -151,13 +151,14 @@ class RayLogicalPartitionOpRunner(LogicalPartitionOpRunner):
         self, inputs: Dict[int, PartitionSet], nodes: List[LogicalPlan], num_partitions: int
     ) -> PartitionSet:
         result = RayPartitionSet({})
-        remote_nodes = ray.put(nodes)
+        node_ids = list(inputs.keys())
         for i in range(num_partitions):
-            input_partitions = {nid: inputs[nid].get_partition(i) for nid in inputs}
+            input_partitions = [inputs[nid].get_partition(i) for nid in node_ids]
             result_partition = _ray_partition_single_part_runner.remote(
-                self, input_refs=input_partitions, nodes=remote_nodes, partition_id=i
+                *input_partitions, input_node_ids=node_ids, op_runner=self, nodes=nodes, partition_id=i
             )
             result.set_partition(i, result_partition)
+
         return result
 
 
@@ -209,26 +210,24 @@ class RayRunner(Runner):
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         result_partition_set: PartitionSet
         for exec_op in exec_plan.execution_ops:
-
             data_deps = exec_op.data_deps
             input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
 
             if exec_op.is_global_op:
                 input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
                 result_partition_set = self._global_op_runner.run_node_list(input_partition_set, exec_op.logical_ops)
-
-                for child_id in exec_op.data_deps:
-                    self._part_manager.rm(child_id)
-
             else:
                 result_partition_set = self._part_op_runner.run_node_list(
                     input_partition_set, exec_op.logical_ops, exec_op.num_partitions
                 )
-
-                for child_id in data_deps:
-                    self._part_manager.rm(child_id)
+            del input_partition_set
+            for child_id in data_deps:
+                self._part_manager.rm(child_id)
 
             self._part_manager.put_partition_set(exec_op.logical_ops[-1].id(), result_partition_set)
-
-        last = exec_plan.execution_ops[-1].logical_ops[-1]
-        return self._part_manager.get_partition_set(last.id())
+            ray.wait(list(result_partition_set._partitions.values()))
+            del result_partition_set
+        last_id = exec_plan.execution_ops[-1].logical_ops[-1].id()
+        last_pset = self._part_manager.get_partition_set(last_id)
+        self._part_manager.clear()
+        return last_pset
