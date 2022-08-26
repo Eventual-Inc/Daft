@@ -278,7 +278,7 @@ def test_tpch_q4(tmp_path, num_partitions, ray_cluster):
     check_answer(daft_pd_df, 4, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 2, 10])
+@pytest.mark.parametrize("num_partitions", [None, 10])
 def test_tpch_q5(tmp_path, num_partitions, ray_cluster):
     orders = get_df("orders", num_partitions=num_partitions).where(
         (col("O_ORDERDATE") >= datetime.date(1994, 1, 1)) & (col("O_ORDERDATE") < datetime.date(1995, 1, 1))

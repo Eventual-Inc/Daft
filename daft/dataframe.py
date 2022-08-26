@@ -17,14 +17,14 @@ from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionSet
-from daft.runners.ray_runner import RayRunner
+from daft.runners.pyrunner import PyRunner
 from daft.serving.endpoint import HTTPEndpoint
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
 
-_RUNNER = RayRunner()
+_RUNNER = PyRunner()
 
 
 @dataclass(frozen=True)

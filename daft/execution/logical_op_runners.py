@@ -168,11 +168,13 @@ class LogicalGlobalOpRunner:
             raise NotImplementedError(f"{type(node)} not implemented")
 
     @abstractmethod
-    def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition]) -> PartitionSet:
+    def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition], **kwargs) -> PartitionSet:
         raise NotImplementedError()
 
     @abstractmethod
-    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], vPartition]) -> vPartition:
+    def reduce_partitions(
+        self, pset: PartitionSet, func: Callable[[List[vPartition]], vPartition], **kwargs
+    ) -> vPartition:
         raise NotImplementedError()
 
     def _get_shuffle_op_klass(self, t: Type[ShuffleOp]) -> Type[Shuffler]:
@@ -223,12 +225,8 @@ class LogicalGlobalOpRunner:
 
         child_id = sort._children()[0].id()
 
-        SAMPLES_PER_PARTITION = 20
         num_partitions = sort.num_partitions()
         exprs: ExpressionList = sort._sort_by
-
-        def sample_map_func(part: vPartition) -> vPartition:
-            return part.sample(SAMPLES_PER_PARTITION).eval_expression_list(exprs)
 
         def quantile_reduce_func(to_reduce: List[vPartition]) -> vPartition:
             merged = vPartition.merge_partitions(to_reduce, verify_partition_id=False)
@@ -236,7 +234,7 @@ class LogicalGlobalOpRunner:
             return first_column.block.quantiles(num_partitions)
 
         prev_part = inputs[child_id]
-        sampled_partitions = self.map_partitions(prev_part, sample_map_func)
+        sampled_partitions = self.map_partitions(prev_part, sample_map_func, exprs=exprs)
         boundaries = self.reduce_partitions(sampled_partitions, quantile_reduce_func)
         expr = exprs.exprs[0]
         sort_shuffle_op_klass = self._get_shuffle_op_klass(SortOp)
@@ -258,3 +256,8 @@ class LogicalGlobalOpRunner:
             map_args={"num_input_partitions": prev_part.num_partitions()},
         )
         return coalesce_op.run(input=prev_part, num_target_partitions=num_partitions)
+
+
+def sample_map_func(part: vPartition, exprs: ExpressionList) -> vPartition:
+    SAMPLES_PER_PARTITION = 20
+    return part.sample(SAMPLES_PER_PARTITION).eval_expression_list(exprs)
