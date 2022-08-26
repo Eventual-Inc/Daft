@@ -383,7 +383,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return self._binary_op(mask, fn=pac.array_filter)
 
     def _take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[ArrowArrType]:
-        return self._binary_op(indices, fn=pac.take)
+        return self._binary_op(indices, fn=partial(pac.take, boundscheck=False))
 
     def _split(self, pivots: np.ndarray) -> Sequence[ArrowArrType]:
         splitted: Sequence[np.ndarray] = np.split(self.data, pivots)[1:]
