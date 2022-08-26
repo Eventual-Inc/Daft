@@ -189,7 +189,7 @@ class Projection(UnaryNode):
         )
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> Projection:
-        return Projection(new_input, self._projection.unresolve())
+        return Projection(new_input, self._projection)
 
     def rebuild(self) -> LogicalPlan:
         return Projection(input=self._children()[0].rebuild(), projection=self._projection.unresolve())
@@ -306,7 +306,7 @@ class Repartition(UnaryNode):
     def copy_with_new_input(self, new_input: LogicalPlan) -> Repartition:
         return Repartition(
             input=new_input,
-            partition_by=self._partition_by.unresolve(),
+            partition_by=self._partition_by,
             num_partitions=self.num_partitions(),
             scheme=self._scheme,
         )
