@@ -98,10 +98,12 @@ class RayRunnerSimpleShuffler(Shuffler):
                 return output_list
 
         map_results = [map_wrapper.remote(input=input.get_partition(i)) for i in range(source_partitions)]
+
         if num_target_partitions == 1:
             ray.wait(map_results)
         else:
-            ray.wait([ref for output in map_results for ref in output])
+            ray.wait([ref for block in map_results for ref in block])
+
         reduced_results = []
         for t in range(num_target_partitions):
             if num_target_partitions == 1:
@@ -217,7 +219,6 @@ class RayRunner(Runner):
             del input_partition_set
             for child_id in data_deps:
                 self._part_manager.rm(child_id)
-
             self._part_manager.put_partition_set(exec_op.logical_ops[-1].id(), result_partition_set)
             del result_partition_set
         last_id = exec_plan.execution_ops[-1].logical_ops[-1].id()
