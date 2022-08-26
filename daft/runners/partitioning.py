@@ -366,3 +366,7 @@ class PartitionManager:
             self._nid_to_partition_set[node_id].delete_partition(partition_id)
             if self._nid_to_partition_set[node_id].num_partitions() == 0:
                 del self._nid_to_partition_set[node_id]
+
+    def clear(self) -> None:
+        del self._nid_to_partition_set
+        self._nid_to_partition_set = {}

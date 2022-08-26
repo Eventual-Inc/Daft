@@ -1,6 +1,5 @@
 from abc import abstractmethod
 from bisect import bisect_right
-from functools import partial
 from itertools import accumulate
 from typing import Callable, ClassVar, Dict, List, Type
 
@@ -231,15 +230,14 @@ class LogicalGlobalOpRunner:
         def sample_map_func(part: vPartition) -> vPartition:
             return part.sample(SAMPLES_PER_PARTITION).eval_expression_list(exprs)
 
+        def quantile_reduce_func(to_reduce: List[vPartition]) -> vPartition:
+            merged = vPartition.merge_partitions(to_reduce, verify_partition_id=False)
+            first_column = list(merged.columns.values())[0]
+            return first_column.block.quantiles(num_partitions)
+
         prev_part = inputs[child_id]
         sampled_partitions = self.map_partitions(prev_part, sample_map_func)
-        merged_samples = self.reduce_partitions(
-            sampled_partitions, partial(vPartition.merge_partitions, verify_partition_id=False)
-        )
-        assert len(sort._sort_by.exprs) == 1
-        assert len(merged_samples.columns) == 1
-        first_column = list(merged_samples.columns.values())[0]
-        boundaries = first_column.block.quantiles(num_partitions)
+        boundaries = self.reduce_partitions(sampled_partitions, quantile_reduce_func)
         expr = exprs.exprs[0]
         sort_shuffle_op_klass = self._get_shuffle_op_klass(SortOp)
         sort_op = sort_shuffle_op_klass(
