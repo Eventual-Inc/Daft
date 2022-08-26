@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import os
 import uuid
@@ -96,22 +97,15 @@ class DataFrameSchema:
             fields.append(DataFrameSchemaField(e.name(), e.resolved_type()))
         return cls(fields)
 
-    def _repr_html_(self) -> str:
-        rows = ["<tr><th>Name</th><th>Type</th></tr>"]
-        rows += [
-            f"<tr><td>{self._fields[field_name].name}</td><td>{self._fields[field_name].daft_type}</td></tr>"
-            for field_name in self._fields
-        ]
-        nl = "\n"
-        return f"""
-            <table>
-                {nl.join(rows)}
-            </table>
-        """
-
     def __repr__(self) -> str:
         fields = list(self._fields.values())
-        return tabulate([[field.name for field in fields], [field.daft_type for field in fields]])
+        return tabulate([[field.daft_type for field in fields]], headers=[field.name for field in fields])
+
+    def _repr_html_(self) -> str:
+        fields = list(self._fields.values())
+        return tabulate(
+            [[field.daft_type for field in fields]], headers=[field.name for field in fields], tablefmt="html"
+        )
 
 
 class DataFrame:
@@ -130,6 +124,37 @@ class DataFrame:
 
     def __repr__(self) -> str:
         return f"DataFrame({self._plan.partition_spec()})\n{self.schema()}"
+
+    def _repr_html_(self) -> str:
+        import PIL.Image
+
+        # TODO(jay): Be more intelligent about computing this small sample
+        column_char_width = 20
+        max_col_rows = 3
+        max_chars_per_cell = max_col_rows * column_char_width
+        sample = self.limit(10)
+        pd_df = sample.to_pandas()
+
+        def stringify_and_truncate(val: Any):
+            if isinstance(val, PIL.Image.Image):
+                bio = io.BytesIO()
+                val_copy = val.copy()
+                val_copy.thumbnail((128, 128))
+                val_copy.save(bio, format="JPEG")
+                base64_img = base64.b64encode(bio.getvalue())
+                return f'<img src="data:image/jpeg;base64, {base64_img.decode("utf-8")}" alt="{str(val)}" />'
+            s = str(val)
+            return s if len(s) <= max_chars_per_cell else s[: max_chars_per_cell - 4] + "..."
+
+        pd_df = pd_df.applymap(stringify_and_truncate)
+        return tabulate(
+            pd_df,
+            headers=[f"{name}<br>({self.schema()[name].daft_type})" for name in self.schema().column_names()],
+            tablefmt="unsafehtml",
+            showindex=False,
+            missingval="None",
+            maxcolwidths=column_char_width,
+        )
 
     ###
     # Creation methods
