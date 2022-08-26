@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import dataclasses
+from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -305,23 +306,38 @@ class vPartition:
         return dataclasses.replace(to_merge[0], columns=new_columns)
 
 
-@dataclass
-class PartitionSet:
-    partitions: Dict[PartID, vPartition]
+PartitionT = TypeVar("PartitionT")
 
+
+class PartitionSet(Generic[PartitionT]):
+    @abstractmethod
     def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
-        partition_ids = sorted(list(self.partitions.keys()))
-        assert partition_ids[0] == 0
-        assert partition_ids[-1] + 1 == len(partition_ids)
-        part_dfs = [self.partitions[pid].to_pandas(schema=schema) for pid in partition_ids]
-        return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
+        raise NotImplementedError()
 
+    @abstractmethod
+    def get_partition(self, idx: PartID) -> PartitionT:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def set_partition(self, idx: PartID, part: PartitionT) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def delete_partition(self, idx: PartID) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def has_partition(self, idx: PartID) -> bool:
+        raise NotImplementedError()
+
+    @abstractmethod
     def __len__(self) -> int:
         return sum(self.len_of_partitions())
 
+    @abstractmethod
     def len_of_partitions(self) -> List[int]:
-        partition_ids = sorted(list(self.partitions.keys()))
-        return [len(self.partitions[pid]) for pid in partition_ids]
+        raise NotImplementedError()
 
+    @abstractmethod
     def num_partitions(self) -> int:
-        return len(self.partitions)
+        raise NotImplementedError()
