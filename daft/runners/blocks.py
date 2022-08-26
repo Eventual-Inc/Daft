@@ -350,6 +350,12 @@ ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
 
 
 class ArrowDataBlock(DataBlock[ArrowArrType]):
+    def __reduce__(self) -> Tuple:
+        if len(self.data) == 0:
+            return ArrowDataBlock, (self._make_empty().data,)
+        else:
+            return ArrowDataBlock, (self.data,)
+
     def cast_to_udf_api(self):
         if isinstance(self.data, pa.Scalar):
             return self.data.as_py()
@@ -388,12 +394,15 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         all_chunks = []
         for block in blocks:
             all_chunks.extend(block.data.chunks)
-        return ArrowDataBlock(data=pa.chunked_array(all_chunks))
+        merged = pa.chunked_array(all_chunks).combine_chunks()
+        return ArrowDataBlock(data=pa.chunked_array([merged]))
 
     def _make_empty(self) -> DataBlock[ArrowArrType]:
         return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
 
     def sample(self, num: int) -> DataBlock[ArrowArrType]:
+        if num >= len(self):
+            return self
         sampled = np.random.choice(self.data, num, replace=False)
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
 
@@ -423,7 +432,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             data_to_hash = data_to_hash.cast(pa.string())
         elif not (pa.types.is_integer(pa_type) or pa.types.is_string(pa_type)):
             raise TypeError(f"cannot hash {pa_type}")
-
         hashed = hash_chunked_array(data_to_hash)
         if seed is None:
             return ArrowDataBlock(data=hashed)

@@ -16,7 +16,7 @@ build_inplace = 'build:build_inplace'
 
 [tool.poetry.dependencies]
 python = "^3.8"
-ray = {version = "2.0", extras = ["default"]}
+ray = "1.13.0"
 numpy = "^1.22.3"
 pyarrow = "^8.0.0"
 Pillow = "^9.1.0"
@@ -36,6 +36,7 @@ loguru = "^0.6.0"
 PyYAML = "^6.0"
 Cython = "^0.29.32"
 tabulate = "^0.8.10"
+viztracer = "^0.15.4"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"

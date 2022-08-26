@@ -29,6 +29,7 @@ from daft.logical.logical_plan import (
 )
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionSet, vPartition
+from daft.runners.profiler import log_event
 from daft.runners.shuffle_ops import (
     CoalesceOp,
     RepartitionHashOp,
@@ -47,7 +48,7 @@ class LogicalPartitionOpRunner:
     def run_node_list_single_partition(
         self, inputs: Dict[int, vPartition], nodes: List[LogicalPlan], partition_id: int
     ) -> vPartition:
-        part_set = inputs.copy()
+        part_set = {nid: part for nid, part in inputs.items()}
         for node in nodes:
             output = self.run_single_node(inputs=part_set, node=node, partition_id=partition_id)
             part_set[node.id()] = output
@@ -56,20 +57,25 @@ class LogicalPartitionOpRunner:
         return output
 
     def run_single_node(self, inputs: Dict[int, vPartition], node: LogicalPlan, partition_id: int) -> vPartition:
-        if isinstance(node, Scan):
-            return self._handle_scan(inputs, node, partition_id=partition_id)
-        elif isinstance(node, Projection):
-            return self._handle_projection(inputs, node, partition_id=partition_id)
-        elif isinstance(node, Filter):
-            return self._handle_filter(inputs, node, partition_id=partition_id)
-        elif isinstance(node, LocalLimit):
-            return self._handle_local_limit(inputs, node, partition_id=partition_id)
-        elif isinstance(node, LocalAggregate):
-            return self._handle_local_aggregate(inputs, node, partition_id=partition_id)
-        elif isinstance(node, Join):
-            return self._handle_join(inputs, node, partition_id=partition_id)
-        else:
-            raise NotImplementedError(f"{type(node)} not implemented")
+        rows = None
+        if len(inputs):
+            rows = len(list(inputs.values())[0])
+        event_name = f"{node.__class__}(id={node.id()}, part_idx={partition_id}, rows={rows})"
+        with log_event(event_name):
+            if isinstance(node, Scan):
+                return self._handle_scan(inputs, node, partition_id=partition_id)
+            elif isinstance(node, Projection):
+                return self._handle_projection(inputs, node, partition_id=partition_id)
+            elif isinstance(node, Filter):
+                return self._handle_filter(inputs, node, partition_id=partition_id)
+            elif isinstance(node, LocalLimit):
+                return self._handle_local_limit(inputs, node, partition_id=partition_id)
+            elif isinstance(node, LocalAggregate):
+                return self._handle_local_aggregate(inputs, node, partition_id=partition_id)
+            elif isinstance(node, Join):
+                return self._handle_join(inputs, node, partition_id=partition_id)
+            else:
+                raise NotImplementedError(f"{type(node)} not implemented")
 
     def _handle_scan(self, inputs: Dict[int, vPartition], scan: Scan, partition_id: int) -> vPartition:
         schema = scan.schema()
@@ -164,16 +170,18 @@ class LogicalGlobalOpRunner:
         return output
 
     def run_single_node(self, inputs: Dict[int, PartitionSet], node: LogicalPlan) -> PartitionSet:
-        if isinstance(node, GlobalLimit):
-            return self._handle_global_limit(inputs, node)
-        elif isinstance(node, Repartition):
-            return self._handle_repartition(inputs, node)
-        elif isinstance(node, Sort):
-            return self._handle_sort(inputs, node)
-        elif isinstance(node, Coalesce):
-            return self._handle_coalesce(inputs, node)
-        else:
-            raise NotImplementedError(f"{type(node)} not implemented")
+        event_name = f"{node.__class__}(id={node.id()})"
+        with log_event(event_name):
+            if isinstance(node, GlobalLimit):
+                return self._handle_global_limit(inputs, node)
+            elif isinstance(node, Repartition):
+                return self._handle_repartition(inputs, node)
+            elif isinstance(node, Sort):
+                return self._handle_sort(inputs, node)
+            elif isinstance(node, Coalesce):
+                return self._handle_coalesce(inputs, node)
+            else:
+                raise NotImplementedError(f"{type(node)} not implemented")
 
     @abstractmethod
     def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition]) -> PartitionSet:
