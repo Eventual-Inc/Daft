@@ -40,7 +40,13 @@ from daft.runners.shuffle_ops import (
 
 
 class LogicalPartitionOpRunner:
-    def run_node_list(self, inputs: Dict[int, vPartition], nodes: List[LogicalPlan], partition_id: int) -> vPartition:
+    @abstractmethod
+    def run_node_list(self, inputs: Dict[int, PartitionSet], nodes: List[LogicalPlan], num_partitions: int):
+        raise NotImplementedError()
+
+    def run_node_list_single_partition(
+        self, inputs: Dict[int, vPartition], nodes: List[LogicalPlan], partition_id: int
+    ) -> vPartition:
         part_set = inputs.copy()
         for node in nodes:
             output = self.run_single_node(inputs=part_set, node=node, partition_id=partition_id)

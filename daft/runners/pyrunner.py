@@ -19,7 +19,7 @@ from daft.logical.optimizer import (
     PushDownPredicates,
 )
 from daft.logical.schema import ExpressionList
-from daft.runners.partitioning import PartID, PartitionSet, vPartition
+from daft.runners.partitioning import PartID, PartitionManager, PartitionSet, vPartition
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
     CoalesceOp,
@@ -40,7 +40,7 @@ class LocalPartitionSet(PartitionSet[vPartition]):
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
         part_dfs = [self._partitions[pid].to_pandas(schema=schema) for pid in partition_ids]
-        return pd.concat(part_dfs, ignore_index=True)
+        return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
 
     def get_partition(self, idx: PartID) -> vPartition:
         return self._partitions[idx]
@@ -63,31 +63,6 @@ class LocalPartitionSet(PartitionSet[vPartition]):
 
     def num_partitions(self) -> int:
         return len(self._partitions)
-
-
-class PartitionManager:
-    def __init__(self, pset_default: Callable[[], PartitionSet]) -> None:
-        self._nid_to_partition_set: Dict[int, PartitionSet] = {}
-        self._pset_default_list = [pset_default]
-
-    def new_partition_set(self) -> PartitionSet:
-        func = self._pset_default_list[0]
-        return func()
-
-    def get_partition_set(self, node_id: int) -> PartitionSet:
-        assert node_id in self._nid_to_partition_set
-        return self._nid_to_partition_set[node_id]
-
-    def put_partition_set(self, node_id: int, pset: PartitionSet) -> None:
-        self._nid_to_partition_set[node_id] = pset
-
-    def rm(self, node_id: int, partition_id: Optional[int] = None):
-        if partition_id is None:
-            del self._nid_to_partition_set[node_id]
-        else:
-            self._nid_to_partition_set[node_id].delete_partition(partition_id)
-            if self._nid_to_partition_set[node_id].num_partitions() == 0:
-                del self._nid_to_partition_set[node_id]
 
 
 class PyRunnerSimpleShuffler(Shuffler):
@@ -126,7 +101,16 @@ class PyRunnerSortOp(PyRunnerSimpleShuffler, SortOp):
     ...
 
 
-LocalLogicalPartitionOpRunner = LogicalPartitionOpRunner
+class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
+    def run_node_list(
+        self, inputs: Dict[int, PartitionSet], nodes: List[LogicalPlan], num_partitions: int
+    ) -> PartitionSet:
+        result = LocalPartitionSet({})
+        for i in range(num_partitions):
+            input_partitions = {nid: inputs[nid].get_partition(i) for nid in inputs}
+            result_partition = self.run_node_list_single_partition(input_partitions, nodes=nodes, partition_id=i)
+            result.set_partition(i, result_partition)
+        return result
 
 
 class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
@@ -178,20 +162,13 @@ class PyRunner(Runner):
             if exec_op.is_global_op:
                 input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
                 result_partition_set = self._global_op_runner.run_node_list(input_partition_set, exec_op.logical_ops)
-
-                for child_id in exec_op.data_deps:
-                    self._part_manager.rm(child_id)
-
             else:
-                result_partition_set = self._part_manager.new_partition_set()
-                for i in range(exec_op.num_partitions):
-                    input_partitions = {nid: input_partition_set[nid].get_partition(i) for nid in input_partition_set}
-                    result_partition = self._part_op_runner.run_node_list(
-                        input_partitions, nodes=exec_op.logical_ops, partition_id=i
-                    )
-                    result_partition_set.set_partition(i, result_partition)
-                    for child_id in data_deps:
-                        self._part_manager.rm(child_id, i)
+                result_partition_set = self._part_op_runner.run_node_list(
+                    input_partition_set, exec_op.logical_ops, exec_op.num_partitions
+                )
+
+            for child_id in data_deps:
+                self._part_manager.rm(child_id)
 
             self._part_manager.put_partition_set(exec_op.logical_ops[-1].id(), result_partition_set)
 
