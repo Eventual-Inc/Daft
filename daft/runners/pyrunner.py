@@ -147,6 +147,9 @@ class PyRunner(Runner):
                 result_partition_set = self._global_op_runner.run_node_list(input_partition_set, exec_op.logical_ops)
                 self._part_manager.put_partition_set(exec_op.logical_ops[-1].id(), result_partition_set)
 
+                for child_id in exec_op.data_deps:
+                    self._part_manager.rm(child_id)
+
             else:
                 data_deps = exec_op.data_deps
                 for i in range(exec_op.num_partitions):
@@ -155,5 +158,8 @@ class PyRunner(Runner):
                         input_partitions, nodes=exec_op.logical_ops, partition_id=i
                     )
                     self._part_manager.put(exec_op.logical_ops[-1].id(), i, result_partition)
+                    for child_id in data_deps:
+                        self._part_manager.rm(child_id, i)
+
         last = exec_plan.execution_ops[-1].logical_ops[-1]
         return self._part_manager.get_partition_set(last.id())
