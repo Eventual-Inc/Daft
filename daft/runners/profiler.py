@@ -33,6 +33,5 @@ def timingcontext(name: str):
         logger.debug(f"log_event:{name}:{(end-start)*1000:.3f}ms")
 
 
-
 def log_event(name: str):
     return timingcontext(name)
