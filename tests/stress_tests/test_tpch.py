@@ -142,8 +142,8 @@ def check_answer(daft_pd_df: pd.DataFrame, tpch_question: int, tmp_path: str):
         assert run_tpch_checker(tpch_question, csv_out)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q1(tmp_path, num_partitions):
+@pytest.mark.parametrize("num_partitions", [None, 10])
+def test_tpch_q1(tmp_path, num_partitions, ray_cluster):
     lineitem = get_df("lineitem", num_partitions=num_partitions)
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
@@ -170,8 +170,8 @@ def test_tpch_q1(tmp_path, num_partitions):
     check_answer(daft_pd_df, 1, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q2(tmp_path, num_partitions):
+@pytest.mark.parametrize("num_partitions", [None, 10])
+def test_tpch_q2(tmp_path, num_partitions, ray_cluster):
     @udf(return_type=bool)
     def ends_with(column, suffix):
         return column.str.endswith(suffix)
@@ -223,8 +223,8 @@ def test_tpch_q2(tmp_path, num_partitions):
     check_answer(daft_pd_df, 2, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q3(tmp_path, num_partitions):
+@pytest.mark.parametrize("num_partitions", [None, 10])
+def test_tpch_q3(tmp_path, num_partitions, ray_cluster):
     def decrease(x, y):
         return x * (1 - y)
 
@@ -254,8 +254,8 @@ def test_tpch_q3(tmp_path, num_partitions):
     check_answer(daft_pd_df, 3, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q4(tmp_path, num_partitions):
+@pytest.mark.parametrize("num_partitions", [None, 10])
+def test_tpch_q4(tmp_path, num_partitions, ray_cluster):
     orders = get_df("orders", num_partitions=num_partitions).where(
         (col("O_ORDERDATE") >= datetime.date(1993, 7, 1)) & (col("O_ORDERDATE") < datetime.date(1993, 10, 1))
     )
@@ -278,8 +278,8 @@ def test_tpch_q4(tmp_path, num_partitions):
     check_answer(daft_pd_df, 4, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q5(tmp_path, num_partitions):
+@pytest.mark.parametrize("num_partitions", [None, 2, 10])
+def test_tpch_q5(tmp_path, num_partitions, ray_cluster):
     orders = get_df("orders", num_partitions=num_partitions).where(
         (col("O_ORDERDATE") >= datetime.date(1994, 1, 1)) & (col("O_ORDERDATE") < datetime.date(1995, 1, 1))
     )
@@ -308,8 +308,8 @@ def test_tpch_q5(tmp_path, num_partitions):
     check_answer(daft_pd_df, 5, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q6(tmp_path, num_partitions):
+@pytest.mark.parametrize("num_partitions", [None, 10])
+def test_tpch_q6(tmp_path, num_partitions, ray_cluster):
     lineitem = get_df("lineitem", num_partitions=num_partitions)
     daft_df = lineitem.where(
         (col("L_SHIPDATE") >= datetime.date(1994, 1, 1))
@@ -323,8 +323,8 @@ def test_tpch_q6(tmp_path, num_partitions):
     check_answer(daft_pd_df, 6, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q7(tmp_path, num_partitions):
+@pytest.mark.parametrize("num_partitions", [None, 10])
+def test_tpch_q7(tmp_path, num_partitions, ray_cluster):
     def decrease(x, y):
         return x * (1 - y)
 
@@ -380,8 +380,8 @@ def test_tpch_q7(tmp_path, num_partitions):
     check_answer(daft_pd_df, 7, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q8(tmp_path, num_partitions):
+@pytest.mark.parametrize("num_partitions", [None, 10])
+def test_tpch_q8(tmp_path, num_partitions, ray_cluster):
     lineitem = get_df("lineitem", num_partitions=num_partitions)
 
     def decrease(x, y):
@@ -442,8 +442,8 @@ def test_tpch_q8(tmp_path, num_partitions):
     check_answer(daft_pd_df, 8, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q9(tmp_path, num_partitions):
+@pytest.mark.parametrize("num_partitions", [None, 10])
+def test_tpch_q9(tmp_path, num_partitions, ray_cluster):
     lineitem = get_df("lineitem", num_partitions=num_partitions)
     part = get_df("part", num_partitions=num_partitions)
     nation = get_df("nation", num_partitions=num_partitions)
@@ -487,8 +487,8 @@ def test_tpch_q9(tmp_path, num_partitions):
     check_answer(daft_pd_df, 9, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 3])
-def test_tpch_q10(tmp_path, num_partitions):
+@pytest.mark.parametrize("num_partitions", [None, 10])
+def test_tpch_q10(tmp_path, num_partitions, ray_cluster):
     def decrease(x, y):
         return x * (1 - y)
 
