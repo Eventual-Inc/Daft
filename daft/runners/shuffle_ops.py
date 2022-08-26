@@ -6,7 +6,7 @@ import numpy as np
 
 from daft.expressions import Expression
 from daft.runners.blocks import ArrowArrType, DataBlock
-from daft.runners.partitioning import PartID, vPartition
+from daft.runners.partitioning import PartID, PartitionSet, vPartition
 
 from ..logical.schema import ExpressionList
 
@@ -104,3 +104,9 @@ class SortOp(ShuffleOp):
     ) -> vPartition:
         assert expr is not None and desc is not None
         return vPartition.merge_partitions(mapped_outputs).sort(expr, desc=desc)
+
+
+class Shuffler(ShuffleOp):
+    @abstractmethod
+    def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
+        raise NotImplementedError()

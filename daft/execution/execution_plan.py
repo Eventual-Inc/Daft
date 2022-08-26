@@ -7,11 +7,20 @@ from typing import ClassVar, List
 from daft.logical.logical_plan import LogicalPlan, OpLevel
 
 
-@dataclass
 class ExecutionOp:
     logical_ops: List[LogicalPlan]
     num_partitions: int
+    data_deps: List[int]
     is_global_op: ClassVar[bool] = False
+
+    def __init__(self, logical_ops: List[LogicalPlan], num_partitions: int) -> None:
+        self.logical_ops = logical_ops
+        self.num_partitions = num_partitions
+        all_deps = set()
+        for node in logical_ops:
+            for child in node._children():
+                all_deps.add(child.id())
+        self.data_deps = list(all_deps - {node.id() for node in logical_ops})
 
     def __repr__(self) -> str:
         builder = StringIO()
@@ -21,12 +30,10 @@ class ExecutionOp:
         return builder.getvalue()
 
 
-@dataclass(repr=False)
 class ForEachPartition(ExecutionOp):
     ...
 
 
-@dataclass(repr=False)
 class GlobalOp(ExecutionOp):
     is_global_op: ClassVar[bool] = True
     ...
@@ -53,7 +60,7 @@ class ExecutionPlan:
         for lop in post_order:
             if lop.op_level() == OpLevel.ROW or lop.op_level() == OpLevel.PARTITION:
                 if len(for_each_so_far) > 0:
-                    if for_each_so_far[-1].num_partitions() != lop.num_partitions():
+                    if (for_each_so_far[-1].num_partitions() != lop.num_partitions()) or (len(lop._children()) == 0):
                         exec_plan.append(
                             ForEachPartition(for_each_so_far, num_partitions=for_each_so_far[-1].num_partitions())
                         )
