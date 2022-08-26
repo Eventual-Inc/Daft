@@ -16,10 +16,8 @@ from tests.conftest import assert_df_equals
 def test_load_pydict_with_obj(repartition_nparts):
     data = {"id": [i for i in range(10)], "features": [np.ones(i) for i in range(10)]}
     daft_df = DataFrame.from_pydict(data).repartition(repartition_nparts)
-    assert [field.daft_type for field in daft_df.schema()] == [
-        ExpressionType.from_py_type(int),
-        ExpressionType.from_py_type(np.ndarray),
-    ]
+    assert daft_df.schema()["id"].daft_type == ExpressionType.from_py_type(int)
+    assert daft_df.schema()["features"].daft_type == ExpressionType.from_py_type(np.ndarray)
     pd_df = pd.DataFrame.from_dict(data)
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
@@ -118,6 +116,12 @@ def test_pyobj_primitive_to_obj_udf(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="lengths")
 
 
+def test_pyobj_filter_error_on_pyobj():
+    data = {"id": [i for i in range(10)], "features": [np.ndarray(i) if i % 2 == 0 else None for i in range(10)]}
+    with pytest.raises(ValueError):
+        daft_df = DataFrame.from_pydict(data).where(col("features") != None)
+
+
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
 def test_pyobj_filter_udf(repartition_nparts):
     data = {"id": [i for i in range(10)], "features": [np.ndarray(i) for i in range(10)]}
@@ -153,4 +157,15 @@ def test_pyobj_aspy_method_call_args(repartition_nparts):
     daft_pd_df = daft_df.to_pandas()
     pd_df = pd.DataFrame.from_dict(data)
     pd_df["clipped"] = pd.Series([feature.clip(0, 1) for feature in pd_df["features"]])
+    assert_df_equals(daft_pd_df, pd_df, sort_key="id")
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
+def test_pyobj_dict_indexing(repartition_nparts):
+    data = {"id": [i for i in range(10)], "dicts": [{"foo": i} for i in range(10)]}
+    daft_df = DataFrame.from_pydict(data).repartition(repartition_nparts)
+    daft_df = daft_df.with_column("foo", col("dicts").as_py(dict)["foo"])
+    daft_pd_df = daft_df.to_pandas()
+    pd_df = pd.DataFrame.from_dict(data)
+    pd_df["foo"] = pd.Series([d["foo"] for d in pd_df["dicts"]])
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")

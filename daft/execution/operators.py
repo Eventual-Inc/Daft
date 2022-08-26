@@ -22,6 +22,10 @@ import pyarrow as pa
 
 class ExpressionType:
     @staticmethod
+    def is_logical(t: ExpressionType) -> bool:
+        return t == _TYPE_REGISTRY["logical"]
+
+    @staticmethod
     def unknown() -> ExpressionType:
         return _TYPE_REGISTRY["unknown"]
 
@@ -40,8 +44,10 @@ class ExpressionType:
 
     @staticmethod
     def from_arrow_type(datatype: pa.DataType) -> ExpressionType:
+        # We fall back on generic Python object expression types if we encounter types that
+        # are not mapped to an ExpressionType
         if datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
-            return _TYPE_REGISTRY["unknown"]
+            return ExpressionType.python_object()
         return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
 
 
@@ -115,7 +121,7 @@ EXPRESSION_TYPE_TO_PYARROW_TYPE = {
 
 
 _PYARROW_TYPE_TO_EXPRESSION_TYPE = {
-    pa.null(): _TYPE_REGISTRY["unknown"],
+    # pa.null(): _TYPE_REGISTRY["unknown"],
     pa.bool_(): _TYPE_REGISTRY["logical"],
     pa.int8(): _TYPE_REGISTRY["integer"],
     pa.int16(): _TYPE_REGISTRY["integer"],
@@ -129,10 +135,10 @@ _PYARROW_TYPE_TO_EXPRESSION_TYPE = {
     pa.float32(): _TYPE_REGISTRY["float"],
     pa.float64(): _TYPE_REGISTRY["float"],
     pa.date32(): _TYPE_REGISTRY["date"],
-    pa.date64(): _TYPE_REGISTRY["unknown"],
+    # pa.date64(): _TYPE_REGISTRY["unknown"],
     pa.string(): _TYPE_REGISTRY["string"],
     pa.utf8(): _TYPE_REGISTRY["string"],
-    pa.large_binary(): _TYPE_REGISTRY["unknown"],
+    # pa.large_binary(): _TYPE_REGISTRY["unknown"],
     pa.large_string(): _TYPE_REGISTRY["string"],
     pa.large_utf8(): _TYPE_REGISTRY["string"],
 }

@@ -7,6 +7,7 @@ from enum import Enum, IntEnum
 from typing import Any, List, Optional, Tuple
 
 from daft.datasources import SourceInfo
+from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression, Expression
 from daft.internal.treenode import TreeNode
 from daft.logical.schema import ExpressionList
@@ -151,6 +152,12 @@ class Filter(UnaryNode):
         )
         self._register_child(input)
         self._predicate = predicate.resolve(input.schema())
+
+        resolved_type = self._predicate.exprs[0].resolved_type()
+        if not ExpressionType.is_logical(resolved_type):
+            raise ValueError(
+                f"Expected expression {self._predicate.exprs[0]} to resolve to type LOGICAL, but received: {resolved_type}"
+            )
 
     def __repr__(self) -> str:
         return f"Filter\n\toutput={self.schema()}\n\tpredicate={self._predicate}"

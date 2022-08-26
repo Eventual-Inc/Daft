@@ -68,4 +68,4 @@ def test_with_column(valid_data: List[Dict[str, float]]) -> None:
     df = DataFrame.from_pylist(valid_data)
     expanded_df = df.with_column("foo", expr)
     # TODO(jay): Test that the expression with name "foo" is equal to the expected expression, except for the IDs of the columns
-    assert expanded_df.column_names() == [c.name for c in df.schema()] + ["foo"]
+    assert expanded_df.column_names() == df.schema().column_names() + ["foo"]

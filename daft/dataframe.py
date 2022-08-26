@@ -3,14 +3,22 @@ from __future__ import annotations
 import io
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Iterator, List, Optional, Tuple, TypeVar, Union
+from functools import partial
+from typing import IO, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
 import pandas
+import pyarrow as pa
 import pyarrow.parquet as papq
-from pyarrow import csv
+from fsspec import AbstractFileSystem
+from pyarrow import csv, json
 from tabulate import tabulate
 
-from daft.datasources import CSVSourceInfo, InMemorySourceInfo, ParquetSourceInfo
+from daft.datasources import (
+    CSVSourceInfo,
+    InMemorySourceInfo,
+    JSONSourceInfo,
+    ParquetSourceInfo,
+)
 from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression, Expression, col
 from daft.filesystem import get_filesystem_from_path
@@ -33,9 +41,39 @@ class DataFrameSchemaField:
     daft_type: ExpressionType
 
 
+def _sample_with_pyarrow(
+    loader_func: Callable[[IO], pa.Table],
+    filepath: str,
+    fs: AbstractFileSystem,
+    max_bytes: int = 5 * 1024**2,
+) -> ExpressionList:
+    sampled_bytes = io.BytesIO()
+    with fs.open(filepath, compression="infer") as f:
+        lines = f.readlines(max_bytes)
+        for line in lines:
+            sampled_bytes.write(line)
+    sampled_bytes.seek(0)
+    sampled_tbl = loader_func(sampled_bytes)
+    fields = [(field.name, field.type) for field in sampled_tbl.schema]
+    schema = ExpressionList(
+        [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
+    )
+    assert schema is not None, f"Unable to read file {filepath} to determine schema"
+    return schema
+
+
 class DataFrameSchema:
     def __init__(self, fields: List[DataFrameSchemaField]):
-        self._fields = fields
+        self._fields = {f.name: f for f in fields}
+
+    def __getitem__(self, key: str) -> DataFrameSchemaField:
+        return self._fields[key]
+
+    def __len__(self) -> int:
+        return len(self._fields)
+
+    def column_names(self) -> List[str]:
+        return list(self._fields.keys())
 
     @classmethod
     def from_expression_list(cls, exprs: ExpressionList) -> DataFrameSchema:
@@ -48,12 +86,12 @@ class DataFrameSchema:
             fields.append(DataFrameSchemaField(e.name(), e.resolved_type()))
         return cls(fields)
 
-    def __iter__(self) -> Iterator[DataFrameSchemaField]:
-        yield from self._fields
-
     def _repr_html_(self) -> str:
         rows = ["<tr><th>Name</th><th>Type</th></tr>"]
-        rows += [f"<tr><td>{field.name}</td><td>{field.daft_type}</td></tr>" for field in self._fields]
+        rows += [
+            f"<tr><td>{self._fields[field_name].name}</td><td>{self._fields[field_name].daft_type}</td></tr>"
+            for field_name in self._fields
+        ]
         nl = "\n"
         return f"""
             <table>
@@ -62,7 +100,8 @@ class DataFrameSchema:
         """
 
     def __repr__(self) -> str:
-        return tabulate([[field.name for field in self._fields], [field.daft_type for field in self._fields]])
+        fields = list(self._fields.values())
+        return tabulate([[field.name for field in fields], [field.daft_type for field in fields]])
 
 
 class DataFrame:
@@ -118,6 +157,35 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
+    def from_json(
+        cls,
+        path: str,
+    ) -> DataFrame:
+        """Creates a DataFrame from line-delimited JSON file(s)
+
+        Args:
+            path (str): Path to CSV or to a folder containing CSV files
+
+        returns:
+            DataFrame: parsed DataFrame
+        """
+        fs = get_filesystem_from_path(path)
+        filepaths = [path] if fs.isfile(path) else fs.ls(path)
+
+        if len(filepaths) == 0:
+            raise ValueError(f"No JSON files found at {path}")
+
+        schema = _sample_with_pyarrow(json.read_json, filepaths[0], fs)
+
+        plan = logical_plan.Scan(
+            schema=schema,
+            predicate=None,
+            columns=None,
+            source_info=JSONSourceInfo(filepaths=filepaths),
+        )
+        return cls(plan)
+
+    @classmethod
     def from_csv(
         cls,
         path: str,
@@ -142,33 +210,23 @@ class DataFrame:
         if len(filepaths) == 0:
             raise ValueError(f"No CSV files found at {path}")
 
-        # Read first N rows with PyArrow to ascertain schema
-        sampled_bytes = io.BytesIO()
-        with fs.open(filepaths[0]) as f:
-            for _ in range(20):
-                line = f.readline()
-                if not line:
-                    break
-                sampled_bytes.write(line)
-        sampled_bytes.seek(0)
-        sampled_tbl = csv.read_csv(
-            sampled_bytes,
-            parse_options=csv.ParseOptions(
-                delimiter=delimiter,
+        schema = _sample_with_pyarrow(
+            partial(
+                csv.read_csv,
+                parse_options=csv.ParseOptions(
+                    delimiter=delimiter,
+                ),
+                read_options=csv.ReadOptions(
+                    # Column names will be read from the first CSV row if column_names is None/empty and has_headers
+                    autogenerate_column_names=(not has_headers) and (column_names is None),
+                    column_names=column_names,
+                    # If user specifies that CSV has headers, and also provides column names, we skip the header row
+                    skip_rows_after_names=1 if has_headers and column_names is not None else 0,
+                ),
             ),
-            read_options=csv.ReadOptions(
-                # Column names will be read from the first CSV row if column_names is None/empty and has_headers
-                autogenerate_column_names=(not has_headers) and (column_names is None),
-                column_names=column_names,
-                # If user specifies that CSV has headers, and also provides column names, we skip the header row
-                skip_rows_after_names=1 if has_headers and column_names is not None else 0,
-            ),
+            filepaths[0],
+            fs,
         )
-        fields = [(field.name, field.type) for field in sampled_tbl.schema]
-        schema = ExpressionList(
-            [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
-        )
-        assert schema is not None, "Unable to read CSV file to determine schema"
 
         plan = logical_plan.Scan(
             schema=schema,

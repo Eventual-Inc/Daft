@@ -25,8 +25,8 @@ def daft_df():
         lit(MyObj()).alias("myobjcol"),
     )
 
-    schema_fields = {e.name: e for e in daft_df.schema()}
-    assert schema_fields.keys() == set(COLS)
+    schema_fields = daft_df.schema()
+    assert set(schema_fields.column_names()) == set(COLS)
     assert schema_fields["floatcol"].daft_type == ExpressionType.from_py_type(float)
     assert schema_fields["intcol"].daft_type == ExpressionType.from_py_type(int)
     assert schema_fields["stringcol"].daft_type == ExpressionType.from_py_type(str)
@@ -87,9 +87,9 @@ def test_unary_ops_select_types(daft_df, colname, op, expected_result_type):
         return
 
     df = daft_df.select(getattr(col(colname), op)())
-    fields = [field for field in df.schema()]
+    fields = df.schema()
     assert len(fields) == 1
-    field = fields[0]
+    field = fields[colname]
     assert field.name == colname
     assert field.daft_type == expected_result_type
 
@@ -155,9 +155,9 @@ def test_binary_ops_select_types(daft_df, col1, col2, op, expected_result_type):
         return
 
     df = daft_df.select(getattr(col(col1), op)(col(col2)))
-    fields = [field for field in df.schema()]
+    fields = df.schema()
     assert len(fields) == 1
-    field = fields[0]
+    field = fields[col1]
     assert field.name == col1
     assert field.daft_type == expected_result_type
 
@@ -169,8 +169,8 @@ def test_udf(daft_df):
 
     df = daft_df.select(my_udf(col("floatcol"), col("boolcol")))
 
-    fields = [field for field in df.schema()]
+    fields = df.schema()
     assert len(fields) == 1
-    field = fields[0]
+    field = fields["floatcol"]
     assert field.name == "floatcol"
     assert field.daft_type == ExpressionType.from_py_type(str)

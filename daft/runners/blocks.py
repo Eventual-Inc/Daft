@@ -25,7 +25,7 @@ import pyarrow as pa
 import pyarrow.compute as pac
 from pandas.core.reshape.merge import get_join_indexers
 
-from daft.execution.operators import OperatorEnum, OperatorEvaluator
+from daft.execution.operators import ExpressionType, OperatorEnum, OperatorEvaluator
 from daft.internal.hashing import hash_chunked_array
 
 ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
@@ -78,16 +78,24 @@ class DataBlock(Generic[ArrType]):
 
     @classmethod
     def make_block(cls, data: Any) -> DataBlock:
-        if isinstance(data, pa.Scalar):
-            return ArrowDataBlock(data=data)
+        # Any sequence of objects that we do not recognize is put into a PyListDataBlock
+        if isinstance(data, list):
+            return PyListDataBlock(data=data)
+        elif (isinstance(data, pa.ChunkedArray) or isinstance(data, pa.Array)) and ExpressionType.from_arrow_type(
+            data.type
+        ) == ExpressionType.python_object():
+            return PyListDataBlock(data=data.to_pylist())
+        # All other sequences have arrow types that we recognize and are put into an ArrowDataBlock
         elif isinstance(data, pa.ChunkedArray):
             return ArrowDataBlock(data=data)
         elif isinstance(data, np.ndarray):
             return ArrowDataBlock(data=pa.chunked_array([data]))
         elif isinstance(data, pa.Array):
             return ArrowDataBlock(data=pa.chunked_array([data]))
-        elif isinstance(data, list):
-            return PyListDataBlock(data=data)
+        # TODO(jay): We should handle non-arrow compatible scalars here as well (for example a PIL.Image)
+        # Scalars should be handled by putting them into an ArrowDataBlock
+        elif isinstance(data, pa.Scalar):
+            return ArrowDataBlock(data=data)
         else:
             try:
                 arrow_type = pa.infer_type([data])
