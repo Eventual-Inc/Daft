@@ -44,9 +44,8 @@ def test_pyobj_add_2_cols(repartition_nparts):
         col("features") + 1,
         col("features") + lit(np.int64(1)),
         lit(np.int64(1)) + col("features"),
-        # TODO: We do not allow operations on PyList blocks and Arrow blocks
-        # col("ones") + col("features"),
-        # col("features") + col("ones"),
+        col("ones") + col("features"),
+        col("features") + col("ones"),
     ],
 )
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])

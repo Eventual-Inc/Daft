@@ -65,9 +65,12 @@ class ExpressionExecutor:
         elif isinstance(expr, CallExpression):
             eval_args: Tuple[DataBlock, ...] = tuple(self.eval(a, operands) for a in expr._args)
 
-            # Dynamically choose the correct OperatorEvaluator based on the types of the arguments
-            block_types = {type(eval_arg) for eval_arg in eval_args if isinstance(eval_arg, DataBlock)}
-            op_evaluator = PyListDataBlock.evaluator if PyListDataBlock in block_types else ArrowDataBlock.evaluator
+            # Use a PyListDataBlock evaluator if any of the args are Python types
+            op_evaluator = (
+                PyListDataBlock.evaluator
+                if any([isinstance(arg.resolved_type(), PythonExpressionType) for arg in expr._args])
+                else ArrowDataBlock.evaluator
+            )
             op = expr._operator
 
             func = getattr(op_evaluator, op.name)

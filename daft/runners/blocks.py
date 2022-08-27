@@ -25,7 +25,7 @@ import pyarrow as pa
 import pyarrow.compute as pac
 from pandas.core.reshape.merge import get_join_indexers
 
-from daft.execution.operators import ExpressionType, OperatorEnum, OperatorEvaluator
+from daft.execution.operators import OperatorEnum, OperatorEvaluator
 from daft.internal.hashing import hash_chunked_array
 
 ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
@@ -78,14 +78,13 @@ class DataBlock(Generic[ArrType]):
 
     @classmethod
     def make_block(cls, data: Any) -> DataBlock:
-        # Any sequence of objects that we do not recognize is put into a PyListDataBlock
         if isinstance(data, list):
-            return PyListDataBlock(data=data)
-        elif (isinstance(data, pa.ChunkedArray) or isinstance(data, pa.Array)) and ExpressionType.from_arrow_type(
-            data.type
-        ) == ExpressionType.python_object():
-            return PyListDataBlock(data=data.to_pylist())
-        # All other sequences have arrow types that we recognize and are put into an ArrowDataBlock
+            try:
+                pa.infer_type(data)
+                return ArrowDataBlock(data=pa.chunked_array([data]))
+            # Any sequence of objects that Arrow cannot handle we put into a PyListDataBlock
+            except pa.lib.ArrowInvalid:
+                return PyListDataBlock(data=data)
         elif isinstance(data, pa.ChunkedArray):
             return ArrowDataBlock(data=data)
         elif isinstance(data, np.ndarray):
@@ -371,8 +370,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             py_scalar = self.data.as_py()
             while True:
                 yield py_scalar
-        for scalar in self.data:
-            yield scalar.as_py()
+        yield from self.data.to_numpy()
 
     def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
         order = "descending" if desc else "ascending"
@@ -543,19 +541,18 @@ IN_2 = TypeVar("IN_2")
 OUT = TypeVar("OUT")
 
 
-def make_map_unary(f: Callable[[IN_1], OUT]) -> Callable[[PyListDataBlock[IN_1]], PyListDataBlock[OUT]]:
-    def map_f(values: PyListDataBlock[IN_1]) -> PyListDataBlock[OUT]:
-        return PyListDataBlock(data=list(map(f, values.data)))
+def make_map_unary(f: Callable[[IN_1], OUT]) -> Callable[[DataBlock[Sequence[IN_1]]], DataBlock[Sequence[OUT]]]:
+    def map_f(values: DataBlock[Sequence[IN_1]]) -> DataBlock[Sequence[OUT]]:
+        return DataBlock.make_block(list(map(f, values.iter_py())))
 
     return map_f
 
 
 def make_map_binary(
     f: Callable[[IN_1, IN_2], OUT]
-) -> Callable[[PyListDataBlock[IN_1], PyListDataBlock[IN_2]], PyListDataBlock[OUT]]:
-    def map_f(values: PyListDataBlock[IN_1], others: PyListDataBlock[IN_2]) -> PyListDataBlock[OUT]:
-        assert isinstance(values, PyListDataBlock) or isinstance(others, PyListDataBlock)
-        return PyListDataBlock(data=list(f(v, o) for v, o in zip_blocks(values, others)))
+) -> Callable[[DataBlock[Sequence[IN_1]], DataBlock[Sequence[IN_2]]], DataBlock[Sequence[OUT]]]:
+    def map_f(values: DataBlock[Sequence[IN_1]], others: DataBlock[Sequence[IN_2]]) -> DataBlock[Sequence[OUT]]:
+        return DataBlock.make_block(list(f(v, o) for v, o in zip_blocks(values, others)))
 
     return map_f
 
