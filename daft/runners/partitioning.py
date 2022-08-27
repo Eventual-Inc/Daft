@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import dataclasses
+from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -305,23 +306,67 @@ class vPartition:
         return dataclasses.replace(to_merge[0], columns=new_columns)
 
 
-@dataclass
-class PartitionSet:
-    partitions: Dict[PartID, vPartition]
+PartitionT = TypeVar("PartitionT")
 
+
+class PartitionSet(Generic[PartitionT]):
+    @abstractmethod
     def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
-        partition_ids = sorted(list(self.partitions.keys()))
-        assert partition_ids[0] == 0
-        assert partition_ids[-1] + 1 == len(partition_ids)
-        part_dfs = [self.partitions[pid].to_pandas(schema=schema) for pid in partition_ids]
-        return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
+        raise NotImplementedError()
 
+    @abstractmethod
+    def get_partition(self, idx: PartID) -> PartitionT:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def set_partition(self, idx: PartID, part: PartitionT) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def delete_partition(self, idx: PartID) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def has_partition(self, idx: PartID) -> bool:
+        raise NotImplementedError()
+
+    @abstractmethod
     def __len__(self) -> int:
         return sum(self.len_of_partitions())
 
+    @abstractmethod
     def len_of_partitions(self) -> List[int]:
-        partition_ids = sorted(list(self.partitions.keys()))
-        return [len(self.partitions[pid]) for pid in partition_ids]
+        raise NotImplementedError()
 
+    @abstractmethod
     def num_partitions(self) -> int:
-        return len(self.partitions)
+        raise NotImplementedError()
+
+
+class PartitionManager:
+    def __init__(self, pset_default: Callable[[], PartitionSet]) -> None:
+        self._nid_to_partition_set: Dict[int, PartitionSet] = {}
+        self._pset_default_list = [pset_default]
+
+    def new_partition_set(self) -> PartitionSet:
+        func = self._pset_default_list[0]
+        return func()
+
+    def get_partition_set(self, node_id: int) -> PartitionSet:
+        assert node_id in self._nid_to_partition_set
+        return self._nid_to_partition_set[node_id]
+
+    def put_partition_set(self, node_id: int, pset: PartitionSet) -> None:
+        self._nid_to_partition_set[node_id] = pset
+
+    def rm(self, node_id: int, partition_id: Optional[int] = None):
+        if partition_id is None:
+            del self._nid_to_partition_set[node_id]
+        else:
+            self._nid_to_partition_set[node_id].delete_partition(partition_id)
+            if self._nid_to_partition_set[node_id].num_partitions() == 0:
+                del self._nid_to_partition_set[node_id]
+
+    def clear(self) -> None:
+        del self._nid_to_partition_set
+        self._nid_to_partition_set = {}

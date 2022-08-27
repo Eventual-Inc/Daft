@@ -6,9 +6,9 @@ import pytest
 import ray
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def ray_cluster():
-    ray.init(num_cpus=2)
+    ray.init(num_cpus=4)
     yield
     ray.shutdown()
 

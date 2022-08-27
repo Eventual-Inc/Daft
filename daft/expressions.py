@@ -579,10 +579,13 @@ class AsPyExpression(Expression):
         )
 
     def __call__(self, *args, **kwargs):
+        python_cls = self._type.python_cls
+        attr_name = self._attr_name
+
         def f(expr, *args, **kwargs):
             results = []
             for vals in zip_blocks(expr, *args, *[arg for arg in kwargs.values()]):
-                method = getattr(self._type.python_cls, self._attr_name)
+                method = getattr(python_cls, attr_name)
                 result = method(
                     vals[0],  # self
                     *vals[1 : len(args) + 1],
@@ -599,12 +602,13 @@ class AsPyExpression(Expression):
         )
 
     def __getitem__(self, key):
-        self._attr_name = "__getitem__"
+        python_cls = self._type.python_cls
+        attr_name = self._attr_name
 
         def __getitem__(expr, keys):
             results = []
             for expr_val, key_val in zip_blocks(expr, keys):
-                method = getattr(self._type.python_cls, self._attr_name)
+                method = getattr(python_cls, attr_name)
                 result = method(expr_val, key_val)
                 results.append(result)
             return DataBlock.make_block(results)

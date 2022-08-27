@@ -160,6 +160,7 @@ def test_pyobj_aspy_method_call_args(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
 
 
+@pytest.mark.skip()
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
 def test_pyobj_dict_indexing(repartition_nparts):
     data = {"id": [i for i in range(10)], "dicts": [{"foo": i} for i in range(10)]}

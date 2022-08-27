@@ -1,8 +1,7 @@
 from abc import abstractmethod
 from bisect import bisect_right
-from functools import partial
 from itertools import accumulate
-from typing import Callable, ClassVar, Dict, List, Type
+from typing import Callable, ClassVar, Dict, List, Type, TypeVar
 
 from pyarrow import csv, json, parquet
 
@@ -29,6 +28,7 @@ from daft.logical.logical_plan import (
     Sort,
 )
 from daft.logical.schema import ExpressionList
+from daft.runners.blocks import DataBlock
 from daft.runners.partitioning import PartitionSet, vPartition
 from daft.runners.shuffle_ops import (
     CoalesceOp,
@@ -41,8 +41,14 @@ from daft.runners.shuffle_ops import (
 
 
 class LogicalPartitionOpRunner:
-    def run_node_list(self, inputs: Dict[int, vPartition], nodes: List[LogicalPlan], partition_id: int) -> vPartition:
-        part_set = inputs.copy()
+    @abstractmethod
+    def run_node_list(self, inputs: Dict[int, PartitionSet], nodes: List[LogicalPlan], num_partitions: int):
+        raise NotImplementedError()
+
+    def run_node_list_single_partition(
+        self, inputs: Dict[int, vPartition], nodes: List[LogicalPlan], partition_id: int
+    ) -> vPartition:
+        part_set = {nid: part for nid, part in inputs.items()}
         for node in nodes:
             output = self.run_single_node(inputs=part_set, node=node, partition_id=partition_id)
             part_set[node.id()] = output
@@ -146,6 +152,9 @@ class LogicalPartitionOpRunner:
         )
 
 
+ReduceType = TypeVar("ReduceType")
+
+
 class LogicalGlobalOpRunner:
     shuffle_ops: ClassVar[Dict[Type[ShuffleOp], Type[Shuffler]]]
 
@@ -175,7 +184,7 @@ class LogicalGlobalOpRunner:
         raise NotImplementedError()
 
     @abstractmethod
-    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], vPartition]) -> vPartition:
+    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], ReduceType]) -> ReduceType:
         raise NotImplementedError()
 
     def _get_shuffle_op_klass(self, t: Type[ShuffleOp]) -> Type[Shuffler]:
@@ -233,15 +242,14 @@ class LogicalGlobalOpRunner:
         def sample_map_func(part: vPartition) -> vPartition:
             return part.sample(SAMPLES_PER_PARTITION).eval_expression_list(exprs)
 
+        def quantile_reduce_func(to_reduce: List[vPartition]) -> DataBlock:
+            merged = vPartition.merge_partitions(to_reduce, verify_partition_id=False)
+            first_column = list(merged.columns.values())[0]
+            return first_column.block.quantiles(num_partitions)
+
         prev_part = inputs[child_id]
         sampled_partitions = self.map_partitions(prev_part, sample_map_func)
-        merged_samples = self.reduce_partitions(
-            sampled_partitions, partial(vPartition.merge_partitions, verify_partition_id=False)
-        )
-        assert len(sort._sort_by.exprs) == 1
-        assert len(merged_samples.columns) == 1
-        first_column = list(merged_samples.columns.values())[0]
-        boundaries = first_column.block.quantiles(num_partitions)
+        boundaries = self.reduce_partitions(sampled_partitions, quantile_reduce_func)
         expr = exprs.exprs[0]
         sort_shuffle_op_klass = self._get_shuffle_op_klass(SortOp)
         sort_op = sort_shuffle_op_klass(

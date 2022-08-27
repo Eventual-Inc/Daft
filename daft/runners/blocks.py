@@ -350,6 +350,12 @@ ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
 
 
 class ArrowDataBlock(DataBlock[ArrowArrType]):
+    def __reduce__(self) -> Tuple:
+        if len(self.data) == 0:
+            return ArrowDataBlock, (self._make_empty().data,)
+        else:
+            return ArrowDataBlock, (self.data,)
+
     def cast_to_udf_api(self):
         if isinstance(self.data, pa.Scalar):
             return self.data.as_py()
@@ -377,7 +383,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return self._binary_op(mask, fn=pac.array_filter)
 
     def _take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[ArrowArrType]:
-        return self._binary_op(indices, fn=pac.take)
+        return self._binary_op(indices, fn=partial(pac.take, boundscheck=False))
 
     def _split(self, pivots: np.ndarray) -> Sequence[ArrowArrType]:
         splitted: Sequence[np.ndarray] = np.split(self.data, pivots)[1:]
@@ -394,6 +400,8 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
 
     def sample(self, num: int) -> DataBlock[ArrowArrType]:
+        if num >= len(self):
+            return self
         sampled = np.random.choice(self.data, num, replace=False)
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
 
@@ -423,7 +431,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             data_to_hash = data_to_hash.cast(pa.string())
         elif not (pa.types.is_integer(pa_type) or pa.types.is_string(pa_type)):
             raise TypeError(f"cannot hash {pa_type}")
-
         hashed = hash_chunked_array(data_to_hash)
         if seed is None:
             return ArrowDataBlock(data=hashed)

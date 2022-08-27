@@ -11,13 +11,12 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.8"]
-
+        daft_runner: ["py", "ray"]
     steps:
     - uses: actions/checkout@v3
     - name: Set up Python ${{ matrix.python-version }}
@@ -47,8 +46,10 @@ jobs:
       working-directory: data/tpch-sqlite
       run: SCALE_FACTOR=0.2 make
     - name: Test with pytest
-      run: |
-        poetry run pytest
+      run: poetry run pytest
+      env:
+          DAFT_RUNNER: ${{ matrix.daft_runner }}
+
     - uses: actions/cache@v3
       id: pre-commit-cache
       with:
