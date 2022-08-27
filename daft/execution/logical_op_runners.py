@@ -57,8 +57,6 @@ class LogicalPartitionOpRunner:
         return output
 
     def run_single_node(self, inputs: Dict[int, vPartition], node: LogicalPlan, partition_id: int) -> vPartition:
-        if len(inputs):
-            len(list(inputs.values())[0])
         if isinstance(node, Scan):
             return self._handle_scan(inputs, node, partition_id=partition_id)
         elif isinstance(node, Projection):
