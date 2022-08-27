@@ -37,7 +37,7 @@ UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 ColumnInputType = Union[Expression, str]
 
 _RUNNER: Runner
-if os.environ.get("RAY_RUNNER", "0") == "1":
+if os.environ.get("DAFT_RUNNER", "").lower() == "ray":
     logger.info("Using RayRunner")
     _RUNNER = RayRunner()
 else:
