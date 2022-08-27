@@ -32,7 +32,12 @@ from daft.execution.operators import (
     PythonExpressionType,
 )
 from daft.internal.treenode import TreeNode
-from daft.runners.blocks import ArrowDataBlock, DataBlock, PyListDataBlock, zip_blocks
+from daft.runners.blocks import (
+    ArrowDataBlock,
+    DataBlock,
+    PyListDataBlock,
+    zip_blocks_as_py,
+)
 
 
 def col(name: str) -> ColumnExpression:
@@ -587,7 +592,7 @@ class AsPyExpression(Expression):
 
         def f(expr, *args, **kwargs):
             results = []
-            for vals in zip_blocks(expr, *args, *[arg for arg in kwargs.values()]):
+            for vals in zip_blocks_as_py(expr, *args, *[arg for arg in kwargs.values()]):
                 method = getattr(python_cls, attr_name)
                 result = method(
                     vals[0],  # self
@@ -610,7 +615,7 @@ class AsPyExpression(Expression):
 
         def __getitem__(expr, keys):
             results = []
-            for expr_val, key_val in zip_blocks(expr, keys):
+            for expr_val, key_val in zip_blocks_as_py(expr, keys):
                 method = getattr(python_cls, attr_name)
                 result = method(expr_val, key_val)
                 results.append(result)

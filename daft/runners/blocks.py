@@ -33,17 +33,33 @@ UnaryFuncType = Callable[[ArrType], ArrType]
 BinaryFuncType = Callable[[ArrType, ArrType], ArrType]
 
 
-def zip_blocks(*blocks: DataBlock) -> Iterator[Tuple[Any, ...]]:
+def zip_blocks_as_py(*blocks: DataBlock) -> Iterator[Tuple[Any, ...]]:
     """Utility to zip the data of blocks together, returning a row-based iterator. This utility
     accounts for special-cases such as blocks that contain a single value to be broadcasted,
     differences in the underlying data representation etc.
+
+    Note that this is invokes data conversion to Python types and will be slow. This should be used
+    only in UDFs.
+
+    1. If all blocks contain scalars, this will return one tuple of all the scalars
+    2. If all blocks are scalars or have 0 length, this returns no elements
+    3. Else return the same number of elements as the shortest block
     """
-    block_lengths = tuple(len(b) for b in blocks)
-    nonzero_block_lengths = [b_len for b_len in block_lengths if b_len > 0]
-    if len(nonzero_block_lengths) == 0:
-        return
-    min_block_len = min(nonzero_block_lengths)
     iterators = [b.iter_py() for b in blocks]
+
+    # If all blocks are scalar blocks we can just return one row
+    scalar_blocks = [b.is_scalar() for b in blocks]
+    if all(scalar_blocks):
+        yield tuple(next(gen) for gen in iterators)
+        return
+
+    block_lengths = tuple(len(b) for b in blocks)
+    nonzero_block_lengths = tuple(b_len for b_len in block_lengths if b_len > 0)
+
+    if not nonzero_block_lengths:
+        return
+
+    min_block_len = min(nonzero_block_lengths)
     for _ in range(min_block_len):
         yield tuple(next(gen) for gen in iterators)
 
@@ -63,6 +79,11 @@ class DataBlock(Generic[ArrType]):
 
     def __eq__(self, o: object) -> bool:
         return isinstance(o, DataBlock) and self.data == o.data
+
+    @abstractmethod
+    def is_scalar(self) -> bool:
+        """Returns True if this DataBlock holds a scalar value"""
+        raise NotImplementedError()
 
     @abstractmethod
     def iter_py(self) -> Iterator:
@@ -134,6 +155,8 @@ class DataBlock(Generic[ArrType]):
         return fn(self, other)
 
     def partition(self, num: int, targets: DataBlock[ArrowArrType]) -> List[DataBlock[ArrType]]:
+        assert not self.is_scalar(), "Cannot partition scalar DataBlock"
+
         # We first argsort the targets to group the same partitions together
         argsort_indices = targets.argsort()
 
@@ -157,14 +180,17 @@ class DataBlock(Generic[ArrType]):
         ]
 
     def head(self, num: int) -> DataBlock[ArrType]:
+        assert not self.is_scalar(), "Cannot get head of scalar DataBlock"
         return DataBlock.make_block(self.data[:num])
 
     def filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
         """Filters elements of the Datablock using the provided mask"""
+        assert not self.is_scalar(), "Cannot filter scalar DataBlock"
         return self._filter(mask)
 
     def take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
         """Takes elements of the DataBlock in the order specified by `indices`"""
+        assert not self.is_scalar(), "Cannot get take from scalar DataBlock"
         return self._take(indices)
 
     @abstractmethod
@@ -194,6 +220,7 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     def argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
+        assert not self.is_scalar(), "Cannot sort scalar DataBlock"
         return self._argsort(desc=desc)
 
     @staticmethod
@@ -287,6 +314,9 @@ T = TypeVar("T")
 
 
 class PyListDataBlock(DataBlock[List[T]]):
+    def is_scalar(self) -> bool:
+        return not isinstance(self.data, list)
+
     def iter_py(self) -> Iterator:
         return iter(self.data)
 
@@ -359,6 +389,9 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         if isinstance(self.data, pa.Scalar):
             return self.data.as_py()
         return self.data.to_pandas()
+
+    def is_scalar(self) -> bool:
+        return isinstance(self.data, pa.Scalar)
 
     def __len__(self) -> int:
         if isinstance(self.data, pa.Scalar):
@@ -543,7 +576,7 @@ OUT = TypeVar("OUT")
 
 def make_map_unary(f: Callable[[IN_1], OUT]) -> Callable[[DataBlock[Sequence[IN_1]]], DataBlock[Sequence[OUT]]]:
     def map_f(values: DataBlock[Sequence[IN_1]]) -> DataBlock[Sequence[OUT]]:
-        return DataBlock.make_block(list(map(f, values.iter_py())))
+        return DataBlock.make_block(list(map(f, (tup[0] for tup in zip_blocks_as_py(values)))))
 
     return map_f
 
@@ -552,7 +585,7 @@ def make_map_binary(
     f: Callable[[IN_1, IN_2], OUT]
 ) -> Callable[[DataBlock[Sequence[IN_1]], DataBlock[Sequence[IN_2]]], DataBlock[Sequence[OUT]]]:
     def map_f(values: DataBlock[Sequence[IN_1]], others: DataBlock[Sequence[IN_2]]) -> DataBlock[Sequence[OUT]]:
-        return DataBlock.make_block(list(f(v, o) for v, o in zip_blocks(values, others)))
+        return DataBlock.make_block(list(f(v, o) for v, o in zip_blocks_as_py(values, others)))
 
     return map_f
 
