@@ -603,7 +603,7 @@ class AsPyExpression(Expression):
 
     def __getitem__(self, key):
         python_cls = self._type.python_cls
-        attr_name = self._attr_name
+        attr_name = "__getitem__"
 
         def __getitem__(expr, keys):
             results = []
