@@ -47,8 +47,13 @@ jobs:
       working-directory: data/tpch-sqlite
       run: SCALE_FACTOR=0.2 make
     - name: Test with pytest
-      run: |
-        poetry run pytest
+      run: poetry run pytest
+      strategy:
+        matrix:
+          DAFT_RUNNER: ['py', 'ray']
+      env:
+          DAFT_RUNNER: ${{secrets[matrix.DAFT_RUNNER]}}
+
     - uses: actions/cache@v3
       id: pre-commit-cache
       with:
