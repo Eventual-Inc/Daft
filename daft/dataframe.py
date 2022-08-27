@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import uuid
 from dataclasses import dataclass
 from functools import partial
@@ -10,6 +11,7 @@ import pandas
 import pyarrow as pa
 import pyarrow.parquet as papq
 from fsspec import AbstractFileSystem
+from loguru import logger
 from pyarrow import csv, json
 from tabulate import tabulate
 
@@ -25,14 +27,22 @@ from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionSet
+from daft.runners.pyrunner import PyRunner
 from daft.runners.ray_runner import RayRunner
+from daft.runners.runner import Runner
 from daft.serving.endpoint import HTTPEndpoint
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
 
-_RUNNER = RayRunner()
+_RUNNER: Runner
+if os.environ.get("RAY_RUNNER", "0") == "1":
+    logger.info("Using RayRunner")
+    _RUNNER = RayRunner()
+else:
+    logger.info("Using PyRunner")
+    _RUNNER = PyRunner()
 
 
 @dataclass(frozen=True)
