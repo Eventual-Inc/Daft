@@ -32,7 +32,12 @@ from daft.execution.operators import (
     PythonExpressionType,
 )
 from daft.internal.treenode import TreeNode
-from daft.runners.blocks import ArrowDataBlock, DataBlock, PyListDataBlock, zip_blocks
+from daft.runners.blocks import (
+    ArrowDataBlock,
+    DataBlock,
+    PyListDataBlock,
+    zip_blocks_as_py,
+)
 
 
 def col(name: str) -> ColumnExpression:
@@ -65,9 +70,12 @@ class ExpressionExecutor:
         elif isinstance(expr, CallExpression):
             eval_args: Tuple[DataBlock, ...] = tuple(self.eval(a, operands) for a in expr._args)
 
-            # Dynamically choose the correct OperatorEvaluator based on the types of the arguments
-            block_types = {type(eval_arg) for eval_arg in eval_args if isinstance(eval_arg, DataBlock)}
-            op_evaluator = PyListDataBlock.evaluator if PyListDataBlock in block_types else ArrowDataBlock.evaluator
+            # Use a PyListDataBlock evaluator if any of the args are Python types
+            op_evaluator = (
+                PyListDataBlock.evaluator
+                if any([isinstance(arg.resolved_type(), PythonExpressionType) for arg in expr._args])
+                else ArrowDataBlock.evaluator
+            )
             op = expr._operator
 
             func = getattr(op_evaluator, op.name)
@@ -584,7 +592,7 @@ class AsPyExpression(Expression):
 
         def f(expr, *args, **kwargs):
             results = []
-            for vals in zip_blocks(expr, *args, *[arg for arg in kwargs.values()]):
+            for vals in zip_blocks_as_py(expr, *args, *[arg for arg in kwargs.values()]):
                 method = getattr(python_cls, attr_name)
                 result = method(
                     vals[0],  # self
@@ -607,7 +615,7 @@ class AsPyExpression(Expression):
 
         def __getitem__(expr, keys):
             results = []
-            for expr_val, key_val in zip_blocks(expr, keys):
+            for expr_val, key_val in zip_blocks_as_py(expr, keys):
                 method = getattr(python_cls, attr_name)
                 result = method(expr_val, key_val)
                 results.append(result)
