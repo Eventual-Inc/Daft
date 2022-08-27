@@ -11,13 +11,12 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.8"]
-
+        daft_runner: ["py", "ray"]
     steps:
     - uses: actions/checkout@v3
     - name: Set up Python ${{ matrix.python-version }}
@@ -48,11 +47,8 @@ jobs:
       run: SCALE_FACTOR=0.2 make
     - name: Test with pytest
       run: poetry run pytest
-      strategy:
-        matrix:
-          DAFT_RUNNER: ['py', 'ray']
       env:
-          DAFT_RUNNER: ${{secrets[matrix.DAFT_RUNNER]}}
+          DAFT_RUNNER: ${{ matrix.daft_runner }}
 
     - uses: actions/cache@v3
       id: pre-commit-cache
