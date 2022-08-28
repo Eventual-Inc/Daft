@@ -64,7 +64,7 @@ def test_pyobj_add(repartition_nparts, op):
 
 @udf(return_type=int)
 def get_length(features: List[np.ndarray]):
-    return pd.Series([len(feature) for feature in features])
+    return [len(feature) for feature in features]
 
 
 @udf(return_type=np.ndarray)
