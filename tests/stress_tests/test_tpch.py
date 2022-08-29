@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -174,7 +175,11 @@ def test_tpch_q1(tmp_path, num_partitions, ray_cluster):
 def test_tpch_q2(tmp_path, num_partitions, ray_cluster):
     @udf(return_type=bool)
     def ends_with(column, suffix):
-        return column.str.endswith(suffix)
+        assert isinstance(suffix, str)
+        assert isinstance(column, np.ndarray)
+        assert column.dtype == np.object_
+        assert all(isinstance(obj, str) for obj in column)
+        return pd.Series(column).str.endswith(suffix)
 
     region = get_df("region", num_partitions=num_partitions)
     nation = get_df("nation", num_partitions=num_partitions)
@@ -330,8 +335,9 @@ def test_tpch_q7(tmp_path, num_partitions, ray_cluster):
 
     @udf(return_type=int)
     def get_year(d):
-        # TODO: should not need to coerce here after proper type conversions
-        return pd.to_datetime(d).dt.year
+        assert isinstance(d, np.ndarray)
+        assert np.issubdtype(d.dtype, np.datetime64)
+        return pd.Series(d).dt.year
 
     lineitem = get_df("lineitem", num_partitions=num_partitions).where(
         (col("L_SHIPDATE") >= datetime.date(1995, 1, 1)) & (col("L_SHIPDATE") <= datetime.date(1996, 12, 31))
@@ -389,12 +395,17 @@ def test_tpch_q8(tmp_path, num_partitions, ray_cluster):
 
     @udf(return_type=int)
     def get_year(d):
-        # TODO: should not need to coerce here after proper type conversions
-        return pd.to_datetime(d).dt.year
+        assert isinstance(d, np.ndarray)
+        assert np.issubdtype(d.dtype, np.datetime64)
+        return pd.Series(d).dt.year
 
     @udf(return_type=float)
     def is_brazil(nation, y):
-        return y.where(nation == "BRAZIL", 0.0)
+        assert isinstance(nation, np.ndarray)
+        assert isinstance(y, np.ndarray)
+        assert nation.dtype == np.object_
+        assert y.dtype == np.float64
+        return pd.Series(y).where(nation == "BRAZIL", 0.0)
 
     region = get_df("region", num_partitions=num_partitions).where(col("R_NAME") == "AMERICA")
     orders = get_df("orders", num_partitions=num_partitions).where(
@@ -453,12 +464,15 @@ def test_tpch_q9(tmp_path, num_partitions, ray_cluster):
 
     @udf(return_type=bool)
     def contains_green(s):
-        return s.str.contains("green")
+        assert isinstance(s, np.ndarray)
+        assert s.dtype == np.object_
+        return pd.Series(s).str.contains("green")
 
     @udf(return_type=int)
     def get_year(d):
-        # TODO: should not need to coerce here after proper type conversions
-        return pd.to_datetime(d).dt.year
+        assert isinstance(d, np.ndarray)
+        assert np.issubdtype(d.dtype, np.datetime64)
+        return pd.Series(d).dt.year
 
     def expr(x, y, v, w):
         return x * (1 - y) - (v * w)

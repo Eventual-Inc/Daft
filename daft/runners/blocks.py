@@ -21,6 +21,7 @@ from typing import (
 )
 
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pac
 from pandas.core.reshape.merge import get_join_indexers
@@ -94,26 +95,27 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @abstractmethod
-    def cast_to_udf_api(self):
+    def to_numpy(self):
         raise NotImplementedError()
 
     @classmethod
     def make_block(cls, data: Any) -> DataBlock:
-        if isinstance(data, list):
-            try:
-                pa.infer_type(data)
-                return ArrowDataBlock(data=pa.chunked_array([data]))
-            # Any sequence of objects that Arrow cannot handle we put into a PyListDataBlock
-            except pa.lib.ArrowInvalid:
-                return PyListDataBlock(data=data)
-        elif isinstance(data, pa.ChunkedArray):
+        # If data is a sequence of data, attempt to return an ArrowDataBlock
+        # If conversion fails because of invalid Arrow types, then we fall back on PyListDataBlock instead
+        if isinstance(data, pa.ChunkedArray):
             return ArrowDataBlock(data=data)
-        elif isinstance(data, np.ndarray):
-            return ArrowDataBlock(data=pa.chunked_array([data]))
-        elif isinstance(data, pa.Array):
-            return ArrowDataBlock(data=pa.chunked_array([data]))
+        elif (
+            isinstance(data, list)
+            or isinstance(data, np.ndarray)
+            or isinstance(data, pd.Series)
+            or isinstance(data, pa.Array)
+        ):
+            try:
+                return ArrowDataBlock(data=pa.chunked_array([data]))
+            except pa.lib.ArrowInvalid:
+                return PyListDataBlock(data=list(data))
+        # If instead data is a "scalar" we store this as a single item in an ArrowDataBlock
         # TODO(jay): We should handle non-arrow compatible scalars here as well (for example a PIL.Image)
-        # Scalars should be handled by putting them into an ArrowDataBlock
         elif isinstance(data, pa.Scalar):
             return ArrowDataBlock(data=data)
         else:
@@ -320,8 +322,8 @@ class PyListDataBlock(DataBlock[List[T]]):
     def iter_py(self) -> Iterator:
         return iter(self.data)
 
-    def cast_to_udf_api(self):
-        return self.data
+    def to_numpy(self):
+        return np.array(self.data)
 
     def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[List[T]]:
         return PyListDataBlock(data=[item for keep, item in zip(mask.iter_py(), self.data) if keep])
@@ -385,10 +387,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         else:
             return ArrowDataBlock, (self.data,)
 
-    def cast_to_udf_api(self):
+    def to_numpy(self):
         if isinstance(self.data, pa.Scalar):
             return self.data.as_py()
-        return self.data.to_pandas()
+        return self.data.to_numpy()
 
     def is_scalar(self) -> bool:
         return isinstance(self.data, pa.Scalar)

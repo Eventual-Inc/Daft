@@ -19,16 +19,11 @@ from typing import (
     cast,
 )
 
-import pandas as pd
-import pyarrow as pa
-
 from daft.execution.operators import (
-    EXPRESSION_TYPE_TO_PYARROW_TYPE,
     CompositeExpressionType,
     ExpressionOperator,
     ExpressionType,
     OperatorEnum,
-    PrimitiveExpressionType,
     PythonExpressionType,
 )
 from daft.internal.treenode import TreeNode
@@ -454,29 +449,10 @@ def udf(f: Callable | None = None, *, return_type: Type) -> Callable:
         def wrapped_func(*args, **kwargs):
             @functools.wraps(func)
             def prepost_process_data_block_func(*args, **kwargs):
-
-                # Preprocess args to a Pandas series for arrow types and lists of Python objects for Python types
-                converted_args = tuple(arg.cast_to_udf_api() for arg in args)
-                converted_kwargs = {kw: arg.cast_to_udf_api() for kw, arg in kwargs.items()}
+                converted_args = tuple(arg.to_numpy() for arg in args)
+                converted_kwargs = {kw: arg.to_numpy() for kw, arg in kwargs.items()}
                 results = func(*converted_args, **converted_kwargs)
-
-                # Postprocess results into a DataBlock
-                if isinstance(func_ret_type, PrimitiveExpressionType):
-                    if not isinstance(results, pd.Series):
-                        raise ValueError(
-                            f"Expected function to return a Pandas series of type {func_ret_type}, received instead: {type(results)}"
-                        )
-                    return DataBlock.make_block(
-                        pa.Array.from_pandas(results, type=EXPRESSION_TYPE_TO_PYARROW_TYPE[func_ret_type])
-                    )
-                elif isinstance(func_ret_type, PythonExpressionType):
-                    if not isinstance(results, list):
-                        raise ValueError(
-                            f"Expected function to return a list of type {func_ret_type}, received instead: {type(results)}"
-                        )
-                    return DataBlock.make_block(results)
-                else:
-                    raise NotImplementedError(f"UDFs not implemented for {func_ret_type}")
+                return DataBlock.make_block(results)
 
             out_expr = UdfExpression(
                 func=prepost_process_data_block_func,
