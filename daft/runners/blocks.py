@@ -100,21 +100,22 @@ class DataBlock(Generic[ArrType]):
 
     @classmethod
     def make_block(cls, data: Any) -> DataBlock:
-        # For any sequence (list, numpy, pandas) passed in, attempt to serialize as Arrow and return an ArrowDataBlock
-        # If conversion fails because of weird types, then we fall back on PyListDataBlock instead
-        if isinstance(data, list) or isinstance(data, np.ndarray) or isinstance(data, pd.Series):
+        # If data is a sequence of data, attempt to return an ArrowDataBlock
+        # If conversion fails because of invalid Arrow types, then we fall back on PyListDataBlock instead
+        if isinstance(data, pa.ChunkedArray):
+            return ArrowDataBlock(data=data)
+        elif (
+            isinstance(data, list)
+            or isinstance(data, np.ndarray)
+            or isinstance(data, pd.Series)
+            or isinstance(data, pa.Array)
+        ):
             try:
                 return ArrowDataBlock(data=pa.chunked_array([data]))
             except pa.lib.ArrowInvalid:
-                if isinstance(data, list):
-                    return PyListDataBlock(data=data)
                 return PyListDataBlock(data=list(data))
-        elif isinstance(data, pa.ChunkedArray):
-            return ArrowDataBlock(data=data)
-        elif isinstance(data, pa.Array):
-            return ArrowDataBlock(data=pa.chunked_array([data]))
+        # If instead data is a "scalar" we store this as a single item in an ArrowDataBlock
         # TODO(jay): We should handle non-arrow compatible scalars here as well (for example a PIL.Image)
-        # Scalars should be handled by putting them into an ArrowDataBlock
         elif isinstance(data, pa.Scalar):
             return ArrowDataBlock(data=data)
         else:
