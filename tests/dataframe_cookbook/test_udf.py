@@ -1,5 +1,8 @@
 from typing import Any
 
+import pandas as pd
+import pytest
+
 from daft.expressions import col, udf
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
@@ -24,8 +27,18 @@ class MyObj:
 
 
 @udf(return_type=int)
-def multiply_kwarg(x, num=2):
+def multiply_kwarg_np(x, num=2):
     return x * num
+
+
+@udf(return_type=int)
+def multiply_kwarg_pd(x, num=2):
+    return pd.Series(x * num)
+
+
+@udf(return_type=int)
+def multiply_kwarg_list(x, num=2):
+    return (x * num).tolist()
 
 
 @udf(return_type=int)
@@ -35,7 +48,8 @@ def multiply(x, num):
 
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
-def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
+@pytest.mark.parametrize("multiply_kwarg", [multiply_kwarg_np, multiply_kwarg_pd, multiply_kwarg_list])
+def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts, multiply_kwarg):
     daft_df = daft_df.repartition(repartition_nparts).with_column(
         "unique_key_identity", multiply_kwarg(col("Unique Key"))
     )
@@ -55,7 +69,8 @@ def test_udf_args(daft_df, service_requests_csv_pd_df, repartition_nparts):
 
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
-def test_udf_kwargs(daft_df, service_requests_csv_pd_df, repartition_nparts):
+@pytest.mark.parametrize("multiply_kwarg", [multiply_kwarg_np, multiply_kwarg_pd, multiply_kwarg_list])
+def test_udf_kwargs(daft_df, service_requests_csv_pd_df, repartition_nparts, multiply_kwarg):
     daft_df = daft_df.repartition(repartition_nparts).with_column(
         "unique_key_identity", multiply_kwarg(col("Unique Key"), num=2)
     )
