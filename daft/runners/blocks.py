@@ -100,21 +100,36 @@ class DataBlock(Generic[ArrType]):
 
     @classmethod
     def make_block(cls, data: Any) -> DataBlock:
-        # If data is a sequence of data, attempt to return an ArrowDataBlock
-        # If conversion fails because of invalid Arrow types, then we fall back on PyListDataBlock instead
+        # Data is a sequence of data
         if isinstance(data, pa.ChunkedArray):
             return ArrowDataBlock(data=data)
-        elif (
-            isinstance(data, list)
-            or isinstance(data, np.ndarray)
-            or isinstance(data, pd.Series)
-            or isinstance(data, pa.Array)
-        ):
+        elif isinstance(data, pa.Array):
+            return ArrowDataBlock(data=pa.chunked_array([data]))
+        elif isinstance(data, np.ndarray):
+            if data.dtype == np.object_:
+                arrow_type = pa.infer_type(data)
+                if pa.types.is_nested(arrow_type):
+                    return PyListDataBlock(data=data.tolist())
+                return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
+            arrow_type = pa.from_numpy_dtype(data.dtype)
+            return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
+        elif isinstance(data, pd.Series):
+            if data.dtype == np.object_:
+                arrow_type = pa.infer_type(data)
+                if pa.types.is_nested(arrow_type):
+                    return PyListDataBlock(data=data.tolist())
+                return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
+            arrow_type = pa.Schema.from_pandas(pd.DataFrame({"0": data}))[0].type
+            return ArrowDataBlock(data=pa.chunked_array([pa.Array.from_pandas(data, type=arrow_type)]))
+        elif isinstance(data, list):
             try:
-                return ArrowDataBlock(data=pa.chunked_array([data]))
+                arrow_type = pa.infer_type(data)
             except pa.lib.ArrowInvalid:
-                return PyListDataBlock(data=list(data))
-        # If instead data is a "scalar" we store this as a single item in an ArrowDataBlock
+                arrow_type = None
+            if arrow_type is None or pa.types.is_nested(arrow_type):
+                return PyListDataBlock(data=data)
+            return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
+        # Data is a scalar
         # TODO(jay): We should handle non-arrow compatible scalars here as well (for example a PIL.Image)
         elif isinstance(data, pa.Scalar):
             return ArrowDataBlock(data=data)
