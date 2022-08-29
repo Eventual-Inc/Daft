@@ -104,7 +104,6 @@ class DataBlock(Generic[ArrType]):
         # If conversion fails because of weird types, then we fall back on PyListDataBlock instead
         if isinstance(data, list) or isinstance(data, np.ndarray) or isinstance(data, pd.Series):
             try:
-                pa.infer_type(data)
                 return ArrowDataBlock(data=pa.chunked_array([data]))
             except pa.lib.ArrowInvalid:
                 if isinstance(data, list):
