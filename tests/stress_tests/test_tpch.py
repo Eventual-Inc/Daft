@@ -116,7 +116,11 @@ def get_df(tbl_name: str):
     local_fs = LocalFileSystem()
     nonchunked_filepath = f"data/tpch-sqlite/tpch-dbgen/{tbl_name}.tbl"
     chunked_filepath = nonchunked_filepath + ".*"
-    fp = chunked_filepath if local_fs.expand_path(chunked_filepath) else nonchunked_filepath
+    try:
+        local_fs.expand_path(chunked_filepath)
+        fp = chunked_filepath
+    except FileNotFoundError:
+        fp = nonchunked_filepath
 
     df = DataFrame.from_csv(
         fp,
