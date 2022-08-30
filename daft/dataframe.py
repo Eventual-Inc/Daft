@@ -10,7 +10,6 @@ from typing import IO, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Unio
 import pandas
 import pyarrow as pa
 import pyarrow.parquet as papq
-from fsspec import AbstractFileSystem
 from loguru import logger
 from pyarrow import csv, json
 from tabulate import tabulate
@@ -57,9 +56,9 @@ class DataFrameSchemaField:
 def _sample_with_pyarrow(
     loader_func: Callable[[IO], pa.Table],
     filepath: str,
-    fs: AbstractFileSystem,
     max_bytes: int = 5 * 1024**2,
 ) -> ExpressionList:
+    fs = get_filesystem_from_path(filepath)
     sampled_bytes = io.BytesIO()
     with fs.open(filepath, compression="infer") as f:
         lines = f.readlines(max_bytes)
@@ -73,6 +72,15 @@ def _sample_with_pyarrow(
     )
     assert schema is not None, f"Unable to read file {filepath} to determine schema"
     return schema
+
+
+def _get_filepaths(path: str):
+    fs = get_filesystem_from_path(path)
+    if fs.isdir(path):
+        return fs.ls(path)
+    elif fs.isfile(path):
+        return [path]
+    return fs.expand_path(path)
 
 
 class DataFrameSchema:
@@ -201,18 +209,17 @@ class DataFrame:
         """Creates a DataFrame from line-delimited JSON file(s)
 
         Args:
-            path (str): Path to CSV or to a folder containing CSV files
+            path (str): Path to JSON files (allows for wildcards)
 
         returns:
             DataFrame: parsed DataFrame
         """
-        fs = get_filesystem_from_path(path)
-        filepaths = [path] if fs.isfile(path) else fs.ls(path)
+        filepaths = _get_filepaths(path)
 
         if len(filepaths) == 0:
             raise ValueError(f"No JSON files found at {path}")
 
-        schema = _sample_with_pyarrow(json.read_json, filepaths[0], fs)
+        schema = _sample_with_pyarrow(json.read_json, filepaths[0])
 
         plan = logical_plan.Scan(
             schema=schema,
@@ -233,7 +240,7 @@ class DataFrame:
         """Creates a DataFrame from CSV file(s)
 
         Args:
-            path (str): Path to CSV or to a folder containing CSV files
+            path (str): Path to CSV (allows for wildcards)
             has_headers (bool): Whether the CSV has a header or not, defaults to True
             column_names (Optional[List[str]]): Custom column names to assign to the DataFrame, defaults to None
             delimiter (Str): Delimiter used in the CSV, defaults to ","
@@ -241,8 +248,7 @@ class DataFrame:
         returns:
             DataFrame: parsed DataFrame
         """
-        fs = get_filesystem_from_path(path)
-        filepaths = [path] if fs.isfile(path) else fs.ls(path)
+        filepaths = _get_filepaths(path)
 
         if len(filepaths) == 0:
             raise ValueError(f"No CSV files found at {path}")
@@ -262,7 +268,6 @@ class DataFrame:
                 ),
             ),
             filepaths[0],
-            fs,
         )
 
         plan = logical_plan.Scan(
@@ -282,13 +287,12 @@ class DataFrame:
         """Creates a DataFrame from Parquet file(s)
 
         Args:
-            path (str): Path to Parquet file or to a folder containing Parquet files
+            path (str): Path to Parquet file (allows for wildcards)
 
         returns:
             DataFrame: parsed DataFrame
         """
-        fs = get_filesystem_from_path(path)
-        filepaths = [path] if fs.isfile(path) else fs.ls(path)
+        filepaths = _get_filepaths(path)
 
         if len(filepaths) == 0:
             raise ValueError(f"No Parquet files found at {path}")
@@ -297,7 +301,7 @@ class DataFrame:
         schema = ExpressionList(
             [
                 ColumnExpression(field.name, expr_type=ExpressionType.from_arrow_type(field.type))
-                for field in papq.ParquetFile(fs.open(filepaths[0])).metadata.schema.to_arrow_schema()
+                for field in papq.ParquetFile(filepaths[0]).metadata.schema.to_arrow_schema()
             ]
         )
 

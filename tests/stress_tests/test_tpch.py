@@ -4,11 +4,11 @@ import pathlib
 import shlex
 import sqlite3
 import subprocess
-from typing import Optional
 
 import numpy as np
 import pandas as pd
 import pytest
+from fsspec.implementations.local import LocalFileSystem
 from sentry_sdk import start_transaction
 
 from daft.config import DaftSettings
@@ -111,16 +111,24 @@ def gen_tpch():
         subprocess.check_output(shlex.split(f"{script} {scale_factor}"))
 
 
-def get_df(tbl_name: str, num_partitions: Optional[int] = None):
+def get_df(tbl_name: str):
+    # Used chunked files if found
+    local_fs = LocalFileSystem()
+    nonchunked_filepath = f"data/tpch-sqlite/tpch-dbgen/{tbl_name}.tbl"
+    chunked_filepath = nonchunked_filepath + ".*"
+    try:
+        local_fs.expand_path(chunked_filepath)
+        fp = chunked_filepath
+    except FileNotFoundError:
+        fp = nonchunked_filepath
+
     df = DataFrame.from_csv(
-        f"data/tpch-sqlite/tpch-dbgen/{tbl_name}.tbl",
+        fp,
         has_headers=False,
         column_names=SCHEMA[tbl_name] + [""],
         delimiter="|",
     )
     df = df.exclude("")
-    if num_partitions is not None:
-        df = df.repartition(num_partitions)
     return df
 
 
@@ -130,24 +138,17 @@ def get_data_size_gb():
 
 
 def check_answer(daft_pd_df: pd.DataFrame, tpch_question: int, tmp_path: str):
-    # If comparing data smaller than 1GB, we fall back onto using SQLite for checking correctness
-    if get_data_size_gb() < 1.0:
-        query = pathlib.Path(f"tests/assets/tpch-sqlite-queries/{tpch_question}.sql").read_text()
-        conn = sqlite3.connect(SQLITE_DB_FILE_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
-        cursor = conn.cursor()
-        res = cursor.execute(query)
-        sqlite_results = res.fetchall()
-        sqlite_pd_results = pd.DataFrame.from_records(sqlite_results, columns=daft_pd_df.columns)
-        assert_df_equals(daft_pd_df, sqlite_pd_results, assert_ordering=True)
-    else:
-        csv_out = f"{tmp_path}/q{tpch_question}.out"
-        daft_pd_df.to_csv(csv_out, sep="|", line_terminator="|\n", index=False)
-        assert run_tpch_checker(tpch_question, csv_out)
+    query = pathlib.Path(f"tests/assets/tpch-sqlite-queries/{tpch_question}.sql").read_text()
+    conn = sqlite3.connect(SQLITE_DB_FILE_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
+    cursor = conn.cursor()
+    res = cursor.execute(query)
+    sqlite_results = res.fetchall()
+    sqlite_pd_results = pd.DataFrame.from_records(sqlite_results, columns=daft_pd_df.columns)
+    assert_df_equals(daft_pd_df, sqlite_pd_results, assert_ordering=True)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 4])
-def test_tpch_q1(tmp_path, num_partitions):
-    lineitem = get_df("lineitem", num_partitions=num_partitions)
+def test_tpch_q1(tmp_path):
+    lineitem = get_df("lineitem")
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
     daft_df = (
@@ -167,16 +168,13 @@ def test_tpch_q1(tmp_path, num_partitions):
         )
         .sort(col("L_RETURNFLAG"))
     )
-    with start_transaction(
-        op="task", name=f"tpch_q1:partitions={num_partitions}:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q1:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["L_RETURNFLAG", "L_LINESTATUS"])  # WE don't have multicolumn sort
     check_answer(daft_pd_df, 1, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 4])
-def test_tpch_q2(tmp_path, num_partitions):
+def test_tpch_q2(tmp_path):
     @udf(return_type=bool)
     def ends_with(column, suffix):
         assert isinstance(suffix, str)
@@ -185,11 +183,11 @@ def test_tpch_q2(tmp_path, num_partitions):
         assert all(isinstance(obj, str) for obj in column)
         return pd.Series(column).str.endswith(suffix)
 
-    region = get_df("region", num_partitions=num_partitions)
-    nation = get_df("nation", num_partitions=num_partitions)
-    supplier = get_df("supplier", num_partitions=num_partitions)
-    partsupp = get_df("partsupp", num_partitions=num_partitions)
-    part = get_df("part", num_partitions=num_partitions)
+    region = get_df("region")
+    nation = get_df("nation")
+    supplier = get_df("supplier")
+    partsupp = get_df("partsupp")
+    part = get_df("part")
 
     europe = (
         region.where(col("R_NAME") == "EUROPE")
@@ -224,9 +222,7 @@ def test_tpch_q2(tmp_path, num_partitions):
         )
     )
     # Multicol sorts not implemented yet
-    with start_transaction(
-        op="task", name=f"tpch_q2:partitions={num_partitions}:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q2:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(
         by=["S_ACCTBAL", "N_NAME", "S_NAME", "P_PARTKEY"], ascending=[False, True, True, True]
@@ -235,14 +231,13 @@ def test_tpch_q2(tmp_path, num_partitions):
     check_answer(daft_pd_df, 2, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 4])
-def test_tpch_q3(tmp_path, num_partitions):
+def test_tpch_q3(tmp_path):
     def decrease(x, y):
         return x * (1 - y)
 
-    customer = get_df("customer", num_partitions=num_partitions).where(col("C_MKTSEGMENT") == "BUILDING")
-    orders = get_df("orders", num_partitions=num_partitions).where(col("O_ORDERDATE") < datetime.date(1995, 3, 15))
-    lineitem = get_df("lineitem", num_partitions=num_partitions).where(col("L_SHIPDATE") > datetime.date(1995, 3, 15))
+    customer = get_df("customer").where(col("C_MKTSEGMENT") == "BUILDING")
+    orders = get_df("orders").where(col("O_ORDERDATE") < datetime.date(1995, 3, 15))
+    lineitem = get_df("lineitem").where(col("L_SHIPDATE") > datetime.date(1995, 3, 15))
 
     daft_df = (
         customer.join(orders, left_on=col("C_CUSTKEY"), right_on=col("O_CUSTKEY"))
@@ -259,9 +254,7 @@ def test_tpch_q3(tmp_path, num_partitions):
     )
 
     # Multicol sorts not implemented yet
-    with start_transaction(
-        op="task", name=f"tpch_q3:partitions={num_partitions}:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q3:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["revenue", "O_ORDERDATE"], ascending=[False, True])
     daft_pd_df = daft_pd_df.head(10)
@@ -269,17 +262,13 @@ def test_tpch_q3(tmp_path, num_partitions):
     check_answer(daft_pd_df, 3, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 4])
-def test_tpch_q4(tmp_path, num_partitions):
-    orders = get_df("orders", num_partitions=num_partitions).where(
+def test_tpch_q4(tmp_path):
+    orders = get_df("orders").where(
         (col("O_ORDERDATE") >= datetime.date(1993, 7, 1)) & (col("O_ORDERDATE") < datetime.date(1993, 10, 1))
     )
 
     lineitems = (
-        get_df("lineitem", num_partitions=num_partitions)
-        .where(col("L_COMMITDATE") < col("L_RECEIPTDATE"))
-        .select(col("L_ORDERKEY"))
-        .distinct()
+        get_df("lineitem").where(col("L_COMMITDATE") < col("L_RECEIPTDATE")).select(col("L_ORDERKEY")).distinct()
     )
 
     daft_df = (
@@ -289,24 +278,21 @@ def test_tpch_q4(tmp_path, num_partitions):
         .sort(col("O_ORDERPRIORITY"))
     )
 
-    with start_transaction(
-        op="task", name=f"tpch_q4:partitions={num_partitions}:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q4:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
 
     check_answer(daft_pd_df, 4, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 4])
-def test_tpch_q5(tmp_path, num_partitions):
-    orders = get_df("orders", num_partitions=num_partitions).where(
+def test_tpch_q5(tmp_path):
+    orders = get_df("orders").where(
         (col("O_ORDERDATE") >= datetime.date(1994, 1, 1)) & (col("O_ORDERDATE") < datetime.date(1995, 1, 1))
     )
-    region = get_df("region", num_partitions=num_partitions).where(col("R_NAME") == "ASIA")
-    nation = get_df("nation", num_partitions=num_partitions)
-    supplier = get_df("supplier", num_partitions=num_partitions)
-    lineitem = get_df("lineitem", num_partitions=num_partitions)
-    customer = get_df("customer", num_partitions=num_partitions)
+    region = get_df("region").where(col("R_NAME") == "ASIA")
+    nation = get_df("nation")
+    supplier = get_df("supplier")
+    lineitem = get_df("lineitem")
+    customer = get_df("customer")
 
     daft_df = (
         region.join(nation, left_on=col("R_REGIONKEY"), right_on=col("N_REGIONKEY"))
@@ -323,16 +309,13 @@ def test_tpch_q5(tmp_path, num_partitions):
         .sort(col("revenue"), desc=True)
     )
 
-    with start_transaction(
-        op="task", name=f"tpch_q5:partitions={num_partitions}:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q5:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 5, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 4])
-def test_tpch_q6(tmp_path, num_partitions):
-    lineitem = get_df("lineitem", num_partitions=num_partitions)
+def test_tpch_q6(tmp_path):
+    lineitem = get_df("lineitem")
     daft_df = lineitem.where(
         (col("L_SHIPDATE") >= datetime.date(1994, 1, 1))
         & (col("L_SHIPDATE") < datetime.date(1995, 1, 1))
@@ -341,15 +324,12 @@ def test_tpch_q6(tmp_path, num_partitions):
         & (col("L_QUANTITY") < 24)
     ).sum(col("L_EXTENDEDPRICE") * col("L_DISCOUNT"))
 
-    with start_transaction(
-        op="task", name=f"tpch_q6:partitions={num_partitions}:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q6:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 6, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 4])
-def test_tpch_q7(tmp_path, num_partitions):
+def test_tpch_q7(tmp_path):
     def decrease(x, y):
         return x * (1 - y)
 
@@ -359,15 +339,13 @@ def test_tpch_q7(tmp_path, num_partitions):
         assert np.issubdtype(d.dtype, np.datetime64)
         return pd.Series(d).dt.year
 
-    lineitem = get_df("lineitem", num_partitions=num_partitions).where(
+    lineitem = get_df("lineitem").where(
         (col("L_SHIPDATE") >= datetime.date(1995, 1, 1)) & (col("L_SHIPDATE") <= datetime.date(1996, 12, 31))
     )
-    nation = get_df("nation", num_partitions=num_partitions).where(
-        (col("N_NAME") == "FRANCE") | (col("N_NAME") == "GERMANY")
-    )
-    supplier = get_df("supplier", num_partitions=num_partitions)
-    customer = get_df("customer", num_partitions=num_partitions)
-    orders = get_df("orders", num_partitions=num_partitions)
+    nation = get_df("nation").where((col("N_NAME") == "FRANCE") | (col("N_NAME") == "GERMANY"))
+    supplier = get_df("supplier")
+    customer = get_df("customer")
+    orders = get_df("orders")
 
     supNation = (
         nation.join(supplier, left_on=col("N_NATIONKEY"), right_on=col("S_NATIONKEY"))
@@ -401,18 +379,13 @@ def test_tpch_q7(tmp_path, num_partitions):
     )
 
     # Multicol sorts not implemented yet
-    with start_transaction(
-        op="task", name=f"tpch_q7:partitions={num_partitions}:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q7:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["supp_nation", "cust_nation", "l_year"])
     check_answer(daft_pd_df, 7, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 4])
-def test_tpch_q8(tmp_path, num_partitions):
-    lineitem = get_df("lineitem", num_partitions=num_partitions)
-
+def test_tpch_q8(tmp_path):
     def decrease(x, y):
         return x * (1 - y)
 
@@ -430,15 +403,15 @@ def test_tpch_q8(tmp_path, num_partitions):
         assert y.dtype == np.float64
         return pd.Series(y).where(nation == "BRAZIL", 0.0)
 
-    region = get_df("region", num_partitions=num_partitions).where(col("R_NAME") == "AMERICA")
-    orders = get_df("orders", num_partitions=num_partitions).where(
+    region = get_df("region").where(col("R_NAME") == "AMERICA")
+    orders = get_df("orders").where(
         (col("O_ORDERDATE") <= datetime.date(1996, 12, 31)) & (col("O_ORDERDATE") >= datetime.date(1995, 1, 1))
     )
-    part = get_df("part", num_partitions=num_partitions).where(col("P_TYPE") == "ECONOMY ANODIZED STEEL")
-    nation = get_df("nation", num_partitions=num_partitions)
-    supplier = get_df("supplier", num_partitions=num_partitions)
-    lineitem = get_df("lineitem", num_partitions=num_partitions)
-    customer = get_df("customer", num_partitions=num_partitions)
+    part = get_df("part").where(col("P_TYPE") == "ECONOMY ANODIZED STEEL")
+    nation = get_df("nation")
+    supplier = get_df("supplier")
+    lineitem = get_df("lineitem")
+    customer = get_df("customer")
 
     nat = nation.join(supplier, left_on=col("N_NATIONKEY"), right_on=col("S_NATIONKEY"))
 
@@ -472,21 +445,18 @@ def test_tpch_q8(tmp_path, num_partitions):
         .sort(col("o_year"))
     )
 
-    with start_transaction(
-        op="task", name=f"tpch_q8:partitions={num_partitions}:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q8:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 8, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [4])
-def test_tpch_q9(tmp_path, num_partitions):
-    lineitem = get_df("lineitem", num_partitions=num_partitions)
-    part = get_df("part", num_partitions=num_partitions)
-    nation = get_df("nation", num_partitions=num_partitions)
-    supplier = get_df("supplier", num_partitions=num_partitions)
-    partsupp = get_df("partsupp", num_partitions=num_partitions)
-    orders = get_df("orders", num_partitions=num_partitions)
+def test_tpch_q9(tmp_path):
+    lineitem = get_df("lineitem")
+    part = get_df("part")
+    nation = get_df("nation")
+    supplier = get_df("supplier")
+    partsupp = get_df("partsupp")
+    orders = get_df("orders")
 
     @udf(return_type=bool)
     def contains_green(s):
@@ -522,23 +492,20 @@ def test_tpch_q9(tmp_path, num_partitions):
         .agg([(col("amount"), "sum")])
     )
 
-    with start_transaction(
-        op="task", name=f"tpch_q9:partitions={num_partitions}:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q9:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["N_NAME", "o_year"], ascending=[True, False])
     check_answer(daft_pd_df, 9, tmp_path)
 
 
-@pytest.mark.parametrize("num_partitions", [None, 4])
-def test_tpch_q10(tmp_path, num_partitions):
+def test_tpch_q10(tmp_path):
     def decrease(x, y):
         return x * (1 - y)
 
-    lineitem = get_df("lineitem", num_partitions=num_partitions).where(col("L_RETURNFLAG") == "R")
-    orders = get_df("orders", num_partitions=num_partitions)
-    nation = get_df("nation", num_partitions=num_partitions)
-    customer = get_df("customer", num_partitions=num_partitions)
+    lineitem = get_df("lineitem").where(col("L_RETURNFLAG") == "R")
+    orders = get_df("orders")
+    nation = get_df("nation")
+    customer = get_df("customer")
 
     daft_df = (
         orders.where(
@@ -581,9 +548,7 @@ def test_tpch_q10(tmp_path, num_partitions):
         .limit(20)
     )
 
-    with start_transaction(
-        op="task", name=f"tpch_q10:partitions={num_partitions}:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q10:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 10, tmp_path)
 
