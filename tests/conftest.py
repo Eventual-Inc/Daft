@@ -5,12 +5,37 @@ import pandas as pd
 import pytest
 import ray
 
+from daft.config import DaftSettings
+
 
 @pytest.fixture(scope="session", autouse=True)
 def ray_cluster():
-    ray.init(num_cpus=4)
+    if DaftSettings.DAFT_RUNNER.upper() == "RAY":
+        ray.init(num_cpus=4)
+        yield
+        ray.shutdown()
+    else:
+        yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def sentry_telemetry():
+    if DaftSettings.CI:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn="https://7e05ae17fdad482a82cd2e79e94d9f51@o1383722.ingest.sentry.io/6701254",
+            # Set traces_sample_rate to 1.0 to capture 100%
+            # of transactions for performance monitoring.
+            # We recommend adjusting this value in production.
+            traces_sample_rate=1.0,
+            # traces_sampler=True,
+        )
+        sentry_sdk.set_tag("CI", DaftSettings.CI)
+        sentry_sdk.set_tag("DAFT_RUNNER", DaftSettings.DAFT_RUNNER.upper())
+    else:
+        ...
     yield
-    ray.shutdown()
 
 
 def pytest_addoption(parser):

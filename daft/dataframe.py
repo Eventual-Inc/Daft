@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import io
-import os
 import uuid
 from dataclasses import dataclass
 from functools import partial
@@ -37,8 +36,11 @@ UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
 
+
+from daft.config import DaftSettings
+
 _RUNNER: Runner
-if os.environ.get("DAFT_RUNNER", "").lower() == "ray":
+if DaftSettings.DAFT_RUNNER.upper() == "RAY":
     logger.info("Using RayRunner")
     _RUNNER = RayRunner()
 else:
