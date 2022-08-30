@@ -8,6 +8,7 @@ import subprocess
 import numpy as np
 import pandas as pd
 import pytest
+from fsspec.implementations.local import LocalFileSystem
 from sentry_sdk import start_transaction
 
 from daft.config import DaftSettings
@@ -111,8 +112,14 @@ def gen_tpch():
 
 
 def get_df(tbl_name: str):
+    # Used chunked files if found
+    local_fs = LocalFileSystem()
+    nonchunked_filepath = f"data/tpch-sqlite/tpch-dbgen/{tbl_name}.tbl"
+    chunked_filepath = nonchunked_filepath + ".*"
+    fp = chunked_filepath if local_fs.expand_path(chunked_filepath) else nonchunked_filepath
+
     df = DataFrame.from_csv(
-        f"data/tpch-sqlite/tpch-dbgen/{tbl_name}.tbl.*",
+        fp,
         has_headers=False,
         column_names=SCHEMA[tbl_name] + [""],
         delimiter="|",
@@ -157,9 +164,7 @@ def test_tpch_q1(tmp_path):
         )
         .sort(col("L_RETURNFLAG"))
     )
-    with start_transaction(
-        op="task", name=f"tpch_q1:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q1:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["L_RETURNFLAG", "L_LINESTATUS"])  # WE don't have multicolumn sort
     check_answer(daft_pd_df, 1, tmp_path)
@@ -213,9 +218,7 @@ def test_tpch_q2(tmp_path):
         )
     )
     # Multicol sorts not implemented yet
-    with start_transaction(
-        op="task", name=f"tpch_q2:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q2:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(
         by=["S_ACCTBAL", "N_NAME", "S_NAME", "P_PARTKEY"], ascending=[False, True, True, True]
@@ -247,9 +250,7 @@ def test_tpch_q3(tmp_path):
     )
 
     # Multicol sorts not implemented yet
-    with start_transaction(
-        op="task", name=f"tpch_q3:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q3:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["revenue", "O_ORDERDATE"], ascending=[False, True])
     daft_pd_df = daft_pd_df.head(10)
@@ -273,9 +274,7 @@ def test_tpch_q4(tmp_path):
         .sort(col("O_ORDERPRIORITY"))
     )
 
-    with start_transaction(
-        op="task", name=f"tpch_q4:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q4:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
 
     check_answer(daft_pd_df, 4, tmp_path)
@@ -306,9 +305,7 @@ def test_tpch_q5(tmp_path):
         .sort(col("revenue"), desc=True)
     )
 
-    with start_transaction(
-        op="task", name=f"tpch_q5:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q5:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 5, tmp_path)
 
@@ -323,9 +320,7 @@ def test_tpch_q6(tmp_path):
         & (col("L_QUANTITY") < 24)
     ).sum(col("L_EXTENDEDPRICE") * col("L_DISCOUNT"))
 
-    with start_transaction(
-        op="task", name=f"tpch_q6:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q6:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 6, tmp_path)
 
@@ -380,16 +375,13 @@ def test_tpch_q7(tmp_path):
     )
 
     # Multicol sorts not implemented yet
-    with start_transaction(
-        op="task", name=f"tpch_q7:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q7:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["supp_nation", "cust_nation", "l_year"])
     check_answer(daft_pd_df, 7, tmp_path)
 
 
 def test_tpch_q8(tmp_path):
-
     def decrease(x, y):
         return x * (1 - y)
 
@@ -449,9 +441,7 @@ def test_tpch_q8(tmp_path):
         .sort(col("o_year"))
     )
 
-    with start_transaction(
-        op="task", name=f"tpch_q8:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q8:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 8, tmp_path)
 
@@ -498,9 +488,7 @@ def test_tpch_q9(tmp_path):
         .agg([(col("amount"), "sum")])
     )
 
-    with start_transaction(
-        op="task", name=f"tpch_q9:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q9:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     daft_pd_df = daft_pd_df.sort_values(by=["N_NAME", "o_year"], ascending=[True, False])
     check_answer(daft_pd_df, 9, tmp_path)
@@ -556,9 +544,7 @@ def test_tpch_q10(tmp_path):
         .limit(20)
     )
 
-    with start_transaction(
-        op="task", name=f"tpch_q10:runner={DaftSettings.DAFT_RUNNER.upper()}"
-    ):
+    with start_transaction(op="task", name=f"tpch_q10:runner={DaftSettings.DAFT_RUNNER.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 10, tmp_path)
 
