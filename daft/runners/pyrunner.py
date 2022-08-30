@@ -21,6 +21,7 @@ from daft.logical.optimizer import (
 )
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartID, PartitionManager, PartitionSet, vPartition
+from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
     CoalesceOp,
@@ -155,23 +156,26 @@ class PyRunner(Runner):
         # plan.to_dot_file()
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         result_partition_set: PartitionSet
-        for exec_op in exec_plan.execution_ops:
+        with profiler("profile.json"):
+            for exec_op in exec_plan.execution_ops:
 
-            data_deps = exec_op.data_deps
-            input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
-
-            if exec_op.is_global_op:
+                data_deps = exec_op.data_deps
                 input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
-                result_partition_set = self._global_op_runner.run_node_list(input_partition_set, exec_op.logical_ops)
-            else:
-                result_partition_set = self._part_op_runner.run_node_list(
-                    input_partition_set, exec_op.logical_ops, exec_op.num_partitions
-                )
 
-            for child_id in data_deps:
-                self._part_manager.rm(child_id)
+                if exec_op.is_global_op:
+                    input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
+                    result_partition_set = self._global_op_runner.run_node_list(
+                        input_partition_set, exec_op.logical_ops
+                    )
+                else:
+                    result_partition_set = self._part_op_runner.run_node_list(
+                        input_partition_set, exec_op.logical_ops, exec_op.num_partitions
+                    )
 
-            self._part_manager.put_partition_set(exec_op.logical_ops[-1].id(), result_partition_set)
+                for child_id in data_deps:
+                    self._part_manager.rm(child_id)
 
-        last = exec_plan.execution_ops[-1].logical_ops[-1]
-        return self._part_manager.get_partition_set(last.id())
+                self._part_manager.put_partition_set(exec_op.logical_ops[-1].id(), result_partition_set)
+
+            last = exec_plan.execution_ops[-1].logical_ops[-1]
+            return self._part_manager.get_partition_set(last.id())

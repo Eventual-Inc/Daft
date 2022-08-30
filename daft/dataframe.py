@@ -38,13 +38,7 @@ ColumnInputType = Union[Expression, str]
 
 from daft.config import DaftSettings
 
-_RUNNER: Runner
-if DaftSettings.DAFT_RUNNER.upper() == "RAY":
-    logger.info("Using RayRunner")
-    _RUNNER = RayRunner()
-else:
-    logger.info("Using PyRunner")
-    _RUNNER = PyRunner()
+_RUNNER: Optional[Runner] = None
 
 
 @dataclass(frozen=True)
@@ -520,7 +514,7 @@ class DataFrame:
 
     def collect(self) -> DataFrame:
         if self._result is None:
-            self._result = _RUNNER.run(self._plan)
+            self._result = self._get_runner().run(self._plan)
         return self
 
     def to_pandas(self) -> pandas.DataFrame:
@@ -530,6 +524,18 @@ class DataFrame:
         del self._result
         self._result = None
         return pd_df
+
+    def _get_runner(self) -> Runner:
+        global _RUNNER
+        if _RUNNER is not None:
+            return _RUNNER
+        if DaftSettings.DAFT_RUNNER.upper() == "RAY":
+            logger.info("Using RayRunner")
+            _RUNNER = RayRunner()
+        else:
+            logger.info("Using PyRunner")
+            _RUNNER = PyRunner()
+        return _RUNNER
 
 
 @dataclass
