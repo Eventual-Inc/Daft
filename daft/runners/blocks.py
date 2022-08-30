@@ -106,13 +106,13 @@ class DataBlock(Generic[ArrType]):
         elif isinstance(data, pa.Array):
             return ArrowDataBlock(data=pa.chunked_array([data]))
         elif isinstance(data, np.ndarray):
-            if data.dtype == np.object_:
+            if data.dtype == np.object_ or len(data.shape) > 1:
                 try:
                     arrow_type = pa.infer_type(data)
                 except pa.lib.ArrowInvalid:
                     arrow_type = None
                 if arrow_type is None or pa.types.is_nested(arrow_type):
-                    return PyListDataBlock(data=data.tolist())
+                    return PyListDataBlock(data=list(data))
                 return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
             arrow_type = pa.from_numpy_dtype(data.dtype)
             return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
