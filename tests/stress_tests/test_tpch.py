@@ -17,7 +17,7 @@ from daft.expressions import col, udf
 from tests.conftest import assert_df_equals
 
 # If running in github, we use smaller-scale data
-SQLITE_DB_FILE_PATH = "data/tpch-sqlite/TPC-H.db"
+SQLITE_DB_FILE_PATH = "data/TPC-H.db"
 
 SCHEMA = {
     "part": [
@@ -103,10 +103,10 @@ SCHEMA = {
 @pytest.fixture(scope="function", autouse=True)
 def gen_tpch():
     script = "scripts/tpch-gen.sh"
-    if not os.path.exists("data/tpch-sqlite"):
+    if not os.path.exists(SQLITE_DB_FILE_PATH):
         # If running in CI, use a scale factor of 0.2
-        # Otherwise, check for TPCH_SCALE_FACTOR env variable or default to 1
-        scale_factor = float(os.getenv("TPCH_SCALE_FACTOR", "1"))
+        # Otherwise, check for SCALE_FACTOR env variable or default to 1
+        scale_factor = float(os.getenv("SCALE_FACTOR", "1"))
         scale_factor = 0.2 if os.getenv("CI") else scale_factor
         subprocess.check_output(shlex.split(f"{script} {scale_factor}"))
 
@@ -114,7 +114,7 @@ def gen_tpch():
 def get_df(tbl_name: str):
     # Used chunked files if found
     local_fs = LocalFileSystem()
-    nonchunked_filepath = f"data/tpch-sqlite/tpch-dbgen/{tbl_name}.tbl"
+    nonchunked_filepath = f"data/tpch-dbgen/{tbl_name}.tbl"
     chunked_filepath = nonchunked_filepath + ".*"
     try:
         local_fs.expand_path(chunked_filepath)
