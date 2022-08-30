@@ -20,7 +20,7 @@ def ray_cluster():
 
 @pytest.fixture(scope="session", autouse=True)
 def sentry_telemetry():
-    if DaftSettings.CI == 1:
+    if DaftSettings.CI:
         import sentry_sdk
 
         sentry_sdk.init(

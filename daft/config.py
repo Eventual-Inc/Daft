@@ -10,7 +10,7 @@ class _DaftSettings(BaseSettings):
 
     DAFT_PACKAGE_ZIP_S3_LOCATION: Optional[str] = "s3://eventual-release-artifacts-bucket/daft_package-amd64/latest.zip"
     DAFT_RUNNER: str = "PY"
-    CI: int = 0
+    CI: bool = False
 
 
 DaftSettings = _DaftSettings()
