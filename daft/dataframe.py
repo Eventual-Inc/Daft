@@ -201,13 +201,13 @@ class DataFrame:
         """Creates a DataFrame from line-delimited JSON file(s)
 
         Args:
-            path (str): Path to CSV or to a folder containing CSV files
+            path (str): Path to JSON files (allows for wildcards)
 
         returns:
             DataFrame: parsed DataFrame
         """
         fs = get_filesystem_from_path(path)
-        filepaths = [path] if fs.isfile(path) else fs.ls(path)
+        filepaths = fs.expand_path(path)
 
         if len(filepaths) == 0:
             raise ValueError(f"No JSON files found at {path}")
@@ -233,7 +233,7 @@ class DataFrame:
         """Creates a DataFrame from CSV file(s)
 
         Args:
-            path (str): Path to CSV or to a folder containing CSV files
+            path (str): Path to CSV (allows for wildcards)
             has_headers (bool): Whether the CSV has a header or not, defaults to True
             column_names (Optional[List[str]]): Custom column names to assign to the DataFrame, defaults to None
             delimiter (Str): Delimiter used in the CSV, defaults to ","
@@ -242,7 +242,7 @@ class DataFrame:
             DataFrame: parsed DataFrame
         """
         fs = get_filesystem_from_path(path)
-        filepaths = [path] if fs.isfile(path) else fs.ls(path)
+        filepaths = fs.expand_path(path)
 
         if len(filepaths) == 0:
             raise ValueError(f"No CSV files found at {path}")
@@ -282,13 +282,13 @@ class DataFrame:
         """Creates a DataFrame from Parquet file(s)
 
         Args:
-            path (str): Path to Parquet file or to a folder containing Parquet files
+            path (str): Path to Parquet file (allows for wildcards)
 
         returns:
             DataFrame: parsed DataFrame
         """
         fs = get_filesystem_from_path(path)
-        filepaths = [path] if fs.isfile(path) else fs.ls(path)
+        filepaths = fs.expand_path(path)
 
         if len(filepaths) == 0:
             raise ValueError(f"No Parquet files found at {path}")
