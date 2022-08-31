@@ -322,6 +322,15 @@ class DataBlock(Generic[ArrType]):
                 assert type(l) == last_type
             last_type = type(l)
         first_type = type(left_keys[0])
+        all_same_type = True
+
+        for block in left_columns + right_columns:
+            if type(block) != first_type:
+                all_same_type = False
+                break
+        if all_same_type and first_type == ArrowDataBlock:
+            return ArrowDataBlock._join(left_keys, right_keys, left_columns, right_columns)
+
         left_indices, right_indices = first_type._join_keys(left_keys=left_keys, right_keys=right_keys)
         to_rtn = []
         for blockset in (left_keys, left_columns):
@@ -400,6 +409,7 @@ class PyListDataBlock(DataBlock[List[T]]):
 
 
 ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
+import polars as pl
 
 
 class ArrowDataBlock(DataBlock[ArrowArrType]):
@@ -529,6 +539,42 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         gcols: List[DataBlock] = [ArrowDataBlock(agged[g_name]) for g_name in group_names]
         acols: List[DataBlock] = [ArrowDataBlock(agged[f"{a_name}_{op}"]) for a_name, op in zip(agg_names, agg_ops)]
         return gcols, acols
+
+    @staticmethod
+    def _join(
+        left_keys: List[DataBlock[ArrowArrType]],
+        right_keys: List[DataBlock[ArrowArrType]],
+        left_columns: List[DataBlock[ArrowArrType]],
+        right_columns: List[DataBlock[ArrowArrType]],
+    ) -> List[DataBlock[ArrowArrType]]:
+        arrs = []
+        names = []
+        for i, a in enumerate(left_keys):
+            arrs.append(pl.from_arrow(a.data, rechunk=False))
+            names.append(f"k_{i}")
+
+        for i, a in enumerate(left_columns):
+            arrs.append(pl.from_arrow(a.data, rechunk=False))
+            names.append(f"lc_{i}")
+
+        left_table = pl.DataFrame(data=arrs, columns=names)
+        arrs = []
+        names = []
+
+        for i, a in enumerate(right_keys):
+            arrs.append(pl.from_arrow(a.data, rechunk=False))
+            names.append(f"k_{i}")
+
+        for i, a in enumerate(right_columns):
+            arrs.append(pl.from_arrow(a.data, rechunk=False))
+            names.append(f"rc_{i}")
+
+        right_table = pl.DataFrame(data=arrs, columns=names)
+
+        result_table = left_table.join(right_table, on=[f"k_{i}" for i in range(len(left_keys))], how="inner")
+
+        arrow_result = result_table.to_arrow()
+        return [ArrowDataBlock(a) for a in arrow_result.columns]
 
     @staticmethod
     def _join_keys(

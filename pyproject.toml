@@ -38,6 +38,7 @@ Cython = "^0.29.32"
 tabulate = "^0.8.10"
 viztracer = "^0.15.4"
 sentry-sdk = "^1.9.5"
+polars = "^0.14.6"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"
