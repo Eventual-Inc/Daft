@@ -231,18 +231,23 @@ def gen_tpch():
             cur.execute(creation_sql)
         num_parts = math.ceil(scale_factor)
 
-        for part_idx in range(1, num_parts + 1):
-            subprocess.check_output(
-                shlex.split(f"./dbgen -v -f -s {scale_factor} -S {part_idx} -C {num_parts}"), cwd=TPCH_DBGEN_DIR
-            )
+        if num_parts == 1:
+            subprocess.check_output(shlex.split(f"./dbgen -v -f -s {scale_factor}"), cwd=TPCH_DBGEN_DIR)
+        else:
+            for part_idx in range(1, num_parts + 1):
+                subprocess.check_output(
+                    shlex.split(f"./dbgen -v -f -s {scale_factor} -S {part_idx} -C {num_parts}"), cwd=TPCH_DBGEN_DIR
+                )
 
         static_tables = ["nation", "region"]
-        tables = ["customer", "lineitem", "orders", "partsupp", "part", "supplier"]
+        partitioned_tables = ["customer", "lineitem", "orders", "partsupp", "part", "supplier"]
+        single_partition_tables = static_tables + partitioned_tables if num_parts == 1 else static_tables
+        multi_partition_tables = [] if num_parts == 1 else partitioned_tables
 
-        for table in static_tables:
+        for table in single_partition_tables:
             import_table(table, f"{TPCH_DBGEN_DIR}/{table}.tbl")
 
-        for table in tables:
+        for table in multi_partition_tables:
             for part_idx in range(1, num_parts + 1):
                 import_table(table, f"{TPCH_DBGEN_DIR}/{table}.tbl.{part_idx}")
 
