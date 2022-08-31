@@ -1,4 +1,5 @@
 import datetime
+import math
 import os
 import pathlib
 import shlex
@@ -17,7 +18,113 @@ from daft.expressions import col, udf
 from tests.conftest import assert_df_equals
 
 # If running in github, we use smaller-scale data
-SQLITE_DB_FILE_PATH = "data/tpch-sqlite/TPC-H.db"
+SQLITE_DB_FILE_PATH = "data/TPC-H.db"
+TPCH_DBGEN_DIR = "data/tpch-dbgen"
+TPCH_SQLITE_TABLE_CREATION_SQL = [
+    """
+        CREATE TABLE NATION (
+        N_NATIONKEY INTEGER PRIMARY KEY NOT NULL,
+        N_NAME      TEXT NOT NULL,
+        N_REGIONKEY INTEGER NOT NULL,
+        N_COMMENT   TEXT,
+        FOREIGN KEY (N_REGIONKEY) REFERENCES REGION(R_REGIONKEY)
+        );
+    """,
+    """
+        CREATE TABLE REGION (
+        R_REGIONKEY INTEGER PRIMARY KEY NOT NULL,
+        R_NAME      TEXT NOT NULL,
+        R_COMMENT   TEXT
+        );
+    """,
+    """
+        CREATE TABLE PART (
+        P_PARTKEY     INTEGER PRIMARY KEY NOT NULL,
+        P_NAME        TEXT NOT NULL,
+        P_MFGR        TEXT NOT NULL,
+        P_BRAND       TEXT NOT NULL,
+        P_TYPE        TEXT NOT NULL,
+        P_SIZE        INTEGER NOT NULL,
+        P_CONTAINER   TEXT NOT NULL,
+        P_RETAILPRICE INTEGER NOT NULL,
+        P_COMMENT     TEXT NOT NULL
+        );
+    """,
+    """
+        CREATE TABLE SUPPLIER (
+        S_SUPPKEY   INTEGER PRIMARY KEY NOT NULL,
+        S_NAME      TEXT NOT NULL,
+        S_ADDRESS   TEXT NOT NULL,
+        S_NATIONKEY INTEGER NOT NULL,
+        S_PHONE     TEXT NOT NULL,
+        S_ACCTBAL   INTEGER NOT NULL,
+        S_COMMENT   TEXT NOT NULL,
+        FOREIGN KEY (S_NATIONKEY) REFERENCES NATION(N_NATIONKEY)
+        );
+    """,
+    """
+        CREATE TABLE PARTSUPP (
+        PS_PARTKEY    INTEGER NOT NULL,
+        PS_SUPPKEY    INTEGER NOT NULL,
+        PS_AVAILQTY   INTEGER NOT NULL,
+        PS_SUPPLYCOST INTEGER NOT NULL,
+        PS_COMMENT    TEXT NOT NULL,
+        PRIMARY KEY (PS_PARTKEY, PS_SUPPKEY),
+        FOREIGN KEY (PS_SUPPKEY) REFERENCES SUPPLIER(S_SUPPKEY),
+        FOREIGN KEY (PS_PARTKEY) REFERENCES PART(P_PARTKEY)
+        );
+    """,
+    """
+        CREATE TABLE CUSTOMER (
+        C_CUSTKEY    INTEGER PRIMARY KEY NOT NULL,
+        C_NAME       TEXT NOT NULL,
+        C_ADDRESS    TEXT NOT NULL,
+        C_NATIONKEY  INTEGER NOT NULL,
+        C_PHONE      TEXT NOT NULL,
+        C_ACCTBAL    INTEGER   NOT NULL,
+        C_MKTSEGMENT TEXT NOT NULL,
+        C_COMMENT    TEXT NOT NULL,
+        FOREIGN KEY (C_NATIONKEY) REFERENCES NATION(N_NATIONKEY)
+        );
+    """,
+    """
+        CREATE TABLE ORDERS (
+        O_ORDERKEY      INTEGER PRIMARY KEY NOT NULL,
+        O_CUSTKEY       INTEGER NOT NULL,
+        O_ORDERSTATUS   TEXT NOT NULL,
+        O_TOTALPRICE    INTEGER NOT NULL,
+        O_ORDERDATE     DATE NOT NULL,
+        O_ORDERPRIORITY TEXT NOT NULL,
+        O_CLERK         TEXT NOT NULL,
+        O_SHIPPRIORITY  INTEGER NOT NULL,
+        O_COMMENT       TEXT NOT NULL,
+        FOREIGN KEY (O_CUSTKEY) REFERENCES CUSTOMER(C_CUSTKEY)
+        );
+    """,
+    """
+        CREATE TABLE LINEITEM (
+        L_ORDERKEY      INTEGER NOT NULL,
+        L_PARTKEY       INTEGER NOT NULL,
+        L_SUPPKEY       INTEGER NOT NULL,
+        L_LINENUMBER    INTEGER NOT NULL,
+        L_QUANTITY      INTEGER NOT NULL,
+        L_EXTENDEDPRICE INTEGER NOT NULL,
+        L_DISCOUNT      INTEGER NOT NULL,
+        L_TAX           INTEGER NOT NULL,
+        L_RETURNFLAG    TEXT NOT NULL,
+        L_LINESTATUS    TEXT NOT NULL,
+        L_SHIPDATE      DATE NOT NULL,
+        L_COMMITDATE    DATE NOT NULL,
+        L_RECEIPTDATE   DATE NOT NULL,
+        L_SHIPINSTRUCT  TEXT NOT NULL,
+        L_SHIPMODE      TEXT NOT NULL,
+        L_COMMENT       TEXT NOT NULL,
+        PRIMARY KEY (L_ORDERKEY, L_LINENUMBER),
+        FOREIGN KEY (L_ORDERKEY) REFERENCES ORDERS(O_ORDERKEY),
+        FOREIGN KEY (L_PARTKEY, L_SUPPKEY) REFERENCES PARTSUPP(PS_PARTKEY, PS_SUPPKEY)
+        );
+    """,
+]
 
 SCHEMA = {
     "part": [
@@ -102,19 +209,61 @@ SCHEMA = {
 
 @pytest.fixture(scope="function", autouse=True)
 def gen_tpch():
-    script = "scripts/tpch-gen.sh"
-    if not os.path.exists("data/tpch-sqlite"):
+    def import_table(table, table_path):
+        if not os.path.isfile(table_path):
+            raise FileNotFoundError(f"Did not find {table_path}")
+        subprocess.check_output(shlex.split(f"sed -e 's/|$//' -i.bak {table_path}"))
+        subprocess.check_output(
+            shlex.split(f"sqlite3 {SQLITE_DB_FILE_PATH} -cmd '.mode csv' '.separator |' '.import {table_path} {table}'")
+        )
+
+    if not os.path.exists(SQLITE_DB_FILE_PATH):
         # If running in CI, use a scale factor of 0.2
-        # Otherwise, check for TPCH_SCALE_FACTOR env variable or default to 1
-        scale_factor = float(os.getenv("TPCH_SCALE_FACTOR", "1"))
+        # Otherwise, check for SCALE_FACTOR env variable or default to 1
+        scale_factor = float(os.getenv("SCALE_FACTOR", "1"))
         scale_factor = 0.2 if os.getenv("CI") else scale_factor
-        subprocess.check_output(shlex.split(f"{script} {scale_factor}"))
+
+        subprocess.check_output(shlex.split(f"git clone https://github.com/electrum/tpch-dbgen {TPCH_DBGEN_DIR}"))
+        subprocess.check_output("make", cwd=TPCH_DBGEN_DIR)
+        con = sqlite3.connect(SQLITE_DB_FILE_PATH)
+        cur = con.cursor()
+        for creation_sql in TPCH_SQLITE_TABLE_CREATION_SQL:
+            cur.execute(creation_sql)
+        num_parts = math.ceil(scale_factor)
+
+        if num_parts == 1:
+            subprocess.check_output(shlex.split(f"./dbgen -v -f -s {scale_factor}"), cwd=TPCH_DBGEN_DIR)
+        else:
+            for part_idx in range(1, num_parts + 1):
+                subprocess.check_output(
+                    shlex.split(f"./dbgen -v -f -s {scale_factor} -S {part_idx} -C {num_parts}"), cwd=TPCH_DBGEN_DIR
+                )
+
+        subprocess.check_output(shlex.split("chmod -R u+rwx ."), cwd=TPCH_DBGEN_DIR)
+
+        static_tables = ["nation", "region"]
+        partitioned_tables = ["customer", "lineitem", "orders", "partsupp", "part", "supplier"]
+        single_partition_tables = static_tables + partitioned_tables if num_parts == 1 else static_tables
+        multi_partition_tables = [] if num_parts == 1 else partitioned_tables
+
+        for table in single_partition_tables:
+            import_table(table, f"{TPCH_DBGEN_DIR}/{table}.tbl")
+
+        for table in multi_partition_tables:
+            for part_idx in range(1, num_parts + 1):
+                import_table(table, f"{TPCH_DBGEN_DIR}/{table}.tbl.{part_idx}")
+
+        # Remove all backup files as they cause problems downstream when searching for files via wilcards
+        local_fs = LocalFileSystem()
+        backup_files = local_fs.expand_path(f"{TPCH_DBGEN_DIR}/*.bak")
+        for backup_file in backup_files:
+            os.remove(backup_file)
 
 
 def get_df(tbl_name: str):
     # Used chunked files if found
     local_fs = LocalFileSystem()
-    nonchunked_filepath = f"data/tpch-sqlite/tpch-dbgen/{tbl_name}.tbl"
+    nonchunked_filepath = f"data/tpch-dbgen/{tbl_name}.tbl"
     chunked_filepath = nonchunked_filepath + ".*"
     try:
         local_fs.expand_path(chunked_filepath)
@@ -125,10 +274,9 @@ def get_df(tbl_name: str):
     df = DataFrame.from_csv(
         fp,
         has_headers=False,
-        column_names=SCHEMA[tbl_name] + [""],
+        column_names=SCHEMA[tbl_name],
         delimiter="|",
     )
-    df = df.exclude("")
     return df
 
 
