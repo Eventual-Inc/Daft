@@ -129,7 +129,7 @@ def get_df(tbl_name: str):
         delimiter="|",
     )
     df = df.exclude("")
-    return df
+    return df.repartition(2)
 
 
 def get_data_size_gb():

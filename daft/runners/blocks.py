@@ -9,6 +9,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
+    Dict,
     Generic,
     Iterator,
     List,
@@ -176,6 +177,27 @@ class DataBlock(Generic[ArrType]):
         op_name = op.name
         fn: Callable[[DataBlock[ArrType], DataBlock[ArrType]], DataBlock[ArrType]] = getattr(self.evaluator, op_name)
         return fn(self, other)
+
+    @staticmethod
+    def multi_partition(
+        keys: List[DataBlock[ArrowArrType]], to_partition: List[DataBlock[ArrType]], num_partitions: int
+    ) -> Dict[Any, List[DataBlock[ArrType]]]:
+        arrs = []
+        names = []
+        for i, a in enumerate(keys):
+            arrs.append(pl.from_arrow(a.data, rechunk=False))
+            names.append(f"k_{i}")
+
+        for i, a in enumerate(to_partition):
+            arrs.append(pl.from_arrow(a.data, rechunk=False))
+            names.append(f"tp_{i}")
+
+        table = pl.DataFrame(data=arrs, columns=names)
+        key_names = [f"k_{i}" for i in range(len(keys))]
+        output_tables = table.partition_by(groups=key_names, maintain_order=False, as_dict=True)
+        output_tables = {k: v.drop(key_names) for k, v in output_tables.items()}
+        result = {k: [ArrowDataBlock(a) for a in pl_table.to_arrow().columns] for k, pl_table in output_tables.items()}
+        return result
 
     def partition(self, num: int, targets: DataBlock[ArrowArrType]) -> List[DataBlock[ArrType]]:
         assert not self.is_scalar(), "Cannot partition scalar DataBlock"
@@ -493,6 +515,8 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         elif pa.types.is_date64(pa_type):
             data_to_hash = data_to_hash.cast(pa.int64())
         elif pa.types.is_floating(pa_type):
+            data_to_hash = data_to_hash.cast(pa.string())
+        elif pa.types.is_large_string(pa_type):
             data_to_hash = data_to_hash.cast(pa.string())
         elif not (pa.types.is_integer(pa_type) or pa.types.is_string(pa_type)):
             raise TypeError(f"cannot hash {pa_type}")

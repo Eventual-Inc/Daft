@@ -226,17 +226,42 @@ class vPartition:
         target_idx = hsf.run_binary_operator(num_partitions, OperatorEnum.MOD)
         return self.split_by_index(num_partitions, target_partition_indices=target_idx)
 
+    def _make_empty(self, partition_id: Optional[int] = None) -> vPartition:
+        if partition_id is None:
+            partition_id = self.partition_id
+        new_columns = {
+            col_id: dataclasses.replace(tile, block=tile.block._make_empty(), partition_id=partition_id)
+            for col_id, tile in self.columns.items()
+        }
+        return vPartition(partition_id=partition_id, columns=new_columns)
+
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:
         assert len(target_partition_indices) == len(self)
         new_partition_to_columns: List[Dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]
-        for col_id, tile in self.columns.items():
-            new_tiles = tile.split_by_index(
-                num_partitions=num_partitions, target_partition_indices=target_partition_indices
-            )
-            for part_id, nt in enumerate(new_tiles):
-                new_partition_to_columns[part_id][col_id] = nt
+        if True:
+            col_ids = list(self.columns.keys())
+            col_blocks = [tile.block for tile in self.columns.values()]
+            output = DataBlock.multi_partition([target_partition_indices], col_blocks, num_partitions=num_partitions)
+            new_partitions = []
+            for i in range(num_partitions):
+                if i in output:
+                    new_cols = {
+                        col_idx: dataclasses.replace(self.columns[col_idx], block=block, partition_id=i)
+                        for col_idx, block in zip(col_ids, output[i])
+                    }
+                    new_partitions.append(vPartition(columns=new_cols, partition_id=i))
+                else:
+                    new_partitions.append(self._make_empty(partition_id=i))
+            return new_partitions
+        else:
+            for col_id, tile in self.columns.items():
+                new_tiles = tile.split_by_index(
+                    num_partitions=num_partitions, target_partition_indices=target_partition_indices
+                )
+                for part_id, nt in enumerate(new_tiles):
+                    new_partition_to_columns[part_id][col_id] = nt
 
-        return [vPartition(partition_id=i, columns=columns) for i, columns in enumerate(new_partition_to_columns)]
+            return [vPartition(partition_id=i, columns=columns) for i, columns in enumerate(new_partition_to_columns)]
 
     def join(
         self,
