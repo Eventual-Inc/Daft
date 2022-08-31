@@ -218,6 +218,34 @@ class DataBlock(Generic[ArrType]):
             for i in range(num)
         ]
 
+    def partition2(
+        self, num: int, sorted_targets: DataBlock[ArrowArrType], argsorted_targets: DataBlock[ArrowArrType]
+    ) -> List[DataBlock[ArrType]]:
+        assert not self.is_scalar(), "Cannot partition scalar DataBlock"
+
+        # We first argsort the targets to group the same partitions together
+        argsort_indices = argsorted_targets
+
+        # We now perform a gather to make items targeting the same partition together
+        reordered = self.take(argsort_indices)
+        sorted_targets = sorted_targets
+
+        sorted_targets_np = sorted_targets.data.to_numpy()
+        pivots = np.where(np.diff(sorted_targets_np, prepend=np.nan))[0]
+
+        # We now split in the num partitions
+        unmatched_partitions = reordered._split(pivots)
+        target_partitions = sorted_targets_np[pivots]
+
+        target_partition_idx_to_match_idx = {target_idx: idx for idx, target_idx in enumerate(target_partitions)}
+
+        return [
+            DataBlock.make_block(unmatched_partitions[target_partition_idx_to_match_idx[i]])
+            if i in target_partition_idx_to_match_idx
+            else self._make_empty()
+            for i in range(num)
+        ]
+
     def head(self, num: int) -> DataBlock[ArrType]:
         assert not self.is_scalar(), "Cannot get head of scalar DataBlock"
         return DataBlock.make_block(self.data[:num])
