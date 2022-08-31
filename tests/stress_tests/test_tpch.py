@@ -239,6 +239,8 @@ def gen_tpch():
                     shlex.split(f"./dbgen -v -f -s {scale_factor} -S {part_idx} -C {num_parts}"), cwd=TPCH_DBGEN_DIR
                 )
 
+        subprocess.check_output(shlex.split("chmod -R u+rwx ."), cwd=TPCH_DBGEN_DIR)
+
         static_tables = ["nation", "region"]
         partitioned_tables = ["customer", "lineitem", "orders", "partsupp", "part", "supplier"]
         single_partition_tables = static_tables + partitioned_tables if num_parts == 1 else static_tables
