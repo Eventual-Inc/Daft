@@ -276,7 +276,6 @@ def gen_tpch(request):
             os.remove(backup_file)
 
     PARQUET_FILE_PATH = os.path.join(SF_TPCH_DIR, "parquet")
-
     if benchmark_mode and not os.path.exists(PARQUET_FILE_PATH):
         for tab_name in SCHEMA.keys():
             logger.info(f"Generating Parquet Files for {tab_name}")

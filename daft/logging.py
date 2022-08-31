@@ -7,4 +7,4 @@ def setup_logger() -> None:
 
     logger.remove()
     LOGURU_LEVEL = env("LOGURU_LEVEL", str, "INFO")
-    logger.start(sys.stderr, level=LOGURU_LEVEL)
+    logger.add(sys.stderr, level=LOGURU_LEVEL)
