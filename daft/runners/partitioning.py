@@ -37,13 +37,15 @@ class PyListTile:
     def split_by_index(
         self,
         num_partitions: int,
-        sorted_target_partition_indices: DataBlock,
+        pivots: np.ndarray,
+        target_partitions: np.ndarray,
         argsorted_target_partition_indices: DataBlock,
     ) -> List[PyListTile]:
-        assert len(sorted_target_partition_indices) == len(self)
+        assert len(argsorted_target_partition_indices) == len(self)
         new_blocks = self.block.partition2(
             num_partitions,
-            sorted_targets=sorted_target_partition_indices,
+            pivots=pivots,
+            target_partitions=target_partitions,
             argsorted_targets=argsorted_target_partition_indices,
         )
         assert len(new_blocks) == num_partitions
@@ -242,10 +244,15 @@ class vPartition:
         new_partition_to_columns: List[Dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]
         argsort_targets = target_partition_indices.argsort()
         sorted_targets = target_partition_indices.take(argsort_targets)
+        sorted_targets_np = sorted_targets.to_numpy()
+        pivots = np.where(np.diff(sorted_targets_np, prepend=np.nan))[0]
+        target_partitions = sorted_targets_np[pivots]
+
         for col_id, tile in self.columns.items():
             new_tiles = tile.split_by_index(
                 num_partitions=num_partitions,
-                sorted_target_partition_indices=sorted_targets,
+                pivots=pivots,
+                target_partitions=target_partitions,
                 argsorted_target_partition_indices=argsort_targets,
             )
             for part_id, nt in enumerate(new_tiles):
