@@ -76,6 +76,8 @@ class DataBlock(Generic[ArrType]):
         return f"{self.__class__.__name__}\n{self.data}"
 
     def __len__(self) -> int:
+        if self.is_scalar():
+            return 0
         return len(self.data)
 
     def __eq__(self, o: object) -> bool:
@@ -136,7 +138,6 @@ class DataBlock(Generic[ArrType]):
                 return PyListDataBlock(data=data)
             return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
         # Data is a scalar
-        # TODO(jay): We should handle non-arrow compatible scalars here as well (for example a PIL.Image)
         elif isinstance(data, pa.Scalar):
             return ArrowDataBlock(data=data)
         else:
@@ -145,8 +146,8 @@ class DataBlock(Generic[ArrType]):
             except pa.lib.ArrowInvalid:
                 arrow_type = None
             if arrow_type is None or pa.types.is_nested(arrow_type):
-                raise ValueError(f"Don't know what block {data} should be")
-            return ArrowDataBlock(data=pa.scalar(data))
+                return PyListDataBlock(data=data)
+            return ArrowDataBlock(data=pa.scalar(data, type=arrow_type))
 
     def _unary_op(self, fn: Callable[[ArrType], ArrType]) -> DataBlock[ArrType]:
         return DataBlock.make_block(data=fn(self.data))
@@ -339,12 +340,19 @@ T = TypeVar("T")
 
 class PyListDataBlock(DataBlock[List[T]]):
     def is_scalar(self) -> bool:
+        # TODO(jay): This is dangerous, as we can't handle cases such as lit([1, 2, 3]). We might need to
+        # make this more explicit and passed in from the DataBlock.make_block() level
         return not isinstance(self.data, list)
 
     def iter_py(self) -> Iterator:
-        return iter(self.data)
+        if self.is_scalar():
+            while True:
+                yield self.data
+        yield from self.data
 
     def to_numpy(self):
+        if self.is_scalar():
+            return self.data
         return np.array(self.data)
 
     def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[List[T]]:
@@ -416,11 +424,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
     def is_scalar(self) -> bool:
         return isinstance(self.data, pa.Scalar)
-
-    def __len__(self) -> int:
-        if isinstance(self.data, pa.Scalar):
-            return 0
-        return len(self.data)
 
     def iter_py(self) -> Iterator:
         if isinstance(self.data, pa.Scalar):
