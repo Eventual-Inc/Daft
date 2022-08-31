@@ -187,11 +187,12 @@ class DataBlock(Generic[ArrType]):
         reordered = self.take(argsort_indices)
         sorted_targets = targets.take(argsort_indices)
 
-        pivots = np.where(np.diff(sorted_targets.data, prepend=np.nan))[0]
+        sorted_targets_np = sorted_targets.data.to_numpy()
+        pivots = np.where(np.diff(sorted_targets_np, prepend=np.nan))[0]
 
         # We now split in the num partitions
         unmatched_partitions = reordered._split(pivots)
-        target_partitions = sorted_targets.data.to_numpy()[pivots]
+        target_partitions = sorted_targets_np[pivots]
 
         target_partition_idx_to_match_idx = {target_idx: idx for idx, target_idx in enumerate(target_partitions)}
 

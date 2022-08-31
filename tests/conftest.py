@@ -11,7 +11,7 @@ from daft.config import DaftSettings
 @pytest.fixture(scope="session", autouse=True)
 def ray_cluster():
     if DaftSettings.DAFT_RUNNER.upper() == "RAY":
-        ray.init(num_cpus=4)
+        ray.init(num_cpus=4, include_dashboard=False)
         yield
         ray.shutdown()
     else:
