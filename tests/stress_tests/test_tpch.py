@@ -14,7 +14,8 @@ from sentry_sdk import start_transaction
 
 from daft.config import DaftSettings
 from daft.dataframe import DataFrame
-from daft.expressions import col, udf
+from daft.expressions import col
+from daft.udf import udf
 from tests.conftest import assert_df_equals
 
 # If running in github, we use smaller-scale data

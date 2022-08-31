@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import functools
 import itertools
 from abc import abstractmethod
 from copy import deepcopy
@@ -439,34 +438,6 @@ class UdfExpression(Expression, Generic[DataBlockValueType]):
 
 
 T = TypeVar("T")
-
-
-def udf(f: Callable | None = None, *, return_type: Type) -> Callable:
-    func_ret_type = ExpressionType.from_py_type(return_type)
-
-    def udf_decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapped_func(*args, **kwargs):
-            @functools.wraps(func)
-            def prepost_process_data_block_func(*args, **kwargs):
-                converted_args = tuple(arg.to_numpy() for arg in args)
-                converted_kwargs = {kw: arg.to_numpy() for kw, arg in kwargs.items()}
-                results = func(*converted_args, **converted_kwargs)
-                return DataBlock.make_block(results)
-
-            out_expr = UdfExpression(
-                func=prepost_process_data_block_func,
-                func_ret_type=func_ret_type,
-                func_args=args,
-                func_kwargs=kwargs,
-            )
-            return out_expr
-
-        return wrapped_func
-
-    if f is None:
-        return udf_decorator
-    return udf_decorator(f)
 
 
 class ColumnExpression(Expression):

@@ -8,7 +8,8 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.execution.operators import ExpressionType
-from daft.expressions import col, lit, udf
+from daft.expressions import col, lit
+from daft.udf import udf
 from tests.conftest import assert_df_equals
 
 ###
