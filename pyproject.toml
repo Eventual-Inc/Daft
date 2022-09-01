@@ -58,6 +58,7 @@ types-PyYAML = "^6.0.11"
 pandas = "^1.4.3"
 xxhash = "^3.0.0"
 min-dalle = "^0.4.11"
+transformers = "^4.21.2"
 
 
 [tool.mypy]
