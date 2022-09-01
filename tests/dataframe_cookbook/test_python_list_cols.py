@@ -66,6 +66,29 @@ def test_python_dict_udf(repartition_nparts, rename_key):
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
 
 
+@udf(return_type=dict)
+def merge_dicts(dicts, to_merge):
+    new_dicts = []
+    for d in dicts:
+        new_dicts.append({**d, **to_merge})
+    return new_dicts
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
+def test_python_dict_udf_merge_dicts(repartition_nparts):
+    to_merge = {"new_field": 1}
+    data = {"id": [i for i in range(10)], "dicts": [{"foo": i} for i in range(10)]}
+    daft_df = (
+        DataFrame.from_pydict(data)
+        .repartition(repartition_nparts)
+        .with_column("dicts_renamed", merge_dicts(col("dicts"), to_merge))
+    )
+    pd_df = pd.DataFrame.from_dict(data)
+    pd_df["dicts_renamed"] = pd.Series([{**d, **to_merge} for d in pd_df["dicts"]])
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="id")
+
+
 ###
 # Using np.ndarray as an object
 ###
@@ -103,6 +126,8 @@ def test_pyobj_add_2_cols(repartition_nparts):
         col("features") + 1,
         col("features") + lit(np.int64(1)),
         lit(np.int64(1)) + col("features"),
+        # col("features") + lit(np.array([1])),
+        # lit(np.array([1])) + col("features"),
         col("ones") + col("features"),
         col("features") + col("ones"),
     ],
