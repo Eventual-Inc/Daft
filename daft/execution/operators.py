@@ -91,7 +91,7 @@ class PythonExpressionType(ExpressionType):
     python_cls: Type
 
     def __repr__(self) -> str:
-        return f"PyObj[{self.python_cls.__name__}]"
+        return f"PY[{self.python_cls.__name__}]"
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, PythonExpressionType):
