@@ -3,7 +3,8 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from daft.expressions import col, udf
+from daft.expressions import col
+from daft.udf import udf
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     parametrize_service_requests_csv_daft_df,
@@ -84,25 +85,24 @@ def test_udf_kwargs(daft_df, service_requests_csv_pd_df, repartition_nparts, mul
 # ###
 
 
-# class MyModel:
-#     def predict(data: pd.Series):
-#         return data
+class MyModel:
+    def predict(self, data):
+        return data
 
 
-# def my_initializations():
-#     return MyModel()
+@udf(return_type=int)
+class RunModel:
+    def __init__(self) -> None:
+        self._model = MyModel()
+
+    def __call__(self, x):
+        return self._model.predict(x)
 
 
-# @udf(return_type=int)
-# def run_model(x: pd.Series, my_model: MyModel = daft.Depends(my_initializations)) -> pd.Series:
-#     return my_model.predict(x)
-
-
-# @pytest.mark.tdd
-# @parametrize_service_requests_csv_daft_df
-# @parametrize_service_requests_csv_repartition
-# def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
-#     daft_df = daft_df.repartition(repartition_nparts).with_column("model_results", run_model(col("Unique Key")))
-#     service_requests_csv_pd_df["model_results"] = service_requests_csv_pd_df["Unique Key"]
-#     daft_pd_df = daft_df.to_pandas()
-#     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
+@parametrize_service_requests_csv_daft_df
+@parametrize_service_requests_csv_repartition
+def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    daft_df = daft_df.repartition(repartition_nparts).with_column("model_results", RunModel(col("Unique Key")))
+    service_requests_csv_pd_df["model_results"] = service_requests_csv_pd_df["Unique Key"]
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
