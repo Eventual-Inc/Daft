@@ -26,6 +26,6 @@ jobs:
       - name: Build sdist
         run: poetry build -f sdist
       - name: Build wheels
-        run: python -m cibuildwheel --output-dir --config-file={package}/pyproject.toml ./wheelhouse dist/daft-0.1.0.tar.gz
+        run: python -m cibuildwheel  --config-file={package}/pyproject.toml --output-dir ./wheelhouse dist/daft-0.1.0.tar.gz
         env:
           CIBW_ARCHS_MACOS: "x86_64 arm64"
