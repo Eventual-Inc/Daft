@@ -98,6 +98,7 @@ target-version = ['py38']
 profile = "black"
 
 [tool.cibuildwheel]
+build-verbosity = 3
 build=["cp38-*", "cp39-*", "cp310-*"]
 skip="*-musllinux*"
 before-build = "python -c 'import platform; print(platform.machine())' && pip install -U pyarrow==8.0" # have to install this for repair the wheel correctly
