@@ -99,7 +99,7 @@ profile = "black"
 [tool.cibuildwheel]
 build=["cp38-*64", "cp39-*64", "cp310-*64"]
 skip="*-musllinux*"
-before-build = "pip install pyarrow==8.0" # have to install this for repair the wheel correctly
+# before-build = "pip install pyarrow==8.0" # have to install this for repair the wheel correctly
 [tool.cibuildwheel.linux]
 repair-wheel-command = "LD_LIBRARY_PATH=$(python -c 'import pyarrow; print(pyarrow.get_library_dirs()[0])'):$LD_LIBRARY_PATH auditwheel repair -w {dest_dir} {wheel}"
 [tool.cibuildwheel.macos]
