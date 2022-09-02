@@ -27,7 +27,7 @@ jobs:
       - name: Build sdist
         run: poetry build -f sdist
       - name: Build wheels
-        run: ls -lh && python -m cibuildwheel --output-dir wheelhouse dist/daft-0.1.0/
+        run: ls -lh && python -m cibuildwheel --output-dir wheelhouse dist/daft-0.1.0
         env:
           CIBW_BUILD: "cp38-*64 cp39-*64 cp310-*64 cp311-*64"
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux1
