@@ -8,7 +8,7 @@ build = "build.py"
 
 
 [build-system]
-requires = ["poetry-core>=1.0.0", "setuptools", "numpy", "pyarrow==8.0", "Cython>=0.29.32"]
+requires = ["poetry-core>=1.0.0", "setuptools", "numpy>=1.22.3", "pyarrow==8.0", "Cython>=0.29.32"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
@@ -34,7 +34,6 @@ uvicorn = "^0.18.2"
 cloudpickle = "^2.1.0"
 loguru = "^0.6.0"
 PyYAML = "^6.0"
-Cython = "^0.29.32"
 tabulate = "^0.8.10"
 viztracer = "^0.15.4"
 sentry-sdk = "^1.9.5"
@@ -100,7 +99,7 @@ profile = "black"
 [tool.cibuildwheel]
 build=["cp38-*64", "cp39-*64", "cp310-*64"]
 skip="*-musllinux*"
-before-build = "pip install pyarrow==8.0"
+before-build = "pip install pyarrow==8.0" # have to install this for repair the wheel correctly
 [tool.cibuildwheel.linux]
 repair-wheel-command = "LD_LIBRARY_PATH=$(python -c 'import pyarrow; print(pyarrow.get_library_dirs()[0])'):$LD_LIBRARY_PATH auditwheel repair -w {dest_dir} {wheel}"
 [tool.cibuildwheel.macos]
