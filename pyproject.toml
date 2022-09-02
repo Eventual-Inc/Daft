@@ -110,4 +110,5 @@ repair-wheel-command = [
   "ln -s $(python -c 'import pyarrow; print(pyarrow.get_library_dirs()[0])')/*.dylib dir_to_dyl",
   "DYLD_LIBRARY_PATH=./dir_to_dyl:$DYLD_LIBRARY_PATH delocate-listdeps {wheel}",
   "DYLD_LIBRARY_PATH=./dir_to_dyl:$DYLD_LIBRARY_PATH delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}",
+  "rm -rf dir_to_dyl"
 ]
