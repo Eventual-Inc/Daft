@@ -1,3 +1,13 @@
+
+name: daft-publish
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+
 build_wheels:
   name: Wheel on ${{ matrix.os }}
   runs-on: ${{ matrix.os }}
