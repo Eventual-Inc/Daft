@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import IO, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
+import numpy as np
 import pandas
 import pyarrow as pa
 import pyarrow.parquet as papq
@@ -39,6 +40,64 @@ ColumnInputType = Union[Expression, str]
 from daft.config import DaftSettings
 
 _RUNNER: Optional[Runner] = None
+
+
+@dataclass(frozen=True)
+class DataFrameDisplay:
+
+    pd_df: pandas.DataFrame
+    schema: DataFrameSchema
+
+    def _repr_html_(self) -> str:
+        import PIL.Image
+
+        column_char_width = 20
+        max_col_rows = 3
+        max_chars_per_cell = max_col_rows * column_char_width
+
+        # TODO: we should run this only for PyObj columns
+        def stringify_and_truncate(val: Any):
+            if isinstance(val, PIL.Image.Image):
+                bio = io.BytesIO()
+                val_copy = val.copy()
+                val_copy.thumbnail((128, 128))
+                val_copy.save(bio, format="JPEG")
+                base64_img = base64.b64encode(bio.getvalue())
+                return f'<img src="data:image/jpeg;base64, {base64_img.decode("utf-8")}" alt="{str(val)}" />'
+            elif isinstance(val, np.ndarray):
+                data_str = np.array2string(val, threshold=3)
+                data_str = (
+                    data_str if len(data_str) <= max_chars_per_cell else data_str[: max_chars_per_cell - 5] + "...]"
+                )
+                return f"&ltnp.ndarray<br>&nbspshape={val.shape}<br>&nbspdtype={val.dtype}<br>&nbspdata={data_str}&gt"
+            else:
+                s = str(val)
+            return s if len(s) <= max_chars_per_cell else s[: max_chars_per_cell - 4] + "..."
+
+        pd_df = self.pd_df.applymap(stringify_and_truncate)
+        table = tabulate(
+            pd_df,
+            headers=[f"{name}<br>{self.schema[name].daft_type}" for name in self.schema.column_names()],
+            tablefmt="unsafehtml",
+            showindex=False,
+            missingval="None",
+        )
+        table_string = table._repr_html_().replace("<td>", '<td style="text-align: left;">')  # type: ignore
+        return f"""
+            <div>
+                {table_string}
+                <p>(Showing first {len(pd_df)} rows)</p>
+            </div>
+        """
+
+    def __repr__(self) -> str:
+        return tabulate(
+            self.pd_df,
+            headers=[f"{name}\n{self.schema[name].daft_type}" for name in self.schema.column_names()],
+            showindex=False,
+            missingval="None",
+            maxcolwidths=20,
+        )
 
 
 @dataclass(frozen=True)
@@ -126,39 +185,18 @@ class DataFrame:
     def column_names(self) -> List[str]:
         return [expr.name() for expr in self._plan.schema()]
 
+    def show(self, n: int = -1) -> DataFrameDisplay:
+        df = self
+        if n != -1:
+            df = df.limit(n)
+        execution_result = df.to_pandas()
+        return DataFrameDisplay(execution_result, df.schema())
+
     def __repr__(self) -> str:
-        return f"DataFrame({self._plan.partition_spec()})\n{self.schema()}"
+        return self.show(10).__repr__()
 
     def _repr_html_(self) -> str:
-        import PIL.Image
-
-        # TODO(jay): Be more intelligent about computing this small sample
-        column_char_width = 20
-        max_col_rows = 3
-        max_chars_per_cell = max_col_rows * column_char_width
-        sample = self.limit(10)
-        pd_df = sample.to_pandas()
-
-        def stringify_and_truncate(val: Any):
-            if isinstance(val, PIL.Image.Image):
-                bio = io.BytesIO()
-                val_copy = val.copy()
-                val_copy.thumbnail((128, 128))
-                val_copy.save(bio, format="JPEG")
-                base64_img = base64.b64encode(bio.getvalue())
-                return f'<img src="data:image/jpeg;base64, {base64_img.decode("utf-8")}" alt="{str(val)}" />'
-            s = str(val)
-            return s if len(s) <= max_chars_per_cell else s[: max_chars_per_cell - 4] + "..."
-
-        pd_df = pd_df.applymap(stringify_and_truncate)
-        return tabulate(
-            pd_df,
-            headers=[f"{name}<br>({self.schema()[name].daft_type})" for name in self.schema().column_names()],
-            tablefmt="unsafehtml",
-            showindex=False,
-            missingval="None",
-            maxcolwidths=column_char_width,
-        )
+        return self.show(10)._repr_html_()
 
     ###
     # Creation methods
