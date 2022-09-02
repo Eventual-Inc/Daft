@@ -97,3 +97,15 @@ target-version = ['py38']
 
 [tool.isort]
 profile = "black"
+
+[tool.cibuildwheel]
+build=["cp38-*64", "cp39-*64", "cp310-*64"]
+skip="*-musllinux*"
+before-build = "pip install pyarrow==8.0"
+[tool.cibuildwheel.linux]
+repair-wheel-command = "LD_LIBRARY_PATH=$(python -c 'import pyarrow; print(pyarrow.get_library_dirs()[0])'):$LD_LIBRARY_PATH auditwheel repair -w {dest_dir} {wheel}"
+[tool.cibuildwheel.macos]
+repair-wheel-command = [
+  "delocate-listdeps {wheel}",
+  "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}",
+]
