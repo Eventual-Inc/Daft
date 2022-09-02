@@ -24,10 +24,8 @@ jobs:
 
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.9.0 poetry
-      - name: Build sdist
-        run: poetry build -f sdist
       - name: Build wheels
-        run: cd dist/daft-0.1.0 && python -m cibuildwheel --output-dir ../wheelhouse
+        run: poetry build -f sdist && cd dist/daft-0.1.0 && python -m cibuildwheel --output-dir ../wheelhouse
         env:
           CIBW_BUILD: "cp38-*64 cp39-*64 cp310-*64 cp311-*64"
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux1
