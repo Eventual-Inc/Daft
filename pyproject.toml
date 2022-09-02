@@ -8,7 +8,7 @@ build = "build.py"
 
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=1.0.0", "setuptools", "Cython>=0.29.32"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
@@ -105,6 +105,7 @@ before-build = "pip install pyarrow==8.0"
 [tool.cibuildwheel.linux]
 repair-wheel-command = "LD_LIBRARY_PATH=$(python -c 'import pyarrow; print(pyarrow.get_library_dirs()[0])'):$LD_LIBRARY_PATH auditwheel repair -w {dest_dir} {wheel}"
 [tool.cibuildwheel.macos]
+archs = ["x86_64", "universal2", "arm64"]
 repair-wheel-command = [
   "delocate-listdeps {wheel}",
   "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}",
