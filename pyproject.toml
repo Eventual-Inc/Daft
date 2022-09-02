@@ -104,7 +104,6 @@ before-build = "python -c 'import platform; print(platform.machine())' && pip in
 archs = ["x86_64"]
 repair-wheel-command = "LD_LIBRARY_PATH=$(python -c 'import pyarrow; print(pyarrow.get_library_dirs()[0])'):$LD_LIBRARY_PATH auditwheel repair -w {dest_dir} {wheel}"
 [tool.cibuildwheel.macos]
-archs = ["arm64"]
 repair-wheel-command = [
   "mkdir dir_to_dyl",
   "ln -s $(python -c 'import pyarrow; print(pyarrow.get_library_dirs()[0])')/*.dylib dir_to_dyl",
