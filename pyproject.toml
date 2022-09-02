@@ -98,7 +98,7 @@ target-version = ['py38']
 profile = "black"
 
 [tool.cibuildwheel]
-build=["cp38", "cp39", "cp310"]
+build=["cp38-*", "cp39-*", "cp310-*"]
 skip="*-musllinux*"
 before-build = "pip install pyarrow==8.0" # have to install this for repair the wheel correctly
 [tool.cibuildwheel.linux]
