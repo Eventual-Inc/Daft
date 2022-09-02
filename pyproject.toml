@@ -98,7 +98,6 @@ target-version = ['py38']
 profile = "black"
 
 [tool.cibuildwheel]
-build-frontend = "build"
 build-verbosity = 3
 build=["cp38-*", "cp39-*", "cp310-*"]
 skip="*-musllinux*"

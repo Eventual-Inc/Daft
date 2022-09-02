@@ -29,4 +29,4 @@ jobs:
       - name: Build wheels
         run: python -m cibuildwheel --output-dir ./wheelhouse
         env:
-          CIBW_ARCHS_MACOS: "arm64"
+          CIBW_ARCHS_MACOS: "x86_64 universal2"
