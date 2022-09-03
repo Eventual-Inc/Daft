@@ -4,13 +4,15 @@ version = "0.1.0"
 description = "Eventual daft"
 authors = ["Eventual Inc <founders@eventualcomputing.com>"]
 license = "Copyright Eventual Inc 2022"
-build = "build.py"
-
 
 [build-system]
 requires = ["poetry-core>=1.0.0", "setuptools", "numpy>=1.22.3", "pyarrow==8.0", "Cython>=0.29.32"]
-#build-backend = "poetry.core.masonry.api"
-build-backend = "setuptools.build_meta"
+build-backend = "poetry.core.masonry.api"
+#build-backend = "setuptools.build_meta"
+
+[tool.poetry.build]
+script = "build.py"
+generate-setup-file = false
 
 [tool.poetry.scripts]
 build_inplace = 'build:build_inplace'
