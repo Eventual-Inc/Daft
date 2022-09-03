@@ -69,6 +69,7 @@ def cythonize_helper(extension_modules: List[Extension]) -> List[Extension]:
 
 def build(setup_kwargs: Dict[str, Any]) -> None:
     extension_modules = cythonize_helper(get_extension_modules())
+    print(f"Building on platform: {sysconfig.get_platform()}")
 
     setup_kwargs.update(
         {
@@ -80,7 +81,6 @@ def build(setup_kwargs: Dict[str, Any]) -> None:
 
 
 def build_inplace() -> None:
-    print(f"Building on platform: {sysconfig.get_platform()}")
     setup = {}
     build(setup)
     distribution = Distribution(setup)
