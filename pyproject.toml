@@ -12,7 +12,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.build]
 script = "build.py"
-generate-setup-file = false
+generate-setup-file = true
 
 [tool.poetry.scripts]
 build_inplace = 'build:build_inplace'
