@@ -9,6 +9,7 @@ import pyarrow as pa
 from Cython.Build import cythonize
 from Cython.Distutils.build_ext import new_build_ext as cython_build_ext
 from setuptools import Distribution, Extension
+from setuptools.command.bdist_egg import bdist_egg as _bdist_egg
 
 SOURCE_DIR = Path("daft")
 BUILD_DIR = Path(".cython_build")
@@ -67,13 +68,21 @@ def cythonize_helper(extension_modules: List[Extension]) -> List[Extension]:
     )
 
 
+class bdist_egg(_bdist_egg):
+    def run(self):
+        # Use self.plat_name before building an egg…
+        print(f"my plat name is: {self.plat_name}")
+        _bdist_egg.run(self)
+        # …or after
+
+
 def build(setup_kwargs: Dict[str, Any]) -> None:
     extension_modules = cythonize_helper(get_extension_modules())
 
     setup_kwargs.update(
         {
             "ext_modules": extension_modules,
-            "cmdclass": dict(build_ext=cython_build_ext),
+            "cmdclass": dict(build_ext=cython_build_ext, bdist_egg=bdist_egg),
             "zip_safe": False,
         }
     )
