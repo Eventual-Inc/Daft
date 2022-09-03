@@ -1,6 +1,6 @@
 import multiprocessing
 import os
-import platform
+import sysconfig
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -80,7 +80,7 @@ def build(setup_kwargs: Dict[str, Any]) -> None:
 
 
 def build_inplace() -> None:
-    print(f"Building on arch: {platform.machine()}")
+    print(f"Building on platform: {sysconfig.get_platform()}")
     setup = {}
     build(setup)
     distribution = Distribution(setup)
