@@ -103,15 +103,18 @@ profile = "black"
 build-verbosity = 3
 build=["cp38-*", "cp39-*", "cp310-*"]
 skip="*-musllinux*"
-before-build = "echo $_PYTHON_HOST_PLATFORM && python -c 'import platform; print(platform.machine())' && pip install -U pyarrow==8.0" # have to install this for repair the wheel correctly
+# before-build = "echo $_PYTHON_HOST_PLATFORM && python -c 'import platform; print(platform.machine())' && pip install -U pyarrow==8.0" # have to install this for repair the wheel correctly
 [tool.cibuildwheel.linux]
 archs = ["x86_64"]
 repair-wheel-command = "LD_LIBRARY_PATH=$(python -c 'import pyarrow; print(pyarrow.get_library_dirs()[0])'):$LD_LIBRARY_PATH auditwheel repair -w {dest_dir} {wheel}"
 [tool.cibuildwheel.macos]
 repair-wheel-command = [
   "mkdir dir_to_dyl",
+  "mkdir tmp_wheel_dir",
   "ln -s $(python -c 'import pyarrow; print(pyarrow.get_library_dirs()[0])')/*.dylib dir_to_dyl",
   "DYLD_LIBRARY_PATH=./dir_to_dyl:$DYLD_LIBRARY_PATH delocate-listdeps {wheel}",
-  "DYLD_LIBRARY_PATH=./dir_to_dyl:$DYLD_LIBRARY_PATH delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}",
+  "DYLD_LIBRARY_PATH=./dir_to_dyl:$DYLD_LIBRARY_PATH delocate-wheel --require-archs {delocate_archs} -w tmp_wheel_dir {wheel}",
+  "cp tmp_wheel_dir/* {dest_dir}/",
   "rm -rf dir_to_dyl",
+  "rm -rf tmp_wheel_dir"
 ]
