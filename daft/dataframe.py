@@ -118,12 +118,22 @@ class DataFrame:
         self._result: Optional[PartitionSet] = None
 
     def plan(self) -> logical_plan.LogicalPlan:
+        """Returns `LogicalPlan` that will be executed to compute the result of this DataFrame.
+
+        Returns:
+            logical_plan.LogicalPlan: LogicalPlan to compute this DataFrame.
+        """
         return self._plan
 
     def schema(self) -> DataFrameSchema:
         return DataFrameSchema.from_expression_list(self._plan.schema())
 
     def column_names(self) -> List[str]:
+        """returns column names of DataFrame as a list of strings.
+
+        Returns:
+            List[str]: Column names of this DataFrame.
+        """
         return [expr.name() for expr in self._plan.schema()]
 
     def __repr__(self) -> str:
@@ -184,6 +194,14 @@ class DataFrame:
 
     @classmethod
     def from_pydict(cls, data: Dict[str, Any]) -> DataFrame:
+        """Creates a DataFrame from an In-Memory Data columnar source that is passed in as `data`.
+
+        Args:
+            data (Dict[str, Any]): Key -> Sequence[item] of data. Each Key is created as a column.
+
+        Returns:
+            DataFrame: parsed DataFrame that will read from an In-Memory Data Source when collected.
+        """
         schema = ExpressionList(
             [ColumnExpression(header, expr_type=ExpressionType.from_py_type(type(data[header][0]))) for header in data]
         )
@@ -330,11 +348,30 @@ class DataFrame:
         return ExpressionList(expressions)
 
     def select(self, *columns: ColumnInputType) -> DataFrame:
+        """Creates a new DataFrame that `selects` that columns that are passed in from the current DataFrame.
+        columns can be:
+        * names of columns as strings. `df.select('x', 'y')`
+        * names of columns as expressions. `df.select(col('x'), col('y'))`
+        * call expressions. `df.select(col('x') * col('y'))`
+        * any of the above mixed in a call. `df.select('x', col('y'), col('z') + 1)`
+
+        Args:
+            *columns (Union[str, Expression]): columns to select from the current DataFrame
+
+        Returns:
+            DataFrame: new DataFrame that will select the passed in columns
+        """
         assert len(columns) > 0
         projection = logical_plan.Projection(self._plan, self.__column_input_to_expression(columns))
         return DataFrame(projection)
 
     def distinct(self) -> DataFrame:
+        """Computes unique rows, dropping duplicates.
+        `unique_df = df.distinct()`
+
+        Returns:
+            DataFrame: DataFrame that has only  unique rows.
+        """
         all_exprs = self._plan.schema()
         gb = self.groupby(*[col(e.name()) for e in all_exprs])
         first_e_name = [e.name() for e in all_exprs][0]
@@ -342,15 +379,43 @@ class DataFrame:
         return gb.agg([(col(first_e_name).alias(dummy_col_name), "min")]).exclude(dummy_col_name)
 
     def exclude(self, *names: str) -> DataFrame:
+        """Drops columns from the current DataFrame by name.
+        This is equivalent of performing a select with all the columns but the ones excluded.
+        `df_without_x = df.exclude('x')`
+
+        Returns:
+            DataFrame: DataFrame with some columns excluded.
+        """
         names_to_skip = set(names)
         el = ExpressionList([e for e in self._plan.schema() if e.name() not in names_to_skip])
         return DataFrame(logical_plan.Projection(self._plan, el))
 
-    def where(self, expr: Expression) -> DataFrame:
-        plan = logical_plan.Filter(self._plan, ExpressionList([expr]))
+    def where(self, predicate: Expression) -> DataFrame:
+        """Filters rows via a predicate expression.
+        similar to SQL style `where`.
+        `filtered_df = df.where((col('x') < 10) & (col('y') == 10))`
+
+        Args:
+            predicate (Expression): expression that keeps row if evaluates to True.
+
+        Returns:
+            DataFrame: Filtered DataFrame.
+        """
+        plan = logical_plan.Filter(self._plan, ExpressionList([predicate]))
         return DataFrame(plan)
 
     def with_column(self, column_name: str, expr: Expression) -> DataFrame:
+        """Adds a column to the current DataFrame with an Expression.
+        This is equivalent to performing a `select` with all the current columns and the new one.
+        `new_df = df.with_column('x+1', col('x') + 1)`
+
+        Args:
+            column_name (str): name of new column
+            expr (Expression): expression of the new column.
+
+        Returns:
+            DataFrame: DataFrame with new column.
+        """
         prev_schema_as_cols = self._plan.schema().to_column_expressions()
         projection = logical_plan.Projection(
             self._plan, prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]))
@@ -358,10 +423,33 @@ class DataFrame:
         return DataFrame(projection)
 
     def sort(self, column: ColumnInputType, desc: bool = False) -> DataFrame:
+        """Sorts DataFrame globally according to column.
+        `sorted_df = df.sort(col('x') + col('y'))`
+
+        Note:
+            * Since this a global sort, this requires an expensive repartition which can be quite slow.
+            * Only single expression sorts are currently implemented.
+        Args:
+            column (ColumnInputType): column to sort by. Can be `str` or expression.
+            desc (bool, optional): Sort by descending order. Defaults to False.
+
+        Returns:
+            DataFrame: Sorted DataFrame.
+        """
         sort = logical_plan.Sort(self._plan, self.__column_input_to_expression((column,)), desc=desc)
         return DataFrame(sort)
 
     def limit(self, num: int) -> DataFrame:
+        """Limits the rows returned by the DataFrame via a `head` operation.
+        This is similar to how `limit` works in SQL.
+        `df_limited = df.limit(10) # returns 10 rows`
+
+        Args:
+            num (int): maximum rows to allow.
+
+        Returns:
+            DataFrame: Limited DataFrame
+        """
         local_limit = logical_plan.LocalLimit(self._plan, num=num)
         global_limit = logical_plan.GlobalLimit(local_limit, num=num)
         return DataFrame(global_limit)
