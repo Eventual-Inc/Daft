@@ -383,6 +383,9 @@ class DataFrame:
         This is equivalent of performing a select with all the columns but the ones excluded.
         `df_without_x = df.exclude('x')`
 
+        Args:
+            *names (str): names to exclude
+
         Returns:
             DataFrame: DataFrame with some columns excluded.
         """
@@ -455,6 +458,20 @@ class DataFrame:
         return DataFrame(global_limit)
 
     def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
+        """repartitions DataFrame to `num` partitions.
+        if columns are passed in, then DataFrame will be repartitioned by those,
+            otherwise random repartitioning will occur.
+        `random_repart_df = df.repartition(4)`
+
+        `part_by_df = df.repartition(4, 'x', col('y') + 1)`
+
+        Args:
+            num (int): number of target partitions.
+            *partition_by (Union[str, Expression]): optional columns to partition by.
+
+        Returns:
+            DataFrame: Repartitioned DataFrame.
+        """
         if len(partition_by) == 0:
             scheme = logical_plan.PartitionScheme.RANDOM
             exprs: ExpressionList = ExpressionList([])
@@ -474,6 +491,27 @@ class DataFrame:
         right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         how: str = "inner",
     ) -> DataFrame:
+        """Joins left (self) DataFrame on the right on a set of keys.
+        Key names can be the same or different for left and right DataFrame.
+
+        Note: Although self joins are supported,
+            we currently duplicate the logical plan for the right side and recompute the entire tree.
+            Caching for this is on the roadmap.
+
+        Args:
+            other (DataFrame): the right DataFrame to join on.
+            on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on [use if the keys on the left and right side match.]. Defaults to None.
+            left_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on left DataFrame.. Defaults to None.
+            right_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on right DataFrame. Defaults to None.
+            how (str, optional): what type of join to performing, currently only `inner` is supported. Defaults to "inner".
+
+        Raises:
+            ValueError: if `on` is passed in and `left_on` or `right_on` is not None.
+            ValueError: if `on` is None but both `left_on` and `right_on` are not defined.
+
+        Returns:
+            DataFrame: Joined DataFrame.
+        """
         if on is None:
             if left_on is None or right_on is None:
                 raise ValueError("If `on` is None then both `left_on` and `right_on` must not be None")
@@ -492,6 +530,7 @@ class DataFrame:
         return DataFrame(join_op)
 
     def _agg(self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionList] = None) -> DataFrame:
+        assert len(to_agg) > 0, "no columns to aggregate."
         exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))
         ops = [op for _, op in to_agg]
 
@@ -592,20 +631,55 @@ class DataFrame:
         return DataFrame(final_op)
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs a global sum on the DataFrame on a sequence of columns.
+
+        Args:
+            *cols (Union[str, Expression]): columns to sum
+        Returns:
+            DataFrame: Globally aggregated sums. Should be a single row.
+        """
+        assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "sum") for c in cols])
 
     def mean(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs a global mean on the DataFrame on a sequence of columns.
+
+        Args:
+            *cols (Union[str, Expression]): columns to mean
+        Returns:
+            DataFrame: Globally aggregated mean. Should be a single row.
+        """
+        assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "mean") for c in cols])
 
     def groupby(self, *group_by: ColumnInputType) -> GroupedDataFrame:
+        """Performs a GroupBy on the DataFrame for Aggregation.
+
+        Args:
+            *group_by (Union[str, Expression]): columns to group by
+
+        Returns:
+            GroupedDataFrame: DataFrame to Aggregate
+        """
         return GroupedDataFrame(self, self.__column_input_to_expression(group_by))
 
     def collect(self) -> DataFrame:
+        """Computes LogicalPlan to materialize DataFrame. This is a blocking operation.
+
+        Returns:
+            DataFrame: DataFrame with cached results.
+        """
         if self._result is None:
             self._result = self._get_runner().run(self._plan)
         return self
 
     def to_pandas(self) -> pandas.DataFrame:
+        """Converts the current DataFrame to a pandas DataFrame.
+        If results have not computed yet, collect will be called.
+
+        Returns:
+            pandas.DataFrame: pandas DataFrame converted from a Daft DataFrame
+        """
         self.collect()
         assert self._result is not None
         pd_df = self._result.to_pandas(schema=self._plan.schema())
@@ -632,10 +706,37 @@ class GroupedDataFrame:
     group_by: ExpressionList
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
+        """performs grouped sum on this Grouped DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to sum
+
+        Returns:
+            DataFrame: DataFrame with grouped sums.
+        """
         return self.df._agg([(c, "sum") for c in cols], group_by=self.group_by)
 
     def mean(self, *cols: ColumnInputType) -> DataFrame:
+        """performs grouped mean on this Grouped DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to mean
+
+        Returns:
+            DataFrame: DataFrame with grouped mean.
+        """
+
         return self.df._agg([(c, "mean") for c in cols], group_by=self.group_by)
 
     def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
+        """performed aggregations on this grouped DataFrame.
+        Allows for mixed aggregations.
+        `df = df.groupby('x').agg([('x', 'sum'), ('x', 'mean'), ('y', 'min'), ('y', 'max')])`
+
+        Args:
+            to_agg (List[Tuple[ColumnInputType, str]]): list of (column, agg_type)
+
+        Returns:
+            DataFrame: DataFrame with grouped aggregations
+        """
         return self.df._agg(to_agg, group_by=self.group_by)
