@@ -3,8 +3,8 @@ import sys
 import sysconfig
 from pathlib import Path
 
-wheel = Path(sys.sys.argv[1])
-dest_dir = Path(sys.sys.argv[2])
+wheel = Path(sys.argv[1])
+dest_dir = Path(sys.argv[2])
 
 wheel_target = dest_dir.joinpath(wheel.name)
 
