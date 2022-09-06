@@ -25,5 +25,7 @@ jobs:
         run: python -m pip install cibuildwheel==2.9.0 poetry
       - name: Build wheels
         run: python -m cibuildwheel --output-dir ./wheelhouse
-        env:
-          CIBW_ARCHS_MACOS: "x86_64 arm64"
+      - uses: actions/upload-artifact@v3
+        with:
+          name: python_wheels
+          path: ./wheelhouse/*.whl
