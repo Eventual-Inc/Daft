@@ -10,7 +10,7 @@ dest_dir = sys.argv[2]
 
 platform = sysconfig.get_platform()
 wheel_name = Path(wheel).name
-wheel_target = Path(dest_dir).joinpath(wheel.name).as_posix()
+wheel_target = Path(dest_dir).joinpath(wheel_name).as_posix()
 
 if platform.startswith("macosx") and platform.endswith("arm64") and wheel.endswith("x86_64.whl"):
     prefix = wheel_name.rsplit("-", 1)[0]
