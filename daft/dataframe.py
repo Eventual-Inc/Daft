@@ -177,12 +177,22 @@ class DataFrame:
         self._result: Optional[PartitionSet] = None
 
     def plan(self) -> logical_plan.LogicalPlan:
+        """Returns `LogicalPlan` that will be executed to compute the result of this DataFrame.
+
+        Returns:
+            logical_plan.LogicalPlan: LogicalPlan to compute this DataFrame.
+        """
         return self._plan
 
     def schema(self) -> DataFrameSchema:
         return DataFrameSchema.from_expression_list(self._plan.schema())
 
     def column_names(self) -> List[str]:
+        """returns column names of DataFrame as a list of strings.
+
+        Returns:
+            List[str]: Column names of this DataFrame.
+        """
         return [expr.name() for expr in self._plan.schema()]
 
     def show(self, n: int = -1) -> DataFrameDisplay:
@@ -222,6 +232,14 @@ class DataFrame:
 
     @classmethod
     def from_pydict(cls, data: Dict[str, Any]) -> DataFrame:
+        """Creates a DataFrame from an In-Memory Data columnar source that is passed in as `data`.
+
+        Args:
+            data (Dict[str, Any]): Key -> Sequence[item] of data. Each Key is created as a column.
+
+        Returns:
+            DataFrame: parsed DataFrame that will read from an In-Memory Data Source when collected.
+        """
         schema = ExpressionList(
             [ColumnExpression(header, expr_type=ExpressionType.from_py_type(type(data[header][0]))) for header in data]
         )
@@ -368,11 +386,30 @@ class DataFrame:
         return ExpressionList(expressions)
 
     def select(self, *columns: ColumnInputType) -> DataFrame:
+        """Creates a new DataFrame that `selects` that columns that are passed in from the current DataFrame.
+        columns can be:
+        * names of columns as strings. `df.select('x', 'y')`
+        * names of columns as expressions. `df.select(col('x'), col('y'))`
+        * call expressions. `df.select(col('x') * col('y'))`
+        * any of the above mixed in a call. `df.select('x', col('y'), col('z') + 1)`
+
+        Args:
+            *columns (Union[str, Expression]): columns to select from the current DataFrame
+
+        Returns:
+            DataFrame: new DataFrame that will select the passed in columns
+        """
         assert len(columns) > 0
         projection = logical_plan.Projection(self._plan, self.__column_input_to_expression(columns))
         return DataFrame(projection)
 
     def distinct(self) -> DataFrame:
+        """Computes unique rows, dropping duplicates.
+        `unique_df = df.distinct()`
+
+        Returns:
+            DataFrame: DataFrame that has only  unique rows.
+        """
         all_exprs = self._plan.schema()
         gb = self.groupby(*[col(e.name()) for e in all_exprs])
         first_e_name = [e.name() for e in all_exprs][0]
@@ -380,15 +417,46 @@ class DataFrame:
         return gb.agg([(col(first_e_name).alias(dummy_col_name), "min")]).exclude(dummy_col_name)
 
     def exclude(self, *names: str) -> DataFrame:
+        """Drops columns from the current DataFrame by name.
+        This is equivalent of performing a select with all the columns but the ones excluded.
+        `df_without_x = df.exclude('x')`
+
+        Args:
+            *names (str): names to exclude
+
+        Returns:
+            DataFrame: DataFrame with some columns excluded.
+        """
         names_to_skip = set(names)
         el = ExpressionList([e for e in self._plan.schema() if e.name() not in names_to_skip])
         return DataFrame(logical_plan.Projection(self._plan, el))
 
-    def where(self, expr: Expression) -> DataFrame:
-        plan = logical_plan.Filter(self._plan, ExpressionList([expr]))
+    def where(self, predicate: Expression) -> DataFrame:
+        """Filters rows via a predicate expression.
+        similar to SQL style `where`.
+        `filtered_df = df.where((col('x') < 10) & (col('y') == 10))`
+
+        Args:
+            predicate (Expression): expression that keeps row if evaluates to True.
+
+        Returns:
+            DataFrame: Filtered DataFrame.
+        """
+        plan = logical_plan.Filter(self._plan, ExpressionList([predicate]))
         return DataFrame(plan)
 
     def with_column(self, column_name: str, expr: Expression) -> DataFrame:
+        """Adds a column to the current DataFrame with an Expression.
+        This is equivalent to performing a `select` with all the current columns and the new one.
+        `new_df = df.with_column('x+1', col('x') + 1)`
+
+        Args:
+            column_name (str): name of new column
+            expr (Expression): expression of the new column.
+
+        Returns:
+            DataFrame: DataFrame with new column.
+        """
         prev_schema_as_cols = self._plan.schema().to_column_expressions()
         projection = logical_plan.Projection(
             self._plan, prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]))
@@ -396,15 +464,52 @@ class DataFrame:
         return DataFrame(projection)
 
     def sort(self, column: ColumnInputType, desc: bool = False) -> DataFrame:
+        """Sorts DataFrame globally according to column.
+        `sorted_df = df.sort(col('x') + col('y'))`
+
+        Note:
+            * Since this a global sort, this requires an expensive repartition which can be quite slow.
+            * Only single expression sorts are currently implemented.
+        Args:
+            column (ColumnInputType): column to sort by. Can be `str` or expression.
+            desc (bool, optional): Sort by descending order. Defaults to False.
+
+        Returns:
+            DataFrame: Sorted DataFrame.
+        """
         sort = logical_plan.Sort(self._plan, self.__column_input_to_expression((column,)), desc=desc)
         return DataFrame(sort)
 
     def limit(self, num: int) -> DataFrame:
+        """Limits the rows returned by the DataFrame via a `head` operation.
+        This is similar to how `limit` works in SQL.
+        `df_limited = df.limit(10) # returns 10 rows`
+
+        Args:
+            num (int): maximum rows to allow.
+
+        Returns:
+            DataFrame: Limited DataFrame
+        """
         local_limit = logical_plan.LocalLimit(self._plan, num=num)
         global_limit = logical_plan.GlobalLimit(local_limit, num=num)
         return DataFrame(global_limit)
 
     def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
+        """repartitions DataFrame to `num` partitions.
+        if columns are passed in, then DataFrame will be repartitioned by those,
+            otherwise random repartitioning will occur.
+        `random_repart_df = df.repartition(4)`
+
+        `part_by_df = df.repartition(4, 'x', col('y') + 1)`
+
+        Args:
+            num (int): number of target partitions.
+            *partition_by (Union[str, Expression]): optional columns to partition by.
+
+        Returns:
+            DataFrame: Repartitioned DataFrame.
+        """
         if len(partition_by) == 0:
             scheme = logical_plan.PartitionScheme.RANDOM
             exprs: ExpressionList = ExpressionList([])
@@ -424,6 +529,27 @@ class DataFrame:
         right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         how: str = "inner",
     ) -> DataFrame:
+        """Joins left (self) DataFrame on the right on a set of keys.
+        Key names can be the same or different for left and right DataFrame.
+
+        Note: Although self joins are supported,
+            we currently duplicate the logical plan for the right side and recompute the entire tree.
+            Caching for this is on the roadmap.
+
+        Args:
+            other (DataFrame): the right DataFrame to join on.
+            on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on [use if the keys on the left and right side match.]. Defaults to None.
+            left_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on left DataFrame.. Defaults to None.
+            right_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on right DataFrame. Defaults to None.
+            how (str, optional): what type of join to performing, currently only `inner` is supported. Defaults to "inner".
+
+        Raises:
+            ValueError: if `on` is passed in and `left_on` or `right_on` is not None.
+            ValueError: if `on` is None but both `left_on` and `right_on` are not defined.
+
+        Returns:
+            DataFrame: Joined DataFrame.
+        """
         if on is None:
             if left_on is None or right_on is None:
                 raise ValueError("If `on` is None then both `left_on` and `right_on` must not be None")
@@ -442,6 +568,7 @@ class DataFrame:
         return DataFrame(join_op)
 
     def _agg(self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionList] = None) -> DataFrame:
+        assert len(to_agg) > 0, "no columns to aggregate."
         exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))
         ops = [op for _, op in to_agg]
 
@@ -542,20 +669,55 @@ class DataFrame:
         return DataFrame(final_op)
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs a global sum on the DataFrame on a sequence of columns.
+
+        Args:
+            *cols (Union[str, Expression]): columns to sum
+        Returns:
+            DataFrame: Globally aggregated sums. Should be a single row.
+        """
+        assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "sum") for c in cols])
 
     def mean(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs a global mean on the DataFrame on a sequence of columns.
+
+        Args:
+            *cols (Union[str, Expression]): columns to mean
+        Returns:
+            DataFrame: Globally aggregated mean. Should be a single row.
+        """
+        assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "mean") for c in cols])
 
     def groupby(self, *group_by: ColumnInputType) -> GroupedDataFrame:
+        """Performs a GroupBy on the DataFrame for Aggregation.
+
+        Args:
+            *group_by (Union[str, Expression]): columns to group by
+
+        Returns:
+            GroupedDataFrame: DataFrame to Aggregate
+        """
         return GroupedDataFrame(self, self.__column_input_to_expression(group_by))
 
     def collect(self) -> DataFrame:
+        """Computes LogicalPlan to materialize DataFrame. This is a blocking operation.
+
+        Returns:
+            DataFrame: DataFrame with cached results.
+        """
         if self._result is None:
             self._result = self._get_runner().run(self._plan)
         return self
 
     def to_pandas(self) -> pandas.DataFrame:
+        """Converts the current DataFrame to a pandas DataFrame.
+        If results have not computed yet, collect will be called.
+
+        Returns:
+            pandas.DataFrame: pandas DataFrame converted from a Daft DataFrame
+        """
         self.collect()
         assert self._result is not None
         pd_df = self._result.to_pandas(schema=self._plan.schema())
@@ -582,10 +744,37 @@ class GroupedDataFrame:
     group_by: ExpressionList
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
+        """performs grouped sum on this Grouped DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to sum
+
+        Returns:
+            DataFrame: DataFrame with grouped sums.
+        """
         return self.df._agg([(c, "sum") for c in cols], group_by=self.group_by)
 
     def mean(self, *cols: ColumnInputType) -> DataFrame:
+        """performs grouped mean on this Grouped DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to mean
+
+        Returns:
+            DataFrame: DataFrame with grouped mean.
+        """
+
         return self.df._agg([(c, "mean") for c in cols], group_by=self.group_by)
 
     def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
+        """performed aggregations on this grouped DataFrame.
+        Allows for mixed aggregations.
+        `df = df.groupby('x').agg([('x', 'sum'), ('x', 'mean'), ('y', 'min'), ('y', 'max')])`
+
+        Args:
+            to_agg (List[Tuple[ColumnInputType, str]]): list of (column, agg_type)
+
+        Returns:
+            DataFrame: DataFrame with grouped aggregations
+        """
         return self.df._agg(to_agg, group_by=self.group_by)
