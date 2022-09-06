@@ -1,17 +1,19 @@
 import shutil
 import sys
 import sysconfig
+from pathlib import Path
 
-wheel = sys.sys.argv[1]
-dest_dir = sys.sys.argv[2]
+wheel = Path(sys.sys.argv[1])
+dest_dir = Path(sys.sys.argv[2])
+
+wheel_target = dest_dir.joinpath(wheel.name)
 
 platform = sysconfig.get_platform()
 
-if platform == "macosx-11.0-arm64" and wheel.endswith("x86_64.whl"):
-    prefix = wheel.rsplit("-", 1)[0]
+if platform.startswith("macosx") and platform.endswith("arm64") and wheel.endswith("x86_64.whl"):
+    wheel_name = wheel.name
+    prefix = wheel_name.rsplit("-", 1)[0]
     new_wheel_name = f"{prefix}-{platform}.whl"
-    new_wheel_name = new_wheel_name.rsplit("/", 1)[1]
-    shutil.copyfile(wheel, new_wheel_name)
-else:
-    pass
-    # shutil.copyfile(wheel, new_wheel_name)
+    wheel_target = dest_dir.joinpath(new_wheel_name)
+
+shutil.copyfile(wheel, wheel_target)
