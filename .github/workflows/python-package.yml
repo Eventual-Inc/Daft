@@ -33,7 +33,7 @@ jobs:
       run: |
         # Install Poetry and deps
         python -m pip install poetry
-        poetry install
+        poetry install --no-root
     - name: Build Extensions Locally
       run: |
         poetry run build_inplace
