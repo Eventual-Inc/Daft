@@ -62,16 +62,22 @@ pre-commit = "^2.20.0"
 pandas = "^1.4.3"
 Cython="^0.29.32"
 
-
 [tool.poetry.group.test.dependencies]
 pytest = "^7.1.2"
 xxhash = "^3.0.0"
+
+
+[tool.poetry.group.jupyter]
+optional=true
 
 [tool.poetry.group.jupyter.dependencies]
 jupyter = "^1.0.0"
 jupyterlab = "^3.4.2"
 jupyterhub = "1.5.0"
 jupyterlab-git = "^0.37.1"
+
+[tool.poetry.group.examples]
+optional=true
 
 [tool.poetry.group.examples.dependencies]
 transformers = "^4.21.2"
