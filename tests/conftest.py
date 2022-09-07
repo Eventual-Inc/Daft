@@ -50,7 +50,9 @@ def pytest_addoption(parser):
         default=False,
         help="run tests that are marked for Test Driven Development (including low priority)",
     )
-    parser.addoption("--run_tpch", action="store_true", default=False, help="run tcp-h tests")
+    parser.addoption(
+        "--skip_tpch_checks", action="store_true", default=False, help="Skip checking correctness of tcp-h tests"
+    )
 
 
 def pytest_configure(config):
@@ -67,7 +69,6 @@ def pytest_collection_modifyitems(config, items):
         "docker": pytest.mark.skip(reason="need --run_docker option to run"),
         "tdd": pytest.mark.skip(reason="need --run_tdd option to run"),
         "tdd_all": pytest.mark.skip(reason="need --run_tdd_all option to run"),
-        "tpch": pytest.mark.skip(reason="need --run_tpch option to run"),
     }
     for item in items:
         for keyword in marks:
