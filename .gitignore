@@ -2,6 +2,7 @@
 
 .env
 venv
+.venv
 dist
 **/__pycache__/
 requirements.txt
@@ -11,5 +12,5 @@ build
 **/node_modules/**
 data/**
 *.so
-
+*.whl
 log/
