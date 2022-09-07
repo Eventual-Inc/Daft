@@ -286,17 +286,25 @@ def get_data_size_gb():
     return os.path.getsize(SQLITE_DB_FILE_PATH) / (1024**3)
 
 
-def check_answer(daft_pd_df: pd.DataFrame, tpch_question: int, tmp_path: str):
-    query = pathlib.Path(f"tests/assets/tpch-sqlite-queries/{tpch_question}.sql").read_text()
-    conn = sqlite3.connect(SQLITE_DB_FILE_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
-    cursor = conn.cursor()
-    res = cursor.execute(query)
-    sqlite_results = res.fetchall()
-    sqlite_pd_results = pd.DataFrame.from_records(sqlite_results, columns=daft_pd_df.columns)
-    assert_df_equals(daft_pd_df, sqlite_pd_results, assert_ordering=True)
+@pytest.fixture(scope="module")
+def check_answer(request):
+    skip_checks = request.config.getoption("--skip_tpch_checks")
+
+    def _check_answer(daft_pd_df: pd.DataFrame, tpch_question: int, tmp_path: str):
+        if skip_checks:
+            return
+        query = pathlib.Path(f"tests/assets/tpch-sqlite-queries/{tpch_question}.sql").read_text()
+        conn = sqlite3.connect(SQLITE_DB_FILE_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
+        cursor = conn.cursor()
+        res = cursor.execute(query)
+        sqlite_results = res.fetchall()
+        sqlite_pd_results = pd.DataFrame.from_records(sqlite_results, columns=daft_pd_df.columns)
+        assert_df_equals(daft_pd_df, sqlite_pd_results, assert_ordering=True)
+
+    return _check_answer
 
 
-def test_tpch_q1(tmp_path):
+def test_tpch_q1(tmp_path, check_answer):
     lineitem = get_df("lineitem")
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
@@ -323,7 +331,7 @@ def test_tpch_q1(tmp_path):
     check_answer(daft_pd_df, 1, tmp_path)
 
 
-def test_tpch_q2(tmp_path):
+def test_tpch_q2(tmp_path, check_answer):
     @udf(return_type=bool)
     def ends_with(column, suffix):
         assert isinstance(suffix, str)
@@ -380,7 +388,7 @@ def test_tpch_q2(tmp_path):
     check_answer(daft_pd_df, 2, tmp_path)
 
 
-def test_tpch_q3(tmp_path):
+def test_tpch_q3(tmp_path, check_answer):
     def decrease(x, y):
         return x * (1 - y)
 
@@ -411,7 +419,7 @@ def test_tpch_q3(tmp_path):
     check_answer(daft_pd_df, 3, tmp_path)
 
 
-def test_tpch_q4(tmp_path):
+def test_tpch_q4(tmp_path, check_answer):
     orders = get_df("orders").where(
         (col("O_ORDERDATE") >= datetime.date(1993, 7, 1)) & (col("O_ORDERDATE") < datetime.date(1993, 10, 1))
     )
@@ -433,7 +441,7 @@ def test_tpch_q4(tmp_path):
     check_answer(daft_pd_df, 4, tmp_path)
 
 
-def test_tpch_q5(tmp_path):
+def test_tpch_q5(tmp_path, check_answer):
     orders = get_df("orders").where(
         (col("O_ORDERDATE") >= datetime.date(1994, 1, 1)) & (col("O_ORDERDATE") < datetime.date(1995, 1, 1))
     )
@@ -463,7 +471,7 @@ def test_tpch_q5(tmp_path):
     check_answer(daft_pd_df, 5, tmp_path)
 
 
-def test_tpch_q6(tmp_path):
+def test_tpch_q6(tmp_path, check_answer):
     lineitem = get_df("lineitem")
     daft_df = lineitem.where(
         (col("L_SHIPDATE") >= datetime.date(1994, 1, 1))
@@ -478,7 +486,7 @@ def test_tpch_q6(tmp_path):
     check_answer(daft_pd_df, 6, tmp_path)
 
 
-def test_tpch_q7(tmp_path):
+def test_tpch_q7(tmp_path, check_answer):
     def decrease(x, y):
         return x * (1 - y)
 
@@ -534,7 +542,7 @@ def test_tpch_q7(tmp_path):
     check_answer(daft_pd_df, 7, tmp_path)
 
 
-def test_tpch_q8(tmp_path):
+def test_tpch_q8(tmp_path, check_answer):
     def decrease(x, y):
         return x * (1 - y)
 
@@ -599,7 +607,7 @@ def test_tpch_q8(tmp_path):
     check_answer(daft_pd_df, 8, tmp_path)
 
 
-def test_tpch_q9(tmp_path):
+def test_tpch_q9(tmp_path, check_answer):
     lineitem = get_df("lineitem")
     part = get_df("part")
     nation = get_df("nation")
@@ -647,7 +655,7 @@ def test_tpch_q9(tmp_path):
     check_answer(daft_pd_df, 9, tmp_path)
 
 
-def test_tpch_q10(tmp_path):
+def test_tpch_q10(tmp_path, check_answer):
     def decrease(x, y):
         return x * (1 - y)
 
