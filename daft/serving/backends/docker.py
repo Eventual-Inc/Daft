@@ -13,9 +13,9 @@ import yaml
 from loguru import logger
 from requests.adapters import HTTPAdapter, Retry
 
-from daft.env import DaftEnv, get_docker_client
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
+from daft.serving.env import DaftEnv, get_docker_client
 
 CONFIG_TYPE_ID = Literal["docker"]
 ENDPOINT_PKL_FILENAME = "endpoint.pkl"

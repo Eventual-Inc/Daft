@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import sysconfig
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -68,6 +69,7 @@ def cythonize_helper(extension_modules: List[Extension]) -> List[Extension]:
 
 def build(setup_kwargs: Dict[str, Any]) -> None:
     extension_modules = cythonize_helper(get_extension_modules())
+    print(f"Building on platform: {sysconfig.get_platform()}")
 
     setup_kwargs.update(
         {

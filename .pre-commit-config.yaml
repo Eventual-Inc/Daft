@@ -6,7 +6,7 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
-        files: "daft" # WE NEED TO ENABLE THIS FOR eventual-hub
+        files: "daft"
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v3.2.0

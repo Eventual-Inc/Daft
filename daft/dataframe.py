@@ -326,7 +326,6 @@ class DataFrame:
             ),
             filepaths[0],
         )
-
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
