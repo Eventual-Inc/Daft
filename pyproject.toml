@@ -17,7 +17,7 @@ packages = [
 
 [build-system]
 requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning", "setuptools", "numpy>=1.22.3", "pyarrow==8.0", "Cython>=0.29.32"]
-build-backend = "poetry_dynamic_versioning.backend"
+build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.build]
 script = "build.py"
