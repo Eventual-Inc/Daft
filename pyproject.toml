@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "daft"
-version = "0.0.0" # needed for poetry but ignored
+version = "0" # needed for poetry but ignored
 description = "Eventual daft"
 authors = ["Eventual Inc <founders@eventualcomputing.com>"]
 license = "Copyright Eventual Inc 2022"
@@ -112,8 +112,8 @@ skip="*-musllinux*"
 [tool.cibuildwheel.linux]
 
 archs = ["x86_64"]
-before-build = "pip install -U pyarrow==8.0" # have to install this for repair the wheel correctly
-repair-wheel-command = "LD_LIBRARY_PATH=$(python -c 'import pyarrow; print(pyarrow.get_library_dirs()[0])'):$LD_LIBRARY_PATH auditwheel repair -w {dest_dir} {wheel}"
+before-build = ""
+repair-wheel-command = ""
 [tool.cibuildwheel.macos]
 archs = ["x86_64", "arm64"]
 repair-wheel-command = [
