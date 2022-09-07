@@ -47,13 +47,13 @@ class DataFrameDisplay:
 
     pd_df: pandas.DataFrame
     schema: DataFrameSchema
+    column_char_width: int = 20
+    max_col_rows: int = 3
 
     def _repr_html_(self) -> str:
         import PIL.Image
 
-        column_char_width = 20
-        max_col_rows = 3
-        max_chars_per_cell = max_col_rows * column_char_width
+        max_chars_per_cell = self.max_col_rows * self.column_char_width
 
         # TODO: we should run this only for PyObj columns
         def stringify_and_truncate(val: Any):
@@ -91,8 +91,15 @@ class DataFrameDisplay:
         """
 
     def __repr__(self) -> str:
+        max_chars_per_cell = self.max_col_rows * self.column_char_width
+
+        def stringify_and_truncate(val: Any):
+            s = str(val)
+            return s if len(s) <= max_chars_per_cell else s[: max_chars_per_cell - 4] + "..."
+
+        pd_df = self.pd_df.applymap(stringify_and_truncate)
         return tabulate(
-            self.pd_df,
+            pd_df,
             headers=[f"{name}\n{self.schema[name].daft_type}" for name in self.schema.column_names()],
             showindex=False,
             missingval="None",
@@ -347,13 +354,16 @@ class DataFrame:
         if len(filepaths) == 0:
             raise ValueError(f"No Parquet files found at {path}")
 
-        # Read first Parquet file to ascertain schema
-        schema = ExpressionList(
-            [
-                ColumnExpression(field.name, expr_type=ExpressionType.from_arrow_type(field.type))
-                for field in papq.ParquetFile(filepaths[0]).metadata.schema.to_arrow_schema()
-            ]
-        )
+        filepath = filepaths[0]
+        fs = get_filesystem_from_path(filepath)
+        with fs.open(filepath, "rb") as f:
+            # Read first Parquet file to ascertain schema
+            schema = ExpressionList(
+                [
+                    ColumnExpression(field.name, expr_type=ExpressionType.from_arrow_type(field.type))
+                    for field in papq.ParquetFile(f).metadata.schema.to_arrow_schema()
+                ]
+            )
 
         plan = logical_plan.Scan(
             schema=schema,
