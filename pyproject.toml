@@ -56,24 +56,24 @@ tabulate = "^0.8.10"
 viztracer = "^0.15.4"
 sentry-sdk = "^1.9.5"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
+ipdb = "^0.13.9"
+pre-commit = "^2.20.0"
+pandas = "^1.4.3"
+Cython="^0.29.32"
+
+
+[tool.poetry.group.test.dependencies]
 pytest = "^7.1.2"
-mypy = "^0.950"
-boto3-stubs = "^1.23.0"
-types-Pillow = "^9.0.15"
-black = "^22.3.0"
-isort = "^5.10.1"
-autoflake = "^1.4"
+xxhash = "^3.0.0"
+
+[tool.poetry.group.jupyter.dependencies]
 jupyter = "^1.0.0"
 jupyterlab = "^3.4.2"
 jupyterhub = "1.5.0"
 jupyterlab-git = "^0.37.1"
-ipdb = "^0.13.9"
-pre-commit = "^2.20.0"
-types-requests = "^2.28.4"
-types-PyYAML = "^6.0.11"
-pandas = "^1.4.3"
-xxhash = "^3.0.0"
+
+[tool.poetry.group.examples.dependencies]
 transformers = "^4.21.2"
 diffusers = "^0.2.4"
 spacy = "^3.4.1"
