@@ -4,8 +4,8 @@ import abc
 import logging
 from typing import Any, Callable, Dict, List, Optional, Type
 
-from daft.env import DaftEnv
 from daft.serving.definitions import Endpoint
+from daft.serving.env import DaftEnv
 
 logger = logging.getLogger(__name__)
 

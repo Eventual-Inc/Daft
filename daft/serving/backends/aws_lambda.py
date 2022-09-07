@@ -13,9 +13,9 @@ import pydantic
 import yaml
 from loguru import logger
 
-from daft.env import DaftEnv, get_docker_client
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
+from daft.serving.env import DaftEnv, get_docker_client
 
 CONFIG_TYPE_ID = Literal["aws_lambda"]
 

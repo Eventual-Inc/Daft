@@ -15,9 +15,9 @@ import yaml
 from loguru import logger
 from requests.adapters import HTTPAdapter, Retry
 
-from daft.env import DaftEnv, get_conda_executable
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
+from daft.serving.env import DaftEnv, get_conda_executable
 
 CONFIG_TYPE_ID = Literal["multiprocessing"]
 
