@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "daft"
+name = "getdaft"
 version = "0" # needed for poetry but ignored
 description = "A Distributed DataFrame library for large scale complex data processing."
 authors = ["Eventual Inc <daft@eventualcomputing.com>"]
@@ -11,6 +11,9 @@ readme = "README.md"
 license = "Apache-2.0"
 homepage = "https://getdaft.io"
 repository = "https://github.com/Eventual-Inc/Daft"
+packages = [
+    {include = "daft"}
+]
 
 [build-system]
 requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning", "setuptools", "numpy>=1.22.3", "pyarrow==8.0", "Cython>=0.29.32"]

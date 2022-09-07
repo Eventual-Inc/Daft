@@ -14,3 +14,4 @@ data/**
 *.so
 *.whl
 log/
+*.egg-info
