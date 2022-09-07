@@ -6,7 +6,6 @@ import shlex
 import sqlite3
 import subprocess
 
-import numpy as np
 import pandas as pd
 import pytest
 from fsspec.implementations.local import LocalFileSystem
@@ -15,7 +14,6 @@ from sentry_sdk import start_transaction
 from daft.config import DaftSettings
 from daft.dataframe import DataFrame
 from daft.expressions import col
-from daft.udf import udf
 from tests.conftest import assert_df_equals
 
 # If running in github, we use smaller-scale data
@@ -332,13 +330,6 @@ def test_tpch_q1(tmp_path, check_answer):
 
 
 def test_tpch_q2(tmp_path, check_answer):
-    @udf(return_type=bool)
-    def ends_with(column, suffix):
-        assert isinstance(suffix, str)
-        assert isinstance(column, np.ndarray)
-        assert column.dtype == np.object_
-        assert all(isinstance(obj, str) for obj in column)
-        return pd.Series(column).str.endswith(suffix)
 
     region = get_df("region")
     nation = get_df("nation")
@@ -353,7 +344,7 @@ def test_tpch_q2(tmp_path, check_answer):
         .join(partsupp, left_on=col("S_SUPPKEY"), right_on=col("PS_SUPPKEY"))
     )
 
-    brass = part.where((col("P_SIZE") == 15) & (ends_with(col("P_TYPE"), "BRASS"))).join(
+    brass = part.where((col("P_SIZE") == 15) & col("P_TYPE").string.endswith("BRASS")).join(
         europe,
         left_on=col("P_PARTKEY"),
         right_on=col("PS_PARTKEY"),
@@ -490,12 +481,6 @@ def test_tpch_q7(tmp_path, check_answer):
     def decrease(x, y):
         return x * (1 - y)
 
-    @udf(return_type=int)
-    def get_year(d):
-        assert isinstance(d, np.ndarray)
-        assert np.issubdtype(d.dtype, np.datetime64)
-        return pd.Series(d).dt.year
-
     lineitem = get_df("lineitem").where(
         (col("L_SHIPDATE") >= datetime.date(1995, 1, 1)) & (col("L_SHIPDATE") <= datetime.date(1996, 12, 31))
     )
@@ -528,7 +513,7 @@ def test_tpch_q7(tmp_path, check_answer):
         .select(
             col("supp_nation"),
             col("cust_nation"),
-            get_year(col("L_SHIPDATE")).alias("l_year"),
+            col("L_SHIPDATE").datetime.year().alias("l_year"),
             decrease(col("L_EXTENDEDPRICE"), col("L_DISCOUNT")).alias("volume"),
         )
         .groupby(col("supp_nation"), col("cust_nation"), col("l_year"))
@@ -545,20 +530,6 @@ def test_tpch_q7(tmp_path, check_answer):
 def test_tpch_q8(tmp_path, check_answer):
     def decrease(x, y):
         return x * (1 - y)
-
-    @udf(return_type=int)
-    def get_year(d):
-        assert isinstance(d, np.ndarray)
-        assert np.issubdtype(d.dtype, np.datetime64)
-        return pd.Series(d).dt.year
-
-    @udf(return_type=float)
-    def is_brazil(nation, y):
-        assert isinstance(nation, np.ndarray)
-        assert isinstance(y, np.ndarray)
-        assert nation.dtype == np.object_
-        assert y.dtype == np.float64
-        return pd.Series(y).where(nation == "BRAZIL", 0.0)
 
     region = get_df("region").where(col("R_NAME") == "AMERICA")
     orders = get_df("orders").where(
@@ -592,9 +563,9 @@ def test_tpch_q8(tmp_path, check_answer):
         .select(col("O_ORDERKEY"), col("O_ORDERDATE"))
         .join(line, left_on=col("O_ORDERKEY"), right_on=col("L_ORDERKEY"))
         .select(
-            get_year(col("O_ORDERDATE")).alias("o_year"),
+            col("O_ORDERDATE").datetime.year().alias("o_year"),
             col("volume"),
-            is_brazil(col("N_NAME"), col("volume")).alias("case_volume"),
+            (col("N_NAME") == "BRAZIL").if_else(col("volume"), 0.0).alias("case_volume"),
         )
         .groupby(col("o_year"))
         .agg([(col("case_volume").alias("case_volume_sum"), "sum"), (col("volume").alias("volume_sum"), "sum")])
@@ -615,22 +586,10 @@ def test_tpch_q9(tmp_path, check_answer):
     partsupp = get_df("partsupp")
     orders = get_df("orders")
 
-    @udf(return_type=bool)
-    def contains_green(s):
-        assert isinstance(s, np.ndarray)
-        assert s.dtype == np.object_
-        return pd.Series(s).str.contains("green")
-
-    @udf(return_type=int)
-    def get_year(d):
-        assert isinstance(d, np.ndarray)
-        assert np.issubdtype(d.dtype, np.datetime64)
-        return pd.Series(d).dt.year
-
     def expr(x, y, v, w):
         return x * (1 - y) - (v * w)
 
-    linepart = part.where(contains_green(col("P_NAME"))).join(
+    linepart = part.where(col("P_NAME").string.contains("green")).join(
         lineitem, left_on=col("P_PARTKEY"), right_on=col("L_PARTKEY")
     )
     natsup = nation.join(supplier, left_on=col("N_NATIONKEY"), right_on=col("S_NATIONKEY"))
@@ -642,7 +601,7 @@ def test_tpch_q9(tmp_path, check_answer):
         .join(orders, left_on=col("L_ORDERKEY"), right_on=col("O_ORDERKEY"))
         .select(
             col("N_NAME"),
-            get_year(col("O_ORDERDATE")).alias("o_year"),
+            col("O_ORDERDATE").datetime.year().alias("o_year"),
             expr(col("L_EXTENDEDPRICE"), col("L_DISCOUNT"), col("PS_SUPPLYCOST"), col("L_QUANTITY")).alias("amount"),
         )
         .groupby(col("N_NAME"), col("o_year"))

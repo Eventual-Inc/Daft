@@ -315,6 +315,12 @@ class Expression(TreeNode["Expression"]):
 
         return True
 
+    def if_else(self, other1: Expression, other2: Expression) -> Expression:
+        return CallExpression(
+            OperatorEnum.IF_ELSE,
+            (self, other1, other2),
+        )
+
     ###
     # Accessors
     ###
@@ -323,6 +329,16 @@ class Expression(TreeNode["Expression"]):
     def url(self) -> UrlMethodAccessor:
         """Access methods that work on columns of URLs"""
         return UrlMethodAccessor(self)
+
+    @property
+    def string(self) -> StringMethodAccessor:
+        """Access methods that work on columns of strings"""
+        return StringMethodAccessor(self)
+
+    @property
+    def datetime(self) -> DatetimeMethodAccessor:
+        """Access methods that work on columns of datetimes"""
+        return DatetimeMethodAccessor(self)
 
 
 class LiteralExpression(Expression):
@@ -634,9 +650,70 @@ class BaseMethodAccessor:
 
 class UrlMethodAccessor(BaseMethodAccessor):
     def download(self) -> UdfExpression:
+        """Treats each string as a URL, and downloads the bytes contents as a bytes column"""
         return UdfExpression(
             url_funcs.download,
             ExpressionType.from_py_type(bytes),
             (self._expr,),
             {},
+        )
+
+
+class StringMethodAccessor(BaseMethodAccessor):
+    def contains(self, pattern: str) -> CallExpression:
+        """Checks whether each string contains the given pattern in a string column"""
+        return CallExpression(
+            OperatorEnum.STR_CONTAINS,
+            (self._expr, pattern),
+        )
+
+    def endswith(self, pattern: str) -> CallExpression:
+        """Checks whether each string ends with the given pattern in a string column"""
+        return CallExpression(
+            OperatorEnum.STR_ENDSWITH,
+            (self._expr, pattern),
+        )
+
+    def startswith(self, pattern: str) -> CallExpression:
+        """Checks whether each string starts with the given pattern in a string column"""
+        return CallExpression(
+            OperatorEnum.STR_STARTSWITH,
+            (self._expr, pattern),
+        )
+
+    def length(self) -> CallExpression:
+        """Retrieves the length for of a UTF-8 string column"""
+        return CallExpression(
+            OperatorEnum.STR_LENGTH,
+            (self._expr,),
+        )
+
+
+class DatetimeMethodAccessor(BaseMethodAccessor):
+    def day(self) -> CallExpression:
+        """Retrieves the day for a datetime column"""
+        return CallExpression(
+            OperatorEnum.DT_DAY,
+            (self._expr,),
+        )
+
+    def month(self) -> CallExpression:
+        """Retrieves the month for a datetime column"""
+        return CallExpression(
+            OperatorEnum.DT_MONTH,
+            (self._expr,),
+        )
+
+    def year(self) -> CallExpression:
+        """Retrieves the year for a datetime column"""
+        return CallExpression(
+            OperatorEnum.DT_YEAR,
+            (self._expr,),
+        )
+
+    def day_of_week(self) -> CallExpression:
+        """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday"""
+        return CallExpression(
+            OperatorEnum.DT_DAY_OF_WEEK,
+            (self._expr,),
         )
