@@ -353,7 +353,10 @@ class PyListDataBlock(DataBlock[List[T]]):
     def to_numpy(self):
         if self.is_scalar():
             return self.data
-        return np.array(self.data)
+        res = np.empty((len(self),), dtype="object")
+        for i, obj in enumerate(self.data):
+            res[i] = obj
+        return res
 
     def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[List[T]]:
         return PyListDataBlock(data=[item for keep, item in zip(mask.iter_py(), self.data) if keep])

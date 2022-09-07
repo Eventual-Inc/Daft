@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 from abc import abstractmethod
 from copy import deepcopy
-from functools import partialmethod
+from functools import partial, partialmethod
 from typing import (
     Any,
     Callable,
@@ -25,6 +25,7 @@ from daft.execution.operators import (
     OperatorEnum,
     PythonExpressionType,
 )
+from daft.expression_methods import urls as url_funcs
 from daft.internal.treenode import TreeNode
 from daft.runners.blocks import (
     ArrowDataBlock,
@@ -265,6 +266,22 @@ class Expression(TreeNode["Expression"]):
     def as_py(self, type_: Type) -> Expression:
         return AsPyExpression(self, ExpressionType.from_py_type(type_))
 
+    def apply(self, func: Callable, return_type: Optional[Type] = None):
+        expression_type = (
+            ExpressionType.from_py_type(return_type) if return_type is not None else ExpressionType.python_object()
+        )
+
+        def apply_func(f, data):
+            results = list(map(f, data.iter_py()))
+            return DataBlock.make_block(results)
+
+        return UdfExpression(
+            partial(apply_func, func),
+            expression_type,
+            (self,),
+            {},
+        )
+
     def has_call(self) -> bool:
         if isinstance(self, CallExpression) or isinstance(self, UdfExpression):
             return True
@@ -297,6 +314,15 @@ class Expression(TreeNode["Expression"]):
                 return False
 
         return True
+
+    ###
+    # Accessors
+    ###
+
+    @property
+    def url(self) -> UrlMethodAccessor:
+        """Access methods that work on columns of URLs"""
+        return UrlMethodAccessor(self)
 
 
 class LiteralExpression(Expression):
@@ -415,11 +441,12 @@ class UdfExpression(Expression, Generic[DataBlockValueType]):
         return self._func_ret_type
 
     def _display_str(self) -> str:
+        func_name: str = self._func.func.__name__ if isinstance(self._func, partial) else self._func.__name__  # type: ignore
         args = ", ".join(a._display_str() for a in self._args)
         kwargs = ", ".join(f"{kw}={a._display_str()}" for kw, a in self._kwargs.items())
         if kwargs:
-            return f"{self._func.__name__}({args}, {kwargs})"
-        return f"{self._func.__name__}({args})"
+            return f"{func_name}({args}, {kwargs})"
+        return f"{func_name}({args})"
 
     def eval_blocks(self, *args: DataBlockValueType, **kwargs: DataBlockValueType) -> DataBlockValueType:
         return self._func(*args, **kwargs)
@@ -593,3 +620,23 @@ class AsPyExpression(Expression):
 
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, AliasExpression) and self._name == other._name
+
+
+###
+# Expression Method Accessors
+###
+
+
+class BaseMethodAccessor:
+    def __init__(self, expr: Expression):
+        self._expr = expr
+
+
+class UrlMethodAccessor(BaseMethodAccessor):
+    def download(self) -> UdfExpression:
+        return UdfExpression(
+            url_funcs.download,
+            ExpressionType.from_py_type(bytes),
+            (self._expr,),
+            {},
+        )

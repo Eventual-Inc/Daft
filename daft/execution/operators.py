@@ -61,6 +61,7 @@ class PrimitiveExpressionType(ExpressionType):
         LOGICAL = 4
         STRING = 5
         DATE = 6
+        BYTES = 7
 
     enum: PrimitiveExpressionType.TypeEnum
 
@@ -106,6 +107,7 @@ _TYPE_REGISTRY: Dict[str, ExpressionType] = {
     "logical": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.LOGICAL),
     "string": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.STRING),
     "date": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.DATE),
+    "bytes": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.BYTES),
     # Represents a generic Python object that we have no further information about
     "pyobj": PythonExpressionType(object),
 }
@@ -117,6 +119,7 @@ EXPRESSION_TYPE_TO_PYARROW_TYPE = {
     _TYPE_REGISTRY["float"]: pa.float64(),
     _TYPE_REGISTRY["string"]: pa.string(),
     _TYPE_REGISTRY["date"]: pa.date32(),
+    _TYPE_REGISTRY["bytes"]: pa.large_binary(),
 }
 
 
@@ -138,7 +141,8 @@ _PYARROW_TYPE_TO_EXPRESSION_TYPE = {
     # pa.date64(): _TYPE_REGISTRY["unknown"],
     pa.string(): _TYPE_REGISTRY["string"],
     pa.utf8(): _TYPE_REGISTRY["string"],
-    # pa.large_binary(): _TYPE_REGISTRY["unknown"],
+    pa.binary(): _TYPE_REGISTRY["bytes"],
+    pa.large_binary(): _TYPE_REGISTRY["bytes"],
     pa.large_string(): _TYPE_REGISTRY["string"],
     pa.large_utf8(): _TYPE_REGISTRY["string"],
 }
@@ -149,6 +153,7 @@ _PY_TYPE_TO_EXPRESSION_TYPE = {
     str: _TYPE_REGISTRY["string"],
     bool: _TYPE_REGISTRY["logical"],
     datetime.date: _TYPE_REGISTRY["date"],
+    bytes: _TYPE_REGISTRY["bytes"],
 }
 
 
