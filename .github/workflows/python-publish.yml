@@ -29,7 +29,7 @@ jobs:
           name: ${{ matrix.os }}_bdist_wheels
           path: ./wheelhouse/*.whl
       - name: Publish package
-        run: python -m twine upload --skip-existing --disable-progress-bar ./wheelhouse
+        run: python -m twine upload --skip-existing --disable-progress-bar ./wheelhouse/*
         env:
           TWINE_USERNAME: "__token__"
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
@@ -52,7 +52,7 @@ jobs:
           name: source_wheels
           path: ./dist/*
       - name: Publish package
-        run: python -m twine upload --skip-existing --disable-progress-bar ./dist
+        run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
         env:
           TWINE_USERNAME: "__token__"
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
