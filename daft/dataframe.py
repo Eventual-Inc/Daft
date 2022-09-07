@@ -203,10 +203,10 @@ class DataFrame:
         return DataFrameDisplay(execution_result, df.schema())
 
     def __repr__(self) -> str:
-        return self.show(10).__repr__()
+        return self.schema().__repr__()
 
     def _repr_html_(self) -> str:
-        return self.show(10)._repr_html_()
+        return self.schema()._repr_html_()
 
     ###
     # Creation methods
