@@ -1,6 +1,12 @@
+import sys
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Protocol
+from typing import Any, Dict, List
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Protocol
+else:
+    from typing import Protocol
 
 
 class ScanType(Enum):

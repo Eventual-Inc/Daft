@@ -2,9 +2,15 @@ import io
 import pathlib
 import re
 import socket
+import sys
 import tarfile
 import tempfile
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Optional
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Literal
+else:
+    from typing import Literal
 
 import cloudpickle
 import docker

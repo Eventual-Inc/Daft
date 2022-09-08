@@ -4,19 +4,14 @@ import copy
 import dataclasses as pydataclasses
 import io
 import json
+import sys
 from inspect import getmembers
-from typing import (
-    Callable,
-    Dict,
-    Generic,
-    List,
-    NamedTuple,
-    Optional,
-    Type,
-    TypeVar,
-    get_args,
-    get_origin,
-)
+from typing import Callable, Dict, Generic, List, NamedTuple, Optional, Type, TypeVar
+
+if sys.version_info < (3, 8):
+    from typing_extensions import get_args, get_origin
+else:
+    from typing import get_origin, get_args
 
 import numpy as np
 import PIL

@@ -33,6 +33,8 @@ ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
 UnaryFuncType = Callable[[ArrType], ArrType]
 BinaryFuncType = Callable[[ArrType, ArrType], ArrType]
 
+NUMPY_MINOR_VERSION = int(np.version.version.split(".")[1])
+
 
 def zip_blocks_as_py(*blocks: DataBlock) -> Iterator[Tuple[Any, ...]]:
     """Utility to zip the data of blocks together, returning a row-based iterator. This utility
@@ -475,7 +477,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
     def quantiles(self, num: int) -> DataBlock[ArrowArrType]:
         quantiles = np.linspace(1.0 / num, 1.0, num)[:-1]
-        pivots = np.quantile(self.data.to_numpy(), quantiles, method="closest_observation")
+        if NUMPY_MINOR_VERSION < 22:
+            pivots = np.quantile(self.data.to_numpy(), quantiles, interpolation="nearest")
+        else:
+            pivots = np.quantile(self.data.to_numpy(), quantiles, method="closest_observation")
         return DataBlock.make_block(data=pivots)
 
     def array_hash(self, seed: Optional[DataBlock[ArrowArrType]] = None) -> DataBlock[ArrowArrType]:

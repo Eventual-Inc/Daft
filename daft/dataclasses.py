@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import dataclasses as pydataclasses
-from typing import (
-    TYPE_CHECKING,
-    Callable,
-    Optional,
-    OrderedDict,
-    Type,
-    TypeVar,
-    Union,
-    get_origin,
-)
+import sys
+from typing import TYPE_CHECKING, Callable, Optional, OrderedDict, Type, TypeVar, Union
+
+if sys.version_info < (3, 8):
+    from typing_extensions import get_origin
+else:
+    from typing import get_origin
 
 from daft.schema import DaftSchema
 
