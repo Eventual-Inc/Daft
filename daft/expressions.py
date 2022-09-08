@@ -343,12 +343,12 @@ class Expression(TreeNode["Expression"]):
         return UrlMethodAccessor(self)
 
     @property
-    def string(self) -> StringMethodAccessor:
+    def str(self) -> StringMethodAccessor:
         """Access methods that work on columns of strings"""
         return StringMethodAccessor(self)
 
     @property
-    def datetime(self) -> DatetimeMethodAccessor:
+    def dt(self) -> DatetimeMethodAccessor:
         """Access methods that work on columns of datetimes"""
         return DatetimeMethodAccessor(self)
 

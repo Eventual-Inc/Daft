@@ -344,7 +344,7 @@ def test_tpch_q2(tmp_path, check_answer):
         .join(partsupp, left_on=col("S_SUPPKEY"), right_on=col("PS_SUPPKEY"))
     )
 
-    brass = part.where((col("P_SIZE") == 15) & col("P_TYPE").string.endswith("BRASS")).join(
+    brass = part.where((col("P_SIZE") == 15) & col("P_TYPE").str.endswith("BRASS")).join(
         europe,
         left_on=col("P_PARTKEY"),
         right_on=col("PS_PARTKEY"),
@@ -513,7 +513,7 @@ def test_tpch_q7(tmp_path, check_answer):
         .select(
             col("supp_nation"),
             col("cust_nation"),
-            col("L_SHIPDATE").datetime.year().alias("l_year"),
+            col("L_SHIPDATE").dt.year().alias("l_year"),
             decrease(col("L_EXTENDEDPRICE"), col("L_DISCOUNT")).alias("volume"),
         )
         .groupby(col("supp_nation"), col("cust_nation"), col("l_year"))
@@ -563,7 +563,7 @@ def test_tpch_q8(tmp_path, check_answer):
         .select(col("O_ORDERKEY"), col("O_ORDERDATE"))
         .join(line, left_on=col("O_ORDERKEY"), right_on=col("L_ORDERKEY"))
         .select(
-            col("O_ORDERDATE").datetime.year().alias("o_year"),
+            col("O_ORDERDATE").dt.year().alias("o_year"),
             col("volume"),
             (col("N_NAME") == "BRAZIL").if_else(col("volume"), 0.0).alias("case_volume"),
         )
@@ -589,7 +589,7 @@ def test_tpch_q9(tmp_path, check_answer):
     def expr(x, y, v, w):
         return x * (1 - y) - (v * w)
 
-    linepart = part.where(col("P_NAME").string.contains("green")).join(
+    linepart = part.where(col("P_NAME").str.contains("green")).join(
         lineitem, left_on=col("P_PARTKEY"), right_on=col("L_PARTKEY")
     )
     natsup = nation.join(supplier, left_on=col("N_NATIONKEY"), right_on=col("S_NATIONKEY"))
@@ -601,7 +601,7 @@ def test_tpch_q9(tmp_path, check_answer):
         .join(orders, left_on=col("L_ORDERKEY"), right_on=col("O_ORDERKEY"))
         .select(
             col("N_NAME"),
-            col("O_ORDERDATE").datetime.year().alias("o_year"),
+            col("O_ORDERDATE").dt.year().alias("o_year"),
             expr(col("L_EXTENDEDPRICE"), col("L_DISCOUNT"), col("PS_SUPPLYCOST"), col("L_QUANTITY")).alias("amount"),
         )
         .groupby(col("N_NAME"), col("o_year"))
