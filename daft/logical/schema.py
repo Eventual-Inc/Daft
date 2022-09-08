@@ -4,6 +4,7 @@ import copy
 from typing import Dict, Iterable, Iterator, List, Optional, Set, TypeVar, cast
 
 from daft.expressions import ColID, ColumnExpression, Expression
+from daft.resource_request import ResourceRequest
 
 ExpressionType = TypeVar("ExpressionType", bound=Expression)
 
@@ -139,3 +140,7 @@ class ExpressionList(Iterable[ExpressionType]):
             assert id is not None
             id_set.add(id)
         return id_set
+
+    def resource_request(self) -> ResourceRequest:
+        """Returns the requested resources for the execution of all expressions in this list"""
+        return ResourceRequest.default().max_resources(*[e.resource_request() for e in self.exprs])

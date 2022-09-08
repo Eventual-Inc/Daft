@@ -211,6 +211,9 @@ class RayRunner(Runner):
                 data_deps = exec_op.data_deps
                 input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
 
+                # TODO(sammy): We should forward the exec_op's .resource_request() into *.run_node_list(...)
+                # so that the OpRunners can run their work with the appropriate requests
+
                 if exec_op.is_global_op:
                     input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
                     result_partition_set = self._global_op_runner.run_node_list(

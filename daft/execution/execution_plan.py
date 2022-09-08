@@ -5,6 +5,7 @@ from io import StringIO
 from typing import ClassVar, List
 
 from daft.logical.logical_plan import LogicalPlan, OpLevel
+from daft.resource_request import ResourceRequest
 
 
 class ExecutionOp:
@@ -28,6 +29,10 @@ class ExecutionOp:
         for op in self.logical_ops:
             builder.write(f"\t{repr(op)}\n\n")
         return builder.getvalue()
+
+    def resource_request(self) -> ResourceRequest:
+        default = ResourceRequest.default()
+        return default.max_resources(*[lop.resource_request() for lop in self.logical_ops])
 
 
 class ForEachPartition(ExecutionOp):

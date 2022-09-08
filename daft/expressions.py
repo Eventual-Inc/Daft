@@ -27,6 +27,7 @@ from daft.execution.operators import (
     PythonExpressionType,
 )
 from daft.internal.treenode import TreeNode
+from daft.resource_request import ResourceRequest
 from daft.runners.blocks import (
     ArrowDataBlock,
     DataBlock,
@@ -132,6 +133,14 @@ class Expression(TreeNode["Expression"]):
     ) -> Expression:
         other_expr = self._to_expression(other)
         return other_expr._binary_op(operator, self)
+
+    def _self_resource_request(self) -> ResourceRequest:
+        """Returns the ResourceRequest required by this specific Expression (not including its children)"""
+        return ResourceRequest.default()
+
+    def resource_request(self) -> ResourceRequest:
+        """Returns the maximum ResourceRequest that is required by this Expression and all its children"""
+        return self._self_resource_request().max_resources(*[e.resource_request() for e in self._children()])
 
     @abstractmethod
     def resolved_type(self) -> Optional[ExpressionType]:
@@ -450,12 +459,19 @@ class UdfExpression(Expression, Generic[DataBlockValueType]):
         func_ret_type: ExpressionType,
         func_args: Tuple,
         func_kwargs: Dict[str, Any],
+        resource_request: Optional[ResourceRequest] = None,
     ) -> None:
         super().__init__()
         self._func = func
         self._func_ret_type = func_ret_type
         self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         self._kwargs_ids = {kw: self._register_child(self._to_expression(arg)) for kw, arg in func_kwargs.items()}
+        self._resource_request = resource_request
+
+    def _self_resource_request(self) -> ResourceRequest:
+        if self._resource_request is not None:
+            return self._resource_request
+        return ResourceRequest.default()
 
     @property
     def _args(self) -> Tuple[Expression, ...]:

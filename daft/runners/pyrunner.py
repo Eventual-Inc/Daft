@@ -159,6 +159,9 @@ class PyRunner(Runner):
         with profiler("profile.json"):
             for exec_op in exec_plan.execution_ops:
 
+                # TODO(sammy): We can do something with the execution op's ResourceRequest here, perhaps throw an error
+                # if num_cpus requested is > CPU count, and if num_gpus requested is > GPU count?
+
                 data_deps = exec_op.data_deps
                 input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
 
