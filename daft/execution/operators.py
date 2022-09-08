@@ -44,8 +44,6 @@ class ExpressionType:
 
     @staticmethod
     def from_arrow_type(datatype: pa.DataType) -> ExpressionType:
-        # We fall back on generic Python object expression types if we encounter types that
-        # are not mapped to an ExpressionType
         if datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
             return ExpressionType.python_object()
         return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
@@ -320,6 +318,7 @@ class OperatorEnum(Enum):
 
     # Null
     IS_NULL = _UOp(name="is_null", symbol="is_null", type_matrix=_AllLogicalTM)
+    IS_NAN = _UOp(name="is_nan", symbol="is_nan", type_matrix=_AllLogicalTM)
 
     # Date
     DT_DAY = _UOp(name="day", symbol="day", type_matrix=_DatetimeExtractionTM)
@@ -395,6 +394,7 @@ class OperatorEvaluator(Protocol[ValueType]):
     STR_LENGTH: UnaryFunction
 
     IS_NULL: UnaryFunction
+    IS_NAN: UnaryFunction
 
     DT_DAY: UnaryFunction
     DT_MONTH: UnaryFunction

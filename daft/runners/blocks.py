@@ -576,7 +576,7 @@ def arrow_str_endswith(arr: pa.ChunkedArray, pattern: pa.StringScalar):
 
 
 def arrow_str_startswith(arr: pa.ChunkedArray, pattern: pa.StringScalar):
-    return pac.ends_with(arr, pattern=pattern.as_py())
+    return pac.starts_with(arr, pattern=pattern.as_py())
 
 
 def _arr_unary_op(
@@ -631,6 +631,7 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     DT_YEAR = _arr_unary_op(pac.year)
     DT_DAY_OF_WEEK = _arr_unary_op(pac.day_of_week)
     IS_NULL = _arr_unary_op(pac.is_null)
+    IS_NAN = _arr_unary_op(pac.is_nan)
     IF_ELSE = _arr_ternary_op(pac.if_else)
 
 
@@ -710,6 +711,7 @@ class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
     DT_MONTH = assert_invalid_pylist_operation
     DT_YEAR = assert_invalid_pylist_operation
     DT_DAY_OF_WEEK = assert_invalid_pylist_operation
+    IS_NAN = assert_invalid_pylist_operation
 
 
 PyListDataBlock.evaluator = PyListEvaluator

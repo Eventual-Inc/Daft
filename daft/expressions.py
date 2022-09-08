@@ -321,6 +321,18 @@ class Expression(TreeNode["Expression"]):
             (self, other1, other2),
         )
 
+    def is_null(self) -> Expression:
+        return CallExpression(
+            OperatorEnum.IS_NULL,
+            (self,),
+        )
+
+    def is_nan(self) -> Expression:
+        return CallExpression(
+            OperatorEnum.IS_NAN,
+            (self,),
+        )
+
     ###
     # Accessors
     ###
