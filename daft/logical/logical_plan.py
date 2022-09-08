@@ -433,8 +433,8 @@ class LocalAggregate(UnaryNode):
     def resource_request(self) -> ResourceRequest:
         req = ResourceRequest.default()
         if self._group_by is not None:
-            req = req.max_resources(self._group_by.resource_request())
-        req = req.max_resources(*[expr.resource_request() for expr, _ in self._agg])
+            req = self._group_by.resource_request()
+        req = ResourceRequest.max_resources([expr.resource_request() for expr, _ in self._agg] + [req])
         return req
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> LocalAggregate:

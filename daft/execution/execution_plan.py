@@ -31,8 +31,7 @@ class ExecutionOp:
         return builder.getvalue()
 
     def resource_request(self) -> ResourceRequest:
-        default = ResourceRequest.default()
-        return default.max_resources(*[lop.resource_request() for lop in self.logical_ops])
+        return ResourceRequest.max_resources([lop.resource_request() for lop in self.logical_ops])
 
 
 class ForEachPartition(ExecutionOp):

@@ -55,7 +55,6 @@ def udf(
     >>>         return self._model(features_col)
     """
     func_ret_type = ExpressionType.from_py_type(return_type)
-    resource_request_dict = {k: v for k, v in {"num_cpus": num_cpus, "num_gpus": num_gpus}.items() if v is not None}
 
     def udf_decorator(func: UDF) -> Callable:
         @functools.wraps(func)
@@ -87,7 +86,7 @@ def udf(
                 func_ret_type=func_ret_type,
                 func_args=args,
                 func_kwargs=kwargs,
-                resource_request=ResourceRequest(**resource_request_dict),
+                resource_request=ResourceRequest(num_cpus=num_cpus, num_gpus=num_gpus),
             )
             return out_expr
 

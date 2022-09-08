@@ -140,7 +140,9 @@ class Expression(TreeNode["Expression"]):
 
     def resource_request(self) -> ResourceRequest:
         """Returns the maximum ResourceRequest that is required by this Expression and all its children"""
-        return self._self_resource_request().max_resources(*[e.resource_request() for e in self._children()])
+        return ResourceRequest.max_resources(
+            [e.resource_request() for e in self._children()] + [self._self_resource_request()]
+        )
 
     @abstractmethod
     def resolved_type(self) -> Optional[ExpressionType]:

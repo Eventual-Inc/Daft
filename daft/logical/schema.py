@@ -143,4 +143,4 @@ class ExpressionList(Iterable[ExpressionType]):
 
     def resource_request(self) -> ResourceRequest:
         """Returns the requested resources for the execution of all expressions in this list"""
-        return ResourceRequest.default().max_resources(*[e.resource_request() for e in self.exprs])
+        return ResourceRequest.max_resources([e.resource_request() for e in self.exprs])
