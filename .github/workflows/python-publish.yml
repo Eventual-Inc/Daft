@@ -22,8 +22,10 @@ jobs:
 
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.9.0 poetry==1.2.0 twine && poetry self add "poetry-dynamic-versioning[plugin]"
+      - name: Build Local sdist
+        run: poetry build -f sdist
       - name: Build wheels
-        run: python -m cibuildwheel --output-dir ./wheelhouse
+        run: python -m cibuildwheel --output-dir ./wheelhouse --config-file {package}/pyproject.toml ./dist/*
         env:
           CIBW_BUILD: ${{ matrix.python }}-*
       - uses: actions/upload-artifact@v3
