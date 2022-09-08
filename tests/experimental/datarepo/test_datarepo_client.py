@@ -2,8 +2,8 @@ import tempfile
 
 import numpy as np
 
-from daft.dataclasses import dataclass
-from daft.datarepo.client import DatarepoClient
+from daft.experimental.dataclasses import dataclass
+from daft.experimental.datarepo.client import DatarepoClient
 
 
 @dataclass

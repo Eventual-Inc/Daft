@@ -4,7 +4,7 @@ from typing import Type
 
 from icebridge.client import IcebergCatalog, IcebergSchema, IcebergTable
 
-from daft.dataclasses import is_daft_dataclass
+from daft.experimental.dataclasses import is_daft_dataclass
 
 
 class DataRepo:

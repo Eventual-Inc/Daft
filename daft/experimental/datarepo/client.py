@@ -6,10 +6,7 @@ from typing import List, Optional, Type, TypeVar
 from icebridge.client import IcebergCatalog, IceBridgeClient
 
 from daft import config
-from daft.datarepo.datarepo import DataRepo
-
-# from daft.datarepo.log import DaftLakeLog
-
+from daft.experimental.datarepo.datarepo import DataRepo
 
 logger = logging.getLogger(__name__)
 

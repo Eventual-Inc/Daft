@@ -3,9 +3,9 @@ from typing import Dict, List
 
 import numpy as np
 
-from daft.dataclasses import DataclassBuilder, dataclass
-from daft.fields import DaftImageField
-from daft.types import DaftImageType
+from daft.experimental.dataclasses import DataclassBuilder, dataclass
+from daft.experimental.fields import DaftImageField
+from daft.experimental.types import DaftImageType
 
 
 def test_dataclass_without_args() -> None:

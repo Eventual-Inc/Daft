@@ -6,10 +6,10 @@ import PIL.Image
 import pyarrow as pa
 import pytest
 
-from daft.dataclasses import dataclass
-from daft.fields import DaftImageField
-from daft.schema import DaftSchema
-from daft.types import DaftImageType
+from daft.experimental.dataclasses import dataclass
+from daft.experimental.fields import DaftImageField
+from daft.experimental.schema import DaftSchema
+from daft.experimental.types import DaftImageType
 
 
 def test_simple_schema() -> None:

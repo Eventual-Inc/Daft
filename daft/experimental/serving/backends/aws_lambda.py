@@ -14,9 +14,9 @@ import pydantic
 import yaml
 from loguru import logger
 
-from daft.serving.backend import AbstractEndpointBackend
-from daft.serving.definitions import Endpoint
-from daft.serving.env import DaftEnv, get_docker_client
+from daft.experimental.serving.backend import AbstractEndpointBackend
+from daft.experimental.serving.definitions import Endpoint
+from daft.experimental.serving.env import DaftEnv, get_docker_client
 
 if sys.version_info < (3, 8):
     from typing_extensions import Literal
