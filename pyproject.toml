@@ -125,7 +125,6 @@ profile = "black"
 
 [tool.cibuildwheel]
 build-verbosity = 3
-build=["cp38-*", "cp39-*", "cp310-*"]
 skip="*-musllinux*"
 [tool.cibuildwheel.linux]
 
