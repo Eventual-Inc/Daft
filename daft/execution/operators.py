@@ -40,8 +40,6 @@ class ExpressionType:
 
     @staticmethod
     def from_arrow_type(datatype: pa.DataType) -> ExpressionType:
-        # We fall back on generic Python object expression types if we encounter types that
-        # are not mapped to an ExpressionType
         if datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
             return ExpressionType.python_object()
         return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
@@ -161,7 +159,6 @@ class ExpressionOperator:
     name: str
     nargs: int
     type_matrix: TypeMatrix
-    accepts_kwargs: bool = False
     symbol: Optional[str] = None
 
     def __post_init__(self) -> None:
@@ -214,6 +211,7 @@ _ComparisionTM = frozenset(
         (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["date"], _TYPE_REGISTRY["date"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["bytes"], _TYPE_REGISTRY["bytes"]): _TYPE_REGISTRY["logical"],
     }.items()
 )
 
@@ -230,15 +228,49 @@ _CountLogicalTM = frozenset(
         (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["bytes"],): _TYPE_REGISTRY["integer"],
     }.items()
 )
 
+_AllLogicalTM = frozenset(
+    {
+        (_TYPE_REGISTRY["integer"],): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["bytes"],): _TYPE_REGISTRY["logical"],
+    }.items()
+)
 
-_UOp = partial(ExpressionOperator, nargs=1, accepts_kwargs=False)
+_IfElseTM = frozenset(
+    {
+        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
+        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["logical"], _TYPE_REGISTRY["logical"]): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["string"],
+        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["date"], _TYPE_REGISTRY["date"]): _TYPE_REGISTRY["date"],
+        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["bytes"], _TYPE_REGISTRY["bytes"]): _TYPE_REGISTRY["bytes"],
+    }.items()
+)
+
+_DatetimeExtractionTM = frozenset(
+    {
+        (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["integer"],
+    }.items()
+)
+
+_LengthTM = frozenset(
+    {
+        (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["integer"],
+    }.items()
+)
+
+_UOp = partial(ExpressionOperator, nargs=1)
 # Numerical Unary Ops
 _NUop = partial(_UOp, type_matrix=_UnaryNumericalTM)
 
-_BOp = partial(ExpressionOperator, nargs=2, accepts_kwargs=False)
+_BOp = partial(ExpressionOperator, nargs=2)
 
 # Numerical Binary Ops
 _NBop = partial(_BOp, type_matrix=_BinaryNumericalTM)
@@ -248,6 +280,12 @@ _CBop = partial(_BOp, type_matrix=_ComparisionTM)
 
 # Logical Binary Ops
 _LBop = partial(_BOp, type_matrix=_BinaryLogicalTM)
+
+# Logical String Ops
+_LSop = partial(
+    _BOp,
+    type_matrix=frozenset({(_TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["logical"]}.items()),
+)
 
 
 class OperatorEnum(Enum):
@@ -267,6 +305,22 @@ class OperatorEnum(Enum):
 
     # Logical
     INVERT = _UOp(name="invert", symbol="~", type_matrix=_UnaryLogicalTM)
+
+    # String
+    STR_CONTAINS = _LSop(name="str_contains", symbol="contains")
+    STR_ENDSWITH = _LSop(name="str_endswith", symbol="endswith")
+    STR_STARTSWITH = _LSop(name="str_startswith", symbol="startswith")
+    STR_LENGTH = _UOp(name="str_length", symbol="len", type_matrix=_LengthTM)
+
+    # Null
+    IS_NULL = _UOp(name="is_null", symbol="is_null", type_matrix=_AllLogicalTM)
+    IS_NAN = _UOp(name="is_nan", symbol="is_nan", type_matrix=_AllLogicalTM)
+
+    # Date
+    DT_DAY = _UOp(name="day", symbol="day", type_matrix=_DatetimeExtractionTM)
+    DT_MONTH = _UOp(name="month", symbol="month", type_matrix=_DatetimeExtractionTM)
+    DT_YEAR = _UOp(name="year", symbol="year", type_matrix=_DatetimeExtractionTM)
+    DT_DAY_OF_WEEK = _UOp(name="day_of_week", symbol="day_of_week", type_matrix=_DatetimeExtractionTM)
 
     # BinaryOps
 
@@ -289,10 +343,15 @@ class OperatorEnum(Enum):
     GT = _CBop(name="greater_than", symbol=">")
     GE = _CBop(name="greater_than_equal", symbol=">=")
 
+    # TernaryOps
+
+    IF_ELSE = ExpressionOperator(nargs=3, name="if_else", type_matrix=_IfElseTM)
+
 
 ValueType = TypeVar("ValueType", covariant=True)
 UnaryFunction = Callable[[ValueType], ValueType]
 BinaryFunction = Callable[[ValueType, ValueType], ValueType]
+TernaryFunction = Callable[[ValueType, ValueType, ValueType], ValueType]
 
 
 class OperatorEvaluator(Protocol[ValueType]):
@@ -324,3 +383,18 @@ class OperatorEvaluator(Protocol[ValueType]):
     NEQ: BinaryFunction
     GT: BinaryFunction
     GE: BinaryFunction
+
+    STR_CONTAINS: BinaryFunction
+    STR_ENDSWITH: BinaryFunction
+    STR_STARTSWITH: BinaryFunction
+    STR_LENGTH: UnaryFunction
+
+    IS_NULL: UnaryFunction
+    IS_NAN: UnaryFunction
+
+    DT_DAY: UnaryFunction
+    DT_MONTH: UnaryFunction
+    DT_YEAR: UnaryFunction
+    DT_DAY_OF_WEEK: UnaryFunction
+
+    IF_ELSE: TernaryFunction

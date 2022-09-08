@@ -151,8 +151,8 @@ class DataBlock(Generic[ArrType]):
                 return PyListDataBlock(data=data)
             return ArrowDataBlock(data=pa.scalar(data, type=arrow_type))
 
-    def _unary_op(self, fn: Callable[[ArrType], ArrType]) -> DataBlock[ArrType]:
-        return DataBlock.make_block(data=fn(self.data))
+    def _unary_op(self, fn: Callable[[ArrType], ArrType], **kwargs) -> DataBlock[ArrType]:
+        return DataBlock.make_block(data=fn(self.data, **kwargs))
 
     @classmethod
     def _convert_to_block(cls, input: Any) -> DataBlock[ArrType]:
@@ -165,6 +165,14 @@ class DataBlock(Generic[ArrType]):
         self = DataBlock._convert_to_block(self)
         other = DataBlock._convert_to_block(other)
         return DataBlock.make_block(data=fn(self.data, other.data))
+
+    def _ternary_op(
+        self, other1: Any, other2: Any, fn: Callable[[ArrType, ArrType, ArrType], ArrType]
+    ) -> DataBlock[ArrType]:
+        self = DataBlock._convert_to_block(self)
+        other1 = DataBlock._convert_to_block(other1)
+        other2 = DataBlock._convert_to_block(other2)
+        return DataBlock.make_block(data=fn(self.data, other1.data, other2.data))
 
     def _reverse_binary_op(self, other: Any, fn) -> DataBlock[ArrType]:
         other_block: DataBlock[ArrType] = DataBlock._convert_to_block(other)
@@ -563,8 +571,21 @@ def arrow_floordiv(arr, m):
     return pac.floor(pac.divide(arr, m))
 
 
+def arrow_str_contains(arr: pa.ChunkedArray, pattern: pa.StringScalar):
+    substring_counts = pac.count_substring(arr, pattern=pattern.as_py())
+    return pac.not_equal(substring_counts, pa.scalar(0))
+
+
+def arrow_str_endswith(arr: pa.ChunkedArray, pattern: pa.StringScalar):
+    return pac.ends_with(arr, pattern=pattern.as_py())
+
+
+def arrow_str_startswith(arr: pa.ChunkedArray, pattern: pa.StringScalar):
+    return pac.starts_with(arr, pattern=pattern.as_py())
+
+
 def _arr_unary_op(
-    fn: Callable[[pa.ChunkedArray], pa.ChunkedArray]
+    fn: Callable[..., pa.ChunkedArray],
 ) -> Callable[[DataBlock[ArrowArrType]], DataBlock[ArrowArrType]]:
     return partial(ArrowDataBlock._unary_op, fn=fn)  # type: ignore
 
@@ -573,6 +594,12 @@ def _arr_bin_op(
     fn: Callable[[pa.ChunkedArray, pa.ChunkedArray], pa.ChunkedArray]
 ) -> Callable[[DataBlock[ArrowArrType], DataBlock[ArrowArrType]], DataBlock[ArrowArrType]]:
     return partial(ArrowDataBlock._binary_op, fn=fn)  # type: ignore
+
+
+def _arr_ternary_op(
+    fn: Callable[[pa.ChunkedArray, pa.ChunkedArray, pa.ChunkedArray], pa.ChunkedArray]
+) -> Callable[[DataBlock[ArrowArrType], DataBlock[ArrowArrType], DataBlock[ArrowArrType]], DataBlock[ArrowArrType]]:
+    return partial(ArrowDataBlock._ternary_op, fn=fn)  # type: ignore
 
 
 class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
@@ -600,6 +627,17 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     NEQ = _arr_bin_op(pac.not_equal)
     GT = _arr_bin_op(pac.greater)
     GE = _arr_bin_op(pac.greater_equal)
+    STR_CONTAINS = _arr_bin_op(arrow_str_contains)
+    STR_ENDSWITH = _arr_bin_op(arrow_str_endswith)
+    STR_STARTSWITH = _arr_bin_op(arrow_str_startswith)
+    STR_LENGTH = _arr_unary_op(pac.utf8_length)
+    DT_DAY = _arr_unary_op(pac.day)
+    DT_MONTH = _arr_unary_op(pac.month)
+    DT_YEAR = _arr_unary_op(pac.year)
+    DT_DAY_OF_WEEK = _arr_unary_op(pac.day_of_week)
+    IS_NULL = _arr_unary_op(pac.is_null)
+    IS_NAN = _arr_unary_op(pac.is_nan)
+    IF_ELSE = _arr_ternary_op(pac.if_else)
 
 
 ArrowDataBlock.evaluator = ArrowEvaluator
@@ -623,6 +661,20 @@ def make_map_binary(
         return DataBlock.make_block(list(f(v, o) for v, o in zip_blocks_as_py(values, others)))
 
     return map_f
+
+
+def assert_invalid_pylist_operation(*args, **kwargs):
+    raise AssertionError(f"This is an invalid operation on a PyListDataBlock and should never be executing")
+
+
+def pylist_is_none(obj: Any):
+    return obj is None
+
+
+def pylist_if_else(
+    cond: DataBlock[Sequence[IN_1]], x: DataBlock[Sequence[IN_2]], y: DataBlock[Sequence[IN_2]]
+) -> DataBlock[Sequence[IN_2]]:
+    return DataBlock.make_block([xitem if c else yitem for c, xitem, yitem in zip_blocks_as_py(cond, x, y)])
 
 
 class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
@@ -650,6 +702,21 @@ class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
     NEQ = make_map_binary(operator.ne)
     GT = make_map_binary(operator.gt)
     GE = make_map_binary(operator.ge)
+
+    IS_NULL = make_map_unary(pylist_is_none)
+    IF_ELSE = pylist_if_else
+
+    # Unary operations that should never run on a PyListDataBlock because they are represented by
+    # Arrow primitives and should always be housed in an ArrowDataBlock
+    STR_CONTAINS = assert_invalid_pylist_operation
+    STR_ENDSWITH = assert_invalid_pylist_operation
+    STR_STARTSWITH = assert_invalid_pylist_operation
+    STR_LENGTH = assert_invalid_pylist_operation
+    DT_DAY = assert_invalid_pylist_operation
+    DT_MONTH = assert_invalid_pylist_operation
+    DT_YEAR = assert_invalid_pylist_operation
+    DT_DAY_OF_WEEK = assert_invalid_pylist_operation
+    IS_NAN = assert_invalid_pylist_operation
 
 
 PyListDataBlock.evaluator = PyListEvaluator
