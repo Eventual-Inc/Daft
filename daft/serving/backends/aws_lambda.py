@@ -3,8 +3,9 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import tempfile
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import boto3
 import cloudpickle
@@ -16,6 +17,12 @@ from loguru import logger
 from daft.serving.backend import AbstractEndpointBackend
 from daft.serving.definitions import Endpoint
 from daft.serving.env import DaftEnv, get_docker_client
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Literal
+else:
+    from typing import Literal
+
 
 CONFIG_TYPE_ID = Literal["aws_lambda"]
 

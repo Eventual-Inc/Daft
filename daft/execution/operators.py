@@ -1,21 +1,17 @@
 from __future__ import annotations
 
 import datetime
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    FrozenSet,
-    Optional,
-    Protocol,
-    Tuple,
-    Type,
-    TypeVar,
-)
+from typing import Any, Callable, Dict, FrozenSet, Optional, Tuple, Type, TypeVar
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Protocol
+else:
+    from typing import Protocol
 
 import pyarrow as pa
 
@@ -176,7 +172,7 @@ class ExpressionOperator:
                 assert sub_k != _TYPE_REGISTRY["unknown"]
             assert isinstance(v, ExpressionType), f"{v} is not an ExpressionType"
 
-    @lru_cache
+    @lru_cache(maxsize=1)
     def _type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
         return MappingProxyType(dict(self.type_matrix))
 

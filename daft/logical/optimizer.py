@@ -1,4 +1,3 @@
-from functools import cached_property
 from typing import Optional, Set, Type
 
 from loguru import logger
@@ -60,7 +59,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
         logger.debug(f"Pushing Filter {parent} through {child}")
         return child.copy_with_new_input(Filter(grandchild, parent._predicate))
 
-    @cached_property
+    @property
     def _supported_unary_nodes(self) -> Set[Type[UnaryNode]]:
         return {Sort, Repartition, Coalesce}
 
@@ -173,6 +172,6 @@ class PushDownLimit(Rule[LogicalPlan]):
         grandchild = child._children()[0]
         return child.copy_with_new_input(GlobalLimit(grandchild, num=parent._num))
 
-    @cached_property
+    @property
     def _supported_unary_nodes(self) -> Set[Type[UnaryNode]]:
         return {Repartition, Coalesce, Projection}
