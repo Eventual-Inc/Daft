@@ -9,7 +9,7 @@ if sys.version_info < (3, 8):
 else:
     from typing import get_origin
 
-from daft.schema import DaftSchema
+from daft.experimental.schema import DaftSchema
 
 _T = TypeVar("_T")
 

@@ -4,8 +4,8 @@ import abc
 import logging
 from typing import Any, Callable, Dict, List, Optional, Type
 
-from daft.serving.definitions import Endpoint
-from daft.serving.env import DaftEnv
+from daft.experimental.serving.definitions import Endpoint
+from daft.experimental.serving.env import DaftEnv
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ def get_serving_backend(
     name: str = "default", configs: Optional[Dict[str, BackendConfigRaw]] = None
 ) -> AbstractEndpointBackend:
     # TODO(jay): Ensure that all endpoint subclasses have been imported and registered with factory - is there a better way to do this?
-    from daft.serving import backends  # noqa: F401
+    from daft.experimental.serving import backends  # noqa: F401
 
     # TODO(jay): Implement support for detecting configs from a user's environment (e.g. a ~/.daft.yaml file)
     if configs is None:

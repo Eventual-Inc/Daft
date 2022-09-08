@@ -1,7 +1,7 @@
 import dataclasses as pydataclasses
 from typing import TypeVar
 
-from daft.types import DaftImageType, DaftType
+from daft.experimental.types import DaftImageType, DaftType
 
 _T = TypeVar("_T")
 

@@ -22,6 +22,7 @@ from daft.datasources import (
     ParquetSourceInfo,
 )
 from daft.execution.operators import ExpressionType
+from daft.experimental.serving.endpoint import HTTPEndpoint
 from daft.expressions import ColumnExpression, Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
@@ -30,7 +31,6 @@ from daft.runners.partitioning import PartitionSet
 from daft.runners.pyrunner import PyRunner
 from daft.runners.ray_runner import RayRunner
 from daft.runners.runner import Runner
-from daft.serving.endpoint import HTTPEndpoint
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 

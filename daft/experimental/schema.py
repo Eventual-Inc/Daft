@@ -18,9 +18,9 @@ import PIL
 import PIL.Image
 import pyarrow as pa
 
-from daft import types
-from daft.fields import DaftFieldMetadata
-from daft.types import DaftType
+from daft.experimental import types
+from daft.experimental.fields import DaftFieldMetadata
+from daft.experimental.types import DaftType
 
 _DaftTypeLookup = dict(getmembers(types))
 

@@ -7,12 +7,15 @@ import pytest
 import requests
 
 from daft.dataframe import DataFrame
+from daft.experimental.serving import HTTPEndpoint
+from daft.experimental.serving.backend import get_serving_backend
+from daft.experimental.serving.backends import (
+    DockerEndpointBackend,
+    MultiprocessingEndpointBackend,
+)
+from daft.experimental.serving.env import DaftEnv, get_docker_client
 from daft.expressions import ColumnExpression
 from daft.logical.schema import ExpressionList
-from daft.serving import HTTPEndpoint
-from daft.serving.backend import get_serving_backend
-from daft.serving.backends import DockerEndpointBackend, MultiprocessingEndpointBackend
-from daft.serving.env import DaftEnv, get_docker_client
 
 TEST_BACKEND_CONFIG = {
     "mp": {"type": "multiprocessing"},
