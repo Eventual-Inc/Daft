@@ -18,6 +18,7 @@ from typing import (
     cast,
 )
 
+from daft.execution import url_operators
 from daft.execution.operators import (
     CompositeExpressionType,
     ExpressionOperator,
@@ -25,7 +26,6 @@ from daft.execution.operators import (
     OperatorEnum,
     PythonExpressionType,
 )
-from daft.expression_methods import urls as url_funcs
 from daft.internal.treenode import TreeNode
 from daft.runners.blocks import (
     ArrowDataBlock,
@@ -664,7 +664,7 @@ class UrlMethodAccessor(BaseMethodAccessor):
     def download(self) -> UdfExpression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column"""
         return UdfExpression(
-            url_funcs.download,
+            url_operators.download,
             ExpressionType.from_py_type(bytes),
             (self._expr,),
             {},
