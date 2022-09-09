@@ -15,13 +15,13 @@ from ..logical.schema import ExpressionList
 class ShuffleOp:
     def __init__(
         self,
-        map_resource_request: ResourceRequest,
+        expr_eval_resource_request: ResourceRequest,
         map_args: Optional[Dict[str, Any]] = None,
         reduce_args: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._map_args = map_args
         self._reduce_args = reduce_args
-        self._map_resource_request = map_resource_request
+        self._expr_eval_resource_request = expr_eval_resource_request
 
     @staticmethod
     @abstractmethod

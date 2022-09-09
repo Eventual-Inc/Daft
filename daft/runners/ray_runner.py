@@ -80,7 +80,7 @@ class RayRunnerSimpleShuffler(Shuffler):
     def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
         map_args = self._map_args if self._map_args is not None else {}
         reduce_args = self._reduce_args if self._reduce_args is not None else {}
-        ray_map_task_options = _get_ray_task_options(self._map_resource_request)
+        ray_expr_eval_task_options = _get_ray_task_options(self._expr_eval_resource_request)
 
         source_partitions = input.num_partitions()
 
@@ -101,7 +101,7 @@ class RayRunnerSimpleShuffler(Shuffler):
                 return output_list
 
         map_results = [
-            map_wrapper.options(**ray_map_task_options).remote(input=input.get_partition(i))
+            map_wrapper.options(**ray_expr_eval_task_options).remote(input=input.get_partition(i))
             for i in range(source_partitions)
         ]
 
@@ -116,7 +116,9 @@ class RayRunnerSimpleShuffler(Shuffler):
                 map_subset = map_results
             else:
                 map_subset = [map_results[i][t] for i in range(source_partitions)]
-            reduced_part = reduce_wrapper.remote(*map_subset)
+            # NOTE: not all reduce ops actually require ray_expr_eval_task_options. This is an area for
+            # potential improvement for repartitioning operations which only require the task options for mapping
+            reduced_part = reduce_wrapper.options(**ray_expr_eval_task_options).remote(*map_subset)
             reduced_results.append(reduced_part)
 
         return RayPartitionSet({i: part for i, part in enumerate(reduced_results)})
@@ -190,7 +192,7 @@ class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
     def map_partitions(
         self, pset: PartitionSet, func: Callable[[vPartition], vPartition], resource_request: ResourceRequest
     ) -> PartitionSet:
-        remote_func = ray.remote(func).options(*_get_ray_task_options(resource_request))
+        remote_func = ray.remote(func).options(**_get_ray_task_options(resource_request))
         return RayPartitionSet({i: remote_func.remote(pset.get_partition(i)) for i in range(pset.num_partitions())})
 
     def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], ReduceType]) -> ReduceType:

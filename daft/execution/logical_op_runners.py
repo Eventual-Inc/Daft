@@ -231,11 +231,11 @@ class LogicalGlobalOpRunner:
         repartitioner: ShuffleOp
         if repartition._scheme == PartitionScheme.RANDOM:
             repartitioner = self._get_shuffle_op_klass(RepartitionRandomOp)(
-                map_resource_request=ResourceRequest.default()
+                expr_eval_resource_request=ResourceRequest.default()
             )
         elif repartition._scheme == PartitionScheme.HASH:
             repartitioner = self._get_shuffle_op_klass(RepartitionHashOp)(
-                map_resource_request=repartition.resource_request(),
+                expr_eval_resource_request=repartition.resource_request(),
                 map_args={"exprs": repartition._partition_by.exprs},
             )
         else:
@@ -265,7 +265,7 @@ class LogicalGlobalOpRunner:
         expr = exprs.exprs[0]
         sort_shuffle_op_klass = self._get_shuffle_op_klass(SortOp)
         sort_op = sort_shuffle_op_klass(
-            map_resource_request=sort.resource_request(),
+            expr_eval_resource_request=sort.resource_request(),
             map_args={"expr": expr, "boundaries": boundaries, "desc": sort._desc},
             reduce_args={"expr": expr, "desc": sort._desc},
         )
@@ -280,7 +280,7 @@ class LogicalGlobalOpRunner:
         coalesce_op_klass = self._get_shuffle_op_klass(CoalesceOp)
 
         coalesce_op = coalesce_op_klass(
-            map_resource_request=ResourceRequest.default(),
+            expr_eval_resource_request=ResourceRequest.default(),
             map_args={"num_input_partitions": prev_part.num_partitions()},
         )
         return coalesce_op.run(input=prev_part, num_target_partitions=num_partitions)
