@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from bisect import bisect_right
 from itertools import accumulate
-from typing import Callable, ClassVar, Dict, List, Type, TypeVar
+from typing import Callable, Dict, List, TypeVar
 
 from pyarrow import csv, json, parquet
 
@@ -163,7 +163,8 @@ ReduceType = TypeVar("ReduceType")
 
 
 class LogicalGlobalOpRunner:
-    shuffle_ops: ClassVar[Dict[Type[ShuffleOp], Type[Shuffler]]]
+    def __init__(self, shuffler: Shuffler):
+        self._shuffler = shuffler
 
     def run_node_list(self, inputs: Dict[int, PartitionSet], nodes: List[LogicalPlan]) -> PartitionSet:
         part_set = inputs.copy()
@@ -196,9 +197,6 @@ class LogicalGlobalOpRunner:
     def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], ReduceType]) -> ReduceType:
         raise NotImplementedError()
 
-    def _get_shuffle_op_klass(self, t: Type[ShuffleOp]) -> Type[Shuffler]:
-        return self.__class__.shuffle_ops[t]
-
     def _handle_global_limit(self, inputs: Dict[int, PartitionSet], limit: GlobalLimit) -> PartitionSet:
         child_id = limit._children()[0].id()
         prev_part = inputs[child_id]
@@ -228,20 +226,15 @@ class LogicalGlobalOpRunner:
     def _handle_repartition(self, inputs: Dict[int, PartitionSet], repartition: Repartition) -> PartitionSet:
 
         child_id = repartition._children()[0].id()
-        repartitioner: ShuffleOp
+        repartition_op: ShuffleOp
         if repartition._scheme == PartitionScheme.RANDOM:
-            repartitioner = self._get_shuffle_op_klass(RepartitionRandomOp)(
-                expr_eval_resource_request=ResourceRequest.default()
-            )
+            repartition_op = RepartitionRandomOp()
         elif repartition._scheme == PartitionScheme.HASH:
-            repartitioner = self._get_shuffle_op_klass(RepartitionHashOp)(
-                expr_eval_resource_request=repartition.resource_request(),
-                map_args={"exprs": repartition._partition_by.exprs},
-            )
+            repartition_op = RepartitionHashOp(exprs=repartition._partition_by)
         else:
             raise NotImplementedError()
         prev_part = inputs[child_id]
-        return repartitioner.run(input=prev_part, num_target_partitions=repartition.num_partitions())
+        return self._shuffler.run(repartition_op, input=prev_part, num_target_partitions=repartition.num_partitions())
 
     def _handle_sort(self, inputs: Dict[int, PartitionSet], sort: Sort) -> PartitionSet:
 
@@ -263,24 +256,18 @@ class LogicalGlobalOpRunner:
         sampled_partitions = self.map_partitions(prev_part, sample_map_func, sort.resource_request())
         boundaries = self.reduce_partitions(sampled_partitions, quantile_reduce_func)
         expr = exprs.exprs[0]
-        sort_shuffle_op_klass = self._get_shuffle_op_klass(SortOp)
-        sort_op = sort_shuffle_op_klass(
-            expr_eval_resource_request=sort.resource_request(),
-            map_args={"expr": expr, "boundaries": boundaries, "desc": sort._desc},
-            reduce_args={"expr": expr, "desc": sort._desc},
+        sort_op = SortOp(
+            expr=expr,
+            boundaries=boundaries,
+            desc=sort._desc,
         )
 
-        return sort_op.run(input=prev_part, num_target_partitions=num_partitions)
+        return self._shuffler.run(sort_op, input=prev_part, num_target_partitions=num_partitions)
 
     def _handle_coalesce(self, inputs: Dict[int, PartitionSet], coal: Coalesce) -> PartitionSet:
         child_id = coal._children()[0].id()
         num_partitions = coal.num_partitions()
         prev_part = inputs[child_id]
 
-        coalesce_op_klass = self._get_shuffle_op_klass(CoalesceOp)
-
-        coalesce_op = coalesce_op_klass(
-            expr_eval_resource_request=ResourceRequest.default(),
-            map_args={"num_input_partitions": prev_part.num_partitions()},
-        )
-        return coalesce_op.run(input=prev_part, num_target_partitions=num_partitions)
+        coalesce_op = CoalesceOp(num_input_partitions=prev_part.num_partitions())
+        return self._shuffler.run(coalesce_op, input=prev_part, num_target_partitions=num_partitions)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 import ray
@@ -25,14 +25,7 @@ from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartID, PartitionManager, PartitionSet, vPartition
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
-from daft.runners.shuffle_ops import (
-    CoalesceOp,
-    RepartitionHashOp,
-    RepartitionRandomOp,
-    ShuffleOp,
-    Shuffler,
-    SortOp,
-)
+from daft.runners.shuffle_ops import ShuffleOp, Shuffler
 
 
 @dataclass
@@ -77,20 +70,21 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 
 
 class RayRunnerSimpleShuffler(Shuffler):
-    def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
-        map_args = self._map_args if self._map_args is not None else {}
-        reduce_args = self._reduce_args if self._reduce_args is not None else {}
-        ray_expr_eval_task_options = _get_ray_task_options(self._expr_eval_resource_request)
+    """Shuffler that runs ShuffleOps on the Ray backend"""
+
+    def run(self, shuffle_op: ShuffleOp, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
+        map_task_options = _get_ray_task_options(shuffle_op.map_resource_request())
+        reduce_task_options = _get_ray_task_options(shuffle_op.reduce_resource_request())
 
         source_partitions = input.num_partitions()
 
         @ray.remote(scheduling_strategy="SPREAD")
         def reduce_wrapper(*to_reduce: vPartition):
-            return self.reduce_fn(list(to_reduce), **reduce_args)
+            return shuffle_op.reduce_fn(list(to_reduce))
 
         @ray.remote(num_returns=num_target_partitions)
         def map_wrapper(input: vPartition):
-            output_dict = self.map_fn(input=input, output_partitions=num_target_partitions, **map_args)
+            output_dict = shuffle_op.map_fn(input=input, output_partitions=num_target_partitions)
             output_list: List[Optional[vPartition]] = [None for _ in range(num_target_partitions)]
             for part_id, part in output_dict.items():
                 output_list[part_id] = part
@@ -101,7 +95,7 @@ class RayRunnerSimpleShuffler(Shuffler):
                 return output_list
 
         map_results = [
-            map_wrapper.options(**ray_expr_eval_task_options).remote(input=input.get_partition(i))
+            map_wrapper.options(**map_task_options).remote(input=input.get_partition(i))
             for i in range(source_partitions)
         ]
 
@@ -116,28 +110,10 @@ class RayRunnerSimpleShuffler(Shuffler):
                 map_subset = map_results
             else:
                 map_subset = [map_results[i][t] for i in range(source_partitions)]
-            # NOTE: not all reduce ops actually require ray_expr_eval_task_options. This is an area for
-            # potential improvement for repartitioning operations which only require the task options for mapping
-            reduced_part = reduce_wrapper.options(**ray_expr_eval_task_options).remote(*map_subset)
+            reduced_part = reduce_wrapper.options(**reduce_task_options).remote(*map_subset)
             reduced_results.append(reduced_part)
 
         return RayPartitionSet({i: part for i, part in enumerate(reduced_results)})
-
-
-class RayRunnerRepartitionRandom(RayRunnerSimpleShuffler, RepartitionRandomOp):
-    ...
-
-
-class RayRunnerRepartitionHash(RayRunnerSimpleShuffler, RepartitionHashOp):
-    ...
-
-
-class RayRunnerCoalesceOp(RayRunnerSimpleShuffler, CoalesceOp):
-    ...
-
-
-class RayRunnerSortOp(RayRunnerSimpleShuffler, SortOp):
-    ...
 
 
 @ray.remote
@@ -182,13 +158,6 @@ class RayLogicalPartitionOpRunner(LogicalPartitionOpRunner):
 
 
 class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
-    shuffle_ops: ClassVar[Dict[Type[ShuffleOp], Type[Shuffler]]] = {
-        RepartitionRandomOp: RayRunnerRepartitionRandom,
-        RepartitionHashOp: RayRunnerRepartitionHash,
-        CoalesceOp: RayRunnerCoalesceOp,
-        SortOp: RayRunnerSortOp,
-    }
-
     def map_partitions(
         self, pset: PartitionSet, func: Callable[[vPartition], vPartition], resource_request: ResourceRequest
     ) -> PartitionSet:
@@ -208,8 +177,9 @@ class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
 class RayRunner(Runner):
     def __init__(self) -> None:
         self._part_manager = PartitionManager(lambda: RayPartitionSet({}))
+        self._shuffler = RayRunnerSimpleShuffler()
         self._part_op_runner = RayLogicalPartitionOpRunner()
-        self._global_op_runner = RayLogicalGlobalOpRunner()
+        self._global_op_runner = RayLogicalGlobalOpRunner(self._shuffler)
         self._optimizer = RuleRunner(
             [
                 RuleBatch(

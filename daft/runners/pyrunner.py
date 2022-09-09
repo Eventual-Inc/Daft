@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import multiprocessing
 from dataclasses import dataclass
-from typing import Callable, ClassVar, Dict, List, Optional, Type
+from typing import Callable, Dict, List, Optional
 
 import pandas as pd
 
@@ -26,14 +26,7 @@ from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartID, PartitionManager, PartitionSet, vPartition
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
-from daft.runners.shuffle_ops import (
-    CoalesceOp,
-    RepartitionHashOp,
-    RepartitionRandomOp,
-    ShuffleOp,
-    Shuffler,
-    SortOp,
-)
+from daft.runners.shuffle_ops import ShuffleOp, Shuffler
 
 
 @dataclass
@@ -71,39 +64,22 @@ class LocalPartitionSet(PartitionSet[vPartition]):
 
 
 class PyRunnerSimpleShuffler(Shuffler):
-    def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
-        map_args = self._map_args if self._map_args is not None else {}
-        reduce_args = self._reduce_args if self._reduce_args is not None else {}
+    """Shuffler that runs ShuffleOps on the PyRunner backend"""
 
+    def run(self, shuffle_op: ShuffleOp, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
         source_partitions = input.num_partitions()
         map_results = [
-            self.map_fn(input=input.get_partition(i), output_partitions=num_target_partitions, **map_args)
+            shuffle_op.map_fn(input=input.get_partition(i), output_partitions=num_target_partitions)
             for i in range(source_partitions)
         ]
         reduced_results = []
         for t in range(num_target_partitions):
-            reduced_part = self.reduce_fn(
-                [map_results[i][t] for i in range(source_partitions) if t in map_results[i]], **reduce_args
+            reduced_part = shuffle_op.reduce_fn(
+                [map_results[i][t] for i in range(source_partitions) if t in map_results[i]]
             )
             reduced_results.append(reduced_part)
 
         return LocalPartitionSet({i: part for i, part in enumerate(reduced_results)})
-
-
-class PyRunnerRepartitionRandom(PyRunnerSimpleShuffler, RepartitionRandomOp):
-    ...
-
-
-class PyRunnerRepartitionHash(PyRunnerSimpleShuffler, RepartitionHashOp):
-    ...
-
-
-class PyRunnerCoalesceOp(PyRunnerSimpleShuffler, CoalesceOp):
-    ...
-
-
-class PyRunnerSortOp(PyRunnerSimpleShuffler, SortOp):
-    ...
 
 
 class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
@@ -124,13 +100,6 @@ class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
 
 
 class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
-    shuffle_ops: ClassVar[Dict[Type[ShuffleOp], Type[Shuffler]]] = {
-        RepartitionRandomOp: PyRunnerRepartitionRandom,
-        RepartitionHashOp: PyRunnerRepartitionHash,
-        CoalesceOp: PyRunnerCoalesceOp,
-        SortOp: PyRunnerSortOp,
-    }
-
     def map_partitions(
         self, pset: PartitionSet, func: Callable[[vPartition], vPartition], resource_request: ResourceRequest
     ) -> PartitionSet:
@@ -145,8 +114,9 @@ class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
 class PyRunner(Runner):
     def __init__(self) -> None:
         self._part_manager = PartitionManager(lambda: LocalPartitionSet({}))
+        self._shuffler = PyRunnerSimpleShuffler()
         self._part_op_runner = LocalLogicalPartitionOpRunner()
-        self._global_op_runner = LocalLogicalGlobalOpRunner()
+        self._global_op_runner = LocalLogicalGlobalOpRunner(self._shuffler)
         self._optimizer = RuleRunner(
             [
                 RuleBatch(

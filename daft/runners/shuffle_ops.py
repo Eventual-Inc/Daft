@@ -1,6 +1,7 @@
+import dataclasses
 import math
 from abc import abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional, Protocol
 
 import numpy as np
 
@@ -12,31 +13,37 @@ from daft.runners.partitioning import PartID, PartitionSet, vPartition
 from ..logical.schema import ExpressionList
 
 
-class ShuffleOp:
-    def __init__(
-        self,
-        expr_eval_resource_request: ResourceRequest,
-        map_args: Optional[Dict[str, Any]] = None,
-        reduce_args: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        self._map_args = map_args
-        self._reduce_args = reduce_args
-        self._expr_eval_resource_request = expr_eval_resource_request
-
-    @staticmethod
-    @abstractmethod
-    def map_fn(input: vPartition, output_partitions: int) -> Dict[PartID, vPartition]:
+class ShuffleOp(Protocol):
+    def map_resource_request(self) -> ResourceRequest:
+        """How much resources this ShuffleOp requires during the map stage"""
         ...
 
-    @staticmethod
-    @abstractmethod
-    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+    def reduce_resource_request(self) -> ResourceRequest:
+        """How much resources this ShuffleOp requires during the reduce stage"""
+        ...
+
+    def map_fn(self, input: vPartition, output_partitions: int) -> Dict[PartID, vPartition]:
+        """Execution of the map function on a single vPartition"""
+        ...
+
+    def reduce_fn(self, mapped_outputs: List[vPartition]) -> vPartition:
+        """Execution of the reduce function on a list of incoming vPartitions that were mapped to the same PartID"""
         ...
 
 
+@dataclasses.dataclass(frozen=True)
 class RepartitionRandomOp(ShuffleOp):
-    @staticmethod
-    def map_fn(input: vPartition, output_partitions: int, seed: Optional[int] = None) -> Dict[PartID, vPartition]:
+
+    seed: Optional[int] = None
+
+    def map_resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
+
+    def reduce_resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
+
+    def map_fn(self, input: vPartition, output_partitions: int) -> Dict[PartID, vPartition]:
+        seed = self.seed
         if seed is None:
             seed = input.partition_id
         else:
@@ -49,71 +56,91 @@ class RepartitionRandomOp(ShuffleOp):
         new_parts = input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
         return {PartID(i): part for i, part in enumerate(new_parts)}
 
-    @staticmethod
-    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+    def reduce_fn(self, mapped_outputs: List[vPartition]) -> vPartition:
         return vPartition.merge_partitions(mapped_outputs)
 
 
+@dataclasses.dataclass(frozen=True)
 class RepartitionHashOp(ShuffleOp):
-    @staticmethod
-    def map_fn(
-        input: vPartition, output_partitions: int, exprs: Optional[ExpressionList] = None
-    ) -> Dict[PartID, vPartition]:
-        assert exprs is not None
-        new_parts = input.split_by_hash(exprs, num_partitions=output_partitions)
+
+    exprs: ExpressionList
+
+    def map_resource_request(self) -> ResourceRequest:
+        return self.exprs.resource_request()
+
+    def reduce_resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
+
+    def map_fn(self, input: vPartition, output_partitions: int) -> Dict[PartID, vPartition]:
+        new_parts = input.split_by_hash(self.exprs, num_partitions=output_partitions)
         return {PartID(i): part for i, part in enumerate(new_parts)}
 
-    @staticmethod
-    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+    def reduce_fn(self, mapped_outputs: List[vPartition]) -> vPartition:
         return vPartition.merge_partitions(mapped_outputs)
 
 
+@dataclasses.dataclass(frozen=True)
 class CoalesceOp(ShuffleOp):
-    @staticmethod
-    def map_fn(
-        input: vPartition, output_partitions: int, num_input_partitions: Optional[int] = None
-    ) -> Dict[PartID, vPartition]:
-        assert num_input_partitions is not None
-        assert output_partitions <= num_input_partitions
 
-        tgt_idx = math.floor((output_partitions / num_input_partitions) * input.partition_id)
+    num_input_partitions: int
+
+    def map_resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
+
+    def reduce_resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
+
+    def map_fn(self, input: vPartition, output_partitions: int) -> Dict[PartID, vPartition]:
+        assert output_partitions <= self.num_input_partitions
+
+        tgt_idx = math.floor((output_partitions / self.num_input_partitions) * input.partition_id)
         return {PartID(tgt_idx): input}
 
-    @staticmethod
-    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+    def reduce_fn(self, mapped_outputs: List[vPartition]) -> vPartition:
         return vPartition.merge_partitions(mapped_outputs, verify_partition_id=False)
 
 
+@dataclasses.dataclass(frozen=True)
 class SortOp(ShuffleOp):
-    @staticmethod
+
+    expr: Expression
+    boundaries: DataBlock
+    desc: bool
+
+    def map_resource_request(self) -> ResourceRequest:
+        return self.expr.resource_request()
+
+    def reduce_resource_request(self) -> ResourceRequest:
+        return self.expr.resource_request()
+
     def map_fn(
+        self,
         input: vPartition,
         output_partitions: int,
-        expr: Optional[Expression] = None,
-        boundaries: Optional[DataBlock] = None,
-        desc: Optional[bool] = None,
     ) -> Dict[PartID, vPartition]:
-        assert expr is not None and boundaries is not None and desc is not None
-        assert len(boundaries) == (output_partitions - 1)
+        assert len(self.boundaries) == (output_partitions - 1)
         if output_partitions == 1:
             return {PartID(0): input}
-        sort_key = input.eval_expression(expr).block
+        sort_key = input.eval_expression(self.expr).block
         argsort_idx = sort_key.argsort()
         sorted_input = input.take(argsort_idx)
         sorted_keys = sort_key.take(argsort_idx)
-        target_idx = sorted_keys.search_sorted(boundaries, reverse=desc)
+        target_idx = sorted_keys.search_sorted(self.boundaries, reverse=self.desc)
         new_parts = sorted_input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
         return {PartID(i): part for i, part in enumerate(new_parts)}
 
-    @staticmethod
     def reduce_fn(
-        mapped_outputs: List[vPartition], expr: Optional[Expression] = None, desc: Optional[bool] = None
+        self,
+        mapped_outputs: List[vPartition],
     ) -> vPartition:
-        assert expr is not None and desc is not None
-        return vPartition.merge_partitions(mapped_outputs).sort(expr, desc=desc)
+        return vPartition.merge_partitions(mapped_outputs).sort(self.expr, desc=self.desc)
 
 
-class Shuffler(ShuffleOp):
+class Shuffler:
+    """A Shuffler is a class that takes as input a ShuffleOp and runs it. Subclasses of Shufflers
+    implement shuffling ShuffleOps on different backends.
+    """
+
     @abstractmethod
-    def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
+    def run(self, shuffle_op: ShuffleOp, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
         raise NotImplementedError()
