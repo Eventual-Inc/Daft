@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import multiprocessing
 from dataclasses import dataclass
 from typing import Callable, ClassVar, Dict, List, Optional, Type
 
 import pandas as pd
+import torch
 
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
@@ -20,6 +22,7 @@ from daft.logical.optimizer import (
     PushDownPredicates,
 )
 from daft.logical.schema import ExpressionList
+from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartID, PartitionManager, PartitionSet, vPartition
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
@@ -105,8 +108,13 @@ class PyRunnerSortOp(PyRunnerSimpleShuffler, SortOp):
 
 class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
     def run_node_list(
-        self, inputs: Dict[int, PartitionSet], nodes: List[LogicalPlan], num_partitions: int
+        self,
+        inputs: Dict[int, PartitionSet],
+        nodes: List[LogicalPlan],
+        num_partitions: int,
+        resource_request: ResourceRequest,
     ) -> PartitionSet:
+        # NOTE: resource_request is ignored since there isn't any actual distribution of workloads in PyRunner
         result = LocalPartitionSet({})
         for i in range(num_partitions):
             input_partitions = {nid: inputs[nid].get_partition(i) for nid in inputs}
@@ -123,7 +131,10 @@ class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
         SortOp: PyRunnerSortOp,
     }
 
-    def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition]) -> PartitionSet:
+    def map_partitions(
+        self, pset: PartitionSet, func: Callable[[vPartition], vPartition], resource_request: ResourceRequest
+    ) -> PartitionSet:
+        # NOTE: resource_request is ignored since there isn't any actual distribution of workloads in PyRunner
         return LocalPartitionSet({i: func(pset.get_partition(i)) for i in range(pset.num_partitions())})
 
     def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], ReduceType]) -> ReduceType:
@@ -156,11 +167,21 @@ class PyRunner(Runner):
         # plan.to_dot_file()
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         result_partition_set: PartitionSet
+
+        # Check that the local machine has sufficient resources available for execution
+        for exec_op in exec_plan.execution_ops:
+            resource_request = exec_op.resource_request()
+            if resource_request.num_cpus is not None and resource_request.num_cpus > multiprocessing.cpu_count():
+                raise RuntimeError(
+                    f"Requested {resource_request.num_cpus} CPUs but found only {multiprocessing.cpu_count()} available"
+                )
+            if resource_request.num_gpus is not None and resource_request.num_gpus > torch.cuda.device_count():
+                raise RuntimeError(
+                    f"Requested {resource_request.num_gpus} GPUs but found only {torch.cuda.device_count()} available"
+                )
+
         with profiler("profile.json"):
             for exec_op in exec_plan.execution_ops:
-
-                # TODO(sammy): We can do something with the execution op's ResourceRequest here, perhaps throw an error
-                # if num_cpus requested is > CPU count, and if num_gpus requested is > GPU count?
 
                 data_deps = exec_op.data_deps
                 input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
@@ -172,7 +193,7 @@ class PyRunner(Runner):
                     )
                 else:
                     result_partition_set = self._part_op_runner.run_node_list(
-                        input_partition_set, exec_op.logical_ops, exec_op.num_partitions
+                        input_partition_set, exec_op.logical_ops, exec_op.num_partitions, exec_op.resource_request()
                     )
 
                 for child_id in data_deps:
