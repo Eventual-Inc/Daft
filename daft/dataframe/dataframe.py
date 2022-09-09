@@ -93,6 +93,9 @@ class DataFrame:
         """
         return self._plan
 
+    def num_partitions(self) -> int:
+        return self._plan.num_partitions()
+
     def schema(self) -> DataFrameSchema:
         """Returns the DataFrameSchema of the DataFrame, which provides information about each column
 
@@ -320,6 +323,16 @@ class DataFrame:
             ),
         )
         return cls(plan)
+
+    def write_parquet(
+        self, path: str, compression: str = "snappy", partition_cols: Optional[List[ColumnInputType]] = None
+    ) -> DataFrame:
+        if partition_cols is not None:
+            df = self.repartition(self.num_partitions(), *partition_cols)
+        else:
+            df = self
+        plan = logical_plan.FileWrite(df._plan)
+        return DataFrame(plan)
 
     ###
     # DataFrame operations

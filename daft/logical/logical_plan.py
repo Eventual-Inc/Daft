@@ -152,6 +152,34 @@ class Scan(LogicalPlan):
         )
 
 
+class FileWrite(UnaryNode):
+    def __init__(self, input: LogicalPlan) -> None:
+        schema = ExpressionList([ColumnExpression("file_path", ExpressionType.from_py_type(str))])
+        pspec = input.partition_spec()
+        if pspec.by is not None:
+            schema = pspec.by.union(schema)
+        schema = schema.resolve()
+        super().__init__(schema, input.partition_spec(), op_level=OpLevel.PARTITION)
+
+    def __repr__(self) -> str:
+        return f"FileWrite\n\toutput={self.schema()}"
+
+    def required_columns(self) -> ExpressionList:
+        raise NotImplementedError()
+
+    def resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
+
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, FileWrite) and self.schema() == other.schema()
+
+    def rebuild(self) -> LogicalPlan:
+        return FileWrite(input=self._children()[0].rebuild())
+
+    def copy_with_new_input(self, new_input: UnaryNode) -> UnaryNode:
+        return FileWrite(new_input)
+
+
 class Filter(UnaryNode):
     """Which rows to keep"""
 
