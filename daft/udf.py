@@ -4,6 +4,7 @@ from typing import Callable, Optional, Sequence, Type, Union
 
 from daft.execution.operators import ExpressionType
 from daft.expressions import UdfExpression
+from daft.resource_request import ResourceRequest
 from daft.runners.blocks import DataBlock
 
 StatefulUDF = type  # stateful UDFs are provided as Python Classes
@@ -14,7 +15,13 @@ UDF = Union[StatefulUDF, StatelessUDF]
 logger = logging.getLogger(__name__)
 
 
-def udf(f: Optional[Callable] = None, *, return_type: Type) -> Callable:
+def udf(
+    f: Optional[Callable] = None,
+    *,
+    return_type: Type,
+    num_gpus: Optional[int] = None,
+    num_cpus: Optional[int] = None,
+) -> Callable:
     """Decorator for creating a UDF
 
     This decorator wraps a function into a DaFt UDF that can then be used on Dataframes.
@@ -79,6 +86,7 @@ def udf(f: Optional[Callable] = None, *, return_type: Type) -> Callable:
                 func_ret_type=func_ret_type,
                 func_args=args,
                 func_kwargs=kwargs,
+                resource_request=ResourceRequest(num_cpus=num_cpus, num_gpus=num_gpus),
             )
             return out_expr
 

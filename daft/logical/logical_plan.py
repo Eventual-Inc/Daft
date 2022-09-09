@@ -11,6 +11,7 @@ from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression, Expression
 from daft.internal.treenode import TreeNode
 from daft.logical.schema import ExpressionList
+from daft.resource_request import ResourceRequest
 
 
 class OpLevel(IntEnum):
@@ -31,6 +32,11 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
 
     def schema(self) -> ExpressionList:
         return self._schema
+
+    @abstractmethod
+    def resource_request(self) -> ResourceRequest:
+        """Resources required to execute this LogicalPlan"""
+        raise NotImplementedError()
 
     @abstractmethod
     def required_columns(self) -> ExpressionList:
@@ -122,6 +128,9 @@ class Scan(LogicalPlan):
     def __repr__(self) -> str:
         return f"Scan\n\toutput={self.schema()}\n\tpredicate={self._predicate}\n\tcolumns={self._columns}\n\t{self._source_info}"
 
+    def resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
+
     def required_columns(self) -> ExpressionList:
         return self._predicate.required_columns()
 
@@ -162,6 +171,9 @@ class Filter(UnaryNode):
     def __repr__(self) -> str:
         return f"Filter\n\toutput={self.schema()}\n\tpredicate={self._predicate}"
 
+    def resource_request(self) -> ResourceRequest:
+        return self._predicate.resource_request()
+
     def required_columns(self) -> ExpressionList:
         return self._predicate.required_columns()
 
@@ -186,6 +198,9 @@ class Projection(UnaryNode):
 
     def __repr__(self) -> str:
         return f"Projection\n\toutput={self.schema()}"
+
+    def resource_request(self) -> ResourceRequest:
+        return self._projection.resource_request()
 
     def required_columns(self) -> ExpressionList:
         return self._projection.required_columns()
@@ -214,6 +229,9 @@ class Sort(UnaryNode):
     def __repr__(self) -> str:
         return f"Sort\n\toutput={self.schema()}\n\tsort_by={self._sort_by}\n\tdesc={self._desc}"
 
+    def resource_request(self) -> ResourceRequest:
+        return self._sort_by.resource_request()
+
     def copy_with_new_input(self, new_input: LogicalPlan) -> Sort:
         return Sort(new_input, sort_by=self._sort_by, desc=self._desc)
 
@@ -241,6 +259,9 @@ class LocalLimit(UnaryNode):
     def __repr__(self) -> str:
         return f"LocalLimit\n\toutput={self.schema()}\n\tN={self._num}"
 
+    def resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
+
     def copy_with_new_input(self, new_input: LogicalPlan) -> LocalLimit:
         raise NotImplementedError()
 
@@ -262,6 +283,9 @@ class GlobalLimit(UnaryNode):
 
     def __repr__(self) -> str:
         return f"GlobalLimit\n\toutput={self.schema()}\n\tN={self._num}"
+
+    def resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> GlobalLimit:
         raise NotImplementedError()
@@ -310,6 +334,9 @@ class Repartition(UnaryNode):
             f"\n\tnum_partitions={self.num_partitions()}\n\tscheme={self._scheme}"
         )
 
+    def resource_request(self) -> ResourceRequest:
+        return self._partition_by.resource_request()
+
     def copy_with_new_input(self, new_input: LogicalPlan) -> Repartition:
         return Repartition(
             input=new_input,
@@ -353,6 +380,9 @@ class Coalesce(UnaryNode):
 
     def __repr__(self) -> str:
         return f"Coalesce\n\toutput={self.schema()}" f"\n\tnum_partitions={self.num_partitions()}"
+
+    def resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> Coalesce:
         return Coalesce(
@@ -400,6 +430,13 @@ class LocalAggregate(UnaryNode):
     def __repr__(self) -> str:
         return f"LocalAggregate\n\toutput={self.schema()}\n\tgroup_by={self._group_by}"
 
+    def resource_request(self) -> ResourceRequest:
+        req = ResourceRequest.default()
+        if self._group_by is not None:
+            req = self._group_by.resource_request()
+        req = ResourceRequest.max_resources([expr.resource_request() for expr, _ in self._agg] + [req])
+        return req
+
     def copy_with_new_input(self, new_input: LogicalPlan) -> LocalAggregate:
         raise NotImplementedError()
 
@@ -437,6 +474,9 @@ class HTTPRequest(LogicalPlan):
     def __repr__(self) -> str:
         return f"HTTPRequest\n\toutput={self.schema()}"
 
+    def resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
+
     def required_columns(self) -> ExpressionList:
         raise NotImplementedError()
 
@@ -460,6 +500,9 @@ class HTTPResponse(UnaryNode):
 
     def __repr__(self) -> str:
         return f"HTTPResponse\n\toutput={self.schema()}"
+
+    def resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
 
     def required_columns(self) -> ExpressionList:
         raise NotImplementedError()
@@ -531,6 +574,12 @@ class Join(BinaryNode):
             f"\n\tleft_on={self._left_on}"
             f"\n\tright_on={self._right_on}"
         )
+
+    def resource_request(self) -> ResourceRequest:
+        # Note that this join creates two Repartition LogicalPlans using the left_on and right_on ExpressionLists
+        # The Repartition LogicalPlans will have the (potentially) expensive ResourceRequests, but the Join itself
+        # after repartitioning is done should be relatively cheap.
+        return ResourceRequest.default()
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> Coalesce:
         raise NotImplementedError()
