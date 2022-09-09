@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Callable, ClassVar, Dict, List, Optional, Type
 
 import pandas as pd
-import torch
 
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
@@ -13,6 +12,7 @@ from daft.execution.logical_op_runners import (
     LogicalPartitionOpRunner,
     ReduceType,
 )
+from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import (
@@ -175,9 +175,9 @@ class PyRunner(Runner):
                 raise RuntimeError(
                     f"Requested {resource_request.num_cpus} CPUs but found only {multiprocessing.cpu_count()} available"
                 )
-            if resource_request.num_gpus is not None and resource_request.num_gpus > torch.cuda.device_count():
+            if resource_request.num_gpus is not None and resource_request.num_gpus > cuda_device_count():
                 raise RuntimeError(
-                    f"Requested {resource_request.num_gpus} GPUs but found only {torch.cuda.device_count()} available"
+                    f"Requested {resource_request.num_gpus} GPUs but found only {cuda_device_count()} available"
                 )
 
         with profiler("profile.json"):
