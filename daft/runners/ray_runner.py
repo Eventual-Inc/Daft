@@ -80,6 +80,7 @@ class RayRunnerSimpleShuffler(Shuffler):
     def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
         map_args = self._map_args if self._map_args is not None else {}
         reduce_args = self._reduce_args if self._reduce_args is not None else {}
+        ray_map_task_options = _get_ray_task_options(self._map_resource_request)
 
         source_partitions = input.num_partitions()
 
@@ -99,7 +100,10 @@ class RayRunnerSimpleShuffler(Shuffler):
             else:
                 return output_list
 
-        map_results = [map_wrapper.remote(input=input.get_partition(i)) for i in range(source_partitions)]
+        map_results = [
+            map_wrapper.options(**ray_map_task_options).remote(input=input.get_partition(i))
+            for i in range(source_partitions)
+        ]
 
         if num_target_partitions == 1:
             ray.wait(map_results)
