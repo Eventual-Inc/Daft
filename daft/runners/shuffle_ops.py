@@ -15,9 +15,9 @@ from ..logical.schema import ExpressionList
 class ShuffleOp:
     def __init__(
         self,
+        map_resource_request: ResourceRequest,
         map_args: Optional[Dict[str, Any]] = None,
         reduce_args: Optional[Dict[str, Any]] = None,
-        map_resource_request: ResourceRequest = ResourceRequest.default(),
     ) -> None:
         self._map_args = map_args
         self._reduce_args = reduce_args
