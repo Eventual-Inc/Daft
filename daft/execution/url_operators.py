@@ -1,6 +1,8 @@
+import pathlib
 from typing import Dict, List
 
 import pyarrow as pa
+from loguru import logger
 
 from daft import filesystem
 from daft.runners.blocks import ArrowDataBlock, DataBlock
@@ -22,6 +24,11 @@ def download(url_block: ArrowDataBlock) -> DataBlock:
         if path is None:
             continue
         protocol = filesystem.get_protocol_from_path(path)
+
+        # fsspec returns data keyed by absolute paths, so we do a conversion here to match up later
+        if protocol == "file":
+            path = str(pathlib.Path(path).resolve())
+
         if protocol not in to_download:
             to_download[protocol] = []
         to_download[protocol].append(path)
@@ -29,8 +36,12 @@ def download(url_block: ArrowDataBlock) -> DataBlock:
 
     for protocol in to_download:
         fs = filesystem.get_filesystem(protocol)
-        data = fs.cat(to_download[protocol])
+        data = fs.cat(to_download[protocol], on_error="return")
         for path in data:
-            results[path_to_result_idx[path]] = data[path]
+            if isinstance(data[path], bytes):
+                results[path_to_result_idx[path]] = data[path]
+            else:
+                logger.error(f"Encountered error during download from URL {path}: {str(data[path])}")
+                results[path_to_result_idx[path]] = None
 
     return DataBlock.make_block(results)

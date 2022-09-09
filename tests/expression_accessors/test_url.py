@@ -33,3 +33,15 @@ def test_download_with_none(files):
     pd_df = pd.DataFrame.from_dict(data)
     pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() if fn is not None else None for fn in files])
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
+
+
+def test_download_with_broken_urls(files):
+    data = {
+        "id": list(range(len(files) * 2)),
+        "filenames": [str(f) for f in files] + [str(uuid.uuid4()) for _ in range(len(files))],
+    }
+    df = DataFrame.from_pydict(data)
+    df = df.with_column("bytes", col("filenames").url.download())
+    pd_df = pd.DataFrame.from_dict(data)
+    pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() if pathlib.Path(fn).exists() else None for fn in files])
+    assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
