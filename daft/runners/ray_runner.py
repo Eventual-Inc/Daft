@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, ClassVar, Dict, List, Optional, Type
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Type
 
 import pandas as pd
 import ray
@@ -21,6 +21,7 @@ from daft.logical.optimizer import (
     PushDownPredicates,
 )
 from daft.logical.schema import ExpressionList
+from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartID, PartitionManager, PartitionSet, vPartition
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
@@ -79,6 +80,7 @@ class RayRunnerSimpleShuffler(Shuffler):
     def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
         map_args = self._map_args if self._map_args is not None else {}
         reduce_args = self._reduce_args if self._reduce_args is not None else {}
+        ray_expr_eval_task_options = _get_ray_task_options(self._expr_eval_resource_request)
 
         source_partitions = input.num_partitions()
 
@@ -98,7 +100,10 @@ class RayRunnerSimpleShuffler(Shuffler):
             else:
                 return output_list
 
-        map_results = [map_wrapper.remote(input=input.get_partition(i)) for i in range(source_partitions)]
+        map_results = [
+            map_wrapper.options(**ray_expr_eval_task_options).remote(input=input.get_partition(i))
+            for i in range(source_partitions)
+        ]
 
         if num_target_partitions == 1:
             ray.wait(map_results)
@@ -111,7 +116,9 @@ class RayRunnerSimpleShuffler(Shuffler):
                 map_subset = map_results
             else:
                 map_subset = [map_results[i][t] for i in range(source_partitions)]
-            reduced_part = reduce_wrapper.remote(*map_subset)
+            # NOTE: not all reduce ops actually require ray_expr_eval_task_options. This is an area for
+            # potential improvement for repartitioning operations which only require the task options for mapping
+            reduced_part = reduce_wrapper.options(**ray_expr_eval_task_options).remote(*map_subset)
             reduced_results.append(reduced_part)
 
         return RayPartitionSet({i: part for i, part in enumerate(reduced_results)})
@@ -145,15 +152,29 @@ def _ray_partition_single_part_runner(
     return op_runner.run_node_list_single_partition(input_partitions, nodes=nodes, partition_id=partition_id)
 
 
+def _get_ray_task_options(resource_request: ResourceRequest) -> Dict[str, Any]:
+    options = {}
+    if resource_request.num_cpus is not None:
+        options["num_cpus"] = resource_request.num_cpus
+    if resource_request.num_gpus is not None:
+        options["num_gpus"] = resource_request.num_gpus
+    return options
+
+
 class RayLogicalPartitionOpRunner(LogicalPartitionOpRunner):
     def run_node_list(
-        self, inputs: Dict[int, PartitionSet], nodes: List[LogicalPlan], num_partitions: int
+        self,
+        inputs: Dict[int, PartitionSet],
+        nodes: List[LogicalPlan],
+        num_partitions: int,
+        resource_request: ResourceRequest,
     ) -> PartitionSet:
+        single_part_runner = _ray_partition_single_part_runner.options(**_get_ray_task_options(resource_request))
         node_ids = list(inputs.keys())
         results = []
         for i in range(num_partitions):
             input_partitions = [inputs[nid].get_partition(i) for nid in node_ids]
-            result_partition = _ray_partition_single_part_runner.remote(
+            result_partition = single_part_runner.remote(
                 *input_partitions, input_node_ids=node_ids, op_runner=self, nodes=nodes, partition_id=i
             )
             results.append(result_partition)
@@ -168,8 +189,10 @@ class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
         SortOp: RayRunnerSortOp,
     }
 
-    def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition]) -> PartitionSet:
-        remote_func = ray.remote(func)
+    def map_partitions(
+        self, pset: PartitionSet, func: Callable[[vPartition], vPartition], resource_request: ResourceRequest
+    ) -> PartitionSet:
+        remote_func = ray.remote(func).options(**_get_ray_task_options(resource_request))
         return RayPartitionSet({i: remote_func.remote(pset.get_partition(i)) for i in range(pset.num_partitions())})
 
     def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], ReduceType]) -> ReduceType:
@@ -211,9 +234,6 @@ class RayRunner(Runner):
                 data_deps = exec_op.data_deps
                 input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
 
-                # TODO(sammy): We should forward the exec_op's .resource_request() into *.run_node_list(...)
-                # so that the OpRunners can run their work with the appropriate requests
-
                 if exec_op.is_global_op:
                     input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
                     result_partition_set = self._global_op_runner.run_node_list(
@@ -221,7 +241,7 @@ class RayRunner(Runner):
                     )
                 else:
                     result_partition_set = self._part_op_runner.run_node_list(
-                        input_partition_set, exec_op.logical_ops, exec_op.num_partitions
+                        input_partition_set, exec_op.logical_ops, exec_op.num_partitions, exec_op.resource_request()
                     )
                 del input_partition_set
                 for child_id in data_deps:

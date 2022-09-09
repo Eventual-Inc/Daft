@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from daft.expressions import Expression
+from daft.resource_request import ResourceRequest
 from daft.runners.blocks import ArrowArrType, DataBlock
 from daft.runners.partitioning import PartID, PartitionSet, vPartition
 
@@ -12,9 +13,15 @@ from ..logical.schema import ExpressionList
 
 
 class ShuffleOp:
-    def __init__(self, map_args: Optional[Dict[str, Any]] = None, reduce_args: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(
+        self,
+        expr_eval_resource_request: ResourceRequest,
+        map_args: Optional[Dict[str, Any]] = None,
+        reduce_args: Optional[Dict[str, Any]] = None,
+    ) -> None:
         self._map_args = map_args
         self._reduce_args = reduce_args
+        self._expr_eval_resource_request = expr_eval_resource_request
 
     @staticmethod
     @abstractmethod

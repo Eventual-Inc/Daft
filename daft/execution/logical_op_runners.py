@@ -28,6 +28,7 @@ from daft.logical.logical_plan import (
     Sort,
 )
 from daft.logical.schema import ExpressionList
+from daft.resource_request import ResourceRequest
 from daft.runners.blocks import DataBlock
 from daft.runners.partitioning import PartitionSet, vPartition
 from daft.runners.shuffle_ops import (
@@ -42,7 +43,13 @@ from daft.runners.shuffle_ops import (
 
 class LogicalPartitionOpRunner:
     @abstractmethod
-    def run_node_list(self, inputs: Dict[int, PartitionSet], nodes: List[LogicalPlan], num_partitions: int):
+    def run_node_list(
+        self,
+        inputs: Dict[int, PartitionSet],
+        nodes: List[LogicalPlan],
+        num_partitions: int,
+        resource_request: ResourceRequest,
+    ):
         raise NotImplementedError()
 
     def run_node_list_single_partition(
@@ -180,7 +187,9 @@ class LogicalGlobalOpRunner:
             raise NotImplementedError(f"{type(node)} not implemented")
 
     @abstractmethod
-    def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition]) -> PartitionSet:
+    def map_partitions(
+        self, pset: PartitionSet, func: Callable[[vPartition], vPartition], resource_request: ResourceRequest
+    ) -> PartitionSet:
         raise NotImplementedError()
 
     @abstractmethod
@@ -214,17 +223,20 @@ class LogicalGlobalOpRunner:
             else:
                 return part.head(0)
 
-        return self.map_partitions(prev_part, limit_map_func)
+        return self.map_partitions(prev_part, limit_map_func, limit.resource_request())
 
     def _handle_repartition(self, inputs: Dict[int, PartitionSet], repartition: Repartition) -> PartitionSet:
 
         child_id = repartition._children()[0].id()
         repartitioner: ShuffleOp
         if repartition._scheme == PartitionScheme.RANDOM:
-            repartitioner = self._get_shuffle_op_klass(RepartitionRandomOp)()
+            repartitioner = self._get_shuffle_op_klass(RepartitionRandomOp)(
+                expr_eval_resource_request=ResourceRequest.default()
+            )
         elif repartition._scheme == PartitionScheme.HASH:
             repartitioner = self._get_shuffle_op_klass(RepartitionHashOp)(
-                map_args={"exprs": repartition._partition_by.exprs}
+                expr_eval_resource_request=repartition.resource_request(),
+                map_args={"exprs": repartition._partition_by.exprs},
             )
         else:
             raise NotImplementedError()
@@ -248,11 +260,12 @@ class LogicalGlobalOpRunner:
             return first_column.block.quantiles(num_partitions)
 
         prev_part = inputs[child_id]
-        sampled_partitions = self.map_partitions(prev_part, sample_map_func)
+        sampled_partitions = self.map_partitions(prev_part, sample_map_func, sort.resource_request())
         boundaries = self.reduce_partitions(sampled_partitions, quantile_reduce_func)
         expr = exprs.exprs[0]
         sort_shuffle_op_klass = self._get_shuffle_op_klass(SortOp)
         sort_op = sort_shuffle_op_klass(
+            expr_eval_resource_request=sort.resource_request(),
             map_args={"expr": expr, "boundaries": boundaries, "desc": sort._desc},
             reduce_args={"expr": expr, "desc": sort._desc},
         )
@@ -267,6 +280,7 @@ class LogicalGlobalOpRunner:
         coalesce_op_klass = self._get_shuffle_op_klass(CoalesceOp)
 
         coalesce_op = coalesce_op_klass(
+            expr_eval_resource_request=ResourceRequest.default(),
             map_args={"num_input_partitions": prev_part.num_partitions()},
         )
         return coalesce_op.run(input=prev_part, num_target_partitions=num_partitions)
