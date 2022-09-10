@@ -1,5 +1,4 @@
 import base64
-import io
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,18 +23,10 @@ class DataFrameDisplay:
 
         # TODO: we should run this only for PyObj columns
         def stringify_and_truncate(val: Any):
-            if (
-                hasattr(type(val), "__name__")
-                and type(val).__name__ == "Image"
-                and hasattr(type(val), "__module__")
-                and type(val).__module__ == "PIL.Image"
-            ):
-                bio = io.BytesIO()
-                val_copy = val.copy()
-                val_copy.thumbnail((128, 128))
-                val_copy.save(bio, format="JPEG")
-                base64_img = base64.b64encode(bio.getvalue())
-                return f'<img src="data:image/jpeg;base64, {base64_img.decode("utf-8")}" alt="{str(val)}" />'
+            if hasattr(val, "_repr_png_"):
+                png_bytes = val._repr_png_()
+                base64_img = base64.b64encode(png_bytes)
+                return f'<img src="data:image/png;base64, {base64_img.decode("utf-8")}" alt="{str(val)}" />'
             elif isinstance(val, np.ndarray):
                 data_str = np.array2string(val, threshold=3)
                 data_str = (
