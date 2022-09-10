@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-import base64
 import io
 import uuid
 from dataclasses import dataclass
 from functools import partial
 from typing import IO, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
-import numpy as np
 import pandas
 import pyarrow as pa
 import pyarrow.parquet as papq
 from loguru import logger
 from pyarrow import csv, json
-from tabulate import tabulate
 
+from daft.dataframe.schema import DataFrameSchema
 from daft.datasources import (
     CSVSourceInfo,
     InMemorySourceInfo,
@@ -22,7 +20,6 @@ from daft.datasources import (
     ParquetSourceInfo,
 )
 from daft.execution.operators import ExpressionType
-from daft.experimental.serving.endpoint import HTTPEndpoint
 from daft.expressions import ColumnExpression, Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
@@ -31,6 +28,7 @@ from daft.runners.partitioning import PartitionSet
 from daft.runners.pyrunner import PyRunner
 from daft.runners.ray_runner import RayRunner
 from daft.runners.runner import Runner
+from daft.viz import DataFrameDisplay
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
@@ -40,77 +38,6 @@ ColumnInputType = Union[Expression, str]
 from daft.config import DaftSettings
 
 _RUNNER: Optional[Runner] = None
-
-
-@dataclass(frozen=True)
-class DataFrameDisplay:
-
-    pd_df: pandas.DataFrame
-    schema: DataFrameSchema
-    column_char_width: int = 20
-    max_col_rows: int = 3
-
-    def _repr_html_(self) -> str:
-        import PIL.Image
-
-        max_chars_per_cell = self.max_col_rows * self.column_char_width
-
-        # TODO: we should run this only for PyObj columns
-        def stringify_and_truncate(val: Any):
-            if isinstance(val, PIL.Image.Image):
-                bio = io.BytesIO()
-                val_copy = val.copy()
-                val_copy.thumbnail((128, 128))
-                val_copy.save(bio, format="JPEG")
-                base64_img = base64.b64encode(bio.getvalue())
-                return f'<img src="data:image/jpeg;base64, {base64_img.decode("utf-8")}" alt="{str(val)}" />'
-            elif isinstance(val, np.ndarray):
-                data_str = np.array2string(val, threshold=3)
-                data_str = (
-                    data_str if len(data_str) <= max_chars_per_cell else data_str[: max_chars_per_cell - 5] + "...]"
-                )
-                return f"&ltnp.ndarray<br>&nbspshape={val.shape}<br>&nbspdtype={val.dtype}<br>&nbspdata={data_str}&gt"
-            else:
-                s = str(val)
-            return s if len(s) <= max_chars_per_cell else s[: max_chars_per_cell - 4] + "..."
-
-        pd_df = self.pd_df.applymap(stringify_and_truncate)
-        table = tabulate(
-            pd_df,
-            headers=[f"{name}<br>{self.schema[name].daft_type}" for name in self.schema.column_names()],
-            tablefmt="unsafehtml",
-            showindex=False,
-            missingval="None",
-        )
-        table_string = table._repr_html_().replace("<td>", '<td style="text-align: left;">')  # type: ignore
-        return f"""
-            <div>
-                {table_string}
-                <p>(Showing first {len(pd_df)} rows)</p>
-            </div>
-        """
-
-    def __repr__(self) -> str:
-        max_chars_per_cell = self.max_col_rows * self.column_char_width
-
-        def stringify_and_truncate(val: Any):
-            s = str(val)
-            return s if len(s) <= max_chars_per_cell else s[: max_chars_per_cell - 4] + "..."
-
-        pd_df = self.pd_df.applymap(stringify_and_truncate)
-        return tabulate(
-            pd_df,
-            headers=[f"{name}\n{self.schema[name].daft_type}" for name in self.schema.column_names()],
-            showindex=False,
-            missingval="None",
-            maxcolwidths=20,
-        )
-
-
-@dataclass(frozen=True)
-class DataFrameSchemaField:
-    name: str
-    daft_type: ExpressionType
 
 
 def _sample_with_pyarrow(
@@ -141,41 +68,6 @@ def _get_filepaths(path: str):
     elif fs.isfile(path):
         return [path]
     return fs.expand_path(path)
-
-
-class DataFrameSchema:
-    def __init__(self, fields: List[DataFrameSchemaField]):
-        self._fields = {f.name: f for f in fields}
-
-    def __getitem__(self, key: str) -> DataFrameSchemaField:
-        return self._fields[key]
-
-    def __len__(self) -> int:
-        return len(self._fields)
-
-    def column_names(self) -> List[str]:
-        return list(self._fields.keys())
-
-    @classmethod
-    def from_expression_list(cls, exprs: ExpressionList) -> DataFrameSchema:
-        fields = []
-        for e in exprs:
-            if e.resolved_type() is None:
-                raise ValueError(f"Unable to parse schema from expression without type: {e}")
-            if e.name() is None:
-                raise ValueError(f"Unable to parse schema from expression without name: {e}")
-            fields.append(DataFrameSchemaField(e.name(), e.resolved_type()))
-        return cls(fields)
-
-    def __repr__(self) -> str:
-        fields = list(self._fields.values())
-        return tabulate([[field.daft_type for field in fields]], headers=[field.name for field in fields])
-
-    def _repr_html_(self) -> str:
-        fields = list(self._fields.values())
-        return tabulate(
-            [[field.daft_type for field in fields]], headers=[field.name for field in fields], tablefmt="html"
-        )
 
 
 class DataFrame:
@@ -373,18 +265,6 @@ class DataFrame:
             ),
         )
         return cls(plan)
-
-    @classmethod
-    def from_endpoint(cls, endpoint: HTTPEndpoint) -> DataFrame:
-        plan = logical_plan.HTTPRequest(schema=endpoint._request_schema)
-        return cls(plan)
-
-    ###
-    # DataFrame write operations
-    ###
-
-    def write_endpoint(self, endpoint: HTTPEndpoint) -> None:
-        endpoint._set_plan(self.plan())
 
     ###
     # DataFrame operations

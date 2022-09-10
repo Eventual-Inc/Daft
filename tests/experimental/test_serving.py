@@ -36,6 +36,7 @@ def docker_backend():
     return get_serving_backend(name="docker", configs=TEST_BACKEND_CONFIG)
 
 
+@pytest.mark.skip(reason="Serving not implemented")
 def test_identity_dataframe_serving_multiprocessing(multiprocessing_backend: MultiprocessingEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA, backend=multiprocessing_backend)
     df = DataFrame.from_endpoint(endpoint)
@@ -54,6 +55,7 @@ def test_identity_dataframe_serving_multiprocessing(multiprocessing_backend: Mul
     assert response.text == '"foo"'
 
 
+@pytest.mark.skip(reason="Serving not implemented")
 @pytest.mark.conda
 def test_identity_dataframe_serving_multiprocessing_with_pip_dependency(
     multiprocessing_backend: MultiprocessingEndpointBackend,
@@ -75,6 +77,7 @@ def test_identity_dataframe_serving_multiprocessing_with_pip_dependency(
     assert response.text == "5.0"
 
 
+@pytest.mark.skip(reason="Serving not implemented")
 @pytest.mark.conda
 def test_identity_dataframe_serving_multiprocessing_with_requirements_txt(
     multiprocessing_backend: DockerEndpointBackend,
@@ -101,6 +104,7 @@ def test_identity_dataframe_serving_multiprocessing_with_requirements_txt(
         assert response.text == "5.0"
 
 
+@pytest.mark.skip(reason="Serving not implemented")
 @pytest.mark.docker
 def test_identity_dataframe_serving_docker(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA, backend=docker_backend)
@@ -127,6 +131,7 @@ def test_identity_dataframe_serving_docker(docker_backend: DockerEndpointBackend
             pass
 
 
+@pytest.mark.skip(reason="Serving not implemented")
 @pytest.mark.docker
 def test_identity_dataframe_serving_docker_with_pip_dependency(docker_backend: DockerEndpointBackend) -> None:
     endpoint = HTTPEndpoint(SCHEMA, backend=docker_backend, custom_env=DaftEnv(pip_packages=["numpy"]))
@@ -153,6 +158,7 @@ def test_identity_dataframe_serving_docker_with_pip_dependency(docker_backend: D
             pass
 
 
+@pytest.mark.skip(reason="Serving not implemented")
 @pytest.mark.docker
 def test_identity_dataframe_serving_docker_with_requirements_txt(docker_backend: DockerEndpointBackend) -> None:
     with tempfile.NamedTemporaryFile(mode="w") as requirements_txt:
