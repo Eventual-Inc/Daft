@@ -37,7 +37,6 @@ python = "^3.7.1"
 ray = "1.13.0"
 numpy = "^1.16.6"
 pyarrow = "^8.0.0"
-Pillow = "^9.1.0"
 pydantic = {extras = ["dotenv"], version = "^1.9.1"}
 fsspec = "*"
 # Ray-protobuf generation issue requires pinning at 3.19:
