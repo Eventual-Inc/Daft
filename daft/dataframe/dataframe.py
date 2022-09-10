@@ -20,7 +20,6 @@ from daft.datasources import (
     ParquetSourceInfo,
 )
 from daft.execution.operators import ExpressionType
-from daft.experimental.serving.endpoint import HTTPEndpoint
 from daft.expressions import ColumnExpression, Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
@@ -266,18 +265,6 @@ class DataFrame:
             ),
         )
         return cls(plan)
-
-    @classmethod
-    def from_endpoint(cls, endpoint: HTTPEndpoint) -> DataFrame:
-        plan = logical_plan.HTTPRequest(schema=endpoint._request_schema)
-        return cls(plan)
-
-    ###
-    # DataFrame write operations
-    ###
-
-    def write_endpoint(self, endpoint: HTTPEndpoint) -> None:
-        endpoint._set_plan(self.plan())
 
     ###
     # DataFrame operations
