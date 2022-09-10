@@ -26,7 +26,7 @@ class DataFrameDisplay:
             if hasattr(val, "_repr_png_"):
                 png_bytes = val._repr_png_()
                 base64_img = base64.b64encode(png_bytes)
-                return f'<img src="data:image/png;base64, {base64_img.decode("utf-8")}" alt="{str(val)}" />'
+                return f'<img style="max-height:128px;width:auto" src="data:image/png;base64, {base64_img.decode("utf-8")}" alt="{str(val)}" />'
             elif isinstance(val, np.ndarray):
                 data_str = np.array2string(val, threshold=3)
                 data_str = (
