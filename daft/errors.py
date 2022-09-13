@@ -1,0 +1,2 @@
+class ExpressionTypeError(Exception):
+    pass
