@@ -564,11 +564,16 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
 
 def arrow_mod(arr, m):
-    return np.mod(arr, m.as_py())
+    if isinstance(m, pa.Scalar):
+        return np.mod(arr, m.as_py())
+    return np.mod(arr, m)
 
 
 def arrow_floordiv(arr, m):
-    return pac.floor(pac.divide(arr, m))
+    floordiv = pac.floor(pac.divide(arr, m))
+    if pa.types.is_integer(arr.type) and pa.types.is_integer(m.type):
+        floordiv = floordiv.cast(pa.int64())
+    return floordiv
 
 
 def arrow_str_contains(arr: pa.ChunkedArray, pattern: pa.StringScalar):

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import Any, Callable, Dict, FrozenSet, Optional, Tuple, Type, TypeVar
+from typing import Callable, Dict, FrozenSet, Optional, Tuple, Type, TypeVar
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
@@ -45,7 +45,7 @@ class ExpressionType:
         return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=True)
 class PrimitiveExpressionType(ExpressionType):
     class TypeEnum(Enum):
 
@@ -62,36 +62,13 @@ class PrimitiveExpressionType(ExpressionType):
     def __repr__(self) -> str:
         return self.enum.name
 
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, PrimitiveExpressionType):
-            return False
-        return self.enum == other.enum
 
-
-@dataclass(frozen=True)
-class CompositeExpressionType(ExpressionType):
-    args: Tuple[ExpressionType, ...]
-
-    def __repr__(self) -> str:
-        return f"({', '.join([str(arg) for arg in self.args])})"
-
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, CompositeExpressionType):
-            return False
-        return self.args == other.args
-
-
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=True)
 class PythonExpressionType(ExpressionType):
     python_cls: Type
 
     def __repr__(self) -> str:
         return f"PY[{self.python_cls.__name__}]"
-
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, PythonExpressionType):
-            return False
-        return self.python_cls == other.python_cls
 
 
 _TYPE_REGISTRY: Dict[str, ExpressionType] = {
@@ -102,7 +79,6 @@ _TYPE_REGISTRY: Dict[str, ExpressionType] = {
     "string": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.STRING),
     "date": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.DATE),
     "bytes": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.BYTES),
-    # Represents a generic Python object that we have no further information about
     "pyobj": PythonExpressionType(object),
 }
 
@@ -174,10 +150,16 @@ class ExpressionOperator:
         return MappingProxyType(dict(self.type_matrix))
 
     def get_return_type(self, args: Tuple[ExpressionType, ...]) -> Optional[ExpressionType]:
-        # Any operation on a Python type will just return a generic Python type
-        if any([isinstance(arg, PythonExpressionType) for arg in args]):
+        # Treat all Python types as a PY[object] for the purposes of typing
+        args = tuple([ExpressionType.python_object() if isinstance(a, PythonExpressionType) else a for a in args])
+
+        res = self._type_matrix_dict().get(args, ExpressionType.unknown())
+
+        # For Python types, we return another Python type instead of unknown
+        if res == ExpressionType.unknown() and any([isinstance(arg, PythonExpressionType) for arg in args]):
             return ExpressionType.python_object()
-        return self._type_matrix_dict().get(args, ExpressionType.unknown())
+
+        return res
 
 
 _UnaryNumericalTM = frozenset(
@@ -240,6 +222,13 @@ _AllLogicalTM = frozenset(
         (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["bytes"],): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["pyobj"],): _TYPE_REGISTRY["logical"],
+    }.items()
+)
+
+_FloatLogicalTM = frozenset(
+    {
+        (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["logical"],
     }.items()
 )
 
@@ -251,6 +240,7 @@ _IfElseTM = frozenset(
         (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["string"],
         (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["date"], _TYPE_REGISTRY["date"]): _TYPE_REGISTRY["date"],
         (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["bytes"], _TYPE_REGISTRY["bytes"]): _TYPE_REGISTRY["bytes"],
+        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["pyobj"], _TYPE_REGISTRY["pyobj"]): _TYPE_REGISTRY["pyobj"],
     }.items()
 )
 
@@ -314,7 +304,7 @@ class OperatorEnum(Enum):
 
     # Null
     IS_NULL = _UOp(name="is_null", symbol="is_null", type_matrix=_AllLogicalTM)
-    IS_NAN = _UOp(name="is_nan", symbol="is_nan", type_matrix=_AllLogicalTM)
+    IS_NAN = _UOp(name="is_nan", symbol="is_nan", type_matrix=_FloatLogicalTM)
 
     # Date
     DT_DAY = _UOp(name="day", symbol="day", type_matrix=_DatetimeExtractionTM)

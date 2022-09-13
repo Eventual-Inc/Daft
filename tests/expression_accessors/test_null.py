@@ -8,7 +8,7 @@ from tests.conftest import assert_df_equals
 
 
 def test_is_nan_arrow():
-    data = {"id": [str(i) for i in range(20)], "foo": [float("nan") if i % 2 == 1 else i for i in range(20)]}
+    data = {"id": [str(i) for i in range(20)], "foo": [float("nan") if i % 2 == 1 else float(i) for i in range(20)]}
     df = DataFrame.from_pydict(data)
     df = df.with_column("is_null", col("foo").is_nan())
     pd_df = pd.DataFrame.from_dict(data)

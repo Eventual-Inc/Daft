@@ -18,9 +18,9 @@ from typing import (
     cast,
 )
 
+from daft.errors import ExpressionTypeError
 from daft.execution import url_operators
 from daft.execution.operators import (
-    CompositeExpressionType,
     ExpressionOperator,
     ExpressionType,
     OperatorEnum,
@@ -379,30 +379,6 @@ class LiteralExpression(Expression):
         return isinstance(other, LiteralExpression) and self._value == other._value
 
 
-class MultipleReturnSelectExpression(Expression):
-    def __init__(self, expr: UdfExpression, n: int) -> None:
-        super().__init__()
-        self._register_child(expr)
-        self._n = n
-
-    def resolved_type(self) -> Optional[ExpressionType]:
-        call_resolved_type = self._expr.resolved_type()
-        if call_resolved_type is None:
-            return None
-        assert isinstance(call_resolved_type, CompositeExpressionType)
-        return call_resolved_type.args[self._n]  # type: ignore
-
-    @property
-    def _expr(self) -> UdfExpression:
-        return cast(UdfExpression, self._children()[0])
-
-    def _display_str(self) -> str:
-        return f"{self._expr}[{self._n}]"
-
-    def _is_eq_local(self, other: Expression) -> bool:
-        return isinstance(other, MultipleReturnSelectExpression) and self._n == other._n
-
-
 class CallExpression(Expression):
     def __init__(
         self,
@@ -428,7 +404,7 @@ class CallExpression(Expression):
                 if operator.nargs == 2
                 else f"{operator_symbol}({', '.join([str(arg) for arg in self._args])})"
             )
-            raise TypeError(f"Unable to resolve type for operation: {op_pretty_print}")
+            raise ExpressionTypeError(f"Unable to resolve type for operation: {op_pretty_print}")
 
         return ret_type
 
@@ -692,6 +668,8 @@ class UrlMethodAccessor(BaseMethodAccessor):
 class StringMethodAccessor(BaseMethodAccessor):
     def contains(self, pattern: str) -> CallExpression:
         """Checks whether each string contains the given pattern in a string column"""
+        if not isinstance(pattern, str):
+            raise ExpressionTypeError(f"Expected pattern to be a Python string, received: {pattern}")
         return CallExpression(
             OperatorEnum.STR_CONTAINS,
             (self._expr, pattern),
@@ -699,6 +677,8 @@ class StringMethodAccessor(BaseMethodAccessor):
 
     def endswith(self, pattern: str) -> CallExpression:
         """Checks whether each string ends with the given pattern in a string column"""
+        if not isinstance(pattern, str):
+            raise ExpressionTypeError(f"Expected pattern to be a Python string, received: {pattern}")
         return CallExpression(
             OperatorEnum.STR_ENDSWITH,
             (self._expr, pattern),
@@ -706,6 +686,8 @@ class StringMethodAccessor(BaseMethodAccessor):
 
     def startswith(self, pattern: str) -> CallExpression:
         """Checks whether each string starts with the given pattern in a string column"""
+        if not isinstance(pattern, str):
+            raise ExpressionTypeError(f"Expected pattern to be a Python string, received: {pattern}")
         return CallExpression(
             OperatorEnum.STR_STARTSWITH,
             (self._expr, pattern),
