@@ -71,7 +71,17 @@ def _get_filepaths(path: str):
 
 
 class DataFrame:
+    """A Daft DataFrame is a table of data. It has columns, where each column has a type and the same
+    number of items (rows) as all other columns.
+    """
+
     def __init__(self, plan: logical_plan.LogicalPlan) -> None:
+        """Constructs a DataFrame according to a given LogicalPlan. Users are expected instead to call
+        the classmethods on DataFrame to create a DataFrame.
+
+        Args:
+            plan: LogicalPlan describing the steps required to arrive at this DataFrame
+        """
         self._plan = plan
         self._result: Optional[PartitionSet] = None
 
@@ -84,10 +94,15 @@ class DataFrame:
         return self._plan
 
     def schema(self) -> DataFrameSchema:
+        """Returns the DataFrameSchema of the DataFrame, which provides information about each column
+
+        Returns:
+            DataFrameSchema: schema of the DataFrame
+        """
         return DataFrameSchema.from_expression_list(self._plan.schema())
 
     def column_names(self) -> List[str]:
-        """returns column names of DataFrame as a list of strings.
+        """Returns column names of DataFrame as a list of strings.
 
         Returns:
             List[str]: Column names of this DataFrame.
@@ -95,6 +110,14 @@ class DataFrame:
         return [expr.name() for expr in self._plan.schema()]
 
     def show(self, n: int = -1) -> DataFrameDisplay:
+        """Executes and displays the executed dataframe as a table
+
+        Args:
+            n: number of rows to show. Defaults to -1.
+
+        Returns:
+            DataFrameDisplay: object that has a rich tabular display
+        """
         df = self
         if n != -1:
             df = df.limit(n)
@@ -113,6 +136,17 @@ class DataFrame:
 
     @classmethod
     def from_pylist(cls, data: List[Dict[str, Any]]) -> DataFrame:
+        """Creates a DataFrame from a list of dictionaries
+
+        Example:
+            >>> df = DataFrame.from_pylist([{"foo": 1}, {"foo": 2}])
+
+        Args:
+            data: list of dictionaries, where each key is a column name
+
+        Returns:
+            DataFrame: DataFrame created from list of dictionaries
+        """
         if not data:
             raise ValueError("Unable to create DataFrame from empty list")
         schema = ExpressionList(
@@ -133,11 +167,14 @@ class DataFrame:
     def from_pydict(cls, data: Dict[str, Any]) -> DataFrame:
         """Creates a DataFrame from an In-Memory Data columnar source that is passed in as `data`.
 
+        Example:
+            >>> df = DataFrame.from_pydict({"foo": [1, 2]})
+
         Args:
-            data (Dict[str, Any]): Key -> Sequence[item] of data. Each Key is created as a column.
+            data: Key -> Sequence[item] of data. Each Key is created as a column.
 
         Returns:
-            DataFrame: parsed DataFrame that will read from an In-Memory Data Source when collected.
+            DataFrame: DataFrame created from dictionary of columns
         """
         schema = ExpressionList(
             [ColumnExpression(header, expr_type=ExpressionType.from_py_type(type(data[header][0]))) for header in data]
@@ -156,6 +193,12 @@ class DataFrame:
         path: str,
     ) -> DataFrame:
         """Creates a DataFrame from line-delimited JSON file(s)
+
+        Example:
+            >>> df = DataFrame.from_json("/path/to/file.json")
+            >>> df = DataFrame.from_json("/path/to/directory")
+            >>> df = DataFrame.from_json("/path/to/files-*.json")
+            >>> df = DataFrame.from_json("s3://path/to/files-*.json")
 
         Args:
             path (str): Path to JSON files (allows for wildcards)
@@ -187,6 +230,12 @@ class DataFrame:
         delimiter: str = ",",
     ) -> DataFrame:
         """Creates a DataFrame from CSV file(s)
+
+        Example:
+            >>> df = DataFrame.from_csv("/path/to/file.csv")
+            >>> df = DataFrame.from_csv("/path/to/directory")
+            >>> df = DataFrame.from_csv("/path/to/files-*.csv")
+            >>> df = DataFrame.from_csv("s3://path/to/files-*.csv")
 
         Args:
             path (str): Path to CSV (allows for wildcards)
@@ -234,6 +283,12 @@ class DataFrame:
     def from_parquet(cls, path: str) -> DataFrame:
         """Creates a DataFrame from Parquet file(s)
 
+        Example:
+            >>> df = DataFrame.from_parquet("/path/to/file.parquet")
+            >>> df = DataFrame.from_parquet("/path/to/directory")
+            >>> df = DataFrame.from_parquet("/path/to/files-*.parquet")
+            >>> df = DataFrame.from_parquet("s3://path/to/files-*.parquet")
+
         Args:
             path (str): Path to Parquet file (allows for wildcards)
 
@@ -276,11 +331,20 @@ class DataFrame:
 
     def select(self, *columns: ColumnInputType) -> DataFrame:
         """Creates a new DataFrame that `selects` that columns that are passed in from the current DataFrame.
-        columns can be:
-        * names of columns as strings. `df.select('x', 'y')`
-        * names of columns as expressions. `df.select(col('x'), col('y'))`
-        * call expressions. `df.select(col('x') * col('y'))`
-        * any of the above mixed in a call. `df.select('x', col('y'), col('z') + 1)`
+
+        Example:
+
+            >>> # names of columns as strings
+            >>> df = df.select('x', 'y')
+            >>>
+            >>> # names of columns as expressions
+            >>> df = df.select(col('x'), col('y'))
+            >>>
+            >>> # call expressions
+            >>> df = df.select(col('x') * col('y'))
+            >>>
+            >>> # any mix of the above
+            >>> df = df.select('x', col('y'), col('z') + 1)
 
         Args:
             *columns (Union[str, Expression]): columns to select from the current DataFrame
@@ -294,7 +358,9 @@ class DataFrame:
 
     def distinct(self) -> DataFrame:
         """Computes unique rows, dropping duplicates.
-        `unique_df = df.distinct()`
+
+        Example:
+            >>> unique_df = df.distinct()
 
         Returns:
             DataFrame: DataFrame that has only  unique rows.
@@ -308,7 +374,9 @@ class DataFrame:
     def exclude(self, *names: str) -> DataFrame:
         """Drops columns from the current DataFrame by name.
         This is equivalent of performing a select with all the columns but the ones excluded.
-        `df_without_x = df.exclude('x')`
+
+        Example:
+            >>> df_without_x = df.exclude('x')
 
         Args:
             *names (str): names to exclude
@@ -323,7 +391,9 @@ class DataFrame:
     def where(self, predicate: Expression) -> DataFrame:
         """Filters rows via a predicate expression.
         similar to SQL style `where`.
-        `filtered_df = df.where((col('x') < 10) & (col('y') == 10))`
+
+        Example:
+            >>> filtered_df = df.where((col('x') < 10) & (col('y') == 10))
 
         Args:
             predicate (Expression): expression that keeps row if evaluates to True.
@@ -337,7 +407,9 @@ class DataFrame:
     def with_column(self, column_name: str, expr: Expression) -> DataFrame:
         """Adds a column to the current DataFrame with an Expression.
         This is equivalent to performing a `select` with all the current columns and the new one.
-        `new_df = df.with_column('x+1', col('x') + 1)`
+
+        Example:
+            >>> new_df = df.with_column('x+1', col('x') + 1)
 
         Args:
             column_name (str): name of new column
@@ -354,7 +426,9 @@ class DataFrame:
 
     def sort(self, column: ColumnInputType, desc: bool = False) -> DataFrame:
         """Sorts DataFrame globally according to column.
-        `sorted_df = df.sort(col('x') + col('y'))`
+
+        Example:
+            >>> sorted_df = df.sort(col('x') + col('y'))
 
         Note:
             * Since this a global sort, this requires an expensive repartition which can be quite slow.
@@ -372,7 +446,9 @@ class DataFrame:
     def limit(self, num: int) -> DataFrame:
         """Limits the rows returned by the DataFrame via a `head` operation.
         This is similar to how `limit` works in SQL.
-        `df_limited = df.limit(10) # returns 10 rows`
+
+        Example:
+            >>> df_limited = df.limit(10) # returns 10 rows
 
         Args:
             num (int): maximum rows to allow.
@@ -385,12 +461,14 @@ class DataFrame:
         return DataFrame(global_limit)
 
     def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
-        """repartitions DataFrame to `num` partitions.
-        if columns are passed in, then DataFrame will be repartitioned by those,
-            otherwise random repartitioning will occur.
-        `random_repart_df = df.repartition(4)`
+        """Repartitions DataFrame to `num` partitions.
 
-        `part_by_df = df.repartition(4, 'x', col('y') + 1)`
+        If columns are passed in, then DataFrame will be repartitioned by those, otherwise
+        random repartitioning will occur.
+
+        Example:
+            >>> random_repart_df = df.repartition(4)
+            >>> part_by_df = df.repartition(4, 'x', col('y') + 1)
 
         Args:
             num (int): number of target partitions.
@@ -421,9 +499,9 @@ class DataFrame:
         """Joins left (self) DataFrame on the right on a set of keys.
         Key names can be the same or different for left and right DataFrame.
 
-        Note: Although self joins are supported,
-            we currently duplicate the logical plan for the right side and recompute the entire tree.
-            Caching for this is on the roadmap.
+        Note:
+            Although self joins are supported, we currently duplicate the logical plan for the right side
+            and recompute the entire tree. Caching for this is on the roadmap.
 
         Args:
             other (DataFrame): the right DataFrame to join on.
@@ -633,7 +711,7 @@ class GroupedDataFrame:
     group_by: ExpressionList
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
-        """performs grouped sum on this Grouped DataFrame.
+        """Perform grouped sum on this GroupedDataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to sum
@@ -644,7 +722,7 @@ class GroupedDataFrame:
         return self.df._agg([(c, "sum") for c in cols], group_by=self.group_by)
 
     def mean(self, *cols: ColumnInputType) -> DataFrame:
-        """performs grouped mean on this Grouped DataFrame.
+        """Performs grouped mean on this GroupedDataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to mean
@@ -656,9 +734,15 @@ class GroupedDataFrame:
         return self.df._agg([(c, "mean") for c in cols], group_by=self.group_by)
 
     def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
-        """performed aggregations on this grouped DataFrame.
-        Allows for mixed aggregations.
-        `df = df.groupby('x').agg([('x', 'sum'), ('x', 'mean'), ('y', 'min'), ('y', 'max')])`
+        """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
+
+        Example:
+        >>> df = df.groupby('x').agg([
+        >>>     ('x', 'sum'),
+        >>>     ('x', 'mean'),
+        >>>     ('y', 'min'),
+        >>>     ('y', 'max'),
+        >>> ])
 
         Args:
             to_agg (List[Tuple[ColumnInputType, str]]): list of (column, agg_type)

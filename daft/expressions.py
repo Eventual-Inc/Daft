@@ -37,10 +37,32 @@ from daft.runners.blocks import (
 
 
 def col(name: str) -> ColumnExpression:
+    """Selects a column with a given name
+
+    Example:
+        >>> col("x")
+
+    Args:
+        name: Name of column
+
+    Returns:
+        ColumnExpression: Expression representing the selected column
+    """
     return ColumnExpression(name)
 
 
 def lit(val: Any) -> LiteralExpression:
+    """Selects a column with every item being the provided value
+
+    Example:
+        >>> col("x") + lit(1)
+
+    Args:
+        val: value of column
+
+    Returns:
+        LiteralExpression: Expression representing the value provided
+    """
     return LiteralExpression(val)
 
 
@@ -272,12 +294,55 @@ class Expression(TreeNode["Expression"]):
         raise NotImplementedError()
 
     def alias(self, name: str) -> Expression:
+        """Gives the expression a new name, which is its column's name in the DataFrame schema and the name
+        by which subsequent expressions can refer to the results of this expression.
+
+        Example:
+            >>> col("x").alias("y")
+
+        Args:
+            name: New name for expression
+
+        Returns:
+            Expression: Renamed expression
+        """
         return AliasExpression(self, name)
 
-    def as_py(self, type_: Type) -> Expression:
+    def as_py(self, type_: Type) -> AsPyExpression:
+        """Treats every value on the given expression as an object of the specified type. Users can then call
+        methods on this object, which will be translated into a method call on every value on the Expression.
+
+        Example:
+            >>> # call .resize(28, 28) on every item in the expression
+            >>> col("images").as_py(Image).resize(28, 28)
+            >>>
+            >>> # get the 0th element of every item in the expression
+            >>> col("tuples").as_py(tuple)[0]
+
+        Args:
+            type_ (Type): type of each item in the expression
+
+        Returns:
+            AsPyExpression: A special Expression that records any method calls that a user runs on it, applying the method call to each item in the expression.
+        """
         return AsPyExpression(self, ExpressionType.from_py_type(type_))
 
-    def apply(self, func: Callable, return_type: Optional[Type] = None):
+    def apply(self, func: Callable, return_type: Optional[Type] = None) -> Expression:
+        """Apply a function on a given expression
+
+        Example:
+            >>> def f(x_val: str) -> int:
+            >>>     return int(x_val) if x_val.isnumeric() else 0
+            >>>
+            >>> col("x").apply(f, return_type=int)
+
+        Args:
+            func (Callable): Function to run per value of the expression
+            return_type (Optional[Type], optional): Return type of the function that was ran. Defaults to None.
+
+        Returns:
+            Expression: New expression after having run the function on the expression
+        """
         expression_type = (
             ExpressionType.from_py_type(return_type) if return_type is not None else ExpressionType.python_object()
         )
@@ -326,19 +391,54 @@ class Expression(TreeNode["Expression"]):
 
         return True
 
-    def if_else(self, other1: Expression, other2: Expression) -> Expression:
+    def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
+        """Choose values from `if_true` and `if_false` based on the current expression as the condition.
+
+        Example:
+            >>> # x = [2, 2, 2]
+            >>> # y = [1, 2, 3]
+            >>> # a = ["a", "a", "a"]
+            >>> # b = ["b", "b", "b"]
+            >>> # if_else_result = ["a", "b", "b"]
+            >>> (col("x") > col("y")).if_else(col("a"), col("b"))
+
+        Args:
+            if_true (Expression): Values to choose if condition is true
+            if_false (Expression): Values to choose if condition is false
+
+        Returns:
+            Expression: New expression where values are chosen from `if_true` and `if_false`.
+        """
         return CallExpression(
             OperatorEnum.IF_ELSE,
-            (self, other1, other2),
+            (self, if_true, if_false),
         )
 
     def is_null(self) -> Expression:
+        """Checks if values in the Expression are Null (i.e. they are missing)
+
+        Example:
+            >>> # [1., None, NaN] -> [False, True, False]
+            >>> col("x").is_null()
+
+        Returns:
+            Expression: LOGICAL Expression indicating whether values are missing
+        """
         return CallExpression(
             OperatorEnum.IS_NULL,
             (self,),
         )
 
     def is_nan(self) -> Expression:
+        """Checks if values in the Expression are NaN (i.e. they are invalid)
+
+        Example:
+            >>> # [1., None, NaN] -> [False, False, True]
+            >>> col("x").is_nan()
+
+        Returns:
+            Expression: LOGICAL Expression indicating whether values are invalid.
+        """
         return CallExpression(
             OperatorEnum.IS_NAN,
             (self,),
@@ -667,7 +767,17 @@ class UrlMethodAccessor(BaseMethodAccessor):
 
 class StringMethodAccessor(BaseMethodAccessor):
     def contains(self, pattern: str) -> CallExpression:
-        """Checks whether each string contains the given pattern in a string column"""
+        """Checks whether each string contains the given pattern in a string column
+
+        Example:
+            >>> col("x").str.contains("foo")
+
+        Args:
+            pattern (str): pattern to search for
+
+        Returns:
+            CallExpression: a LOGICAL expression indicating whether each value contains the provided pattern
+        """
         if not isinstance(pattern, str):
             raise ExpressionTypeError(f"Expected pattern to be a Python string, received: {pattern}")
         return CallExpression(
@@ -676,7 +786,17 @@ class StringMethodAccessor(BaseMethodAccessor):
         )
 
     def endswith(self, pattern: str) -> CallExpression:
-        """Checks whether each string ends with the given pattern in a string column"""
+        """Checks whether each string ends with the given pattern in a string column
+
+        Example:
+            >>> col("x").str.endswith("foo")
+
+        Args:
+            pattern (str): pattern to search for
+
+        Returns:
+            CallExpression: a LOGICAL expression indicating whether each value ends with the provided pattern
+        """
         if not isinstance(pattern, str):
             raise ExpressionTypeError(f"Expected pattern to be a Python string, received: {pattern}")
         return CallExpression(
@@ -685,7 +805,17 @@ class StringMethodAccessor(BaseMethodAccessor):
         )
 
     def startswith(self, pattern: str) -> CallExpression:
-        """Checks whether each string starts with the given pattern in a string column"""
+        """Checks whether each string starts with the given pattern in a string column
+
+        Example:
+            >>> col("x").str.startswith("foo")
+
+        Args:
+            pattern (str): pattern to search for
+
+        Returns:
+            CallExpression: a LOGICAL expression indicating whether each value starts with the provided pattern
+        """
         if not isinstance(pattern, str):
             raise ExpressionTypeError(f"Expected pattern to be a Python string, received: {pattern}")
         return CallExpression(
@@ -694,7 +824,14 @@ class StringMethodAccessor(BaseMethodAccessor):
         )
 
     def length(self) -> CallExpression:
-        """Retrieves the length for of a UTF-8 string column"""
+        """Retrieves the length for of a UTF-8 string column
+
+        Example:
+            >>> col("x").str.length()
+
+        Returns:
+            CallExpression: an INTEGER expression with the length of each string
+        """
         return CallExpression(
             OperatorEnum.STR_LENGTH,
             (self._expr,),
@@ -703,28 +840,56 @@ class StringMethodAccessor(BaseMethodAccessor):
 
 class DatetimeMethodAccessor(BaseMethodAccessor):
     def day(self) -> CallExpression:
-        """Retrieves the day for a datetime column"""
+        """Retrieves the day for a datetime column
+
+        Example:
+            >>> col("x").dt.day()
+
+        Returns:
+            CallExpression: an INTEGER expression with just the day extracted from a datetime column
+        """
         return CallExpression(
             OperatorEnum.DT_DAY,
             (self._expr,),
         )
 
     def month(self) -> CallExpression:
-        """Retrieves the month for a datetime column"""
+        """Retrieves the month for a datetime column
+
+        Example:
+            >>> col("x").dt.month()
+
+        Returns:
+            CallExpression: an INTEGER expression with just the month extracted from a datetime column
+        """
         return CallExpression(
             OperatorEnum.DT_MONTH,
             (self._expr,),
         )
 
     def year(self) -> CallExpression:
-        """Retrieves the year for a datetime column"""
+        """Retrieves the year for a datetime column
+
+        Example:
+            >>> col("x").dt.year()
+
+        Returns:
+            CallExpression: an INTEGER expression with just the year extracted from a datetime column
+        """
         return CallExpression(
             OperatorEnum.DT_YEAR,
             (self._expr,),
         )
 
     def day_of_week(self) -> CallExpression:
-        """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday"""
+        """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday
+
+        Example:
+            >>> col("x").dt.day_of_week()
+
+        Returns:
+            CallExpression: an INTEGER expression with just the day_of_week extracted from a datetime column
+        """
         return CallExpression(
             OperatorEnum.DT_DAY_OF_WEEK,
             (self._expr,),
