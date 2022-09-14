@@ -29,30 +29,39 @@ def udf(
 
     The possible types of input a UDF can take in are:
 
-    1. `f(col("foo"))` - A Column expression, which will instruct DaFt to pass the referenced column into the
-        function at runtime as a Numpy array.
-    2. `f(x)` - When `x` is some object that is not a Column, DaFt will pass it into the function with no modifications.
-        Note that this object must be pickleable, and that users should use this to pass light data around. For heavier
-        initializations, use the __init__ method in a stateful UDF.
+    1. f(col("foo")) - A Column expression, which will instruct DaFt to pass the referenced column into the function at runtime as a Numpy array.
+    2. f(x) - When `x` is some object that is not a Column, DaFt will pass it into the function with no modifications. Note that this object must be pickleable, and that users should use this to pass light data around. For heavier initializations, use the __init__ method in a stateful UDF.
 
-    For example, a simple UDF that adds a number to an integer column looks like:
+    For example, a simple UDF that randomly rotates some user-defined Image type could look like:
 
-    >>> @udf(return_type=int)
-    >>> def add_to_col(int_col, num=1):
-    >>>     return int_col + num
+    >>> @udf(return_type=Image)
+    >>> def random_rotations(image_col, rotation_bounds_degrees: int):
+    >>>     return [
+    >>>         img.rotate(random.uniform(0, 1) * rotation_bounds_degrees)
+    >>>         for img in image_col
+    >>>     ]
     >>>
     >>> # Usage on a DataFrame:
-    >>> df.select(add_to_col(col("foo"), num=10))
+    >>> df.select(random_rotations(col("images"), rotation_bounds_degrees=90))
 
     UDFs can also be created on Classes, which allow for initialization on some expensive state that can be shared
     between invocations of the class, for example downloading data or creating a model.
 
     >>> @udf(return_type=int)
     >>> class RunModel:
+    >>>
     >>>     def __init__(self):
+    >>>         # Perform expensive initializations
     >>>         self._model = create_model()
+    >>>
     >>>     def __call__(self, features_col):
     >>>         return self._model(features_col)
+
+    Args:
+        f: Function to wrap as a UDF, accepts column inputs as Numpy arrays and returns a column of data as a Numpy array/Python list/Pandas series.
+        return_type: The return type of the UDF
+        num_gpus: How many GPUs the UDF requires for execution, used for resource allocation when running in a distributed setting
+        num_cpus: How many CPUs the UDF requires for execution, used for resource allocation when running in a distributed setting
     """
     func_ret_type = ExpressionType.from_py_type(return_type)
 
