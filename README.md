@@ -2,7 +2,7 @@
 
 # Daft
 
-Daft is a fast, ergonomic and scalable open-source dataframe library: built for Python and Complex Data/Machine Learning workloads.
+[Daft](https://www.getdaft.io) is a fast, ergonomic and scalable open-source dataframe library: built for Python and Complex Data/Machine Learning workloads.
 
 ## Installation
 
