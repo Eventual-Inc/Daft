@@ -1,5 +1,5 @@
 import datetime
-from typing import Tuple
+from typing import Dict, Set, Tuple, Type
 
 import numpy as np
 import pytest
@@ -70,15 +70,17 @@ EXCLUDE_OPS = {
     "COUNT",
 }
 
-# Mapping between ExpressionTypes and their expected numpy dtype
-NP_TYPE = {
-    ExpressionType.from_py_type(str): {np.dtype("object")},
-    ExpressionType.from_py_type(bytes): {np.dtype("object")},
-    ExpressionType.from_py_type(bool): {np.dtype("bool")},
-    ExpressionType.from_py_type(datetime.date): {np.dtype("object")},
-    ExpressionType.from_py_type(int): {np.dtype("int32"), np.dtype("int64")},
-    ExpressionType.from_py_type(float): {np.dtype("float64")},
-    ExpressionType.from_py_type(object): {np.dtype("object")},
+# Mapping between ExpressionTypes and (expected_numpy_dtypes, expected_python_types)
+NP_AND_PY_TYPE: Dict[ExpressionType, Tuple[Set[np.dtype], Type]] = {
+    ExpressionType.from_py_type(str): ({np.dtype("object")}, str),
+    ExpressionType.from_py_type(bytes): ({np.dtype("object")}, bytes),
+    ExpressionType.from_py_type(bool): ({np.dtype("bool")}, bool),
+    ExpressionType.from_py_type(datetime.date): ({np.dtype("object")}, datetime.date),
+    ExpressionType.from_py_type(int): ({np.dtype("int32"), np.dtype("int64")}, int),
+    ExpressionType.from_py_type(float): ({np.dtype("float64")}, float),
+    ExpressionType.from_py_type(object): ({np.dtype("object")}, MyObj),
+    # None of the operations return Null types
+    # ExpressionType.from_py_type(type(None)): ({np.dtype("object")}, type(None)),
 }
 
 
@@ -96,5 +98,9 @@ def test_type_matrix_execution(op_name: str, arg_types: Tuple[ExpressionType, ..
     op = OPS[op_name]
     df = df.with_column("bar", op(*[col(str(et)) for et in arg_types]))
 
+    expected_numpy_types, expected_python_type = NP_AND_PY_TYPE[ret_type]
+
     assert df.schema()["bar"].daft_type == ret_type
-    assert df.to_pandas()["bar"].dtype in NP_TYPE[ret_type]
+    assert df.to_pandas()["bar"].dtype in expected_numpy_types
+    for result_item in df.to_pandas()["bar"].tolist():
+        assert isinstance(result_item, expected_python_type)
