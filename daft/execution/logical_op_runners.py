@@ -177,7 +177,7 @@ class LogicalPartitionOpRunner:
         columns: Dict[ColID, PyListTile] = {}
         columns[file_name_col_id] = PyListTile(
             file_name_col_id,
-            file_name_expr.get_name(),
+            file_name_expr.name(),
             partition_id=partition_id,
             block=DataBlock.make_block(file_names),
         )

@@ -58,9 +58,6 @@ def _sample_with_pyarrow(
     schema = ExpressionList(
         [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
     )
-    import ipdb
-
-    ipdb.set_trace()
     assert schema is not None, f"Unable to read file {filepath} to determine schema"
     return schema
 
@@ -71,7 +68,7 @@ def _get_filepaths(path: str):
         return fs.ls(path)
     elif fs.isfile(path):
         return [path]
-    return fs.expand_path(path)
+    return fs.expand_path(path, recursive=True)
 
 
 class DataFrame:

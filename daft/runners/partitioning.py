@@ -10,6 +10,7 @@ from uuid import uuid4
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+from pyarrow import dataset as pada
 
 from daft.expressions import ColID, ColumnExpression, Expression, ExpressionExecutor
 from daft.logical.schema import ExpressionList
@@ -310,9 +311,9 @@ class vPartition:
             visited_paths.append(written_file.path)
             visited_metadata.append(written_file.metadata)
 
-        format = pa.dataset.ParquetFileFormat()
+        format = pada.ParquetFileFormat()
         opts = format.make_write_options(compression=compression)
-        pa.dataset.write_dataset(
+        pada.write_dataset(
             arrow_table,
             base_dir=root_path,
             basename_template=str(uuid4()) + "-{i}." + format.default_extname,
