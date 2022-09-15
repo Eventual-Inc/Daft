@@ -15,8 +15,19 @@ def test_parquet_write(tmp_path):
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
 
-def test_parquet_write_with_partitioning(tmp_path):
+def test_parquet_write_with_partitioning_cols(tmp_path):
     df = DataFrame.from_csv(SERVICE_REQUESTS_CSV)
+
+    pd_df = df.write_parquet(tmp_path, partition_cols=["Borough"]).to_pandas()
+    assert len(pd_df) == 5
+
+    read_back_pd_df = DataFrame.from_parquet(tmp_path.as_posix() + "/**/*.parquet").to_pandas()
+
+    assert_df_equals(df.exclude("Borough").to_pandas(), read_back_pd_df)
+
+
+def test_parquet_mulit_write_with_partitioning_cols(tmp_path):
+    df = DataFrame.from_csv(SERVICE_REQUESTS_CSV).repartition(4)
 
     pd_df = df.write_parquet(tmp_path, partition_cols=["Borough"]).to_pandas()
     assert len(pd_df) == 5
@@ -37,7 +48,7 @@ def test_csv_write(tmp_path):
 
 
 @pytest.mark.skip()
-def test_csv_write_with_partitioning(tmp_path):
+def test_csv_write_with_partitioning_cols(tmp_path):
     df = DataFrame.from_csv(SERVICE_REQUESTS_CSV)
 
     pd_df = df.write_csv(tmp_path, partition_cols=["Borough"]).to_pandas()
