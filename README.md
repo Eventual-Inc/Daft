@@ -2,6 +2,9 @@
 
 # Daft
 
+![Frame 113](https://user-images.githubusercontent.com/17691182/190476440-28f29e87-8e3b-41c4-9c28-e112e595f558.png)
+
+
 [Daft](https://www.getdaft.io) is a fast, ergonomic and scalable open-source dataframe library: built for Python and Complex Data/Machine Learning workloads.
 
 ## Installation
