@@ -56,6 +56,7 @@ class PrimitiveExpressionType(ExpressionType):
         STRING = 5
         DATE = 6
         BYTES = 7
+        NULL = 8
 
     enum: PrimitiveExpressionType.TypeEnum
 
@@ -79,6 +80,7 @@ _TYPE_REGISTRY: Dict[str, ExpressionType] = {
     "string": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.STRING),
     "date": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.DATE),
     "bytes": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.BYTES),
+    "null": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.NULL),
     "pyobj": PythonExpressionType(object),
 }
 
@@ -90,11 +92,12 @@ EXPRESSION_TYPE_TO_PYARROW_TYPE = {
     _TYPE_REGISTRY["string"]: pa.string(),
     _TYPE_REGISTRY["date"]: pa.date32(),
     _TYPE_REGISTRY["bytes"]: pa.large_binary(),
+    _TYPE_REGISTRY["null"]: pa.null(),
 }
 
 
 _PYARROW_TYPE_TO_EXPRESSION_TYPE = {
-    # pa.null(): _TYPE_REGISTRY["unknown"],
+    pa.null(): _TYPE_REGISTRY["null"],
     pa.bool_(): _TYPE_REGISTRY["logical"],
     pa.int8(): _TYPE_REGISTRY["integer"],
     pa.int16(): _TYPE_REGISTRY["integer"],
@@ -124,6 +127,7 @@ _PY_TYPE_TO_EXPRESSION_TYPE = {
     bool: _TYPE_REGISTRY["logical"],
     datetime.date: _TYPE_REGISTRY["date"],
     bytes: _TYPE_REGISTRY["bytes"],
+    type(None): _TYPE_REGISTRY["null"],
 }
 
 
@@ -211,6 +215,7 @@ _CountLogicalTM = frozenset(
         (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["integer"],
         (_TYPE_REGISTRY["bytes"],): _TYPE_REGISTRY["integer"],
+        (_TYPE_REGISTRY["null"],): _TYPE_REGISTRY["integer"],
     }.items()
 )
 
@@ -222,6 +227,7 @@ _AllLogicalTM = frozenset(
         (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["bytes"],): _TYPE_REGISTRY["logical"],
+        (_TYPE_REGISTRY["null"],): _TYPE_REGISTRY["logical"],
         (_TYPE_REGISTRY["pyobj"],): _TYPE_REGISTRY["logical"],
     }.items()
 )
