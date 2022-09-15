@@ -24,6 +24,7 @@ ALL_TYPES = {
     ExpressionType.from_py_type(int): [1, 2, 3],
     ExpressionType.from_py_type(float): [1.0, 2.0, 3.0],
     ExpressionType.from_py_type(object): [MyObj(), MyObj(), MyObj()],
+    ExpressionType.from_py_type(type(None)): [None, None, None],
 }
 
 # Mapping between the OperatorEnum name and a lambda that runs it on input expressions
