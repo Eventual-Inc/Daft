@@ -157,14 +157,16 @@ class FileWrite(UnaryNode):
     def __init__(
         self,
         input: LogicalPlan,
-        path_prefix: str,
+        root_dir: str,
         storage_type: StorageType,
         partition_cols: Optional[ExpressionList] = None,
         compression: Optional[str] = None,
     ) -> None:
-        assert storage_type == StorageType.PARQUET, "only parquet is supported currently"
+        assert (
+            storage_type == StorageType.PARQUET or storage_type == StorageType.CSV
+        ), "only parquet and csv is supported currently"
         self._storage_type = storage_type
-        self._path_prefix = path_prefix
+        self._root_dir = root_dir
         self._compression = compression
         self._partition_cols = partition_cols
         if self._partition_cols is not None:
@@ -195,7 +197,7 @@ class FileWrite(UnaryNode):
             isinstance(other, FileWrite)
             and self.schema() == other.schema()
             and self._storage_type == other._storage_type
-            and self._path_prefix == other._path_prefix
+            and self._root_dir == other._root_dir
             and self._compression == other._compression
         )
 

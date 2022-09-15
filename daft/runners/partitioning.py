@@ -286,8 +286,12 @@ class vPartition:
         output = vPartition(columns=result_columns, partition_id=self.partition_id)
         return output.eval_expression_list(output_schema)
 
-    def to_parquet(
-        self, root_path: str, partition_cols: Optional[ExpressionList] = None, compression: Optional[str] = None
+    def _to_file(
+        self,
+        file_format: str,
+        root_path: str,
+        partition_cols: Optional[ExpressionList] = None,
+        compression: Optional[str] = None,
     ) -> List[str]:
         keys = [col_id for col_id in self.columns.keys()]
         names = [self.columns[k].column_name for k in keys]
@@ -305,14 +309,20 @@ class vPartition:
                 partition_col_names.append(self.columns[col_id].column_name)
 
         visited_paths = []
-        visited_metadata = []
 
         def file_visitor(written_file):
             visited_paths.append(written_file.path)
-            visited_metadata.append(written_file.metadata)
 
-        format = pada.ParquetFileFormat()
-        opts = format.make_write_options(compression=compression)
+        format: pada.FileFormat
+        opts = None
+
+        if file_format == "parquet":
+            format = pada.ParquetFileFormat()
+            opts = format.make_write_options(compression=compression)
+        elif file_format == "csv":
+            format = pada.CsvFileFormat()
+            assert compression is None
+
         pada.write_dataset(
             arrow_table,
             base_dir=root_path,
@@ -325,6 +335,16 @@ class vPartition:
             existing_data_behavior="overwrite_or_ignore",
         )
         return visited_paths
+
+    def to_parquet(
+        self, root_path: str, partition_cols: Optional[ExpressionList] = None, compression: Optional[str] = None
+    ) -> List[str]:
+        return self._to_file("parquet", root_path=root_path, partition_cols=partition_cols, compression=compression)
+
+    def to_csv(
+        self, root_path: str, partition_cols: Optional[ExpressionList] = None, compression: Optional[str] = None
+    ) -> List[str]:
+        return self._to_file("csv", root_path=root_path, partition_cols=partition_cols, compression=compression)
 
     @classmethod
     def merge_partitions(cls, to_merge: List[vPartition], verify_partition_id: bool = True) -> vPartition:

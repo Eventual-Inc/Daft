@@ -164,12 +164,20 @@ class LogicalPartitionOpRunner:
 
     def _handle_file_write(self, inputs: Dict[int, vPartition], file_write: FileWrite, partition_id: int) -> vPartition:
         child_id = file_write._children()[0].id()
-        assert file_write._storage_type == StorageType.PARQUET
-        file_names = inputs[child_id].to_parquet(
-            root_path=file_write._path_prefix,
-            partition_cols=file_write._partition_cols,
-            compression=file_write._compression,
-        )
+        assert file_write._storage_type == StorageType.PARQUET or file_write._storage_type == StorageType.CSV
+        if file_write._storage_type == StorageType.PARQUET:
+            file_names = inputs[child_id].to_parquet(
+                root_path=file_write._root_dir,
+                partition_cols=file_write._partition_cols,
+                compression=file_write._compression,
+            )
+        else:
+            file_names = inputs[child_id].to_csv(
+                root_path=file_write._root_dir,
+                partition_cols=file_write._partition_cols,
+                compression=file_write._compression,
+            )
+
         output_schema = file_write.schema()
         assert len(output_schema) == 1
         file_name_expr = output_schema.exprs[0]
