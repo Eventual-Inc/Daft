@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum, IntEnum
 from typing import Any, List, Optional, Tuple
 
-from daft.datasources import SourceInfo
+from daft.datasources import SourceInfo, StorageType
 from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression, Expression
 from daft.internal.treenode import TreeNode
@@ -51,6 +51,7 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
             isinstance(other, LogicalPlan)
             and self._local_eq(other)
             and self.schema() == other.schema()
+            and self.partition_spec() == other.partition_spec()
             and self.num_partitions() == other.num_partitions()
             and all(
                 [self_child.is_eq(other_child) for self_child, other_child in zip(self._children(), other._children())]
@@ -153,13 +154,32 @@ class Scan(LogicalPlan):
 
 
 class FileWrite(UnaryNode):
-    def __init__(self, input: LogicalPlan) -> None:
+    def __init__(
+        self,
+        input: LogicalPlan,
+        path_prefix: str,
+        storage_type: StorageType,
+        partition_cols: Optional[ExpressionList] = None,
+        compression: Optional[str] = None,
+    ) -> None:
+        assert storage_type == StorageType.PARQUET, "only parquet is supported currently"
+        self._storage_type = storage_type
+        self._path_prefix = path_prefix
+        self._compression = compression
+        self._partition_cols = partition_cols
+        if self._partition_cols is not None:
+            self._partition_cols = self._partition_cols.resolve(input.schema())
+
+        for expr in input.schema():
+            assert ExpressionType.is_primitive(
+                expr.resolved_type()
+            ), f"we can currently only write out primitive types, got: {expr}"
+
         schema = ExpressionList([ColumnExpression("file_path", ExpressionType.from_py_type(str))])
-        pspec = input.partition_spec()
-        if pspec.by is not None:
-            schema = pspec.by.union(schema)
         schema = schema.resolve()
+
         super().__init__(schema, input.partition_spec(), op_level=OpLevel.PARTITION)
+        self._register_child(input)
 
     def __repr__(self) -> str:
         return f"FileWrite\n\toutput={self.schema()}"
@@ -171,13 +191,19 @@ class FileWrite(UnaryNode):
         return ResourceRequest.default()
 
     def _local_eq(self, other: Any) -> bool:
-        return isinstance(other, FileWrite) and self.schema() == other.schema()
+        return (
+            isinstance(other, FileWrite)
+            and self.schema() == other.schema()
+            and self._storage_type == other._storage_type
+            and self._path_prefix == other._path_prefix
+            and self._compression == other._compression
+        )
 
     def rebuild(self) -> LogicalPlan:
-        return FileWrite(input=self._children()[0].rebuild())
+        raise NotImplementedError("We can not rebuild a filewrite due to side effects")
 
     def copy_with_new_input(self, new_input: UnaryNode) -> UnaryNode:
-        return FileWrite(new_input)
+        raise NotImplementedError()
 
 
 class Filter(UnaryNode):
@@ -346,12 +372,15 @@ class Repartition(UnaryNode):
     def __init__(
         self, input: LogicalPlan, partition_by: ExpressionList, num_partitions: int, scheme: PartitionScheme
     ) -> None:
+        resolved_part_by = partition_by.resolve(input.schema().to_column_expressions())
         pspec = PartitionSpec(
-            scheme=scheme, num_partitions=num_partitions, by=partition_by if len(partition_by) > 0 else None
+            scheme=scheme,
+            num_partitions=num_partitions,
+            by=resolved_part_by.to_column_expressions() if len(partition_by) > 0 else None,
         )
         super().__init__(input.schema().to_column_expressions(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
-        self._partition_by = partition_by.resolve(self.schema())
+        self._partition_by = resolved_part_by
         self._scheme = scheme
         if scheme == PartitionScheme.RANDOM and len(partition_by.names) > 0:
             raise ValueError("Can not pass in random partitioning and partition_by args")

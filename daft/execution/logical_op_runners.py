@@ -10,11 +10,13 @@ from daft.datasources import (
     InMemorySourceInfo,
     JSONSourceInfo,
     ParquetSourceInfo,
-    ScanType,
+    StorageType,
 )
+from daft.expressions import ColID
 from daft.filesystem import get_filesystem_from_path
 from daft.logical.logical_plan import (
     Coalesce,
+    FileWrite,
     Filter,
     GlobalLimit,
     Join,
@@ -30,7 +32,7 @@ from daft.logical.logical_plan import (
 from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.blocks import DataBlock
-from daft.runners.partitioning import PartitionSet, vPartition
+from daft.runners.partitioning import PartitionSet, PyListTile, vPartition
 from daft.runners.shuffle_ops import (
     CoalesceOp,
     RepartitionHashOp,
@@ -76,13 +78,15 @@ class LogicalPartitionOpRunner:
             return self._handle_local_aggregate(inputs, node, partition_id=partition_id)
         elif isinstance(node, Join):
             return self._handle_join(inputs, node, partition_id=partition_id)
+        elif isinstance(node, FileWrite):
+            return self._handle_file_write(inputs, node, partition_id=partition_id)
         else:
             raise NotImplementedError(f"{type(node)} not implemented")
 
     def _handle_scan(self, inputs: Dict[int, vPartition], scan: Scan, partition_id: int) -> vPartition:
         schema = scan.schema()
         column_ids = [col.get_id() for col in schema.to_column_expressions()]
-        if scan._source_info.scan_type() == ScanType.IN_MEMORY:
+        if scan._source_info.scan_type() == StorageType.IN_MEMORY:
             assert isinstance(scan._source_info, InMemorySourceInfo)
             table_len = [len(scan._source_info.data[key]) for key in scan._source_info.data][0]
             partition_size = table_len // scan._source_info.num_partitions
@@ -90,7 +94,7 @@ class LogicalPartitionOpRunner:
             data = {key: scan._source_info.data[key][start:end] for key in scan._source_info.data}
             vpart = vPartition.from_pydict(data, schema=schema, partition_id=partition_id)
             return vpart
-        elif scan._source_info.scan_type() == ScanType.CSV:
+        elif scan._source_info.scan_type() == StorageType.CSV:
             assert isinstance(scan._source_info, CSVSourceInfo)
             path = scan._source_info.filepaths[partition_id]
             fs = get_filesystem_from_path(path)
@@ -106,14 +110,14 @@ class LogicalPartitionOpRunner:
             )
             vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
             return vpart
-        elif scan._source_info.scan_type() == ScanType.JSON:
+        elif scan._source_info.scan_type() == StorageType.JSON:
             assert isinstance(scan._source_info, JSONSourceInfo)
             path = scan._source_info.filepaths[partition_id]
             fs = get_filesystem_from_path(path)
             table = json.read_json(fs.open(path, compression="infer")).select([col.name() for col in schema])
             vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
             return vpart
-        elif scan._source_info.scan_type() == ScanType.PARQUET:
+        elif scan._source_info.scan_type() == StorageType.PARQUET:
             assert isinstance(scan._source_info, ParquetSourceInfo)
             table = parquet.read_table(scan._source_info.filepaths[partition_id])
             vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
@@ -156,6 +160,30 @@ class LogicalPartitionOpRunner:
             right_on=join._right_on,
             output_schema=join.schema(),
             how=join._how.value,
+        )
+
+    def _handle_file_write(self, inputs: Dict[int, vPartition], file_write: FileWrite, partition_id: int) -> vPartition:
+        child_id = file_write._children()[0].id()
+        assert file_write._storage_type == StorageType.PARQUET
+        file_names = inputs[child_id].to_parquet(
+            root_path=file_write._path_prefix,
+            partition_cols=file_write._partition_cols,
+            compression=file_write._compression,
+        )
+        output_schema = file_write.schema()
+        assert len(output_schema) == 1
+        file_name_expr = output_schema.exprs[0]
+        file_name_col_id = file_name_expr.get_id()
+        columns: Dict[ColID, PyListTile] = {}
+        columns[file_name_col_id] = PyListTile(
+            file_name_col_id,
+            file_name_expr.get_name(),
+            partition_id=partition_id,
+            block=DataBlock.make_block(file_names),
+        )
+        return vPartition(
+            columns,
+            partition_id=partition_id,
         )
 
 

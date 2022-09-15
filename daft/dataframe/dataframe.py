@@ -18,6 +18,7 @@ from daft.datasources import (
     InMemorySourceInfo,
     JSONSourceInfo,
     ParquetSourceInfo,
+    StorageType,
 )
 from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression, Expression, col
@@ -57,6 +58,9 @@ def _sample_with_pyarrow(
     schema = ExpressionList(
         [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
     )
+    import ipdb
+
+    ipdb.set_trace()
     assert schema is not None, f"Unable to read file {filepath} to determine schema"
     return schema
 
@@ -325,13 +329,23 @@ class DataFrame:
         return cls(plan)
 
     def write_parquet(
-        self, path: str, compression: str = "snappy", partition_cols: Optional[List[ColumnInputType]] = None
+        self, path_prefix: str, compression: str = "snappy", partition_cols: Optional[List[ColumnInputType]] = None
     ) -> DataFrame:
+        cols: Optional[ExpressionList] = None
         if partition_cols is not None:
-            df = self.repartition(self.num_partitions(), *partition_cols)
+            cols = self.__column_input_to_expression(tuple(partition_cols))
+            for c in cols:
+                assert isinstance(c, ColumnExpression), "we cant support non ColumnExpressions for partition writing"
+            df = self.repartition(self.num_partitions(), *cols)
         else:
             df = self
-        plan = logical_plan.FileWrite(df._plan)
+        plan = logical_plan.FileWrite(
+            df._plan,
+            path_prefix=path_prefix,
+            partition_cols=cols,
+            storage_type=StorageType.PARQUET,
+            compression=compression,
+        )
         return DataFrame(plan)
 
     ###
