@@ -9,7 +9,7 @@ else:
     from typing import Protocol
 
 
-class ScanType(Enum):
+class StorageType(Enum):
     CSV = "CSV"
     PARQUET = "PARQUET"
     IN_MEMORY = "IN_MEMORY"
@@ -19,7 +19,7 @@ class ScanType(Enum):
 class SourceInfo(Protocol):
     """A class that provides information about a given Datasource"""
 
-    def scan_type(self) -> ScanType:
+    def scan_type(self) -> StorageType:
         ...
 
     def get_num_partitions(self) -> int:
@@ -34,7 +34,7 @@ class CSVSourceInfo(SourceInfo):
     has_headers: bool
 
     def scan_type(self):
-        return ScanType.CSV
+        return StorageType.CSV
 
     def get_num_partitions(self) -> int:
         return len(self.filepaths)
@@ -46,7 +46,7 @@ class JSONSourceInfo(SourceInfo):
     filepaths: List[str]
 
     def scan_type(self):
-        return ScanType.JSON
+        return StorageType.JSON
 
     def get_num_partitions(self) -> int:
         return len(self.filepaths)
@@ -59,7 +59,7 @@ class InMemorySourceInfo(SourceInfo):
     num_partitions: int = 1
 
     def scan_type(self):
-        return ScanType.IN_MEMORY
+        return StorageType.IN_MEMORY
 
     def get_num_partitions(self) -> int:
         return self.num_partitions
@@ -71,7 +71,7 @@ class ParquetSourceInfo(SourceInfo):
     filepaths: List[str]
 
     def scan_type(self):
-        return ScanType.PARQUET
+        return StorageType.PARQUET
 
     def get_num_partitions(self) -> int:
         return len(self.filepaths)

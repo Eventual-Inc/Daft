@@ -5,12 +5,14 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+from pyarrow import dataset as pada
 
-from daft.expressions import ColID, Expression, ExpressionExecutor
+from daft.expressions import ColID, ColumnExpression, Expression, ExpressionExecutor
 from daft.logical.schema import ExpressionList
 from daft.runners.blocks import ArrowArrType, DataBlock, PyListDataBlock
 
@@ -283,6 +285,66 @@ class vPartition:
 
         output = vPartition(columns=result_columns, partition_id=self.partition_id)
         return output.eval_expression_list(output_schema)
+
+    def _to_file(
+        self,
+        file_format: str,
+        root_path: str,
+        partition_cols: Optional[ExpressionList] = None,
+        compression: Optional[str] = None,
+    ) -> List[str]:
+        keys = [col_id for col_id in self.columns.keys()]
+        names = [self.columns[k].column_name for k in keys]
+        data = [self.columns[k].block.to_arrow() for k in keys]
+        arrow_table = pa.table(data, names=names)
+        partition_col_names = []
+        if partition_cols is not None:
+            for col in partition_cols:
+                assert isinstance(
+                    col, ColumnExpression
+                ), "we can only support ColumnExpressions for partitioning parquet"
+                col_id = col.get_id()
+                assert col_id is not None
+                assert col_id in keys
+                partition_col_names.append(self.columns[col_id].column_name)
+
+        visited_paths = []
+
+        def file_visitor(written_file):
+            visited_paths.append(written_file.path)
+
+        format: pada.FileFormat
+        opts = None
+
+        if file_format == "parquet":
+            format = pada.ParquetFileFormat()
+            opts = format.make_write_options(compression=compression)
+        elif file_format == "csv":
+            format = pada.CsvFileFormat()
+            assert compression is None
+
+        pada.write_dataset(
+            arrow_table,
+            base_dir=root_path,
+            basename_template=str(uuid4()) + "-{i}." + format.default_extname,
+            format=format,
+            partitioning=partition_col_names,
+            file_options=opts,
+            file_visitor=file_visitor,
+            use_threads=False,
+            existing_data_behavior="overwrite_or_ignore",
+        )
+        return visited_paths
+
+    def to_parquet(
+        self, root_path: str, partition_cols: Optional[ExpressionList] = None, compression: Optional[str] = None
+    ) -> List[str]:
+        return self._to_file("parquet", root_path=root_path, partition_cols=partition_cols, compression=compression)
+
+    def to_csv(
+        self, root_path: str, partition_cols: Optional[ExpressionList] = None, compression: Optional[str] = None
+    ) -> List[str]:
+        return self._to_file("csv", root_path=root_path, partition_cols=partition_cols, compression=compression)
 
     @classmethod
     def merge_partitions(cls, to_merge: List[vPartition], verify_partition_id: bool = True) -> vPartition:

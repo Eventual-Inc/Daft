@@ -18,6 +18,7 @@ from daft.datasources import (
     InMemorySourceInfo,
     JSONSourceInfo,
     ParquetSourceInfo,
+    StorageType,
 )
 from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression, Expression, col
@@ -67,7 +68,7 @@ def _get_filepaths(path: str):
         return fs.ls(path)
     elif fs.isfile(path):
         return [path]
-    return fs.expand_path(path)
+    return fs.expand_path(path, recursive=True)
 
 
 class DataFrame:
@@ -92,6 +93,9 @@ class DataFrame:
             logical_plan.LogicalPlan: LogicalPlan to compute this DataFrame.
         """
         return self._plan
+
+    def num_partitions(self) -> int:
+        return self._plan.num_partitions()
 
     def schema(self) -> DataFrameSchema:
         """Returns the DataFrameSchema of the DataFrame, which provides information about each column
@@ -320,6 +324,65 @@ class DataFrame:
             ),
         )
         return cls(plan)
+
+    def write_parquet(
+        self, root_dir: str, compression: str = "snappy", partition_cols: Optional[List[ColumnInputType]] = None
+    ) -> DataFrame:
+        """Writes the DataFrame to parquet files using a `root_dir` and randomly generated UUIDs as the filepath and returns the filepaths.
+        Currently generates a parquet file per partition unless `partition_cols` are used, then the number of files can equal the number of partitions times the number of values of partition col.
+
+        Args:
+            root_dir (str): root file path to write parquet files to.
+            compression (str, optional): compression algorithm. Defaults to "snappy".
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports ColumnExpressions with any calls. Defaults to None.
+
+        Returns:
+            DataFrame: The filenames that were written out as strings.
+        """
+        cols: Optional[ExpressionList] = None
+        if partition_cols is not None:
+            cols = self.__column_input_to_expression(tuple(partition_cols))
+            for c in cols:
+                assert isinstance(c, ColumnExpression), "we cant support non ColumnExpressions for partition writing"
+            df = self.repartition(self.num_partitions(), *cols)
+        else:
+            df = self
+        plan = logical_plan.FileWrite(
+            df._plan,
+            root_dir=root_dir,
+            partition_cols=cols,
+            storage_type=StorageType.PARQUET,
+            compression=compression,
+        )
+        return DataFrame(plan)
+
+    def write_csv(self, root_dir: str, partition_cols: Optional[List[ColumnInputType]] = None) -> DataFrame:
+        """Writes the DataFrame to CSV files using a `root_dir` and randomly generated UUIDs as the filepath and returns the filepaths.
+        Currently generates a csv file per partition unless `partition_cols` are used, then the number of files can equal the number of partitions times the number of values of partition col.
+
+        Args:
+            root_dir (str): root file path to write parquet files to.
+            compression (str, optional): compression algorithm. Defaults to "snappy".
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports ColumnExpressions with any calls. Defaults to None.
+
+        Returns:
+            DataFrame: The filenames that were written out as strings.
+        """
+        cols: Optional[ExpressionList] = None
+        if partition_cols is not None:
+            cols = self.__column_input_to_expression(tuple(partition_cols))
+            for c in cols:
+                assert isinstance(c, ColumnExpression), "we cant support non ColumnExpressions for partition writing"
+            df = self.repartition(self.num_partitions(), *cols)
+        else:
+            df = self
+        plan = logical_plan.FileWrite(
+            df._plan,
+            root_dir=root_dir,
+            partition_cols=cols,
+            storage_type=StorageType.CSV,
+        )
+        return DataFrame(plan)
 
     ###
     # DataFrame operations

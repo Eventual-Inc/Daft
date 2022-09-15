@@ -99,7 +99,11 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @abstractmethod
-    def to_numpy(self):
+    def to_numpy(self) -> np.ndarray:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def to_arrow(self) -> pa.ChunkedArray:
         raise NotImplementedError()
 
     @classmethod
@@ -368,6 +372,9 @@ class PyListDataBlock(DataBlock[List[T]]):
             res[i] = obj
         return res
 
+    def to_arrow(self) -> pa.ChunkedArray:
+        raise NotImplementedError("can not convert pylist block to arrow")
+
     def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[List[T]]:
         return PyListDataBlock(data=[item for keep, item in zip(mask.iter_py(), self.data) if keep])
 
@@ -434,6 +441,9 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         if isinstance(self.data, pa.Scalar):
             return self.data.as_py()
         return self.data.to_numpy()
+
+    def to_arrow(self) -> pa.ChunkedArray:
+        return self.data
 
     def is_scalar(self) -> bool:
         return isinstance(self.data, pa.Scalar)
