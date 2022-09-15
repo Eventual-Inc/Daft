@@ -1,4 +1,5 @@
 import base64
+import io
 from dataclasses import dataclass
 from typing import Any
 
@@ -7,6 +8,16 @@ import pandas
 from tabulate import tabulate
 
 from daft.dataframe.schema import DataFrameSchema
+
+HAS_PILLOW = False
+try:
+    import PIL
+
+    HAS_PILLOW = True
+except ImportError:
+    pass
+if HAS_PILLOW:
+    import PIL.Image
 
 
 @dataclass(frozen=True)
@@ -23,9 +34,12 @@ class DataFrameDisplay:
 
         # TODO: we should run this only for PyObj columns
         def stringify_and_truncate(val: Any):
-            if hasattr(val, "_repr_png_"):
-                png_bytes = val._repr_png_()
-                base64_img = base64.b64encode(png_bytes)
+            if HAS_PILLOW and isinstance(val, PIL.Image.Image):
+                img = val.copy()
+                img.thumbnail((128, 128))
+                bio = io.BytesIO()
+                img.save(bio, "JPEG")
+                base64_img = base64.b64encode(bio.getvalue())
                 return f'<img style="max-height:128px;width:auto" src="data:image/png;base64, {base64_img.decode("utf-8")}" alt="{str(val)}" />'
             elif isinstance(val, np.ndarray):
                 data_str = np.array2string(val, threshold=3)
