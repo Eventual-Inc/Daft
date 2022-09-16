@@ -9,6 +9,7 @@ import subprocess
 import pandas as pd
 import pytest
 from fsspec.implementations.local import LocalFileSystem
+from loguru import logger
 from sentry_sdk import start_transaction
 
 from daft.config import DaftSettings
@@ -17,7 +18,6 @@ from daft.expressions import col
 from tests.conftest import assert_df_equals
 
 # If running in github, we use smaller-scale data
-SQLITE_DB_FILE_PATH = "data/TPC-H.db"
 TPCH_DBGEN_DIR = "data/tpch-dbgen"
 TPCH_SQLITE_TABLE_CREATION_SQL = [
     """
@@ -207,7 +207,20 @@ SCHEMA = {
 
 
 @pytest.fixture(scope="function", autouse=True)
-def gen_tpch():
+def gen_tpch(request):
+
+    benchmark_mode = request.config.getoption("--tpch_benchmark")
+
+    scale_factor = float(os.getenv("SCALE_FACTOR", "1"))
+    scale_factor = 0.2 if os.getenv("CI") else scale_factor
+
+    if benchmark_mode:
+        scale_factor = 10.0
+
+    SF_TPCH_DIR = os.path.join(TPCH_DBGEN_DIR, ("%.1f" % scale_factor).replace(".", "_"))
+
+    SQLITE_DB_FILE_PATH = os.path.join(SF_TPCH_DIR, "TPC-H.db")
+
     def import_table(table, table_path):
         if not os.path.isfile(table_path):
             raise FileNotFoundError(f"Did not find {table_path}")
@@ -216,29 +229,33 @@ def gen_tpch():
             shlex.split(f"sqlite3 {SQLITE_DB_FILE_PATH} -cmd '.mode csv' '.separator |' '.import {table_path} {table}'")
         )
 
-    if not os.path.exists(SQLITE_DB_FILE_PATH):
+    if not os.path.exists(SF_TPCH_DIR):
         # If running in CI, use a scale factor of 0.2
         # Otherwise, check for SCALE_FACTOR env variable or default to 1
-        scale_factor = float(os.getenv("SCALE_FACTOR", "1"))
-        scale_factor = 0.2 if os.getenv("CI") else scale_factor
+        logger.info("Cloning tpch dbgen repo")
+        subprocess.check_output(shlex.split(f"git clone https://github.com/electrum/tpch-dbgen {SF_TPCH_DIR}"))
+        subprocess.check_output("make", cwd=SF_TPCH_DIR)
 
-        subprocess.check_output(shlex.split(f"git clone https://github.com/electrum/tpch-dbgen {TPCH_DBGEN_DIR}"))
-        subprocess.check_output("make", cwd=TPCH_DBGEN_DIR)
+        num_parts = math.ceil(scale_factor)
+        logger.info(f"Generating {num_parts} for tpch")
+        if num_parts == 1:
+            subprocess.check_output(shlex.split(f"./dbgen -v -f -s {scale_factor}"), cwd=SF_TPCH_DIR)
+        else:
+
+            for part_idx in range(1, num_parts + 1):
+                logger.info(f"Generating partition: {part_idx}")
+                subprocess.check_output(
+                    shlex.split(f"./dbgen -v -f -s {scale_factor} -S {part_idx} -C {num_parts}"), cwd=SF_TPCH_DIR
+                )
+
+        subprocess.check_output(shlex.split("chmod -R u+rwx ."), cwd=SF_TPCH_DIR)
+
+    SQLITE_DB_FILE_PATH = os.path.join(SF_TPCH_DIR, "TPC-H.db")
+    if not benchmark_mode and not os.path.exists(SQLITE_DB_FILE_PATH):
         con = sqlite3.connect(SQLITE_DB_FILE_PATH)
         cur = con.cursor()
         for creation_sql in TPCH_SQLITE_TABLE_CREATION_SQL:
             cur.execute(creation_sql)
-        num_parts = math.ceil(scale_factor)
-
-        if num_parts == 1:
-            subprocess.check_output(shlex.split(f"./dbgen -v -f -s {scale_factor}"), cwd=TPCH_DBGEN_DIR)
-        else:
-            for part_idx in range(1, num_parts + 1):
-                subprocess.check_output(
-                    shlex.split(f"./dbgen -v -f -s {scale_factor} -S {part_idx} -C {num_parts}"), cwd=TPCH_DBGEN_DIR
-                )
-
-        subprocess.check_output(shlex.split("chmod -R u+rwx ."), cwd=TPCH_DBGEN_DIR)
 
         static_tables = ["nation", "region"]
         partitioned_tables = ["customer", "lineitem", "orders", "partsupp", "part", "supplier"]
@@ -246,50 +263,84 @@ def gen_tpch():
         multi_partition_tables = [] if num_parts == 1 else partitioned_tables
 
         for table in single_partition_tables:
-            import_table(table, f"{TPCH_DBGEN_DIR}/{table}.tbl")
+            import_table(table, f"{SF_TPCH_DIR}/{table}.tbl")
 
         for table in multi_partition_tables:
             for part_idx in range(1, num_parts + 1):
-                import_table(table, f"{TPCH_DBGEN_DIR}/{table}.tbl.{part_idx}")
+                import_table(table, f"{SF_TPCH_DIR}/{table}.tbl.{part_idx}")
 
         # Remove all backup files as they cause problems downstream when searching for files via wilcards
         local_fs = LocalFileSystem()
-        backup_files = local_fs.expand_path(f"{TPCH_DBGEN_DIR}/*.bak")
+        backup_files = local_fs.expand_path(f"{SF_TPCH_DIR}/*.bak")
         for backup_file in backup_files:
             os.remove(backup_file)
 
+    PARQUET_FILE_PATH = os.path.join(SF_TPCH_DIR, "parquet")
 
-def get_df(tbl_name: str):
-    # Used chunked files if found
-    local_fs = LocalFileSystem()
-    nonchunked_filepath = f"data/tpch-dbgen/{tbl_name}.tbl"
-    chunked_filepath = nonchunked_filepath + ".*"
-    try:
-        local_fs.expand_path(chunked_filepath)
-        fp = chunked_filepath
-    except FileNotFoundError:
-        fp = nonchunked_filepath
-
-    df = DataFrame.from_csv(
-        fp,
-        has_headers=False,
-        column_names=SCHEMA[tbl_name],
-        delimiter="|",
-    )
-    return df
+    if benchmark_mode and not os.path.exists(PARQUET_FILE_PATH):
+        for tab_name in SCHEMA.keys():
+            logger.info(f"Generating Parquet Files for {tab_name}")
+            df = DataFrame.from_csv(
+                os.path.join(SF_TPCH_DIR, f"{tab_name}.tbl*"),
+                has_headers=False,
+                column_names=SCHEMA[tab_name] + [""],
+                delimiter="|",
+            ).exclude("")
+            df = df.write_parquet(os.path.join(PARQUET_FILE_PATH, tab_name))
+            df.collect()
 
 
-def get_data_size_gb():
-    # Check the size of the sqlite db
-    return os.path.getsize(SQLITE_DB_FILE_PATH) / (1024**3)
+@pytest.fixture(scope="module")
+def get_df(request):
+    def _get_df(tbl_name: str):
+        benchmark_mode = request.config.getoption("--tpch_benchmark")
+        local_fs = LocalFileSystem()
+        scale_factor = float(os.getenv("SCALE_FACTOR", "1"))
+        scale_factor = 0.2 if os.getenv("CI") else scale_factor
+
+        if benchmark_mode:
+            scale_factor = 10.0
+        SF_TPCH_DIR = os.path.join(TPCH_DBGEN_DIR, ("%.1f" % scale_factor).replace(".", "_"))
+
+        if benchmark_mode:
+            logger.debug(f"using parquet files for {tbl_name}")
+            df = DataFrame.from_parquet(os.path.join(SF_TPCH_DIR, "parquet", tbl_name, "*.parquet"))
+        else:
+            logger.debug(f"using csv files for {tbl_name}")
+
+            # Used chunked files if found
+            nonchunked_filepath = f"{SF_TPCH_DIR}/{tbl_name}.tbl"
+            chunked_filepath = nonchunked_filepath + ".*"
+            try:
+                local_fs.expand_path(chunked_filepath)
+                fp = chunked_filepath
+            except FileNotFoundError:
+                fp = nonchunked_filepath
+
+            df = DataFrame.from_csv(
+                fp,
+                has_headers=False,
+                column_names=SCHEMA[tbl_name],
+                delimiter="|",
+            )
+        return df
+
+    return _get_df
 
 
 @pytest.fixture(scope="module")
 def check_answer(request):
-    skip_checks = request.config.getoption("--skip_tpch_checks")
+    benchmark_mode = request.config.getoption("--tpch_benchmark")
+    scale_factor = float(os.getenv("SCALE_FACTOR", "1"))
+    scale_factor = 0.2 if os.getenv("CI") else scale_factor
+
+    if benchmark_mode:
+        scale_factor = 10.0
+    SF_TPCH_DIR = os.path.join(TPCH_DBGEN_DIR, ("%.1f" % scale_factor).replace(".", "_"))
+    SQLITE_DB_FILE_PATH = os.path.join(SF_TPCH_DIR, "TPC-H.db")
 
     def _check_answer(daft_pd_df: pd.DataFrame, tpch_question: int, tmp_path: str):
-        if skip_checks:
+        if benchmark_mode:
             return
         query = pathlib.Path(f"tests/assets/tpch-sqlite-queries/{tpch_question}.sql").read_text()
         conn = sqlite3.connect(SQLITE_DB_FILE_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
@@ -302,7 +353,7 @@ def check_answer(request):
     return _check_answer
 
 
-def test_tpch_q1(tmp_path, check_answer):
+def test_tpch_q1(tmp_path, check_answer, get_df):
     lineitem = get_df("lineitem")
     discounted_price = col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))
     taxed_discounted_price = discounted_price * (1 + col("L_TAX"))
@@ -329,7 +380,7 @@ def test_tpch_q1(tmp_path, check_answer):
     check_answer(daft_pd_df, 1, tmp_path)
 
 
-def test_tpch_q2(tmp_path, check_answer):
+def test_tpch_q2(tmp_path, check_answer, get_df):
 
     region = get_df("region")
     nation = get_df("nation")
@@ -379,7 +430,7 @@ def test_tpch_q2(tmp_path, check_answer):
     check_answer(daft_pd_df, 2, tmp_path)
 
 
-def test_tpch_q3(tmp_path, check_answer):
+def test_tpch_q3(tmp_path, check_answer, get_df):
     def decrease(x, y):
         return x * (1 - y)
 
@@ -410,7 +461,7 @@ def test_tpch_q3(tmp_path, check_answer):
     check_answer(daft_pd_df, 3, tmp_path)
 
 
-def test_tpch_q4(tmp_path, check_answer):
+def test_tpch_q4(tmp_path, check_answer, get_df):
     orders = get_df("orders").where(
         (col("O_ORDERDATE") >= datetime.date(1993, 7, 1)) & (col("O_ORDERDATE") < datetime.date(1993, 10, 1))
     )
@@ -432,7 +483,7 @@ def test_tpch_q4(tmp_path, check_answer):
     check_answer(daft_pd_df, 4, tmp_path)
 
 
-def test_tpch_q5(tmp_path, check_answer):
+def test_tpch_q5(tmp_path, check_answer, get_df):
     orders = get_df("orders").where(
         (col("O_ORDERDATE") >= datetime.date(1994, 1, 1)) & (col("O_ORDERDATE") < datetime.date(1995, 1, 1))
     )
@@ -462,7 +513,7 @@ def test_tpch_q5(tmp_path, check_answer):
     check_answer(daft_pd_df, 5, tmp_path)
 
 
-def test_tpch_q6(tmp_path, check_answer):
+def test_tpch_q6(tmp_path, check_answer, get_df):
     lineitem = get_df("lineitem")
     daft_df = lineitem.where(
         (col("L_SHIPDATE") >= datetime.date(1994, 1, 1))
@@ -477,7 +528,7 @@ def test_tpch_q6(tmp_path, check_answer):
     check_answer(daft_pd_df, 6, tmp_path)
 
 
-def test_tpch_q7(tmp_path, check_answer):
+def test_tpch_q7(tmp_path, check_answer, get_df):
     def decrease(x, y):
         return x * (1 - y)
 
@@ -527,7 +578,7 @@ def test_tpch_q7(tmp_path, check_answer):
     check_answer(daft_pd_df, 7, tmp_path)
 
 
-def test_tpch_q8(tmp_path, check_answer):
+def test_tpch_q8(tmp_path, check_answer, get_df):
     def decrease(x, y):
         return x * (1 - y)
 
@@ -578,7 +629,7 @@ def test_tpch_q8(tmp_path, check_answer):
     check_answer(daft_pd_df, 8, tmp_path)
 
 
-def test_tpch_q9(tmp_path, check_answer):
+def test_tpch_q9(tmp_path, check_answer, get_df):
     lineitem = get_df("lineitem")
     part = get_df("part")
     nation = get_df("nation")
@@ -614,7 +665,7 @@ def test_tpch_q9(tmp_path, check_answer):
     check_answer(daft_pd_df, 9, tmp_path)
 
 
-def test_tpch_q10(tmp_path, check_answer):
+def test_tpch_q10(tmp_path, check_answer, get_df):
     def decrease(x, y):
         return x * (1 - y)
 
