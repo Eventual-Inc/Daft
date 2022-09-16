@@ -1,4 +1,5 @@
 import argparse
+import os
 from typing import List, Union
 
 import pandas as pd
@@ -11,7 +12,7 @@ from daft.config import DaftSettings
 @pytest.fixture(scope="session", autouse=True)
 def ray_cluster():
     if DaftSettings.DAFT_RUNNER.upper() == "RAY":
-        ray.init(num_cpus=4, include_dashboard=False)
+        ray.init(num_cpus=os.cpu_count() // 2, include_dashboard=False)
         yield
         ray.shutdown()
     else:
@@ -51,7 +52,10 @@ def pytest_addoption(parser):
         help="run tests that are marked for Test Driven Development (including low priority)",
     )
     parser.addoption(
-        "--skip_tpch_checks", action="store_true", default=False, help="Skip checking correctness of tcp-h tests"
+        "--tpch_benchmark",
+        action="store_true",
+        default=False,
+        help="Runs benchmarking on TPCH using scale factor 10 and parquet",
     )
 
 
