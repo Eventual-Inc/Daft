@@ -494,9 +494,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         for i in range(len(pivots) - 1):
             offset = pivots[i]
             size = pivots[i + 1] - offset
-            to_return.append(self.data.slice(offset, size))
+            # Combine chunks otherwise arrow has a serialization issue with giant memory
+            to_return.append(self.data.slice(offset, size).combine_chunks())
         if len(pivots) > 0:
-            to_return.append(self.data.slice(pivots[-1]))
+            to_return.append(self.data.slice(pivots[-1]).combine_chunks())
         return to_return
 
     @staticmethod
