@@ -34,9 +34,20 @@ class PyListTile:
     def apply(self, func: Callable[[DataBlock], DataBlock]) -> PyListTile:
         return dataclasses.replace(self, block=func(self.block))
 
-    def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[PyListTile]:
-        assert len(target_partition_indices) == len(self)
-        new_blocks = self.block.partition(num_partitions, targets=target_partition_indices)
+    def split_by_index(
+        self,
+        num_partitions: int,
+        pivots: np.ndarray,
+        target_partitions: np.ndarray,
+        argsorted_target_partition_indices: DataBlock,
+    ) -> List[PyListTile]:
+        assert len(argsorted_target_partition_indices) == len(self)
+        new_blocks = self.block.partition(
+            num_partitions,
+            pivots=pivots,
+            target_partitions=target_partitions,
+            argsorted_targets=argsorted_target_partition_indices,
+        )
         assert len(new_blocks) == num_partitions
         return [dataclasses.replace(self, block=nb, partition_id=i) for i, nb in enumerate(new_blocks)]
 
@@ -231,9 +242,18 @@ class vPartition:
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:
         assert len(target_partition_indices) == len(self)
         new_partition_to_columns: List[Dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]
+        argsort_targets = target_partition_indices.argsort()
+        sorted_targets = target_partition_indices.take(argsort_targets)
+        sorted_targets_np = sorted_targets.to_numpy()
+        pivots = np.where(np.diff(sorted_targets_np, prepend=np.nan))[0]
+        target_partitions = sorted_targets_np[pivots]
+
         for col_id, tile in self.columns.items():
             new_tiles = tile.split_by_index(
-                num_partitions=num_partitions, target_partition_indices=target_partition_indices
+                num_partitions=num_partitions,
+                pivots=pivots,
+                target_partitions=target_partitions,
+                argsorted_target_partition_indices=argsort_targets,
             )
             for part_id, nt in enumerate(new_tiles):
                 new_partition_to_columns[part_id][col_id] = nt

@@ -192,29 +192,26 @@ class DataBlock(Generic[ArrType]):
         fn: Callable[[DataBlock[ArrType], DataBlock[ArrType]], DataBlock[ArrType]] = getattr(self.evaluator, op_name)
         return fn(self, other)
 
-    def partition(self, num: int, targets: DataBlock[ArrowArrType]) -> List[DataBlock[ArrType]]:
+    def partition(
+        self, num: int, pivots: np.ndarray, target_partitions: np.ndarray, argsorted_targets: DataBlock[ArrowArrType]
+    ) -> List[DataBlock[ArrType]]:
         assert not self.is_scalar(), "Cannot partition scalar DataBlock"
 
         # We first argsort the targets to group the same partitions together
-        argsort_indices = targets.argsort()
+        argsort_indices = argsorted_targets
 
         # We now perform a gather to make items targeting the same partition together
         reordered = self.take(argsort_indices)
-        sorted_targets = targets.take(argsort_indices)
-
-        sorted_targets_np = sorted_targets.data.to_numpy()
-        pivots = np.where(np.diff(sorted_targets_np, prepend=np.nan))[0]
 
         # We now split in the num partitions
         unmatched_partitions = reordered._split(pivots)
-        target_partitions = sorted_targets_np[pivots]
-
         target_partition_idx_to_match_idx = {target_idx: idx for idx, target_idx in enumerate(target_partitions)}
+        empty = self._make_empty()
 
         return [
             DataBlock.make_block(unmatched_partitions[target_partition_idx_to_match_idx[i]])
             if i in target_partition_idx_to_match_idx
-            else self._make_empty()
+            else empty
             for i in range(num)
         ]
 
@@ -467,8 +464,15 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return self._binary_op(indices, fn=partial(pac.take, boundscheck=False))
 
     def _split(self, pivots: np.ndarray) -> Sequence[ArrowArrType]:
-        splitted: Sequence[np.ndarray] = np.split(self.data, pivots)[1:]
-        return splitted
+        to_return = []
+        for i in range(len(pivots) - 1):
+            offset = pivots[i]
+            size = pivots[i + 1] - offset
+            # Combine chunks otherwise arrow has a serialization issue with giant memory
+            to_return.append(self.data.slice(offset, size).combine_chunks())
+        if len(pivots) > 0:
+            to_return.append(self.data.slice(pivots[-1]).combine_chunks())
+        return to_return
 
     @staticmethod
     def _merge_blocks(blocks: List[DataBlock[ArrowArrType]]) -> DataBlock[ArrowArrType]:
