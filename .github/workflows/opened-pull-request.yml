@@ -1,0 +1,15 @@
+name: Move opened pull requests into In progress
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  automate-in-progress-project-column:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: alex-page/github-project-automation-plus@v0.8.1
+        with:
+          project: Daft-OSS
+          column: In progress
+          repo-token: ${{ secrets.GITHUB_TOKEN }}

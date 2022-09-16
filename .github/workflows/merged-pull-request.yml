@@ -1,0 +1,16 @@
+name: Move assigned pull requests into done
+
+on:
+  pull_request:
+    types:
+      - closed
+jobs:
+  automate-done-project-column:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: alex-page/github-project-automation-plus@v0.8.1
+        with:
+          project: Daft-OSS
+          column: Done
+          repo-token: ${{ secrets.GITHUB_TOKEN }}

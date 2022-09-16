@@ -1,0 +1,15 @@
+name: Move assigned pull requests into In review
+
+on:
+  pull_request:
+    types: [ready_for_review, review_requested]
+
+jobs:
+  automate-in-review-project-column:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: alex-page/github-project-automation-plus@v0.8.1
+        with:
+          project: Daft-OSS
+          column: In review
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
