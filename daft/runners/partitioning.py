@@ -42,7 +42,7 @@ class PyListTile:
         argsorted_target_partition_indices: DataBlock,
     ) -> List[PyListTile]:
         assert len(argsorted_target_partition_indices) == len(self)
-        new_blocks = self.block.partition2(
+        new_blocks = self.block.partition(
             num_partitions,
             pivots=pivots,
             target_partitions=target_partitions,

@@ -192,33 +192,7 @@ class DataBlock(Generic[ArrType]):
         fn: Callable[[DataBlock[ArrType], DataBlock[ArrType]], DataBlock[ArrType]] = getattr(self.evaluator, op_name)
         return fn(self, other)
 
-    def partition(self, num: int, targets: DataBlock[ArrowArrType]) -> List[DataBlock[ArrType]]:
-        assert not self.is_scalar(), "Cannot partition scalar DataBlock"
-
-        # We first argsort the targets to group the same partitions together
-        argsort_indices = targets.argsort()
-
-        # We now perform a gather to make items targeting the same partition together
-        reordered = self.take(argsort_indices)
-        sorted_targets = targets.take(argsort_indices)
-
-        sorted_targets_np = sorted_targets.data.to_numpy()
-        pivots = np.where(np.diff(sorted_targets_np, prepend=np.nan))[0]
-
-        # We now split in the num partitions
-        unmatched_partitions = reordered._split(pivots)
-        target_partitions = sorted_targets_np[pivots]
-
-        target_partition_idx_to_match_idx = {target_idx: idx for idx, target_idx in enumerate(target_partitions)}
-        empty = self._make_empty()
-        return [
-            DataBlock.make_block(unmatched_partitions[target_partition_idx_to_match_idx[i]])
-            if i in target_partition_idx_to_match_idx
-            else empty
-            for i in range(num)
-        ]
-
-    def partition2(
+    def partition(
         self, num: int, pivots: np.ndarray, target_partitions: np.ndarray, argsorted_targets: DataBlock[ArrowArrType]
     ) -> List[DataBlock[ArrType]]:
         assert not self.is_scalar(), "Cannot partition scalar DataBlock"
