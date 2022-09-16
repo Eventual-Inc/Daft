@@ -15,6 +15,10 @@ Install Daft with `pip install getdaft`.
 
 Learn more about Daft in our [documentation](https://docs.getdaft.io).
 
+## Community
+
+For questions about Daft, please post in our [community hosted on GitHub Discussions](https://github.com/Eventual-Inc/Daft/discussions)! We look forward to meeting you there.
+
 ## Why Daft?
 
 Processing Complex Data such as images/audio/pointclouds often requires accelerated compute for geometric or machine learning algorithms, much of which leverages existing tooling from the Python/C++ ecosystem. However, many workloads such as analytics, model training data curation and data processing often also require relational query operations for loading/filtering/joining/aggregations.
