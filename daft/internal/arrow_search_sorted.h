@@ -3,14 +3,14 @@
 #include <arrow/type.h>
 
 
-template <class ArrowType>
-static void
-primative_binsearch_nonnull(const uint8_t *arr, const uint8_t *key, uint8_t *ret, size_t arr_len,
-          size_t key_len, size_t arr_str, size_t key_str, size_t ret_str) {
+template <class T>
+void
+primative_binsearch_nonnull(const uint8_t *arr, const uint8_t *key, uint8_t *ret, const size_t arr_len,
+            size_t key_len, const size_t arr_str, const size_t key_str, const size_t ret_str) {
     /*
      * Adapted from numpy binary search: https://github.com/numpy/numpy/blob/main/numpy/core/src/npysort/binsearch.cpp
      */
-    using T = typename ArrowType::c_type;
+    // using T = typename ArrowType::c_type;
     assert(sizeof(T) == arr_str);
     assert(sizeof(T) == key_str);
     auto cmp = std::less<T>{};
@@ -52,8 +52,4 @@ primative_binsearch_nonnull(const uint8_t *arr, const uint8_t *key, uint8_t *ret
         }
         *(size_t *)ret = min_idx;
     }
-}
-
-void test_main() {
-    primative_binsearch_nonnull<arrow::UInt8Type>(NULL, NULL, NULL, 0,0,0,0,0);
 }
