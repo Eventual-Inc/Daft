@@ -36,7 +36,7 @@ UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 ColumnInputType = Union[Expression, str]
 
 
-from daft.config import DaftSettings
+from daft.config import get_daft_settings
 
 _RUNNER: Optional[Runner] = None
 
@@ -759,7 +759,7 @@ class DataFrame:
         global _RUNNER
         if _RUNNER is not None:
             return _RUNNER
-        if DaftSettings.DAFT_RUNNER.upper() == "RAY":
+        if get_daft_settings().runner_config.name == "ray":
             logger.info("Using RayRunner")
             _RUNNER = RayRunner()
         else:

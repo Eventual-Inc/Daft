@@ -6,12 +6,12 @@ import pandas as pd
 import pytest
 import ray
 
-from daft.config import DaftSettings
+from daft.config import get_daft_settings
 
 
 @pytest.fixture(scope="session", autouse=True)
 def ray_cluster():
-    if DaftSettings.DAFT_RUNNER.upper() == "RAY":
+    if get_daft_settings().runner_config.name == "ray":
         ray.init(num_cpus=os.cpu_count() // 2, include_dashboard=False)
         yield
         ray.shutdown()
@@ -21,7 +21,7 @@ def ray_cluster():
 
 @pytest.fixture(scope="session", autouse=True)
 def sentry_telemetry():
-    if DaftSettings.CI:
+    if os.getenv("CI"):
         import sentry_sdk
 
         sentry_sdk.init(
@@ -32,8 +32,8 @@ def sentry_telemetry():
             traces_sample_rate=1.0,
             # traces_sampler=True,
         )
-        sentry_sdk.set_tag("CI", DaftSettings.CI)
-        sentry_sdk.set_tag("DAFT_RUNNER", DaftSettings.DAFT_RUNNER.upper())
+        sentry_sdk.set_tag("CI", os.environ["CI"])
+        sentry_sdk.set_tag("DAFT_RUNNER", get_daft_settings().runner_config.name)
     else:
         ...
     yield
