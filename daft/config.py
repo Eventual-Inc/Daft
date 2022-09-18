@@ -42,6 +42,10 @@ class DaftSettings:
     runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
     runner_set_called: bool = False
 
+    def ray_runner_config(self) -> _RayRunnerConfig:
+        assert isinstance(self.runner_config, _RayRunnerConfig)
+        return self.runner_config
+
 
 _GlobalDaftSettings = DaftSettings()
 

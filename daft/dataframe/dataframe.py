@@ -36,7 +36,7 @@ UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 ColumnInputType = Union[Expression, str]
 
 
-from daft.config import _RayRunnerConfig, get_daft_settings
+from daft.config import get_daft_settings
 
 _RUNNER: Optional[Runner] = None
 
@@ -761,9 +761,7 @@ class DataFrame:
             return _RUNNER
         if get_daft_settings().runner_config.name == "ray":
             logger.info("Using RayRunner")
-            runner_config = get_daft_settings().runner_config
-            assert isinstance(runner_config, _RayRunnerConfig)
-            _RUNNER = RayRunner(address=runner_config.address)
+            _RUNNER = RayRunner(address=get_daft_settings().ray_runner_config().address)
         else:
             logger.info("Using PyRunner")
             _RUNNER = PyRunner()
