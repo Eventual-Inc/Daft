@@ -9,9 +9,9 @@ from typing import IO, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Unio
 import pandas
 import pyarrow as pa
 import pyarrow.parquet as papq
-from loguru import logger
 from pyarrow import csv, json
 
+from daft.context import get_context
 from daft.dataframe.schema import DataFrameSchema
 from daft.datasources import (
     CSVSourceInfo,
@@ -26,19 +26,11 @@ from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionSet
-from daft.runners.pyrunner import PyRunner
-from daft.runners.ray_runner import RayRunner
-from daft.runners.runner import Runner
 from daft.viz import DataFrameDisplay
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
-
-
-from daft.config import DaftSettings
-
-_RUNNER: Optional[Runner] = None
 
 
 def _sample_with_pyarrow(
@@ -737,8 +729,9 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with cached results.
         """
+        context = get_context()
         if self._result is None:
-            self._result = self._get_runner().run(self._plan)
+            self._result = context.runner().run(self._plan)
         return self
 
     def to_pandas(self) -> pandas.DataFrame:
@@ -754,18 +747,6 @@ class DataFrame:
         del self._result
         self._result = None
         return pd_df
-
-    def _get_runner(self) -> Runner:
-        global _RUNNER
-        if _RUNNER is not None:
-            return _RUNNER
-        if DaftSettings.DAFT_RUNNER.upper() == "RAY":
-            logger.info("Using RayRunner")
-            _RUNNER = RayRunner()
-        else:
-            logger.info("Using PyRunner")
-            _RUNNER = PyRunner()
-        return _RUNNER
 
 
 @dataclass

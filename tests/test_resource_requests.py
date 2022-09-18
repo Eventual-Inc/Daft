@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from daft import DataFrame, udf
-from daft.config import DaftSettings
+from daft.context import get_context
 from daft.expressions import col
 from daft.internal.gpu import cuda_device_count
 from tests.conftest import assert_df_equals
@@ -50,7 +50,7 @@ def requesting_too_many_cpus(c):
 ###
 
 
-@pytest.mark.skipif(DaftSettings.DAFT_RUNNER.upper() != "PY", reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name != "py", reason="requires PyRunner to be in use")
 def test_requesting_too_many_cpus():
     df = DataFrame.from_pydict(DATA)
     df = df.with_column("foo", requesting_too_many_cpus(col("id")))
@@ -59,7 +59,7 @@ def test_requesting_too_many_cpus():
         df.to_pandas()
 
 
-@pytest.mark.skipif(DaftSettings.DAFT_RUNNER.upper() != "PY", reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name != "py", reason="requires PyRunner to be in use")
 def test_requesting_too_many_gpus():
     df = DataFrame.from_pydict(DATA)
     df = df.with_column("foo", requesting_too_many_gpus(col("id")))
@@ -68,7 +68,7 @@ def test_requesting_too_many_gpus():
         df.to_pandas()
 
 
-@pytest.mark.skipif(DaftSettings.DAFT_RUNNER.upper() != "PY", reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name != "py", reason="requires PyRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 def test_with_column_pyrunner():
     df = DataFrame.from_pydict(DATA).repartition(5)
@@ -96,7 +96,7 @@ def noop_assert_gpu_available(c):
     return c
 
 
-@pytest.mark.skipif(DaftSettings.DAFT_RUNNER.upper() != "RAY", reason="requires RayRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="requires RayRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 @pytest.mark.parametrize("num_gpus", [None, 1])
 def test_with_column_rayrunner(num_gpus):
@@ -108,7 +108,7 @@ def test_with_column_rayrunner(num_gpus):
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
 
 
-@pytest.mark.skipif(DaftSettings.DAFT_RUNNER.upper() != "RAY", reason="requires RayRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="requires RayRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 def test_with_column_max_resources_rayrunner():
     df = DataFrame.from_pydict(DATA).repartition(2)
@@ -126,7 +126,7 @@ def test_with_column_max_resources_rayrunner():
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
 
 
-@pytest.mark.skipif(DaftSettings.DAFT_RUNNER.upper() != "RAY", reason="requires RayRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="requires RayRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 def test_sort_rayrunner():
     df = DataFrame.from_pydict(DATA).repartition(2)
@@ -135,7 +135,7 @@ def test_sort_rayrunner():
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
 
 
-@pytest.mark.skipif(DaftSettings.DAFT_RUNNER.upper() != "RAY", reason="requires RayRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="requires RayRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 def test_repartition_rayrunner():
     df = DataFrame.from_pydict(DATA).repartition(2, noop_assert_gpu_available(col("id")))

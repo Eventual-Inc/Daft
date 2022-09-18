@@ -206,7 +206,8 @@ class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
 
 
 class RayRunner(Runner):
-    def __init__(self) -> None:
+    def __init__(self, address: Optional[str]) -> None:
+        self._ray_context = ray.init(address=address)
         self._part_manager = PartitionManager(lambda: RayPartitionSet({}))
         self._part_op_runner = RayLogicalPartitionOpRunner()
         self._global_op_runner = RayLogicalGlobalOpRunner()
