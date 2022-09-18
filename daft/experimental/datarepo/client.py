@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, Type, TypeVar
+from typing import List, Type, TypeVar
 
 from icebridge.client import IcebergCatalog, IceBridgeClient
 
-from daft import config
 from daft.experimental.datarepo.datarepo import DataRepo
 
 logger = logging.getLogger(__name__)
@@ -40,13 +39,10 @@ class DatarepoClient:
         return self._iceberg_catalog.drop_table(repo_id, True)  # type: ignore
 
 
-def get_client(datarepo_path: Optional[str] = None) -> DatarepoClient:
+def get_client(datarepo_path: str) -> DatarepoClient:
     """Return the appropriate DatarepoClient as configured by the environment
 
     Returns:
         DatarepoClient: DatarepoClient to access Datarepos
     """
-    if datarepo_path is None:
-        daft_settings = config.DaftSettings()
-        datarepo_path = f"s3://{daft_settings.DAFT_DATAREPOS_BUCKET}/{daft_settings.DAFT_DATAREPOS_PREFIX}"
     return DatarepoClient(datarepo_path)
