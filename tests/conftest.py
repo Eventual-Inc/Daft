@@ -4,19 +4,8 @@ from typing import List, Union
 
 import pandas as pd
 import pytest
-import ray
 
-from daft.config import get_daft_settings
-
-
-@pytest.fixture(scope="session", autouse=True)
-def ray_cluster():
-    if get_daft_settings().runner_config.name == "ray":
-        ray.init(num_cpus=os.cpu_count() // 2, include_dashboard=False)
-        yield
-        ray.shutdown()
-    else:
-        yield
+from daft.context import get_context
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -33,7 +22,7 @@ def sentry_telemetry():
             # traces_sampler=True,
         )
         sentry_sdk.set_tag("CI", os.environ["CI"])
-        sentry_sdk.set_tag("DAFT_RUNNER", get_daft_settings().runner_config.name)
+        sentry_sdk.set_tag("DAFT_RUNNER", get_context().runner_config.name)
     else:
         ...
     yield
