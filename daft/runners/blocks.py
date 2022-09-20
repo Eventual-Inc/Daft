@@ -22,12 +22,16 @@ from typing import (
 
 import numpy as np
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pac
 from pandas.core.reshape.merge import get_join_indexers
 
 from daft.execution.operators import OperatorEnum, OperatorEvaluator
 from daft.internal.hashing import hash_chunked_array
+
+# A type representing some Python scalar (non-series/array like object)
+PyScalar = Any
 
 ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
 UnaryFuncType = Callable[[ArrType], ArrType]
@@ -103,6 +107,10 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @abstractmethod
+    def to_polars(self) -> Union[PyScalar, pl.Series]:
+        raise NotImplementedError()
+
+    @abstractmethod
     def to_arrow(self) -> pa.ChunkedArray:
         raise NotImplementedError()
 
@@ -113,6 +121,10 @@ class DataBlock(Generic[ArrType]):
             return ArrowDataBlock(data=data)
         elif isinstance(data, pa.Array):
             return ArrowDataBlock(data=pa.chunked_array([data]))
+        elif isinstance(data, pl.Series):
+            if data.dtype == pl.datatypes.Object:
+                return PyListDataBlock(data=data.to_list())
+            return ArrowDataBlock(pa.chunked_array([data.to_arrow()]))
         elif isinstance(data, np.ndarray):
             if data.dtype == np.object_ or len(data.shape) > 1:
                 try:
@@ -369,6 +381,11 @@ class PyListDataBlock(DataBlock[List[T]]):
             res[i] = obj
         return res
 
+    def to_polars(self) -> Union[PyScalar, pl.Series]:
+        if self.is_scalar():
+            return self.data
+        return pl.Series(self.data, dtype=pl.datatypes.Object)
+
     def to_arrow(self) -> pa.ChunkedArray:
         raise NotImplementedError("can not convert pylist block to arrow")
 
@@ -438,6 +455,11 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         if isinstance(self.data, pa.Scalar):
             return self.data.as_py()
         return self.data.to_numpy()
+
+    def to_polars(self) -> Union[PyScalar, pl.Series]:
+        if isinstance(self.data, pa.Scalar):
+            return self.data.as_py()
+        return pl.Series(self.data)
 
     def to_arrow(self) -> pa.ChunkedArray:
         return self.data

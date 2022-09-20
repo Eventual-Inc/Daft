@@ -244,7 +244,7 @@ class vPartition:
         new_partition_to_columns: List[Dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]
         argsort_targets = target_partition_indices.argsort()
         sorted_targets = target_partition_indices.take(argsort_targets)
-        sorted_targets_np = sorted_targets.to_numpy()
+        sorted_targets_np = sorted_targets.to_polars().to_numpy()
         pivots = np.where(np.diff(sorted_targets_np, prepend=np.nan))[0]
         target_partitions = sorted_targets_np[pivots]
 

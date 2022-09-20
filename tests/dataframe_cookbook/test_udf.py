@@ -39,7 +39,7 @@ def multiply_kwarg_pd(x, num=2):
 
 @udf(return_type=int)
 def multiply_kwarg_list(x, num=2):
-    return (x * num).tolist()
+    return x * num
 
 
 @udf(return_type=int)

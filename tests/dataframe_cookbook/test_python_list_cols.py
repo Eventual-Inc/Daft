@@ -4,6 +4,7 @@ from typing import List
 
 import numpy as np
 import pandas as pd
+import polars as pl
 import pytest
 
 from daft.dataframe import DataFrame
@@ -148,7 +149,7 @@ def test_pyobj_add(repartition_nparts, op):
 
 
 @udf(return_type=int)
-def get_length(features: List[np.ndarray]):
+def get_length(features: pl.Series[np.ndarray]):
     return [len(feature) for feature in features]
 
 
