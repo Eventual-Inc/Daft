@@ -62,7 +62,9 @@ if __name__ == "__main__":
         help="Path to the folder containing the TPCH dbgen tool and generated data",
     )
     parser.add_argument("--scale_factor", default=10.0, help="Scale factor to run on in GB", type=float)
-    parser.add_argument("--num_parts", default=None, help="Number of parts to generate (defaults to 1 part per GB)", type=int)
+    parser.add_argument(
+        "--num_parts", default=None, help="Number of parts to generate (defaults to 1 part per GB)", type=int
+    )
     args = parser.parse_args()
     num_parts = math.ceil(args.scale_factor) if args.num_parts is None else args.num_parts
 
