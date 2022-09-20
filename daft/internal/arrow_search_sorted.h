@@ -3,7 +3,7 @@
 #include <arrow/type.h>
 
 
-template <class T>
+template <typename T>
 void
 primative_binsearch_nonnull(const uint8_t *arr, const uint8_t *key, uint8_t *ret, const size_t arr_len,
             size_t key_len, const size_t arr_str, const size_t key_str, const size_t ret_str) {

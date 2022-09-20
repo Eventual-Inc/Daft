@@ -92,8 +92,8 @@ cdef shared_ptr[CArray] _search_sorted_primative_array(shared_ptr[CArray] arr, s
     cdef shared_ptr[CBuffer] result_buffer = to_shared(GetResultValue(AllocateBuffer(result_buffer_size, NULL)))
     cdef stdint.uint8_t* buffer_data_ptr = <stdint.uint8_t*> result_buffer.get().mutable_data()
 
-
     cdef stdint.int64_t byte_width =  (buffers.at(1).get().size() // (length + offset)) if length > 0 else 0
+
     primative_binsearch_nonnull[stdint.int64_t](data_ptr + byte_width*offset, key_data_ptr + byte_width*key_offset, buffer_data_ptr, length, key_length, byte_width, byte_width, cython.sizeof(stdint.uint64_t))
 
     cdef vector[shared_ptr[CBuffer]] result_buffer_vector
