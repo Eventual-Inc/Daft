@@ -40,12 +40,6 @@ def pytest_addoption(parser):
         default=False,
         help="run tests that are marked for Test Driven Development (including low priority)",
     )
-    parser.addoption(
-        "--tpch_benchmark",
-        action="store_true",
-        default=False,
-        help="Runs benchmarking on TPCH using scale factor 10 and parquet",
-    )
 
 
 def pytest_configure(config):
