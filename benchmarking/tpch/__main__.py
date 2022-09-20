@@ -40,7 +40,7 @@ def run_all_benchmarks(parquet_folder):
             daft_df.to_pandas()
 
 
-def generate_parquet_data(tpch_gen_folder: str, scale_factor: float) -> str:
+def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: int) -> str:
     """Generates Parquet data and returns the path to the folder
 
     Args:
@@ -50,7 +50,6 @@ def generate_parquet_data(tpch_gen_folder: str, scale_factor: float) -> str:
     Returns:
         str: Path to folder containing Parquet files
     """
-    num_parts = math.ceil(scale_factor)
     csv_folder = data_generation.gen_csv_files(basedir=tpch_gen_folder, scale_factor=scale_factor, num_parts=num_parts)
     return data_generation.gen_parquet(csv_folder)
 
@@ -63,6 +62,11 @@ if __name__ == "__main__":
         help="Path to the folder containing the TPCH dbgen tool and generated data",
     )
     parser.add_argument("--scale_factor", default=10.0, help="Scale factor to run on in GB", type=float)
+    parser.add_argument("--num_parts", default=None, help="Number of parts to generate (defaults to 1 part per GB)", type=int)
     args = parser.parse_args()
-    parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor)
+    num_parts = math.ceil(args.scale_factor) if args.num_parts is None else args.num_parts
+
+    # Generate Parquet data, or skip if data is cached on disk
+    parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
+
     run_all_benchmarks(parquet_folder)
