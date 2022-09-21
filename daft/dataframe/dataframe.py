@@ -7,6 +7,7 @@ from functools import partial
 from typing import IO, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
 import pandas
+import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as papq
 from pyarrow import csv, json
@@ -117,7 +118,7 @@ class DataFrame:
         df = self
         if n != -1:
             df = df.limit(n)
-        execution_result = df.to_pandas()
+        execution_result = df.to_polars()
         return DataFrameDisplay(execution_result, df.schema())
 
     def __repr__(self) -> str:
@@ -741,12 +742,26 @@ class DataFrame:
         Returns:
             pandas.DataFrame: pandas DataFrame converted from a Daft DataFrame
         """
+        pl_df = self.to_polars()
+        object_col_names = [name for name, dtype in pl_df.schema.items() if dtype == pl.Object]
+        pd_df = pl_df.drop(object_col_names).to_pandas()
+        for object_col_name in object_col_names:
+            pd_df[object_col_name] = pl_df[object_col_name].to_list()
+        return pd_df
+
+    def to_polars(self) -> pl.DataFrame:
+        """Converts the current DataFrame to a polars DataFrame.
+        If results have not computed yet, collect will be called.
+
+        Returns:
+            polars.DataFrame: polars DataFrame converted from a Daft DataFrame
+        """
         self.collect()
         assert self._result is not None
-        pd_df = self._result.to_pandas(schema=self._plan.schema())
+        pl_df = self._result.to_polars(schema=self._plan.schema())
         del self._result
         self._result = None
-        return pd_df
+        return pl_df
 
 
 @dataclass

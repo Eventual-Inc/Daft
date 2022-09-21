@@ -4,7 +4,7 @@ import multiprocessing
 from dataclasses import dataclass
 from typing import Callable, ClassVar, Dict, List, Optional, Type
 
-import pandas as pd
+import polars as pl
 
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
@@ -40,12 +40,12 @@ from daft.runners.shuffle_ops import (
 class LocalPartitionSet(PartitionSet[vPartition]):
     _partitions: Dict[PartID, vPartition]
 
-    def to_pandas(self, schema: Optional[ExpressionList] = None) -> "pd.DataFrame":
+    def to_polars(self, schema: Optional[ExpressionList] = None) -> pl.DataFrame:
         partition_ids = sorted(list(self._partitions.keys()))
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
-        part_dfs = [self._partitions[pid].to_pandas(schema=schema) for pid in partition_ids]
-        return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
+        part_dfs = [self._partitions[pid].to_polars(schema=schema) for pid in partition_ids]
+        return pl.concat([pdf for pdf in part_dfs if not pdf.is_empty()])
 
     def get_partition(self, idx: PartID) -> vPartition:
         return self._partitions[idx]

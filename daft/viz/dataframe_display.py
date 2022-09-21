@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-import pandas
+import polars as pl
 from tabulate import tabulate
 
 from daft.dataframe.schema import DataFrameSchema
@@ -23,7 +23,7 @@ if HAS_PILLOW:
 @dataclass(frozen=True)
 class DataFrameDisplay:
 
-    pd_df: pandas.DataFrame
+    pl_df: pl.DataFrame
     schema: DataFrameSchema
     column_char_width: int = 20
     max_col_rows: int = 3
@@ -51,9 +51,9 @@ class DataFrameDisplay:
                 s = str(val)
             return s if len(s) <= max_chars_per_cell else s[: max_chars_per_cell - 4] + "..."
 
-        pd_df = self.pd_df.applymap(stringify_and_truncate)
+        pl_df = self.pl_df.applymap(stringify_and_truncate)
         table = tabulate(
-            pd_df,
+            pl_df,
             headers=[f"{name}<br>{self.schema[name].daft_type}" for name in self.schema.column_names()],
             tablefmt="unsafehtml",
             showindex=False,
@@ -63,7 +63,7 @@ class DataFrameDisplay:
         return f"""
             <div>
                 {table_string}
-                <p>(Showing first {len(pd_df)} rows)</p>
+                <p>(Showing first {len(pl_df)} rows)</p>
             </div>
         """
 
@@ -74,9 +74,9 @@ class DataFrameDisplay:
             s = str(val)
             return s if len(s) <= max_chars_per_cell else s[: max_chars_per_cell - 4] + "..."
 
-        pd_df = self.pd_df.applymap(stringify_and_truncate)
+        pl_df = self.pl_df.applymap(stringify_and_truncate)
         return tabulate(
-            pd_df,
+            pl_df,
             headers=[f"{name}\n{self.schema[name].daft_type}" for name in self.schema.column_names()],
             showindex=False,
             missingval="None",

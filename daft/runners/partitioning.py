@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
 from uuid import uuid4
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pyarrow as pa
 from pyarrow import dataset as pada
 
@@ -158,16 +158,16 @@ class vPartition:
             tiles[col_id] = PyListTile(column_id=col_id, column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
-    def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
+    def to_polars(self, schema: Optional[ExpressionList] = None) -> pl.DataFrame:
         if schema is not None:
             output_schema = [(expr.name(), expr.get_id()) for expr in schema]
         else:
             output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
-        return pd.DataFrame(
+        return pl.DataFrame(
             {
-                name: pd.Series(self.columns[id].block.data)
+                name: pl.Series(self.columns[id].block.data, dtype=pl.Object)
                 if isinstance(self.columns[id].block, PyListDataBlock)
-                else self.columns[id].block.data.to_pandas()
+                else pl.Series(self.columns[id].block.data)
                 for name, id in output_schema
             }
         )
@@ -393,7 +393,7 @@ PartitionT = TypeVar("PartitionT")
 
 class PartitionSet(Generic[PartitionT]):
     @abstractmethod
-    def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
+    def to_polars(self, schema: Optional[ExpressionList] = None) -> pl.DataFrame:
         raise NotImplementedError()
 
     @abstractmethod

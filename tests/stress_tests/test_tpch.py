@@ -1,3 +1,4 @@
+import datetime
 import math
 import os
 import pathlib
@@ -76,6 +77,12 @@ def check_answer(gen_tpch):
         res = cursor.execute(query)
         sqlite_results = res.fetchall()
         sqlite_pd_results = pd.DataFrame.from_records(sqlite_results, columns=daft_pd_df.columns)
+
+        # HACK: datetimes are not parsed correctly in Pandas, we have to cast them manually here
+        for colname in sqlite_pd_results.columns:
+            if isinstance(sqlite_pd_results[colname][0], datetime.date):
+                sqlite_pd_results[colname] = pd.to_datetime(sqlite_pd_results[colname])
+
         assert_df_equals(daft_pd_df, sqlite_pd_results, assert_ordering=True)
 
     return _check_answer

@@ -69,7 +69,7 @@ def test_vpartition_to_arrow_table() -> None:
         block = DataBlock.make_block(np.ones(10) * i)
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
-    arrow_table = pa.Table.from_pandas(part.to_pandas())
+    arrow_table = pa.Table.from_pandas(part.to_polars().to_pandas())
     assert arrow_table.column_names == [f"col_{i}" for i in range(4)]
 
     for i in range(4):
@@ -124,7 +124,7 @@ def test_vpartition_head() -> None:
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     part = part.head(3)
-    arrow_table = pa.Table.from_pandas(part.to_pandas())
+    arrow_table = pa.Table.from_pandas(part.to_polars().to_pandas())
     assert arrow_table.column_names == [f"col_{i}" for i in range(4)]
 
     for i in range(4):
@@ -138,7 +138,7 @@ def test_vpartition_sample() -> None:
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     part = part.sample(3)
-    arrow_table = pa.Table.from_pandas(part.to_pandas())
+    arrow_table = pa.Table.from_pandas(part.to_polars().to_pandas())
     assert arrow_table.column_names == [f"col_{i}" for i in range(4)]
 
     for i in range(4):
@@ -156,7 +156,7 @@ def test_vpartition_filter() -> None:
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     part = part.filter(ExpressionList([expr]))
-    arrow_table = pa.Table.from_pandas(part.to_pandas())
+    arrow_table = pa.Table.from_pandas(part.to_polars().to_pandas())
     assert arrow_table.column_names == [f"col_{i}" for i in range(col_id, col_id + 4)]
 
     for i in range(4):
@@ -179,7 +179,7 @@ def test_vpartition_sort() -> None:
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     part = part.sort(expr)
-    arrow_table = pa.Table.from_pandas(part.to_pandas())
+    arrow_table = pa.Table.from_pandas(part.to_polars().to_pandas())
     assert arrow_table.column_names == [f"col_{i}" for i in range(col_id, col_id + 4)]
 
     is_sorted = lambda a: np.all(a[:-1] <= a[1:])
@@ -204,7 +204,7 @@ def test_vpartition_sort_desc() -> None:
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     part = part.sort(expr, desc=True)
-    arrow_table = pa.Table.from_pandas(part.to_pandas())
+    arrow_table = pa.Table.from_pandas(part.to_polars().to_pandas())
     assert arrow_table.column_names == [f"col_{i}" for i in range(col_id, col_id + 4)]
 
     is_sorted = lambda a: np.all(a[:-1] <= a[1:])

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Type
 
-import pandas as pd
+import polars as pl
 import ray
 
 from daft.execution.execution_plan import ExecutionPlan
@@ -39,13 +39,13 @@ from daft.runners.shuffle_ops import (
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     _partitions: Dict[PartID, ray.ObjectRef]
 
-    def to_pandas(self, schema: Optional[ExpressionList] = None) -> "pd.DataFrame":
+    def to_polars(self, schema: Optional[ExpressionList] = None) -> pl.DataFrame:
         partition_ids = sorted(list(self._partitions.keys()))
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
         all_partitions = ray.get([self._partitions[pid] for pid in partition_ids])
-        part_dfs = [part.to_pandas(schema=schema) for part in all_partitions]
-        return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
+        part_dfs = [part.to_polars(schema=schema) for part in all_partitions]
+        return pl.concat([pdf for pdf in part_dfs if not pdf.empty])
 
     def get_partition(self, idx: PartID) -> ray.ObjectRef:
         return self._partitions[idx]
