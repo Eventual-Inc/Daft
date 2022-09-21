@@ -22,6 +22,10 @@ class ExpressionType:
         return t == _TYPE_REGISTRY["logical"]
 
     @staticmethod
+    def is_string(t: ExpressionType) -> bool:
+        return t == _TYPE_REGISTRY["string"]
+
+    @staticmethod
     def is_primitive(t: ExpressionType) -> bool:
         return isinstance(t, PrimitiveExpressionType)
 
