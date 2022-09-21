@@ -24,7 +24,7 @@ struct SearchSortedPrimativeSingle {
 
   static void KernelNonNull(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
     using T = typename InType::c_type;
-    ARROW_CHECK(*arr->type.get() == *keys->type.get());
+    ARROW_CHECK(arr->type->id() == keys->type->id());
 
     ARROW_CHECK(arr->GetNullCount() == 0);
     ARROW_CHECK(keys->GetNullCount() == 0);
@@ -84,6 +84,7 @@ struct SearchSortedPrimativeSingle {
   static void KernelWithNull(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
     using T = typename InType::c_type;
     ARROW_CHECK(arr->GetNullCount() == 0);
+    ARROW_CHECK(arr->type->id() == keys->type->id());
 
     const T *arr_ptr = arr->GetValues<T>(1);
     ARROW_CHECK(arr_ptr != NULL);
@@ -196,10 +197,104 @@ void search_sorted_primative_single(const arrow::ArrayData *arr, const arrow::Ar
   }
 }
 
+int strcmpNoTerminator(const uint8_t *str1, const uint8_t *str2, size_t str1len, size_t str2len) {
+  // https://stackoverflow.com/questions/24770665/comparing-2-char-with-different-lengths-without-null-terminators
+  // Get the length of the shorter string
+  size_t len = str1len < str2len ? str1len : str2len;
+  // Compare the strings up until one ends
+  int cmp = memcmp(str1, str2, len);
+  // If they weren't equal, we've got our result
+  // If they are equal and the same length, they matched
+  if (cmp != 0 || str1len == str2len) {
+    return cmp;
+  }
+  // If they were equal but one continues on, the shorter string is
+  // lexicographically smaller
+  return str1len < str2len ? -1 : 1;
+}
+
+template <typename T>
 void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
-  switch (arr->type->id()) {
-    default:
-      break;
+  ARROW_CHECK(arrow::is_base_binary_like(arr->type->id()));
+  ARROW_CHECK(arr->type->id() == keys->type->id());
+  ARROW_CHECK(result->type->id() == arrow::Type::UINT64);
+
+  ARROW_CHECK(arr->GetNullCount() == 0);
+  ARROW_CHECK(arr->type->id() == keys->type->id());
+
+  const T *arr_index_ptr = arr->GetValues<T>(1);
+  ARROW_CHECK(arr_index_ptr != NULL);
+
+  const uint8_t *arr_data_ptr = arr->GetValues<uint8_t>(2);
+  ARROW_CHECK(arr_data_ptr != NULL);
+
+  const bool has_nulls = keys->GetNullCount() > 0;
+  const uint8_t *keys_bitmask_ptr = keys->GetValues<uint8_t>(0);
+  // ARROW_CHECK(keys_bitmask_ptr != NULL);
+
+  const T *keys_index_ptr = keys->GetValues<T>(1);
+  ARROW_CHECK(keys_index_ptr != NULL);
+
+  const uint8_t *keys_data_ptr = keys->GetValues<uint8_t>(2);
+  ARROW_CHECK(keys_data_ptr != NULL);
+
+  ARROW_CHECK(result->length == keys->length);
+
+  uint64_t *result_ptr = result->GetMutableValues<uint64_t>(1);
+  ARROW_CHECK(result_ptr != NULL);
+
+  uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0);
+  ARROW_CHECK(!has_nulls || (result_bitmask_ptr != NULL));
+
+  size_t min_idx = 0;
+  size_t arr_len = arr->length;
+  size_t max_idx = arr_len;
+  size_t key_len = keys->length;
+
+  size_t last_key_idx = 0;
+
+  if (key_len == 0) {
+    return;
+  }
+
+  for (size_t key_idx = 0; key_idx < key_len; key_idx++, result_ptr++) {
+    if (has_nulls) {
+      const bool key_bit = arrow::bit_util::GetBit(keys_bitmask_ptr, key_idx);
+      arrow::bit_util::SetBitTo(result_bitmask_ptr, key_idx, key_bit);
+      if (!key_bit) {
+        continue;
+      }
+    }
+    const T curr_key_offset = keys_index_ptr[key_idx];
+    const size_t curr_key_size = keys_index_ptr[key_idx + 1] - curr_key_offset;
+    const T last_key_offset = keys_index_ptr[last_key_idx];
+    const size_t last_key_size = keys_index_ptr[last_key_idx + 1] - last_key_offset;
+    /*
+     * Updating only one of the indices based on the previous key
+     * gives the search a big boost when keys are sorted, but slightly
+     * slows down things for purely random ones.
+     */
+    if (strcmpNoTerminator(keys_data_ptr + last_key_offset, keys_data_ptr + curr_key_offset, last_key_size, curr_key_size) < 0) {
+      max_idx = arr_len;
+    } else {
+      min_idx = 0;
+      max_idx = (max_idx < arr_len) ? (max_idx + 1) : arr_len;
+    }
+
+    last_key_idx = key_idx;
+
+    while (min_idx < max_idx) {
+      const size_t mid_idx = min_idx + ((max_idx - min_idx) >> 1);
+      const T mid_key_offset = keys_index_ptr[mid_idx];
+      const size_t mid_key_size = keys_index_ptr[mid_idx + 1] - mid_key_offset;
+
+      if (strcmpNoTerminator(keys_data_ptr + mid_key_offset, keys_data_ptr + curr_key_offset, mid_key_size, curr_key_size) < 0) {
+        min_idx = mid_idx + 1;
+      } else {
+        max_idx = mid_idx;
+      }
+    }
+    *result_ptr = min_idx;
   }
 }
 
@@ -219,6 +314,12 @@ std::shared_ptr<arrow::Array> search_sorted(const arrow::Array *arr, const arrow
   ARROW_CHECK(result.get() != NULL);
   if (arrow::is_primitive(arr->type()->id())) {
     search_sorted_primative_single(arr->data().get(), keys->data().get(), result.get());
+  } else if (arrow::is_binary_like(arr->type()->id())) {
+    search_sorted_binary_single<arrow::BinaryType::offset_type>(arr->data().get(), keys->data().get(), result.get());
+  } else if (arrow::is_large_binary_like(arr->type()->id())) {
+    search_sorted_binary_single<arrow::LargeBinaryType::offset_type>(arr->data().get(), keys->data().get(), result.get());
+  } else {
+    ARROW_LOG(FATAL) << "Unsupported Type " << arrow::is_large_binary_like(arr->type()->id());
   }
   return arrow::MakeArray(result);
 }

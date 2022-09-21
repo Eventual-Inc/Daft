@@ -39,25 +39,10 @@ def search_sorted_chunked_array(data_arr, keys):
         raise TypeError("not a chunked array")
     num_chunks: cython.int = carr.get().num_chunks()
     assert num_chunks == 1
-    cdef shared_ptr[CDataType] ctype = carr.get().type()
-    cdef Type type_id = ctype.get().id()
-    is_integer: cython.bool = False
-    is_string: cython.bool = False
-
-    if (Type._Type_UINT8 <= type_id) and (type_id <= Type._Type_INT64):
-        is_integer = True
-        # elif type_id == Type._Type_STRING:
-        #     is_string = True
-    else:
-        raise TypeError('excepted integer or string got neither')
-
     cdef shared_ptr[CChunkedArray] key_arr = pyarrow_unwrap_chunked_array(keys)
     if key_arr.get() == NULL:
         raise TypeError("not a chunked array")
     assert key_arr.get().num_chunks() == 1
-    cdef shared_ptr[CDataType] key_ctype = key_arr.get().type()
-    cdef Type key_type_id = key_ctype.get().id()
-    assert key_type_id == type_id
 
     cdef shared_ptr[CArray] arr
 
