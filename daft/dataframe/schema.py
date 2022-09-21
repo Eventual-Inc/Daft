@@ -40,10 +40,15 @@ class DataFrameSchema:
         return cls(fields)
 
     def _to_pandas(self) -> pd.DataFrame:
-        return pd.DataFrame({field.name: [str(field.daft_type)] for field in self._fields.values()})
+        return pd.DataFrame(
+            {
+                "column_name": [field.name for field in self._fields.values()],
+                "type": [field.daft_type for field in self._fields.values()],
+            },
+        )
 
     def __repr__(self) -> str:
-        return cast(str, self._to_pandas().__repr__())
+        return cast(str, self._to_pandas().to_string(index=False))
 
     def _repr_html_(self) -> str:
-        return cast(str, self._to_pandas()._repr_html_())
+        return cast(str, self._to_pandas().to_html(index=False))
