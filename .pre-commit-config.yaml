@@ -54,6 +54,7 @@ repos:
     hooks:
       - id: clang-format
         types_or: [c, c++]
+        exclude_types: [python]
         args: [--style=Google]
 
 
