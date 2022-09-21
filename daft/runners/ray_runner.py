@@ -5,6 +5,7 @@ from typing import Any, Callable, ClassVar, Dict, List, Optional, Type
 
 import pandas as pd
 import ray
+from loguru import logger
 
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
@@ -207,7 +208,11 @@ class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
 
 class RayRunner(Runner):
     def __init__(self, address: Optional[str]) -> None:
-        self._ray_context = ray.init(address=address)
+        if ray.is_initialized():
+            logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context")
+            self._ray_context = ray.init(address=address, ignore_reinit_error=True)
+        else:
+            self._ray_context = ray.init(address=address)
         self._part_manager = PartitionManager(lambda: RayPartitionSet({}))
         self._part_op_runner = RayLogicalPartitionOpRunner()
         self._global_op_runner = RayLogicalGlobalOpRunner()
