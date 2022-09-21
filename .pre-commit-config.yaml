@@ -55,7 +55,7 @@ repos:
       - id: clang-format
         types_or: [c, c++]
         exclude_types: [python]
-        args: [--style=Google]
+        args: []
 
 
   # - repo: https://github.com/stackrox/kube-linter

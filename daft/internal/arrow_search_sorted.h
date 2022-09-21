@@ -4,10 +4,8 @@
 #include <functional>  // for std::less and std::less_equal
 
 template <typename T>
-void primative_binsearch_nonnull(const uint8_t *arr, const uint8_t *key,
-                                 uint8_t *ret, const size_t arr_len,
-                                 size_t key_len, const size_t arr_str,
-                                 const size_t key_str, const size_t ret_str) {
+void primative_binsearch_nonnull(const uint8_t *arr, const uint8_t *key, uint8_t *ret, const size_t arr_len, size_t key_len,
+                                 const size_t arr_str, const size_t key_str, const size_t ret_str) {
   /*
    * Adapted from numpy binary search:
    * https://github.com/numpy/numpy/blob/main/numpy/core/src/npysort/binsearch.cpp
