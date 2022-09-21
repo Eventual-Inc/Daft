@@ -67,7 +67,7 @@ def search_sorted_chunked_array(data_arr, keys):
     for i in range(num_chunks):
         arr = carr.get().chunk(i)
         key_single_arr = key_arr.get().chunk(i)
-        result__ = search_sorted(arr.get(), key_single_arr.get())
+        search_results.push_back(search_sorted(arr.get(), key_single_arr.get()))
 
     cdef shared_ptr[CChunkedArray] result = make_shared[CChunkedArray](search_results, GetPrimitiveType(Type._Type_UINT64))
     return pyarrow_wrap_chunked_array(result)

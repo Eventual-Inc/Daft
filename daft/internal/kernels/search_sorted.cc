@@ -1,6 +1,9 @@
+#include <arrow/api.h>
 #include <arrow/array.h>
 #include <arrow/array/data.h>
+#include <arrow/buffer.h>
 #include <arrow/type_traits.h>
+#include <arrow/util/logging.h>
 
 #include <iostream>
 
@@ -11,9 +14,64 @@ namespace {
 template <typename InType>
 struct SearchSortedPrimativeSingle {
   static void Exec(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
+    return KernelNonNull(arr, keys, result);
+  }
+
+  static void KernelNonNull(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
     using T = typename InType::c_type;
-    std::cout << typeid(T).name() << std::endl;
-    return;
+    ARROW_CHECK(arr->GetNullCount() == 0);
+    ARROW_CHECK(keys->GetNullCount() == 0);
+
+    const T *arr_ptr = arr->GetValues<T>(1);
+    ARROW_CHECK(arr_ptr != NULL);
+
+    const T *keys_ptr = keys->GetValues<T>(1);
+    ARROW_CHECK(keys_ptr != NULL);
+
+    ARROW_CHECK(result->type->id() == arrow::Type::UINT64);
+
+    uint64_t *result_ptr = result->GetMutableValues<uint64_t>(1);
+    ARROW_CHECK(result_ptr != NULL);
+
+    auto cmp = std::less<T>{};
+    size_t min_idx = 0;
+    size_t arr_len = arr->length;
+    size_t max_idx = arr_len;
+    size_t key_len = keys->length;
+
+    if (key_len == 0) {
+      return;
+    }
+
+    T last_key_val = *keys_ptr;
+
+    for (; key_len > 0; key_len--, keys_ptr++, result_ptr++) {
+      const T key_val = *keys_ptr;
+      /*
+       * Updating only one of the indices based on the previous key
+       * gives the search a big boost when keys are sorted, but slightly
+       * slows down things for purely random ones.
+       */
+      if (cmp(last_key_val, key_val)) {
+        max_idx = arr_len;
+      } else {
+        min_idx = 0;
+        max_idx = (max_idx < arr_len) ? (max_idx + 1) : arr_len;
+      }
+
+      last_key_val = key_val;
+
+      while (min_idx < max_idx) {
+        const size_t mid_idx = min_idx + ((max_idx - min_idx) >> 1);
+        const T mid_val = *(arr_ptr + mid_idx);
+        if (cmp(mid_val, key_val)) {
+          min_idx = mid_idx + 1;
+        } else {
+          max_idx = mid_idx;
+        }
+      }
+      *result_ptr = min_idx;
+    }
   }
 };
 
@@ -47,10 +105,16 @@ void search_sorted_primative_single(const arrow::ArrayData *arr, const arrow::Ar
 }  // namespace
 
 std::shared_ptr<arrow::Array> search_sorted(const arrow::Array *arr, const arrow::Array *keys) {
+  ARROW_CHECK(arr != NULL);
+  ARROW_CHECK(keys != NULL);
   const size_t size = keys->length();
-  std::shared_ptr<arrow::ArrayData> result = arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), size, keys->null_count());
+  std::vector<std::shared_ptr<arrow::Buffer>> result_buffers{2};
+  result_buffers[1] = arrow::AllocateBuffer(sizeof(arrow::UInt64Type::c_type) * size).ValueOrDie();
+  std::shared_ptr<arrow::ArrayData> result =
+      arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), size, result_buffers, keys->null_count());
+  ARROW_CHECK(result.get() != NULL);
   if (arrow::is_primitive(arr->type()->id())) {
     search_sorted_primative_single(arr->data().get(), keys->data().get(), result.get());
   }
-  return 0;
+  return arrow::MakeArray(result);
 }
