@@ -30,10 +30,10 @@ import cython
 
 
 cdef extern from "search_sorted.h" nogil:
-    cdef int search_sorted(CArray* arr);
+    cdef shared_ptr[CArray] search_sorted(const CArray* arr, const CArray* keys);
 
 
-def search_sorted_chunked_array(data_arr,keys):
+def search_sorted_chunked_array(data_arr, keys):
     cdef shared_ptr[CChunkedArray] carr = pyarrow_unwrap_chunked_array(data_arr)
     if carr.get() == NULL:
         raise TypeError("not a chunked array")
@@ -67,7 +67,7 @@ def search_sorted_chunked_array(data_arr,keys):
     for i in range(num_chunks):
         arr = carr.get().chunk(i)
         key_single_arr = key_arr.get().chunk(i)
-        print(search_sorted(arr.get()))
+        result__ = search_sorted(arr.get(), key_single_arr.get())
 
     cdef shared_ptr[CChunkedArray] result = make_shared[CChunkedArray](search_results, GetPrimitiveType(Type._Type_UINT64))
     return pyarrow_wrap_chunked_array(result)

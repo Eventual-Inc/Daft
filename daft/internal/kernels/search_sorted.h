@@ -1,7 +1,8 @@
 
 namespace arrow {
-    class Array;
+class Array;
 
 } // namespace arrow
 
-int search_sorted(const arrow::Array* arr);
+std::shared_ptr<arrow::Array> search_sorted(const arrow::Array *arr,
+                                            const arrow::Array *keys);
