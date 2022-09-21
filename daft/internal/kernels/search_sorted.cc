@@ -24,6 +24,8 @@ struct SearchSortedPrimativeSingle {
 
   static void KernelNonNull(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
     using T = typename InType::c_type;
+    ARROW_CHECK(*arr->type.get() == *keys->type.get());
+
     ARROW_CHECK(arr->GetNullCount() == 0);
     ARROW_CHECK(keys->GetNullCount() == 0);
 
@@ -170,6 +172,32 @@ void search_sorted_primative_single(const arrow::ArrayData *arr, const arrow::Ar
       return SearchSortedPrimativeSingle<arrow::FloatType>::Exec(arr, keys, result);
     case arrow::Type::DOUBLE:
       return SearchSortedPrimativeSingle<arrow::DoubleType>::Exec(arr, keys, result);
+    case arrow::Type::DATE32:
+      return SearchSortedPrimativeSingle<arrow::Date32Type>::Exec(arr, keys, result);
+    case arrow::Type::DATE64:
+      return SearchSortedPrimativeSingle<arrow::Date64Type>::Exec(arr, keys, result);
+    case arrow::Type::TIME32:
+      return SearchSortedPrimativeSingle<arrow::Time32Type>::Exec(arr, keys, result);
+    case arrow::Type::TIME64:
+      return SearchSortedPrimativeSingle<arrow::Time64Type>::Exec(arr, keys, result);
+    case arrow::Type::TIMESTAMP:
+      return SearchSortedPrimativeSingle<arrow::TimestampType>::Exec(arr, keys, result);
+    case arrow::Type::DURATION:
+      return SearchSortedPrimativeSingle<arrow::DurationType>::Exec(arr, keys, result);
+    case arrow::Type::INTERVAL_MONTHS:
+      return SearchSortedPrimativeSingle<arrow::MonthIntervalType>::Exec(arr, keys, result);
+    // Need custom less function for this since it uses a custom struct for the data structure
+    // case arrow::Type::INTERVAL_MONTH_DAY_NANO:
+    //   return SearchSortedPrimativeSingle<arrow::MonthDayNanoIntervalType>::Exec(arr, keys, result);
+    case arrow::Type::INTERVAL_DAY_TIME:
+      return SearchSortedPrimativeSingle<arrow::DayTimeIntervalType>::Exec(arr, keys, result);
+    default:
+      break;
+  }
+}
+
+void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
+  switch (arr->type->id()) {
     default:
       break;
   }
