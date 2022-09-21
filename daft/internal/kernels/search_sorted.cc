@@ -3,6 +3,7 @@
 #include <arrow/array/data.h>
 #include <arrow/buffer.h>
 #include <arrow/type_traits.h>
+#include <arrow/util/bit_util.h>
 #include <arrow/util/logging.h>
 
 #include <iostream>
@@ -14,7 +15,11 @@ namespace {
 template <typename InType>
 struct SearchSortedPrimativeSingle {
   static void Exec(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
-    return KernelNonNull(arr, keys, result);
+    if (keys->GetNullCount() == 0) {
+      return KernelNonNull(arr, keys, result);
+    } else {
+      return KernelWithNull(arr, keys, result);
+    }
   }
 
   static void KernelNonNull(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
@@ -46,6 +51,74 @@ struct SearchSortedPrimativeSingle {
     T last_key_val = *keys_ptr;
 
     for (; key_len > 0; key_len--, keys_ptr++, result_ptr++) {
+      const T key_val = *keys_ptr;
+      /*
+       * Updating only one of the indices based on the previous key
+       * gives the search a big boost when keys are sorted, but slightly
+       * slows down things for purely random ones.
+       */
+      if (cmp(last_key_val, key_val)) {
+        max_idx = arr_len;
+      } else {
+        min_idx = 0;
+        max_idx = (max_idx < arr_len) ? (max_idx + 1) : arr_len;
+      }
+
+      last_key_val = key_val;
+
+      while (min_idx < max_idx) {
+        const size_t mid_idx = min_idx + ((max_idx - min_idx) >> 1);
+        const T mid_val = *(arr_ptr + mid_idx);
+        if (cmp(mid_val, key_val)) {
+          min_idx = mid_idx + 1;
+        } else {
+          max_idx = mid_idx;
+        }
+      }
+      *result_ptr = min_idx;
+    }
+  }
+
+  static void KernelWithNull(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
+    using T = typename InType::c_type;
+    ARROW_CHECK(arr->GetNullCount() == 0);
+
+    const T *arr_ptr = arr->GetValues<T>(1);
+    ARROW_CHECK(arr_ptr != NULL);
+
+    const T *keys_ptr = keys->GetValues<T>(1);
+    ARROW_CHECK(keys_ptr != NULL);
+
+    const uint8_t *keys_bitmask_ptr = keys->GetValues<uint8_t>(0);
+    ARROW_CHECK(keys_bitmask_ptr != NULL);
+
+    ARROW_CHECK(result->type->id() == arrow::Type::UINT64);
+    ARROW_CHECK(result->length == keys->length);
+
+    uint64_t *result_ptr = result->GetMutableValues<uint64_t>(1);
+    ARROW_CHECK(result_ptr != NULL);
+
+    uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0);
+    ARROW_CHECK(result_bitmask_ptr != NULL);
+
+    auto cmp = std::less<T>{};
+    size_t min_idx = 0;
+    size_t arr_len = arr->length;
+    size_t max_idx = arr_len;
+    size_t key_len = keys->length;
+
+    if (key_len == 0) {
+      return;
+    }
+
+    T last_key_val = *keys_ptr;
+
+    for (size_t key_idx = 0; key_idx < key_len; key_idx++, keys_ptr++, result_ptr++) {
+      const bool key_bit = arrow::bit_util::GetBit(keys_bitmask_ptr, key_idx);
+      arrow::bit_util::SetBitTo(result_bitmask_ptr, key_idx, key_bit);
+      if (!key_bit) {
+        continue;
+      }
       const T key_val = *keys_ptr;
       /*
        * Updating only one of the indices based on the previous key
@@ -109,6 +182,9 @@ std::shared_ptr<arrow::Array> search_sorted(const arrow::Array *arr, const arrow
   ARROW_CHECK(keys != NULL);
   const size_t size = keys->length();
   std::vector<std::shared_ptr<arrow::Buffer>> result_buffers{2};
+  if (keys->null_count() > 0) {
+    result_buffers[0] = arrow::AllocateBitmap(size).ValueOrDie();
+  }
   result_buffers[1] = arrow::AllocateBuffer(sizeof(arrow::UInt64Type::c_type) * size).ValueOrDie();
   std::shared_ptr<arrow::ArrayData> result =
       arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), size, result_buffers, keys->null_count());
