@@ -1,3 +1,5 @@
+#include "daft/internal/kernels/search_sorted.h"
+
 #include <arrow/api.h>
 #include <arrow/array.h>
 #include <arrow/array/data.h>
@@ -10,7 +12,6 @@
 #include <iostream>
 
 #include "arrow/array/concatenate.h"
-#include "daft/internal/kernels/memory_view.h"
 
 namespace {
 
@@ -302,6 +303,8 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
 
 }  // namespace
 
+namespace daft {
+namespace kernels {
 std::shared_ptr<arrow::Array> search_sorted_single_array(const arrow::Array *arr, const arrow::Array *keys) {
   ARROW_CHECK(arr != NULL);
   ARROW_CHECK(keys != NULL);
@@ -343,3 +346,6 @@ std::shared_ptr<arrow::ChunkedArray> search_sorted_chunked(const arrow::ChunkedA
   }
   return arrow::ChunkedArray::Make(result_arrays, std::make_shared<arrow::UInt64Type>()).ValueOrDie();
 }
+
+}  // namespace kernels
+}  // namespace daft
