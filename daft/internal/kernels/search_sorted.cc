@@ -252,7 +252,6 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
   size_t arr_len = arr->length;
   size_t max_idx = arr_len;
   size_t key_len = keys->length;
-
   size_t last_key_idx = 0;
 
   if (key_len == 0) {
@@ -267,10 +266,11 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
         continue;
       }
     }
-    const T curr_key_offset = keys_index_ptr[key_idx];
+    const size_t curr_key_offset = keys_index_ptr[key_idx];
     const size_t curr_key_size = keys_index_ptr[key_idx + 1] - curr_key_offset;
-    const T last_key_offset = keys_index_ptr[last_key_idx];
+    const size_t last_key_offset = keys_index_ptr[last_key_idx];
     const size_t last_key_size = keys_index_ptr[last_key_idx + 1] - last_key_offset;
+
     /*
      * Updating only one of the indices based on the previous key
      * gives the search a big boost when keys are sorted, but slightly
@@ -287,10 +287,10 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
 
     while (min_idx < max_idx) {
       const size_t mid_idx = min_idx + ((max_idx - min_idx) >> 1);
-      const T mid_key_offset = keys_index_ptr[mid_idx];
-      const size_t mid_key_size = keys_index_ptr[mid_idx + 1] - mid_key_offset;
+      const size_t mid_arr_offset = arr_index_ptr[mid_idx];
+      const size_t mid_arr_size = arr_index_ptr[mid_idx + 1] - mid_arr_offset;
 
-      if (strcmpNoTerminator(keys_data_ptr + mid_key_offset, keys_data_ptr + curr_key_offset, mid_key_size, curr_key_size) < 0) {
+      if (strcmpNoTerminator(arr_data_ptr + mid_arr_offset, keys_data_ptr + curr_key_offset, mid_arr_size, curr_key_size) < 0) {
         min_idx = mid_idx + 1;
       } else {
         max_idx = mid_idx;
