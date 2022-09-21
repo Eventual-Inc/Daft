@@ -2,12 +2,14 @@
 #include <arrow/array.h>
 #include <arrow/array/data.h>
 #include <arrow/buffer.h>
+#include <arrow/chunked_array.h>
 #include <arrow/type_traits.h>
 #include <arrow/util/bit_util.h>
 #include <arrow/util/logging.h>
 
 #include <iostream>
 
+#include "arrow/array/concatenate.h"
 #include "daft/internal/kernels/memory_view.h"
 
 namespace {
@@ -300,7 +302,7 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
 
 }  // namespace
 
-std::shared_ptr<arrow::Array> search_sorted(const arrow::Array *arr, const arrow::Array *keys) {
+std::shared_ptr<arrow::Array> search_sorted_single_array(const arrow::Array *arr, const arrow::Array *keys) {
   ARROW_CHECK(arr != NULL);
   ARROW_CHECK(keys != NULL);
   const size_t size = keys->length();
@@ -322,4 +324,22 @@ std::shared_ptr<arrow::Array> search_sorted(const arrow::Array *arr, const arrow
     ARROW_LOG(FATAL) << "Unsupported Type " << arrow::is_large_binary_like(arr->type()->id());
   }
   return arrow::MakeArray(result);
+}
+
+std::shared_ptr<arrow::ChunkedArray> search_sorted_chunked(const arrow::ChunkedArray *arr, const arrow::ChunkedArray *keys) {
+  ARROW_CHECK_NE(arr, NULL);
+  ARROW_CHECK_NE(keys, NULL);
+
+  std::shared_ptr<arrow::Array> arr_single_chunk;
+  if (arr->num_chunks() == 1) {
+    arr_single_chunk = arr->chunk(0);
+  } else {
+    arr_single_chunk = arrow::Concatenate(arr->chunks()).ValueOrDie();
+  }
+  size_t num_key_chunks = keys->num_chunks();
+  std::vector<std::shared_ptr<arrow::Array>> result_arrays;
+  for (size_t i = 0; i < num_key_chunks; ++i) {
+    result_arrays.push_back(search_sorted_single_array(arr_single_chunk.get(), keys->chunk(i).get()));
+  }
+  return arrow::ChunkedArray::Make(result_arrays, std::make_shared<arrow::UInt64Type>()).ValueOrDie();
 }

@@ -30,29 +30,15 @@ import cython
 
 
 cdef extern from "search_sorted.h" nogil:
-    cdef shared_ptr[CArray] search_sorted(const CArray* arr, const CArray* keys);
+    cdef shared_ptr[CChunkedArray] search_sorted_chunked(const CChunkedArray* arr, const CChunkedArray* keys);
 
 
 def search_sorted_chunked_array(data_arr, keys):
     cdef shared_ptr[CChunkedArray] carr = pyarrow_unwrap_chunked_array(data_arr)
     if carr.get() == NULL:
         raise TypeError("not a chunked array")
-    num_chunks: cython.int = carr.get().num_chunks()
-    assert num_chunks == 1
     cdef shared_ptr[CChunkedArray] key_arr = pyarrow_unwrap_chunked_array(keys)
     if key_arr.get() == NULL:
         raise TypeError("not a chunked array")
-    assert key_arr.get().num_chunks() == 1
-
-    cdef shared_ptr[CArray] arr
-
-    cdef shared_ptr[CArray] key_single_arr
-
-    cdef vector[shared_ptr[CArray]] search_results
-    for i in range(num_chunks):
-        arr = carr.get().chunk(i)
-        key_single_arr = key_arr.get().chunk(i)
-        search_results.push_back(search_sorted(arr.get(), key_single_arr.get()))
-
-    cdef shared_ptr[CChunkedArray] result = make_shared[CChunkedArray](search_results, GetPrimitiveType(Type._Type_UINT64))
+    cdef shared_ptr[CChunkedArray] result = search_sorted_chunked(carr.get(), key_arr.get())
     return pyarrow_wrap_chunked_array(result)
