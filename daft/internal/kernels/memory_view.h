@@ -1,8 +1,7 @@
 #include <algorithm>
+#include <cstdint>
 #include <memory>
 #include <vector>
-
-#include <cstdint>
 
 namespace daft {
 
@@ -15,7 +14,8 @@ struct MemoryViewBase {
   size_t length_;
 };
 
-template <typename T> struct MemoryView : public MemoryViewBase {
+template <typename T>
+struct MemoryView : public MemoryViewBase {
   int Compare(const MemoryViewBase &other, const uint64_t left_idx,
               const uint64_t right_idx) {
     const T left_val = *(((T *)buffer_) + left_idx);
@@ -54,4 +54,4 @@ struct CompositeView {
   std::vector<std::unique_ptr<MemoryViewBase>> views_;
 };
 
-} // namespace daft
+}  // namespace daft

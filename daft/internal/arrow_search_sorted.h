@@ -1,6 +1,7 @@
 #include <arrow/type.h>
+
 #include <cassert>
-#include <functional> // for std::less and std::less_equal
+#include <functional>  // for std::less and std::less_equal
 
 template <typename T>
 void primative_binsearch_nonnull(const uint8_t *arr, const uint8_t *key,
