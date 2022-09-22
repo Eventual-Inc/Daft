@@ -1,6 +1,7 @@
 import multiprocessing
 import os
 import sysconfig
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -53,6 +54,11 @@ def get_extension_modules() -> List[Extension]:
 
 def cythonize_helper(extension_modules: List[Extension]) -> List[Extension]:
     """Cythonize all Python extensions"""
+    num_threads = multiprocessing.cpu_count()
+    if multiprocessing.get_start_method() == "spawn":
+        num_threads = 0
+        warnings.warn("multiprocessing start method is `spawn` which is incompatible with parallel builds")
+
     return cythonize(
         module_list=extension_modules,
         # Don't build in source tree (this leaves behind .c files)
@@ -60,7 +66,7 @@ def cythonize_helper(extension_modules: List[Extension]) -> List[Extension]:
         # Don't generate an .html output file. This will contain source.
         annotate=False,
         # Parallelize our build
-        nthreads=multiprocessing.cpu_count(),
+        nthreads=num_threads,
         # Tell Cython we're using Python 3
         compiler_directives={"language_level": "3"},
         # (Optional) Always rebuild, even if files untouched
