@@ -60,7 +60,7 @@ def cythonize_helper(extension_modules: List[Extension]) -> List[Extension]:
         # Don't generate an .html output file. This will contain source.
         annotate=False,
         # Parallelize our build
-        nthreads=multiprocessing.cpu_count() * 2,
+        nthreads=multiprocessing.cpu_count(),
         # Tell Cython we're using Python 3
         compiler_directives={"language_level": "3"},
         # (Optional) Always rebuild, even if files untouched
