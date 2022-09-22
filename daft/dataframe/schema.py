@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, cast
 
-from tabulate import tabulate
+import pandas as pd
 
 from daft.execution.operators import ExpressionType
 from daft.logical.schema import ExpressionList
@@ -39,12 +39,16 @@ class DataFrameSchema:
             fields.append(DataFrameSchemaField(e.name(), e.resolved_type()))
         return cls(fields)
 
+    def _to_pandas(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "column_name": [field.name for field in self._fields.values()],
+                "type": [field.daft_type for field in self._fields.values()],
+            },
+        )
+
     def __repr__(self) -> str:
-        fields = list(self._fields.values())
-        return tabulate([[field.daft_type for field in fields]], headers=[field.name for field in fields])
+        return cast(str, self._to_pandas().to_string(index=False))
 
     def _repr_html_(self) -> str:
-        fields = list(self._fields.values())
-        return tabulate(
-            [[field.daft_type for field in fields]], headers=[field.name for field in fields], tablefmt="html"
-        )
+        return cast(str, self._to_pandas().to_html(index=False))
