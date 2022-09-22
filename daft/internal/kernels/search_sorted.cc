@@ -15,6 +15,12 @@
 
 namespace {
 
+#if ARROW_VERSION_MAJOR < 7
+namespace bit_util = arrow::BitUtil;
+#else
+namespace bit_util = arrow::bit_util;
+#endif
+
 template <typename InType>
 struct SearchSortedPrimativeSingle {
   static void Exec(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
@@ -120,8 +126,8 @@ struct SearchSortedPrimativeSingle {
     T last_key_val = *keys_ptr;
 
     for (size_t key_idx = 0; key_idx < key_len; key_idx++, keys_ptr++, result_ptr++) {
-      const bool key_bit = arrow::bit_util::GetBit(keys_bitmask_ptr, key_idx);
-      arrow::bit_util::SetBitTo(result_bitmask_ptr, key_idx, key_bit);
+      const bool key_bit = bit_util::GetBit(keys_bitmask_ptr, key_idx);
+      bit_util::SetBitTo(result_bitmask_ptr, key_idx, key_bit);
       if (!key_bit) {
         continue;
       }
@@ -261,8 +267,8 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
 
   for (size_t key_idx = 0; key_idx < key_len; key_idx++, result_ptr++) {
     if (has_nulls) {
-      const bool key_bit = arrow::bit_util::GetBit(keys_bitmask_ptr, key_idx);
-      arrow::bit_util::SetBitTo(result_bitmask_ptr, key_idx, key_bit);
+      const bool key_bit = bit_util::GetBit(keys_bitmask_ptr, key_idx);
+      bit_util::SetBitTo(result_bitmask_ptr, key_idx, key_bit);
       if (!key_bit) {
         continue;
       }
