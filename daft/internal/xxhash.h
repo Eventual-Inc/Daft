@@ -1,3 +1,4 @@
+// clang-format off
 /*
  * xxHash - Extremely Fast Hash algorithm
  * Header File

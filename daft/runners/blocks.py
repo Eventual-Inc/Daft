@@ -28,6 +28,7 @@ from pandas.core.reshape.merge import get_join_indexers
 
 from daft.execution.operators import OperatorEnum, OperatorEvaluator
 from daft.internal.hashing import hash_chunked_array
+from daft.internal.kernels.search_sorted import search_sorted_chunked_array
 
 ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
 UnaryFuncType = Callable[[ArrType], ArrType]
@@ -491,11 +492,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
 
     def search_sorted(self, pivots: DataBlock, reverse: bool = False) -> DataBlock[ArrowArrType]:
-        arr = self.data.to_numpy()
-        indices = np.searchsorted(pivots.data.to_numpy(), arr)
+        indices = DataBlock.make_block(search_sorted_chunked_array(pivots.data, self.data))
         if reverse:
-            indices = len(pivots) - indices
-        return ArrowDataBlock(data=pa.chunked_array([indices]))
+            indices = ArrowEvaluator.SUB(DataBlock.make_block(len(pivots)), indices)
+        return indices
 
     def quantiles(self, num: int) -> DataBlock[ArrowArrType]:
         quantiles = np.linspace(1.0 / num, 1.0, num)[:-1]

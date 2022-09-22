@@ -31,6 +31,8 @@ def get_extension_modules() -> List[Extension]:
             name=module_path, sources=[str(py_file)], extra_compile_args=["-Wno-unused-variable"]
         )
         extension_module.include_dirs.append(np.get_include())
+        extension_module.include_dirs.append(".")
+
         extension_module.include_dirs.append(pa.get_include())
         extension_module.libraries.extend(pa.get_libraries())
 
@@ -42,8 +44,7 @@ def get_extension_modules() -> List[Extension]:
         ):
             pa.create_library_symlinks()
 
-        if os.name == "posix":
-            extension_module.extra_compile_args.append("-std=c++11")
+        extension_module.extra_compile_args.append("-std=c++14")
 
         extension_modules.append(extension_module)
 
@@ -59,7 +60,7 @@ def cythonize_helper(extension_modules: List[Extension]) -> List[Extension]:
         # Don't generate an .html output file. This will contain source.
         annotate=False,
         # Parallelize our build
-        nthreads=multiprocessing.cpu_count() * 2,
+        nthreads=multiprocessing.cpu_count(),
         # Tell Cython we're using Python 3
         compiler_directives={"language_level": "3"},
         # (Optional) Always rebuild, even if files untouched
