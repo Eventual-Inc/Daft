@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from daft.expressions import col
-from daft.udf import udf
+from daft.udf import polars_udf, udf
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     parametrize_service_requests_csv_daft_df,
@@ -42,14 +42,26 @@ def multiply_kwarg_list(x, num=2):
     return (x * num).tolist()
 
 
+@polars_udf(return_type=int)
+def multiply_kwarg_pl(x, num=2):
+    return x * num
+
+
 @udf(return_type=int)
-def multiply(x, num):
+def multiply_arg_np(x, num):
+    return x * num
+
+
+@polars_udf(return_type=int)
+def multiply_arg_pl(x, num):
     return x * num
 
 
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
-@pytest.mark.parametrize("multiply_kwarg", [multiply_kwarg_np, multiply_kwarg_pd, multiply_kwarg_list])
+@pytest.mark.parametrize(
+    "multiply_kwarg", [multiply_kwarg_np, multiply_kwarg_pd, multiply_kwarg_list, multiply_kwarg_pl]
+)
 def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts, multiply_kwarg):
     daft_df = daft_df.repartition(repartition_nparts).with_column(
         "unique_key_identity", multiply_kwarg(col("Unique Key"))
@@ -61,8 +73,11 @@ def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_npar
 
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
-def test_udf_args(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    daft_df = daft_df.repartition(repartition_nparts).with_column("unique_key_identity", multiply(col("Unique Key"), 2))
+@pytest.mark.parametrize("multiply_arg", [multiply_arg_np, multiply_arg_pl])
+def test_udf_args(daft_df, service_requests_csv_pd_df, repartition_nparts, multiply_arg):
+    daft_df = daft_df.repartition(repartition_nparts).with_column(
+        "unique_key_identity", multiply_arg(col("Unique Key"), 2)
+    )
     service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"] * 2
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
@@ -73,9 +88,9 @@ def test_udf_args(daft_df, service_requests_csv_pd_df, repartition_nparts):
 @pytest.mark.parametrize("multiply_kwarg", [multiply_kwarg_np, multiply_kwarg_pd, multiply_kwarg_list])
 def test_udf_kwargs(daft_df, service_requests_csv_pd_df, repartition_nparts, multiply_kwarg):
     daft_df = daft_df.repartition(repartition_nparts).with_column(
-        "unique_key_identity", multiply_kwarg(col("Unique Key"), num=2)
+        "unique_key_identity", multiply_kwarg(col("Unique Key"), num=4)
     )
-    service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"] * 2
+    service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"] * 4
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
@@ -91,7 +106,16 @@ class MyModel:
 
 
 @udf(return_type=int)
-class RunModel:
+class RunModelNumpy:
+    def __init__(self) -> None:
+        self._model = MyModel()
+
+    def __call__(self, x):
+        return self._model.predict(x)
+
+
+@polars_udf(return_type=int)
+class RunModelPolars:
     def __init__(self) -> None:
         self._model = MyModel()
 
@@ -101,7 +125,8 @@ class RunModel:
 
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
-def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
+@pytest.mark.parametrize("RunModel", [RunModelNumpy, RunModelPolars])
+def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartition_nparts, RunModel):
     daft_df = daft_df.repartition(repartition_nparts).with_column("model_results", RunModel(col("Unique Key")))
     service_requests_csv_pd_df["model_results"] = service_requests_csv_pd_df["Unique Key"]
     daft_pd_df = daft_df.to_pandas()
