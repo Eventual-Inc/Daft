@@ -42,10 +42,9 @@ jobs:
         uses: actions/configure-pages@v2
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v1
-        working-directory: ./docs/build
         with:
           # Upload the docs/build folder
-          path: '.'
+          path: 'docs/build'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v1
