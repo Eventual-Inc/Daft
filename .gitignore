@@ -15,3 +15,5 @@ data/**
 *.whl
 log/
 *.egg-info
+
+**.DS_Store

@@ -71,6 +71,8 @@ pre-commit = "^2.20.0"
 Cython="^0.29.32"
 viztracer = "^0.15.4"
 sentry-sdk = "^1.9.5"
+Sphinx = "<5"
+sphinx-book-theme = "^0.3.3"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.1.2"
