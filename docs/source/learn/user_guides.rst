@@ -1,6 +1,9 @@
 User Guides
 ===========
 
-Page under construction!
+.. toctree::
 
-Check out our existing `Daft User Guide <https://docs.getdaft.io/daft/user-guides/dataframes>`_ for more details.
+    user_guides/dataframes
+    user_guides/expressions
+    user_guides/udf
+    user_guides/types_and_ops

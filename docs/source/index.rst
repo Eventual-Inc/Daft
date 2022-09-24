@@ -4,7 +4,7 @@ Daft
 Daft is the open-sourced distributed Dataframe framework for querying, processing and building Complex Data applications. With Daft, you can load any data into a DataFrame and work with your data in pure native Python.
 
 .. image:: _static/daft_illustration.png
-   :scale: 40%
+   :scale: 60%
 
 New to Daft
 -----------
@@ -34,9 +34,9 @@ View our :doc:`api_docs` for technical documentation of Daft's functions and cla
    learn
    api_docs
 
-Indices and tables
-==================
+.. Indices and tables
+.. ==================
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+.. * :ref:`genindex`
+.. * :ref:`modindex`
+.. * :ref:`search`

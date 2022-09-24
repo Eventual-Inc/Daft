@@ -43,6 +43,8 @@ html_theme_options = {
     "extra_navbar": "",
     # This is how many levels are shown on the secondary sidebar
     "show_toc_level": 2,
+    # Remove title under the logo on the left sidebar
+    "logo_only": True,
 }
 
 # Resolving code links to github
