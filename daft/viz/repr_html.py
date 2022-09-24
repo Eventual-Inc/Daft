@@ -2,7 +2,6 @@ import base64
 import io
 from typing import Any
 
-import numpy as np
 import pandas as pd
 from tabulate import tabulate
 
@@ -16,6 +15,13 @@ try:
 except ImportError:
     HAS_PILLOW = False
 
+try:
+    import numpy as np
+
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+
 
 DEFAULT_MAX_COL_WIDTH = 20
 DEFAULT_MAX_LINES = 3
@@ -23,7 +29,8 @@ DEFAULT_MAX_LINES = 3
 
 def _truncate(s: str, max_col_width: int, max_lines: int):
     """Truncates a string and adds an ellipsis if it exceeds (max_col_width * max_lines) number of characters"""
-    if len(s) > (max_col_width * max_lines):
+    max_len = max_col_width * max_lines
+    if len(s) > max_len:
         s = s[: (max_col_width * max_lines) - 3] + "..."
     return s
 
@@ -37,7 +44,7 @@ def _stringify_object_field(max_col_width: int = DEFAULT_MAX_COL_WIDTH, max_line
             img.save(bio, "JPEG")
             base64_img = base64.b64encode(bio.getvalue())
             return f'<img style="max-height:128px;width:auto" src="data:image/png;base64, {base64_img.decode("utf-8")}" alt="{str(val)}" />'
-        elif isinstance(val, np.ndarray):
+        elif HAS_NUMPY and isinstance(val, np.ndarray):
             return f"&ltnp.ndarray<br>shape={val.shape}<br>dtype={val.dtype}&gt"
         return _truncate(str(val), max_col_width, max_lines)
 
@@ -76,18 +83,12 @@ def pd_df_repr_html(
         }
     )
 
-    maxcolwidths = [
-        max_col_width if ExpressionType.is_primitive(daft_schema[colname].daft_type) else None
-        for colname in daft_schema.column_names()
-    ]
-
     tabulate_html_string = tabulate(
         stringified_df,
         headers=[f"{name}<br>{daft_schema[name].daft_type}" for name in daft_schema.column_names()],
         tablefmt="unsafehtml",
         showindex=False,
         missingval="None",
-        maxcolwidths=maxcolwidths,
     )
 
     # Appending class="dataframe" here helps Google Colab with applying CSS
