@@ -285,11 +285,11 @@ class DataBlock(Generic[ArrType]):
         return first_type._merge_blocks(blocks)
 
     @abstractmethod
-    def search_sorted(self, pivots: DataBlock[ArrType], reverse: bool = False) -> DataBlock[ArrType]:
+    def search_sorted(self, pivots: DataBlock[ArrType], input_reversed: bool = False) -> DataBlock[ArrType]:
         raise NotImplementedError()
 
     @abstractmethod
-    def quantiles(self, num: int) -> DataBlock[ArrType]:
+    def quantiles(self, num: int, desc: bool = False) -> DataBlock[ArrType]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -415,10 +415,10 @@ class PyListDataBlock(DataBlock[List[T]]):
             concatted_data.extend(block.data)
         return PyListDataBlock(data=concatted_data)
 
-    def search_sorted(self, pivots: DataBlock[List[T]], reverse: bool = False) -> DataBlock[ArrowArrType]:
+    def search_sorted(self, pivots: DataBlock[List[T]], input_reversed: bool = False) -> DataBlock[ArrowArrType]:
         raise NotImplementedError("Sorting by Python objects is not implemented")
 
-    def quantiles(self, num: int) -> DataBlock[List[T]]:
+    def quantiles(self, num: int, desc: bool = False) -> DataBlock[List[T]]:
         raise NotImplementedError("Sorting by Python objects is not implemented")
 
     def array_hash(self, seed: Optional[DataBlock[ArrType]] = None) -> DataBlock[ArrowArrType]:
@@ -513,15 +513,17 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         sampled = np.random.choice(self.data, num, replace=False)
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
 
-    def search_sorted(self, pivots: DataBlock, reverse: bool = False) -> DataBlock[ArrowArrType]:
-        return DataBlock.make_block(search_sorted(pivots.data, self.data, reverse))
+    def search_sorted(self, pivots: DataBlock, input_reversed: bool = False) -> DataBlock[ArrowArrType]:
+        return DataBlock.make_block(search_sorted(pivots.data, self.data, input_reversed))
 
-    def quantiles(self, num: int) -> DataBlock[ArrowArrType]:
+    def quantiles(self, num: int, desc: bool = False) -> DataBlock[ArrowArrType]:
         quantiles = np.linspace(1.0 / num, 1.0, num)[:-1]
         if NUMPY_MINOR_VERSION < 22:
             pivots = np.quantile(self.data.to_numpy(), quantiles, interpolation="nearest")
         else:
             pivots = np.quantile(self.data.to_numpy(), quantiles, method="closest_observation")
+        if desc:
+            pivots = pivots[::-1]
         return DataBlock.make_block(data=pivots)
 
     def array_hash(self, seed: Optional[DataBlock[ArrowArrType]] = None) -> DataBlock[ArrowArrType]:

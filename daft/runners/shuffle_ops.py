@@ -98,10 +98,12 @@ class SortOp(ShuffleOp):
         if output_partitions == 1:
             return {PartID(0): input}
         sort_key = input.eval_expression(expr).block
-        argsort_idx = sort_key.argsort()
+        if desc is None:
+            desc = False
+        argsort_idx = sort_key.argsort(desc=desc)
         sorted_input = input.take(argsort_idx)
         sorted_keys = sort_key.take(argsort_idx)
-        target_idx = sorted_keys.search_sorted(boundaries, reverse=desc)
+        target_idx = sorted_keys.search_sorted(boundaries, input_reversed=desc)
         new_parts = sorted_input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
         return {PartID(i): part for i, part in enumerate(new_parts)}
 

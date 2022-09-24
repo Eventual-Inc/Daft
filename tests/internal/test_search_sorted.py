@@ -191,7 +191,7 @@ def test_number_string_table_desc(str_len, num_chunks) -> None:
     sorted_table = pa.table([np.zeros(100), pa_data], names=["a", "b"])
     key_table = pa.table([pa_int_keys, pa_str_keys], names=["a", "b"])
 
-    pa_result = search_sorted(sorted_table, key_table, desc=[False, True])
+    pa_result = search_sorted(sorted_table, key_table, input_reversed=[False, True])
     assert np.all(result == pa_result.to_numpy())
 
 

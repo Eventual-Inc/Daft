@@ -286,6 +286,7 @@ class LogicalGlobalOpRunner:
         SAMPLES_PER_PARTITION = 20
         num_partitions = sort.num_partitions()
         exprs: ExpressionList = sort._sort_by
+        desc = sort._desc
 
         def sample_map_func(part: vPartition) -> vPartition:
             return part.sample(SAMPLES_PER_PARTITION).eval_expression_list(exprs)
@@ -293,7 +294,8 @@ class LogicalGlobalOpRunner:
         def quantile_reduce_func(to_reduce: List[vPartition]) -> DataBlock:
             merged = vPartition.merge_partitions(to_reduce, verify_partition_id=False)
             first_column = list(merged.columns.values())[0]
-            return first_column.block.quantiles(num_partitions)
+            quantiles = first_column.block.quantiles(num_partitions, desc=desc)
+            return quantiles
 
         prev_part = inputs[child_id]
         sampled_partitions = self.map_partitions(prev_part, sample_map_func, sort.resource_request())
