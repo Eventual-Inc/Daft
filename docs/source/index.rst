@@ -1,13 +1,16 @@
-Daft
-====
+Daft Dataframes
+===============
 
-Daft is the open-sourced distributed Dataframe framework for querying, processing and building Complex Data applications. With Daft, you can load any data into a DataFrame and work with your data in pure native Python.
+Daft is a **fast, Pythonic and scalable dataframe** for Complex Data and Machine Learning workloads.
+
+.. centered:: ``pip install getdaft``
 
 .. image:: _static/daft_illustration.png
    :scale: 60%
+   :align: center
 
-New to Daft
------------
+New to Daft?
+------------
 
 Check out the :doc:`learn/quickstart` or watch a 5-minute video.
 
