@@ -150,3 +150,64 @@ def test_multi_column_mixed_number_table(num_chunks) -> None:
     key_table = pa.table([pa_keys, pa_keys.cast(pa.float32()), pa_keys.cast(pa.uint64())], names=["a", "b", "c"])
     pa_result = search_sorted(sorted_table, key_table)
     assert np.all(result == pa_result.to_numpy())
+
+
+@pytest.mark.parametrize("str_len", [0, 1, 5])
+@pytest.mark.parametrize("num_chunks", range(1, 4))
+def test_number_string_table(str_len, num_chunks) -> None:
+    pa_int_keys = pa.chunked_array([np.zeros(10) for _ in range(num_chunks)])
+    pa_str_keys = pa.chunked_array(
+        [[gen_random_str(str_len) for _ in range(10)] for _ in range(num_chunks)],
+    )
+    keys = pa_str_keys.to_numpy()
+
+    data = np.array([gen_random_str(str_len + 1) for i in range(10)])
+    data.sort()
+    result = np.searchsorted(data, keys)
+    pa_data = pa.chunked_array([data])
+    sorted_table = pa.table([np.zeros(10), pa_data], names=["a", "b"])
+    key_table = pa.table([pa_int_keys, pa_str_keys], names=["a", "b"])
+
+    pa_result = search_sorted(sorted_table, key_table)
+    assert np.all(result == pa_result.to_numpy())
+
+
+@pytest.mark.parametrize("str_len", [0, 1, 5])
+@pytest.mark.parametrize("num_chunks", range(1, 4))
+def test_string_number_table(str_len, num_chunks) -> None:
+    pa_int_keys = pa.chunked_array([np.zeros(10) for _ in range(num_chunks)])
+    pa_str_keys = pa.chunked_array(
+        [[gen_random_str(str_len) for _ in range(10)] for _ in range(num_chunks)],
+    )
+    keys = pa_str_keys.to_numpy()
+
+    data = np.array([gen_random_str(str_len + 1) for i in range(10)])
+    data.sort()
+    result = np.searchsorted(data, keys)
+    pa_data = pa.chunked_array([data])
+    sorted_table = pa.table([pa_data, np.zeros(10)], names=["a", "b"])
+    key_table = pa.table([pa_str_keys, pa_int_keys], names=["a", "b"])
+
+    pa_result = search_sorted(sorted_table, key_table)
+    assert np.all(result == pa_result.to_numpy())
+
+
+@pytest.mark.parametrize("str_len", range(0, 10))
+@pytest.mark.parametrize("num_chunks", range(1, 4))
+def test_string_table(str_len, num_chunks) -> None:
+
+    pa_keys = pa.chunked_array(
+        [[gen_random_str(str_len) for _ in range(10)] for _ in range(num_chunks)],
+    )
+    keys = pa_keys.to_numpy()
+
+    data = np.array([gen_random_str(str_len + 1) for i in range(10)])
+    data.sort()
+    result = np.searchsorted(data, keys)
+    pa_data = pa.chunked_array([data])
+
+    sorted_table = pa.table([pa_data, pa_data, pa_data], names=["a", "b", "c"])
+    key_table = pa.table([pa_keys, pa_keys, pa_keys], names=["a", "b", "c"])
+
+    pa_result = search_sorted(sorted_table, key_table)
+    assert np.all(result == pa_result.to_numpy())

@@ -208,22 +208,6 @@ void search_sorted_primative_single(const arrow::ArrayData *arr, const arrow::Ar
   }
 }
 
-int strcmpNoTerminator(const uint8_t *str1, const uint8_t *str2, size_t str1len, size_t str2len) {
-  // https://stackoverflow.com/questions/24770665/comparing-2-char-with-different-lengths-without-null-terminators
-  // Get the length of the shorter string
-  size_t len = str1len < str2len ? str1len : str2len;
-  // Compare the strings up until one ends
-  int cmp = memcmp(str1, str2, len);
-  // If they weren't equal, we've got our result
-  // If they are equal and the same length, they matched
-  if (cmp != 0 || str1len == str2len) {
-    return cmp;
-  }
-  // If they were equal but one continues on, the shorter string is
-  // lexicographically smaller
-  return str1len < str2len ? -1 : 1;
-}
-
 template <typename T>
 void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
   ARROW_CHECK(arrow::is_base_binary_like(arr->type->id()));
@@ -285,7 +269,8 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
      * gives the search a big boost when keys are sorted, but slightly
      * slows down things for purely random ones.
      */
-    if (strcmpNoTerminator(keys_data_ptr + last_key_offset, keys_data_ptr + curr_key_offset, last_key_size, curr_key_size) < 0) {
+    if (daft::kernels::strcmpNoTerminator(keys_data_ptr + last_key_offset, keys_data_ptr + curr_key_offset, last_key_size, curr_key_size) <
+        0) {
       max_idx = arr_len;
     } else {
       min_idx = 0;
@@ -299,7 +284,8 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
       const size_t mid_arr_offset = arr_index_ptr[mid_idx];
       const size_t mid_arr_size = arr_index_ptr[mid_idx + 1] - mid_arr_offset;
 
-      if (strcmpNoTerminator(arr_data_ptr + mid_arr_offset, keys_data_ptr + curr_key_offset, mid_arr_size, curr_key_size) < 0) {
+      if (daft::kernels::strcmpNoTerminator(arr_data_ptr + mid_arr_offset, keys_data_ptr + curr_key_offset, mid_arr_size, curr_key_size) <
+          0) {
         min_idx = mid_idx + 1;
       } else {
         max_idx = mid_idx;
@@ -310,6 +296,7 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
 }
 
 void add_primative_memory_view_to_comp_view(daft::kernels::CompositeView &comp_view, const std::shared_ptr<arrow::ArrayData> arr) {
+  ARROW_CHECK(arrow::is_primitive(arr->type->id()));
   switch (arr->type->id()) {
     case arrow::Type::INT8:
       return comp_view.AddPrimativeMemoryView<arrow::Int8Type>(arr);
@@ -341,17 +328,27 @@ void add_primative_memory_view_to_comp_view(daft::kernels::CompositeView &comp_v
       return comp_view.AddPrimativeMemoryView<arrow::Time64Type>(arr);
     case arrow::Type::TIMESTAMP:
       return comp_view.AddPrimativeMemoryView<arrow::TimestampType>(arr);
-    // case arrow::Type::DURATION:
-    //   return comp_view.AddPrimativeMemoryView<arrow::DurationType>(arr);
-    // case arrow::Type::INTERVAL_MONTHS:
-    //   return comp_view.AddPrimativeMemoryView<arrow::MonthIntervalType>(arr);
+    case arrow::Type::DURATION:
+      return comp_view.AddPrimativeMemoryView<arrow::DurationType>(arr);
+    case arrow::Type::INTERVAL_MONTHS:
+      return comp_view.AddPrimativeMemoryView<arrow::MonthIntervalType>(arr);
     // Need custom less function for this since it uses a custom struct for the data structure
     // case arrow::Type::INTERVAL_MONTH_DAY_NANO:
     //   return comp_view.AddPrimativeMemoryView<arrow::MonthDayNanoIntervalType>(arr);
-    // case arrow::Type::INTERVAL_DAY_TIME:
-    //   return comp_view.AddPrimativeMemoryView<arrow::DayTimeIntervalType>(arr);
+    case arrow::Type::INTERVAL_DAY_TIME:
+      return comp_view.AddPrimativeMemoryView<arrow::DayTimeIntervalType>(arr);
     default:
       break;
+  }
+}
+
+void add_binary_memory_view_to_comp_view(daft::kernels::CompositeView &comp_view, const std::shared_ptr<arrow::ArrayData> arr) {
+  if (arrow::is_binary_like(arr->type->id())) {
+    return comp_view.AddBinaryMemoryView<arrow::BinaryType>(arr);
+  } else if (arrow::is_large_binary_like(arr->type->id())) {
+    return comp_view.AddBinaryMemoryView<arrow::LargeBinaryType>(arr);
+  } else {
+    ARROW_LOG(FATAL) << "Unsupported Type " << arrow::is_large_binary_like(arr->type->id());
   }
 }
 
@@ -359,10 +356,22 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
                                                              const std::vector<std::shared_ptr<arrow::ArrayData>> &keys) {
   daft::kernels::CompositeView sorted_comp_view{}, keys_comp_view{};
   for (auto arr : sorted) {
-    add_primative_memory_view_to_comp_view(sorted_comp_view, arr);
+    if (arrow::is_primitive(arr->type->id())) {
+      add_primative_memory_view_to_comp_view(sorted_comp_view, arr);
+    } else if (arrow::is_base_binary_like(arr->type->id())) {
+      add_binary_memory_view_to_comp_view(sorted_comp_view, arr);
+    } else {
+      ARROW_LOG(FATAL) << "Unsupported Type " << arr->type->id();
+    }
   }
   for (auto arr : keys) {
-    add_primative_memory_view_to_comp_view(keys_comp_view, arr);
+    if (arrow::is_primitive(arr->type->id())) {
+      add_primative_memory_view_to_comp_view(keys_comp_view, arr);
+    } else if (arrow::is_base_binary_like(arr->type->id())) {
+      add_binary_memory_view_to_comp_view(keys_comp_view, arr);
+    } else {
+      ARROW_LOG(FATAL) << "Unsupported Type " << arr->type->id();
+    }
   }
 
   size_t min_idx = 0;
@@ -433,7 +442,7 @@ std::shared_ptr<arrow::Array> search_sorted_single_array(const arrow::Array *arr
   } else if (arrow::is_large_binary_like(arr->type()->id())) {
     search_sorted_binary_single<arrow::LargeBinaryType::offset_type>(arr->data().get(), keys->data().get(), result.get());
   } else {
-    ARROW_LOG(FATAL) << "Unsupported Type " << arrow::is_large_binary_like(arr->type()->id());
+    ARROW_LOG(FATAL) << "Unsupported Type " << arr->type()->id();
   }
   return arrow::MakeArray(result);
 }
