@@ -356,6 +356,7 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
                                                              const std::vector<std::shared_ptr<arrow::ArrayData>> &keys) {
   daft::kernels::CompositeView sorted_comp_view{}, keys_comp_view{};
   for (auto arr : sorted) {
+    ARROW_CHECK_EQ(arr->GetNullCount(), 0);
     if (arrow::is_primitive(arr->type->id())) {
       add_primative_memory_view_to_comp_view(sorted_comp_view, arr);
     } else if (arrow::is_base_binary_like(arr->type->id())) {
@@ -364,7 +365,9 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
       ARROW_LOG(FATAL) << "Unsupported Type " << arr->type->id();
     }
   }
+  bool key_has_nulls = false;
   for (auto arr : keys) {
+    key_has_nulls = key_has_nulls | (arr->GetNullCount() > 0);
     if (arrow::is_primitive(arr->type->id())) {
       add_primative_memory_view_to_comp_view(keys_comp_view, arr);
     } else if (arrow::is_base_binary_like(arr->type->id())) {
@@ -381,7 +384,9 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
   size_t last_key_idx = 0;
 
   std::vector<std::shared_ptr<arrow::Buffer>> result_buffers{2};
-  result_buffers[0] = arrow::AllocateBitmap(key_len).ValueOrDie();
+  if (key_has_nulls) {
+    result_buffers[0] = arrow::AllocateBitmap(key_len).ValueOrDie();
+  }
   result_buffers[1] = arrow::AllocateBuffer(sizeof(arrow::UInt64Type::c_type) * key_len).ValueOrDie();
   std::shared_ptr<arrow::ArrayData> result = arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), key_len, result_buffers);
 
@@ -391,7 +396,14 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
   uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0);
 
   for (size_t key_idx = 0; key_idx < key_len; key_idx++, result_ptr++) {
-    bit_util::SetBitTo(result_bitmask_ptr, key_idx, 1);
+    if (key_has_nulls) {
+      const bool is_valid = keys_comp_view.isValid(key_idx);
+      bit_util::SetBitTo(result_bitmask_ptr, key_idx, is_valid);
+      if (!is_valid) {
+        continue;
+      }
+    }
+
     /*
      * Updating only one of the indices based on the previous key
      * gives the search a big boost when keys are sorted, but slightly

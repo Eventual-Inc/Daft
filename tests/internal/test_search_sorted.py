@@ -211,3 +211,22 @@ def test_string_table(str_len, num_chunks) -> None:
 
     pa_result = search_sorted(sorted_table, key_table)
     assert np.all(result == pa_result.to_numpy())
+
+
+def test_string_table_with_nulls() -> None:
+    py_keys = [str(i) for i in range(100)]
+    random.shuffle(py_keys)
+    keys = np.array(py_keys)
+    data = np.array([gen_random_str(10 + 1) for i in range(10)])
+    data.sort()
+    result = np.searchsorted(data, keys)
+    pa_data = pa.chunked_array([data])
+    pa_keys = pa.chunked_array([py_keys + [None] * 10 + py_keys])
+    pa_data_table = pa.table([pa_data, pa_data], names=["a", "b"])
+    pa_key_table = pa.table([pa_keys, pa_keys], names=["a", "b"])
+
+    pa_result = search_sorted(pa_data_table, pa_key_table)
+
+    assert np.all(result == pa_result[:100].to_numpy())
+    assert np.all(result == pa_result[100 + 10 :].to_numpy())
+    assert pa_result[100 : 100 + 10].null_count == 10

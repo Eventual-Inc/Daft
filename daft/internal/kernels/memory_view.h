@@ -28,6 +28,19 @@ struct MemoryViewBase {
   MemoryViewBase(const std::shared_ptr<arrow::ArrayData> &data) : data_(data){};
   virtual ~MemoryViewBase() = default;
 
+  inline bool isValid(const uint64_t idx) const {
+#if ARROW_VERSION_MAJOR < 7
+    namespace bit_util = arrow::BitUtil;
+#else
+    namespace bit_util = arrow::bit_util;
+#endif
+    const auto bit_ptr = data_->GetValues<uint8_t>(0);
+    if (bit_ptr == NULL) {
+      return false;
+    }
+    return bit_util::GetBit(bit_ptr, idx);
+  }
+
   virtual int Compare(const MemoryViewBase *other, const uint64_t left_idx, const uint64_t right_idx) const = 0;
   const std::shared_ptr<arrow::ArrayData> data_;
 };
@@ -81,6 +94,16 @@ struct CompositeView {
   void AddBinaryMemoryView(const std::shared_ptr<arrow::ArrayData> &data) {
     static_assert(std::is_base_of<arrow::DataType, ArrowType>::value, "T is not derived from MemoryViewBase");
     AddMemoryView<BinaryMemoryView<ArrowType>>(data);
+  }
+
+  inline bool isValid(const uint64_t idx) const {
+    const size_t size = views_.size();
+    for (size_t i = 0; i < size; ++i) {
+      if (views_[i]->isValid(idx)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   int Compare(const CompositeView &other, const uint64_t left_idx, const uint64_t right_idx) const {
