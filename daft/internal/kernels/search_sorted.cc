@@ -5,6 +5,7 @@
 #include <arrow/array/data.h>
 #include <arrow/buffer.h>
 #include <arrow/chunked_array.h>
+#include <arrow/table.h>
 #include <arrow/type_traits.h>
 #include <arrow/util/bit_util.h>
 #include <arrow/util/logging.h>
@@ -12,6 +13,7 @@
 #include <iostream>
 
 #include "arrow/array/concatenate.h"
+#include "daft/internal/kernels/memory_view.h"
 
 namespace {
 
@@ -307,6 +309,107 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
   }
 }
 
+void add_primative_memory_view_to_comp_view(daft::kernels::CompositeView &comp_view, const std::shared_ptr<arrow::ArrayData> arr) {
+  switch (arr->type->id()) {
+    case arrow::Type::INT8:
+      return comp_view.AddPrimativeMemoryView<arrow::Int8Type>(arr);
+    case arrow::Type::INT16:
+      return comp_view.AddPrimativeMemoryView<arrow::Int16Type>(arr);
+    case arrow::Type::INT32:
+      return comp_view.AddPrimativeMemoryView<arrow::Int32Type>(arr);
+    case arrow::Type::INT64:
+      return comp_view.AddPrimativeMemoryView<arrow::Int64Type>(arr);
+    case arrow::Type::UINT8:
+      return comp_view.AddPrimativeMemoryView<arrow::UInt8Type>(arr);
+    case arrow::Type::UINT16:
+      return comp_view.AddPrimativeMemoryView<arrow::UInt16Type>(arr);
+    case arrow::Type::UINT32:
+      return comp_view.AddPrimativeMemoryView<arrow::UInt32Type>(arr);
+    case arrow::Type::UINT64:
+      return comp_view.AddPrimativeMemoryView<arrow::UInt64Type>(arr);
+    case arrow::Type::FLOAT:
+      return comp_view.AddPrimativeMemoryView<arrow::FloatType>(arr);
+    case arrow::Type::DOUBLE:
+      return comp_view.AddPrimativeMemoryView<arrow::DoubleType>(arr);
+    case arrow::Type::DATE32:
+      return comp_view.AddPrimativeMemoryView<arrow::Date32Type>(arr);
+    case arrow::Type::DATE64:
+      return comp_view.AddPrimativeMemoryView<arrow::Date64Type>(arr);
+    case arrow::Type::TIME32:
+      return comp_view.AddPrimativeMemoryView<arrow::Time32Type>(arr);
+    case arrow::Type::TIME64:
+      return comp_view.AddPrimativeMemoryView<arrow::Time64Type>(arr);
+    case arrow::Type::TIMESTAMP:
+      return comp_view.AddPrimativeMemoryView<arrow::TimestampType>(arr);
+    // case arrow::Type::DURATION:
+    //   return comp_view.AddPrimativeMemoryView<arrow::DurationType>(arr);
+    // case arrow::Type::INTERVAL_MONTHS:
+    //   return comp_view.AddPrimativeMemoryView<arrow::MonthIntervalType>(arr);
+    // Need custom less function for this since it uses a custom struct for the data structure
+    // case arrow::Type::INTERVAL_MONTH_DAY_NANO:
+    //   return comp_view.AddPrimativeMemoryView<arrow::MonthDayNanoIntervalType>(arr);
+    // case arrow::Type::INTERVAL_DAY_TIME:
+    //   return comp_view.AddPrimativeMemoryView<arrow::DayTimeIntervalType>(arr);
+    default:
+      break;
+  }
+}
+
+std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<std::shared_ptr<arrow::ArrayData>> &sorted,
+                                                             const std::vector<std::shared_ptr<arrow::ArrayData>> &keys) {
+  daft::kernels::CompositeView sorted_comp_view{}, keys_comp_view{};
+  for (auto arr : sorted) {
+    add_primative_memory_view_to_comp_view(sorted_comp_view, arr);
+  }
+  for (auto arr : keys) {
+    add_primative_memory_view_to_comp_view(keys_comp_view, arr);
+  }
+
+  size_t min_idx = 0;
+  size_t arr_len = sorted[0]->length;
+  size_t max_idx = arr_len;
+  size_t key_len = keys[0]->length;
+  size_t last_key_idx = 0;
+
+  std::vector<std::shared_ptr<arrow::Buffer>> result_buffers{2};
+  result_buffers[0] = arrow::AllocateBitmap(key_len).ValueOrDie();
+  result_buffers[1] = arrow::AllocateBuffer(sizeof(arrow::UInt64Type::c_type) * key_len).ValueOrDie();
+  std::shared_ptr<arrow::ArrayData> result = arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), key_len, result_buffers);
+
+  uint64_t *result_ptr = result->GetMutableValues<uint64_t>(1);
+  ARROW_CHECK(result_ptr != NULL);
+
+  uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0);
+
+  for (size_t key_idx = 0; key_idx < key_len; key_idx++, result_ptr++) {
+    bit_util::SetBitTo(result_bitmask_ptr, key_idx, 1);
+    /*
+     * Updating only one of the indices based on the previous key
+     * gives the search a big boost when keys are sorted, but slightly
+     * slows down things for purely random ones.
+     */
+    if (keys_comp_view.Compare(keys_comp_view, last_key_idx, key_idx) < 0) {
+      max_idx = arr_len;
+    } else {
+      min_idx = 0;
+      max_idx = (max_idx < arr_len) ? (max_idx + 1) : arr_len;
+    }
+
+    last_key_idx = key_idx;
+
+    while (min_idx < max_idx) {
+      const size_t mid_idx = min_idx + ((max_idx - min_idx) >> 1);
+      if (sorted_comp_view.Compare(keys_comp_view, mid_idx, key_idx) < 0) {
+        min_idx = mid_idx + 1;
+      } else {
+        max_idx = mid_idx;
+      }
+    }
+    *result_ptr = min_idx;
+  }
+  return arrow::MakeArray(result);
+}
+
 }  // namespace
 
 namespace daft {
@@ -335,7 +438,7 @@ std::shared_ptr<arrow::Array> search_sorted_single_array(const arrow::Array *arr
   return arrow::MakeArray(result);
 }
 
-std::shared_ptr<arrow::ChunkedArray> search_sorted_chunked(const arrow::ChunkedArray *arr, const arrow::ChunkedArray *keys) {
+std::shared_ptr<arrow::ChunkedArray> search_sorted_chunked_array(const arrow::ChunkedArray *arr, const arrow::ChunkedArray *keys) {
   ARROW_CHECK_NE(arr, NULL);
   ARROW_CHECK_NE(keys, NULL);
 
@@ -351,6 +454,34 @@ std::shared_ptr<arrow::ChunkedArray> search_sorted_chunked(const arrow::ChunkedA
     result_arrays.push_back(search_sorted_single_array(arr_single_chunk.get(), keys->chunk(i).get()));
   }
   return arrow::ChunkedArray::Make(result_arrays, std::make_shared<arrow::UInt64Type>()).ValueOrDie();
+}
+
+std::shared_ptr<arrow::ChunkedArray> search_sorted_table(const arrow::Table *data, const arrow::Table *keys) {
+  ARROW_CHECK_NE(data, NULL);
+  ARROW_CHECK_NE(keys, NULL);
+  const auto data_schema = data->schema();
+  const auto key_schema = keys->schema();
+  ARROW_CHECK(data_schema->Equals(key_schema));
+  if (data_schema->num_fields() == 0) {
+    return arrow::ChunkedArray::MakeEmpty(std::make_shared<arrow::UInt64Type>()).ValueOrDie();
+  } else if (data_schema->num_fields() == 1) {
+    return search_sorted_chunked_array(data->column(0).get(), keys->column(0).get());
+  } else {
+    const auto combined_data_table = data->CombineChunks().ValueOrDie();
+    const auto combined_keys_table = keys->CombineChunks().ValueOrDie();
+    std::vector<std::shared_ptr<arrow::ArrayData>> data_vector, key_vector;
+    for (auto chunked_arr : combined_data_table->columns()) {
+      ARROW_CHECK_EQ(chunked_arr->num_chunks(), 1);
+      data_vector.push_back(chunked_arr->chunk(0)->data());
+    }
+
+    for (auto chunked_arr : combined_keys_table->columns()) {
+      ARROW_CHECK_EQ(chunked_arr->num_chunks(), 1);
+      key_vector.push_back(chunked_arr->chunk(0)->data());
+    }
+    auto result = search_sorted_multiple_columns(data_vector, key_vector);
+    return arrow::ChunkedArray::Make({result}, std::make_shared<arrow::UInt64Type>()).ValueOrDie();
+  }
 }
 
 }  // namespace kernels

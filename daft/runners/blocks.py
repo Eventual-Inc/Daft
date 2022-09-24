@@ -29,7 +29,7 @@ from pandas.core.reshape.merge import get_join_indexers
 
 from daft.execution.operators import OperatorEnum, OperatorEvaluator
 from daft.internal.hashing import hash_chunked_array
-from daft.internal.kernels.search_sorted import search_sorted_chunked_array
+from daft.internal.kernels.search_sorted import search_sorted
 
 # A type representing some Python scalar (non-series/array like object)
 PyScalar = Any
@@ -514,7 +514,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
 
     def search_sorted(self, pivots: DataBlock, reverse: bool = False) -> DataBlock[ArrowArrType]:
-        indices = DataBlock.make_block(search_sorted_chunked_array(pivots.data, self.data))
+        indices = DataBlock.make_block(search_sorted(pivots.data, self.data))
         if reverse:
             indices = ArrowEvaluator.SUB(DataBlock.make_block(len(pivots)), indices)
         return indices
