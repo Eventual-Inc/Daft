@@ -25,15 +25,15 @@ namespace bit_util = arrow::bit_util;
 
 template <typename InType>
 struct SearchSortedPrimativeSingle {
-  static void Exec(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
+  static void Exec(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result, const bool desc) {
     if (keys->GetNullCount() == 0) {
-      return KernelNonNull(arr, keys, result);
+      return KernelNonNull(arr, keys, result, desc);
     } else {
-      return KernelWithNull(arr, keys, result);
+      return KernelWithNull(arr, keys, result, desc);
     }
   }
 
-  static void KernelNonNull(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
+  static void KernelNonNull(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result, const bool desc) {
     using T = typename InType::c_type;
     ARROW_CHECK(arr->type->id() == keys->type->id());
 
@@ -88,11 +88,11 @@ struct SearchSortedPrimativeSingle {
           max_idx = mid_idx;
         }
       }
-      *result_ptr = min_idx;
+      *result_ptr = desc ? arr_len - min_idx : min_idx;
     }
   }
 
-  static void KernelWithNull(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
+  static void KernelWithNull(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result, const bool desc) {
     using T = typename InType::c_type;
     ARROW_CHECK(arr->GetNullCount() == 0);
     ARROW_CHECK(arr->type->id() == keys->type->id());
@@ -157,59 +157,59 @@ struct SearchSortedPrimativeSingle {
           max_idx = mid_idx;
         }
       }
-      *result_ptr = min_idx;
+      *result_ptr = desc ? arr_len - min_idx : min_idx;
     }
   }
 };
 
-void search_sorted_primative_single(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
+void search_sorted_primative_single(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result, const bool desc) {
   switch (arr->type->id()) {
     case arrow::Type::INT8:
-      return SearchSortedPrimativeSingle<arrow::Int8Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::Int8Type>::Exec(arr, keys, result, desc);
     case arrow::Type::INT16:
-      return SearchSortedPrimativeSingle<arrow::Int16Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::Int16Type>::Exec(arr, keys, result, desc);
     case arrow::Type::INT32:
-      return SearchSortedPrimativeSingle<arrow::Int32Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::Int32Type>::Exec(arr, keys, result, desc);
     case arrow::Type::INT64:
-      return SearchSortedPrimativeSingle<arrow::Int64Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::Int64Type>::Exec(arr, keys, result, desc);
     case arrow::Type::UINT8:
-      return SearchSortedPrimativeSingle<arrow::UInt8Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::UInt8Type>::Exec(arr, keys, result, desc);
     case arrow::Type::UINT16:
-      return SearchSortedPrimativeSingle<arrow::UInt16Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::UInt16Type>::Exec(arr, keys, result, desc);
     case arrow::Type::UINT32:
-      return SearchSortedPrimativeSingle<arrow::UInt32Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::UInt32Type>::Exec(arr, keys, result, desc);
     case arrow::Type::UINT64:
-      return SearchSortedPrimativeSingle<arrow::UInt64Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::UInt64Type>::Exec(arr, keys, result, desc);
     case arrow::Type::FLOAT:
-      return SearchSortedPrimativeSingle<arrow::FloatType>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::FloatType>::Exec(arr, keys, result, desc);
     case arrow::Type::DOUBLE:
-      return SearchSortedPrimativeSingle<arrow::DoubleType>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::DoubleType>::Exec(arr, keys, result, desc);
     case arrow::Type::DATE32:
-      return SearchSortedPrimativeSingle<arrow::Date32Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::Date32Type>::Exec(arr, keys, result, desc);
     case arrow::Type::DATE64:
-      return SearchSortedPrimativeSingle<arrow::Date64Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::Date64Type>::Exec(arr, keys, result, desc);
     case arrow::Type::TIME32:
-      return SearchSortedPrimativeSingle<arrow::Time32Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::Time32Type>::Exec(arr, keys, result, desc);
     case arrow::Type::TIME64:
-      return SearchSortedPrimativeSingle<arrow::Time64Type>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::Time64Type>::Exec(arr, keys, result, desc);
     case arrow::Type::TIMESTAMP:
-      return SearchSortedPrimativeSingle<arrow::TimestampType>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::TimestampType>::Exec(arr, keys, result, desc);
     case arrow::Type::DURATION:
-      return SearchSortedPrimativeSingle<arrow::DurationType>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::DurationType>::Exec(arr, keys, result, desc);
     case arrow::Type::INTERVAL_MONTHS:
-      return SearchSortedPrimativeSingle<arrow::MonthIntervalType>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::MonthIntervalType>::Exec(arr, keys, result, desc);
     // Need custom less function for this since it uses a custom struct for the data structure
     // case arrow::Type::INTERVAL_MONTH_DAY_NANO:
     //   return SearchSortedPrimativeSingle<arrow::MonthDayNanoIntervalType>::Exec(arr, keys, result);
     case arrow::Type::INTERVAL_DAY_TIME:
-      return SearchSortedPrimativeSingle<arrow::DayTimeIntervalType>::Exec(arr, keys, result);
+      return SearchSortedPrimativeSingle<arrow::DayTimeIntervalType>::Exec(arr, keys, result, desc);
     default:
-      break;
+      ARROW_LOG(FATAL) << "Unknown arrow type" << arr->type->id();
   }
 }
 
 template <typename T>
-void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result) {
+void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result, const bool desc) {
   ARROW_CHECK(arrow::is_base_binary_like(arr->type->id()));
   ARROW_CHECK(arr->type->id() == keys->type->id());
   ARROW_CHECK(result->type->id() == arrow::Type::UINT64);
@@ -291,7 +291,7 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
         max_idx = mid_idx;
       }
     }
-    *result_ptr = min_idx;
+    *result_ptr = desc ? arr_len - min_idx : min_idx;
   }
 }
 
@@ -353,7 +353,8 @@ void add_binary_memory_view_to_comp_view(daft::kernels::CompositeView &comp_view
 }
 
 std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<std::shared_ptr<arrow::ArrayData>> &sorted,
-                                                             const std::vector<std::shared_ptr<arrow::ArrayData>> &keys) {
+                                                             const std::vector<std::shared_ptr<arrow::ArrayData>> &keys,
+                                                             const std::vector<bool> &desc) {
   daft::kernels::CompositeView sorted_comp_view{}, keys_comp_view{};
   for (auto arr : sorted) {
     ARROW_CHECK_EQ(arr->GetNullCount(), 0);
@@ -409,7 +410,7 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
      * gives the search a big boost when keys are sorted, but slightly
      * slows down things for purely random ones.
      */
-    if (keys_comp_view.Compare(keys_comp_view, last_key_idx, key_idx) < 0) {
+    if (keys_comp_view.Compare(keys_comp_view, last_key_idx, key_idx, desc) < 0) {
       max_idx = arr_len;
     } else {
       min_idx = 0;
@@ -420,7 +421,7 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
 
     while (min_idx < max_idx) {
       const size_t mid_idx = min_idx + ((max_idx - min_idx) >> 1);
-      if (sorted_comp_view.Compare(keys_comp_view, mid_idx, key_idx) < 0) {
+      if (sorted_comp_view.Compare(keys_comp_view, mid_idx, key_idx, desc) < 0) {
         min_idx = mid_idx + 1;
       } else {
         max_idx = mid_idx;
@@ -435,7 +436,7 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
 
 namespace daft {
 namespace kernels {
-std::shared_ptr<arrow::Array> search_sorted_single_array(const arrow::Array *arr, const arrow::Array *keys) {
+std::shared_ptr<arrow::Array> search_sorted_single_array(const arrow::Array *arr, const arrow::Array *keys, const bool desc) {
   ARROW_CHECK(arr != NULL);
   ARROW_CHECK(keys != NULL);
   const size_t size = keys->length();
@@ -448,18 +449,19 @@ std::shared_ptr<arrow::Array> search_sorted_single_array(const arrow::Array *arr
       arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), size, result_buffers, keys->null_count());
   ARROW_CHECK(result.get() != NULL);
   if (arrow::is_primitive(arr->type()->id())) {
-    search_sorted_primative_single(arr->data().get(), keys->data().get(), result.get());
+    search_sorted_primative_single(arr->data().get(), keys->data().get(), result.get(), desc);
   } else if (arrow::is_binary_like(arr->type()->id())) {
-    search_sorted_binary_single<arrow::BinaryType::offset_type>(arr->data().get(), keys->data().get(), result.get());
+    search_sorted_binary_single<arrow::BinaryType::offset_type>(arr->data().get(), keys->data().get(), result.get(), desc);
   } else if (arrow::is_large_binary_like(arr->type()->id())) {
-    search_sorted_binary_single<arrow::LargeBinaryType::offset_type>(arr->data().get(), keys->data().get(), result.get());
+    search_sorted_binary_single<arrow::LargeBinaryType::offset_type>(arr->data().get(), keys->data().get(), result.get(), desc);
   } else {
     ARROW_LOG(FATAL) << "Unsupported Type " << arr->type()->id();
   }
   return arrow::MakeArray(result);
 }
 
-std::shared_ptr<arrow::ChunkedArray> search_sorted_chunked_array(const arrow::ChunkedArray *arr, const arrow::ChunkedArray *keys) {
+std::shared_ptr<arrow::ChunkedArray> search_sorted_chunked_array(const arrow::ChunkedArray *arr, const arrow::ChunkedArray *keys,
+                                                                 const bool desc) {
   ARROW_CHECK_NE(arr, NULL);
   ARROW_CHECK_NE(keys, NULL);
 
@@ -472,12 +474,13 @@ std::shared_ptr<arrow::ChunkedArray> search_sorted_chunked_array(const arrow::Ch
   size_t num_key_chunks = keys->num_chunks();
   std::vector<std::shared_ptr<arrow::Array>> result_arrays;
   for (size_t i = 0; i < num_key_chunks; ++i) {
-    result_arrays.push_back(search_sorted_single_array(arr_single_chunk.get(), keys->chunk(i).get()));
+    result_arrays.push_back(search_sorted_single_array(arr_single_chunk.get(), keys->chunk(i).get(), desc));
   }
   return arrow::ChunkedArray::Make(result_arrays, std::make_shared<arrow::UInt64Type>()).ValueOrDie();
 }
 
-std::shared_ptr<arrow::ChunkedArray> search_sorted_table(const arrow::Table *data, const arrow::Table *keys) {
+std::shared_ptr<arrow::ChunkedArray> search_sorted_table(const arrow::Table *data, const arrow::Table *keys,
+                                                         const std::vector<bool> &desc) {
   ARROW_CHECK_NE(data, NULL);
   ARROW_CHECK_NE(keys, NULL);
   const auto data_schema = data->schema();
@@ -486,7 +489,8 @@ std::shared_ptr<arrow::ChunkedArray> search_sorted_table(const arrow::Table *dat
   if (data_schema->num_fields() == 0) {
     return arrow::ChunkedArray::MakeEmpty(std::make_shared<arrow::UInt64Type>()).ValueOrDie();
   } else if (data_schema->num_fields() == 1) {
-    return search_sorted_chunked_array(data->column(0).get(), keys->column(0).get());
+    ARROW_CHECK_EQ(desc.size(), 1);
+    return search_sorted_chunked_array(data->column(0).get(), keys->column(0).get(), desc[0]);
   } else {
     const auto combined_data_table = data->CombineChunks().ValueOrDie();
     const auto combined_keys_table = keys->CombineChunks().ValueOrDie();
@@ -500,7 +504,7 @@ std::shared_ptr<arrow::ChunkedArray> search_sorted_table(const arrow::Table *dat
       ARROW_CHECK_EQ(chunked_arr->num_chunks(), 1);
       key_vector.push_back(chunked_arr->chunk(0)->data());
     }
-    auto result = search_sorted_multiple_columns(data_vector, key_vector);
+    auto result = search_sorted_multiple_columns(data_vector, key_vector, desc);
     return arrow::ChunkedArray::Make({result}, std::make_shared<arrow::UInt64Type>()).ValueOrDie();
   }
 }

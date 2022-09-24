@@ -172,6 +172,29 @@ def test_number_string_table(str_len, num_chunks) -> None:
     assert np.all(result == pa_result.to_numpy())
 
 
+@pytest.mark.parametrize("str_len", [1, 5])
+@pytest.mark.parametrize("num_chunks", range(1, 4))
+def test_number_string_table_desc(str_len, num_chunks) -> None:
+    pa_int_keys = pa.chunked_array([np.zeros(100) for _ in range(num_chunks)])
+    pa_str_keys = pa.chunked_array(
+        [[gen_random_str(str_len) for _ in range(100)] for _ in range(num_chunks)],
+    )
+    keys = pa_str_keys.to_numpy()
+
+    data = np.array([gen_random_str(str_len + 1) for i in range(100)])
+    data.sort()
+    result = len(data) - np.searchsorted(data, keys)
+
+    data = data[::-1]
+
+    pa_data = pa.chunked_array([data])
+    sorted_table = pa.table([np.zeros(100), pa_data], names=["a", "b"])
+    key_table = pa.table([pa_int_keys, pa_str_keys], names=["a", "b"])
+
+    pa_result = search_sorted(sorted_table, key_table, desc=[False, True])
+    assert np.all(result == pa_result.to_numpy())
+
+
 @pytest.mark.parametrize("str_len", [0, 1, 5])
 @pytest.mark.parametrize("num_chunks", range(1, 4))
 def test_string_number_table(str_len, num_chunks) -> None:

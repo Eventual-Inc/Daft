@@ -106,11 +106,13 @@ struct CompositeView {
     return false;
   }
 
-  int Compare(const CompositeView &other, const uint64_t left_idx, const uint64_t right_idx) const {
+  int Compare(const CompositeView &other, const uint64_t left_idx, const uint64_t right_idx, const std::vector<bool> &desc) const {
     int result = 0;
     const size_t size = views_.size();
     for (size_t i = 0; i < size; ++i) {
+      const bool is_desc = desc[i];
       result = views_[i]->Compare(other.views_[i].get(), left_idx, right_idx);
+      result = is_desc ? -result : result;
       if (result != 0) {
         break;
       }

@@ -514,10 +514,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
 
     def search_sorted(self, pivots: DataBlock, reverse: bool = False) -> DataBlock[ArrowArrType]:
-        indices = DataBlock.make_block(search_sorted(pivots.data, self.data))
-        if reverse:
-            indices = ArrowEvaluator.SUB(DataBlock.make_block(len(pivots)), indices)
-        return indices
+        return DataBlock.make_block(search_sorted(pivots.data, self.data, reverse))
 
     def quantiles(self, num: int) -> DataBlock[ArrowArrType]:
         quantiles = np.linspace(1.0 / num, 1.0, num)[:-1]
