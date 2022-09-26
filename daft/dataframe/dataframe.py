@@ -4,7 +4,18 @@ import io
 import uuid
 from dataclasses import dataclass
 from functools import partial
-from typing import IO, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+from typing import (
+    IO,
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 import pandas
 import pyarrow as pa
@@ -380,7 +391,7 @@ class DataFrame:
     # DataFrame operations
     ###
 
-    def __column_input_to_expression(self, columns: Tuple[ColumnInputType, ...]) -> ExpressionList:
+    def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> ExpressionList:
         expressions = [col(c) if isinstance(c, str) else c for c in columns]
         return ExpressionList(expressions)
 
@@ -479,7 +490,7 @@ class DataFrame:
         )
         return DataFrame(projection)
 
-    def sort(self, column: ColumnInputType, desc: bool = False) -> DataFrame:
+    def sort(self, by: Union[ColumnInputType, List[ColumnInputType]], desc: bool = False) -> DataFrame:
         """Sorts DataFrame globally according to column.
 
         Example:
@@ -495,7 +506,11 @@ class DataFrame:
         Returns:
             DataFrame: Sorted DataFrame.
         """
-        sort = logical_plan.Sort(self._plan, self.__column_input_to_expression((column,)), desc=desc)
+        if not isinstance(by, list):
+            by = [
+                by,
+            ]
+        sort = logical_plan.Sort(self._plan, self.__column_input_to_expression(by), desc=desc)
         return DataFrame(sort)
 
     def limit(self, num: int) -> DataFrame:

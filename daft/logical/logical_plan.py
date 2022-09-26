@@ -278,7 +278,6 @@ class Sort(UnaryNode):
         pspec = PartitionSpec(scheme=PartitionScheme.RANGE, num_partitions=input.num_partitions(), by=sort_by)
         super().__init__(input.schema().to_column_expressions(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
-        assert len(sort_by.exprs) == 1, "we can only sort with 1 expression"
         self._sort_by = sort_by.resolve(input_schema=input.schema())
         self._desc = desc
 
