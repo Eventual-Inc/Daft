@@ -1,11 +1,11 @@
 [![daft](https://github.com/Eventual-Inc/Daft/actions/workflows/python-package.yml/badge.svg)](https://github.com/Eventual-Inc/Daft/actions/workflows/python-package.yml)
 
-# Daft
+# Welcome to Daft
+
+[Daft](https://www.getdaft.io) is a fast, ergonomic and scalable open-source dataframe library: built for Python and Complex Data/Machine Learning workloads.
 
 ![Frame 113](https://user-images.githubusercontent.com/17691182/190476440-28f29e87-8e3b-41c4-9c28-e112e595f558.png)
 
-
-[Daft](https://www.getdaft.io) is a fast, ergonomic and scalable open-source dataframe library: built for Python and Complex Data/Machine Learning workloads.
 
 ## Installation
 
@@ -13,11 +13,11 @@ Install Daft with `pip install getdaft`.
 
 ## Documentation
 
-Learn more about Daft in our [documentation](https://docs.getdaft.io).
+[Learn more about Daft in our documentation](https://www.getdaft.io).
 
 ## Community
 
-For questions about Daft, please post in our [community hosted on GitHub Discussions](https://github.com/Eventual-Inc/Daft/discussions)! We look forward to meeting you there.
+For questions about Daft, please post in our [community hosted on GitHub Discussions](https://github.com/Eventual-Inc/Daft/discussions). We look forward to meeting you there!
 
 ## Why Daft?
 
