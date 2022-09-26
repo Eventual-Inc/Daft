@@ -207,10 +207,29 @@ class vPartition:
             mask = mask.run_binary_operator(to_and.block, OperatorEnum.AND)
         return self.for_each_column_block(partial(DataBlock.filter, mask=mask))
 
-    def sort(self, sort_key: Expression, desc: bool = False) -> vPartition:
-        sort_tile = self.eval_expression(sort_key)
-        argsort_idx = sort_tile.apply(partial(DataBlock.argsort, desc=desc))
-        return self.take(argsort_idx.block)
+    def argsort(self, sort_keys: ExpressionList, descending: Optional[List[bool]] = None) -> DataBlock:
+        sorted = self.eval_expression_list(sort_keys)
+        keys = list(sorted.columns.keys())
+
+        if descending is None:
+            descending = [False for _ in keys]
+
+        idx = DataBlock.argsort([sorted.columns[k].block for k in keys], descending=descending)
+        return idx
+
+    def sort(self, sort_keys: ExpressionList, descending: Optional[List[bool]] = None) -> vPartition:
+        idx = self.argsort(sort_keys=sort_keys, descending=descending)
+        return self.take(idx)
+
+    def search_sorted(self, keys: vPartition, input_reversed: Optional[List[bool]] = None) -> DataBlock:
+        assert self.columns.keys() == keys.columns.keys()
+        col_ids = list(self.columns.keys())
+        idx = DataBlock.search_sorted(
+            [self.columns[k].block for k in col_ids],
+            [keys.columns[k].block for k in col_ids],
+            input_reversed=input_reversed,
+        )
+        return idx
 
     def take(self, indices: DataBlock) -> vPartition:
         return self.for_each_column_block(partial(DataBlock.take, indices=indices))
@@ -256,9 +275,9 @@ class vPartition:
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:
         assert len(target_partition_indices) == len(self)
         new_partition_to_columns: List[Dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]
-        argsort_targets = target_partition_indices.argsort()
+        argsort_targets = DataBlock.argsort([target_partition_indices])
         sorted_targets = target_partition_indices.take(argsort_targets)
-        sorted_targets_np = sorted_targets.to_polars().to_numpy()
+        sorted_targets_np = sorted_targets.to_numpy()
         pivots = np.where(np.diff(sorted_targets_np, prepend=np.nan))[0]
         target_partitions = sorted_targets_np[pivots]
 
@@ -273,6 +292,11 @@ class vPartition:
                 new_partition_to_columns[part_id][col_id] = nt
 
         return [vPartition(partition_id=i, columns=columns) for i, columns in enumerate(new_partition_to_columns)]
+
+    def quantiles(self, num: int) -> vPartition:
+        self_size = len(self)
+        sample_idx_np = np.linspace(self_size / num, self_size, num)[:-1].round().astype(np.int32)
+        return self.take(DataBlock.make_block(sample_idx_np))
 
     def join(
         self,

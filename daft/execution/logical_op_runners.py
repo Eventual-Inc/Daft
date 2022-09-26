@@ -286,24 +286,24 @@ class LogicalGlobalOpRunner:
         SAMPLES_PER_PARTITION = 20
         num_partitions = sort.num_partitions()
         exprs: ExpressionList = sort._sort_by
+        descending = sort._descending
 
         def sample_map_func(part: vPartition) -> vPartition:
             return part.sample(SAMPLES_PER_PARTITION).eval_expression_list(exprs)
 
-        def quantile_reduce_func(to_reduce: List[vPartition]) -> DataBlock:
+        def quantile_reduce_func(to_reduce: List[vPartition]) -> vPartition:
             merged = vPartition.merge_partitions(to_reduce, verify_partition_id=False)
-            first_column = list(merged.columns.values())[0]
-            return first_column.block.quantiles(num_partitions)
+            merged_sorted = merged.sort(exprs, descending=descending)
+            return merged_sorted.quantiles(num_partitions)
 
         prev_part = inputs[child_id]
         sampled_partitions = self.map_partitions(prev_part, sample_map_func, sort.resource_request())
         boundaries = self.reduce_partitions(sampled_partitions, quantile_reduce_func)
-        expr = exprs.exprs[0]
         sort_shuffle_op_klass = self._get_shuffle_op_klass(SortOp)
         sort_op = sort_shuffle_op_klass(
             expr_eval_resource_request=sort.resource_request(),
-            map_args={"expr": expr, "boundaries": boundaries, "desc": sort._desc},
-            reduce_args={"expr": expr, "desc": sort._desc},
+            map_args={"exprs": exprs, "boundaries": boundaries, "descending": descending},
+            reduce_args={"exprs": exprs, "descending": descending},
         )
 
         return sort_op.run(input=prev_part, num_target_partitions=num_partitions)

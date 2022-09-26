@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from daft.expressions import Expression
 from daft.resource_request import ResourceRequest
 from daft.runners.blocks import ArrowArrType, DataBlock
 from daft.runners.partitioning import PartID, PartitionSet, vPartition
@@ -89,28 +88,29 @@ class SortOp(ShuffleOp):
     def map_fn(
         input: vPartition,
         output_partitions: int,
-        expr: Optional[Expression] = None,
-        boundaries: Optional[DataBlock] = None,
-        desc: Optional[bool] = None,
+        exprs: Optional[ExpressionList] = None,
+        boundaries: Optional[vPartition] = None,
+        descending: Optional[List[bool]] = None,
     ) -> Dict[PartID, vPartition]:
-        assert expr is not None and boundaries is not None and desc is not None
+        assert exprs is not None and boundaries is not None and descending is not None
         assert len(boundaries) == (output_partitions - 1)
+        assert len(exprs) == len(descending)
         if output_partitions == 1:
             return {PartID(0): input}
-        sort_key = input.eval_expression(expr).block
-        argsort_idx = sort_key.argsort()
-        sorted_input = input.take(argsort_idx)
-        sorted_keys = sort_key.take(argsort_idx)
-        target_idx = sorted_keys.search_sorted(boundaries, reverse=desc)
-        new_parts = sorted_input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
+        sort_keys = input.eval_expression_list(exprs)
+        target_idx = boundaries.search_sorted(sort_keys, input_reversed=descending)
+        new_parts = input.split_by_index(num_partitions=output_partitions, target_partition_indices=target_idx)
         return {PartID(i): part for i, part in enumerate(new_parts)}
 
     @staticmethod
     def reduce_fn(
-        mapped_outputs: List[vPartition], expr: Optional[Expression] = None, desc: Optional[bool] = None
+        mapped_outputs: List[vPartition],
+        exprs: Optional[ExpressionList] = None,
+        descending: Optional[List[bool]] = None,
     ) -> vPartition:
-        assert expr is not None and desc is not None
-        return vPartition.merge_partitions(mapped_outputs).sort(expr, desc=desc)
+        assert exprs is not None and descending is not None
+        assert len(exprs) == len(descending)
+        return vPartition.merge_partitions(mapped_outputs).sort(exprs, descending=descending)
 
 
 class Shuffler(ShuffleOp):

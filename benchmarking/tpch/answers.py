@@ -26,7 +26,7 @@ def q1(get_df: GetDFFunc) -> DataFrame:
                 (col("L_QUANTITY").alias("count_order"), "count"),
             ]
         )
-        .sort(col("L_RETURNFLAG"))
+        .sort(["L_RETURNFLAG", "L_LINESTATUS"])
     )
     return daft_df
 
@@ -69,6 +69,8 @@ def q2(get_df: GetDFFunc) -> DataFrame:
             col("S_PHONE"),
             col("S_COMMENT"),
         )
+        .sort(by=["S_ACCTBAL", "N_NAME", "S_NAME", "P_PARTKEY"], desc=[True, False, False, False])
+        .limit(100)
     )
     return daft_df
 
@@ -93,6 +95,9 @@ def q3(get_df: GetDFFunc) -> DataFrame:
         )
         .groupby(col("O_ORDERKEY"), col("O_ORDERDATE"), col("O_SHIPPRIORITY"))
         .agg([(col("volume").alias("revenue"), "sum")])
+        .sort(by=["revenue", "O_ORDERDATE"], desc=[True, False])
+        .limit(10)
+        .select("O_ORDERKEY", "revenue", "O_ORDERDATE", "O_SHIPPRIORITY")
     )
     return daft_df
 
@@ -196,6 +201,7 @@ def q7(get_df: GetDFFunc) -> DataFrame:
         )
         .groupby(col("supp_nation"), col("cust_nation"), col("l_year"))
         .agg([(col("volume").alias("revenue"), "sum")])
+        .sort(by=["supp_nation", "cust_nation", "l_year"])
     )
     return daft_df
 
@@ -277,6 +283,7 @@ def q9(get_df: GetDFFunc) -> DataFrame:
         )
         .groupby(col("N_NAME"), col("o_year"))
         .agg([(col("amount"), "sum")])
+        .sort(by=["N_NAME", "o_year"], desc=[False, True])
     )
 
     return daft_df

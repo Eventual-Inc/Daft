@@ -29,7 +29,7 @@ from pandas.core.reshape.merge import get_join_indexers
 
 from daft.execution.operators import OperatorEnum, OperatorEvaluator
 from daft.internal.hashing import hash_chunked_array
-from daft.internal.kernels.search_sorted import search_sorted_chunked_array
+from daft.internal.kernels.search_sorted import search_sorted
 
 # A type representing some Python scalar (non-series/array like object)
 PyScalar = Any
@@ -264,13 +264,44 @@ class DataBlock(Generic[ArrType]):
     def sample(self, num: int) -> DataBlock[ArrType]:
         raise NotImplementedError()
 
+    @staticmethod
     @abstractmethod
-    def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
+    def _argsort(blocks: List[DataBlock[ArrType]], descending: Optional[List[bool]] = None) -> DataBlock[ArrowArrType]:
         raise NotImplementedError()
 
-    def argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
-        assert not self.is_scalar(), "Cannot sort scalar DataBlock"
-        return self._argsort(desc=desc)
+    @classmethod
+    def argsort(cls, blocks: List[DataBlock], descending: Optional[List[bool]] = None) -> DataBlock[ArrowArrType]:
+        first_type = type(blocks[0])
+        assert all(type(b) == first_type for b in blocks), "all block types must match"
+        size = len(blocks)
+        if descending is None:
+            descending = [False for _ in range(size)]
+        else:
+            assert size == len(descending), f"mismatch of size of descending and blocks {size} vs {len(descending)}"
+        return first_type._argsort(blocks, descending=descending)
+
+    @staticmethod
+    @abstractmethod
+    def _search_sorted(
+        sorted_blocks: List[DataBlock], keys: List[DataBlock], input_reversed: Optional[List[bool]] = None
+    ) -> DataBlock[ArrowArrType]:
+        raise NotImplementedError()
+
+    @classmethod
+    def search_sorted(
+        cls, sorted_blocks: List[DataBlock], keys: List[DataBlock], input_reversed: Optional[List[bool]] = None
+    ) -> DataBlock[ArrowArrType]:
+        first_type = type(sorted_blocks[0])
+        assert all(type(b) == first_type for b in sorted_blocks), "all block types must match"
+        assert all(type(b) == first_type for b in keys), "all block types must match"
+
+        size = len(sorted_blocks)
+        if input_reversed is None:
+            input_reversed = [False for _ in range(size)]
+        assert len(sorted_blocks) == len(keys)
+        assert size == len(input_reversed), f"mismatch of size of descending and blocks {size} vs {len(input_reversed)}"
+
+        return first_type._search_sorted(sorted_blocks=sorted_blocks, keys=keys, input_reversed=input_reversed)
 
     @staticmethod
     @abstractmethod
@@ -283,14 +314,6 @@ class DataBlock(Generic[ArrType]):
         first_type = type(blocks[0])
         assert all(type(b) == first_type for b in blocks), "all block types must match"
         return first_type._merge_blocks(blocks)
-
-    @abstractmethod
-    def search_sorted(self, pivots: DataBlock[ArrType], reverse: bool = False) -> DataBlock[ArrType]:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def quantiles(self, num: int) -> DataBlock[ArrType]:
-        raise NotImplementedError()
 
     @abstractmethod
     def array_hash(self, seed: Optional[DataBlock[ArrType]] = None) -> DataBlock[ArrowArrType]:
@@ -399,7 +422,14 @@ class PyListDataBlock(DataBlock[List[T]]):
     def sample(self, num: int) -> DataBlock[List[T]]:
         return PyListDataBlock(data=random.sample(self.data, num))
 
-    def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
+    @staticmethod
+    def _search_sorted(
+        sorted_blocks: List[DataBlock], keys: List[DataBlock], input_reversed: Optional[List[bool]] = None
+    ) -> DataBlock[ArrowArrType]:
+        raise NotImplementedError()
+
+    @staticmethod
+    def _argsort(blocks: List[DataBlock[ArrType]], descending: Optional[List[bool]] = None) -> DataBlock[ArrowArrType]:
         raise NotImplementedError("Sorting by Python objects is not implemented")
 
     def _make_empty(self) -> DataBlock[List[T]]:
@@ -414,12 +444,6 @@ class PyListDataBlock(DataBlock[List[T]]):
         for block in blocks:
             concatted_data.extend(block.data)
         return PyListDataBlock(data=concatted_data)
-
-    def search_sorted(self, pivots: DataBlock[List[T]], reverse: bool = False) -> DataBlock[ArrowArrType]:
-        raise NotImplementedError("Sorting by Python objects is not implemented")
-
-    def quantiles(self, num: int) -> DataBlock[List[T]]:
-        raise NotImplementedError("Sorting by Python objects is not implemented")
 
     def array_hash(self, seed: Optional[DataBlock[ArrType]] = None) -> DataBlock[ArrowArrType]:
         # TODO(jay): seed is ignored here, but perhaps we need to set it in PYTHONHASHSEED?
@@ -475,10 +499,35 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
                 yield py_scalar
         yield from self.data.to_numpy()
 
-    def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
-        order = "descending" if desc else "ascending"
-        sort_indices = pac.array_sort_indices(self.data, order=order)
-        return ArrowDataBlock(data=sort_indices)
+    # def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
+    #     order = "descending" if desc else "ascending"
+    #     sort_indices = pac.array_sort_indices(self.data, order=order)
+    #     return ArrowDataBlock(data=sort_indices)
+
+    @staticmethod
+    def _argsort(blocks: List[DataBlock[ArrType]], descending: Optional[List[bool]] = None) -> DataBlock[ArrowArrType]:
+        arrs = [a.data for a in blocks]
+        arr_names = [f"a_{i}" for i in range(len(blocks))]
+        if descending is None:
+            descending = [False for _ in range(len(blocks))]
+        order = ["descending" if desc else "ascending" for desc in descending]
+        table = pa.table(arrs, names=arr_names)
+        indices = pac.sort_indices(table, sort_keys=list(zip(arr_names, order)))
+        return DataBlock.make_block(indices)
+
+    @staticmethod
+    def _search_sorted(
+        sorted_blocks: List[DataBlock], keys: List[DataBlock], input_reversed: Optional[List[bool]] = None
+    ) -> DataBlock[ArrowArrType]:
+
+        arr_names = [f"a_{i}" for i in range(len(sorted_blocks))]
+        if input_reversed is None:
+            input_reversed = [False for _ in range(len(sorted_blocks))]
+        sorted_table = pa.table([a.data for a in sorted_blocks], names=arr_names)
+        key_table = pa.table([a.data for a in keys], names=arr_names)
+        assert sorted_table.schema == key_table.schema
+        result = search_sorted(sorted_table, key_table, input_reversed=input_reversed)
+        return DataBlock.make_block(result)
 
     def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrowArrType]:
         return self._binary_op(mask, fn=pac.array_filter)
@@ -512,20 +561,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             return self
         sampled = np.random.choice(self.data, num, replace=False)
         return ArrowDataBlock(data=pa.chunked_array([sampled]))
-
-    def search_sorted(self, pivots: DataBlock, reverse: bool = False) -> DataBlock[ArrowArrType]:
-        indices = DataBlock.make_block(search_sorted_chunked_array(pivots.data, self.data))
-        if reverse:
-            indices = ArrowEvaluator.SUB(DataBlock.make_block(len(pivots)), indices)
-        return indices
-
-    def quantiles(self, num: int) -> DataBlock[ArrowArrType]:
-        quantiles = np.linspace(1.0 / num, 1.0, num)[:-1]
-        if NUMPY_MINOR_VERSION < 22:
-            pivots = np.quantile(self.data.to_numpy(), quantiles, interpolation="nearest")
-        else:
-            pivots = np.quantile(self.data.to_numpy(), quantiles, method="closest_observation")
-        return DataBlock.make_block(data=pivots)
 
     def array_hash(self, seed: Optional[DataBlock[ArrowArrType]] = None) -> DataBlock[ArrowArrType]:
         assert isinstance(self.data, pa.ChunkedArray)

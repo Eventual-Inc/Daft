@@ -85,7 +85,6 @@ def test_tpch_q1(tmp_path, check_answer, get_df):
     daft_df = answers.q1(get_df)
     with start_transaction(op="task", name=f"tpch_q1:runner={get_context().runner_config.name.upper()}"):
         daft_pd_df = daft_df.to_pandas()
-    daft_pd_df = daft_pd_df.sort_values(by=["L_RETURNFLAG", "L_LINESTATUS"])  # WE don't have multicolumn sort
     check_answer(daft_pd_df, 1, tmp_path)
 
 
@@ -94,10 +93,6 @@ def test_tpch_q2(tmp_path, check_answer, get_df):
     # Multicol sorts not implemented yet
     with start_transaction(op="task", name=f"tpch_q2:runner={get_context().runner_config.name.upper()}"):
         daft_pd_df = daft_df.to_pandas()
-    daft_pd_df = daft_pd_df.sort_values(
-        by=["S_ACCTBAL", "N_NAME", "S_NAME", "P_PARTKEY"], ascending=[False, True, True, True]
-    )
-    daft_pd_df = daft_pd_df.head(100)
     check_answer(daft_pd_df, 2, tmp_path)
 
 
@@ -107,9 +102,6 @@ def test_tpch_q3(tmp_path, check_answer, get_df):
     # Multicol sorts not implemented yet
     with start_transaction(op="task", name=f"tpch_q3:runner={get_context().runner_config.name.upper()}"):
         daft_pd_df = daft_df.to_pandas()
-    daft_pd_df = daft_pd_df.sort_values(by=["revenue", "O_ORDERDATE"], ascending=[False, True])
-    daft_pd_df = daft_pd_df.head(10)
-    daft_pd_df = daft_pd_df[["O_ORDERKEY", "revenue", "O_ORDERDATE", "O_SHIPPRIORITY"]]
     check_answer(daft_pd_df, 3, tmp_path)
 
 
@@ -144,7 +136,6 @@ def test_tpch_q7(tmp_path, check_answer, get_df):
     # Multicol sorts not implemented yet
     with start_transaction(op="task", name=f"tpch_q7:runner={get_context().runner_config.name.upper()}"):
         daft_pd_df = daft_df.to_pandas()
-    daft_pd_df = daft_pd_df.sort_values(by=["supp_nation", "cust_nation", "l_year"])
     check_answer(daft_pd_df, 7, tmp_path)
 
 
@@ -161,7 +152,6 @@ def test_tpch_q9(tmp_path, check_answer, get_df):
 
     with start_transaction(op="task", name=f"tpch_q9:runner={get_context().runner_config.name.upper()}"):
         daft_pd_df = daft_df.to_pandas()
-    daft_pd_df = daft_pd_df.sort_values(by=["N_NAME", "o_year"], ascending=[True, False])
     check_answer(daft_pd_df, 9, tmp_path)
 
 
