@@ -178,7 +178,7 @@ def test_vpartition_sort() -> None:
 
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
-    part = part.sort(expr)
+    part = part.sort(ExpressionList([expr]))
     arrow_table = pa.Table.from_pandas(part.to_pandas())
     assert arrow_table.column_names == [f"col_{i}" for i in range(col_id, col_id + 4)]
 
@@ -203,7 +203,7 @@ def test_vpartition_sort_desc() -> None:
 
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
-    part = part.sort(expr, desc=True)
+    part = part.sort(ExpressionList([expr]), descending=[True])
     arrow_table = pa.Table.from_pandas(part.to_pandas())
     assert arrow_table.column_names == [f"col_{i}" for i in range(col_id, col_id + 4)]
 
