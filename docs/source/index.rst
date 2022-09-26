@@ -3,7 +3,9 @@ Daft Dataframes
 
 Daft is a **fast, Pythonic and scalable dataframe** for Complex Data and Machine Learning workloads.
 
-.. centered:: ``pip install getdaft``
+.. raw:: html
+
+   <div style="background: #333333; padding: 8px; margin: 12px; color: #f1f3f6; font-family: 'Roboto Mono', sans-serif; text-align: center; border-radius: 8px;">pip install getdaft</div>
 
 .. image:: _static/daft_illustration.png
    :scale: 60%
@@ -22,9 +24,9 @@ Check out the :doc:`learn/quickstart` or watch a 5-minute video.
 Learning Daft
 -------------
 
-View our :doc:`learn/tutorials` for examples on how to use Daft.
-
 Check out our :doc:`learn/user_guides` for deeper-dives into Daft concepts.
+
+View our :doc:`learn/tutorials` for examples on how to use Daft.
 
 Building with Daft
 ------------------
@@ -36,6 +38,7 @@ View our :doc:`api_docs` for technical documentation of Daft's functions and cla
 
    learn
    api_docs
+   dataframe_comparison
 
 .. Indices and tables
 .. ==================
