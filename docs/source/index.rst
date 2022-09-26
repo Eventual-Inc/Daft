@@ -8,7 +8,7 @@ Daft is a **fast, Pythonic and scalable dataframe** for Complex Data and Machine
    <div style="background: #333333; padding: 8px; margin: 12px; color: #f1f3f6; font-family: 'Roboto Mono', sans-serif; text-align: center; border-radius: 8px;">pip install getdaft</div>
 
 .. image:: _static/daft_illustration.png
-   :scale: 60%
+   :width: 500
    :align: center
 
 New to Daft?
