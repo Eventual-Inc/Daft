@@ -7,3 +7,4 @@ API Documentation
    api_docs/expressions
    api_docs/groupby
    api_docs/udf
+   api_docs/context

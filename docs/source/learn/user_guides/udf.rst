@@ -86,7 +86,7 @@ Daft provides an API for Stateful UDFs to do this. Stateful UDFs are just like S
 
 For example, to download and run a model on a column of images as shown in the :doc:`../quickstart` guide:
 
-.. code::python
+.. code:: python
 
     @udf(return_type=int)
     class ClassifyImages:
@@ -101,7 +101,7 @@ For example, to download and run a model on a column of images as shown in the :
 
 Running Stateful UDFs are exactly the same as running their Stateless cousins.
 
-.. code::python
+.. code:: python
 
     df = df.with_column("image_classifications", ClassifyImages(col("images")))
 
@@ -113,9 +113,9 @@ Sometimes, you may want to request for specific resources for your UDF. For exam
 
 Daft provides a simple API for indicating GPU and CPU requests.
 
-.. code::python
+.. code:: python
 
-    # Requires one GPU and two CPUs to run
+    # Requires one GPU and eight CPUs to run
     @udf(return_type=int, num_gpus=1, num_cpus=8)
     def func():
         model = get_model().cuda()
