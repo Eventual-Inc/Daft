@@ -17,15 +17,6 @@ Construction
 .. automethod:: daft.DataFrame.from_pylist
 .. automethod:: daft.DataFrame.from_pydict
 
-
-.. _df-write-data:
-
-Writing Data
-############
-
-.. automethod:: daft.DataFrame.write_parquet
-.. automethod:: daft.DataFrame.write_csv
-
 .. _dataframe-api-operations:
 
 Operations
@@ -77,6 +68,14 @@ Visualization
 .. automethod:: daft.DataFrame.show
 .. _df-to-pandas:
 .. automethod:: daft.DataFrame.to_pandas
+
+.. _df-write-data:
+
+Writing Data
+************
+
+.. automethod:: daft.DataFrame.write_parquet
+.. automethod:: daft.DataFrame.write_csv
 
 Schema and Lineage
 ##################

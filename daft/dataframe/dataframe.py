@@ -113,6 +113,9 @@ class DataFrame:
 
         Returns:
             DataFrameDisplay: object that has a rich tabular display
+
+            .. NOTE::
+                This call is **blocking** and will execute the DataFrame when called
         """
         df = self
         if n != -1:
@@ -330,6 +333,9 @@ class DataFrame:
 
         Returns:
             DataFrame: The filenames that were written out as strings.
+
+            .. NOTE::
+                This call is **blocking** and will execute the DataFrame when called
         """
         cols: Optional[ExpressionList] = None
         if partition_cols is not None:
@@ -359,6 +365,9 @@ class DataFrame:
 
         Returns:
             DataFrame: The filenames that were written out as strings.
+
+            .. NOTE::
+                This call is **blocking** and will execute the DataFrame when called
         """
         cols: Optional[ExpressionList] = None
         if partition_cols is not None:
@@ -554,7 +563,7 @@ class DataFrame:
         """Joins left (self) DataFrame on the right on a set of keys.
         Key names can be the same or different for left and right DataFrame.
 
-        Note:
+        .. NOTE::
             Although self joins are supported, we currently duplicate the logical plan for the right side
             and recompute the entire tree. Caching for this is on the roadmap.
 
@@ -740,6 +749,9 @@ class DataFrame:
 
         Returns:
             pandas.DataFrame: pandas DataFrame converted from a Daft DataFrame
+
+            .. NOTE::
+                This call is **blocking** and will execute the DataFrame when called
         """
         self.collect()
         assert self._result is not None
