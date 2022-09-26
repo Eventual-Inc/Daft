@@ -45,6 +45,9 @@ html_theme_options = {
     "show_toc_level": 2,
     # Remove title under the logo on the left sidebar
     "logo_only": True,
+    # Show github button
+    "repository_url": "https://github.com/Eventual-Inc/Daft",
+    "use_repository_button": True,
 }
 
 # Resolving code links to github
