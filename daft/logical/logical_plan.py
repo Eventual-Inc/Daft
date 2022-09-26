@@ -4,7 +4,7 @@ import itertools
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Union
 
 from daft.datasources import SourceInfo, StorageType
 from daft.execution.operators import ExpressionType
@@ -274,21 +274,26 @@ class Projection(UnaryNode):
 
 
 class Sort(UnaryNode):
-    def __init__(self, input: LogicalPlan, sort_by: ExpressionList, desc: bool = False) -> None:
+    def __init__(
+        self, input: LogicalPlan, sort_by: ExpressionList, descending: Union[List[bool], bool] = False
+    ) -> None:
         pspec = PartitionSpec(scheme=PartitionScheme.RANGE, num_partitions=input.num_partitions(), by=sort_by)
         super().__init__(input.schema().to_column_expressions(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._sort_by = sort_by.resolve(input_schema=input.schema())
-        self._desc = desc
+        if isinstance(descending, bool):
+            self._descending = [descending for _ in self._sort_by]
+        else:
+            self._descending = descending
 
     def __repr__(self) -> str:
-        return f"Sort\n\toutput={self.schema()}\n\tsort_by={self._sort_by}\n\tdesc={self._desc}"
+        return f"Sort\n\toutput={self.schema()}\n\tsort_by={self._sort_by}\n\tdesc={self._descending}"
 
     def resource_request(self) -> ResourceRequest:
         return self._sort_by.resource_request()
 
     def copy_with_new_input(self, new_input: LogicalPlan) -> Sort:
-        return Sort(new_input, sort_by=self._sort_by, desc=self._desc)
+        return Sort(new_input, sort_by=self._sort_by, descending=self._descending)
 
     def required_columns(self) -> ExpressionList:
         return self._sort_by.required_columns()
@@ -298,11 +303,11 @@ class Sort(UnaryNode):
             isinstance(other, Sort)
             and self.schema() == other.schema()
             and self._sort_by == self._sort_by
-            and self._desc == self._desc
+            and self._descending == self._descending
         )
 
     def rebuild(self) -> LogicalPlan:
-        return Sort(input=self._children()[0].rebuild(), sort_by=self._sort_by.unresolve(), desc=self._desc)
+        return Sort(input=self._children()[0].rebuild(), sort_by=self._sort_by.unresolve(), descending=self._descending)
 
 
 class LocalLimit(UnaryNode):

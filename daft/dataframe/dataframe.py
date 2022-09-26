@@ -490,18 +490,22 @@ class DataFrame:
         )
         return DataFrame(projection)
 
-    def sort(self, by: Union[ColumnInputType, List[ColumnInputType]], desc: bool = False) -> DataFrame:
+    def sort(
+        self, by: Union[ColumnInputType, List[ColumnInputType]], desc: Union[bool, List[bool]] = False
+    ) -> DataFrame:
         """Sorts DataFrame globally according to column.
 
         Example:
             >>> sorted_df = df.sort(col('x') + col('y'))
+            >>> sorted_df = df.sort([col('x'), col('y')], desc=[False, True])
+            >>> sorted_df = df.sort(['z', col('x'), col('y')], desc=[True, False, True])
 
         Note:
             * Since this a global sort, this requires an expensive repartition which can be quite slow.
-            * Only single expression sorts are currently implemented.
+            * Supports multicolumn sorts and can have unique `descending` flag per column.
         Args:
-            column (ColumnInputType): column to sort by. Can be `str` or expression.
-            desc (bool, optional): Sort by descending order. Defaults to False.
+            column (Union[ColumnInputType, List[ColumnInputType]]): column to sort by. Can be `str` or expression as well as a list of either.
+            desc (Union[bool, List[bool]), optional): Sort by descending order. Defaults to False.
 
         Returns:
             DataFrame: Sorted DataFrame.
@@ -510,7 +514,7 @@ class DataFrame:
             by = [
                 by,
             ]
-        sort = logical_plan.Sort(self._plan, self.__column_input_to_expression(by), desc=desc)
+        sort = logical_plan.Sort(self._plan, self.__column_input_to_expression(by), descending=desc)
         return DataFrame(sort)
 
     def limit(self, num: int) -> DataFrame:

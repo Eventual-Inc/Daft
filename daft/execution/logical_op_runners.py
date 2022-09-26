@@ -286,14 +286,14 @@ class LogicalGlobalOpRunner:
         SAMPLES_PER_PARTITION = 20
         num_partitions = sort.num_partitions()
         exprs: ExpressionList = sort._sort_by
-        desc = sort._desc
+        descending = sort._descending
 
         def sample_map_func(part: vPartition) -> vPartition:
             return part.sample(SAMPLES_PER_PARTITION).eval_expression_list(exprs)
 
         def quantile_reduce_func(to_reduce: List[vPartition]) -> vPartition:
             merged = vPartition.merge_partitions(to_reduce, verify_partition_id=False)
-            merged_sorted = merged.sort(exprs, desc=desc)
+            merged_sorted = merged.sort(exprs, descending=descending)
             return merged_sorted.quantiles(num_partitions)
 
         prev_part = inputs[child_id]
@@ -302,8 +302,8 @@ class LogicalGlobalOpRunner:
         sort_shuffle_op_klass = self._get_shuffle_op_klass(SortOp)
         sort_op = sort_shuffle_op_klass(
             expr_eval_resource_request=sort.resource_request(),
-            map_args={"exprs": exprs, "boundaries": boundaries, "desc": sort._desc},
-            reduce_args={"exprs": exprs, "desc": sort._desc},
+            map_args={"exprs": exprs, "boundaries": boundaries, "descending": descending},
+            reduce_args={"exprs": exprs, "descending": descending},
         )
 
         return sort_op.run(input=prev_part, num_target_partitions=num_partitions)

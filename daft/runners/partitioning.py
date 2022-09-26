@@ -193,23 +193,27 @@ class vPartition:
             mask = mask.run_binary_operator(to_and.block, OperatorEnum.AND)
         return self.for_each_column_block(partial(DataBlock.filter, mask=mask))
 
-    def argsort(self, sort_keys: ExpressionList, desc: bool = False) -> DataBlock:
+    def argsort(self, sort_keys: ExpressionList, descending: Optional[List[bool]] = None) -> DataBlock:
         sorted = self.eval_expression_list(sort_keys)
         keys = list(sorted.columns.keys())
-        idx = DataBlock.argsort([sorted.columns[k].block for k in keys], descending=[desc for _ in keys])
+
+        if descending is None:
+            descending = [False for _ in keys]
+
+        idx = DataBlock.argsort([sorted.columns[k].block for k in keys], descending=descending)
         return idx
 
-    def sort(self, sort_keys: ExpressionList, desc: bool = False) -> vPartition:
-        idx = self.argsort(sort_keys=sort_keys, desc=desc)
+    def sort(self, sort_keys: ExpressionList, descending: Optional[List[bool]] = None) -> vPartition:
+        idx = self.argsort(sort_keys=sort_keys, descending=descending)
         return self.take(idx)
 
-    def search_sorted(self, keys: vPartition, input_reversed: bool = False) -> DataBlock:
+    def search_sorted(self, keys: vPartition, input_reversed: Optional[List[bool]] = None) -> DataBlock:
         assert self.columns.keys() == keys.columns.keys()
         col_ids = list(self.columns.keys())
         idx = DataBlock.search_sorted(
             [self.columns[k].block for k in col_ids],
             [keys.columns[k].block for k in col_ids],
-            input_reversed=[input_reversed for _ in col_ids],
+            input_reversed=input_reversed,
         )
         return idx
 

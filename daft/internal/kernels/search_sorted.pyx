@@ -54,7 +54,7 @@ def search_sorted(data, keys, input_reversed=None):
             if isinstance(input_reversed, bool):
                 table_input_reversed = [input_reversed for _ in range(num_columns)]
             elif isinstance(input_reversed, list):
-                assert all(isinstance(b, bool) for b in input_reversed)
+                assert all(isinstance(b, bool) for b in input_reversed), 'found wrong type in input_reversed ' + str(input_reversed)
                 assert len(input_reversed) == num_columns
                 table_input_reversed = input_reversed
             else:
