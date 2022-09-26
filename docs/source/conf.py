@@ -20,10 +20,17 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.autosummary",
     "sphinx.ext.linkcode",
+    "myst_nb",
 ]
 
 templates_path = ["_templates"]
 exclude_patterns = []
+
+
+# -- Options for Notebook rendering
+# https://myst-nb.readthedocs.io/en/latest/configuration.html?highlight=nb_execution_mode#execution
+
+nb_execution_mode = "off"
 
 
 # -- Options for HTML output -------------------------------------------------
@@ -31,7 +38,14 @@ exclude_patterns = []
 
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
-html_theme_options = {"show_toc_level": 2}
+html_theme_options = {
+    # This is the footer of the primary sidebar as HTML
+    "extra_navbar": "",
+    # This is how many levels are shown on the secondary sidebar
+    "show_toc_level": 2,
+    # Remove title under the logo on the left sidebar
+    "logo_only": True,
+}
 
 # Resolving code links to github
 # Adapted from: https://github.com/aaugustin/websockets/blob/778a1ca6936ac67e7a3fe1bbe585db2eafeaa515/docs/conf.py#L100-L134

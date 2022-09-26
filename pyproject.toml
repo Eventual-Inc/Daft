@@ -73,6 +73,7 @@ viztracer = "^0.15.4"
 sentry-sdk = "^1.9.5"
 Sphinx = "<5"
 sphinx-book-theme = "^0.3.3"
+myst-nb = "^0.16.0"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.1.2"
