@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import multiprocessing
 from dataclasses import dataclass
-from typing import Callable, ClassVar, Dict, List, Optional, Type
-
-import pandas as pd
+from typing import Callable, ClassVar, Dict, List, Type
 
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
@@ -21,7 +19,6 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
-from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartID, PartitionManager, PartitionSet, vPartition
 from daft.runners.profiler import profiler
@@ -40,12 +37,11 @@ from daft.runners.shuffle_ops import (
 class LocalPartitionSet(PartitionSet[vPartition]):
     _partitions: Dict[PartID, vPartition]
 
-    def to_pandas(self, schema: Optional[ExpressionList] = None) -> "pd.DataFrame":
+    def _get_all_vpartitions(self) -> List[vPartition]:
         partition_ids = sorted(list(self._partitions.keys()))
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
-        part_dfs = [self._partitions[pid].to_pandas(schema=schema) for pid in partition_ids]
-        return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
+        return [self._partitions[pid] for pid in partition_ids]
 
     def get_partition(self, idx: PartID) -> vPartition:
         return self._partitions[idx]

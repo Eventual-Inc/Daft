@@ -346,7 +346,13 @@ class DataFrame:
             storage_type=StorageType.PARQUET,
             compression=compression,
         )
-        return DataFrame(plan)
+
+        # Block and write, then retrieve data and return a new disconnected DataFrame
+        write_df = DataFrame(plan)
+        write_df.collect()
+        assert write_df._result is not None
+        data = write_df._result.to_pydict()
+        return DataFrame.from_pydict(data)
 
     def write_csv(self, root_dir: str, partition_cols: Optional[List[ColumnInputType]] = None) -> DataFrame:
         """Writes the DataFrame to CSV files using a `root_dir` and randomly generated UUIDs as the filepath and returns the filepaths.
@@ -374,7 +380,13 @@ class DataFrame:
             partition_cols=cols,
             storage_type=StorageType.CSV,
         )
-        return DataFrame(plan)
+
+        # Block and write, then retrieve data and return a new disconnected DataFrame
+        write_df = DataFrame(plan)
+        write_df.collect()
+        assert write_df._result is not None
+        data = write_df._result.to_pydict()
+        return DataFrame.from_pydict(data)
 
     ###
     # DataFrame operations

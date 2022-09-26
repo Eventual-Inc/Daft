@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Type
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, cast
 
-import pandas as pd
 import ray
 from loguru import logger
 
@@ -21,7 +20,6 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
-from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartID, PartitionManager, PartitionSet, vPartition
 from daft.runners.profiler import profiler
@@ -40,13 +38,11 @@ from daft.runners.shuffle_ops import (
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     _partitions: Dict[PartID, ray.ObjectRef]
 
-    def to_pandas(self, schema: Optional[ExpressionList] = None) -> "pd.DataFrame":
+    def _get_all_vpartitions(self) -> List[vPartition]:
         partition_ids = sorted(list(self._partitions.keys()))
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
-        all_partitions = ray.get([self._partitions[pid] for pid in partition_ids])
-        part_dfs = [part.to_pandas(schema=schema) for part in all_partitions]
-        return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
+        return cast(List[vPartition], ray.get([self._partitions[pid] for pid in partition_ids]))
 
     def get_partition(self, idx: PartID) -> ray.ObjectRef:
         return self._partitions[idx]

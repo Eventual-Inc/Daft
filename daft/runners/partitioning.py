@@ -4,7 +4,17 @@ import dataclasses
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeVar,
+)
 from uuid import uuid4
 
 import numpy as np
@@ -157,6 +167,10 @@ class vPartition:
             block: DataBlock = DataBlock.make_block(arr)
             tiles[col_id] = PyListTile(column_id=col_id, column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
+
+    def to_pydict(self) -> Dict[str, Sequence]:
+        output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
+        return {name: self.columns[id].block.data for name, id in output_schema}
 
     def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
         if schema is not None:
@@ -392,9 +406,19 @@ PartitionT = TypeVar("PartitionT")
 
 
 class PartitionSet(Generic[PartitionT]):
-    @abstractmethod
-    def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
+    def _get_all_vpartitions(self) -> List[vPartition]:
         raise NotImplementedError()
+
+    def to_pydict(self) -> Dict[str, Sequence]:
+        """Retrieves all the data in a PartitionSet as a Python dictionary. Values are the raw data from each Block."""
+        all_partitions = self._get_all_vpartitions()
+        merged_partition = vPartition.merge_partitions(all_partitions)
+        return merged_partition.to_pydict()
+
+    def to_pandas(self, schema: Optional[ExpressionList] = None) -> "pd.DataFrame":
+        all_partitions = self._get_all_vpartitions()
+        part_dfs = [part.to_pandas(schema=schema) for part in all_partitions]
+        return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
 
     @abstractmethod
     def get_partition(self, idx: PartID) -> PartitionT:
