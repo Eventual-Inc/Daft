@@ -1,9 +1,19 @@
-from daft.expressions import col
+from daft.expressions import col, lit
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     parametrize_service_requests_csv_daft_df,
     parametrize_service_requests_csv_repartition,
 )
+
+
+@parametrize_service_requests_csv_repartition
+@parametrize_service_requests_csv_daft_df
+def test_with_column_literal(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results"""
+    daft_df = daft_df.repartition(repartition_nparts).with_column("literal", lit(1))
+    service_requests_csv_pd_df["literal"] = 1
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
 @parametrize_service_requests_csv_repartition
