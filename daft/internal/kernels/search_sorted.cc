@@ -493,7 +493,7 @@ std::shared_ptr<arrow::ChunkedArray> search_sorted_table(const arrow::Table *dat
   const auto data_schema = data->schema();
   const auto key_schema = keys->schema();
   ARROW_CHECK(data_schema->Equals(key_schema));
-  if (data_schema->num_fields() == 0) {
+  if ((data_schema->num_fields() == 0) || (keys->num_rows() == 0)) {
     return arrow::ChunkedArray::Make({}, std::make_shared<arrow::UInt64Type>()).ValueOrDie();
   } else if (data_schema->num_fields() == 1) {
     ARROW_CHECK_EQ(input_reversed.size(), 1);
@@ -506,7 +506,6 @@ std::shared_ptr<arrow::ChunkedArray> search_sorted_table(const arrow::Table *dat
       ARROW_CHECK_EQ(chunked_arr->num_chunks(), 1);
       data_vector.push_back(chunked_arr->chunk(0)->data());
     }
-
     for (auto chunked_arr : combined_keys_table->columns()) {
       ARROW_CHECK_EQ(chunked_arr->num_chunks(), 1);
       key_vector.push_back(chunked_arr->chunk(0)->data());
