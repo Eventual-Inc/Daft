@@ -294,6 +294,45 @@ class vPartition:
         sample_idx_np = np.linspace(self_size / num, self_size, num)[:-1].round().astype(np.int32)
         return self.take(DataBlock.make_block(sample_idx_np))
 
+    def explode(self, columns: ExpressionList) -> vPartition:
+        partition_to_explode = self.eval_expression_list(columns)
+        partition_to_repeat = vPartition(
+            {cid: tile for cid, tile in self.columns.items() if cid not in partition_to_explode.columns},
+            partition_id=self.partition_id,
+        )
+
+        exploded_cols = {}
+        found_list_lengths = None
+        for col_id, tile in partition_to_explode.columns.items():
+            exploded_block, list_lengths = tile.block.list_explode()
+
+            # Ensure that each row has the same length as other rows
+            if found_list_lengths is None:
+                found_list_lengths = list_lengths
+            else:
+                if list_lengths != found_list_lengths:
+                    raise RuntimeError(
+                        ".explode expects columns to have the same length in each row, "
+                        "but found row(s) with mismatched lengths"
+                    )
+
+            exploded_cols[col_id] = PyListTile(
+                column_id=tile.column_id,  # TODO: should this be a new column_id?
+                column_name=tile.column_name,
+                partition_id=tile.partition_id,
+                block=exploded_block,
+            )
+        assert found_list_lengths is not None, "At least one column must be specified to explode"
+
+        # HACK(jay): use Pandas for its repeat implementation for now, to replace with our own implementation
+        # I can do instead: cumsum on found_list_lengths, allocate zeroed array INDICES with length=found_list_lengths[-1], assign
+        # INDICES[found_list_lengths]=1, cumsum again to get something like [1, 1, 1, 2, 2, ...], then take -1 to get actual indices
+        arange = pd.Series(range(len(self)))
+        take_indices = arange.repeat(found_list_lengths.data.to_pandas())
+
+        repeated_partition = partition_to_repeat.take(DataBlock.make_block(take_indices))
+        return vPartition({**exploded_cols, **repeated_partition.columns}, partition_id=self.partition_id)
+
     def join(
         self,
         right: vPartition,

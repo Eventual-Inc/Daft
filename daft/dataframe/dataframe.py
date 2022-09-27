@@ -648,6 +648,27 @@ class DataFrame:
         )
         return DataFrame(join_op)
 
+    def explode(self, *columns: ColumnInputType) -> DataFrame:
+        """Explodes a List column, where every element in each row's List becomes its own row, and all
+        other columns in the DataFrame are duplicated across rows.
+
+        If multiple columns are specified, each row must contain the same number of
+        items in each specified column.
+
+        Args:
+            *columns (ColumnInputType): columns to explode
+
+        Returns:
+            DataFrame: DataFrame with exploded column
+        """
+        if len(columns) < 1:
+            raise ValueError("At least one column to explode must be specified")
+        explode_op = logical_plan.Explode(
+            self._plan,
+            self.__column_input_to_expression(columns),
+        )
+        return DataFrame(explode_op)
+
     def _agg(self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionList] = None) -> DataFrame:
         assert len(to_agg) > 0, "no columns to aggregate."
         exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))

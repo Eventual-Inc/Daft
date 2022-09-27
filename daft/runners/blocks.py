@@ -11,14 +11,17 @@ from typing import (
     Callable,
     ClassVar,
     Generic,
+    Iterable,
     Iterator,
     List,
     Optional,
     Sequence,
+    Sized,
     Tuple,
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 import numpy as np
@@ -430,6 +433,16 @@ class DataBlock(Generic[ArrType]):
 
         return to_rtn
 
+    @abstractmethod
+    def list_explode(self) -> Tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
+        """Treats each row as a list and flattens the nested lists. Will throw an error if
+        elements in the block cannot be treated as a list.
+
+        Returns a tuple `(exploded_block, list_lengths)` where `exploded_block` is the new block with the
+        topmost level of lists flattened, and `list_lengths` is the length of each list element before flattening.
+        """
+        raise NotImplementedError()
+
 
 T = TypeVar("T")
 
@@ -513,6 +526,28 @@ class PyListDataBlock(DataBlock[List[T]]):
         left_keys: List[DataBlock[List[T]]], right_keys: List[DataBlock[List[T]]]
     ) -> Tuple[DataBlock[List[T]], DataBlock[List[T]]]:
         raise NotImplementedError()
+
+    def list_explode(self) -> Tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
+        """Treats each row as a list and flattens the nested lists. Will throw an error if
+        elements in the block cannot be treated as a list.
+        """
+        return (
+            DataBlock.make_block(
+                [
+                    nested_element
+                    for item in self.data
+                    # NOTE: we cast to Iterable here but this will fail at runtime if the Python object stored in this block are not iterable
+                    for nested_element in cast(Iterable, item)
+                ]
+            ),
+            DataBlock.make_block(
+                [
+                    # NOTE: we cast to Sized here but this will fail at runtime if the Python object stored in this block are not Sized
+                    len(cast(Sized, item))
+                    for item in self.data
+                ]
+            ),
+        )
 
 
 ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
@@ -733,6 +768,15 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         left_index, right_index = get_join_indexers(pd_left_keys, pd_right_keys, how="inner")
 
         return DataBlock.make_block(left_index), DataBlock.make_block(right_index)
+
+    def list_explode(self) -> Tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
+        """Treats each row as a list and flattens the nested lists. Will throw an error if
+        elements in the block cannot be treated as a list.
+        """
+        return (
+            DataBlock.make_block(pac.list_flatten(self.data)),
+            DataBlock.make_block(pac.list_value_length(self.data)),
+        )
 
 
 def arrow_mod(arr, m):

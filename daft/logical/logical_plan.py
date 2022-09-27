@@ -310,6 +310,38 @@ class Sort(UnaryNode):
         return Sort(input=self._children()[0].rebuild(), sort_by=self._sort_by.unresolve(), descending=self._descending)
 
 
+class Explode(UnaryNode):
+    def __init__(self, input: LogicalPlan, columns: ExpressionList) -> None:
+        super().__init__(
+            input.schema().to_column_expressions(), partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION
+        )
+        self._register_child(input)
+        self._columns = columns.resolve(input.schema())
+
+        for c in self._columns:
+            resolved_type = c.resolved_type()
+            # TODO(jay): Will have to change this after introducing nested types
+            if ExpressionType.is_primitive(resolved_type):
+                raise ValueError(
+                    f"Expected expression {c} to resolve to an explodable type such as PY, but received: {resolved_type}"
+                )
+
+    def resource_request(self) -> ResourceRequest:
+        return self._columns.resource_request()
+
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, Explode) and self.schema() == other.schema() and self._columns == other._columns
+
+    def copy_with_new_input(self, new_input: UnaryNode) -> UnaryNode:
+        return Explode(new_input, columns=self._columns)
+
+    def required_columns(self) -> ExpressionList:
+        return self._columns.required_columns()
+
+    def rebuild(self) -> LogicalPlan:
+        return Explode(input=self._children()[0].rebuild(), columns=self._columns)
+
+
 class LocalLimit(UnaryNode):
     def __init__(self, input: LogicalPlan, num: int) -> None:
         super().__init__(input.schema(), partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
