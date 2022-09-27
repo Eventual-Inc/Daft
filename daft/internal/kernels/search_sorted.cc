@@ -494,7 +494,7 @@ std::shared_ptr<arrow::ChunkedArray> search_sorted_table(const arrow::Table *dat
   const auto key_schema = keys->schema();
   ARROW_CHECK(data_schema->Equals(key_schema));
   if (data_schema->num_fields() == 0) {
-    return arrow::ChunkedArray::MakeEmpty(std::make_shared<arrow::UInt64Type>()).ValueOrDie();
+    return arrow::ChunkedArray::Make({}, std::make_shared<arrow::UInt64Type>()).ValueOrDie();
   } else if (data_schema->num_fields() == 1) {
     ARROW_CHECK_EQ(input_reversed.size(), 1);
     return search_sorted_chunked_array(data->column(0).get(), keys->column(0).get(), input_reversed[0]);

@@ -5,6 +5,7 @@ import dataclasses as pydataclasses
 import io
 import json
 import sys
+from collections import defaultdict
 from inspect import getmembers
 from typing import Callable, Dict, Generic, List, NamedTuple, Optional, Type, TypeVar
 
@@ -192,7 +193,7 @@ class DaftSchema(Generic[_T]):
 
     def serialize(self, objs: List[_T]) -> pa.Table:
         sp = SchemaParser(to_arrow=True)
-        values = []
+        values = defaultdict(list)
         # if len(objs) != 0:
         #     _patch_class_for_deserialization(objs[0])
         for o in objs:
@@ -200,9 +201,9 @@ class DaftSchema(Generic[_T]):
             obj_dict = {f"root.{key}": val for key, val in copy.deepcopy(o.__dict__).items()}
             obj_dict = sp.parse_schema(self.schema, obj_dict)
             # obj_dict = self.resolve_conversions(self.schema, obj_dict)
-            values.append(obj_dict)
-
-        return pa.Table.from_pylist(values, schema=self.schema)
+            for k, v in obj_dict.items():
+                values[k].append(v)
+        return pa.Table.from_pydict(values, schema=self.schema)
 
     def deserialize_batch(self, batch: pa.Table, target_type: Type[_T]) -> List[_T]:
         assert pydataclasses.is_dataclass(target_type) and isinstance(target_type, type)
@@ -211,9 +212,11 @@ class DaftSchema(Generic[_T]):
 
         sp = SchemaParser(to_arrow=False)
 
-        objs = batch.to_pylist()
+        objs = batch.to_pydict()
+        size = len(batch)
         values = []
-        for o in objs:
+        for i in range(size):
+            o = {key: val[i] for key, val in objs.items()}
             post_obj = sp.parse_schema(self.schema, o)
             post_obj = {key[len(f"root.") :]: val for key, val in post_obj.items() if key.startswith("root.")}
             # py_obj = dacite.from_dict(data_class=target_type, data=post_obj)
