@@ -610,14 +610,44 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
     def _group_by_agg(
         group_by: List[DataBlock[ArrowArrType]], to_agg: List[DataBlock[ArrowArrType]], agg_ops: List[str]
     ) -> Tuple[List[DataBlock[ArrowArrType]], List[DataBlock[ArrowArrType]]]:
-        arrs = [a.data for a in group_by]
-        arrs.extend([a.data for a in to_agg])
+        group_arrs = [a.data for a in group_by]
+        agg_arrs = [a.data for a in to_agg]
+        arrs = group_arrs + agg_arrs
         group_names = [f"g_{i}" for i in range(len(group_by))]
         agg_names = [f"a_{i}" for i in range(len(to_agg))]
-        table = pa.table(arrs, names=group_names + agg_names).combine_chunks()
-        agged = table.group_by(group_names).aggregate([(a_name, op) for a_name, op in zip(agg_names, agg_ops)])
-        gcols: List[DataBlock] = [ArrowDataBlock(agged[g_name]) for g_name in group_names]
-        acols: List[DataBlock] = [ArrowDataBlock(agged[f"{a_name}_{op}"]) for a_name, op in zip(agg_names, agg_ops)]
+        table = pa.table(arrs, names=group_names + agg_names)
+        pl_table = pl.from_arrow(table, rechunk=True)
+
+        exprs = []
+        grouped_expected_arrow_type = [a.type for a in group_arrs]
+        agg_expected_arrow_type = []
+        for an, op, arr in zip(agg_names, agg_ops, agg_arrs):
+            if op == "sum":
+                exprs.append(pl.sum(an))
+                agg_expected_arrow_type.append(arr.type)
+            elif op == "mean":
+                exprs.append(pl.mean(an))
+                agg_expected_arrow_type.append(pa.float64())
+            elif op == "min":
+                exprs.append(pl.min(an))
+                agg_expected_arrow_type.append(arr.type)
+            elif op == "max":
+                exprs.append(pl.max(an))
+                agg_expected_arrow_type.append(arr.type)
+            elif op == "count":
+                exprs.append(pl.count(an))
+                agg_expected_arrow_type.append(pa.int64())
+            else:
+                raise NotImplementedError()
+
+        pl_agged = pl_table.groupby(group_names).agg(exprs)
+        agged = pl_agged.to_arrow()
+        gcols: List[DataBlock] = [
+            ArrowDataBlock(agged[g_name].cast(t)) for g_name, t in zip(group_names, grouped_expected_arrow_type)
+        ]
+        acols: List[DataBlock] = [
+            ArrowDataBlock(agged[f"{a_name}"].cast(t)) for a_name, t in zip(agg_names, agg_expected_arrow_type)
+        ]
         return gcols, acols
 
     @staticmethod

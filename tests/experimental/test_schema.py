@@ -29,9 +29,8 @@ def test_simple_schema() -> None:
     to_serialize = [SimpleClass(i) for i in range(5)]
     table = daft_schema.serialize(to_serialize)
     assert table.schema == arrow_schema
-    data = table.to_pylist()
-    values = [d["root.item"] for d in data]
-    assert values == list(range(5))
+    values = table.to_pydict()
+    assert values["root.item"] == list(range(5))
 
     back_to_py = daft_schema.deserialize_batch(table, SimpleClass)
     assert to_serialize == back_to_py
@@ -53,9 +52,8 @@ def test_conversion_schema() -> None:
     to_serialize = [SimpleClass(np.full(i + 1, i)) for i in range(5)]
     table = daft_schema.serialize(to_serialize)
     assert table.schema == arrow_schema
-    data = table.to_pylist()
-    for i, d in enumerate(data):
-        v = d["root.item"]
+    data = table.to_pydict()
+    for i, v in enumerate(data["root.item"]):
         assert type(v) == bytes
         with io.BytesIO(v) as f:
             recreated_np = np.load(f)
@@ -101,7 +99,7 @@ def test_schema_daft_field_numpy() -> None:
     assert pa.types.is_binary(img_field.type)
     to_serialize = [SimpleDaftField(np.ones(i + 1, dtype=np.uint8)) for i in range(5)]
     table = daft_schema.serialize(to_serialize)
-    data = table.to_pylist()
+    data = table.to_pydict()
 
     def is_jpeg(buffer):
         # Magic Headers for JPEG
@@ -110,9 +108,7 @@ def test_schema_daft_field_numpy() -> None:
         assert buffer[6:11] == b"JFIF\0"
         return True
 
-    for d in data:
-        assert "root.img" in d
-        buffer = d["root.img"]
+    for buffer in data["root.img"]:
         assert is_jpeg(buffer)
 
     back_to_py = daft_schema.deserialize_batch(table, SimpleDaftField)
@@ -137,7 +133,7 @@ def test_schema_daft_field_PIL() -> None:
     assert pa.types.is_binary(img_field.type)
     to_serialize = [SimpleDaftField(PIL.Image.new("RGB", (i, i))) for i in range(1, 6)]
     table = daft_schema.serialize(to_serialize)
-    data = table.to_pylist()
+    data = table.to_pydict()
 
     def is_jpeg(buffer):
         # Magic Headers for JPEG
@@ -146,9 +142,7 @@ def test_schema_daft_field_PIL() -> None:
         assert buffer[6:11] == b"JFIF\0"
         return True
 
-    for d in data:
-        assert "root.img" in d
-        buffer = d["root.img"]
+    for buffer in data["root.img"]:
         assert is_jpeg(buffer)
 
     back_to_py = daft_schema.deserialize_batch(table, SimpleDaftField)
