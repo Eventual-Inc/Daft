@@ -6,6 +6,7 @@ import pytest
 from daft.dataframe import DataFrame
 from daft.execution.operators import ExpressionType
 from daft.expressions import col
+from daft.filesystem import get_filesystem_from_path
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     COLUMNS,
@@ -102,3 +103,17 @@ def test_load_pylist():
     pd_df = pd.DataFrame.from_records(data)
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="foo")
+
+
+def test_load_files(tmpdir):
+    for i in range(10):
+        filepath = pathlib.Path(tmpdir) / f"file_{i}.foo"
+        filepath.write_text("a" * i)
+        filepath = pathlib.Path(tmpdir) / f"file_{i}.bar"
+        filepath.write_text("b" * i)
+
+    daft_df = DataFrame.from_files(f"{tmpdir}/*.foo")
+    daft_pd_df = daft_df.to_pandas()
+    pd_df = pd.DataFrame.from_records(get_filesystem_from_path(str(tmpdir)).ls(str(tmpdir), detail=True))
+    pd_df = pd_df[~pd_df["name"].str.endswith(".bar")]
+    assert_df_equals(daft_pd_df, pd_df, sort_key="name")

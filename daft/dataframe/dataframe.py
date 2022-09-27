@@ -331,6 +331,25 @@ class DataFrame:
         )
         return cls(plan)
 
+    @classmethod
+    def from_files(cls, path: str) -> DataFrame:
+        """Creates a DataFrame from files in storage, where each file is one row of the DataFrame
+
+        Args:
+            path (str): path to files on disk (allows wildcards)
+
+        Returns:
+            DataFrame: DataFrame containing the path to each file as a row, along with other metadata
+                parsed from the provided filesystem
+        """
+        fs = get_filesystem_from_path(path)
+        file_details = fs.glob(path, detail=True)
+        return cls.from_pylist(list(file_details.values()))
+
+    ###
+    # Write methods
+    ###
+
     def write_parquet(
         self, root_dir: str, compression: str = "snappy", partition_cols: Optional[List[ColumnInputType]] = None
     ) -> DataFrame:
