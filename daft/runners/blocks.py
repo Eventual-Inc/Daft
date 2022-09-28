@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections
+import math
 import operator
 import random
 from abc import abstractmethod
@@ -533,6 +534,22 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return self._binary_op(mask, fn=pac.array_filter)
 
     def _take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[ArrowArrType]:
+
+        if pa.types.is_binary(self.data.type) or pa.types.is_string(self.data.type):
+            bytes_per_row = self.data.nbytes / max(len(self.data), 1)
+            expected_size = bytes_per_row * len(indices) * 2  # with safety factor
+            if expected_size >= (2**31):
+                # if we have a binary or string array thats result will be is larger than 2GB
+                # then we need to chunk the indice array so the result array will also be chunk
+                # this is a hack since arrow's kernels don't correctly chunk with the arraybuilder
+                # for take.
+                num_chunks = math.ceil(expected_size / (2**31))
+                chunk_size = len(indices) // num_chunks
+                new_indices_subarray = []
+                for i in range(num_chunks):
+                    new_indices_subarray.extend(indices.data.slice(i * chunk_size, chunk_size).chunks)
+                indices = DataBlock.make_block(pa.chunked_array(new_indices_subarray))
+
         return self._binary_op(indices, fn=partial(pac.take, boundscheck=False))
 
     def _split(self, pivots: np.ndarray) -> Sequence[ArrowArrType]:
@@ -551,16 +568,16 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         all_chunks = []
         for block in blocks:
             all_chunks.extend(block.data.chunks)
-        return ArrowDataBlock(data=pa.chunked_array(all_chunks))
+        return DataBlock.make_block(pa.chunked_array(all_chunks))
 
     def _make_empty(self) -> DataBlock[ArrowArrType]:
-        return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
+        return DataBlock.make_block(data=pa.chunked_array([[]], type=self.data.type))
 
     def sample(self, num: int) -> DataBlock[ArrowArrType]:
         if num >= len(self):
             return self
         sampled = np.random.choice(self.data, num, replace=False)
-        return ArrowDataBlock(data=pa.chunked_array([sampled]))
+        return DataBlock.make_block(data=pa.chunked_array([sampled]))
 
     def array_hash(self, seed: Optional[DataBlock[ArrowArrType]] = None) -> DataBlock[ArrowArrType]:
         assert isinstance(self.data, pa.ChunkedArray)
@@ -578,7 +595,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             raise TypeError(f"cannot hash {pa_type}")
         hashed = hash_chunked_array(data_to_hash)
         if seed is None:
-            return ArrowDataBlock(data=hashed)
+            return DataBlock.make_block(data=hashed)
         else:
             seed_pa_type = seed.data.type
             if not (pa.types.is_uint64(seed_pa_type)):
@@ -586,7 +603,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
             seed_arr = seed.data.to_numpy()
             seed_arr = seed_arr ^ (hashed.to_numpy() + 0x9E3779B9 + (seed_arr << 6) + (seed_arr >> 2))
-            return ArrowDataBlock(data=pa.chunked_array([seed_arr]))
+            return DataBlock.make_block(data=pa.chunked_array([seed_arr]))
 
     def agg(self, op: str) -> DataBlock[ArrowArrType]:
 
@@ -643,10 +660,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         pl_agged = pl_table.groupby(group_names).agg(exprs)
         agged = pl_agged.to_arrow()
         gcols: List[DataBlock] = [
-            ArrowDataBlock(agged[g_name].cast(t)) for g_name, t in zip(group_names, grouped_expected_arrow_type)
+            DataBlock.make_block(agged[g_name].cast(t)) for g_name, t in zip(group_names, grouped_expected_arrow_type)
         ]
         acols: List[DataBlock] = [
-            ArrowDataBlock(agged[f"{a_name}"].cast(t)) for a_name, t in zip(agg_names, agg_expected_arrow_type)
+            DataBlock.make_block(agged[f"{a_name}"].cast(t)) for a_name, t in zip(agg_names, agg_expected_arrow_type)
         ]
         return gcols, acols
 
