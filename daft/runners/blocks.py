@@ -16,7 +16,6 @@ from typing import (
     List,
     Optional,
     Sequence,
-    Sized,
     Tuple,
     Type,
     TypeVar,
@@ -438,6 +437,8 @@ class DataBlock(Generic[ArrType]):
         """Treats each row as a list and flattens the nested lists. Will throw an error if
         elements in the block cannot be treated as a list.
 
+        Note: empty lists are flattened into a single `Null` element!
+
         Returns a tuple `(exploded_block, list_lengths)` where `exploded_block` is the new block with the
         topmost level of lists flattened, and `list_lengths` is the length of each list element before flattening.
         """
@@ -528,44 +529,23 @@ class PyListDataBlock(DataBlock[List[T]]):
         raise NotImplementedError()
 
     def list_explode(self) -> Tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
-        """Treats each row as a list and flattens the nested lists. Will throw an error if
-        elements in the block cannot be treated as a list.
-        """
-        print(
-            (
-                DataBlock.make_block(
-                    [
-                        nested_element
-                        for item in self.data
-                        # NOTE: we cast to Iterable here but this will fail at runtime if the Python object stored in this block are not iterable
-                        for nested_element in cast(Iterable, item)
-                    ]
-                ),
-                DataBlock.make_block(
-                    [
-                        # NOTE: we cast to Sized here but this will fail at runtime if the Python object stored in this block are not Sized
-                        len(cast(Sized, item))
-                        for item in self.data
-                    ]
-                ),
-            )
-        )
+        lengths = []
+        exploded = []
+        for item in self.data:
+            length = 0
+            if item is not None:
+                for nested_element in cast(Iterable, item):
+                    length += 1
+                    exploded.append(nested_element)
+            # empty lists or Null elements explode into a `Null`
+            if length == 0:
+                exploded.append(None)
+                lengths.append(1)
+            else:
+                lengths.append(length)
         return (
-            DataBlock.make_block(
-                [
-                    nested_element
-                    for item in self.data
-                    # NOTE: we cast to Iterable here but this will fail at runtime if the Python object stored in this block are not iterable
-                    for nested_element in cast(Iterable, item)
-                ]
-            ),
-            DataBlock.make_block(
-                [
-                    # NOTE: we cast to Sized here but this will fail at runtime if the Python object stored in this block are not Sized
-                    len(cast(Sized, item))
-                    for item in self.data
-                ]
-            ),
+            DataBlock.make_block(exploded),
+            DataBlock.make_block(lengths),
         )
 
 
@@ -792,10 +772,20 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         """Treats each row as a list and flattens the nested lists. Will throw an error if
         elements in the block cannot be treated as a list.
         """
-        return (
-            DataBlock.make_block(pac.list_flatten(self.data)),
-            DataBlock.make_block(pac.list_value_length(self.data)),
-        )
+        raise NotImplementedError("Needs to be implemented")
+        # list_lengths = pac.list_value_length(self.data)
+        # list_length_zero = pac.equal(list_lengths, 0)
+
+        # data_null_to_nullarr = pac.replace_with_mask(self.data, pac.is_null(self.data), [None])
+        # data_emptyarr_to_nullarr = pac.replace_with_mask(data_null_to_nullarr, list_length_zero, [None])
+
+        # exploded = pac.list_flatten(data_emptyarr_to_nullarr)
+        # list_lengths = pac.replace_with_mask(list_lengths, list_length_zero, 1)
+
+        # return (
+        #     DataBlock.make_block(exploded),
+        #     DataBlock.make_block(list_lengths),
+        # )
 
 
 def arrow_mod(arr, m):

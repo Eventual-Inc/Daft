@@ -328,7 +328,7 @@ class vPartition:
         # Use the `found_list_lengths` to generate an array of indices to take from other columns (e.g. [0, 0, 1, 1, 1, 2, ...])
         list_length_cumsum = found_list_lengths.to_polars().cumsum()
         take_indices = pl.Series([0 for _ in range(list_length_cumsum[-1])])
-        take_indices = take_indices.set_at_idx((list_length_cumsum - list_length_cumsum[0]), 1)
+        take_indices = take_indices.set_at_idx(pl.Series([0]).append(list_length_cumsum[:-1]), 1)
         take_indices = take_indices.cumsum()
         take_indices = take_indices - 1
 
