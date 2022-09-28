@@ -772,20 +772,15 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         """Treats each row as a list and flattens the nested lists. Will throw an error if
         elements in the block cannot be treated as a list.
         """
-        raise NotImplementedError("Needs to be implemented")
-        # list_lengths = pac.list_value_length(self.data)
-        # list_length_zero = pac.equal(list_lengths, 0)
-
-        # data_null_to_nullarr = pac.replace_with_mask(self.data, pac.is_null(self.data), [None])
-        # data_emptyarr_to_nullarr = pac.replace_with_mask(data_null_to_nullarr, list_length_zero, [None])
-
-        # exploded = pac.list_flatten(data_emptyarr_to_nullarr)
-        # list_lengths = pac.replace_with_mask(list_lengths, list_length_zero, 1)
-
-        # return (
-        #     DataBlock.make_block(exploded),
-        #     DataBlock.make_block(list_lengths),
-        # )
+        data = self.data
+        data = pac.if_else(pac.equal(pac.list_value_length(data), pa.scalar(0)), pa.scalar([None], data.type), data)
+        data = pac.if_else(data.is_null(), pa.scalar([None], data.type), data)
+        exploded = pac.list_flatten(data)
+        list_lengths = pac.list_value_length(data)
+        return (
+            DataBlock.make_block(exploded),
+            DataBlock.make_block(list_lengths),
+        )
 
 
 def arrow_mod(arr, m):
