@@ -150,6 +150,12 @@ _LengthTM = frozenset(
     }.items()
 )
 
+_ExplodeTM = frozenset(
+    {
+        (_TYPE_REGISTRY["pyobj"],): _TYPE_REGISTRY["pyobj"],
+    }.items()
+)
+
 _UOp = partial(ExpressionOperator, nargs=1)
 # Numerical Unary Ops
 _NUop = partial(_UOp, type_matrix=_UnaryNumericalTM)
@@ -205,6 +211,9 @@ class OperatorEnum(Enum):
     DT_MONTH = _UOp(name="month", symbol="month", type_matrix=_DatetimeExtractionTM)
     DT_YEAR = _UOp(name="year", symbol="year", type_matrix=_DatetimeExtractionTM)
     DT_DAY_OF_WEEK = _UOp(name="day_of_week", symbol="day_of_week", type_matrix=_DatetimeExtractionTM)
+
+    # Lists
+    EXPLODE = _UOp(name="explode", symbol="explode", type_matrix=_ExplodeTM)
 
     # BinaryOps
 
@@ -280,5 +289,7 @@ class OperatorEvaluator(Protocol[ValueType]):
     DT_MONTH: UnaryFunction
     DT_YEAR: UnaryFunction
     DT_DAY_OF_WEEK: UnaryFunction
+
+    EXPLODE: UnaryFunction
 
     IF_ELSE: TernaryFunction

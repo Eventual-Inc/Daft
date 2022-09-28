@@ -531,6 +531,25 @@ class PyListDataBlock(DataBlock[List[T]]):
         """Treats each row as a list and flattens the nested lists. Will throw an error if
         elements in the block cannot be treated as a list.
         """
+        print(
+            (
+                DataBlock.make_block(
+                    [
+                        nested_element
+                        for item in self.data
+                        # NOTE: we cast to Iterable here but this will fail at runtime if the Python object stored in this block are not iterable
+                        for nested_element in cast(Iterable, item)
+                    ]
+                ),
+                DataBlock.make_block(
+                    [
+                        # NOTE: we cast to Sized here but this will fail at runtime if the Python object stored in this block are not Sized
+                        len(cast(Sized, item))
+                        for item in self.data
+                    ]
+                ),
+            )
+        )
         return (
             DataBlock.make_block(
                 [
@@ -833,11 +852,6 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     NEGATE = _arr_unary_op(pac.negate)
     POSITIVE = ArrowDataBlock.identity
     ABS = _arr_unary_op(pac.abs)
-    SUM = ArrowDataBlock.identity
-    MEAN = ArrowDataBlock.identity
-    MIN = ArrowDataBlock.identity
-    MAX = ArrowDataBlock.identity
-    COUNT = ArrowDataBlock.identity
     INVERT = _arr_unary_op(pac.invert)
     ADD = _arr_bin_op(pac.add)
     SUB = _arr_bin_op(pac.subtract)
@@ -864,7 +878,17 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     DT_DAY_OF_WEEK = _arr_unary_op(pac.day_of_week)
     IS_NULL = _arr_unary_op(pac.is_null)
     IS_NAN = _arr_unary_op(pac.is_nan)
+    EXPLODE = _arr_unary_op(pac.list_flatten)
     IF_ELSE = _arr_ternary_op(pac.if_else)
+
+    # Placeholders: these change the cardinality of the block and should never be evaluated from the Evaluator
+    # They exist on the Evaluator only to provide correct typing information
+    SUM = ArrowDataBlock.identity
+    MEAN = ArrowDataBlock.identity
+    MIN = ArrowDataBlock.identity
+    MAX = ArrowDataBlock.identity
+    COUNT = ArrowDataBlock.identity
+    EXPLODE = ArrowDataBlock.identity
 
 
 ArrowDataBlock.evaluator = ArrowEvaluator
@@ -908,11 +932,6 @@ class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
     NEGATE = make_map_unary(operator.neg)
     POSITIVE = PyListDataBlock.identity
     ABS = make_map_unary(operator.abs)
-    SUM = PyListDataBlock.identity
-    MEAN = PyListDataBlock.identity
-    MIN = PyListDataBlock.identity
-    MAX = PyListDataBlock.identity
-    COUNT = PyListDataBlock.identity
     INVERT = make_map_unary(operator.invert)
     ADD = make_map_binary(operator.add)
     SUB = make_map_binary(operator.sub)
@@ -932,6 +951,15 @@ class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
 
     IS_NULL = make_map_unary(pylist_is_none)
     IF_ELSE = pylist_if_else
+
+    # Placeholders: these change the cardinality of the block and should never be evaluated from the Evaluator
+    # They exist on the Evaluator only to provide correct typing information
+    SUM = PyListDataBlock.identity
+    MEAN = PyListDataBlock.identity
+    MIN = PyListDataBlock.identity
+    MAX = PyListDataBlock.identity
+    COUNT = PyListDataBlock.identity
+    EXPLODE = PyListDataBlock.identity
 
     # Unary operations that should never run on a PyListDataBlock because they are represented by
     # Arrow primitives and should always be housed in an ArrowDataBlock

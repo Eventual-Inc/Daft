@@ -312,11 +312,13 @@ class Sort(UnaryNode):
 
 class Explode(UnaryNode):
     def __init__(self, input: LogicalPlan, columns: ExpressionList) -> None:
+        self._columns = columns.resolve(input.schema())
         super().__init__(
-            input.schema().to_column_expressions(), partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION
+            input.schema().to_column_expressions().union(self._columns, other_override=True),
+            partition_spec=input.partition_spec(),
+            op_level=OpLevel.PARTITION,
         )
         self._register_child(input)
-        self._columns = columns.resolve(input.schema())
 
         for c in self._columns:
             resolved_type = c.resolved_type()
@@ -325,6 +327,9 @@ class Explode(UnaryNode):
                 raise ValueError(
                     f"Expected expression {c} to resolve to an explodable type such as PY, but received: {resolved_type}"
                 )
+
+    def __repr__(self) -> str:
+        return f"Explode\n\t_columns={self._columns}"
 
     def resource_request(self) -> ResourceRequest:
         return self._columns.resource_request()

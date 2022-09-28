@@ -663,9 +663,10 @@ class DataFrame:
         """
         if len(columns) < 1:
             raise ValueError("At least one column to explode must be specified")
+        exprs_to_explode = self.__column_input_to_expression(columns)
         explode_op = logical_plan.Explode(
             self._plan,
-            self.__column_input_to_expression(columns),
+            ExpressionList([e._explode() for e in exprs_to_explode]),
         )
         return DataFrame(explode_op)
 
