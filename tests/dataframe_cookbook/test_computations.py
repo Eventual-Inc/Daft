@@ -16,6 +16,20 @@ def test_add_one_to_column(daft_df, service_requests_csv_pd_df, repartition_npar
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
+@parametrize_service_requests_csv_repartition
+@parametrize_service_requests_csv_daft_df
+def test_add_one_to_column_name_override(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results"""
+    daft_df = (
+        daft_df.repartition(repartition_nparts)
+        .with_column("Unique Key", col("Unique Key") + 1)
+        .with_column("Unique Key", col("Unique Key") + 1)
+    )
+    service_requests_csv_pd_df["Unique Key"] = service_requests_csv_pd_df["Unique Key"] + 2
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
+
+
 @parametrize_service_requests_csv_daft_df
 def test_add_one_to_column_limit(daft_df, service_requests_csv_pd_df):
     """Creating a new column that is derived from (1 + other_column) and retrieving the top N results"""

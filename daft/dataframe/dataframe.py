@@ -526,7 +526,7 @@ class DataFrame:
         """
         prev_schema_as_cols = self._plan.schema().to_column_expressions()
         projection = logical_plan.Projection(
-            self._plan, prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]))
+            self._plan, prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]), other_override=True)
         )
         return DataFrame(projection)
 

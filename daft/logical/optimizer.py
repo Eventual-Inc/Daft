@@ -71,7 +71,7 @@ class CombineFilters(Rule[LogicalPlan]):
 
     def _combine_filters(self, parent: Filter, child: Filter) -> Filter:
         logger.debug(f"combining {parent} into {child}")
-        new_predicate = parent._predicate.union(child._predicate, strict=False)
+        new_predicate = parent._predicate.union(child._predicate, rename_dup="right.")
         grand_child = child._children()[0]
         return Filter(grand_child, new_predicate)
 
@@ -109,7 +109,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
         self.register_fn(Projection, Scan, self._push_down_projections_into_scan)
 
     def _push_down_predicates_into_scan(self, parent: Filter, child: Scan) -> Scan:
-        new_predicate = parent._predicate.union(child._predicate, strict=False)
+        new_predicate = parent._predicate.union(child._predicate, rename_dup="right.")
         child_schema = child.schema()
         assert new_predicate.required_columns().to_id_set().issubset(child_schema.to_id_set())
         return Scan(

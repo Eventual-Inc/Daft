@@ -617,7 +617,7 @@ class Join(BinaryNode):
             num_partitions = min(left.num_partitions(), right.num_partitions())
             right_id_set = self._right_on.to_id_set()
             filtered_right = [e for e in right.schema() if e.get_id() not in right_id_set]
-            schema = left.schema().union(ExpressionList(filtered_right), strict=False, rename_dup="right.")
+            schema = left.schema().union(ExpressionList(filtered_right), rename_dup="right.")
 
         left = Repartition(left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH)
         right = Repartition(

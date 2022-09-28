@@ -83,7 +83,17 @@ class ExpressionList(Iterable[ExpressionType]):
     def __repr__(self) -> str:
         return repr(self.exprs)
 
-    def union(self, other: ExpressionList, strict: bool = True, rename_dup: str = "right."):
+    def union(self, other: ExpressionList, rename_dup: Optional[str] = None, other_override: bool = False):
+        """Unions two schemas together
+
+        Note: only one of rename_dup or other_override can be specified as the behavior when resolving naming conflicts.
+
+        Args:
+            other (ExpressionList): other ExpressionList to union with this one
+            rename_dup (Optional[str], optional): when conflicts in naming happen, append this string to the conflicting column in `other`. Defaults to None.
+            other_override (bool, optional): when conflicts in naming happen, use the `other` column instead of `self`. Defaults to False.
+        """
+        assert not ((rename_dup is not None) and other_override), "Only can specify one of rename_dup or other_override"
         deduped = self.exprs.copy()
         seen: Dict[str, ExpressionType] = {}
         for e in self.exprs:
@@ -100,13 +110,16 @@ class ExpressionList(Iterable[ExpressionType]):
             if name in seen:
                 if seen[name].is_eq(e):
                     continue
-                if strict:
+                if rename_dup is not None:
+                    name = f"{rename_dup}{name}"
+                    e = cast(ExpressionType, e.alias(name))
+                elif other_override:
+                    # Allow this expression in `other` to override the existing expressions
+                    deduped = [current_expr for current_expr in deduped if current_expr.name() != name]
+                else:
                     raise ValueError(
                         f"Duplicate name found with different expression. name: {name}, seen: {seen[name]}, current: {e}"
                     )
-                else:
-                    name = f"{rename_dup}{name}"
-                    e = cast(ExpressionType, e.alias(name))
             deduped.append(e)
             seen[name] = e
 
