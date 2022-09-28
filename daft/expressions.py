@@ -20,12 +20,7 @@ from typing import (
 
 from daft.errors import ExpressionTypeError
 from daft.execution import url_operators
-from daft.execution.operators import (
-    ExpressionOperator,
-    ExpressionType,
-    OperatorEnum,
-    PythonExpressionType,
-)
+from daft.execution.operators import ExpressionOperator, ExpressionType, OperatorEnum
 from daft.internal.treenode import TreeNode
 from daft.resource_request import ResourceRequest
 from daft.runners.blocks import (
@@ -91,7 +86,7 @@ class ExpressionExecutor:
             # Use a PyListDataBlock evaluator if any of the args are Python types
             op_evaluator = (
                 PyListDataBlock.evaluator
-                if any([isinstance(arg.resolved_type(), PythonExpressionType) for arg in expr._args])
+                if any(isinstance(block, PyListDataBlock) for block in eval_args)
                 else ArrowDataBlock.evaluator
             )
             op = expr._operator

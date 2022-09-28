@@ -678,15 +678,21 @@ def arrow_floordiv(arr, m):
 
 
 def arrow_str_contains(arr: pa.ChunkedArray, pattern: pa.StringScalar):
+    if pa.types.is_null(arr.type):
+        return arr
     substring_counts = pac.count_substring(arr, pattern=pattern.as_py())
     return pac.not_equal(substring_counts, pa.scalar(0))
 
 
 def arrow_str_endswith(arr: pa.ChunkedArray, pattern: pa.StringScalar):
+    if pa.types.is_null(arr.type):
+        return arr
     return pac.ends_with(arr, pattern=pattern.as_py())
 
 
 def arrow_str_startswith(arr: pa.ChunkedArray, pattern: pa.StringScalar):
+    if pa.types.is_null(arr.type):
+        return arr
     return pac.starts_with(arr, pattern=pattern.as_py())
 
 

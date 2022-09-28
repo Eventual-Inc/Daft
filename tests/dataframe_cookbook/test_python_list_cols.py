@@ -139,6 +139,20 @@ def test_python_dict_udf_merge_dicts(repartition_nparts, merge_dicts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
 
 
+@pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
+def test_python_chained_expression_calls(repartition_nparts):
+    data = {"id": [i for i in range(10)], "dicts": [{"foo": str(i)} for i in range(10)]}
+    daft_df = (
+        DataFrame.from_pydict(data)
+        .repartition(repartition_nparts)
+        .with_column("foo_starts_with_1", col("dicts").as_py(dict)["foo"].str.startswith("1"))
+    )
+    pd_df = pd.DataFrame.from_dict(data)
+    pd_df["foo_starts_with_1"] = pd.Series([d["foo"] for d in pd_df["dicts"]]).str.startswith("1")
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="id")
+
+
 ###
 # Using np.ndarray as an object
 ###
