@@ -19,6 +19,7 @@ from uuid import uuid4
 
 import numpy as np
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 from pyarrow import dataset as pada
 
@@ -324,11 +325,12 @@ class vPartition:
             )
         assert found_list_lengths is not None, "At least one column must be specified to explode"
 
-        # HACK(jay): use Pandas for its repeat implementation for now, to replace with our own implementation
-        # I can do instead: cumsum on found_list_lengths, allocate zeroed array INDICES with length=found_list_lengths[-1], assign
-        # INDICES[found_list_lengths]=1, cumsum again to get something like [1, 1, 1, 2, 2, ...], then take -1 to get actual indices
-        arange = pd.Series(range(len(self)))
-        take_indices = arange.repeat(found_list_lengths.data.to_pandas())
+        # Use the `found_list_lengths` to generate an array of indices to take from other columns (e.g. [0, 0, 1, 1, 1, 2, ...])
+        list_length_cumsum = found_list_lengths.to_polars().cumsum()
+        take_indices = pl.Series([0 for _ in range(list_length_cumsum[-1])])
+        take_indices = take_indices.set_at_idx((list_length_cumsum - list_length_cumsum[0]), 1)
+        take_indices = take_indices.cumsum()
+        take_indices = take_indices - 1
 
         repeated_partition = partition_to_repeat.take(DataBlock.make_block(take_indices))
         return vPartition({**exploded_cols, **repeated_partition.columns}, partition_id=self.partition_id)
