@@ -22,7 +22,6 @@ from typing import (
 )
 
 import numpy as np
-import pandas as pd
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pac
@@ -123,39 +122,10 @@ class DataBlock(Generic[ArrType]):
             return ArrowDataBlock(data=data)
         elif isinstance(data, pa.Array):
             return ArrowDataBlock(data=pa.chunked_array([data]))
-        elif isinstance(data, pl.Series):
-            if data.dtype == pl.datatypes.Object:
-                return PyListDataBlock(data=data.to_list())
-            return ArrowDataBlock(pa.chunked_array([data.to_arrow()]))
-        elif isinstance(data, np.ndarray):
-            if data.dtype == np.object_ or len(data.shape) > 1:
-                try:
-                    arrow_type = pa.infer_type(data)
-                except pa.lib.ArrowInvalid:
-                    arrow_type = None
-                if arrow_type is None or pa.types.is_nested(arrow_type):
-                    return PyListDataBlock(data=list(data))
-                return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
-            arrow_type = pa.from_numpy_dtype(data.dtype)
-            return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
-        elif isinstance(data, pd.Series):
-            if data.dtype == np.object_:
-                try:
-                    arrow_type = pa.infer_type(data)
-                except pa.lib.ArrowInvalid:
-                    arrow_type = None
-                if arrow_type is None or pa.types.is_nested(arrow_type):
-                    return PyListDataBlock(data=data.to_list())
-                return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
-            arrow_type = pa.Schema.from_pandas(pd.DataFrame({"0": data}))[0].type
-            return ArrowDataBlock(data=pa.chunked_array([pa.Array.from_pandas(data, type=arrow_type)]))
         elif isinstance(data, list):
-            try:
-                arrow_type = pa.infer_type(data)
-            except pa.lib.ArrowInvalid:
-                arrow_type = None
-            if arrow_type is None or pa.types.is_nested(arrow_type):
-                return PyListDataBlock(data=data)
+            return PyListDataBlock(data=data)
+        elif isinstance(data, np.ndarray):
+            arrow_type = pa.from_numpy_dtype(data.dtype)
             return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
         # Data is a scalar
         elif isinstance(data, pa.Scalar):
@@ -776,18 +746,18 @@ IN_2 = TypeVar("IN_2")
 OUT = TypeVar("OUT")
 
 
-def make_map_unary(f: Callable[[IN_1], OUT]) -> Callable[[DataBlock[Sequence[IN_1]]], DataBlock[Sequence[OUT]]]:
-    def map_f(values: DataBlock[Sequence[IN_1]]) -> DataBlock[Sequence[OUT]]:
-        return DataBlock.make_block(list(map(f, (tup[0] for tup in zip_blocks_as_py(values)))))
+def make_map_unary(f: Callable[[IN_1], OUT]) -> Callable[[DataBlock[Sequence[IN_1]]], PyListDataBlock[OUT]]:
+    def map_f(values: DataBlock[Sequence[IN_1]]) -> PyListDataBlock[OUT]:
+        return PyListDataBlock(list(map(f, (tup[0] for tup in zip_blocks_as_py(values)))))
 
     return map_f
 
 
 def make_map_binary(
     f: Callable[[IN_1, IN_2], OUT]
-) -> Callable[[DataBlock[Sequence[IN_1]], DataBlock[Sequence[IN_2]]], DataBlock[Sequence[OUT]]]:
-    def map_f(values: DataBlock[Sequence[IN_1]], others: DataBlock[Sequence[IN_2]]) -> DataBlock[Sequence[OUT]]:
-        return DataBlock.make_block(list(f(v, o) for v, o in zip_blocks_as_py(values, others)))
+) -> Callable[[DataBlock[Sequence[IN_1]], DataBlock[Sequence[IN_2]]], PyListDataBlock[OUT]]:
+    def map_f(values: DataBlock[Sequence[IN_1]], others: DataBlock[Sequence[IN_2]]) -> PyListDataBlock[OUT]:
+        return PyListDataBlock(list(f(v, o) for v, o in zip_blocks_as_py(values, others)))
 
     return map_f
 
@@ -802,8 +772,8 @@ def pylist_is_none(obj: Any):
 
 def pylist_if_else(
     cond: DataBlock[Sequence[IN_1]], x: DataBlock[Sequence[IN_2]], y: DataBlock[Sequence[IN_2]]
-) -> DataBlock[Sequence[IN_2]]:
-    return DataBlock.make_block([xitem if c else yitem for c, xitem, yitem in zip_blocks_as_py(cond, x, y)])
+) -> PyListDataBlock[IN_2]:
+    return PyListDataBlock([xitem if c else yitem for c, xitem, yitem in zip_blocks_as_py(cond, x, y)])
 
 
 class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):

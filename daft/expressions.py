@@ -8,15 +8,20 @@ from typing import (
     Any,
     Callable,
     Dict,
-    Generic,
     List,
     NewType,
     Optional,
+    Sequence,
     Tuple,
     Type,
     TypeVar,
     cast,
 )
+
+import numpy as np
+import pandas as pd
+import polars as pl
+import pyarrow as pa
 
 from daft.errors import ExpressionTypeError
 from daft.execution import url_operators
@@ -64,7 +69,6 @@ def lit(val: Any) -> LiteralExpression:
 
 _COUNTER = itertools.count()
 ColID = NewType("ColID", int)
-DataBlockValueType = TypeVar("DataBlockValueType", bound=DataBlock)
 
 
 class ExpressionExecutor:
@@ -344,8 +348,7 @@ class Expression(TreeNode["Expression"]):
         )
 
         def apply_func(f, data):
-            results = list(map(f, data.iter_py()))
-            return DataBlock.make_block(results)
+            return list(map(f, data.iter_py()))
 
         return UdfExpression(
             partial(apply_func, func),
@@ -526,10 +529,10 @@ class CallExpression(Expression):
         )
 
 
-class UdfExpression(Expression, Generic[DataBlockValueType]):
+class UdfExpression(Expression):
     def __init__(
         self,
-        func: Callable[..., DataBlockValueType],
+        func: Callable[..., Sequence],
         func_ret_type: ExpressionType,
         func_args: Tuple,
         func_kwargs: Dict[str, Any],
@@ -566,8 +569,54 @@ class UdfExpression(Expression, Generic[DataBlockValueType]):
             return f"{func_name}({args}, {kwargs})"
         return f"{func_name}({args})"
 
-    def eval_blocks(self, *args: DataBlockValueType, **kwargs: DataBlockValueType) -> DataBlockValueType:
-        return self._func(*args, **kwargs)
+    def eval_blocks(self, *args: DataBlock, **kwargs: DataBlock) -> DataBlock:
+        results = self._func(*args, **kwargs)
+
+        if ExpressionType.is_py(self._func_ret_type):
+            return PyListDataBlock(results if isinstance(results, list) else list(results))
+
+        # Convert these user-provided types to pa.ChunkedArray for making blocks
+        if isinstance(results, pa.Array):
+            results = pa.chunked_array([results])
+        elif isinstance(results, pl.Series):
+            results = pa.chunked_array([results.to_arrow()])
+        elif isinstance(results, np.ndarray):
+            results = pa.chunked_array([pa.array(results)])
+        elif isinstance(results, pd.Series):
+            results = pa.chunked_array([pa.array(results)])
+        elif isinstance(results, list):
+            results = pa.chunked_array([pa.array(results)])
+
+        if not isinstance(results, pa.ChunkedArray):
+            raise NotImplementedError(f"Cannot make block for data of type: {type(results)}")
+
+        def _block_from_chunked_array(
+            data: pa.ChunkedArray, validate: Callable[[pa.DataType], bool], cast_null_to: pa.DataType
+        ) -> DataBlock:
+            """Check that provided pa.ChunkedArray is the correct type, and performs appropriate coercion
+            of types if the provided pa.ChunkedArray is null type (e.g. empty array, or array full of Nulls)
+            """
+            if pa.types.is_null(data.type):
+                data = data.cast(cast_null_to)
+            if not validate(data.type):
+                raise ValueError(f"Expected data of {self._func_ret_type} type, received: {data.type}")
+            return ArrowDataBlock(data)
+
+        if self._func_ret_type == ExpressionType.integer():
+            return _block_from_chunked_array(results, pa.types.is_integer, pa.int32())
+        elif self._func_ret_type == ExpressionType.float():
+            return _block_from_chunked_array(results, pa.types.is_floating, pa.float32())
+        elif self._func_ret_type == ExpressionType.logical():
+            return _block_from_chunked_array(results, pa.types.is_boolean, pa.bool_())
+        elif self._func_ret_type == ExpressionType.string():
+            return _block_from_chunked_array(results, pa.types.is_string, pa.string())
+        elif self._func_ret_type == ExpressionType.date():
+            return _block_from_chunked_array(results, pa.types.is_date, pa.date32())
+        elif self._func_ret_type == ExpressionType.bytes():
+            return _block_from_chunked_array(results, pa.types.is_binary, pa.binary())
+        elif self._func_ret_type == ExpressionType.null():
+            return _block_from_chunked_array(results, pa.types.is_null, pa.null())
+        raise NotImplementedError(f"make_block_with_type not implemented for type: {self._func_ret_type}")
 
     def _is_eq_local(self, other: Expression) -> bool:
         return (
@@ -692,7 +741,7 @@ class AsPyExpression(Expression):
                     **{kw: val for kw, val in zip(kwargs.keys(), *vals[len(args) + 1 :])},
                 )
                 results.append(result)
-            return DataBlock.make_block(results)
+            return results
 
         return UdfExpression(
             f,
@@ -711,7 +760,7 @@ class AsPyExpression(Expression):
                 method = getattr(python_cls, attr_name)
                 result = method(expr_val, key_val)
                 results.append(result)
-            return DataBlock.make_block(results)
+            return results
 
         return UdfExpression(
             __getitem__,

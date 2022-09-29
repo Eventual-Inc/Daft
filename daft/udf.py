@@ -100,7 +100,8 @@ def udf(
                 except:
                     logger.error(f"Encountered error when running user-defined function {func.__name__}")
                     raise
-                return DataBlock.make_block(results)
+
+                return results
 
             out_expr = UdfExpression(
                 func=prepost_process_data_block_func,
@@ -187,7 +188,8 @@ def polars_udf(
                 except:
                     logger.error(f"Encountered error when running user-defined function {func.__name__}")
                     raise
-                return DataBlock.make_block(results)
+
+                return results
 
             out_expr = UdfExpression(
                 func=prepost_process_data_block_func,

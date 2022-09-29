@@ -1,9 +1,12 @@
 from typing import Any
 
 import pandas as pd
+import polars as pl
+import pyarrow as pa
 import pytest
 
 from daft.expressions import col
+from daft.types import ExpressionType
 from daft.udf import polars_udf, udf
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
@@ -23,81 +26,65 @@ class MyObj:
 
 
 ###
-# Simple UDFs with one or two return types
+# Test different return containers (list vs numpy vs polars vs pandas vs arrow)
 ###
 
 
 @udf(return_type=int)
-def multiply_kwarg_np(x, num=2):
-    return x * num
-
-
-@udf(return_type=int)
-def multiply_kwarg_pd(x, num=2):
-    return pd.Series(x * num)
-
-
-@udf(return_type=int)
-def multiply_kwarg_list(x, num=2):
-    return (x * num).tolist()
-
-
-@polars_udf(return_type=int)
-def multiply_kwarg_pl(x, num=2):
-    return x * num
-
-
-@udf(return_type=int)
-def multiply_arg_np(x, num):
-    return x * num
+def multiply_np(x, num=2, container="numpy"):
+    arr = x * num
+    if container == "numpy":
+        return arr
+    elif container == "list":
+        return arr.tolist()
+    elif container == "arrow":
+        return pa.array(arr)
+    elif container == "arrow_chunked":
+        return pa.chunked_array([pa.array(arr)])
+    elif container == "pandas":
+        return pd.Series(arr)
+    elif container == "polars":
+        return pl.Series(arr)
+    raise NotImplementedError(container)
 
 
 @polars_udf(return_type=int)
-def multiply_arg_pl(x, num):
-    return x * num
+def multiply_polars(x, num=2, container="numpy"):
+    arr = x * num
+    if container == "numpy":
+        return arr.to_numpy()
+    elif container == "list":
+        return arr.to_list()
+    elif container == "arrow":
+        return arr.to_arrow()
+    elif container == "arrow_chunked":
+        return pa.chunked_array([arr.to_arrow()])
+    elif container == "pandas":
+        return arr.to_pandas()
+    elif container == "polars":
+        return arr
+    raise NotImplementedError(container)
 
 
 @parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
+@pytest.mark.parametrize("multiply_kwarg", [multiply_np, multiply_polars])
 @pytest.mark.parametrize(
-    "multiply_kwarg", [multiply_kwarg_np, multiply_kwarg_pd, multiply_kwarg_list, multiply_kwarg_pl]
+    "return_container",
+    ["numpy", "list", "arrow", "arrow_chunked", "pandas", "polars"],
 )
-def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts, multiply_kwarg):
+def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts, multiply_kwarg, return_container):
     daft_df = daft_df.repartition(repartition_nparts).with_column(
-        "unique_key_identity", multiply_kwarg(col("Unique Key"))
+        "unique_key_identity", multiply_kwarg(col("Unique Key"), container=return_container)
     )
     service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"] * 2
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
-@parametrize_service_requests_csv_daft_df
-@parametrize_service_requests_csv_repartition
-@pytest.mark.parametrize("multiply_arg", [multiply_arg_np, multiply_arg_pl])
-def test_udf_args(daft_df, service_requests_csv_pd_df, repartition_nparts, multiply_arg):
-    daft_df = daft_df.repartition(repartition_nparts).with_column(
-        "unique_key_identity", multiply_arg(col("Unique Key"), 2)
-    )
-    service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"] * 2
-    daft_pd_df = daft_df.to_pandas()
-    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
-
-
-@parametrize_service_requests_csv_daft_df
-@parametrize_service_requests_csv_repartition
-@pytest.mark.parametrize("multiply_kwarg", [multiply_kwarg_np, multiply_kwarg_pd, multiply_kwarg_list])
-def test_udf_kwargs(daft_df, service_requests_csv_pd_df, repartition_nparts, multiply_kwarg):
-    daft_df = daft_df.repartition(repartition_nparts).with_column(
-        "unique_key_identity", multiply_kwarg(col("Unique Key"), num=4)
-    )
-    service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"] * 4
-    daft_pd_df = daft_df.to_pandas()
-    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
-
-
-# ###
-# # Stateful UDF using dependency injection
-# ###
+###
+# Stateful UDFs
+###
 
 
 class MyModel:
@@ -131,3 +118,31 @@ def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartiti
     service_requests_csv_pd_df["model_results"] = service_requests_csv_pd_df["Unique Key"]
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
+
+
+###
+# .apply UDFs
+###
+
+
+@parametrize_service_requests_csv_daft_df
+@parametrize_service_requests_csv_repartition
+def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    daft_df = daft_df.repartition(repartition_nparts).with_column(
+        "string_key", col("Unique Key").apply(lambda key: str(key))
+    )
+    service_requests_csv_pd_df["string_key"] = service_requests_csv_pd_df["Unique Key"].apply(str)
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
+
+    # Running .str expressions will fail on PyObj columns
+    assert daft_df.schema()["string_key"].daft_type == ExpressionType.python_object()
+    # TODO(jay): This should fail during column resolving instead of at runtime
+    daft_df_fail = daft_df.with_column("string_key_stars_with_1", col("string_key").str.startswith("1"))
+    with pytest.raises(AssertionError):
+        daft_df_fail.to_pandas()
+
+    # However, if we specify the return type then the blocks will be casted correctly to string types
+    daft_df_pass = daft_df.with_column("string_key", col("string_key").apply(lambda x: x, return_type=str))
+    daft_pd_df_pass = daft_df_pass.to_pandas()
+    assert_df_equals(daft_pd_df_pass, service_requests_csv_pd_df)
