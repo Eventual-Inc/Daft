@@ -152,7 +152,7 @@ _LengthTM = frozenset(
 
 _ExplodeTM = frozenset(
     {
-        (_TYPE_REGISTRY["pyobj"],): _TYPE_REGISTRY["pyobj"],
+        (ExpressionType.python_object(),): ExpressionType.python_object(),
     }.items()
 )
 

@@ -24,6 +24,7 @@ from typing import (
 )
 
 import numpy as np
+import pandas as pd
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pac
@@ -528,7 +529,7 @@ class PyListDataBlock(DataBlock[List[T]]):
     ) -> Tuple[DataBlock[List[T]], DataBlock[List[T]]]:
         raise NotImplementedError()
 
-    def list_explode(self) -> Tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
+    def list_explode(self) -> Tuple[PyListDataBlock, DataBlock[ArrowArrType]]:
         lengths = []
         exploded = []
         for item in self.data:
@@ -544,8 +545,8 @@ class PyListDataBlock(DataBlock[List[T]]):
             else:
                 lengths.append(length)
         return (
-            DataBlock.make_block(exploded),
-            DataBlock.make_block(lengths),
+            PyListDataBlock(exploded),
+            DataBlock.make_block(pa.array(lengths)),
         )
 
 

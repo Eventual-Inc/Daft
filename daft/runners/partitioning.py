@@ -297,8 +297,9 @@ class vPartition:
 
     def explode(self, columns: ExpressionList) -> vPartition:
         partition_to_explode = self.eval_expression_list(columns)
+        exploded_col_names = {tile.column_name for tile in partition_to_explode.columns.values()}
         partition_to_repeat = vPartition(
-            {cid: tile for cid, tile in self.columns.items() if cid not in partition_to_explode.columns},
+            {cid: tile for cid, tile in self.columns.items() if tile.column_name not in exploded_col_names},
             partition_id=self.partition_id,
         )
 
@@ -325,6 +326,15 @@ class vPartition:
             )
         assert found_list_lengths is not None, "At least one column must be specified to explode"
 
+        if len(found_list_lengths) == 0:
+            return vPartition(
+                {
+                    **exploded_cols,
+                    **partition_to_repeat.columns,
+                },
+                partition_id=self.partition_id,
+            )
+
         # Use the `found_list_lengths` to generate an array of indices to take from other columns (e.g. [0, 0, 1, 1, 1, 2, ...])
         list_length_cumsum = found_list_lengths.to_polars().cumsum()
         take_indices = pl.Series([0 for _ in range(list_length_cumsum[-1])])
@@ -334,7 +344,7 @@ class vPartition:
         take_indices = take_indices.cumsum()
         take_indices = take_indices - 1
 
-        repeated_partition = partition_to_repeat.take(DataBlock.make_block(take_indices))
+        repeated_partition = partition_to_repeat.take(DataBlock.make_block(take_indices.to_arrow()))
         return vPartition({**exploded_cols, **repeated_partition.columns}, partition_id=self.partition_id)
 
     def join(
@@ -475,7 +485,7 @@ class PartitionSet(Generic[PartitionT]):
     def to_pydict(self) -> Dict[str, Sequence]:
         """Retrieves all the data in a PartitionSet as a Python dictionary. Values are the raw data from each Block."""
         all_partitions = self._get_all_vpartitions()
-        merged_partition = vPartition.merge_partitions(all_partitions)
+        merged_partition = vPartition.merge_partitions(all_partitions, verify_partition_id=False)
         return merged_partition.to_pydict()
 
     def to_pandas(self, schema: Optional[ExpressionList] = None) -> "pd.DataFrame":
