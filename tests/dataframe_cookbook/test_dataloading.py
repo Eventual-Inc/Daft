@@ -4,9 +4,9 @@ import pandas as pd
 import pytest
 
 from daft.dataframe import DataFrame
-from daft.execution.operators import ExpressionType
 from daft.expressions import col
 from daft.filesystem import get_filesystem_from_path
+from daft.types import ExpressionType
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     COLUMNS,

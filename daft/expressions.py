@@ -20,7 +20,7 @@ from typing import (
 
 from daft.errors import ExpressionTypeError
 from daft.execution import url_operators
-from daft.execution.operators import ExpressionOperator, ExpressionType, OperatorEnum
+from daft.execution.operators import ExpressionOperator, OperatorEnum
 from daft.internal.treenode import TreeNode
 from daft.resource_request import ResourceRequest
 from daft.runners.blocks import (
@@ -29,6 +29,7 @@ from daft.runners.blocks import (
     PyListDataBlock,
     zip_blocks_as_py,
 )
+from daft.types import ExpressionType
 
 
 def col(name: str) -> ColumnExpression:

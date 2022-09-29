@@ -7,11 +7,11 @@ from enum import Enum, IntEnum
 from typing import Any, List, Optional, Tuple, Union
 
 from daft.datasources import SourceInfo, StorageType
-from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression, Expression
 from daft.internal.treenode import TreeNode
 from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
+from daft.types import ExpressionType
 
 
 class OpLevel(IntEnum):
@@ -219,7 +219,7 @@ class Filter(UnaryNode):
         self._predicate = predicate.resolve(input.schema())
 
         resolved_type = self._predicate.exprs[0].resolved_type()
-        if not ExpressionType.is_logical(resolved_type):
+        if resolved_type != ExpressionType.logical():
             raise ValueError(
                 f"Expected expression {self._predicate.exprs[0]} to resolve to type LOGICAL, but received: {resolved_type}"
             )

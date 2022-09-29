@@ -1,10 +1,10 @@
 import pytest
 
 from daft.datasources import InMemorySourceInfo
-from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression, col
 from daft.logical.logical_plan import Filter, Projection, Scan
 from daft.logical.schema import ExpressionList
+from daft.types import ExpressionType
 
 
 @pytest.fixture(scope="function")

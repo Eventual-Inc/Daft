@@ -1,142 +1,18 @@
 from __future__ import annotations
 
-import datetime
 import sys
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import Callable, Dict, FrozenSet, Optional, Tuple, Type, TypeVar
+from typing import Callable, FrozenSet, Optional, Tuple, TypeVar
+
+from daft.types import ExpressionType
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
 else:
     from typing import Protocol
-
-import pyarrow as pa
-
-
-class ExpressionType:
-    @staticmethod
-    def is_logical(t: ExpressionType) -> bool:
-        return t == _TYPE_REGISTRY["logical"]
-
-    @staticmethod
-    def is_string(t: ExpressionType) -> bool:
-        return t == _TYPE_REGISTRY["string"]
-
-    @staticmethod
-    def is_primitive(t: ExpressionType) -> bool:
-        return isinstance(t, PrimitiveExpressionType)
-
-    @staticmethod
-    def unknown() -> ExpressionType:
-        return _TYPE_REGISTRY["unknown"]
-
-    @staticmethod
-    def python_object() -> ExpressionType:
-        return _TYPE_REGISTRY["pyobj"]
-
-    @staticmethod
-    def from_py_type(obj_type: Type) -> ExpressionType:
-        """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
-        if unable to find the appropriate type. ExpressionTypes.Python is never returned.
-        """
-        if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
-            return PythonExpressionType(obj_type)
-        return _PY_TYPE_TO_EXPRESSION_TYPE[obj_type]
-
-    @staticmethod
-    def from_arrow_type(datatype: pa.DataType) -> ExpressionType:
-        if datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
-            return ExpressionType.python_object()
-        return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
-
-
-@dataclass(frozen=True, eq=True)
-class PrimitiveExpressionType(ExpressionType):
-    class TypeEnum(Enum):
-
-        UNKNOWN = 1
-        INTEGER = 2
-        FLOAT = 3
-        LOGICAL = 4
-        STRING = 5
-        DATE = 6
-        BYTES = 7
-        NULL = 8
-
-    enum: PrimitiveExpressionType.TypeEnum
-
-    def __repr__(self) -> str:
-        return self.enum.name
-
-
-@dataclass(frozen=True, eq=True)
-class PythonExpressionType(ExpressionType):
-    python_cls: Type
-
-    def __repr__(self) -> str:
-        return f"PY[{self.python_cls.__name__}]"
-
-
-_TYPE_REGISTRY: Dict[str, ExpressionType] = {
-    "unknown": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.UNKNOWN),
-    "integer": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.INTEGER),
-    "float": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.FLOAT),
-    "logical": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.LOGICAL),
-    "string": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.STRING),
-    "date": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.DATE),
-    "bytes": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.BYTES),
-    "null": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.NULL),
-    "pyobj": PythonExpressionType(object),
-}
-
-
-EXPRESSION_TYPE_TO_PYARROW_TYPE = {
-    _TYPE_REGISTRY["logical"]: pa.bool_(),
-    _TYPE_REGISTRY["integer"]: pa.int64(),
-    _TYPE_REGISTRY["float"]: pa.float64(),
-    _TYPE_REGISTRY["string"]: pa.string(),
-    _TYPE_REGISTRY["date"]: pa.date32(),
-    _TYPE_REGISTRY["bytes"]: pa.large_binary(),
-    _TYPE_REGISTRY["null"]: pa.null(),
-}
-
-
-_PYARROW_TYPE_TO_EXPRESSION_TYPE = {
-    pa.null(): _TYPE_REGISTRY["null"],
-    pa.bool_(): _TYPE_REGISTRY["logical"],
-    pa.int8(): _TYPE_REGISTRY["integer"],
-    pa.int16(): _TYPE_REGISTRY["integer"],
-    pa.int32(): _TYPE_REGISTRY["integer"],
-    pa.int64(): _TYPE_REGISTRY["integer"],
-    pa.uint8(): _TYPE_REGISTRY["integer"],
-    pa.uint16(): _TYPE_REGISTRY["integer"],
-    pa.uint32(): _TYPE_REGISTRY["integer"],
-    pa.uint64(): _TYPE_REGISTRY["integer"],
-    pa.float16(): _TYPE_REGISTRY["float"],
-    pa.float32(): _TYPE_REGISTRY["float"],
-    pa.float64(): _TYPE_REGISTRY["float"],
-    pa.date32(): _TYPE_REGISTRY["date"],
-    # pa.date64(): _TYPE_REGISTRY["unknown"],
-    pa.string(): _TYPE_REGISTRY["string"],
-    pa.utf8(): _TYPE_REGISTRY["string"],
-    pa.binary(): _TYPE_REGISTRY["bytes"],
-    pa.large_binary(): _TYPE_REGISTRY["bytes"],
-    pa.large_string(): _TYPE_REGISTRY["string"],
-    pa.large_utf8(): _TYPE_REGISTRY["string"],
-}
-
-_PY_TYPE_TO_EXPRESSION_TYPE = {
-    int: _TYPE_REGISTRY["integer"],
-    float: _TYPE_REGISTRY["float"],
-    str: _TYPE_REGISTRY["string"],
-    bool: _TYPE_REGISTRY["logical"],
-    datetime.date: _TYPE_REGISTRY["date"],
-    bytes: _TYPE_REGISTRY["bytes"],
-    type(None): _TYPE_REGISTRY["null"],
-}
 
 
 TypeMatrix = FrozenSet[Tuple[Tuple[ExpressionType, ...], ExpressionType]]
@@ -154,7 +30,7 @@ class ExpressionOperator:
             assert len(k) == self.nargs, f"all keys in type matrix must have {self.nargs}"
             for sub_k in k:
                 assert isinstance(sub_k, ExpressionType)
-                assert sub_k != _TYPE_REGISTRY["unknown"]
+                assert sub_k != ExpressionType.unknown()
             assert isinstance(v, ExpressionType), f"{v} is not an ExpressionType"
 
     @lru_cache(maxsize=1)
@@ -163,12 +39,12 @@ class ExpressionOperator:
 
     def get_return_type(self, args: Tuple[ExpressionType, ...]) -> Optional[ExpressionType]:
         # Treat all Python types as a PY[object] for the purposes of typing
-        args = tuple([ExpressionType.python_object() if isinstance(a, PythonExpressionType) else a for a in args])
+        args = tuple([ExpressionType.python_object() if ExpressionType.is_py(a) else a for a in args])
 
         res = self._type_matrix_dict().get(args, ExpressionType.unknown())
 
         # For Python types, we return another Python type instead of unknown
-        if res == ExpressionType.unknown() and any([isinstance(arg, PythonExpressionType) for arg in args]):
+        if res == ExpressionType.unknown() and any([ExpressionType.is_py(arg) for arg in args]):
             return ExpressionType.python_object()
 
         return res
@@ -176,97 +52,101 @@ class ExpressionOperator:
 
 _UnaryNumericalTM = frozenset(
     {
-        (_TYPE_REGISTRY["integer"],): _TYPE_REGISTRY["integer"],
-        (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["float"],
+        (ExpressionType.integer(),): ExpressionType.integer(),
+        (ExpressionType.float(),): ExpressionType.float(),
     }.items()
 )
 
 _UnaryLogicalTM = frozenset(
     {
-        (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["logical"],
+        (ExpressionType.logical(),): ExpressionType.logical(),
     }.items()
 )
 
 
 _BinaryNumericalTM = frozenset(
     {
-        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
-        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
-        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["float"],
-        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
+        (ExpressionType.integer(), ExpressionType.integer()): ExpressionType.integer(),
+        (ExpressionType.float(), ExpressionType.float()): ExpressionType.float(),
+        (ExpressionType.float(), ExpressionType.integer()): ExpressionType.float(),
+        (ExpressionType.integer(), ExpressionType.float()): ExpressionType.float(),
     }.items()
 )
 
 _ComparisionTM = frozenset(
     {
-        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["integer"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["float"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["date"], _TYPE_REGISTRY["date"]): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["bytes"], _TYPE_REGISTRY["bytes"]): _TYPE_REGISTRY["logical"],
+        (ExpressionType.integer(), ExpressionType.integer()): ExpressionType.logical(),
+        (ExpressionType.float(), ExpressionType.float()): ExpressionType.logical(),
+        (ExpressionType.integer(), ExpressionType.float()): ExpressionType.logical(),
+        (ExpressionType.float(), ExpressionType.integer()): ExpressionType.logical(),
+        (ExpressionType.string(), ExpressionType.string()): ExpressionType.logical(),
+        (ExpressionType.date(), ExpressionType.date()): ExpressionType.logical(),
+        (ExpressionType.bytes(), ExpressionType.bytes()): ExpressionType.logical(),
     }.items()
 )
 
 _BinaryLogicalTM = frozenset(
     {
-        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["logical"]): _TYPE_REGISTRY["logical"],
+        (ExpressionType.logical(), ExpressionType.logical()): ExpressionType.logical(),
     }.items()
 )
 
 _CountLogicalTM = frozenset(
     {
-        (_TYPE_REGISTRY["integer"],): _TYPE_REGISTRY["integer"],
-        (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["integer"],
-        (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["integer"],
-        (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["integer"],
-        (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["integer"],
-        (_TYPE_REGISTRY["bytes"],): _TYPE_REGISTRY["integer"],
-        (_TYPE_REGISTRY["null"],): _TYPE_REGISTRY["integer"],
+        (ExpressionType.integer(),): ExpressionType.integer(),
+        (ExpressionType.float(),): ExpressionType.integer(),
+        (ExpressionType.logical(),): ExpressionType.integer(),
+        (ExpressionType.string(),): ExpressionType.integer(),
+        (ExpressionType.date(),): ExpressionType.integer(),
+        (ExpressionType.bytes(),): ExpressionType.integer(),
+        (ExpressionType.null(),): ExpressionType.integer(),
     }.items()
 )
 
 _AllLogicalTM = frozenset(
     {
-        (_TYPE_REGISTRY["integer"],): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["logical"],): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["bytes"],): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["null"],): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["pyobj"],): _TYPE_REGISTRY["logical"],
+        (ExpressionType.integer(),): ExpressionType.logical(),
+        (ExpressionType.float(),): ExpressionType.logical(),
+        (ExpressionType.logical(),): ExpressionType.logical(),
+        (ExpressionType.string(),): ExpressionType.logical(),
+        (ExpressionType.date(),): ExpressionType.logical(),
+        (ExpressionType.bytes(),): ExpressionType.logical(),
+        (ExpressionType.null(),): ExpressionType.logical(),
+        (ExpressionType.python_object(),): ExpressionType.logical(),
     }.items()
 )
 
 _FloatLogicalTM = frozenset(
     {
-        (_TYPE_REGISTRY["float"],): _TYPE_REGISTRY["logical"],
+        (ExpressionType.float(),): ExpressionType.logical(),
     }.items()
 )
 
 _IfElseTM = frozenset(
     {
-        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["integer"], _TYPE_REGISTRY["integer"]): _TYPE_REGISTRY["integer"],
-        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["float"], _TYPE_REGISTRY["float"]): _TYPE_REGISTRY["float"],
-        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["logical"], _TYPE_REGISTRY["logical"]): _TYPE_REGISTRY["logical"],
-        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["string"],
-        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["date"], _TYPE_REGISTRY["date"]): _TYPE_REGISTRY["date"],
-        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["bytes"], _TYPE_REGISTRY["bytes"]): _TYPE_REGISTRY["bytes"],
-        (_TYPE_REGISTRY["logical"], _TYPE_REGISTRY["pyobj"], _TYPE_REGISTRY["pyobj"]): _TYPE_REGISTRY["pyobj"],
+        (ExpressionType.logical(), ExpressionType.integer(), ExpressionType.integer()): ExpressionType.integer(),
+        (ExpressionType.logical(), ExpressionType.float(), ExpressionType.float()): ExpressionType.float(),
+        (ExpressionType.logical(), ExpressionType.logical(), ExpressionType.logical()): ExpressionType.logical(),
+        (ExpressionType.logical(), ExpressionType.string(), ExpressionType.string()): ExpressionType.string(),
+        (ExpressionType.logical(), ExpressionType.date(), ExpressionType.date()): ExpressionType.date(),
+        (ExpressionType.logical(), ExpressionType.bytes(), ExpressionType.bytes()): ExpressionType.bytes(),
+        (
+            ExpressionType.logical(),
+            ExpressionType.python_object(),
+            ExpressionType.python_object(),
+        ): ExpressionType.python_object(),
     }.items()
 )
 
 _DatetimeExtractionTM = frozenset(
     {
-        (_TYPE_REGISTRY["date"],): _TYPE_REGISTRY["integer"],
+        (ExpressionType.date(),): ExpressionType.integer(),
     }.items()
 )
 
 _LengthTM = frozenset(
     {
-        (_TYPE_REGISTRY["string"],): _TYPE_REGISTRY["integer"],
+        (ExpressionType.string(),): ExpressionType.integer(),
     }.items()
 )
 
@@ -288,7 +168,7 @@ _LBop = partial(_BOp, type_matrix=_BinaryLogicalTM)
 # Logical String Ops
 _LSop = partial(
     _BOp,
-    type_matrix=frozenset({(_TYPE_REGISTRY["string"], _TYPE_REGISTRY["string"]): _TYPE_REGISTRY["logical"]}.items()),
+    type_matrix=frozenset({(ExpressionType.string(), ExpressionType.string()): ExpressionType.logical()}.items()),
 )
 
 
