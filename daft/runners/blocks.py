@@ -30,6 +30,7 @@ from pandas.core.reshape.merge import get_join_indexers
 from daft.execution.operators import OperatorEnum, OperatorEvaluator
 from daft.internal.hashing import hash_chunked_array
 from daft.internal.kernels.search_sorted import search_sorted
+from daft.types import ExpressionType
 
 # A type representing some Python scalar (non-series/array like object)
 PyScalar = Any
@@ -114,6 +115,66 @@ class DataBlock(Generic[ArrType]):
     @abstractmethod
     def to_arrow(self) -> pa.ChunkedArray:
         raise NotImplementedError()
+
+    @classmethod
+    def make_block_with_type(cls, data: Any, daft_type: ExpressionType) -> DataBlock:
+        """Makes the appropriate block from some data, when provided a daft_type
+
+        Args:
+            data (Any): data provided by user
+            daft_type (ExpressionType): type of this block
+
+        Raises:
+            ValueError: the provided data is incompatible with the provided daft_type
+
+        Returns:
+            DataBlock: DataBlock constructed from the data
+        """
+        if ExpressionType.is_py(daft_type):
+            return PyListDataBlock(data if isinstance(data, list) else list(data))
+
+        # Convert these user-provided types to pa.ChunkedArray for making blocks
+        if isinstance(data, pa.Array):
+            data = pa.chunked_array([data])
+        elif isinstance(data, pl.Series):
+            data = pa.chunked_array([data.to_arrow()])
+        elif isinstance(data, np.ndarray):
+            data = pa.chunked_array([pa.array(data)])
+        elif isinstance(data, pd.Series):
+            data = pa.chunked_array([pa.array(data)])
+        elif isinstance(data, list):
+            data = pa.chunked_array([pa.array(data)])
+
+        if not isinstance(data, pa.ChunkedArray):
+            raise NotImplementedError(f"Cannot make block for data of type: {type(data)}")
+
+        def _block_from_chunked_array(
+            data: pa.ChunkedArray, validate: Callable[[pa.DataType], bool], cast_null_to: pa.DataType
+        ) -> DataBlock:
+            """Check that provided pa.ChunkedArray is the correct type, and performs appropriate coercion
+            of types if the provided pa.ChunkedArray is null type (e.g. empty array, or array full of Nulls)
+            """
+            if pa.types.is_null(data.type):
+                data = data.cast(cast_null_to)
+            if not validate(data.type):
+                raise ValueError(f"Expected data of {daft_type} type, received: {data.type}")
+            return ArrowDataBlock(data)
+
+        if daft_type == ExpressionType.integer():
+            return _block_from_chunked_array(data, pa.types.is_integer, pa.int32())
+        elif daft_type == ExpressionType.float():
+            return _block_from_chunked_array(data, pa.types.is_floating, pa.float32())
+        elif daft_type == ExpressionType.logical():
+            return _block_from_chunked_array(data, pa.types.is_boolean, pa.bool_())
+        elif daft_type == ExpressionType.string():
+            return _block_from_chunked_array(data, pa.types.is_string, pa.string())
+        elif daft_type == ExpressionType.date():
+            return _block_from_chunked_array(data, pa.types.is_date, pa.date32())
+        elif daft_type == ExpressionType.bytes():
+            return _block_from_chunked_array(data, pa.types.is_binary, pa.binary())
+        elif daft_type == ExpressionType.null():
+            return _block_from_chunked_array(data, pa.types.is_null, pa.null())
+        raise NotImplementedError(f"make_block_with_type not implemented for type: {daft_type}")
 
     @classmethod
     def make_block(cls, data: Any) -> DataBlock:
