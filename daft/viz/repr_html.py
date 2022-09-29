@@ -6,7 +6,7 @@ import pandas as pd
 from tabulate import tabulate
 
 from daft.dataframe.schema import DataFrameSchema, DataFrameSchemaField
-from daft.execution.operators import ExpressionType
+from daft.types import ExpressionType
 
 try:
     import PIL.Image

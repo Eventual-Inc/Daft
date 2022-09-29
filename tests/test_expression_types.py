@@ -5,7 +5,8 @@ import numpy as np
 import pytest
 
 from daft import DataFrame, col
-from daft.execution.operators import ExpressionType, OperatorEnum
+from daft.execution.operators import OperatorEnum
+from daft.types import ExpressionType
 
 
 class MyObj:

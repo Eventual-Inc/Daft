@@ -5,8 +5,8 @@ from typing import List, cast
 
 import pandas as pd
 
-from daft.execution.operators import ExpressionType
 from daft.logical.schema import ExpressionList
+from daft.types import ExpressionType
 
 
 @dataclass(frozen=True)

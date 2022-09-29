@@ -8,8 +8,8 @@ import polars as pl
 import pytest
 
 from daft.dataframe import DataFrame
-from daft.execution.operators import ExpressionType
 from daft.expressions import col, lit
+from daft.types import ExpressionType
 from daft.udf import polars_udf, udf
 from tests.conftest import assert_df_equals
 
