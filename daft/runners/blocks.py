@@ -491,7 +491,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             py_scalar = self.data.as_py()
             while True:
                 yield py_scalar
-        yield from self.data.to_numpy()
+        yield from self.data.to_pylist()
 
     # def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
     #     order = "descending" if desc else "ascending"
