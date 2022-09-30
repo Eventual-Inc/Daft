@@ -8,7 +8,7 @@ import pytest
 from daft.expressions import col
 from daft.types import ExpressionType
 from daft.udf import polars_udf, udf
-from tests.conftest import assert_df_equals
+from tests.conftest import assert_df_column_type, assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     parametrize_service_requests_csv_daft_df,
     parametrize_service_requests_csv_repartition,
@@ -75,11 +75,19 @@ def multiply_polars(x, num=2, container="numpy"):
 )
 def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts, multiply_kwarg, return_container):
     daft_df = daft_df.repartition(repartition_nparts).with_column(
-        "unique_key_identity", multiply_kwarg(col("Unique Key"), container=return_container)
+        "unique_key_multiply_2", multiply_kwarg(col("Unique Key"), container=return_container)
     )
-    service_requests_csv_pd_df["unique_key_identity"] = service_requests_csv_pd_df["Unique Key"] * 2
+    service_requests_csv_pd_df["unique_key_multiply_2"] = service_requests_csv_pd_df["Unique Key"] * 2
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
+
+    # Assert that the data after UDF runs is an ArrowDataBlock with type int64
+    daft_df.collect()
+    assert_df_column_type(
+        daft_df._result,
+        "unique_key_multiply_2",
+        int,
+    )
 
 
 ###
@@ -119,6 +127,14 @@ def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartiti
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
+    # Assert that the data after UDF runs is an ArrowDataBlock with type int64
+    daft_df.collect()
+    assert_df_column_type(
+        daft_df._result,
+        "model_results",
+        int,
+    )
+
 
 ###
 # .apply UDFs
@@ -134,6 +150,12 @@ def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     service_requests_csv_pd_df["string_key"] = service_requests_csv_pd_df["Unique Key"].apply(str)
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
+    daft_df.collect()
+    assert_df_column_type(
+        daft_df._result,
+        "string_key",
+        object,  # no return_type specified for .apply, column has PY[object] type
+    )
 
     # Running .str expressions will fail on PyObj columns
     assert daft_df.schema()["string_key"].daft_type == ExpressionType.python_object()
@@ -151,3 +173,18 @@ def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     )
     daft_pd_df_pass = daft_df_pass.to_pandas()
     assert_df_equals(daft_pd_df_pass, service_requests_csv_pd_df)
+
+    # Assert that the data after UDF runs is an ArrowDataBlock with type string and bool_
+    assert daft_df_pass.schema()["string_key"].daft_type == ExpressionType.string()
+    assert daft_df_pass.schema()["string_key_starts_with_1"].daft_type == ExpressionType.logical()
+    daft_df_pass.collect()
+    assert_df_column_type(
+        daft_df_pass._result,
+        "string_key",
+        str,
+    )
+    assert_df_column_type(
+        daft_df_pass._result,
+        "string_key_starts_with_1",
+        bool,
+    )

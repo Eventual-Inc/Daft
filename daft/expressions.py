@@ -35,7 +35,7 @@ from daft.runners.blocks import (
     PyListDataBlock,
     zip_blocks_as_py,
 )
-from daft.types import ExpressionType
+from daft.types import ExpressionType, PrimitiveExpressionType
 
 
 def col(name: str) -> ColumnExpression:
@@ -600,22 +600,10 @@ class UdfExpression(Expression):
         # Explcitly cast results of the UDF here for these primitive types:
         #   1. Ensures that all blocks across all partitions will have the same underlying Arrow type after the UDF
         #   2. Ensures that any null blocks from empty partitions or partitions with all nulls have the correct type
-        if self._func_ret_type == ExpressionType.integer():
-            results = results.cast(pa.int64())
-        elif self._func_ret_type == ExpressionType.float():
-            results = results.cast(pa.float64())
-        elif self._func_ret_type == ExpressionType.logical():
-            results = results.cast(pa.bool_())
-        elif self._func_ret_type == ExpressionType.string():
-            results = results.cast(pa.string())
-        elif self._func_ret_type == ExpressionType.date():
-            results = results.cast(pa.date32())
-        elif self._func_ret_type == ExpressionType.bytes():
-            results = results.cast(pa.binary())
-        elif self._func_ret_type == ExpressionType.null():
-            results = results.cast(pa.null())
-        else:
-            raise NotImplementedError(f"make_block_with_type not implemented for type: {self._func_ret_type}")
+        assert isinstance(self._func_ret_type, PrimitiveExpressionType)
+        expected_arrow_type = self._func_ret_type.to_arrow_type()
+        results = results.cast(expected_arrow_type)
+
         return ArrowDataBlock(results)
 
     def _is_eq_local(self, other: Expression) -> bool:

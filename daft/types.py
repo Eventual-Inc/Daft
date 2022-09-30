@@ -91,6 +91,9 @@ class PrimitiveExpressionType(ExpressionType):
     def __repr__(self) -> str:
         return self.enum.name
 
+    def to_arrow_type(self) -> pa.DataType:
+        return _EXPRESSION_TYPE_TO_PYARROW_TYPE[self]
+
 
 @dataclass(frozen=True, eq=True)
 class PythonExpressionType(ExpressionType):
@@ -113,13 +116,13 @@ _TYPE_REGISTRY: Dict[str, ExpressionType] = {
 }
 
 
-EXPRESSION_TYPE_TO_PYARROW_TYPE = {
+_EXPRESSION_TYPE_TO_PYARROW_TYPE = {
     _TYPE_REGISTRY["logical"]: pa.bool_(),
     _TYPE_REGISTRY["integer"]: pa.int64(),
     _TYPE_REGISTRY["float"]: pa.float64(),
     _TYPE_REGISTRY["string"]: pa.string(),
     _TYPE_REGISTRY["date"]: pa.date32(),
-    _TYPE_REGISTRY["bytes"]: pa.large_binary(),
+    _TYPE_REGISTRY["bytes"]: pa.binary(),
     _TYPE_REGISTRY["null"]: pa.null(),
 }
 
