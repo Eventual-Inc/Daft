@@ -118,17 +118,34 @@ class DataBlock(Generic[ArrType]):
     @classmethod
     def make_block(cls, data: Any) -> DataBlock:
         # Data is a sequence of data
+        # Arrow data: nested types get casted to a list and stored as PyListDataBlock
         if isinstance(data, pa.ChunkedArray):
+            if pa.types.is_nested(data.type):
+                return PyListDataBlock(data=data.to_pylist())
             return ArrowDataBlock(data=data)
         elif isinstance(data, pa.Array):
+            if pa.types.is_nested(data.type):
+                return PyListDataBlock(data=data.to_pylist())
             return ArrowDataBlock(data=pa.chunked_array([data]))
+        # Lists: always stored as a PyListDataBlock
         elif isinstance(data, list):
             return PyListDataBlock(data=data)
+        # Numpy data: attempt to cast to Arrow, nested types get casted to a list and stored as PyListDataBlock
         elif isinstance(data, np.ndarray):
+            if data.dtype == np.object_ or len(data.shape) > 1:
+                try:
+                    arrow_type = pa.infer_type(data)
+                except pa.lib.ArrowInvalid:
+                    arrow_type = None
+                if arrow_type is None or pa.types.is_nested(arrow_type):
+                    return PyListDataBlock(data=list(data))
+                return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
             arrow_type = pa.from_numpy_dtype(data.dtype)
             return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
         # Data is a scalar
         elif isinstance(data, pa.Scalar):
+            if pa.types.is_nested(data.type):
+                return PyListDataBlock(data=data.as_py())
             return ArrowDataBlock(data=data)
         else:
             try:
@@ -441,6 +458,12 @@ ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
 
 
 class ArrowDataBlock(DataBlock[ArrowArrType]):
+    def __init__(self, data: ArrowArrType) -> None:
+        assert not pa.types.is_nested(
+            data.type
+        ), f"Cannot create ArrowDataBlock with nested type: {data.type}, please report this to Daft developers."
+        super().__init__(data)
+
     def __reduce__(self) -> Tuple:
         if len(self.data) == 0:
             return ArrowDataBlock, (self._make_empty().data,)

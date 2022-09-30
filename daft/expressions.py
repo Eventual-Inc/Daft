@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import warnings
 from abc import abstractmethod
 from copy import deepcopy
 from functools import partial, partialmethod
@@ -343,6 +344,12 @@ class Expression(TreeNode["Expression"]):
         Returns:
             Expression: New expression after having run the function on the expression
         """
+        if return_type is None:
+            warnings.warn(
+                "No `return_type` keyword argument specified in `.apply`. It is highly recommended to "
+                "specify a return_type for Daft to perform optimizations and for access to vectorized expression operators."
+            )
+
         expression_type = (
             ExpressionType.from_py_type(return_type) if return_type is not None else ExpressionType.python_object()
         )

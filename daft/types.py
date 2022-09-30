@@ -64,6 +64,10 @@ class ExpressionType:
 
     @staticmethod
     def from_arrow_type(datatype: pa.DataType) -> ExpressionType:
+        if pa.types.is_list(datatype):
+            return PythonExpressionType(list)
+        elif pa.types.is_struct(datatype):
+            return PythonExpressionType(dict)
         if datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
             return ExpressionType.python_object()
         return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
