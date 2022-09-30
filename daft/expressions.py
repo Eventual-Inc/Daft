@@ -597,33 +597,26 @@ class UdfExpression(Expression):
         if not isinstance(results, pa.ChunkedArray):
             raise NotImplementedError(f"Cannot make block for data of type: {type(results)}")
 
-        def _block_from_chunked_array(
-            data: pa.ChunkedArray, validate: Callable[[pa.DataType], bool], cast_null_to: pa.DataType
-        ) -> DataBlock:
-            """Check that provided pa.ChunkedArray is the correct type, and performs appropriate coercion
-            of types if the provided pa.ChunkedArray is null type (e.g. empty array, or array full of Nulls)
-            """
-            if pa.types.is_null(data.type):
-                data = data.cast(cast_null_to)
-            if not validate(data.type):
-                raise ValueError(f"Expected data of {self._func_ret_type} type, received: {data.type}")
-            return ArrowDataBlock(data)
-
+        # Explcitly cast results of the UDF here for these primitive types:
+        #   1. Ensures that all blocks across all partitions will have the same underlying Arrow type after the UDF
+        #   2. Ensures that any null blocks from empty partitions or partitions with all nulls have the correct type
         if self._func_ret_type == ExpressionType.integer():
-            return _block_from_chunked_array(results, pa.types.is_integer, pa.int32())
+            results = results.cast(pa.int64())
         elif self._func_ret_type == ExpressionType.float():
-            return _block_from_chunked_array(results, pa.types.is_floating, pa.float32())
+            results = results.cast(pa.float64())
         elif self._func_ret_type == ExpressionType.logical():
-            return _block_from_chunked_array(results, pa.types.is_boolean, pa.bool_())
+            results = results.cast(pa.bool_())
         elif self._func_ret_type == ExpressionType.string():
-            return _block_from_chunked_array(results, pa.types.is_string, pa.string())
+            results = results.cast(pa.string())
         elif self._func_ret_type == ExpressionType.date():
-            return _block_from_chunked_array(results, pa.types.is_date, pa.date32())
+            results = results.cast(pa.date32())
         elif self._func_ret_type == ExpressionType.bytes():
-            return _block_from_chunked_array(results, pa.types.is_binary, pa.binary())
+            results = results.cast(pa.binary())
         elif self._func_ret_type == ExpressionType.null():
-            return _block_from_chunked_array(results, pa.types.is_null, pa.null())
-        raise NotImplementedError(f"make_block_with_type not implemented for type: {self._func_ret_type}")
+            results = results.cast(pa.null())
+        else:
+            raise NotImplementedError(f"make_block_with_type not implemented for type: {self._func_ret_type}")
+        return ArrowDataBlock(results)
 
     def _is_eq_local(self, other: Expression) -> bool:
         return (
