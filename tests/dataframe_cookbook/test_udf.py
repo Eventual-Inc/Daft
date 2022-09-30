@@ -138,11 +138,16 @@ def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     # Running .str expressions will fail on PyObj columns
     assert daft_df.schema()["string_key"].daft_type == ExpressionType.python_object()
     # TODO(jay): This should fail during column resolving instead of at runtime
-    daft_df_fail = daft_df.with_column("string_key_stars_with_1", col("string_key").str.startswith("1"))
+    daft_df_fail = daft_df.with_column("string_key_starts_with_1", col("string_key").str.startswith("1"))
     with pytest.raises(AssertionError):
         daft_df_fail.to_pandas()
 
     # However, if we specify the return type then the blocks will be casted correctly to string types
-    daft_df_pass = daft_df.with_column("string_key", col("string_key").apply(lambda x: x, return_type=str))
+    daft_df_pass = daft_df.with_column("string_key", col("string_key").apply(lambda x: x, return_type=str)).with_column(
+        "string_key_starts_with_1", col("string_key").str.startswith("1")
+    )
+    service_requests_csv_pd_df["string_key_starts_with_1"] = service_requests_csv_pd_df["string_key"].str.startswith(
+        "1"
+    )
     daft_pd_df_pass = daft_df_pass.to_pandas()
     assert_df_equals(daft_pd_df_pass, service_requests_csv_pd_df)
