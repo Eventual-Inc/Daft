@@ -1,14 +1,14 @@
 import pathlib
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pyarrow as pa
 from loguru import logger
 
 from daft import filesystem
-from daft.runners.blocks import ArrowDataBlock, DataBlock
+from daft.runners.blocks import ArrowDataBlock
 
 
-def download(url_block: ArrowDataBlock) -> DataBlock:
+def download(url_block: ArrowDataBlock) -> List[Optional[bytes]]:
     assert isinstance(
         url_block, ArrowDataBlock
     ), f"Can only download from columns containing strings, found non-arrow block"
@@ -16,7 +16,7 @@ def download(url_block: ArrowDataBlock) -> DataBlock:
         url_block.data.type
     ), f"Can only download from columns containing strings, found {url_block.data.type}"
 
-    results = [None for _ in range(len(url_block))]
+    results: List[Optional[bytes]] = [None for _ in range(len(url_block))]
 
     path_to_result_idx = {}
     to_download: Dict[str, List[str]] = {}
@@ -44,4 +44,4 @@ def download(url_block: ArrowDataBlock) -> DataBlock:
                 logger.error(f"Encountered error during download from URL {path}: {str(data[path])}")
                 results[path_to_result_idx[path]] = None
 
-    return DataBlock.make_block(results)
+    return results

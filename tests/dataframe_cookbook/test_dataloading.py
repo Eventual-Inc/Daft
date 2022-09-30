@@ -6,7 +6,7 @@ import pytest
 from daft.dataframe import DataFrame
 from daft.expressions import col
 from daft.filesystem import get_filesystem_from_path
-from daft.types import ExpressionType
+from daft.types import PythonExpressionType
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     COLUMNS,
@@ -78,8 +78,8 @@ def test_load_json(tmp_path: pathlib.Path):
     pd_df.to_json(json_file, lines=True, orient="records")
     daft_df = DataFrame.from_json(str(json_file))
 
-    assert daft_df.schema()["dicts"].daft_type == ExpressionType.python_object()
-    assert daft_df.schema()["lists"].daft_type == ExpressionType.python_object()
+    assert daft_df.schema()["dicts"].daft_type == PythonExpressionType(dict)
+    assert daft_df.schema()["lists"].daft_type == PythonExpressionType(list)
 
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, assert_ordering=True)

@@ -145,7 +145,7 @@ def test_python_chained_expression_calls(repartition_nparts):
     daft_df = (
         DataFrame.from_pydict(data)
         .repartition(repartition_nparts)
-        .with_column("foo_starts_with_1", col("dicts").as_py(dict)["foo"].str.startswith("1"))
+        .with_column("foo_starts_with_1", col("dicts").apply(lambda d: d["foo"], return_type=str).str.startswith("1"))
     )
     pd_df = pd.DataFrame.from_dict(data)
     pd_df["foo_starts_with_1"] = pd.Series([d["foo"] for d in pd_df["dicts"]]).str.startswith("1")

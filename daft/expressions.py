@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import warnings
 from abc import abstractmethod
 from copy import deepcopy
 from functools import partial, partialmethod
@@ -8,15 +9,20 @@ from typing import (
     Any,
     Callable,
     Dict,
-    Generic,
     List,
     NewType,
     Optional,
+    Sequence,
     Tuple,
     Type,
     TypeVar,
     cast,
 )
+
+import numpy as np
+import pandas as pd
+import polars as pl
+import pyarrow as pa
 
 from daft.errors import ExpressionTypeError
 from daft.execution import url_operators
@@ -29,7 +35,7 @@ from daft.runners.blocks import (
     PyListDataBlock,
     zip_blocks_as_py,
 )
-from daft.types import ExpressionType
+from daft.types import ExpressionType, PrimitiveExpressionType
 
 
 def col(name: str) -> ColumnExpression:
@@ -64,7 +70,6 @@ def lit(val: Any) -> LiteralExpression:
 
 _COUNTER = itertools.count()
 ColID = NewType("ColID", int)
-DataBlockValueType = TypeVar("DataBlockValueType", bound=DataBlock)
 
 
 class ExpressionExecutor:
@@ -339,13 +344,18 @@ class Expression(TreeNode["Expression"]):
         Returns:
             Expression: New expression after having run the function on the expression
         """
+        if return_type is None:
+            warnings.warn(
+                "No `return_type` keyword argument specified in `.apply`. It is highly recommended to "
+                "specify a return_type for Daft to perform optimizations and for access to vectorized expression operators."
+            )
+
         expression_type = (
             ExpressionType.from_py_type(return_type) if return_type is not None else ExpressionType.python_object()
         )
 
         def apply_func(f, data):
-            results = list(map(f, data.iter_py()))
-            return DataBlock.make_block(results)
+            return list(map(f, data.iter_py()))
 
         return UdfExpression(
             partial(apply_func, func),
@@ -526,10 +536,10 @@ class CallExpression(Expression):
         )
 
 
-class UdfExpression(Expression, Generic[DataBlockValueType]):
+class UdfExpression(Expression):
     def __init__(
         self,
-        func: Callable[..., DataBlockValueType],
+        func: Callable[..., Sequence],
         func_ret_type: ExpressionType,
         func_args: Tuple,
         func_kwargs: Dict[str, Any],
@@ -566,8 +576,35 @@ class UdfExpression(Expression, Generic[DataBlockValueType]):
             return f"{func_name}({args}, {kwargs})"
         return f"{func_name}({args})"
 
-    def eval_blocks(self, *args: DataBlockValueType, **kwargs: DataBlockValueType) -> DataBlockValueType:
-        return self._func(*args, **kwargs)
+    def eval_blocks(self, *args: DataBlock, **kwargs: DataBlock) -> DataBlock:
+        results = self._func(*args, **kwargs)
+
+        if ExpressionType.is_py(self._func_ret_type):
+            return PyListDataBlock(results if isinstance(results, list) else list(results))
+
+        # Convert these user-provided types to pa.ChunkedArray for making blocks
+        if isinstance(results, pa.Array):
+            results = pa.chunked_array([results])
+        elif isinstance(results, pl.Series):
+            results = pa.chunked_array([results.to_arrow()])
+        elif isinstance(results, np.ndarray):
+            results = pa.chunked_array([pa.array(results)])
+        elif isinstance(results, pd.Series):
+            results = pa.chunked_array([pa.array(results)])
+        elif isinstance(results, list):
+            results = pa.chunked_array([pa.array(results)])
+
+        if not isinstance(results, pa.ChunkedArray):
+            raise NotImplementedError(f"Cannot make block for data of type: {type(results)}")
+
+        # Explcitly cast results of the UDF here for these primitive types:
+        #   1. Ensures that all blocks across all partitions will have the same underlying Arrow type after the UDF
+        #   2. Ensures that any null blocks from empty partitions or partitions with all nulls have the correct type
+        assert isinstance(self._func_ret_type, PrimitiveExpressionType)
+        expected_arrow_type = self._func_ret_type.to_arrow_type()
+        results = results.cast(expected_arrow_type)
+
+        return ArrowDataBlock(results)
 
     def _is_eq_local(self, other: Expression) -> bool:
         return (
@@ -692,7 +729,7 @@ class AsPyExpression(Expression):
                     **{kw: val for kw, val in zip(kwargs.keys(), *vals[len(args) + 1 :])},
                 )
                 results.append(result)
-            return DataBlock.make_block(results)
+            return results
 
         return UdfExpression(
             f,
@@ -711,7 +748,7 @@ class AsPyExpression(Expression):
                 method = getattr(python_cls, attr_name)
                 result = method(expr_val, key_val)
                 results.append(result)
-            return DataBlock.make_block(results)
+            return results
 
         return UdfExpression(
             __getitem__,
