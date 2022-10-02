@@ -655,6 +655,25 @@ class DataFrame:
         If multiple columns are specified, each row must contain the same number of
         items in each specified column.
 
+        Example:
+            >>> df = DataFrame.from_pydict({
+            >>>     "x": [[1], [2, 3]],
+            >>>     "y": [["a"], ["b", "c"]],
+            >>>     "z": [1.0, 2.0],
+            >>> ]})
+            >>>
+            >>> df.explode(col("x"), col("y"))
+            >>>
+            >>> # +------+-----------+-----+      +-----+-----+-----+
+            >>> # | x    | y         | z   |      | x   | y   | z   |
+            >>> # +------+-----------+-----+      +-----+-----+-----+
+            >>> # |[1]   | ["a"]     | 1.0 |      | 1   | "a" | 1.0 |
+            >>> # +------+-----------+-----+  ->  +-----+-----+-----+
+            >>> # |[2, 3]| ["b", "c"]| 2.0 |      | 2   | "b" | 2.0 |
+            >>> # +------+-----------+-----+      +-----+-----+-----+
+            >>> #                                 | 3   | "c" | 2.0 |
+            >>> #                                 +-----+-----+-----+
+
         Args:
             *columns (ColumnInputType): columns to explode
 
@@ -666,7 +685,7 @@ class DataFrame:
         exprs_to_explode = self.__column_input_to_expression(columns)
         explode_op = logical_plan.Explode(
             self._plan,
-            ExpressionList([e._explode() for e in exprs_to_explode]),
+            exprs_to_explode,
         )
         return DataFrame(explode_op)
 

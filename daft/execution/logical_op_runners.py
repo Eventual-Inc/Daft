@@ -16,7 +16,6 @@ from daft.expressions import ColID
 from daft.filesystem import get_filesystem_from_path
 from daft.logical.logical_plan import (
     Coalesce,
-    Explode,
     FileWrite,
     Filter,
     GlobalLimit,
@@ -24,6 +23,7 @@ from daft.logical.logical_plan import (
     LocalAggregate,
     LocalLimit,
     LogicalPlan,
+    MapPartition,
     PartitionScheme,
     Projection,
     Repartition,
@@ -81,8 +81,8 @@ class LogicalPartitionOpRunner:
             return self._handle_join(inputs, node, partition_id=partition_id)
         elif isinstance(node, FileWrite):
             return self._handle_file_write(inputs, node, partition_id=partition_id)
-        elif isinstance(node, Explode):
-            return self._handle_explode(inputs, node, partition_id=partition_id)
+        elif isinstance(node, MapPartition):
+            return self._handle_map_partition(inputs, node, partition_id=partition_id)
         else:
             raise NotImplementedError(f"{type(node)} not implemented")
 
@@ -197,10 +197,12 @@ class LogicalPartitionOpRunner:
             partition_id=partition_id,
         )
 
-    def _handle_explode(self, inputs: Dict[int, vPartition], explode: Explode, partition_id: int) -> vPartition:
-        child_id = explode._children()[0].id()
+    def _handle_map_partition(
+        self, inputs: Dict[int, vPartition], map_partition: MapPartition, partition_id: int
+    ) -> vPartition:
+        child_id = map_partition._children()[0].id()
         prev_partition = inputs[child_id]
-        return prev_partition.explode(explode._columns)
+        return map_partition.eval_partition(prev_partition)
 
 
 ReduceType = TypeVar("ReduceType")
