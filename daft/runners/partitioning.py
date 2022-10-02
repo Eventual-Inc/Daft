@@ -19,7 +19,6 @@ from uuid import uuid4
 
 import numpy as np
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 from pyarrow import dataset as pada
 
@@ -319,7 +318,7 @@ class vPartition:
                     )
 
             exploded_cols[col_id] = PyListTile(
-                column_id=tile.column_id,  # TODO: should this be a new column_id?
+                column_id=tile.column_id,
                 column_name=tile.column_name,
                 partition_id=tile.partition_id,
                 block=exploded_block,
@@ -336,15 +335,14 @@ class vPartition:
             )
 
         # Use the `found_list_lengths` to generate an array of indices to take from other columns (e.g. [0, 0, 1, 1, 1, 2, ...])
-        list_length_cumsum = found_list_lengths.to_polars().cumsum()
-        take_indices = pl.Series([0 for _ in range(list_length_cumsum[-1])])
-        take_indices = take_indices.set_at_idx(
-            pl.Series([0], dtype=list_length_cumsum.dtype).append(list_length_cumsum[:-1]), 1
-        )
+        list_length_cumsum = found_list_lengths.to_numpy().cumsum()
+        take_indices = np.zeros(list_length_cumsum[-1], dtype="int64")
+        take_indices[0] = 1
+        take_indices[list_length_cumsum[:-1]] = 1
         take_indices = take_indices.cumsum()
         take_indices = take_indices - 1
 
-        repeated_partition = partition_to_repeat.take(DataBlock.make_block(take_indices.to_arrow()))
+        repeated_partition = partition_to_repeat.take(DataBlock.make_block(take_indices))
         return vPartition({**exploded_cols, **repeated_partition.columns}, partition_id=self.partition_id)
 
     def join(
