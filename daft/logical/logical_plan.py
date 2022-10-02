@@ -4,13 +4,15 @@ import itertools
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Generic, List, Optional, Tuple, TypeVar, Union
 
 from daft.datasources import SourceInfo, StorageType
 from daft.expressions import ColumnExpression, Expression
 from daft.internal.treenode import TreeNode
+from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
+from daft.runners.partitioning import vPartition
 from daft.types import ExpressionType
 
 
@@ -308,6 +310,60 @@ class Sort(UnaryNode):
 
     def rebuild(self) -> LogicalPlan:
         return Sort(input=self._children()[0].rebuild(), sort_by=self._sort_by.unresolve(), descending=self._descending)
+
+
+TMapPartitionOp = TypeVar("TMapPartitionOp", bound=MapPartitionOp)
+
+
+class MapPartition(UnaryNode, Generic[TMapPartitionOp]):
+    def __init__(self, input: LogicalPlan, map_partition_op: TMapPartitionOp) -> None:
+        self._map_partition_op = map_partition_op
+        super().__init__(
+            self._map_partition_op.get_output_schema(input.schema()),
+            partition_spec=input.partition_spec(),
+            op_level=OpLevel.PARTITION,
+        )
+        self._register_child(input)
+
+    def __repr__(self) -> str:
+        return f"MapPartition\n\top={self._map_partition_op}"
+
+    def resource_request(self) -> ResourceRequest:
+        return self._map_partition_op.resource_request()
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, MapPartition)
+            and self.schema() == other.schema()
+            and self._map_partition_op == other._map_partition_op
+        )
+
+    def eval_partition(self, partition: vPartition) -> vPartition:
+        return self._map_partition_op.run(partition)
+
+
+class Explode(MapPartition[ExplodeOp]):
+    def __init__(self, input: LogicalPlan, explode_expressions: ExpressionList):
+        explode_expressions_resolved = ExpressionList([e._explode() for e in explode_expressions]).resolve(
+            input.schema()
+        )
+        map_partition_op = ExplodeOp(explode_columns=explode_expressions_resolved)
+        super().__init__(
+            input,
+            map_partition_op,
+        )
+
+    def required_columns(self) -> ExpressionList:
+        return self._map_partition_op.explode_columns.required_columns()
+
+    def rebuild(self) -> LogicalPlan:
+        return Explode(
+            self._children()[0].rebuild(),
+            self._map_partition_op.explode_columns.unresolve(),
+        )
+
+    def copy_with_new_input(self, new_input: UnaryNode) -> Explode:
+        return Explode(new_input, explode_expressions=self._map_partition_op.explode_columns)
 
 
 class LocalLimit(UnaryNode):

@@ -240,21 +240,16 @@ class Expression(TreeNode["Expression"]):
     __pos__ = partialmethod(_unary_op, OperatorEnum.POSITIVE)
     __abs__ = partialmethod(_unary_op, OperatorEnum.ABS)
 
+    # Symbolic - not used during evaluation but useful for type resolution on the Expression
     _sum = partialmethod(_unary_op, OperatorEnum.SUM)
     _count = partialmethod(_unary_op, OperatorEnum.COUNT)
     _mean = partialmethod(_unary_op, OperatorEnum.MEAN)
     _min = partialmethod(_unary_op, OperatorEnum.MIN)
     _max = partialmethod(_unary_op, OperatorEnum.MAX)
+    _explode = partialmethod(_unary_op, OperatorEnum.EXPLODE)
+
     # Logical
     __invert__ = partialmethod(_unary_op, OperatorEnum.INVERT)
-
-    # # function
-    # def map(self, func: Callable) -> Expression:
-    #     return self._unary_op(
-    #         # TODO(jay): Figure out how to do this operator correctly, we use a placeholder here for now
-    #         None,  # type: ignore
-    #         func,
-    #     )
 
     # BinaryOps
 

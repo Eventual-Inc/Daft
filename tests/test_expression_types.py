@@ -62,13 +62,14 @@ OPS = {
     "IF_ELSE": lambda ex1, ex2, ex3: ex1.if_else(ex2, ex3),
 }
 
-# These ops do not have Expression methods and are exluded from this test
+# These ops are not evaluated via expression evaluation and are exluded from this test
 EXCLUDE_OPS = {
     "SUM",
     "MEAN",
     "MIN",
     "MAX",
     "COUNT",
+    "EXPLODE",
 }
 
 # Mapping between ExpressionTypes and (expected_numpy_dtypes, expected_python_types)

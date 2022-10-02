@@ -83,7 +83,9 @@ class ExpressionList(Iterable[ExpressionType]):
     def __repr__(self) -> str:
         return repr(self.exprs)
 
-    def union(self, other: ExpressionList, rename_dup: Optional[str] = None, other_override: bool = False):
+    def union(
+        self, other: ExpressionList, rename_dup: Optional[str] = None, other_override: bool = False
+    ) -> ExpressionList:
         """Unions two schemas together
 
         Note: only one of rename_dup or other_override can be specified as the behavior when resolving naming conflicts.

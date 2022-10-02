@@ -11,6 +11,7 @@ from typing import (
     Callable,
     ClassVar,
     Generic,
+    Iterable,
     Iterator,
     List,
     Optional,
@@ -19,6 +20,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 import numpy as np
@@ -369,6 +371,18 @@ class DataBlock(Generic[ArrType]):
 
         return to_rtn
 
+    @abstractmethod
+    def list_explode(self) -> Tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
+        """Treats each row as a list and flattens the nested lists. Will throw an error if
+        elements in the block cannot be treated as a list.
+
+        Note: empty lists are flattened into a single `Null` element!
+
+        Returns a tuple `(exploded_block, list_lengths)` where `exploded_block` is the new block with the
+        topmost level of lists flattened, and `list_lengths` is the length of each list element before flattening.
+        """
+        raise NotImplementedError()
+
 
 T = TypeVar("T")
 
@@ -452,6 +466,26 @@ class PyListDataBlock(DataBlock[List[T]]):
         left_keys: List[DataBlock[List[T]]], right_keys: List[DataBlock[List[T]]]
     ) -> Tuple[DataBlock[List[T]], DataBlock[List[T]]]:
         raise NotImplementedError()
+
+    def list_explode(self) -> Tuple[PyListDataBlock, DataBlock[ArrowArrType]]:
+        lengths = []
+        exploded = []
+        for item in self.data:
+            length = 0
+            if item is not None:
+                for nested_element in cast(Iterable, item):
+                    length += 1
+                    exploded.append(nested_element)
+            # empty lists or Null elements explode into a `Null`
+            if length == 0:
+                exploded.append(None)
+                lengths.append(1)
+            else:
+                lengths.append(length)
+        return (
+            PyListDataBlock(exploded),
+            DataBlock.make_block(pa.array(lengths)),
+        )
 
 
 ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
@@ -673,6 +707,20 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
         return DataBlock.make_block(left_index), DataBlock.make_block(right_index)
 
+    def list_explode(self) -> Tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
+        """Treats each row as a list and flattens the nested lists. Will throw an error if
+        elements in the block cannot be treated as a list.
+        """
+        data = self.data
+        data = pac.if_else(pac.equal(pac.list_value_length(data), pa.scalar(0)), pa.scalar([None], data.type), data)
+        data = pac.if_else(data.is_null(), pa.scalar([None], data.type), data)
+        exploded = pac.list_flatten(data)
+        list_lengths = pac.list_value_length(data)
+        return (
+            DataBlock.make_block(exploded),
+            DataBlock.make_block(list_lengths),
+        )
+
 
 def arrow_mod(arr, m):
     if isinstance(m, pa.Scalar):
@@ -728,11 +776,6 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     NEGATE = _arr_unary_op(pac.negate)
     POSITIVE = ArrowDataBlock.identity
     ABS = _arr_unary_op(pac.abs)
-    SUM = ArrowDataBlock.identity
-    MEAN = ArrowDataBlock.identity
-    MIN = ArrowDataBlock.identity
-    MAX = ArrowDataBlock.identity
-    COUNT = ArrowDataBlock.identity
     INVERT = _arr_unary_op(pac.invert)
     ADD = _arr_bin_op(pac.add)
     SUB = _arr_bin_op(pac.subtract)
@@ -759,7 +802,17 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     DT_DAY_OF_WEEK = _arr_unary_op(pac.day_of_week)
     IS_NULL = _arr_unary_op(pac.is_null)
     IS_NAN = _arr_unary_op(pac.is_nan)
+    EXPLODE = _arr_unary_op(pac.list_flatten)
     IF_ELSE = _arr_ternary_op(pac.if_else)
+
+    # Placeholders: these change the cardinality of the block and should never be evaluated from the Evaluator
+    # They exist on the Evaluator only to provide correct typing information
+    SUM = ArrowDataBlock.identity
+    MEAN = ArrowDataBlock.identity
+    MIN = ArrowDataBlock.identity
+    MAX = ArrowDataBlock.identity
+    COUNT = ArrowDataBlock.identity
+    EXPLODE = ArrowDataBlock.identity
 
 
 ArrowDataBlock.evaluator = ArrowEvaluator
@@ -803,11 +856,6 @@ class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
     NEGATE = make_map_unary(operator.neg)
     POSITIVE = PyListDataBlock.identity
     ABS = make_map_unary(operator.abs)
-    SUM = PyListDataBlock.identity
-    MEAN = PyListDataBlock.identity
-    MIN = PyListDataBlock.identity
-    MAX = PyListDataBlock.identity
-    COUNT = PyListDataBlock.identity
     INVERT = make_map_unary(operator.invert)
     ADD = make_map_binary(operator.add)
     SUB = make_map_binary(operator.sub)
@@ -827,6 +875,15 @@ class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
 
     IS_NULL = make_map_unary(pylist_is_none)
     IF_ELSE = pylist_if_else
+
+    # Placeholders: these change the cardinality of the block and should never be evaluated from the Evaluator
+    # They exist on the Evaluator only to provide correct typing information
+    SUM = PyListDataBlock.identity
+    MEAN = PyListDataBlock.identity
+    MIN = PyListDataBlock.identity
+    MAX = PyListDataBlock.identity
+    COUNT = PyListDataBlock.identity
+    EXPLODE = PyListDataBlock.identity
 
     # Unary operations that should never run on a PyListDataBlock because they are represented by
     # Arrow primitives and should always be housed in an ArrowDataBlock

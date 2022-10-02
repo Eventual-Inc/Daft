@@ -648,6 +648,53 @@ class DataFrame:
         )
         return DataFrame(join_op)
 
+    def explode(self, *columns: ColumnInputType) -> DataFrame:
+        """Explodes a List column, where every element in each row's List becomes its own row, and all
+        other columns in the DataFrame are duplicated across rows.
+
+        If multiple columns are specified, each row must contain the same number of
+        items in each specified column.
+
+        Exploding Null values or empty lists will create a single Null entry (see example below).
+
+        Example:
+            >>> df = DataFrame.from_pydict({
+            >>>     "x": [[1], [2, 3]],
+            >>>     "y": [["a"], ["b", "c"]],
+            >>>     "z": [1.0, 2.0],
+            >>> ]})
+            >>>
+            >>> df.explode(col("x"), col("y"))
+            >>>
+            >>> # +------+-----------+-----+      +------+------+-----+
+            >>> # | x    | y         | z   |      |  x   |  y   | z   |
+            >>> # +------+-----------+-----+      +------+------+-----+
+            >>> # |[1]   | ["a"]     | 1.0 |      |  1   | "a"  | 1.0 |
+            >>> # +------+-----------+-----+  ->  +------+------+-----+
+            >>> # |[2, 3]| ["b", "c"]| 2.0 |      |  2   | "b"  | 2.0 |
+            >>> # +------+-----------+-----+      +------+------+-----+
+            >>> # |[]    | []        | 3.0 |      |  3   | "c"  | 2.0 |
+            >>> # +------+-----------+-----+      +------+------+-----+
+            >>> # |None  | None      | 4.0 |      | None | None | 3.0 |
+            >>> # +------+-----------+-----+      +------+------+-----+
+            >>> #                                 | None | None | 4.0 |
+            >>> #                                 +------+------+-----+
+
+        Args:
+            *columns (ColumnInputType): columns to explode
+
+        Returns:
+            DataFrame: DataFrame with exploded column
+        """
+        if len(columns) < 1:
+            raise ValueError("At least one column to explode must be specified")
+        exprs_to_explode = self.__column_input_to_expression(columns)
+        explode_op = logical_plan.Explode(
+            self._plan,
+            exprs_to_explode,
+        )
+        return DataFrame(explode_op)
+
     def _agg(self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionList] = None) -> DataFrame:
         assert len(to_agg) > 0, "no columns to aggregate."
         exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))

@@ -23,6 +23,7 @@ from daft.logical.logical_plan import (
     LocalAggregate,
     LocalLimit,
     LogicalPlan,
+    MapPartition,
     PartitionScheme,
     Projection,
     Repartition,
@@ -80,6 +81,8 @@ class LogicalPartitionOpRunner:
             return self._handle_join(inputs, node, partition_id=partition_id)
         elif isinstance(node, FileWrite):
             return self._handle_file_write(inputs, node, partition_id=partition_id)
+        elif isinstance(node, MapPartition):
+            return self._handle_map_partition(inputs, node, partition_id=partition_id)
         else:
             raise NotImplementedError(f"{type(node)} not implemented")
 
@@ -193,6 +196,13 @@ class LogicalPartitionOpRunner:
             columns,
             partition_id=partition_id,
         )
+
+    def _handle_map_partition(
+        self, inputs: Dict[int, vPartition], map_partition: MapPartition, partition_id: int
+    ) -> vPartition:
+        child_id = map_partition._children()[0].id()
+        prev_partition = inputs[child_id]
+        return map_partition.eval_partition(prev_partition)
 
 
 ReduceType = TypeVar("ReduceType")
