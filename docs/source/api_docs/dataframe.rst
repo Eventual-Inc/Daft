@@ -11,6 +11,7 @@ Construction
 .. automethod:: daft.DataFrame.from_csv
 .. automethod:: daft.DataFrame.from_json
 .. automethod:: daft.DataFrame.from_parquet
+.. automethod:: daft.DataFrame.from_files
 
 .. _df-memory-construction-api:
 
@@ -29,6 +30,7 @@ Manipulating Columns
 .. _df-with-column:
 .. automethod:: daft.DataFrame.with_column
 .. automethod:: daft.DataFrame.exclude
+.. automethod:: daft.DataFrame.explode
 
 Filtering Rows
 **************

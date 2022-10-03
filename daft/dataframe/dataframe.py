@@ -335,6 +335,9 @@ class DataFrame:
     def from_files(cls, path: str) -> DataFrame:
         """Creates a DataFrame from files in storage, where each file is one row of the DataFrame
 
+        Example:
+            >>> df = DataFrame.from_files("/path/to/files/*.jpeg")
+
         Args:
             path (str): path to files on disk (allows wildcards)
 
