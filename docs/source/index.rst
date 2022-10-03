@@ -39,6 +39,7 @@ View our :doc:`api_docs` for technical documentation of Daft's functions and cla
    learn
    api_docs
    dataframe_comparison
+   release_notes
 
 .. Indices and tables
 .. ==================
