@@ -33,12 +33,11 @@ class TreeNode(Generic[TreeNodeType]):
         made_change = False
         while continue_looping:
             for child in root._children():
-                fn_list = rule.dispatch_fn(root, child)
+                fn = rule.dispatch_fn(root, child)
 
-                if fn_list is None:
+                if fn is None:
                     continue
-
-                maybe_new_root = rule.apply(root, child)
+                maybe_new_root = fn(root, child)
 
                 if maybe_new_root is not None:
                     root = maybe_new_root

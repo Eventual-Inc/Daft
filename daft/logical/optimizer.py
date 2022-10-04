@@ -106,10 +106,11 @@ class PushDownPredicates(Rule[LogicalPlan]):
 class PruneColumns(Rule[LogicalPlan]):
     def __init__(self) -> None:
         super().__init__()
-        self.register_fn(Projection, Projection, self._projection_projection)
-        self.register_fn(Projection, LocalAggregate, self._projection_aggregate)
-        self.register_fn(LocalAggregate, LogicalPlan, self._aggregate_logical_plan)
+
         self.register_fn(Projection, LogicalPlan, self._projection_logical_plan)
+        self.register_fn(Projection, Projection, self._projection_projection, override=True)
+        self.register_fn(Projection, LocalAggregate, self._projection_aggregate, override=True)
+        self.register_fn(LocalAggregate, LogicalPlan, self._aggregate_logical_plan)
 
     def _projection_projection(self, parent: Projection, child: Projection) -> Optional[Projection]:
         parent_required_set = parent.required_columns().to_id_set()
@@ -193,15 +194,20 @@ class DropRepartition(Rule[LogicalPlan]):
     def __init__(self) -> None:
         super().__init__()
         self.register_fn(Repartition, LogicalPlan, self._drop_repartition_if_same_spec)
-        self.register_fn(Repartition, Repartition, self._drop_double_repartition)
+        self.register_fn(Repartition, Repartition, self._drop_double_repartition, override=True)
 
     def _drop_repartition_if_same_spec(self, parent: Repartition, child: LogicalPlan) -> Optional[LogicalPlan]:
         if (
             parent.partition_spec() == child.partition_spec()
             and parent.partition_spec().scheme != PartitionScheme.RANGE
-        ) or ((parent.num_partitions() == 1 and child.num_partitions() == 1)):
-            logger.debug(f"Dropping: {parent}")
+        ):
+            logger.debug(f"Dropping Repartition due to same spec: {parent} ")
             return child
+
+        if parent.num_partitions() == 1 and child.num_partitions() == 1:
+            logger.debug(f"Dropping Repartition due to single partition: {parent}")
+            return child
+
         return None
 
     def _drop_double_repartition(self, parent: Repartition, child: Repartition) -> Repartition:
@@ -248,9 +254,9 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
 class FoldProjections(Rule[LogicalPlan]):
     def __init__(self) -> None:
         super().__init__()
-        self.register_fn(Projection, Projection, self._push_down_predicates_into_scan)
+        self.register_fn(Projection, Projection, self._drop_double_projection)
 
-    def _push_down_predicates_into_scan(self, parent: Projection, child: Projection) -> Optional[Projection]:
+    def _drop_double_projection(self, parent: Projection, child: Projection) -> Optional[Projection]:
         required_columns = parent._projection.required_columns()
         grandchild = child._children()[0]
         grandchild_output = grandchild.schema()

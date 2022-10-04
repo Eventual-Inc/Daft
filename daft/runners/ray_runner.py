@@ -219,17 +219,17 @@ class RayRunner(Runner):
                     "SinglePassPushDowns",
                     Once,
                     [
-                        PushDownPredicates(),
-                        FoldProjections(),
                         DropRepartition(),
+                        PushDownPredicates(),
                         PruneColumns(),
+                        FoldProjections(),
                         PushDownClausesIntoScan(),
                     ],
                 ),
                 RuleBatch(
-                    "PushDownLimits",
+                    "PushDownLimitsAndRepartitions",
                     FixedPointPolicy(3),
-                    [PushDownLimit()],
+                    [PushDownLimit(), DropRepartition()],
                 ),
             ]
         )

@@ -151,24 +151,24 @@ class PyRunner(Runner):
                     "SinglePassPushDowns",
                     Once,
                     [
-                        PushDownPredicates(),
-                        FoldProjections(),
                         DropRepartition(),
+                        PushDownPredicates(),
                         PruneColumns(),
+                        FoldProjections(),
                         PushDownClausesIntoScan(),
                     ],
                 ),
                 RuleBatch(
-                    "PushDownLimits",
+                    "PushDownLimitsAndRepartitions",
                     FixedPointPolicy(3),
-                    [PushDownLimit()],
+                    [PushDownLimit(), DropRepartition()],
                 ),
             ]
         )
 
     def run(self, plan: LogicalPlan) -> PartitionSet:
-        plan = self._optimizer.optimize(plan)
-        exec_plan = ExecutionPlan.plan_from_logical(plan)
+        optimized_plan = self._optimizer.optimize(plan)
+        exec_plan = ExecutionPlan.plan_from_logical(optimized_plan)
         result_partition_set: PartitionSet
 
         # Check that the local machine has sufficient resources available for execution
