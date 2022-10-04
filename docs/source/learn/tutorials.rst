@@ -6,7 +6,7 @@ Generating images from text with Mini DALL-E
 
 In this series of tutorials, we will be exploring using Daft to build a model that can generate images from text using the Mini DALL-E model. We will explore how to scale this up with GPUs and Ray, and eventually deploy our model as a HTTP service that can serve incoming requests.
 
-1. `Running on GPUs <https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/notebooks/tutorials/text_to_image/text_to_image_generation.ipynb>`_
+1. `Running on GPUs <https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb>`_
 2. Scaling up in the cloud with Ray **[Coming Soon]**
 3. Building a HTTP service **[Coming Soon]**
 
