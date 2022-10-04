@@ -3,14 +3,12 @@ import contextlib
 import math
 import os
 import time
-from typing import Callable
+from typing import Callable, Set
 
 from loguru import logger
-from sentry_sdk import start_transaction
 
 from benchmarking.tpch import answers, data_generation
 from daft import DataFrame
-from daft.context import get_context
 
 
 @contextlib.contextmanager
@@ -28,15 +26,18 @@ def get_df_with_parquet_folder(parquet_folder: str) -> Callable[[str], DataFrame
     return _get_df
 
 
-def run_all_benchmarks(parquet_folder):
+def run_all_benchmarks(parquet_folder: str, skip_questions: Set[int]):
     get_df = get_df_with_parquet_folder(parquet_folder)
 
     for i in range(1, 11):
+
+        if i in skip_questions:
+            logger.warning(f"Skipping TPC-H q{i}")
+            continue
+
         answer = getattr(answers, f"q{i}")
         daft_df = answer(get_df)
-        with start_transaction(op="task", name=f"tpch_q{i}:runner={get_context().runner_config.name.upper()}"), timer(
-            i
-        ):
+        with timer(i):
             daft_df.to_pandas()
 
 
@@ -65,10 +66,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_parts", default=None, help="Number of parts to generate (defaults to 1 part per GB)", type=int
     )
+    parser.add_argument("--skip_questions", action="append", default=[], help="Questions to skip", type=int)
     args = parser.parse_args()
     num_parts = math.ceil(args.scale_factor) if args.num_parts is None else args.num_parts
 
     # Generate Parquet data, or skip if data is cached on disk
     parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
 
-    run_all_benchmarks(parquet_folder)
+    run_all_benchmarks(parquet_folder, skip_questions=set(args.skip_questions))
