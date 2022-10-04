@@ -218,16 +218,16 @@ class DropRepartition(Rule[LogicalPlan]):
 class PushDownClausesIntoScan(Rule[LogicalPlan]):
     def __init__(self) -> None:
         super().__init__()
-        self.register_fn(Filter, Scan, self._push_down_predicates_into_scan)
+        # self.register_fn(Filter, Scan, self._push_down_predicates_into_scan)
         self.register_fn(Projection, Scan, self._push_down_projections_into_scan)
 
-    def _push_down_predicates_into_scan(self, parent: Filter, child: Scan) -> Scan:
-        new_predicate = parent._predicate.union(child._predicate, rename_dup="right.")
-        child_schema = child.schema()
-        assert new_predicate.required_columns().to_id_set().issubset(child_schema.to_id_set())
-        return Scan(
-            schema=child._schema, predicate=new_predicate, columns=child_schema.names, source_info=child._source_info
-        )
+    # def _push_down_predicates_into_scan(self, parent: Filter, child: Scan) -> Scan:
+    #     new_predicate = parent._predicate.union(child._predicate, rename_dup="right.")
+    #     child_schema = child.schema()
+    #     assert new_predicate.required_columns().to_id_set().issubset(child_schema.to_id_set())
+    #     return Scan(
+    #         schema=child._schema, predicate=new_predicate, columns=child_schema.names, source_info=child._source_info
+    #     )
 
     def _push_down_projections_into_scan(self, parent: Projection, child: Scan) -> Optional[LogicalPlan]:
         required_columns = parent.schema().required_columns()
@@ -241,11 +241,8 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             columns=required_columns.names,
             source_info=child._source_info,
         )
-        projection_required = any(e.has_call() for e in parent._projection)
-        if projection_required:
-            return Projection(new_scan, parent._projection)
-        else:
-            return new_scan
+
+        return Projection(new_scan, parent._projection)
 
 
 class FoldProjections(Rule[LogicalPlan]):

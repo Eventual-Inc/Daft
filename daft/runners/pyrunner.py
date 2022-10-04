@@ -17,6 +17,7 @@ from daft.logical.optimizer import (
     DropRepartition,
     FoldProjections,
     PruneColumns,
+    PushDownClausesIntoScan,
     PushDownLimit,
     PushDownPredicates,
 )
@@ -149,7 +150,13 @@ class PyRunner(Runner):
                 RuleBatch(
                     "SinglePassPushDowns",
                     Once,
-                    [PushDownPredicates(), FoldProjections(), DropRepartition(), PruneColumns()],
+                    [
+                        PushDownPredicates(),
+                        FoldProjections(),
+                        DropRepartition(),
+                        PruneColumns(),
+                        PushDownClausesIntoScan(),
+                    ],
                 ),
                 RuleBatch(
                     "PushDownLimits",
