@@ -90,7 +90,6 @@ def test_tpch_q1(tmp_path, check_answer, get_df):
 
 def test_tpch_q2(tmp_path, check_answer, get_df):
     daft_df = answers.q2(get_df)
-    # Multicol sorts not implemented yet
     with start_transaction(op="task", name=f"tpch_q2:runner={get_context().runner_config.name.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 2, tmp_path)
@@ -98,8 +97,6 @@ def test_tpch_q2(tmp_path, check_answer, get_df):
 
 def test_tpch_q3(tmp_path, check_answer, get_df):
     daft_df = answers.q3(get_df)
-
-    # Multicol sorts not implemented yet
     with start_transaction(op="task", name=f"tpch_q3:runner={get_context().runner_config.name.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 3, tmp_path)
@@ -116,6 +113,7 @@ def test_tpch_q4(tmp_path, check_answer, get_df):
 
 def test_tpch_q5(tmp_path, check_answer, get_df):
     daft_df = answers.q5(get_df)
+    daft_df._plan.to_dot_file("q5.dot")
 
     with start_transaction(op="task", name=f"tpch_q5:runner={get_context().runner_config.name.upper()}"):
         daft_pd_df = daft_df.to_pandas()
@@ -133,7 +131,6 @@ def test_tpch_q6(tmp_path, check_answer, get_df):
 def test_tpch_q7(tmp_path, check_answer, get_df):
     daft_df = answers.q7(get_df)
 
-    # Multicol sorts not implemented yet
     with start_transaction(op="task", name=f"tpch_q7:runner={get_context().runner_config.name.upper()}"):
         daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 7, tmp_path)

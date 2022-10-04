@@ -537,10 +537,11 @@ class LocalAggregate(UnaryNode):
         cols_to_agg = ExpressionList([e for e, _ in agg]).resolve(input.schema())
         schema = cols_to_agg.to_column_expressions()
         self._group_by = group_by
-
+        self._required_cols = cols_to_agg.required_columns()
         if group_by is not None:
             self._group_by = group_by.resolve(input.schema())
             schema = self._group_by.union(schema)
+            self._required_cols = self._group_by.union(self._required_cols)
 
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
@@ -560,7 +561,7 @@ class LocalAggregate(UnaryNode):
         raise NotImplementedError()
 
     def required_columns(self) -> ExpressionList:
-        raise NotImplementedError()
+        return self._required_cols
 
     def _local_eq(self, other: Any) -> bool:
         return (

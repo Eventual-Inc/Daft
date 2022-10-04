@@ -17,6 +17,7 @@ from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import (
     DropRepartition,
     FoldProjections,
+    PruneColumns,
     PushDownLimit,
     PushDownPredicates,
 )
@@ -216,7 +217,7 @@ class RayRunner(Runner):
                 RuleBatch(
                     "SinglePassPushDowns",
                     Once,
-                    [PushDownPredicates(), FoldProjections(), DropRepartition()],
+                    [PushDownPredicates(), FoldProjections(), DropRepartition(), PruneColumns()],
                 ),
                 RuleBatch(
                     "PushDownLimits",

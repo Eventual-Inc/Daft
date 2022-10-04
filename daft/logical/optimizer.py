@@ -2,11 +2,14 @@ from typing import Optional, Set, Type
 
 from loguru import logger
 
+from daft.expressions import ColID
 from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
     Coalesce,
     Filter,
     GlobalLimit,
+    Join,
+    LocalAggregate,
     LocalLimit,
     LogicalPlan,
     PartitionScheme,
@@ -27,6 +30,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
         self.register_fn(Filter, Projection, self._filter_through_projection)
         for op in self._supported_unary_nodes:
             self.register_fn(Filter, op, self._filter_through_unary_node)
+        self.register_fn(Filter, Join, self._filter_through_join)
 
     def _filter_through_projection(self, parent: Filter, child: Projection) -> Optional[LogicalPlan]:
         filter_predicate = parent._predicate
@@ -59,9 +63,102 @@ class PushDownPredicates(Rule[LogicalPlan]):
         logger.debug(f"Pushing Filter {parent} through {child}")
         return child.copy_with_new_input(Filter(grandchild, parent._predicate))
 
+    def _filter_through_join(self, parent: Filter, child: Join) -> Optional[LogicalPlan]:
+        left = child._children()[0]
+        right = child._children()[1]
+        left_ids = left.schema().to_id_set()
+        right_ids = right.schema().to_id_set()
+        filter_predicate = parent._predicate
+        can_not_push_down = []
+        left_push_down = []
+        right_push_down = []
+        for pred in filter_predicate:
+            id_set = {e.get_id() for e in pred.required_columns()}
+            if id_set.issubset(left_ids):
+                left_push_down.append(pred)
+            elif id_set.issubset(right_ids):
+                right_push_down.append(pred)
+            else:
+                can_not_push_down.append(pred)
+
+        if len(left_push_down) == 0 and len(right_push_down) == 0:
+            logger.debug(f"Could not push down Filter predicates into Join")
+            return None
+
+        if len(left_push_down) > 0:
+            logger.debug(f"Pushing down Filter predicate left side: {left_push_down} into Join")
+            left = Filter(left, predicate=ExpressionList(left_push_down))
+        if len(right_push_down) > 0:
+            logger.debug(f"Pushing down Filter predicate right side: {right_push_down} into Join")
+            right = Filter(right, predicate=ExpressionList(right_push_down))
+
+        new_join = Join(left, right, left_on=child._left_on, right_on=child._right_on, how=child._how)
+        if len(can_not_push_down) == 0:
+            return new_join
+        else:
+            return Filter(new_join, ExpressionList(can_not_push_down))
+
     @property
     def _supported_unary_nodes(self) -> Set[Type[UnaryNode]]:
         return {Sort, Repartition, Coalesce}
+
+
+class PruneColumns(Rule[LogicalPlan]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_fn(Projection, Projection, self._projection_projection)
+        self.register_fn(Projection, LocalAggregate, self._projection_aggregate)
+        self.register_fn(LocalAggregate, LogicalPlan, self._aggregate_logical_plan)
+
+    def _projection_projection(self, parent: Projection, child: Projection) -> Optional[Projection]:
+        parent_required_set = parent.required_columns().to_id_set()
+        child_output_set = child.schema().to_id_set()
+        if child_output_set.issubset(parent_required_set):
+            return None
+
+        logger.debug(f"Pruning Columns: {child_output_set - parent_required_set} in projection projection")
+
+        new_child_exprs = [e for e in child.schema() if e.get_id() in parent_required_set]
+        grandchild = child._children()[0]
+        return Projection(
+            input=Projection(grandchild, projection=ExpressionList(new_child_exprs)), projection=parent._projection
+        )
+
+    def _projection_aggregate(self, parent: Projection, child: LocalAggregate) -> Optional[Projection]:
+        parent_required_set = parent.required_columns().to_id_set()
+        agg_op_pairs = child._agg
+        agg_ids = set([e.get_id() for e, _ in agg_op_pairs])
+        if agg_ids.issubset(parent_required_set):
+            return None
+
+        new_agg_pairs = [(e, op) for e, op in agg_op_pairs if e.get_id() in parent_required_set]
+        grandchild = child._children()[0]
+        if len(new_agg_pairs) == 0:
+            return None
+
+        logger.debug(f"Pruning Columns:  {agg_ids - parent_required_set} in projection aggregate")
+        return Projection(
+            input=LocalAggregate(input=grandchild, agg=new_agg_pairs, group_by=child._group_by),
+            projection=parent._projection,
+        )
+
+    def _aggregate_logical_plan(self, parent: LocalAggregate, child: LogicalPlan) -> Optional[LocalAggregate]:
+        parent_required_set = parent.required_columns().to_id_set()
+        child_output_set = child.schema().to_id_set()
+        if child_output_set.issubset(parent_required_set):
+            return None
+
+        logger.debug(f"Pruning Columns: {child_output_set - parent_required_set} in aggregate logical plan")
+
+        return LocalAggregate(
+            self._create_pruning_child(child, parent_required_set), agg=parent._agg, group_by=parent._group_by
+        )
+
+    def _create_pruning_child(self, child: LogicalPlan, parent_id_set: Set[ColID]) -> LogicalPlan:
+        child_ids = child.schema().to_id_set()
+        if child_ids.issubset(parent_id_set):
+            return child
+        return Projection(child, projection=ExpressionList([e for e in child.schema() if e.get_id() in parent_id_set]))
 
 
 class CombineFilters(Rule[LogicalPlan]):
