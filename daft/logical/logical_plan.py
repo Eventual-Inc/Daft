@@ -703,10 +703,25 @@ class Join(BinaryNode):
             filtered_right = [e for e in right.schema() if e.get_id() not in right_id_set]
             schema = left.schema().union(ExpressionList(filtered_right), rename_dup="right.")
 
-        left = Repartition(left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH)
-        right = Repartition(
+        left_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._left_on)
+        right_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._right_on)
+
+        new_left = Repartition(
+            left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
+        )
+
+        if num_partitions == 1 and left.num_partitions() == 1:
+            left = left
+        elif left.partition_spec() != left_pspec:
+            left = new_left
+
+        new_right = Repartition(
             right, partition_by=self._right_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
         )
+        if num_partitions == 1 and right.num_partitions() == 1:
+            right = right
+        elif right.partition_spec() != right_pspec:
+            right = new_right
 
         super().__init__(
             schema.to_column_expressions(), partition_spec=left.partition_spec(), op_level=OpLevel.PARTITION
