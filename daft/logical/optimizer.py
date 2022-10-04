@@ -112,7 +112,7 @@ class PruneColumns(Rule[LogicalPlan]):
         self.register_fn(Projection, LocalAggregate, self._projection_aggregate, override=True)
         self.register_fn(LocalAggregate, LogicalPlan, self._aggregate_logical_plan)
 
-    def _projection_projection(self, parent: Projection, child: Projection) -> Optional[Projection]:
+    def _projection_projection(self, parent: Projection, child: Projection) -> Optional[LogicalPlan]:
         parent_required_set = parent.required_columns().to_id_set()
         child_output_set = child.schema().to_id_set()
         if child_output_set.issubset(parent_required_set):
@@ -122,11 +122,9 @@ class PruneColumns(Rule[LogicalPlan]):
 
         new_child_exprs = [e for e in child.schema() if e.get_id() in parent_required_set]
         grandchild = child._children()[0]
-        return Projection(
-            input=Projection(grandchild, projection=ExpressionList(new_child_exprs)), projection=parent._projection
-        )
+        return parent.copy_with_new_children([Projection(grandchild, projection=ExpressionList(new_child_exprs))])
 
-    def _projection_aggregate(self, parent: Projection, child: LocalAggregate) -> Optional[Projection]:
+    def _projection_aggregate(self, parent: Projection, child: LocalAggregate) -> Optional[LogicalPlan]:
         parent_required_set = parent.required_columns().to_id_set()
         agg_op_pairs = child._agg
         agg_ids = set([e.get_id() for e, _ in agg_op_pairs])
@@ -140,12 +138,11 @@ class PruneColumns(Rule[LogicalPlan]):
             return None
 
         logger.debug(f"Pruning Columns:  {agg_ids - parent_required_set} in projection aggregate")
-        return Projection(
-            input=LocalAggregate(input=grandchild, agg=new_agg_pairs, group_by=child._group_by),
-            projection=parent._projection,
+        return parent.copy_with_new_children(
+            [LocalAggregate(input=grandchild, agg=new_agg_pairs, group_by=child._group_by)]
         )
 
-    def _aggregate_logical_plan(self, parent: LocalAggregate, child: LogicalPlan) -> Optional[LocalAggregate]:
+    def _aggregate_logical_plan(self, parent: LocalAggregate, child: LogicalPlan) -> Optional[LogicalPlan]:
         parent_required_set = parent.required_columns().to_id_set()
         child_output_set = child.schema().to_id_set()
         if child_output_set.issubset(parent_required_set):
@@ -153,9 +150,7 @@ class PruneColumns(Rule[LogicalPlan]):
 
         logger.debug(f"Pruning Columns: {child_output_set - parent_required_set} in aggregate logical plan")
 
-        return LocalAggregate(
-            self._create_pruning_child(child, parent_required_set), agg=parent._agg, group_by=parent._group_by
-        )
+        return parent.copy_with_new_children([self._create_pruning_child(child, parent_required_set)])
 
     def _projection_logical_plan(self, parent: Projection, child: LogicalPlan) -> Optional[LogicalPlan]:
         if isinstance(child, Projection) or isinstance(child, LocalAggregate):
@@ -210,15 +205,10 @@ class DropRepartition(Rule[LogicalPlan]):
 
         return None
 
-    def _drop_double_repartition(self, parent: Repartition, child: Repartition) -> Repartition:
+    def _drop_double_repartition(self, parent: Repartition, child: Repartition) -> LogicalPlan:
         grandchild = child._children()[0]
         logger.debug(f"Dropping: {child}")
-        return Repartition(
-            grandchild,
-            partition_by=parent._partition_by,
-            num_partitions=parent.num_partitions(),
-            scheme=parent.partition_spec().scheme,
-        )
+        return parent.copy_with_new_children([grandchild])
 
 
 class PushDownClausesIntoScan(Rule[LogicalPlan]):
@@ -248,7 +238,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             source_info=child._source_info,
         )
 
-        return Projection(new_scan, parent._projection)
+        return parent.copy_with_new_children([new_scan])
 
 
 class FoldProjections(Rule[LogicalPlan]):
@@ -256,7 +246,7 @@ class FoldProjections(Rule[LogicalPlan]):
         super().__init__()
         self.register_fn(Projection, Projection, self._drop_double_projection)
 
-    def _drop_double_projection(self, parent: Projection, child: Projection) -> Optional[Projection]:
+    def _drop_double_projection(self, parent: Projection, child: Projection) -> Optional[LogicalPlan]:
         required_columns = parent._projection.required_columns()
         grandchild = child._children()[0]
         grandchild_output = grandchild.schema()
@@ -266,7 +256,7 @@ class FoldProjections(Rule[LogicalPlan]):
 
         if can_skip_child:
             logger.debug(f"Folding: {parent} into {child}")
-            return Projection(grandchild, parent._projection)
+            return parent.copy_with_new_children([grandchild])
         else:
             return None
 
