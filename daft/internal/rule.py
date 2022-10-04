@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Callable, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
 from daft.internal.treenode import TreeNode
@@ -22,23 +23,27 @@ def get_all_subclasses(type: Type) -> List[Type]:
 
 class Rule(Generic[TreeNodeType]):
     def __init__(self) -> None:
-        self._fn_registry: Dict[Tuple[Type[TreeNodeType], Type[TreeNodeType]], RuleFn] = dict()
+        self._fn_registry: Dict[Tuple[Type[TreeNodeType], Type[TreeNodeType]], List[RuleFn]] = defaultdict(list)
 
-    def register_fn(self, parent_type: Type, child_type: Type, fn: RuleFn, override: bool = False) -> None:
+    def register_fn(self, parent_type: Type, child_type: Type, fn: RuleFn) -> None:
         for p_subclass in get_all_subclasses(parent_type):
             for c_subtype in get_all_subclasses(child_type):
                 type_tuple = (p_subclass, c_subtype)
-                if not override:
-                    assert type_tuple not in self._fn_registry
-                self._fn_registry[type_tuple] = fn
+                self._fn_registry[type_tuple].append(fn)
 
-    def dispatch_fn(self, parent: TreeNodeType, child: TreeNodeType) -> Optional[RuleFn]:
+    def dispatch_fn(self, parent: TreeNodeType, child: TreeNodeType) -> Optional[List[RuleFn]]:
         type_tuple = (type(parent), type(child))
+        if type_tuple not in self._fn_registry:
+            return None
         return self._fn_registry.get(type_tuple, None)
 
     def apply(self, parent: TreeNodeType, child: TreeNodeType) -> Optional[TreeNodeType]:
-        fn = self.dispatch_fn(parent, child)
-        if fn is not None:
-            return fn(parent, child)
-        else:
+        fn_list = self.dispatch_fn(parent, child)
+        if fn_list is None:
             return None
+        val: Optional[TreeNodeType] = None
+        for fn in fn_list:
+            val = fn(parent, child)
+            if val is not None:
+                return val  # type: ignore
+        return val

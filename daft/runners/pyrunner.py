@@ -161,7 +161,6 @@ class PyRunner(Runner):
 
     def run(self, plan: LogicalPlan) -> PartitionSet:
         plan = self._optimizer.optimize(plan)
-        plan.to_dot_file("optimized.dot")
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         result_partition_set: PartitionSet
 
