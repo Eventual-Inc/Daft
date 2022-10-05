@@ -368,7 +368,9 @@ class DataBlock(Generic[ArrType]):
 
         for b in right_columns:
             to_rtn.append(b.take(right_indices))
-
+        all_lens = set(map(len, to_rtn))
+        if len(all_lens) != 1:
+            raise ValueError(f"expected all lengths to be the same, got {list(map(len, to_rtn))}")
         return to_rtn
 
     @abstractmethod
@@ -573,9 +575,16 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
                 num_chunks = math.ceil(expected_size / (2**31))
                 chunk_size = len(indices) // num_chunks
                 new_indices_subarray = []
-                for i in range(num_chunks):
+                for i in range(num_chunks - 1):
                     new_indices_subarray.extend(indices.data.slice(i * chunk_size, chunk_size).chunks)
+
+                new_indices_subarray.extend(indices.data.slice((num_chunks - 1) * chunk_size).chunks)
+                old_indices = indices
                 indices = DataBlock.make_block(pa.chunked_array(new_indices_subarray))
+                if len(old_indices) != len(indices):
+                    raise ValueError(
+                        f"expected new indices to be the same length as the old one {len(old_indices)} bs {len(indices)}"
+                    )
 
         return self._binary_op(indices, fn=partial(pac.take, boundscheck=False))
 
