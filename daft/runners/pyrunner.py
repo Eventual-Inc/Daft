@@ -16,6 +16,8 @@ from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import (
     DropRepartition,
     FoldProjections,
+    PruneColumns,
+    PushDownClausesIntoScan,
     PushDownLimit,
     PushDownPredicates,
 )
@@ -148,20 +150,25 @@ class PyRunner(Runner):
                 RuleBatch(
                     "SinglePassPushDowns",
                     Once,
-                    [PushDownPredicates(), FoldProjections(), DropRepartition()],
+                    [
+                        DropRepartition(),
+                        PushDownPredicates(),
+                        PruneColumns(),
+                        FoldProjections(),
+                        PushDownClausesIntoScan(),
+                    ],
                 ),
                 RuleBatch(
-                    "PushDownLimits",
+                    "PushDownLimitsAndRepartitions",
                     FixedPointPolicy(3),
-                    [PushDownLimit()],
+                    [PushDownLimit(), DropRepartition()],
                 ),
             ]
         )
 
     def run(self, plan: LogicalPlan) -> PartitionSet:
-        plan = self._optimizer.optimize(plan)
-        # plan.to_dot_file()
-        exec_plan = ExecutionPlan.plan_from_logical(plan)
+        optimized_plan = self._optimizer.optimize(plan)
+        exec_plan = ExecutionPlan.plan_from_logical(optimized_plan)
         result_partition_set: PartitionSet
 
         # Check that the local machine has sufficient resources available for execution

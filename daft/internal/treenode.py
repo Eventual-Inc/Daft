@@ -37,7 +37,6 @@ class TreeNode(Generic[TreeNodeType]):
 
                 if fn is None:
                     continue
-
                 maybe_new_root = fn(root, child)
 
                 if maybe_new_root is not None:

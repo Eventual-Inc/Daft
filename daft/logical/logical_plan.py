@@ -87,11 +87,13 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
     def rebuild(self) -> LogicalPlan:
         raise NotImplementedError()
 
+    @abstractmethod
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        raise NotImplementedError()
+
 
 class UnaryNode(LogicalPlan):
-    @abstractmethod
-    def copy_with_new_input(self, new_input: UnaryNode) -> UnaryNode:
-        raise NotImplementedError()
+    ...
 
 
 class BinaryNode(LogicalPlan):
@@ -154,6 +156,10 @@ class Scan(LogicalPlan):
             columns=self._column_names,
         )
 
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 0
+        return self
+
 
 class FileWrite(UnaryNode):
     def __init__(
@@ -170,10 +176,10 @@ class FileWrite(UnaryNode):
         self._storage_type = storage_type
         self._root_dir = root_dir
         self._compression = compression
-        self._partition_cols = partition_cols
-        if self._partition_cols is not None:
-            self._partition_cols = self._partition_cols.resolve(input.schema())
-
+        if partition_cols is not None:
+            self._partition_cols = partition_cols.resolve(input.schema())
+        else:
+            self._partition_cols = ExpressionList([])
         for expr in input.schema():
             assert ExpressionType.is_primitive(
                 expr.resolved_type()
@@ -189,7 +195,7 @@ class FileWrite(UnaryNode):
         return f"FileWrite\n\toutput={self.schema()}"
 
     def required_columns(self) -> ExpressionList:
-        raise NotImplementedError()
+        return self._partition_cols.required_columns()
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -206,8 +212,15 @@ class FileWrite(UnaryNode):
     def rebuild(self) -> LogicalPlan:
         raise NotImplementedError("We can not rebuild a filewrite due to side effects")
 
-    def copy_with_new_input(self, new_input: UnaryNode) -> UnaryNode:
-        raise NotImplementedError()
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
+        return FileWrite(
+            new_children[0],
+            root_dir=self._root_dir,
+            storage_type=self._storage_type,
+            partition_cols=self._partition_cols,
+            compression=self._compression,
+        )
 
 
 class Filter(UnaryNode):
@@ -238,11 +251,12 @@ class Filter(UnaryNode):
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, Filter) and self.schema() == other.schema() and self._predicate == other._predicate
 
-    def copy_with_new_input(self, new_input: LogicalPlan) -> Filter:
-        raise NotImplementedError()
-
     def rebuild(self) -> LogicalPlan:
         return Filter(input=self._children()[0].rebuild(), predicate=self._predicate.unresolve())
+
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
+        return Filter(input=new_children[0], predicate=self._predicate)
 
 
 class Projection(UnaryNode):
@@ -268,11 +282,12 @@ class Projection(UnaryNode):
             isinstance(other, Projection) and self.schema() == other.schema() and self._projection == other._projection
         )
 
-    def copy_with_new_input(self, new_input: LogicalPlan) -> Projection:
-        return Projection(new_input, self._projection)
-
     def rebuild(self) -> LogicalPlan:
         return Projection(input=self._children()[0].rebuild(), projection=self._projection.unresolve())
+
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
+        return Projection(new_children[0], self._projection)
 
 
 class Sort(UnaryNode):
@@ -294,9 +309,6 @@ class Sort(UnaryNode):
     def resource_request(self) -> ResourceRequest:
         return self._sort_by.resource_request()
 
-    def copy_with_new_input(self, new_input: LogicalPlan) -> Sort:
-        return Sort(new_input, sort_by=self._sort_by, descending=self._descending)
-
     def required_columns(self) -> ExpressionList:
         return self._sort_by.required_columns()
 
@@ -310,6 +322,10 @@ class Sort(UnaryNode):
 
     def rebuild(self) -> LogicalPlan:
         return Sort(input=self._children()[0].rebuild(), sort_by=self._sort_by.unresolve(), descending=self._descending)
+
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
+        return Sort(new_children[0], sort_by=self._sort_by, descending=self._descending)
 
 
 TMapPartitionOp = TypeVar("TMapPartitionOp", bound=MapPartitionOp)
@@ -362,8 +378,9 @@ class Explode(MapPartition[ExplodeOp]):
             self._map_partition_op.explode_columns.unresolve(),
         )
 
-    def copy_with_new_input(self, new_input: UnaryNode) -> Explode:
-        return Explode(new_input, explode_expressions=self._map_partition_op.explode_columns)
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
+        return Explode(new_children[0], explode_expressions=self._map_partition_op.explode_columns)
 
 
 class LocalLimit(UnaryNode):
@@ -378,11 +395,12 @@ class LocalLimit(UnaryNode):
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
 
-    def copy_with_new_input(self, new_input: LogicalPlan) -> LocalLimit:
-        raise NotImplementedError()
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
+        return LocalLimit(new_children[0], self._num)
 
     def required_columns(self) -> ExpressionList:
-        raise NotImplementedError()
+        return ExpressionList([])
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, LocalLimit) and self.schema() == other.schema() and self._num == self._num
@@ -403,11 +421,12 @@ class GlobalLimit(UnaryNode):
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
 
-    def copy_with_new_input(self, new_input: LogicalPlan) -> GlobalLimit:
-        raise NotImplementedError()
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
+        return GlobalLimit(new_children[0], self._num)
 
     def required_columns(self) -> ExpressionList:
-        raise NotImplementedError()
+        return ExpressionList([])
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, GlobalLimit) and self.schema() == other.schema() and self._num == self._num
@@ -456,16 +475,17 @@ class Repartition(UnaryNode):
     def resource_request(self) -> ResourceRequest:
         return self._partition_by.resource_request()
 
-    def copy_with_new_input(self, new_input: LogicalPlan) -> Repartition:
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
         return Repartition(
-            input=new_input,
+            input=new_children[0],
             partition_by=self._partition_by,
             num_partitions=self.num_partitions(),
             scheme=self._scheme,
         )
 
     def required_columns(self) -> ExpressionList:
-        raise NotImplementedError()
+        return self._partition_by.required_columns()
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -503,14 +523,15 @@ class Coalesce(UnaryNode):
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
 
-    def copy_with_new_input(self, new_input: LogicalPlan) -> Coalesce:
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
         return Coalesce(
-            input=new_input,
+            input=new_children[0],
             num_partitions=self.num_partitions(),
         )
 
     def required_columns(self) -> ExpressionList:
-        raise NotImplementedError()
+        return ExpressionList([])
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -537,10 +558,11 @@ class LocalAggregate(UnaryNode):
         cols_to_agg = ExpressionList([e for e, _ in agg]).resolve(input.schema())
         schema = cols_to_agg.to_column_expressions()
         self._group_by = group_by
-
+        self._required_cols = cols_to_agg.required_columns()
         if group_by is not None:
             self._group_by = group_by.resolve(input.schema())
             schema = self._group_by.union(schema)
+            self._required_cols = self._group_by.union(self._required_cols)
 
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
@@ -556,11 +578,12 @@ class LocalAggregate(UnaryNode):
         req = ResourceRequest.max_resources([expr.resource_request() for expr, _ in self._agg] + [req])
         return req
 
-    def copy_with_new_input(self, new_input: LogicalPlan) -> LocalAggregate:
-        raise NotImplementedError()
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
+        return LocalAggregate(new_children[0], agg=self._agg, group_by=self._group_by)
 
     def required_columns(self) -> ExpressionList:
-        raise NotImplementedError()
+        return self._required_cols
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -605,6 +628,10 @@ class HTTPRequest(LogicalPlan):
     def rebuild(self) -> LogicalPlan:
         return HTTPRequest(schema=self.schema().unresolve())
 
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 0
+        return self
+
 
 class HTTPResponse(UnaryNode):
     def __init__(
@@ -629,8 +656,9 @@ class HTTPResponse(UnaryNode):
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, HTTPResponse) and self.schema() == other.schema()
 
-    def copy_with_new_input(self, new_input: LogicalPlan) -> HTTPResponse:
-        raise NotImplementedError()
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
+        return HTTPResponse(new_children[0])
 
     def rebuild(self) -> LogicalPlan:
         return HTTPResponse(
@@ -675,10 +703,25 @@ class Join(BinaryNode):
             filtered_right = [e for e in right.schema() if e.get_id() not in right_id_set]
             schema = left.schema().union(ExpressionList(filtered_right), rename_dup="right.")
 
-        left = Repartition(left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH)
-        right = Repartition(
+        left_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._left_on)
+        right_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._right_on)
+
+        new_left = Repartition(
+            left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
+        )
+
+        if num_partitions == 1 and left.num_partitions() == 1:
+            left = left
+        elif left.partition_spec() != left_pspec:
+            left = new_left
+
+        new_right = Repartition(
             right, partition_by=self._right_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
         )
+        if num_partitions == 1 and right.num_partitions() == 1:
+            right = right
+        elif right.partition_spec() != right_pspec:
+            right = new_right
 
         super().__init__(
             schema.to_column_expressions(), partition_spec=left.partition_spec(), op_level=OpLevel.PARTITION
@@ -700,11 +743,12 @@ class Join(BinaryNode):
         # after repartitioning is done should be relatively cheap.
         return ResourceRequest.default()
 
-    def copy_with_new_input(self, new_input: LogicalPlan) -> Coalesce:
-        raise NotImplementedError()
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 2
+        return Join(new_children[0], new_children[1], left_on=self._left_on, right_on=self._right_on, how=self._how)
 
     def required_columns(self) -> ExpressionList:
-        raise NotImplementedError()
+        return self._left_on.required_columns().union(self._right_on.required_columns(), rename_dup="right.")
 
     def _local_eq(self, other: Any) -> bool:
         return (

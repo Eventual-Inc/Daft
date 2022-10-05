@@ -28,17 +28,22 @@ class Rule(Generic[TreeNodeType]):
         for p_subclass in get_all_subclasses(parent_type):
             for c_subtype in get_all_subclasses(child_type):
                 type_tuple = (p_subclass, c_subtype)
-                if not override:
-                    assert type_tuple not in self._fn_registry
-                self._fn_registry[type_tuple] = fn
+                if type_tuple in self._fn_registry:
+                    if override:
+                        self._fn_registry[type_tuple] = fn
+                    else:
+                        raise ValueError(f"Rule already registered for {type_tuple}")
+                else:
+                    self._fn_registry[type_tuple] = fn
 
     def dispatch_fn(self, parent: TreeNodeType, child: TreeNodeType) -> Optional[RuleFn]:
         type_tuple = (type(parent), type(child))
+        if type_tuple not in self._fn_registry:
+            return None
         return self._fn_registry.get(type_tuple, None)
 
     def apply(self, parent: TreeNodeType, child: TreeNodeType) -> Optional[TreeNodeType]:
         fn = self.dispatch_fn(parent, child)
-        if fn is not None:
-            return fn(parent, child)
-        else:
+        if fn is None:
             return None
+        return fn(parent, child)
