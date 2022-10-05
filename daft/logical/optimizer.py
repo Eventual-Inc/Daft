@@ -2,7 +2,7 @@ from typing import Optional, Set, Type
 
 from loguru import logger
 
-from daft.expressions import ColID
+from daft.expressions import ColID, ColumnExpression
 from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
     Coalesce,
@@ -237,8 +237,10 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             columns=required_columns.names,
             source_info=child._source_info,
         )
-
-        return parent.copy_with_new_children([new_scan])
+        if any(not isinstance(e, ColumnExpression) for e in parent._projection):
+            return parent.copy_with_new_children([new_scan])
+        else:
+            return new_scan
 
 
 class FoldProjections(Rule[LogicalPlan]):
@@ -256,7 +258,20 @@ class FoldProjections(Rule[LogicalPlan]):
 
         if can_skip_child:
             logger.debug(f"Folding: {parent} into {child}")
-            return parent.copy_with_new_children([grandchild])
+
+            new_exprs = []
+            for e in parent._projection:
+                if isinstance(e, ColumnExpression):
+                    name = e.name()
+                    assert name is not None
+                    e = child._projection.get_expression_by_name(name)
+                else:
+                    for rc in e.required_columns():
+                        name = rc.name()
+                        assert name is not None
+                        e = e._replace_column_with_expression(rc, child._projection.get_expression_by_name(name))
+                new_exprs.append(e)
+            return Projection(grandchild, ExpressionList(new_exprs))
         else:
             return None
 
