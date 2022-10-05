@@ -81,6 +81,7 @@ class MetricsBuilder:
         try:
             yield
         except:
+            logger.exception(f"Exception raised when running TPC-H q{qnum}")
             success = False
         walltime_s = time.time() - start
         logger.info(f"Finished benchmarks for q{qnum}: {walltime_s}s")
