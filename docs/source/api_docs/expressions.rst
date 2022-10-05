@@ -156,6 +156,8 @@ Running Python Functions
 Accessors
 #########
 
+.. _expression-accessor-properties:
+
 Expression Accessor Properties
 ******************************
 .. autoproperty:: daft.expressions.Expression.str
