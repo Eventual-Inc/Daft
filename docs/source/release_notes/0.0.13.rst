@@ -1,7 +1,7 @@
-Daft 0.0.12 Release Notes
+Daft 3 Release Notes
 =========================
 
-The Daft 0.0.12 release fixes some issues with typing and adds new functionality for loading from files on disk. The highlights are:
+The Daft 0.0.13 release fixes some issues with typing and adds new functionality for loading from files on disk. The highlights are:
 
 * Improved unified API + User documentation published on www.getdaft.io
 * Adds support for multi-column ``DataFrame.sort``

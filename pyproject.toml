@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "getdaft"
-version = "0.0.12" # needed for poetry but ignored
+version = "0.0.13" # needed for poetry but ignored
 description = "A Distributed DataFrame library for large scale complex data processing."
 authors = ["Eventual Inc <daft@eventualcomputing.com>"]
 maintainers = [
