@@ -648,7 +648,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         if op == "sum":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
-            return ArrowDataBlock(data=pa.chunked_array([[pac.sum(self.data).as_py()]]))
+            return ArrowDataBlock(data=pa.chunked_array([[pac.sum(self.data, min_count=0).as_py()]]))
         elif op == "mean":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.float64()))
@@ -685,7 +685,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         agg_expected_arrow_type = []
         for an, op, arr in zip(agg_names, agg_ops, agg_arrs):
             if op == "sum":
-                exprs.append(pl.sum(an))
+                exprs.append(pl.sum(an).fill_null(0))
                 agg_expected_arrow_type.append(arr.type)
             elif op == "mean":
                 exprs.append(pl.mean(an))

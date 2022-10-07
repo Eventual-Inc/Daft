@@ -1,10 +1,8 @@
 import pathlib
 
 import pandas as pd
-import pytest
 
 from daft.dataframe import DataFrame
-from daft.expressions import col
 from daft.filesystem import get_filesystem_from_path
 from daft.types import PythonExpressionType
 from tests.assets.assets import (
@@ -30,20 +28,20 @@ def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, pd_slice)
 
 
-@pytest.mark.parametrize(
-    "daft_df",
-    [
-        DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET).select(*[col(c) for c in COLUMNS]),
-        DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET_FOLDER).select(*[col(c) for c in COLUMNS]),
-    ],
-)
-@parametrize_service_requests_csv_repartition
-def test_load_parquet(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Loading data from a CSV or Parquet works"""
-    pd_slice = service_requests_csv_pd_df
-    daft_slice = daft_df.repartition(repartition_nparts)
-    daft_pd_df = daft_slice.to_pandas()
-    assert_df_equals(daft_pd_df, pd_slice)
+# @pytest.mark.parametrize(
+#     "daft_df",
+#     [
+#         DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET).select(*[col(c) for c in COLUMNS]),
+#         DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET_FOLDER).select(*[col(c) for c in COLUMNS]),
+#     ],
+# )
+# @parametrize_service_requests_csv_repartition
+# def test_load_parquet(daft_df, service_requests_csv_pd_df, repartition_nparts):
+#     """Loading data from a CSV or Parquet works"""
+#     pd_slice = service_requests_csv_pd_df
+#     daft_slice = daft_df.repartition(repartition_nparts)
+#     daft_pd_df = daft_slice.to_pandas()
+#     assert_df_equals(daft_pd_df, pd_slice)
 
 
 def test_load_csv_no_headers(tmp_path: pathlib.Path):

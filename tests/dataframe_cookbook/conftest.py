@@ -7,7 +7,7 @@ from daft.dataframe import DataFrame
 from daft.expressions import col
 from tests.assets.assets import SERVICE_REQUESTS_CSV, SERVICE_REQUESTS_CSV_FOLDER
 
-COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
+COLUMNS = ["id", "Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
 CsvPathAndColumns = Tuple[str, List[str]]
 
 
@@ -38,7 +38,7 @@ def parametrize_service_requests_csv_daft_df(test_case):
 
 @pytest.fixture(scope="function")
 def service_requests_csv_pd_df():
-    return pd.read_csv(SERVICE_REQUESTS_CSV, keep_default_na=False)[COLUMNS]
+    return pd.read_csv(SERVICE_REQUESTS_CSV, keep_default_na=True)[COLUMNS]
 
 
 def parametrize_service_requests_csv_repartition(test_case):

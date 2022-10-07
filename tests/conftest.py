@@ -100,7 +100,7 @@ def assert_df_column_type(
 def assert_df_equals(
     daft_df: pd.DataFrame,
     pd_df: pd.DataFrame,
-    sort_key: Union[str, List[str]] = "Unique Key",
+    sort_key: Union[str, List[str]] = "id",
     assert_ordering: bool = False,
 ):
     """Asserts that a Daft Dataframe is equal to a Pandas Dataframe.
