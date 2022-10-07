@@ -372,14 +372,14 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
 [[package]]
 name = "confection"
-version = "0.0.2"
+version = "0.0.3"
 description = "The sweetest config system for Python"
 category = "dev"
 optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
-pydantic = ">=1.7.4,<1.8 || >1.8,<1.8.1 || >1.8.1,<1.10.0"
+pydantic = ">=1.7.4,<1.8 || >1.8,<1.8.1 || >1.8.1,<1.11.0"
 srsly = ">=2.4.0,<3.0.0"
 typing-extensions = {version = ">=3.7.4.1,<4.2.0", markers = "python_version < \"3.8\""}
 
@@ -601,7 +601,7 @@ smmap = ">=3.0.1,<6"
 
 [[package]]
 name = "GitPython"
-version = "3.1.27"
+version = "3.1.28"
 description = "GitPython is a python library used to interact with Git repositories"
 category = "dev"
 optional = false
@@ -1373,7 +1373,7 @@ testing = ["beautifulsoup4", "coverage[toml]", "pytest (>=6,<7)", "pytest-cov", 
 
 [[package]]
 name = "nbclassic"
-version = "0.4.4"
+version = "0.4.5"
 description = "A web-based notebook environment for interactive computing"
 category = "dev"
 optional = false
@@ -1423,7 +1423,7 @@ test = ["black", "check-manifest", "flake8", "ipykernel", "ipython (<8.0.0)", "i
 
 [[package]]
 name = "nbconvert"
-version = "7.1.0"
+version = "7.2.1"
 description = "Converting Jupyter Notebooks"
 category = "dev"
 optional = false
@@ -1448,8 +1448,8 @@ tinycss2 = "*"
 traitlets = ">=5.0"
 
 [package.extras]
-all = ["ipykernel", "ipython", "ipywidgets (>=7)", "nbsphinx (>=0.2.12)", "pre-commit", "pyppeteer (>=1,<1.1)", "pyqtwebengine (>=5.15)", "pytest", "pytest-cov", "pytest-dependency", "sphinx (==5.0.2)", "sphinx-rtd-theme", "tornado (>=6.1)"]
-docs = ["ipython", "nbsphinx (>=0.2.12)", "sphinx (==5.0.2)", "sphinx-rtd-theme"]
+all = ["ipykernel", "ipython", "ipywidgets (>=7)", "myst-parser", "nbsphinx (>=0.2.12)", "pre-commit", "pyppeteer (>=1,<1.1)", "pyqtwebengine (>=5.15)", "pytest", "pytest-cov", "pytest-dependency", "sphinx (==5.0.2)", "sphinx-rtd-theme", "tornado (>=6.1)"]
+docs = ["ipython", "myst-parser", "nbsphinx (>=0.2.12)", "sphinx (==5.0.2)", "sphinx-rtd-theme"]
 qtpdf = ["pyqtwebengine (>=5.15)"]
 qtpng = ["pyqtwebengine (>=5.15)"]
 serve = ["tornado (>=6.1)"]
@@ -2619,7 +2619,7 @@ test = ["pre-commit", "pytest (>=6.0)", "pytest-timeout"]
 
 [[package]]
 name = "thinc"
-version = "8.1.2"
+version = "8.1.3"
 description = "A refreshing functional take on deep learning, compatible with your favorite libraries"
 category = "dev"
 optional = false
@@ -2633,7 +2633,7 @@ cymem = ">=2.0.2,<2.1.0"
 murmurhash = ">=1.0.2,<1.1.0"
 numpy = ">=1.15.0"
 preshed = ">=3.0.2,<3.1.0"
-pydantic = ">=1.7.4,<1.8 || >1.8,<1.8.1 || >1.8.1,<1.10.0"
+pydantic = ">=1.7.4,<1.8 || >1.8,<1.8.1 || >1.8.1,<1.11.0"
 setuptools = "*"
 srsly = ">=2.4.0,<3.0.0"
 typing-extensions = {version = ">=3.7.4.1,<4.2.0", markers = "python_version < \"3.8\""}
@@ -3017,7 +3017,7 @@ serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.1"
-content-hash = "1a774bfcb05c1c8971329414e3b7dc9662f7057ef88776590b7509168d28a550"
+content-hash = "8d87924f276dbe557af38eb407a6c91b308e493410cc8f13c233452477e3a647"
 
 [metadata.files]
 aiobotocore = [
@@ -3329,8 +3329,8 @@ colorama = [
     {file = "colorama-0.4.5.tar.gz", hash = "sha256:e6c6b4334fc50988a639d9b98aa429a0b57da6e17b9a44f0451f930b6967b7a4"},
 ]
 confection = [
-    {file = "confection-0.0.2-py3-none-any.whl", hash = "sha256:20663e54b472d77f2add23c2bc2ecad33b9fcb3c3679d303b74003ad45ff5927"},
-    {file = "confection-0.0.2.tar.gz", hash = "sha256:1833a11052db95f212b447009e3d0dd6f09a9ad38228054cefe0daf540134792"},
+    {file = "confection-0.0.3-py3-none-any.whl", hash = "sha256:51af839c1240430421da2b248541ebc95f9d0ee385bcafa768b8acdbd2b0111d"},
+    {file = "confection-0.0.3.tar.gz", hash = "sha256:4fec47190057c43c9acbecb8b1b87a9bf31c469caa0d6888a5b9384432fdba5a"},
 ]
 cryptography = [
     {file = "cryptography-38.0.1-cp36-abi3-macosx_10_10_universal2.whl", hash = "sha256:10d1f29d6292fc95acb597bacefd5b9e812099d75a6469004fd38ba5471a977f"},
@@ -3558,8 +3558,8 @@ gitdb = [
     {file = "gitdb-4.0.9.tar.gz", hash = "sha256:bac2fd45c0a1c9cf619e63a90d62bdc63892ef92387424b855792a6cabe789aa"},
 ]
 GitPython = [
-    {file = "GitPython-3.1.27-py3-none-any.whl", hash = "sha256:5b68b000463593e05ff2b261acff0ff0972df8ab1b70d3cdbd41b546c8b8fc3d"},
-    {file = "GitPython-3.1.27.tar.gz", hash = "sha256:1c885ce809e8ba2d88a29befeb385fcea06338d3640712b59ca623c220bb5704"},
+    {file = "GitPython-3.1.28-py3-none-any.whl", hash = "sha256:77bfbd299d8709f6af7e0c70840ef26e7aff7cf0c1ed53b42dd7fc3a310fcb02"},
+    {file = "GitPython-3.1.28.tar.gz", hash = "sha256:6bd3451b8271132f099ceeaf581392eaf6c274af74bb06144307870479d0697c"},
 ]
 greenlet = [
     {file = "greenlet-1.1.3-cp27-cp27m-macosx_10_14_x86_64.whl", hash = "sha256:8c287ae7ac921dfde88b1c125bd9590b7ec3c900c2d3db5197f1286e144e712b"},
@@ -4020,16 +4020,16 @@ myst-parser = [
     {file = "myst_parser-0.18.1-py3-none-any.whl", hash = "sha256:61b275b85d9f58aa327f370913ae1bec26ebad372cc99f3ab85c8ec3ee8d9fb8"},
 ]
 nbclassic = [
-    {file = "nbclassic-0.4.4-py3-none-any.whl", hash = "sha256:6dbea338e67d36cdaf491178e9544d9f0088763ca8bb1f0901dd6cab15aba548"},
-    {file = "nbclassic-0.4.4.tar.gz", hash = "sha256:f6c4fbac2c5efc6f5e7c02a69f5359a6040b90ac648719990d059bdec380afec"},
+    {file = "nbclassic-0.4.5-py3-none-any.whl", hash = "sha256:07fba5a9e52a6ed7e795b45d300629b2a07a69e5a47398833b7977a7ecc8a3c1"},
+    {file = "nbclassic-0.4.5.tar.gz", hash = "sha256:05704c6cdd8301bf52e40ed9fae39e80d6bc5d2d447dc67831c145b4dd928779"},
 ]
 nbclient = [
     {file = "nbclient-0.5.13-py3-none-any.whl", hash = "sha256:47ac905af59379913c1f8f541098d2550153cf8dc58553cbe18c702b181518b0"},
     {file = "nbclient-0.5.13.tar.gz", hash = "sha256:40c52c9b5e3c31faecaee69f202b3f53e38d7c1c563de0fadde9d7eda0fdafe8"},
 ]
 nbconvert = [
-    {file = "nbconvert-7.1.0-py3-none-any.whl", hash = "sha256:8cc353e3e6a37cf9d8363997b9470fa0de5adda84063ed65a43d4d3de1bf37a9"},
-    {file = "nbconvert-7.1.0.tar.gz", hash = "sha256:308c9648ebd20823cfd5af12202ac0ef5f8913fe35b51e72db28d2ca0f66a598"},
+    {file = "nbconvert-7.2.1-py3-none-any.whl", hash = "sha256:50a54366ab53da20e82668818b7b2f3f7b85c0bcd46ec8e18836f12b39180dfa"},
+    {file = "nbconvert-7.2.1.tar.gz", hash = "sha256:1e180801205ad831b6e2480c5a03307dfb6327fa5b2f9b156d6fed45f9700686"},
 ]
 nbdime = [
     {file = "nbdime-3.1.1-py2.py3-none-any.whl", hash = "sha256:ea4ddf919e3035800ef8bd5552b814522207cb154ca7512565e4539a54c74dbf"},
@@ -4992,29 +4992,29 @@ terminado = [
     {file = "terminado-0.16.0.tar.gz", hash = "sha256:fac14374eb5498bdc157ed32e510b1f60d5c3c7981a9f5ba018bb9a64cec0c25"},
 ]
 thinc = [
-    {file = "thinc-8.1.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:b23e9ae90cdd368de5da802472ca893ef06b8874a5d5c9e058978b975bdaabc8"},
-    {file = "thinc-8.1.2-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:adaab1c4838e1ddbd8618593cd86c01ff1c1d614b6004cf8139ae4434a4ac096"},
-    {file = "thinc-8.1.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:91da35a2a529720bb1cd85f7b821972908931283a495d3ce7bd6b2bd191d830d"},
-    {file = "thinc-8.1.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0af471505d04ea1d2e788ce14d76925492cacfaa38eceeba54f318dc0876fdfb"},
-    {file = "thinc-8.1.2-cp310-cp310-win_amd64.whl", hash = "sha256:1da80e4bb09604e422a21be24abf6f496573b096bbd146049a2081b15e9fdc04"},
-    {file = "thinc-8.1.2-cp36-cp36m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:499bc871d6710cbd950b972a0155dbadcffc5995fafdf6a8b1a3794fb5c55521"},
-    {file = "thinc-8.1.2-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b3e12f270ac15d7e9676f1312d2e9217b4e9366de4bbff13cbafe310dc06f539"},
-    {file = "thinc-8.1.2-cp36-cp36m-win_amd64.whl", hash = "sha256:e2dea427e0e05901ce481dd78adac78abf5f971f0e41b284da5163f41a964631"},
-    {file = "thinc-8.1.2-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:f35a286bc614fc43ea11ded38fc6163225155144f593604aab243594e11fd442"},
-    {file = "thinc-8.1.2-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ebaf5676cb8ee05734534e2dda6a3d657e625ab60635be052b4164a444189625"},
-    {file = "thinc-8.1.2-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:02efa62df57106f31021cc7dc0554bb4012ab156abf41ba93b303ec91da6b60f"},
-    {file = "thinc-8.1.2-cp37-cp37m-win_amd64.whl", hash = "sha256:7816f843be58b6d645b990d9638bc345a0d2fee7657bb1b1e8956a8b14d5c61a"},
-    {file = "thinc-8.1.2-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:3f74963cbc4c8b9dd4a0903452d422cf19c1460edc3c64efe708473833fa8210"},
-    {file = "thinc-8.1.2-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:9bc5d5bf543c9357c555d34bcfdb84ce50807443072e31088c23d3401dcd35ed"},
-    {file = "thinc-8.1.2-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c6088e8d61b17419a2ea963cacb32f8a7df2100f48af668edc820cf0709a7e28"},
-    {file = "thinc-8.1.2-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2f27f4ef150e82847615984f9eff90f83f438093b9b1f6e5fcdaf37ece95b4e8"},
-    {file = "thinc-8.1.2-cp38-cp38-win_amd64.whl", hash = "sha256:5f24ce11d7f7c87173d0c90c20a31548e28fc46d09bea16c6e00f40f15e0aa01"},
-    {file = "thinc-8.1.2-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:10ee209aed8870bccca0e88996e8c8fafb4853cb5c704ca2addfe48c2072f369"},
-    {file = "thinc-8.1.2-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:14abcbbc4b76b79aa39ae8922128574bba6cfe88734412922d1581ec30e69219"},
-    {file = "thinc-8.1.2-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a8612f4b28746b6eea910f85dfed131b9cc6bf0ae76d1a8521e0b3f30b0493bd"},
-    {file = "thinc-8.1.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5c8aa54fb0a10b95f6e050dee52af385804d359673ebe9557fe9f3675aa3225b"},
-    {file = "thinc-8.1.2-cp39-cp39-win_amd64.whl", hash = "sha256:c9f2393d25e4b90b24226329fa561ae6e034a6e3721590bcb2c46f82a67a091d"},
-    {file = "thinc-8.1.2.tar.gz", hash = "sha256:147dd04bc5a87f9d48d44292632663dee064d6e199a47dfaa3bb9a2a668f31b5"},
+    {file = "thinc-8.1.3-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:87c81bfef92946336f28d780332866762c393c85daf7f682b46ee4daab3d1536"},
+    {file = "thinc-8.1.3-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:9159d033600a4c772eba7f4dcec7ae80db7968bd6f8b1faaf8c2809b71453f4c"},
+    {file = "thinc-8.1.3-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:60a5215cb7595b163474b015a301bc798f3da702a55865e6eb5661db13865f28"},
+    {file = "thinc-8.1.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:472d573195331b7c1a8d2b908f6a0f6d2d0c04a0e19524060a6260dfc6fb35a3"},
+    {file = "thinc-8.1.3-cp310-cp310-win_amd64.whl", hash = "sha256:fb0f030a63b9244434ff1e2052e9658e3518d8aaf353bdd73e4c7621471217e8"},
+    {file = "thinc-8.1.3-cp36-cp36m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:fddab9a19947779c97a2f3e50287debc113c94a54553a73f402a1dc47d436adc"},
+    {file = "thinc-8.1.3-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6d87fe4196615b0766fb91778d3a39ef1e25321b58176c59ce3005431d55131f"},
+    {file = "thinc-8.1.3-cp36-cp36m-win_amd64.whl", hash = "sha256:75ae4d65e3a02e69d19ef9ef180abf4ce6e24fc70eef58c8372a10e729cbfc92"},
+    {file = "thinc-8.1.3-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:d1dae14b3fc2f3b5baa46e700db556bb0f6162484b4dab4009f0428904132cd2"},
+    {file = "thinc-8.1.3-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:2e67ef34a89ab86b57b905f6ab8c69a9ee4e910e080f9b357daa19856c6c809f"},
+    {file = "thinc-8.1.3-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:58da2eef362e574f9c2ea8afee196e6885f34aafbe2e309fea1e556653fdaabd"},
+    {file = "thinc-8.1.3-cp37-cp37m-win_amd64.whl", hash = "sha256:3b6cc4b29e5124d45c5f3598be29ad9abfb3fe4d126b9f34ce0a11f2be1fdcf9"},
+    {file = "thinc-8.1.3-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:a1204e950b645fd6336008382ea68da7bdbf4063c22f4fc386045e117277b52b"},
+    {file = "thinc-8.1.3-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:057b14c4445e9377bd3eaee2400f990f386f91ad40e64c31a63aac4a961527bc"},
+    {file = "thinc-8.1.3-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5a81adffd22f44095762628a169aca41e64358d1b9294ade23c8ce64725609fb"},
+    {file = "thinc-8.1.3-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b8e493e948a2cc3f8881e30d12e56501660ce8a34d61d82c1fc6ee162430f10c"},
+    {file = "thinc-8.1.3-cp38-cp38-win_amd64.whl", hash = "sha256:aa33dddaee4a0498ab77337632028c2cf791e671b5e5e4664c4862837a571a65"},
+    {file = "thinc-8.1.3-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:fc955a2b20393bc0f0ca5961090c9ad4573ad1e53029b4f19989d206048e5b5c"},
+    {file = "thinc-8.1.3-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:4b9a7c30a4f227f26c3e3b47872826436d1c8e567f16bfaa4c8cb517822e31ab"},
+    {file = "thinc-8.1.3-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ac5f8238084587f19927627eb919d7b142ee85c0d89662bdaa4ff5d92f6891ab"},
+    {file = "thinc-8.1.3-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f64bbbb6e7c8e416e3e3d3c41fd64ef49318d0011b5011c5ec66a5a7d058b52c"},
+    {file = "thinc-8.1.3-cp39-cp39-win_amd64.whl", hash = "sha256:190464cc88c62d64ee23a61afbec3284e19521d881c5edad969d407c0039f5cc"},
+    {file = "thinc-8.1.3.tar.gz", hash = "sha256:b62b5761ead7c9f82f038820605117530495df21b4636f3ddbe13fe19a1e5b36"},
 ]
 tinycss2 = [
     {file = "tinycss2-1.1.1-py3-none-any.whl", hash = "sha256:fe794ceaadfe3cf3e686b22155d0da5780dd0e273471a51846d0a02bc204fec8"},
