@@ -34,9 +34,14 @@ def test_explode_single_col_pylist(nrepartitions):
 
     assert df.schema()["explode"].daft_type == ExpressionType.python_object()
 
+    df = df.select(col("explode_plus1"))
+
+    assert df.schema()["explode_plus1"].daft_type == ExpressionType.python_object()
+
     pd_df = pd.DataFrame(data)
     pd_df = pd_df.explode("explode")
     pd_df["explode_plus1"] = pd_df["explode"].apply(add_one)
+    pd_df = pd_df[["explode_plus1"]]
 
     df.collect()
     daft_pd_df = pd.DataFrame(df._result.to_pydict())
