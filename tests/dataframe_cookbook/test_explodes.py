@@ -27,16 +27,23 @@ def test_explode_single_col_pylist(nrepartitions):
             return None
         return o._x + 1
 
-    data = {"explode": [[MyObj(1), MyObj(2), MyObj(3)], [MyObj(4), MyObj(5)], [], None], "repeat": ["a", "b", "c", "d"]}
+    data = {
+        "explode": [[MyObj(1), MyObj(2), MyObj(3)], [MyObj(4), MyObj(5)], [], None],
+        "repeat": ["a", "b", "c", "d"],
+        "repeat2": ["a", "b", "c", "d"],
+    }
     df = DataFrame.from_pydict(data).repartition(nrepartitions)
     df = df.explode(col("explode"))
-    df = df.with_column("explode_plus1", col("explode").apply(add_one))
-
     assert df.schema()["explode"].daft_type == ExpressionType.python_object()
+
+    df = df.with_column("explode_plus1", col("explode").apply(add_one))
+    df = df.select(col("explode_plus1"), col("repeat"))
+    assert df.schema()["explode_plus1"].daft_type == ExpressionType.python_object()
 
     pd_df = pd.DataFrame(data)
     pd_df = pd_df.explode("explode")
     pd_df["explode_plus1"] = pd_df["explode"].apply(add_one)
+    pd_df = pd_df[["explode_plus1", "repeat"]]
 
     df.collect()
     daft_pd_df = pd.DataFrame(df._result.to_pydict())
@@ -46,11 +53,16 @@ def test_explode_single_col_pylist(nrepartitions):
 
 @pytest.mark.parametrize("nrepartitions", [1, 5])
 def test_explode_single_col_arrow(nrepartitions):
-    data = {"explode": pa.array([[1, 2, 3], [4, 5], [], None]), "repeat": ["a", "b", "c", "d"]}
+    data = {
+        "explode": pa.array([[1, 2, 3], [4, 5], [], None]),
+        "repeat": ["a", "b", "c", "d"],
+        "repeat2": ["a", "b", "c", "d"],
+    }
     df = DataFrame.from_pydict(data).repartition(nrepartitions)
     df = df.explode(col("explode"))
-
     assert df.schema()["explode"].daft_type == ExpressionType.python_object()
+
+    df = df.select(col("explode"), col("repeat"))
 
     df.collect()
     daft_pd_df = pd.DataFrame(df._result.to_pydict())
@@ -59,6 +71,7 @@ def test_explode_single_col_arrow(nrepartitions):
     pd_df = pd_df.explode("explode")
 
     pd_df["explode"] = pd_df["explode"].astype(float)
+    pd_df = pd_df[["explode", "repeat"]]
     assert_df_equals(daft_pd_df, pd_df, sort_key=["explode", "repeat"])
 
 

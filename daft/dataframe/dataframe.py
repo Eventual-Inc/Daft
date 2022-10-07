@@ -694,7 +694,7 @@ class DataFrame:
         exprs_to_explode = self.__column_input_to_expression(columns)
         explode_op = logical_plan.Explode(
             self._plan,
-            exprs_to_explode,
+            ExpressionList([e._explode() for e in exprs_to_explode]),
         )
         return DataFrame(explode_op)
 
