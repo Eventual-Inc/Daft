@@ -11,10 +11,10 @@ from sentry_sdk import start_transaction
 from benchmarking.tpch import answers, data_generation
 from daft.context import get_context
 from daft.dataframe import DataFrame
+from tests.assets.assets import TPCH_DBGEN_DIR, TPCH_QUERIES
 from tests.conftest import assert_df_equals
 
 # If running in github, we use smaller-scale data
-TPCH_DBGEN_DIR = "data/tpch-dbgen"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -70,7 +70,7 @@ def check_answer(gen_tpch):
     _, sqlite_db_file_path = gen_tpch
 
     def _check_answer(daft_pd_df: pd.DataFrame, tpch_question: int, tmp_path: str):
-        query = pathlib.Path(f"tests/assets/tpch-sqlite-queries/{tpch_question}.sql").read_text()
+        query = pathlib.Path(f"{TPCH_QUERIES}/{tpch_question}.sql").read_text()
         conn = sqlite3.connect(sqlite_db_file_path, detect_types=sqlite3.PARSE_DECLTYPES)
         cursor = conn.cursor()
         res = cursor.execute(query)

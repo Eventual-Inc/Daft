@@ -5,10 +5,8 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
+from tests.assets.assets import SERVICE_REQUESTS_CSV, SERVICE_REQUESTS_CSV_FOLDER
 
-IRIS_CSV = "tests/assets/iris.csv"
-SERVICE_REQUESTS_CSV = "tests/assets/311-service-requests.50.csv"
-SERVICE_REQUESTS_CSV_FOLDER = "tests/assets/311-service-requests.50"
 COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
 CsvPathAndColumns = Tuple[str, List[str]]
 

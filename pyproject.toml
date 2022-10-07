@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "getdaft"
-version = "0.0.12" # needed for poetry but ignored
+version = "0.0.13" # needed for poetry but ignored
 description = "A Distributed DataFrame library for large scale complex data processing."
 authors = ["Eventual Inc <daft@eventualcomputing.com>"]
 maintainers = [
@@ -71,7 +71,6 @@ ipdb = "^0.13.9"
 pre-commit = "^2.20.0"
 Cython="^0.29.32"
 viztracer = "^0.15.4"
-sentry-sdk = "^1.9.5"
 Sphinx = "<5"
 sphinx-book-theme = "^0.3.3"
 myst-nb = "^0.16.0"
@@ -79,6 +78,8 @@ myst-nb = "^0.16.0"
 [tool.poetry.group.test.dependencies]
 pytest = "^7.1.2"
 xxhash = "^3.0.0"
+sentry-sdk = "^1.9.5"
+Pillow = {version = "^9.2.0"}
 
 
 [tool.poetry.group.jupyter]
@@ -143,6 +144,8 @@ skip="*-musllinux*"
 archs = ["x86_64"]
 before-build = ""
 repair-wheel-command = ""
+before-test="pip install poetry>=1.2 && poetry export --extras experimental --with test > test-requirements.txt && pip install -r test-requirements.txt && rm -rf {package}/daft"
+test-command = "pytest {package}/tests"
 [tool.cibuildwheel.macos]
 archs = ["x86_64", "arm64"]
 repair-wheel-command = [

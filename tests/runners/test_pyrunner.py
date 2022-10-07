@@ -2,12 +2,13 @@ import pandas as pd
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
+from tests.assets.assets import IRIS_CSV
 
 
 def test_pyrunner_with_pandas():
 
     # Pandas query
-    pd_df = pd.read_csv("tests/assets/iris.csv")
+    pd_df = pd.read_csv(IRIS_CSV)
     pd_df["area"] = pd_df["sepal.width"] * pd_df["sepal.length"]
     pd_df = pd_df[pd_df["area"] < 20]
     pd_df = pd_df[pd_df["variety"] == "Virginica"]
@@ -15,7 +16,7 @@ def test_pyrunner_with_pandas():
     pd_df = pd_df.head(10)
 
     # Daft Query
-    df = DataFrame.from_csv("tests/assets/iris.csv")
+    df = DataFrame.from_csv(IRIS_CSV)
     df = df.with_column("area", col("sepal.width") * col("sepal.length"))
     df = df.repartition(3, "variety")
     df = df.where(col("area") < 20)

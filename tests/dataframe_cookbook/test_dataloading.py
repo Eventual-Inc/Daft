@@ -7,16 +7,17 @@ from daft.dataframe import DataFrame
 from daft.expressions import col
 from daft.filesystem import get_filesystem_from_path
 from daft.types import PythonExpressionType
+from tests.assets.assets import (
+    IRIS_CSV,
+    SERVICE_REQUESTS_PARQUET,
+    SERVICE_REQUESTS_PARQUET_FOLDER,
+)
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     COLUMNS,
-    IRIS_CSV,
     parametrize_service_requests_csv_daft_df,
     parametrize_service_requests_csv_repartition,
 )
-
-SERVICE_REQUESTS_PARQUET = "tests/assets/311-service-requests.50.parquet"
-SERVICE_REQUESTS_PARQUET_FOLDER = "tests/assets/311-service-requests.50.parquet_folder"
 
 
 @parametrize_service_requests_csv_daft_df
