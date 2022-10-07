@@ -1,6 +1,8 @@
+import subprocess
 import tempfile
 
 import numpy as np
+import pytest
 
 from daft.experimental.dataclasses import dataclass
 from daft.experimental.datarepo.client import DatarepoClient
@@ -12,6 +14,15 @@ class _TestDc:
     arr: np.ndarray
 
 
+def verify_java() -> bool:
+    try:
+        subprocess.run(["java", "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return True
+    except:
+        return False
+
+
+@pytest.mark.skipif(not verify_java(), reason="We do not have java on this machine")
 def test_datarepo_client_full_workflow() -> None:
     with tempfile.TemporaryDirectory() as td:
         client = DatarepoClient(f"file://{td}")
