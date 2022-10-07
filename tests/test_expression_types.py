@@ -2,6 +2,7 @@ import datetime
 from typing import Dict, Set, Tuple, Type
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 from daft import DataFrame, col
@@ -14,18 +15,19 @@ class MyObj:
 
 
 ALL_TYPES = {
-    ExpressionType.from_py_type(str): ["a", "b", "c"],
-    ExpressionType.from_py_type(bytes): [b"a", b"b", b"c"],
-    ExpressionType.from_py_type(bool): [True, True, False],
+    ExpressionType.from_py_type(str): ["a", "b", "c", None],
+    ExpressionType.from_py_type(bytes): [b"a", b"b", b"c", None],
+    ExpressionType.from_py_type(bool): [True, True, False, None],
     ExpressionType.from_py_type(datetime.date): [
         datetime.date(1994, 1, 1),
         datetime.date(1994, 1, 2),
         datetime.date(1994, 1, 3),
+        None,
     ],
-    ExpressionType.from_py_type(int): [1, 2, 3],
-    ExpressionType.from_py_type(float): [1.0, 2.0, 3.0],
-    ExpressionType.from_py_type(object): [MyObj(), MyObj(), MyObj()],
-    ExpressionType.from_py_type(type(None)): [None, None, None],
+    ExpressionType.from_py_type(int): [1, 2, 3, None],
+    ExpressionType.from_py_type(float): [1.0, 2.0, 3.0, None],
+    ExpressionType.from_py_type(object): [MyObj(), MyObj(), MyObj(), None],
+    ExpressionType.from_py_type(type(None)): [None, None, None, None],
 }
 
 # Mapping between the OperatorEnum name and a lambda that runs it on input expressions
@@ -73,14 +75,14 @@ EXCLUDE_OPS = {
 }
 
 # Mapping between ExpressionTypes and (expected_numpy_dtypes, expected_python_types)
-NP_AND_PY_TYPE: Dict[ExpressionType, Tuple[Set[np.dtype], Type]] = {
-    ExpressionType.from_py_type(str): ({np.dtype("object")}, str),
-    ExpressionType.from_py_type(bytes): ({np.dtype("object")}, bytes),
-    ExpressionType.from_py_type(bool): ({np.dtype("bool")}, bool),
-    ExpressionType.from_py_type(datetime.date): ({np.dtype("object")}, datetime.date),
-    ExpressionType.from_py_type(int): ({np.dtype("int32"), np.dtype("int64")}, int),
-    ExpressionType.from_py_type(float): ({np.dtype("float64")}, float),
-    ExpressionType.from_py_type(object): ({np.dtype("object")}, MyObj),
+CHECK_TYPE_FUNC: Dict[ExpressionType, Tuple[Set[np.dtype], Type]] = {
+    ExpressionType.from_py_type(str): lambda arr: pa.types.is_string(arr.type),
+    ExpressionType.from_py_type(bytes): lambda arr: pa.types.is_binary(arr.type),
+    ExpressionType.from_py_type(bool): lambda arr: pa.types.is_boolean(arr.type),
+    ExpressionType.from_py_type(datetime.date): lambda arr: pa.types.is_date(arr.type),
+    ExpressionType.from_py_type(int): lambda arr: pa.types.is_integer(arr.type),
+    ExpressionType.from_py_type(float): lambda arr: pa.types.is_floating(arr.type),
+    ExpressionType.from_py_type(object): lambda arr: isinstance(arr, list),
     # None of the operations return Null types
     # ExpressionType.from_py_type(type(None)): ({np.dtype("object")}, type(None)),
 }
@@ -88,6 +90,7 @@ NP_AND_PY_TYPE: Dict[ExpressionType, Tuple[Set[np.dtype], Type]] = {
 
 @pytest.mark.parametrize(
     ["op_name", "arg_types", "ret_type"],
+    # Test that all the defined types in type matrix work as intended
     [
         pytest.param(op_name, arg_types, ret_type, id=f"{op_name}-{'-'.join(map(str, arg_types))}-{ret_type}")
         for op_name, op_enum in OperatorEnum.__members__.items()
@@ -100,9 +103,13 @@ def test_type_matrix_execution(op_name: str, arg_types: Tuple[ExpressionType, ..
     op = OPS[op_name]
     df = df.with_column("bar", op(*[col(str(et)) for et in arg_types]))
 
-    expected_numpy_types, expected_python_type = NP_AND_PY_TYPE[ret_type]
-
     assert df.schema()["bar"].daft_type == ret_type
-    assert df.to_pandas()["bar"].dtype in expected_numpy_types
-    for result_item in df.to_pandas()["bar"].tolist():
-        assert isinstance(result_item, expected_python_type)
+
+    df.collect()
+    assert df._result is not None
+    collected_columns = df._result.to_pydict()
+
+    check_type_func = CHECK_TYPE_FUNC[ret_type]
+    assert check_type_func(
+        collected_columns["bar"]
+    ), f"Expected type {ret_type} but received array {collected_columns['bar']} with type {collected_columns['bar'].type}"

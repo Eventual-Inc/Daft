@@ -732,9 +732,11 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
 
 def arrow_mod(arr, m):
-    if isinstance(m, pa.Scalar):
-        return np.mod(arr, m.as_py())
-    return np.mod(arr, m)
+    # TODO: Write a better kernel for mod without relying on Numpy, but respects typing semantics of Polars (see: https://github.com/Eventual-Inc/Daft/issues/250)
+    mask = arr.is_null()
+    modded_np = np.mod(arr, m.as_py()) if isinstance(m, pa.Scalar) else np.mod(arr, m)
+    return_type = pa.int64() if pa.types.is_integer(m.type) and pa.types.is_integer(arr.type) else pa.float64()
+    return pa.array(modded_np, mask=mask.to_numpy(), type=return_type)
 
 
 def arrow_floordiv(arr, m):
@@ -851,8 +853,8 @@ def assert_invalid_pylist_operation(*args, **kwargs):
     raise AssertionError(f"This is an invalid operation on a PyListDataBlock and should never be executing")
 
 
-def pylist_is_none(obj: Any):
-    return obj is None
+def pylist_is_none(input_block: PyListDataBlock) -> ArrowDataBlock:
+    return ArrowDataBlock(pa.chunked_array([[item is None for item in input_block.data]]))
 
 
 def pylist_if_else(
@@ -882,7 +884,7 @@ class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
     GT = make_map_binary(operator.gt)
     GE = make_map_binary(operator.ge)
 
-    IS_NULL = make_map_unary(pylist_is_none)
+    IS_NULL = pylist_is_none
     IF_ELSE = pylist_if_else
 
     # Placeholders: these change the cardinality of the block and should never be evaluated from the Evaluator
