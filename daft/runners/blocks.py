@@ -325,11 +325,14 @@ class DataBlock(Generic[ArrType]):
         cls, group_by: List[DataBlock[ArrType]], to_agg: List[DataBlock[ArrType]], agg_ops: List[str]
     ) -> Tuple[List[DataBlock[ArrType]], List[DataBlock[ArrType]]]:
         assert len(group_by) > 0, "no blocks"
-        assert len(to_agg) > 0, "no blocks"
         assert len(to_agg) == len(agg_ops)
-        first_type = type(to_agg[0])
+        if len(to_agg) > 0:
+            first_type = type(to_agg[0])
+            assert all(type(b) == first_type for b in to_agg), "all block types must match"
+        else:
+            first_type = type(group_by[0])
+
         assert all(type(b) == first_type for b in group_by), "all block types must match"
-        assert all(type(b) == first_type for b in to_agg), "all block types must match"
 
         return first_type._group_by_agg(group_by, to_agg, agg_ops)
 
@@ -692,6 +695,9 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
                 agg_expected_arrow_type.append(pa.int64())
             else:
                 raise NotImplementedError()
+        if len(agg_names) == 0:
+            exprs.append(pl.count(group_names[0]).alias("placeholder"))
+            agg_expected_arrow_type.append(pa.int64())
 
         pl_agged = pl_table.groupby(group_names).agg(exprs)
         agged = pl_agged.to_arrow()
@@ -701,6 +707,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         acols: List[DataBlock] = [
             DataBlock.make_block(agged[f"{a_name}"].cast(t)) for a_name, t in zip(agg_names, agg_expected_arrow_type)
         ]
+
+        if len(agg_names) == 0:
+            acols = []
+
         return gcols, acols
 
     @staticmethod

@@ -21,6 +21,7 @@ from daft.logical.logical_plan import (
     GlobalLimit,
     Join,
     LocalAggregate,
+    LocalDistinct,
     LocalLimit,
     LogicalPlan,
     MapPartition,
@@ -77,6 +78,8 @@ class LogicalPartitionOpRunner:
             return self._handle_local_limit(inputs, node, partition_id=partition_id)
         elif isinstance(node, LocalAggregate):
             return self._handle_local_aggregate(inputs, node, partition_id=partition_id)
+        elif isinstance(node, LocalDistinct):
+            return self._handle_local_distinct(inputs, node, partition_id=partition_id)
         elif isinstance(node, Join):
             return self._handle_join(inputs, node, partition_id=partition_id)
         elif isinstance(node, FileWrite):
@@ -161,6 +164,13 @@ class LogicalPartitionOpRunner:
         child_id = agg._children()[0].id()
         prev_partition = inputs[child_id]
         return prev_partition.agg(agg._agg, group_by=agg._group_by)
+
+    def _handle_local_distinct(
+        self, inputs: Dict[int, vPartition], agg: LocalDistinct, partition_id: int
+    ) -> vPartition:
+        child_id = agg._children()[0].id()
+        prev_partition = inputs[child_id]
+        return prev_partition.agg([], group_by=agg._group_by)
 
     def _handle_join(self, inputs: Dict[int, vPartition], join: Join, partition_id: int) -> vPartition:
         left_id = join._children()[0].id()

@@ -62,7 +62,7 @@ def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     "keys",
     [
         pytest.param(["Borough"], id="NumGroupByKeys:1"),
-        # pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
+        pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
     ],
 )
 def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
@@ -80,7 +80,7 @@ def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
     "keys",
     [
         pytest.param(["Borough"], id="NumGroupSortKeys:1"),
-        #        pytest.param(["Borough", "Complaint Type"], id="NumGroupSortKeys:2"),
+        pytest.param(["Borough", "Complaint Type"], id="NumGroupSortKeys:2"),
     ],
 )
 def test_sum_groupby_sorted(daft_df, sort_desc, service_requests_csv_pd_df, repartition_nparts, keys):
@@ -89,7 +89,7 @@ def test_sum_groupby_sorted(daft_df, sort_desc, service_requests_csv_pd_df, repa
         daft_df.repartition(repartition_nparts)
         .groupby(*[col(k) for k in keys])
         .sum(col("Unique Key"))
-        .sort(*[col(k) for k in keys], desc=sort_desc)
+        .sort(by=[col(k) for k in keys], desc=sort_desc)
     )
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df.groupby(keys).sum("Unique Key").sort_values(by=keys, ascending=not sort_desc)

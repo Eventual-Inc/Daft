@@ -133,9 +133,6 @@ class PruneColumns(Rule[LogicalPlan]):
 
         new_agg_pairs = [(e, op) for e, op in agg_op_pairs if e.get_id() in parent_required_set]
         grandchild = child._children()[0]
-        if len(new_agg_pairs) == 0:
-            # TODO(sammy) add an actual distinct operation to avoid the extra col from being optimized out
-            return None
 
         logger.debug(f"Pruning Columns:  {agg_ids - parent_required_set} in projection aggregate")
         return parent.copy_with_new_children(
