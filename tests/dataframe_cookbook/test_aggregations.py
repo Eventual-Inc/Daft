@@ -36,6 +36,32 @@ def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
 
 @parametrize_service_requests_csv_repartition
 @parametrize_service_requests_csv_daft_df
+def test_global_agg(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    """Averages across a column for entire table"""
+    daft_df = daft_df.repartition(repartition_nparts).agg(
+        [
+            (col("Unique Key").alias("unique_key_mean"), "mean"),
+            (col("Unique Key").alias("unique_key_sum"), "sum"),
+            (col("Borough").alias("borough_min"), "min"),
+            (col("Borough").alias("borough_max"), "max"),
+        ]
+    )
+    service_requests_csv_pd_df = pd.DataFrame.from_records(
+        [
+            {
+                "unique_key_mean": service_requests_csv_pd_df["Unique Key"].mean(),
+                "unique_key_sum": service_requests_csv_pd_df["Unique Key"].sum(),
+                "borough_min": service_requests_csv_pd_df["Borough"].min(),
+                "borough_max": service_requests_csv_pd_df["Borough"].max(),
+            }
+        ]
+    )
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_mean")
+
+
+@parametrize_service_requests_csv_repartition
+@parametrize_service_requests_csv_daft_df
 def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Sums across an entire column for the entire table filtered by a certain condition"""
     daft_df = (
@@ -69,6 +95,31 @@ def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
     """Sums across groups"""
     daft_df = daft_df.repartition(repartition_nparts).groupby(*[col(k) for k in keys]).sum(col("Unique Key"))
     service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).sum("Unique Key").reset_index()
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
+
+
+# We are skippping due to a bug in polars with groupby aggregations with min
+@pytest.mark.skip()
+@parametrize_service_requests_csv_repartition
+@parametrize_service_requests_csv_daft_df
+@pytest.mark.parametrize(
+    "keys",
+    [
+        pytest.param(["Borough"], id="NumGroupByKeys:1"),
+        pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
+    ],
+)
+def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
+    """Sums across groups"""
+    daft_df = (
+        daft_df.repartition(repartition_nparts)
+        .groupby(*[col(k) for k in keys])
+        .min(col("Unique Key"), col("Created Date"))
+    )
+    service_requests_csv_pd_df = (
+        service_requests_csv_pd_df.groupby(keys)["Unique Key", "Created Date"].min().reset_index()
+    )
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
 
