@@ -697,7 +697,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
                 exprs.append(pl.max(an))
                 agg_expected_arrow_type.append(arr.type)
             elif op == "count":
-                exprs.append(pl.count(an))
+                exprs.append(pl.col(an).is_not_null().sum().alias(an))
                 agg_expected_arrow_type.append(pa.int64())
             else:
                 raise NotImplementedError()
