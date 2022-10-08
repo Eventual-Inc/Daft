@@ -648,7 +648,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         if op == "sum":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
-            return ArrowDataBlock(data=pa.chunked_array([[pac.sum(self.data).as_py()]]))
+            return ArrowDataBlock(data=pa.chunked_array([[pac.sum(self.data, min_count=0).as_py()]]))
         elif op == "mean":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.float64()))
@@ -697,7 +697,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
                 exprs.append(pl.max(an))
                 agg_expected_arrow_type.append(arr.type)
             elif op == "count":
-                exprs.append(pl.count(an))
+                exprs.append(pl.col(an).is_not_null().sum().alias(an))
                 agg_expected_arrow_type.append(pa.int64())
             else:
                 raise NotImplementedError()
