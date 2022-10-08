@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import uuid
 from dataclasses import dataclass
 from functools import partial
 from typing import (
@@ -475,10 +474,15 @@ class DataFrame:
             DataFrame: DataFrame that has only  unique rows.
         """
         all_exprs = self._plan.schema()
-        gb = self.groupby(*[col(e.name()) for e in all_exprs])
-        first_e_name = [e.name() for e in all_exprs][0]
-        dummy_col_name = str(uuid.uuid4())
-        return gb.agg([(col(first_e_name).alias(dummy_col_name), "min")]).exclude(dummy_col_name)
+        local_distinct = logical_plan.LocalDistinct(self._plan, all_exprs)
+        repartition = logical_plan.Repartition(
+            local_distinct,
+            partition_by=all_exprs,
+            num_partitions=self.num_partitions(),
+            scheme=logical_plan.PartitionScheme.HASH,
+        )
+        global_distinct = logical_plan.LocalDistinct(repartition, all_exprs)
+        return DataFrame(global_distinct)
 
     def exclude(self, *names: str) -> DataFrame:
         """Drops columns from the current DataFrame by name.

@@ -601,6 +601,44 @@ class LocalAggregate(UnaryNode):
         )
 
 
+class LocalDistinct(UnaryNode):
+    def __init__(
+        self,
+        input: LogicalPlan,
+        group_by: ExpressionList,
+    ) -> None:
+
+        self._group_by = group_by.resolve(input.schema())
+        schema = self._group_by.to_column_expressions()
+        super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
+        self._register_child(input)
+
+    def __repr__(self) -> str:
+        return f"LocalDistinct\n\toutput={self.schema()}\n\tgroup_by={self._group_by}"
+
+    def resource_request(self) -> ResourceRequest:
+        req = ResourceRequest.default()
+        if self._group_by is not None:
+            req = self._group_by.resource_request()
+        req = ResourceRequest.max_resources([req])
+        return req
+
+    def copy_with_new_children(self, new_children: List[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
+        return LocalDistinct(new_children[0], group_by=self._group_by)
+
+    def required_columns(self) -> ExpressionList:
+        return self._group_by.required_columns()
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, LocalDistinct) and self.schema() == other.schema() and self._group_by == other._group_by
+        )
+
+    def rebuild(self) -> LogicalPlan:
+        return LocalDistinct(input=self._children()[0].rebuild(), group_by=self._group_by.unresolve())
+
+
 class HTTPRequest(LogicalPlan):
     def __init__(
         self,
