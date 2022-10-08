@@ -67,3 +67,31 @@ def test_with_column(valid_data: List[Dict[str, float]]) -> None:
     expanded_df = df.with_column("foo", expr)
     # TODO(jay): Test that the expression with name "foo" is equal to the expected expression, except for the IDs of the columns
     assert expanded_df.column_names() == df.schema().column_names() + ["foo"]
+
+
+def test_dataframe_getitem_single(valid_data: List[Dict[str, float]]) -> None:
+    df = DataFrame.from_pylist(valid_data)
+    expanded_df = df.with_column("foo", df["sepal_length"] + df["sepal_width"])
+    # TODO(jay): Test that the expression with name "foo" is equal to the expected expression, except for the IDs of the columns
+    assert expanded_df.column_names() == df.schema().column_names() + ["foo"]
+    assert df.select(df["sepal_length"]).column_names() == ["sepal_length"]
+
+
+def test_dataframe_getitem_multiple(valid_data: List[Dict[str, float]]) -> None:
+    df = DataFrame.from_pylist(valid_data)
+    expanded_df = df.with_column("foo", sum(df["sepal_length", "sepal_width"]))
+    # TODO(jay): Test that the expression with name "foo" is equal to the expected expression, except for the IDs of the columns
+    assert expanded_df.column_names() == df.schema().column_names() + ["foo"]
+    assert df.select(*df["sepal_length", "sepal_width"]).column_names() == ["sepal_length", "sepal_width"]
+
+
+def test_dataframe_getitem_slice(valid_data: List[Dict[str, float]]) -> None:
+    df = DataFrame.from_pylist(valid_data)
+    slice_df = df.select(*df[:])
+    assert df.column_names() == slice_df.column_names()
+
+
+def test_dataframe_getitem_slice_rev(valid_data: List[Dict[str, float]]) -> None:
+    df = DataFrame.from_pylist(valid_data)
+    slice_df = df.select(*df[::-1])
+    assert df.column_names() == slice_df.column_names()[::-1]
