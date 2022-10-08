@@ -48,7 +48,7 @@ def test_projection_scan_pushdown(valid_data: List[Dict[str, float]], optimizer)
     df = DataFrame.from_pylist(valid_data)
     original_schema = df._plan.schema()
     df = df.select(*selected_columns)
-    assert df.column_names() == selected_columns
+    assert df.column_names == selected_columns
 
     optimized = optimizer(df.plan())
     expected = logical_plan.Scan(

@@ -107,6 +107,7 @@ class DataFrame:
         """
         return DataFrameSchema.from_expression_list(self._plan.schema())
 
+    @property
     def column_names(self) -> List[str]:
         """Returns column names of DataFrame as a list of strings.
 
@@ -114,6 +115,15 @@ class DataFrame:
             List[str]: Column names of this DataFrame.
         """
         return [expr.name() for expr in self._plan.schema()]
+
+    @property
+    def columns(self) -> List[ColumnExpression]:
+        """Returns column of DataFrame as a list of ColumnExpressions.
+
+        Returns:
+            List[ColumnExpression]: Columns of this DataFrame.
+        """
+        return [expr.to_column_expression() for expr in self._plan.schema()]
 
     def show(self, n: int = -1) -> DataFrameDisplay:
         """Executes and displays the executed dataframe as a table
@@ -436,6 +446,49 @@ class DataFrame:
     def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> ExpressionList:
         expressions = [col(c) if isinstance(c, str) else c for c in columns]
         return ExpressionList(expressions)
+
+    def __getitem__(
+        self, item: Union[slice, int, str, Iterable[Union[str, int]]]
+    ) -> Union[ColumnExpression, DataFrame]:
+        result: Optional[ColumnExpression]
+
+        if isinstance(item, int):
+            exprs = self._plan.schema()
+            if item < -len(exprs.exprs) or item >= len(exprs.exprs):
+                raise ValueError(f"{item} out of bounds for {exprs.exprs}")
+            result = exprs.exprs[item]
+            assert result is not None
+            return result.to_column_expression()
+        elif isinstance(item, str):
+            exprs = self._plan.schema()
+            result = exprs.get_expression_by_name(item)
+            if result is None:
+                raise ValueError(f"{item} not found in DataFrame schema {exprs}")
+            assert result is not None
+            return result.to_column_expression()  # type: ignore
+        elif isinstance(item, Iterable):
+            exprs = self._plan.schema()
+            columns = []
+            for it in item:
+                if isinstance(it, str):
+                    result = exprs.get_expression_by_name(it)
+                    if result is None:
+                        raise ValueError(f"{it} not found in DataFrame schema {exprs}")
+                    columns.append(result)
+                elif isinstance(it, int):
+                    if it < -len(exprs.exprs) or it >= len(exprs.exprs):
+                        raise ValueError(f"{it} out of bounds for {exprs.exprs}")
+                    result = exprs.exprs[it]
+                    assert result is not None
+                    columns.append(result.to_column_expression())
+                else:
+                    raise ValueError(f"unknown indexing type: {type(it)}")
+            return self.select(*columns)
+        elif isinstance(item, slice):
+            exprs = self._plan.schema()
+            return self.select(*[val.to_column_expression() for val in exprs.exprs[item]])
+        else:
+            raise ValueError(f"unknown indexing type: {type(item)}")
 
     def select(self, *columns: ColumnInputType) -> DataFrame:
         """Creates a new DataFrame that `selects` that columns that are passed in from the current DataFrame.
