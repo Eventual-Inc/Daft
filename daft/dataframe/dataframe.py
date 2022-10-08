@@ -107,6 +107,7 @@ class DataFrame:
         """
         return DataFrameSchema.from_expression_list(self._plan.schema())
 
+    @property
     def column_names(self) -> List[str]:
         """Returns column names of DataFrame as a list of strings.
 
@@ -114,6 +115,15 @@ class DataFrame:
             List[str]: Column names of this DataFrame.
         """
         return [expr.name() for expr in self._plan.schema()]
+
+    @property
+    def columns(self) -> List[ColumnExpression]:
+        """Returns column of DataFrame as a list of ColumnExpressions.
+
+        Returns:
+            List[ColumnExpression]: Columns of this DataFrame.
+        """
+        return [expr.to_column_expression() for expr in self._plan.schema()]
 
     def show(self, n: int = -1) -> DataFrameDisplay:
         """Executes and displays the executed dataframe as a table
@@ -439,7 +449,7 @@ class DataFrame:
 
     def __getitem__(
         self, item: Union[slice, int, str, Iterable[Union[str, int]]]
-    ) -> Union[ColumnExpression, List[ColumnExpression]]:
+    ) -> Union[ColumnExpression, DataFrame]:
         result: Optional[ColumnExpression]
 
         if isinstance(item, int):
@@ -472,13 +482,13 @@ class DataFrame:
                     assert result is not None
                     columns.append(result.to_column_expression())
                 else:
-                    raise ValueError(f"unknown indexing type: {it}")
-            return columns
+                    raise ValueError(f"unknown indexing type: {type(it)}")
+            return self.select(*columns)
         elif isinstance(item, slice):
             exprs = self._plan.schema()
-            return [val.to_column_expression() for val in exprs.exprs[item]]
+            return self.select(*[val.to_column_expression() for val in exprs.exprs[item]])
         else:
-            raise ValueError(f"Unknown type {type(item)} for indexing")
+            raise ValueError(f"unknown indexing type: {type(item)}")
 
     def select(self, *columns: ColumnInputType) -> DataFrame:
         """Creates a new DataFrame that `selects` that columns that are passed in from the current DataFrame.
