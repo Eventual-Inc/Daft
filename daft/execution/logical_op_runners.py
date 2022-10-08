@@ -319,7 +319,11 @@ class LogicalGlobalOpRunner:
         descending = sort._descending
 
         def sample_map_func(part: vPartition) -> vPartition:
-            return part.sample(SAMPLES_PER_PARTITION).eval_expression_list(exprs)
+            return (
+                part.sample(SAMPLES_PER_PARTITION)
+                .eval_expression_list(exprs)
+                .filter(ExpressionList([~e.to_column_expression().is_null() for e in exprs]).resolve(exprs))
+            )
 
         def quantile_reduce_func(to_reduce: List[vPartition]) -> vPartition:
             merged = vPartition.merge_partitions(to_reduce, verify_partition_id=False)
