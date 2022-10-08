@@ -73,6 +73,17 @@ _BinaryNumericalTM = frozenset(
     }.items()
 )
 
+_ComparableTM = frozenset(
+    {
+        (ExpressionType.integer(),): ExpressionType.integer(),
+        (ExpressionType.logical(),): ExpressionType.logical(),
+        (ExpressionType.float(),): ExpressionType.float(),
+        (ExpressionType.string(),): ExpressionType.string(),
+        (ExpressionType.date(),): ExpressionType.date(),
+        (ExpressionType.bytes(),): ExpressionType.bytes(),
+    }.items()
+)
+
 _ComparisionTM = frozenset(
     {
         (ExpressionType.integer(), ExpressionType.integer()): ExpressionType.logical(),
@@ -84,6 +95,7 @@ _ComparisionTM = frozenset(
         (ExpressionType.bytes(), ExpressionType.bytes()): ExpressionType.logical(),
     }.items()
 )
+
 
 _BinaryLogicalTM = frozenset(
     {
@@ -168,6 +180,8 @@ _NBop = partial(_BOp, type_matrix=_BinaryNumericalTM)
 # Comparison Binary Ops
 _CBop = partial(_BOp, type_matrix=_ComparisionTM)
 
+_ComparibleUop = partial(_UOp, type_matrix=_ComparableTM)
+
 # Logical Binary Ops
 _LBop = partial(_BOp, type_matrix=_BinaryLogicalTM)
 
@@ -188,8 +202,8 @@ class OperatorEnum(Enum):
     # Reductions
     SUM = _NUop(name="sum", symbol="sum")
     MEAN = _NUop(name="mean", symbol="mean")
-    MIN = _NUop(name="min", symbol="min")
-    MAX = _NUop(name="max", symbol="max")
+    MIN = _ComparibleUop(name="min", symbol="min")
+    MAX = _ComparibleUop(name="max", symbol="max")
 
     COUNT = _UOp(name="count", symbol="count", type_matrix=_CountLogicalTM)
 

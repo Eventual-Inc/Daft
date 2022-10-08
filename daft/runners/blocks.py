@@ -645,7 +645,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             return DataBlock.make_block(data=pa.chunked_array([seed_arr]))
 
     def agg(self, op: str) -> DataBlock[ArrowArrType]:
-
         if op == "sum":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
@@ -658,7 +657,14 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.int64()))
             return ArrowDataBlock(data=pa.chunked_array([[pac.count(self.data).as_py()]]))
-
+        elif op == "min":
+            if len(self) == 0:
+                return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
+            return ArrowDataBlock(data=pa.chunked_array([[pac.min(self.data).as_py()]], type=self.data.type))
+        elif op == "max":
+            if len(self) == 0:
+                return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
+            return ArrowDataBlock(data=pa.chunked_array([[pac.max(self.data).as_py()]], type=self.data.type))
         else:
             raise NotImplementedError(op)
 

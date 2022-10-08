@@ -825,6 +825,60 @@ class DataFrame:
         assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "mean") for c in cols])
 
+    def min(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs a global min on the DataFrame on a sequence of columns.
+
+        Args:
+            *cols (Union[str, Expression]): columns to min
+        Returns:
+            DataFrame: Globally aggregated min. Should be a single row.
+        """
+        assert len(cols) > 0, "no columns were passed in"
+        return self._agg([(c, "min") for c in cols])
+
+    def max(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs a global max on the DataFrame on a sequence of columns.
+
+        Args:
+            *cols (Union[str, Expression]): columns to max
+        Returns:
+            DataFrame: Globally aggregated max. Should be a single row.
+        """
+        assert len(cols) > 0, "no columns were passed in"
+        return self._agg([(c, "max") for c in cols])
+
+    def count(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs a global count on the DataFrame on a sequence of columns.
+
+        Args:
+            *cols (Union[str, Expression]): columns to count
+        Returns:
+            DataFrame: Globally aggregated count. Should be a single row.
+        """
+        assert len(cols) > 0, "no columns were passed in"
+        return self._agg([(c, "count") for c in cols])
+
+    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
+        """Perform aggregations on this DataFrame. Allows for mixed aggregations for multiple columns
+        Will return a single row that aggregated the entire DataFrame.
+
+        Example:
+        >>> df = df.agg([
+        >>>     ('x', 'sum'),
+        >>>     ('x', 'mean'),
+        >>>     ('y', 'min'),
+        >>>     ('y', 'max'),
+        >>>     (col('x') + col('y'), 'max'),
+        >>> ])
+
+        Args:
+            to_agg (List[Tuple[ColumnInputType, str]]): list of (column, agg_type)
+
+        Returns:
+            DataFrame: DataFrame with aggregated results
+        """
+        return self._agg(to_agg, group_by=None)
+
     def groupby(self, *group_by: ColumnInputType) -> GroupedDataFrame:
         """Performs a GroupBy on the DataFrame for Aggregation.
 
@@ -892,6 +946,29 @@ class GroupedDataFrame:
         """
 
         return self.df._agg([(c, "mean") for c in cols], group_by=self.group_by)
+
+    def min(self, *cols: ColumnInputType) -> DataFrame:
+        """Perform grouped min on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to min
+
+        Returns:
+            DataFrame: DataFrame with grouped min.
+        """
+        return self.df._agg([(c, "min") for c in cols], group_by=self.group_by)
+
+    def max(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs grouped max on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to max
+
+        Returns:
+            DataFrame: DataFrame with grouped max.
+        """
+
+        return self.df._agg([(c, "max") for c in cols], group_by=self.group_by)
 
     def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
