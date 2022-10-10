@@ -208,7 +208,13 @@ def assert_arrow_equals(
             ), f"{col} failed NaN check: {daft_arr} vs {expected_arr}"
             nan_indices = pac.is_nan(daft_arr)
 
-        arr_eq = pac.equal(daft_arr, expected_arr)
+        # pac.equal not implemented for null arrays
+        arr_eq = (
+            pac.equal(daft_arr, expected_arr)
+            if not pa.types.is_null(daft_arr.type)
+            else pa.array([True] * len(daft_arr))
+        )
+
         if nan_indices is not None:
             arr_eq = pac.array_filter(arr_eq, pac.invert(nan_indices))
 

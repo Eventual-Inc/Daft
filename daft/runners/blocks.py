@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections
+import functools
 import math
 import operator
 import random
@@ -690,9 +691,15 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
         pl_agged = pl_table.groupby(group_names).agg(exprs)
         agged = pl_agged.to_arrow()
-        gcols: List[DataBlock] = [
-            DataBlock.make_block(agged[g_name].cast(t)) for g_name, t in zip(group_names, grouped_expected_arrow_type)
-        ]
+        gcols: List[DataBlock] = []
+        for g_name, t in zip(group_names, grouped_expected_arrow_type):
+            # Arrow really doesn't like casting to null types, so we corner-case here and construct a null array from scratch
+            block = (
+                DataBlock.make_block(pa.array([None for _ in range(len(agged[g_name]))], type=pa.null()))
+                if pa.types.is_null(t)
+                else DataBlock.make_block(agged[g_name].cast(t))
+            )
+            gcols.append(block)
         acols: List[DataBlock] = [
             DataBlock.make_block(agged[f"{a_name}"].cast(t)) for a_name, t in zip(agg_names, agg_expected_arrow_type)
         ]
@@ -703,16 +710,45 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return gcols, acols
 
     @staticmethod
+    def _get_null_nan_mask(keys: List[DataBlock[ArrowArrType]]) -> Tuple[pa.Array, bool]:
+        """Returns a mask which indicates the presence of nulls/nans across a list of DataBlocks"""
+        mask_list = [pac.invert(pac.is_null(k.data, nan_is_null=True)) for k in keys]
+        mask = functools.reduce(lambda a, b: pac.and_(a, b), mask_list)
+        return mask, pac.all(mask).as_py()
+
+    @staticmethod
     def _join_keys(
         left_keys: List[DataBlock[ArrowArrType]], right_keys: List[DataBlock[ArrowArrType]]
     ) -> Tuple[DataBlock[ArrowArrType], DataBlock[ArrowArrType]]:
         assert len(left_keys) == len(right_keys)
+        left_null_nan_mask, left_no_nulls = ArrowDataBlock._get_null_nan_mask(left_keys)
+        right_null_nan_mask, right_no_nulls = ArrowDataBlock._get_null_nan_mask(right_keys)
 
-        pd_left_keys = [k.data.to_pandas() for k in left_keys]
+        # Filter out rows with NaNs/None entries
+        left_keys_arrs = (
+            [k.data for k in left_keys]
+            if left_no_nulls
+            else [pac.array_filter(k.data, left_null_nan_mask) for k in left_keys]
+        )
+        right_keys_arrs = (
+            [k.data for k in right_keys]
+            if right_no_nulls
+            else [pac.array_filter(k.data, right_null_nan_mask) for k in right_keys]
+        )
 
-        pd_right_keys = [k.data.to_pandas() for k in right_keys]
-        left_index, right_index = get_join_indexers(pd_left_keys, pd_right_keys, how="inner")
+        left_index, right_index = get_join_indexers(
+            [arr.to_pandas() for arr in left_keys_arrs], [arr.to_pandas() for arr in right_keys_arrs], how="inner"
+        )
 
+        # Restore the join indices to original indices before filtering rows with NaNs/Nones
+        if not left_no_nulls:
+            num_nulls_cumsum = np.invert(left_null_nan_mask.to_numpy()).cumsum()[left_null_nan_mask.to_numpy()]
+            left_index = left_index + num_nulls_cumsum[left_index]
+        if not right_no_nulls:
+            num_nulls_cumsum = np.invert(right_null_nan_mask.to_numpy()).cumsum()[right_null_nan_mask.to_numpy()]
+            right_index = right_index + num_nulls_cumsum[right_index]
+
+        # NOTE: the results presented here are always an INNER join because all the NaN/Null keys are always filtered out
         return DataBlock.make_block(left_index), DataBlock.make_block(right_index)
 
     def list_explode(self) -> Tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
