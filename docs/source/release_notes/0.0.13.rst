@@ -1,4 +1,4 @@
-Daft 3 Release Notes
+Daft 0.0.13 Release Notes
 =========================
 
 The Daft 0.0.13 release fixes some issues with typing and adds new functionality for loading from files on disk. The highlights are:

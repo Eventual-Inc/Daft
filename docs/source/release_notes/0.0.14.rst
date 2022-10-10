@@ -1,0 +1,60 @@
+Daft 0.0.14 Release Notes
+=========================
+
+The Daft 0.0.14 release features many stabilization and bugfixes. The highlights are:
+
+* Adds index syntax for accessing columns (``df["mycol"]``)
+* Null testing and hardening for numerical expressions
+* Null testing and hardening for aggregations/groupby operations
+
+
+New Features
+------------
+
+DataFrame Indexing Syntax
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+DataFrame columns can now be accessed via an indexing syntax, greatly improving code readability and ease of use.
+
+Example:
+
+.. code:: python
+
+    df = df.with_column("foo_plus_1", df["foo"] + 1)
+    df = df.join(df2, left_on=df["id"], right_on=df2["id"])
+
+See: `#265 <https://github.com/Eventual-Inc/Daft/pull/265>`_
+
+Global Aggregations
+^^^^^^^^^^^^^^^^^^^
+
+``DataFrame.agg`` added for aggregations on a non-grouped DataFrame
+
+See: `#263 <https://github.com/Eventual-Inc/Daft/pull/263>`_
+
+Enhancements
+------------
+
+- implement distinct logical plan and remove hack in aggregate `#262 <https://github.com/Eventual-Inc/Daft/pull/262>`_
+
+Bug Fixes
+---------
+
+* Fixes and unit tests for aggregations on null items `#268 <https://github.com/Eventual-Inc/Daft/pull/268>`_
+* Fix explode column pruning optimizer bug `#257 <https://github.com/Eventual-Inc/Daft/pull/257>`_
+* Add null testing for operators and fix mod operator `#247 <https://github.com/Eventual-Inc/Daft/pull/247>`_
+* Filter out nulls when running sample function for sort shuffle op `#267 <https://github.com/Eventual-Inc/Daft/pull/267>`_
+
+Build Changes
+-------------
+
+* Test Wheels after building to verify they work `#260 <https://github.com/Eventual-Inc/Daft/pull/260>`_
+
+Closed Issues
+-------------
+
+* Use indexing syntax for getting/setting columns in a Dataframe \(e.g. df\["foo"\]\) `#259 <https://github.com/Eventual-Inc/Daft/issues/259>`_
+* Explode column pruning optimizer bug `#258 <https://github.com/Eventual-Inc/Daft/issues/258>`_
+* Run workflow that installs wheels to verify they work `#253 <https://github.com/Eventual-Inc/Daft/issues/253>`_
+* Build Distinct Logical Plan Operator  `#245 <https://github.com/Eventual-Inc/Daft/issues/245>`_
+* Allow for `.agg` aggregations over a non-grouped DataFrame `#243 <https://github.com/Eventual-Inc/Daft/issues/243>`_
