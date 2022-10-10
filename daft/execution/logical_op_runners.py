@@ -292,7 +292,6 @@ class LogicalGlobalOpRunner:
         return self.map_partitions(prev_part, limit_map_func, limit.resource_request())
 
     def _handle_repartition(self, inputs: Dict[int, PartitionSet], repartition: Repartition) -> PartitionSet:
-
         child_id = repartition._children()[0].id()
         repartitioner: ShuffleOp
         if repartition._scheme == PartitionScheme.RANDOM:
