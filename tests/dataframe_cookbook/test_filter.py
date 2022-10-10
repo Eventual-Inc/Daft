@@ -33,7 +33,7 @@ COL_SUBSET = ["Unique Key", "Complaint Type", "Borough", "Descriptor"]
         ),
     ],
 )
-def test_sum(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
+def test_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Filter the dataframe, retrieve the top N results and select a subset of columns"""
 
     daft_noise_complaints = daft_df_ops(daft_df.repartition(repartition_nparts))
@@ -88,7 +88,7 @@ def test_sum(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_npart
         ),
     ],
 )
-def test_sum(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
+def test_complex_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Filter the dataframe with a complex filter and select a subset of columns"""
     daft_noise_complaints_brooklyn = daft_df_ops(daft_df.repartition(repartition_nparts))
 
@@ -136,7 +136,7 @@ def test_sum(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_npart
         ),
     ],
 )
-def test_sum(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
+def test_chain_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Filter the dataframe with a chain of filters and select a subset of columns"""
     daft_noise_complaints_brooklyn = daft_df_ops(daft_df.repartition(repartition_nparts))
 
