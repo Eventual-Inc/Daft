@@ -11,7 +11,9 @@ Daft is a **fast, Pythonic and scalable dataframe** for Complex Data and Machine
    :width: 500
    :align: center
 
-*Daft is in Alpha - we do not recommend Daft for production workloads but welcome users to file issues and request for features.*
+.. NOTE::
+
+   *Daft is currently in its Alpha release phase - please expect bugs and rapid improvements to the project. We welcome user feedback/feature requests in our* `Discussions forums <https://github.com/Eventual-Inc/Daft/discussions>`_.
 
 New to Daft?
 ------------
