@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional, Set
 
 import ray
+import fsspec
 from loguru import logger
 from ray.util.placement_group import (
     placement_group,
@@ -204,11 +205,16 @@ if __name__ == "__main__":
         default="data/tpch-dbgen",
         help="Path to the folder containing the TPCH dbgen tool and generated data",
     )
+    parser.add_argument(
+        "--parquet_file_cache",
+        default=None,
+        help="Path to root folder (local or in S3) containing cached Parquet files",
+    )
     parser.add_argument("--scale_factor", default=10.0, help="Scale factor to run on in GB", type=float)
     parser.add_argument(
         "--num_parts", default=None, help="Number of parts to generate (defaults to 1 part per GB)", type=int
     )
-    parser.add_argument("--skip_questions", action="append", default=[], help="Questions to skip", type=int)
+    parser.add_argument("--skip_questions", type=str, default=None, help="Comma-separated list of questions to skip")
     parser.add_argument("--output_csv", default=None, type=str, help="Location to output CSV file")
     parser.add_argument("--output_csv_headers", action="store_true", help="Whether to output headers for the CSV file")
     parser.add_argument(
@@ -218,13 +224,24 @@ if __name__ == "__main__":
     num_parts = math.ceil(args.scale_factor) if args.num_parts is None else args.num_parts
 
     # Generate Parquet data, or skip if data is cached on disk
-    parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
+    parquet_folder: str
+    if args.parquet_file_cache is not None:
+        parquet_folder = (
+            os.path.join(args.parquet_file_cache, str(args.scale_factor).replace(".", "_"), str(num_parts), "parquet")
+            + "/"
+        )
+        fs = fsspec.filesystem("s3" if parquet_folder.startswith("s3://") else "file")
+        if not fs.isdir(parquet_folder):
+            local_parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
+            fs.put(local_parquet_folder, parquet_folder, recursive=True)
+    else:
+        parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
 
     setup_ray(args.daft_wheel_location)
 
     run_all_benchmarks(
         parquet_folder,
-        skip_questions=set(args.skip_questions),
+        skip_questions=set(args.skip_questions.split(",")) if args.skip_questions is not None else set(),
         csv_output_location=args.output_csv,
         output_csv_headers=args.output_csv_headers,
     )
