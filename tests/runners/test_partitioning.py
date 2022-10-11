@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List, Optional, Set
 
 import numpy as np
 import pyarrow as pa
@@ -262,3 +262,56 @@ def test_hash_partition(n) -> None:
                 values_expected = pylist
             assert values_expected == pylist
         values_seen.update(pylist)
+
+
+@pytest.mark.parametrize("n", [1, 2, 3, 4, 5, 10])
+def test_hash_partition_nulls(n) -> None:
+    expr = col("x")
+    expr = resolve_expr(expr)
+    col_id = expr.required_columns()[0].get_id()
+
+    part0 = vPartition(
+        columns={
+            col_id: PyListTile(
+                column_id=col_id,
+                column_name=f"col_{col_id}",
+                partition_id=0,
+                block=DataBlock.make_block(pa.array([1, 2, 3])),
+            )
+        },
+        partition_id=0,
+    )
+    part1 = vPartition(
+        columns={
+            col_id: PyListTile(
+                column_id=col_id,
+                column_name=f"col_{col_id}",
+                partition_id=1,
+                block=DataBlock.make_block(pa.array([1, None, 3])),
+            )
+        },
+        partition_id=1,
+    )
+
+    new_parts_0 = part0.split_by_hash(ExpressionList([expr]), n)
+    new_parts_1 = part1.split_by_hash(ExpressionList([expr]), n)
+
+    partition_values: Dict[int, Set[Optional[int]]] = {}
+    for part0, part1 in zip(new_parts_0, new_parts_1):
+        assert part0.partition_id == part1.partition_id
+        part0_values = list(part0.columns[col_id].block.iter_py())
+        part1_values = list(part1.columns[col_id].block.iter_py())
+        partition_values[part0.partition_id] = set(part0_values + part1_values)
+
+    # Check that no rows were dropped after repartitioning
+    assert sum([len(p) for p in new_parts_0]) == 3
+    assert sum([len(p) for p in new_parts_1]) == 3
+
+    # Check that all partitions are disjoint
+    for partition_id in partition_values:
+        for other_partition_id in partition_values:
+            if partition_id == other_partition_id:
+                continue
+            assert partition_values[partition_id].isdisjoint(
+                partition_values[other_partition_id]
+            ), f"Found non-disjoint partitions: {partition_id}={partition_values[partition_id]} vs {other_partition_id}={partition_values[other_partition_id]}"
