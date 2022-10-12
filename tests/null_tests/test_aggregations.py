@@ -200,7 +200,7 @@ def test_all_null_groupby_keys(repartition_nparts):
     daft_df = DataFrame.from_pydict(
         {
             "id": [0, 1, 2],
-            "group": [None, None, None],
+            "group": pa.array([None, None, None], type=pa.int64()),
             "values": [1, 2, 3],
         }
     )
@@ -216,7 +216,7 @@ def test_all_null_groupby_keys(repartition_nparts):
     )
 
     expected_arrow_table = {
-        "group": pa.array([None]),
+        "group": pa.array([None], type=pa.int64()),
         "mean": pa.array([2.0]),
     }
     daft_df.collect()

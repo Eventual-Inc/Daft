@@ -49,8 +49,7 @@ def test_sort_with_nulls_multikey(repartition_nparts):
 def test_sort_with_all_nulls(repartition_nparts):
     daft_df = DataFrame.from_pydict(
         {
-            "id": [None, None, None],
-            "values": ["a1", "b1", "c1"],
+            "id": pa.array([None, None, None], type=pa.int64()),
         }
     ).repartition(repartition_nparts)
     daft_df = daft_df.sort(daft_df["id"])
