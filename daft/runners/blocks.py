@@ -626,14 +626,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
         hashed = hash_chunked_array(self.data, seed.data if seed is not None else None)
         return DataBlock.make_block(data=hashed)
-        # else:
-        #     seed_pa_type = seed.data.type
-        #     if not (pa.types.is_uint64(seed_pa_type)):
-        #         raise TypeError(f"can only seed hash uint64 not {seed_pa_type}")
-
-        #     seed_arr = seed.data.to_numpy()
-        #     seed_arr = seed_arr ^ (hashed.to_numpy() + 0x9E3779B9 + (seed_arr << 6) + (seed_arr >> 2))
-        #     return DataBlock.make_block(data=pa.chunked_array([seed_arr]))
 
     def agg(self, op: str) -> DataBlock[ArrowArrType]:
         if op == "sum":

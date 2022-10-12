@@ -48,11 +48,8 @@ struct HashingPrimativeArray {
     for (int64_t idx = 0; idx < arr_len; ++idx) {
       int64_t length = WordSize;
 
-      if (has_nulls) {
-        const bool is_valid = bit_util::GetBit(bitmask_ptr, idx + bit_offset);
-        if (!is_valid) {
-          length = 0;
-        }
+      if (has_nulls && !bit_util::GetBit(bitmask_ptr, idx + bit_offset)) {
+        length = 0;
       }
       uint64_t seed_val = 0;
       if (has_seed) {
