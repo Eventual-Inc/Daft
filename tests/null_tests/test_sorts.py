@@ -36,9 +36,9 @@ def test_sort_with_nulls_multikey(repartition_nparts):
     daft_df = daft_df.sort([daft_df["id1"], daft_df["id2"]])
 
     expected_arrow_table = {
-        "id1": pa.array([2, 2, 1, None, None]),
-        "id2": pa.array([1, 2, None, 1, None]),
-        "values": pa.array(["c1", "a1", "e1", "d1", "b1"]),
+        "id1": pa.array([1, 2, 2, None, None]),
+        "id2": pa.array([None, 1, 2, 1, None]),
+        "values": pa.array(["e1", "c1", "a1", "d1", "b1"]),
     }
     daft_df.collect()
 
