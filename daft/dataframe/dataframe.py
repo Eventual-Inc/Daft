@@ -30,6 +30,7 @@ from daft.datasources import (
     ParquetSourceInfo,
     StorageType,
 )
+from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression, Expression, col
 from daft.filesystem import get_filesystem_from_path
@@ -1006,6 +1007,12 @@ class DataFrame:
 class GroupedDataFrame:
     df: DataFrame
     group_by: ExpressionList
+
+    def __post_init__(self):
+        resolved_groupby = self.group_by.resolve(self.df._plan.schema())
+        for e in resolved_groupby:
+            if e.resolved_type() == ExpressionType.null():
+                raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped sum on this GroupedDataFrame.

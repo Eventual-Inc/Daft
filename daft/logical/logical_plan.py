@@ -7,6 +7,7 @@ from enum import Enum, IntEnum
 from typing import Any, Generic, List, Optional, Tuple, TypeVar, Union
 
 from daft.datasources import SourceInfo, StorageType
+from daft.errors import ExpressionTypeError
 from daft.execution.operators import OperatorEnum
 from daft.expressions import CallExpression, ColumnExpression, Expression
 from daft.internal.treenode import TreeNode
@@ -299,6 +300,11 @@ class Sort(UnaryNode):
         super().__init__(input.schema().to_column_expressions(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._sort_by = sort_by.resolve(input_schema=input.schema())
+
+        for e in self._sort_by:
+            if e.resolved_type() == ExpressionType.null():
+                raise ExpressionTypeError(f"Cannot sort on null type expression: {e}")
+
         if isinstance(descending, bool):
             self._descending = [descending for _ in self._sort_by]
         else:
@@ -557,7 +563,6 @@ class LocalAggregate(UnaryNode):
         agg: List[Tuple[Expression, str]],
         group_by: Optional[ExpressionList] = None,
     ) -> None:
-
         cols_to_agg = ExpressionList([e for e, _ in agg]).resolve(input.schema())
         schema = cols_to_agg.to_column_expressions()
         self._group_by = group_by
@@ -730,6 +735,12 @@ class Join(BinaryNode):
         num_partitions: int
         self._left_on = left_on.resolve(left.schema())
         self._right_on = right_on.resolve(right.schema())
+
+        for join_keys in (self._left_on, self._right_on):
+            for e in join_keys:
+                if e.resolved_type() == ExpressionType.null():
+                    raise ExpressionTypeError(f"Cannot join on null type expression: {e}")
+
         self._how = how
         schema: ExpressionList
         if how == JoinType.LEFT:

@@ -2,6 +2,7 @@ import pyarrow as pa
 import pytest
 
 from daft import DataFrame
+from daft.errors import ExpressionTypeError
 from tests.conftest import assert_arrow_equals
 
 
@@ -82,3 +83,21 @@ def test_inner_join_all_null(repartition_nparts):
     }
     daft_df.collect()
     assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="id")
+
+
+def test_inner_join_null_type_column():
+    daft_df = DataFrame.from_pydict(
+        {
+            "id": pa.array([None, None, None], type=pa.null()),
+            "values_left": ["a1", "b1", "c1"],
+        }
+    )
+    daft_df2 = DataFrame.from_pydict(
+        {
+            "id": pa.array([None, None, None], type=pa.null()),
+            "values_right": ["a2", "b2", "c2"],
+        }
+    )
+
+    with pytest.raises(ExpressionTypeError):
+        daft_df.join(daft_df2, on="id", how="inner")
