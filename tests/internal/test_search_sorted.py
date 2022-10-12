@@ -17,11 +17,16 @@ number_types = int_types + float_types
 def test_number_array(num_chunks, dtype) -> None:
     pa_keys = pa.chunked_array([np.array([4, 2, 1, 3], dtype=dtype.to_pandas_dtype()) for _ in range(num_chunks)])
     np_keys = pa_keys.to_numpy()
-    np_sorted_arr = np.arange(100, dtype=dtype.to_pandas_dtype()) * 10
+    np_sorted_arr = np.arange(100, dtype=dtype.to_pandas_dtype())
     result = np.searchsorted(np_sorted_arr, np_keys)
     pa_sorted_arr = pa.chunked_array([np_sorted_arr], type=dtype)
     pa_result = search_sorted(pa_sorted_arr, pa_keys)
+
     assert np.all(result == pa_result.to_numpy())
+
+    # Key Slice
+    pa_result_slice = search_sorted(pa_sorted_arr, pa_keys[1:])
+    assert np.all(result[1:] == pa_result_slice.to_numpy())
 
 
 def test_number_array_with_nulls() -> None:
@@ -34,6 +39,19 @@ def test_number_array_with_nulls() -> None:
     assert np.all(result == pa_result[:1000].to_numpy())
     assert np.all(result == pa_result[1000 + 10 :].to_numpy())
     assert pa_result[1000 : 1000 + 10].null_count == 10
+
+    # Key Slice
+    pa_result_slice = search_sorted(pa_data, pa_keys[1:])
+    assert np.all(result[1:] == pa_result_slice[: 1000 - 1].to_numpy())
+    assert np.all(result == pa_result_slice[1000 + 10 - 1 :].to_numpy())
+    assert pa_result_slice[1000 - 1 : 1000 + 10 - 1].null_count == 10
+
+    # Data Slice
+    pa_result_slice = search_sorted(pa_data[1:], pa_keys)
+    new_result = np.maximum((result - 1), 0)
+    assert np.all(new_result == pa_result_slice[:1000].to_numpy())
+    assert np.all(new_result == pa_result_slice[1000 + 10 :].to_numpy())
+    assert pa_result_slice[1000 : 1000 + 10].null_count == 10
 
 
 def gen_random_str(k: int):
@@ -56,6 +74,15 @@ def test_string_array(str_len, num_chunks) -> None:
     pa_result = search_sorted(pa_data, pa_keys)
     assert np.all(result == pa_result.to_numpy())
 
+    # Key Slice
+    pa_result_slice = search_sorted(pa_data, pa_keys[1:])
+    assert np.all(result[1:] == pa_result_slice.to_numpy())
+
+    # Data Slice
+    pa_result_slice = search_sorted(pa_data[1:], pa_keys)
+    new_result = np.maximum((result - 1), 0)
+    assert np.all(new_result == pa_result_slice.to_numpy())
+
 
 def test_string_array_with_nulls() -> None:
     py_keys = [str(i) for i in range(100)]
@@ -70,6 +97,19 @@ def test_string_array_with_nulls() -> None:
     assert np.all(result == pa_result[:100].to_numpy())
     assert np.all(result == pa_result[100 + 10 :].to_numpy())
     assert pa_result[100 : 100 + 10].null_count == 10
+
+    # Key Slice
+    pa_result = search_sorted(pa_data, pa_keys[1:])
+    assert np.all(result[1:] == pa_result[: 100 - 1].to_numpy())
+    assert np.all(result == pa_result[100 + 10 - 1 :].to_numpy())
+    assert pa_result[100 - 1 : 100 + 10 - 1].null_count == 10
+
+    # Data Slice
+    pa_result_slice = search_sorted(pa_data[1:], pa_keys)
+    new_result = np.maximum((result - 1), 0)
+    assert np.all(new_result == pa_result_slice[:100].to_numpy())
+    assert np.all(new_result == pa_result_slice[100 + 10 :].to_numpy())
+    assert pa_result_slice[100 : 100 + 10].null_count == 10
 
 
 @pytest.mark.parametrize("str_len", range(0, 10))
@@ -116,6 +156,16 @@ def test_single_column_number_table(num_chunks, dtype) -> None:
     pa_result = search_sorted(pa_sorted_table, pa_table_keys)
     assert np.all(result == pa_result.to_numpy())
 
+    # Key Slice
+    pa_result_slice = search_sorted(pa_sorted_table, pa_table_keys[1:])
+    assert np.all(result[1:] == pa_result_slice.to_numpy())
+
+    # Data Slice
+    pa_result_slice = search_sorted(pa_sorted_table[1:], pa_table_keys)
+    new_result = np.maximum((result - 1), 0)
+
+    assert np.all(new_result == pa_result_slice.to_numpy())
+
 
 @pytest.mark.parametrize("num_chunks", range(1, 4))
 @pytest.mark.parametrize("dtype", number_types, ids=[repr(it) for it in number_types])
@@ -132,6 +182,16 @@ def test_multi_column_number_table(num_chunks, dtype) -> None:
     key_table = pa.table([pa_keys, pa_keys, pa_keys], names=["a", "b", "c"])
     pa_result = search_sorted(sorted_table, key_table)
     assert np.all(result == pa_result.to_numpy())
+
+    # Key Slice
+    pa_result_slice = search_sorted(sorted_table, key_table[1:])
+    assert np.all(result[1:] == pa_result_slice.to_numpy())
+
+    # Data Slice
+    pa_result_slice = search_sorted(sorted_table[1:], key_table)
+    new_result = np.maximum((result - 1), 0)
+
+    assert np.all(new_result == pa_result_slice.to_numpy())
 
 
 @pytest.mark.parametrize("num_chunks", range(1, 4))
@@ -150,6 +210,16 @@ def test_multi_column_mixed_number_table(num_chunks) -> None:
     key_table = pa.table([pa_keys, pa_keys.cast(pa.float32()), pa_keys.cast(pa.uint64())], names=["a", "b", "c"])
     pa_result = search_sorted(sorted_table, key_table)
     assert np.all(result == pa_result.to_numpy())
+
+    # Key Slice
+    pa_result_slice = search_sorted(sorted_table, key_table[1:])
+    assert np.all(result[1:] == pa_result_slice.to_numpy())
+
+    # Data Slice
+    pa_result_slice = search_sorted(sorted_table[1:], key_table)
+    new_result = np.maximum((result - 1), 0)
+
+    assert np.all(new_result == pa_result_slice.to_numpy())
 
 
 @pytest.mark.parametrize("str_len", [0, 1, 5])
@@ -170,6 +240,16 @@ def test_number_string_table(str_len, num_chunks) -> None:
 
     pa_result = search_sorted(sorted_table, key_table)
     assert np.all(result == pa_result.to_numpy())
+
+    # Key Slice
+    pa_result_slice = search_sorted(sorted_table, key_table[1:])
+    assert np.all(result[1:] == pa_result_slice.to_numpy())
+
+    # Data Slice
+    pa_result_slice = search_sorted(sorted_table[1:], key_table)
+    new_result = np.maximum((result - 1), 0)
+
+    assert np.all(new_result == pa_result_slice.to_numpy())
 
 
 @pytest.mark.parametrize("str_len", [1, 5])
@@ -253,3 +333,17 @@ def test_string_table_with_nulls() -> None:
     assert np.all(result == pa_result[:100].to_numpy())
     assert np.all(result == pa_result[100 + 10 :].to_numpy())
     assert pa_result[100 : 100 + 10].null_count == 10
+
+    # Key Slice
+    pa_result_slice = search_sorted(pa_data_table, pa_key_table[1:])
+    assert np.all(result[1:] == pa_result_slice[: 100 - 1].to_numpy())
+    assert np.all(result == pa_result_slice[100 + 10 - 1 :].to_numpy())
+    assert pa_result_slice[100 - 1 : 100 + 10 - 1].null_count == 10
+
+    # Data Slice
+    pa_result_slice = search_sorted(pa_data_table[1:], pa_key_table)
+    new_result = np.maximum((result - 1), 0)
+
+    assert np.all(new_result == pa_result_slice[:100].to_numpy())
+    assert np.all(new_result == pa_result_slice[100 + 10 :].to_numpy())
+    assert pa_result_slice[100 : 100 + 10].null_count == 10

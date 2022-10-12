@@ -106,7 +106,7 @@ struct SearchSortedPrimativeSingle {
     const T *keys_ptr = keys->GetValues<T>(1);
     ARROW_CHECK(keys_ptr != NULL);
 
-    const uint8_t *keys_bitmask_ptr = keys->GetValues<uint8_t>(0);
+    const uint8_t *keys_bitmask_ptr = keys->GetValues<uint8_t>(0, 0);
     ARROW_CHECK(keys_bitmask_ptr != NULL);
 
     ARROW_CHECK(result->type->id() == arrow::Type::UINT64);
@@ -114,15 +114,19 @@ struct SearchSortedPrimativeSingle {
 
     uint64_t *result_ptr = result->GetMutableValues<uint64_t>(1);
     ARROW_CHECK(result_ptr != NULL);
+    const size_t result_offset = result->offset;
 
-    uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0);
+    uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0, 0);
     ARROW_CHECK(result_bitmask_ptr != NULL);
 
     auto cmp = std::less<T>{};
     size_t min_idx = 0;
     size_t arr_len = arr->length;
+
     size_t max_idx = arr_len;
+
     size_t key_len = keys->length;
+    const size_t key_offset = keys->offset;
 
     if (key_len == 0) {
       return;
@@ -131,8 +135,8 @@ struct SearchSortedPrimativeSingle {
     T last_key_val = *keys_ptr;
 
     for (size_t key_idx = 0; key_idx < key_len; key_idx++, keys_ptr++, result_ptr++) {
-      const bool key_bit = bit_util::GetBit(keys_bitmask_ptr, key_idx);
-      bit_util::SetBitTo(result_bitmask_ptr, key_idx, key_bit);
+      const bool key_bit = bit_util::GetBit(keys_bitmask_ptr, key_idx + key_offset);
+      bit_util::SetBitTo(result_bitmask_ptr, key_idx + result_offset, key_bit);
       if (!key_bit) {
         continue;
       }
@@ -226,17 +230,17 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
   const T *arr_index_ptr = arr->GetValues<T>(1);
   ARROW_CHECK(arr_index_ptr != NULL);
 
-  const uint8_t *arr_data_ptr = arr->GetValues<uint8_t>(2);
+  const uint8_t *arr_data_ptr = arr->GetValues<uint8_t>(2, 0);
   ARROW_CHECK(arr_data_ptr != NULL);
 
   const bool has_nulls = keys->GetNullCount() > 0;
-  const uint8_t *keys_bitmask_ptr = keys->GetValues<uint8_t>(0);
+  const uint8_t *keys_bitmask_ptr = keys->GetValues<uint8_t>(0, 0);
   // ARROW_CHECK(keys_bitmask_ptr != NULL);
 
   const T *keys_index_ptr = keys->GetValues<T>(1);
   ARROW_CHECK(keys_index_ptr != NULL);
 
-  const uint8_t *keys_data_ptr = keys->GetValues<uint8_t>(2);
+  const uint8_t *keys_data_ptr = keys->GetValues<uint8_t>(2, 0);
   ARROW_CHECK(keys_data_ptr != NULL);
 
   ARROW_CHECK(result->length == keys->length);
@@ -244,13 +248,16 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
   uint64_t *result_ptr = result->GetMutableValues<uint64_t>(1);
   ARROW_CHECK(result_ptr != NULL);
 
-  uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0);
+  uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0, 0);
   ARROW_CHECK(!has_nulls || (result_bitmask_ptr != NULL));
+  const size_t result_offset = result->offset;
 
   size_t min_idx = 0;
   size_t arr_len = arr->length;
   size_t max_idx = arr_len;
   size_t key_len = keys->length;
+  const size_t key_offset = keys->offset;
+
   size_t last_key_idx = 0;
 
   if (key_len == 0) {
@@ -259,8 +266,8 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
 
   for (size_t key_idx = 0; key_idx < key_len; key_idx++, result_ptr++) {
     if (has_nulls) {
-      const bool key_bit = bit_util::GetBit(keys_bitmask_ptr, key_idx);
-      bit_util::SetBitTo(result_bitmask_ptr, key_idx, key_bit);
+      const bool key_bit = bit_util::GetBit(keys_bitmask_ptr, key_idx + key_offset);
+      bit_util::SetBitTo(result_bitmask_ptr, key_idx + result_offset, key_bit);
       if (!key_bit) {
         continue;
       }
