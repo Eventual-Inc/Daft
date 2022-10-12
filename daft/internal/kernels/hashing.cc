@@ -128,6 +128,15 @@ void hash_primitive_array(const arrow::ArrayData *arr, const arrow::ArrayData *s
   }
 }
 
+void hash_null_array(const int64_t arr_length, const arrow::ArrayData *seed, arrow::ArrayData *result) {
+  // Construct an UInt8 array of all nulls and use that for hashing
+  arrow::UInt8Builder builder;
+  ARROW_CHECK(builder.Reserve(arr_length).ok());
+  ARROW_CHECK(builder.AppendNulls(arr_length).ok());
+  const std::shared_ptr<arrow::Array> all_null_arr = builder.Finish().ValueOrDie();
+  hash_primitive_array(all_null_arr->data().get(), seed, result);
+}
+
 void hash_single_array(const arrow::ArrayData *arr, const arrow::ArrayData *seed, arrow::ArrayData *result) {
   ARROW_CHECK(arr != NULL);
   ARROW_CHECK(result != NULL);
@@ -137,6 +146,8 @@ void hash_single_array(const arrow::ArrayData *arr, const arrow::ArrayData *seed
     HashingBinaryArray<arrow::BinaryType::offset_type>::Exec(arr, seed, result);
   } else if (arrow::is_large_binary_like(arr->type->id())) {
     HashingBinaryArray<arrow::LargeBinaryType::offset_type>::Exec(arr, seed, result);
+  } else if (arr->type->id() == arrow::Type::type::NA) {
+    hash_null_array(arr->length, seed, result);
   } else {
     ARROW_LOG(FATAL) << "Unsupported Type " << arr->type->id();
   }
