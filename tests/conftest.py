@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import Dict, List, Type, Union
+from typing import Dict, List, Optional, Type, Union
 
 import pandas as pd
 import pyarrow as pa
@@ -153,6 +153,8 @@ def assert_arrow_equals(
     However, if asserting on ordering is intended behavior, set `assert_ordering=True` and this function will
     no longer run sorting before running the equality comparison.
     """
+    daft_sort_indices: Optional[pa.Array] = None
+    expected_sort_indices: Optional[pa.Array] = None
     if not assert_ordering:
         sort_key_list: List[str] = [sort_key] if isinstance(sort_key, str) else sort_key
         for key in sort_key_list:
@@ -176,25 +178,23 @@ def assert_arrow_equals(
     assert sorted(daft_columns.keys()) == sorted(
         expected_columns.keys()
     ), f"Found {daft_columns.keys()} expected {expected_columns.keys()}"
-    for col in daft_columns.keys():
+    columns = list(daft_columns.keys())
 
-        daft_arr: pa.Array
-        if isinstance(daft_columns[col], pa.ChunkedArray) and daft_columns[col].num_chunks > 0:
-            daft_arr = daft_columns[col].combine_chunks()
-        elif isinstance(daft_columns[col], pa.ChunkedArray):
-            daft_arr = pa.array([], type=daft_columns[col].type)
-        else:
-            daft_arr = daft_columns[col]
-        daft_arr = pac.array_take(daft_arr, daft_sort_indices)
+    for coldict, sort_indices in ((daft_columns, daft_sort_indices), (expected_columns, expected_sort_indices)):
+        for col in columns:
+            arr: pa.Array
+            if isinstance(coldict[col], pa.ChunkedArray) and coldict[col].num_chunks > 0:
+                arr = coldict[col].combine_chunks()
+            elif isinstance(coldict[col], pa.ChunkedArray):
+                arr = pa.array([], type=coldict[col].type)
+            else:
+                arr = coldict[col]
+            arr = pac.array_take(arr, sort_indices) if sort_indices is not None else arr
+            coldict[col] = arr
 
-        expected_arr: pa.Array
-        if isinstance(expected_columns[col], pa.ChunkedArray) and expected_columns[col].num_chunks > 0:
-            expected_arr = expected_columns[col].combine_chunks()
-        elif isinstance(expected_columns[col], pa.ChunkedArray):
-            expected_arr = pa.array([], type=expected_columns[col].type)
-        else:
-            expected_arr = expected_columns[col]
-        expected_arr = pac.array_take(expected_arr, expected_sort_indices)
+    for col in columns:
+        daft_arr = daft_columns[col]
+        expected_arr = expected_columns[col]
 
         assert len(daft_arr) == len(expected_arr), f"{col} failed length check: {len(daft_arr)} vs {len(expected_arr)}"
 
