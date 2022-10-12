@@ -30,7 +30,7 @@ import pyarrow.compute as pac
 from pandas.core.reshape.merge import get_join_indexers
 
 from daft.execution.operators import OperatorEnum, OperatorEvaluator
-from daft.internal.hashing import hash_chunked_array
+from daft.internal.kernels.hashing import hash_chunked_array
 from daft.internal.kernels.search_sorted import search_sorted
 
 # A type representing some Python scalar (non-series/array like object)
@@ -624,27 +624,8 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         assert isinstance(self.data, pa.ChunkedArray)
         assert seed is None or isinstance(seed.data, pa.ChunkedArray)
 
-        pa_type = self.data.type
-        data_to_hash = self.data
-        if pa.types.is_date32(pa_type):
-            data_to_hash = data_to_hash.cast(pa.int32())
-        elif pa.types.is_date64(pa_type):
-            data_to_hash = data_to_hash.cast(pa.int64())
-        elif pa.types.is_floating(pa_type):
-            data_to_hash = data_to_hash.cast(pa.string())
-        elif not (pa.types.is_integer(pa_type) or pa.types.is_string(pa_type)):
-            raise TypeError(f"cannot hash {pa_type}")
-        hashed = hash_chunked_array(data_to_hash)
-        if seed is None:
-            return DataBlock.make_block(data=hashed)
-        else:
-            seed_pa_type = seed.data.type
-            if not (pa.types.is_uint64(seed_pa_type)):
-                raise TypeError(f"can only seed hash uint64 not {seed_pa_type}")
-
-            seed_arr = seed.data.to_numpy()
-            seed_arr = seed_arr ^ (hashed.to_numpy() + 0x9E3779B9 + (seed_arr << 6) + (seed_arr >> 2))
-            return DataBlock.make_block(data=pa.chunked_array([seed_arr]))
+        hashed = hash_chunked_array(self.data, seed.data if seed is not None else None)
+        return DataBlock.make_block(data=hashed)
 
     def agg(self, op: str) -> DataBlock[ArrowArrType]:
         if op == "sum":
