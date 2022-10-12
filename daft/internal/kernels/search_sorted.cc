@@ -24,7 +24,7 @@ namespace bit_util = arrow::bit_util;
 #endif
 
 template <typename InType>
-struct SearchSortedPrimativeSingle {
+struct SearchSortedPrimitiveSingle {
   static void Exec(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result, const bool input_reversed) {
     if (keys->GetNullCount() == 0) {
       return KernelNonNull(arr, keys, result, input_reversed);
@@ -170,48 +170,48 @@ struct SearchSortedPrimativeSingle {
   }
 };
 
-void search_sorted_primative_single(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result,
+void search_sorted_primitive_single(const arrow::ArrayData *arr, const arrow::ArrayData *keys, arrow::ArrayData *result,
                                     const bool input_reversed) {
   switch (arr->type->id()) {
     case arrow::Type::INT8:
-      return SearchSortedPrimativeSingle<arrow::Int8Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::Int8Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::INT16:
-      return SearchSortedPrimativeSingle<arrow::Int16Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::Int16Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::INT32:
-      return SearchSortedPrimativeSingle<arrow::Int32Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::Int32Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::INT64:
-      return SearchSortedPrimativeSingle<arrow::Int64Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::Int64Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::UINT8:
-      return SearchSortedPrimativeSingle<arrow::UInt8Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::UInt8Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::UINT16:
-      return SearchSortedPrimativeSingle<arrow::UInt16Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::UInt16Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::UINT32:
-      return SearchSortedPrimativeSingle<arrow::UInt32Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::UInt32Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::UINT64:
-      return SearchSortedPrimativeSingle<arrow::UInt64Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::UInt64Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::FLOAT:
-      return SearchSortedPrimativeSingle<arrow::FloatType>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::FloatType>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::DOUBLE:
-      return SearchSortedPrimativeSingle<arrow::DoubleType>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::DoubleType>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::DATE32:
-      return SearchSortedPrimativeSingle<arrow::Date32Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::Date32Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::DATE64:
-      return SearchSortedPrimativeSingle<arrow::Date64Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::Date64Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::TIME32:
-      return SearchSortedPrimativeSingle<arrow::Time32Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::Time32Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::TIME64:
-      return SearchSortedPrimativeSingle<arrow::Time64Type>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::Time64Type>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::TIMESTAMP:
-      return SearchSortedPrimativeSingle<arrow::TimestampType>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::TimestampType>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::DURATION:
-      return SearchSortedPrimativeSingle<arrow::DurationType>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::DurationType>::Exec(arr, keys, result, input_reversed);
     case arrow::Type::INTERVAL_MONTHS:
-      return SearchSortedPrimativeSingle<arrow::MonthIntervalType>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::MonthIntervalType>::Exec(arr, keys, result, input_reversed);
     // Need custom less function for this since it uses a custom struct for the data structure
     // case arrow::Type::INTERVAL_MONTH_DAY_NANO:
-    //   return SearchSortedPrimativeSingle<arrow::MonthDayNanoIntervalType>::Exec(arr, keys, result);
+    //   return SearchSortedPrimitiveSingle<arrow::MonthDayNanoIntervalType>::Exec(arr, keys, result);
     case arrow::Type::INTERVAL_DAY_TIME:
-      return SearchSortedPrimativeSingle<arrow::DayTimeIntervalType>::Exec(arr, keys, result, input_reversed);
+      return SearchSortedPrimitiveSingle<arrow::DayTimeIntervalType>::Exec(arr, keys, result, input_reversed);
     default:
       ARROW_LOG(FATAL) << "Unknown arrow type" << arr->type->id();
   }
@@ -309,48 +309,48 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
   }
 }
 
-void add_primative_memory_view_to_comp_view(daft::kernels::CompositeView &comp_view, const std::shared_ptr<arrow::ArrayData> arr) {
+void add_primitive_memory_view_to_comp_view(daft::kernels::CompositeView &comp_view, const std::shared_ptr<arrow::ArrayData> arr) {
   ARROW_CHECK(arrow::is_primitive(arr->type->id()));
   switch (arr->type->id()) {
     case arrow::Type::INT8:
-      return comp_view.AddPrimativeMemoryView<arrow::Int8Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::Int8Type>(arr);
     case arrow::Type::INT16:
-      return comp_view.AddPrimativeMemoryView<arrow::Int16Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::Int16Type>(arr);
     case arrow::Type::INT32:
-      return comp_view.AddPrimativeMemoryView<arrow::Int32Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::Int32Type>(arr);
     case arrow::Type::INT64:
-      return comp_view.AddPrimativeMemoryView<arrow::Int64Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::Int64Type>(arr);
     case arrow::Type::UINT8:
-      return comp_view.AddPrimativeMemoryView<arrow::UInt8Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::UInt8Type>(arr);
     case arrow::Type::UINT16:
-      return comp_view.AddPrimativeMemoryView<arrow::UInt16Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::UInt16Type>(arr);
     case arrow::Type::UINT32:
-      return comp_view.AddPrimativeMemoryView<arrow::UInt32Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::UInt32Type>(arr);
     case arrow::Type::UINT64:
-      return comp_view.AddPrimativeMemoryView<arrow::UInt64Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::UInt64Type>(arr);
     case arrow::Type::FLOAT:
-      return comp_view.AddPrimativeMemoryView<arrow::FloatType>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::FloatType>(arr);
     case arrow::Type::DOUBLE:
-      return comp_view.AddPrimativeMemoryView<arrow::DoubleType>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::DoubleType>(arr);
     case arrow::Type::DATE32:
-      return comp_view.AddPrimativeMemoryView<arrow::Date32Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::Date32Type>(arr);
     case arrow::Type::DATE64:
-      return comp_view.AddPrimativeMemoryView<arrow::Date64Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::Date64Type>(arr);
     case arrow::Type::TIME32:
-      return comp_view.AddPrimativeMemoryView<arrow::Time32Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::Time32Type>(arr);
     case arrow::Type::TIME64:
-      return comp_view.AddPrimativeMemoryView<arrow::Time64Type>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::Time64Type>(arr);
     case arrow::Type::TIMESTAMP:
-      return comp_view.AddPrimativeMemoryView<arrow::TimestampType>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::TimestampType>(arr);
     case arrow::Type::DURATION:
-      return comp_view.AddPrimativeMemoryView<arrow::DurationType>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::DurationType>(arr);
     case arrow::Type::INTERVAL_MONTHS:
-      return comp_view.AddPrimativeMemoryView<arrow::MonthIntervalType>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::MonthIntervalType>(arr);
     // Need custom less function for this since it uses a custom struct for the data structure
     // case arrow::Type::INTERVAL_MONTH_DAY_NANO:
-    //   return comp_view.AddPrimativeMemoryView<arrow::MonthDayNanoIntervalType>(arr);
+    //   return comp_view.AddPrimitiveMemoryView<arrow::MonthDayNanoIntervalType>(arr);
     case arrow::Type::INTERVAL_DAY_TIME:
-      return comp_view.AddPrimativeMemoryView<arrow::DayTimeIntervalType>(arr);
+      return comp_view.AddPrimitiveMemoryView<arrow::DayTimeIntervalType>(arr);
     default:
       break;
   }
@@ -373,7 +373,7 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
   for (auto arr : sorted) {
     ARROW_CHECK_EQ(arr->GetNullCount(), 0);
     if (arrow::is_primitive(arr->type->id())) {
-      add_primative_memory_view_to_comp_view(sorted_comp_view, arr);
+      add_primitive_memory_view_to_comp_view(sorted_comp_view, arr);
     } else if (arrow::is_base_binary_like(arr->type->id())) {
       add_binary_memory_view_to_comp_view(sorted_comp_view, arr);
     } else {
@@ -384,7 +384,7 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
   for (auto arr : keys) {
     key_has_nulls = key_has_nulls | (arr->GetNullCount() > 0);
     if (arrow::is_primitive(arr->type->id())) {
-      add_primative_memory_view_to_comp_view(keys_comp_view, arr);
+      add_primitive_memory_view_to_comp_view(keys_comp_view, arr);
     } else if (arrow::is_base_binary_like(arr->type->id())) {
       add_binary_memory_view_to_comp_view(keys_comp_view, arr);
     } else {
@@ -464,7 +464,7 @@ std::shared_ptr<arrow::Array> search_sorted_single_array(const arrow::Array *arr
       arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), size, result_buffers, keys->null_count());
   ARROW_CHECK(result.get() != NULL);
   if (arrow::is_primitive(arr->type()->id())) {
-    search_sorted_primative_single(arr->data().get(), keys->data().get(), result.get(), input_reversed);
+    search_sorted_primitive_single(arr->data().get(), keys->data().get(), result.get(), input_reversed);
   } else if (arrow::is_binary_like(arr->type()->id())) {
     search_sorted_binary_single<arrow::BinaryType::offset_type>(arr->data().get(), keys->data().get(), result.get(), input_reversed);
   } else if (arrow::is_large_binary_like(arr->type()->id())) {

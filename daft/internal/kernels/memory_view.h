@@ -46,9 +46,9 @@ struct MemoryViewBase {
 };
 
 template <typename ArrowType>
-struct PrimativeMemoryView : public MemoryViewBase {
-  PrimativeMemoryView(const std::shared_ptr<arrow::ArrayData> &data) : MemoryViewBase(data){};
-  ~PrimativeMemoryView() = default;
+struct PrimitiveMemoryView : public MemoryViewBase {
+  PrimitiveMemoryView(const std::shared_ptr<arrow::ArrayData> &data) : MemoryViewBase(data){};
+  ~PrimitiveMemoryView() = default;
   int Compare(const MemoryViewBase *other, const uint64_t left_idx, const uint64_t right_idx) const {
     using T = typename ArrowType::c_type;
     const T left_val = *(this->data_->template GetValues<T>(1) + left_idx);
@@ -85,9 +85,9 @@ struct CompositeView {
   }
 
   template <typename ArrowType>
-  void AddPrimativeMemoryView(const std::shared_ptr<arrow::ArrayData> &data) {
+  void AddPrimitiveMemoryView(const std::shared_ptr<arrow::ArrayData> &data) {
     static_assert(std::is_base_of<arrow::DataType, ArrowType>::value, "T is not derived from MemoryViewBase");
-    AddMemoryView<PrimativeMemoryView<ArrowType>>(data);
+    AddMemoryView<PrimitiveMemoryView<ArrowType>>(data);
   }
 
   template <typename ArrowType>

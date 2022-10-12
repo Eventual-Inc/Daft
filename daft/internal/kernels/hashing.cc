@@ -19,7 +19,7 @@ namespace bit_util = arrow::bit_util;
 #endif
 
 template <int64_t WordSize>
-struct HashingPrimativeArray {
+struct HashingPrimitiveArray {
   static void Exec(const arrow::ArrayData *arr, const arrow::ArrayData *seed, arrow::ArrayData *result) {
     const int64_t arr_len = arr->length;
     const int64_t bit_offset = arr->offset;
@@ -109,20 +109,20 @@ struct HashingBinaryArray {
   }
 };
 
-void hash_primative_array(const arrow::ArrayData *arr, const arrow::ArrayData *seed, arrow::ArrayData *result) {
+void hash_primitive_array(const arrow::ArrayData *arr, const arrow::ArrayData *seed, arrow::ArrayData *result) {
   switch (arrow::bit_width(arr->type->id()) >> 3) {
     case 1:
-      return HashingPrimativeArray<1>::Exec(arr, seed, result);
+      return HashingPrimitiveArray<1>::Exec(arr, seed, result);
     case 2:
-      return HashingPrimativeArray<2>::Exec(arr, seed, result);
+      return HashingPrimitiveArray<2>::Exec(arr, seed, result);
     case 4:
-      return HashingPrimativeArray<4>::Exec(arr, seed, result);
+      return HashingPrimitiveArray<4>::Exec(arr, seed, result);
     case 8:
-      return HashingPrimativeArray<8>::Exec(arr, seed, result);
+      return HashingPrimitiveArray<8>::Exec(arr, seed, result);
     case 16:
-      return HashingPrimativeArray<16>::Exec(arr, seed, result);
+      return HashingPrimitiveArray<16>::Exec(arr, seed, result);
     case 32:
-      return HashingPrimativeArray<32>::Exec(arr, seed, result);
+      return HashingPrimitiveArray<32>::Exec(arr, seed, result);
     default:
       ARROW_LOG(FATAL) << "Unknown bitwidth for arrow type" << arr->type->id();
   }
@@ -132,7 +132,7 @@ void hash_single_array(const arrow::ArrayData *arr, const arrow::ArrayData *seed
   ARROW_CHECK(arr != NULL);
   ARROW_CHECK(result != NULL);
   if (arrow::is_primitive(arr->type->id())) {
-    hash_primative_array(arr, seed, result);
+    hash_primitive_array(arr, seed, result);
   } else if (arrow::is_binary_like(arr->type->id())) {
     HashingBinaryArray<arrow::BinaryType::offset_type>::Exec(arr, seed, result);
   } else if (arrow::is_large_binary_like(arr->type->id())) {
