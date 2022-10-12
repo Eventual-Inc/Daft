@@ -106,23 +106,18 @@ void hash_primative_array(const arrow::ArrayData *arr, arrow::ArrayData *result)
   }
 }
 
-std::shared_ptr<arrow::Array> hash_single_array(const arrow::Array *arr) {
+void hash_single_array(const arrow::ArrayData *arr, arrow::ArrayData *result) {
   ARROW_CHECK(arr != NULL);
-  const size_t size = arr->length();
-  std::vector<std::shared_ptr<arrow::Buffer>> result_buffers{2};
-  result_buffers[1] = arrow::AllocateBuffer(sizeof(arrow::UInt64Type::c_type) * size).ValueOrDie();
-  std::shared_ptr<arrow::ArrayData> result = arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), size, result_buffers, 0);
-  ARROW_CHECK(result.get() != NULL);
-  if (arrow::is_primitive(arr->type()->id())) {
-    hash_primative_array(arr->data().get(), result.get());
-  } else if (arrow::is_binary_like(arr->type()->id())) {
-    HashingBinaryArray<arrow::BinaryType::offset_type>::Exec(arr->data().get(), result.get());
-  } else if (arrow::is_large_binary_like(arr->type()->id())) {
-    HashingBinaryArray<arrow::LargeBinaryType::offset_type>::Exec(arr->data().get(), result.get());
+  ARROW_CHECK(result != NULL);
+  if (arrow::is_primitive(arr->type->id())) {
+    hash_primative_array(arr, result);
+  } else if (arrow::is_binary_like(arr->type->id())) {
+    HashingBinaryArray<arrow::BinaryType::offset_type>::Exec(arr, result);
+  } else if (arrow::is_large_binary_like(arr->type->id())) {
+    HashingBinaryArray<arrow::LargeBinaryType::offset_type>::Exec(arr, result);
   } else {
-    ARROW_LOG(FATAL) << "Unsupported Type " << arr->type()->id();
+    ARROW_LOG(FATAL) << "Unsupported Type " << arr->type->id();
   }
-  return arrow::MakeArray(result);
 }
 
 }  // namespace
@@ -133,11 +128,23 @@ namespace kernels {
 std::shared_ptr<arrow::ChunkedArray> xxhash_chunked_array(const arrow::ChunkedArray *arr) {
   ARROW_CHECK_NE(arr, NULL);
   size_t num_chunks = arr->num_chunks();
+
+  const size_t size = arr->length();
+  std::vector<std::shared_ptr<arrow::Buffer>> result_buffers{2};
+  result_buffers[1] = arrow::AllocateBuffer(sizeof(arrow::UInt64Type::c_type) * size).ValueOrDie();
+  std::shared_ptr<arrow::ArrayData> result = arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), size, result_buffers, 0);
+
   std::vector<std::shared_ptr<arrow::Array>> result_arrays;
+  size_t offset_so_far = 0;
   for (size_t i = 0; i < num_chunks; ++i) {
-    result_arrays.push_back(hash_single_array(arr->chunk(i).get()));
+    std::shared_ptr<arrow::ArrayData> arr_subslice = arr->chunk(i)->data();
+    size_t arr_len = arr_subslice->length;
+    std::shared_ptr<arrow::ArrayData> result_subslice = result->Slice(offset_so_far, arr_len);
+
+    hash_single_array(arr_subslice.get(), result_subslice.get());
+    offset_so_far += arr_len;
   }
-  return arrow::ChunkedArray::Make(result_arrays, std::make_shared<arrow::UInt64Type>()).ValueOrDie();
+  return arrow::ChunkedArray::Make({arrow::MakeArray(result)}, std::make_shared<arrow::UInt64Type>()).ValueOrDie();
 }
 
 }  // namespace kernels
