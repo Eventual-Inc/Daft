@@ -34,11 +34,11 @@ struct MemoryViewBase {
 #else
     namespace bit_util = arrow::bit_util;
 #endif
-    const auto bit_ptr = data_->GetValues<uint8_t>(0);
+    const auto bit_ptr = data_->GetValues<uint8_t>(0, 0);
     if (bit_ptr == NULL) {
       return false;
     }
-    return bit_util::GetBit(bit_ptr, idx);
+    return bit_util::GetBit(bit_ptr, idx + data_->offset);
   }
 
   virtual int Compare(const MemoryViewBase *other, const uint64_t left_idx, const uint64_t right_idx) const = 0;
@@ -46,9 +46,9 @@ struct MemoryViewBase {
 };
 
 template <typename ArrowType>
-struct PrimativeMemoryView : public MemoryViewBase {
-  PrimativeMemoryView(const std::shared_ptr<arrow::ArrayData> &data) : MemoryViewBase(data){};
-  ~PrimativeMemoryView() = default;
+struct PrimitiveMemoryView : public MemoryViewBase {
+  PrimitiveMemoryView(const std::shared_ptr<arrow::ArrayData> &data) : MemoryViewBase(data){};
+  ~PrimitiveMemoryView() = default;
   int Compare(const MemoryViewBase *other, const uint64_t left_idx, const uint64_t right_idx) const {
     using T = typename ArrowType::c_type;
     const T left_val = *(this->data_->template GetValues<T>(1) + left_idx);
@@ -65,11 +65,11 @@ struct BinaryMemoryView : public MemoryViewBase {
   ~BinaryMemoryView() = default;
   int Compare(const MemoryViewBase *other, const uint64_t left_idx, const uint64_t right_idx) const {
     using T = typename ArrowType::offset_type;
-    const T left_offset = *this->data_->template GetValues<T>(1, left_idx);
-    const T left_size = *this->data_->template GetValues<T>(1, left_idx + 1) - left_offset;
+    const T left_offset = *(this->data_->template GetValues<T>(1) + left_idx);
+    const T left_size = *(this->data_->template GetValues<T>(1) + left_idx + 1) - left_offset;
 
-    const T right_offset = *other->data_->template GetValues<T>(1, right_idx);
-    const T right_size = *other->data_->template GetValues<T>(1, right_idx + 1) - right_offset;
+    const T right_offset = *(other->data_->template GetValues<T>(1) + right_idx);
+    const T right_size = *(other->data_->template GetValues<T>(1) + right_idx + 1) - right_offset;
     return strcmpNoTerminator(this->data_->template GetValues<uint8_t>(2, left_offset),
                               other->data_->template GetValues<uint8_t>(2, right_offset), left_size, right_size);
   }
@@ -85,9 +85,9 @@ struct CompositeView {
   }
 
   template <typename ArrowType>
-  void AddPrimativeMemoryView(const std::shared_ptr<arrow::ArrayData> &data) {
+  void AddPrimitiveMemoryView(const std::shared_ptr<arrow::ArrayData> &data) {
     static_assert(std::is_base_of<arrow::DataType, ArrowType>::value, "T is not derived from MemoryViewBase");
-    AddMemoryView<PrimativeMemoryView<ArrowType>>(data);
+    AddMemoryView<PrimitiveMemoryView<ArrowType>>(data);
   }
 
   template <typename ArrowType>

@@ -166,7 +166,7 @@ _T = TypeVar("_T")
 
 
 class DaftSchema(Generic[_T]):
-    primative_translation = {
+    primitive_translation = {
         int: TBT(0, pa.int64, int),
         float: TBT(0, pa.float32, float),
         str: TBT(0, pa.string, str),
@@ -263,8 +263,8 @@ class DaftSchema(Generic[_T]):
 
     @classmethod
     def parse_type(cls, name: str, t: Type) -> pa.Field:
-        if t in cls.primative_translation:
-            nargs, f, source_type, conversion = cls.primative_translation[t]
+        if t in cls.primitive_translation:
+            nargs, f, source_type, conversion = cls.primitive_translation[t]
             return pa.field(name, f()).with_metadata(cls.type_to_metadata(source_type, conversion))
 
         if get_origin(t) is not None:
