@@ -408,12 +408,13 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
   uint64_t *result_ptr = result->GetMutableValues<uint64_t>(1);
   ARROW_CHECK(result_ptr != NULL);
 
-  uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0);
+  uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0, 0);
+  const size_t result_offset = result->offset;
 
   for (size_t key_idx = 0; key_idx < key_len; key_idx++, result_ptr++) {
     if (key_has_nulls) {
       const bool is_valid = keys_comp_view.isValid(key_idx);
-      bit_util::SetBitTo(result_bitmask_ptr, key_idx, is_valid);
+      bit_util::SetBitTo(result_bitmask_ptr, key_idx + result_offset, is_valid);
       if (!is_valid) {
         continue;
       }
