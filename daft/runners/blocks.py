@@ -553,7 +553,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
     def _search_sorted(
         sorted_blocks: List[DataBlock], keys: List[DataBlock], input_reversed: Optional[List[bool]] = None
     ) -> DataBlock[ArrowArrType]:
-
         arr_names = [f"a_{i}" for i in range(len(sorted_blocks))]
         if input_reversed is None:
             input_reversed = [False for _ in range(len(sorted_blocks))]
@@ -710,19 +709,21 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return gcols, acols
 
     @staticmethod
-    def _get_null_nan_mask(keys: List[DataBlock[ArrowArrType]]) -> Tuple[pa.Array, bool]:
+    def _get_null_nan_mask(keys: List[DataBlock[ArrowArrType]]) -> pa.Array:
         """Returns a mask which indicates the presence of nulls/nans across a list of DataBlocks"""
         mask_list = [pac.invert(pac.is_null(k.data, nan_is_null=True)) for k in keys]
         mask = functools.reduce(lambda a, b: pac.and_(a, b), mask_list)
-        return mask, pac.all(mask).as_py()
+        return mask
 
     @staticmethod
     def _join_keys(
         left_keys: List[DataBlock[ArrowArrType]], right_keys: List[DataBlock[ArrowArrType]]
     ) -> Tuple[DataBlock[ArrowArrType], DataBlock[ArrowArrType]]:
         assert len(left_keys) == len(right_keys)
-        left_null_nan_mask, left_no_nulls = ArrowDataBlock._get_null_nan_mask(left_keys)
-        right_null_nan_mask, right_no_nulls = ArrowDataBlock._get_null_nan_mask(right_keys)
+        left_null_nan_mask = ArrowDataBlock._get_null_nan_mask(left_keys)
+        left_no_nulls = pac.all(left_null_nan_mask).as_py()
+        right_null_nan_mask = ArrowDataBlock._get_null_nan_mask(right_keys)
+        right_no_nulls = pac.all(right_null_nan_mask).as_py()
 
         # Filter out rows with NaNs/None entries
         left_keys_arrs = (
