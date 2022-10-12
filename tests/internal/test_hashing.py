@@ -24,6 +24,8 @@ def test_hash_chunked_number_array_shift(shift, num_chunks, dtype):
     overall_shift = num_chunks * shift
     shifted = hash_chunked_array(arr[overall_shift:])
     assert hash_all[overall_shift:] == shifted
+    hashed_shifted_again = hash_chunked_array(arr[overall_shift:], seed=hash_all[overall_shift:])
+    assert hash_all[overall_shift:] != hashed_shifted_again
 
 
 @pytest.mark.parametrize("shift", range(0, 4))
@@ -55,6 +57,8 @@ def test_hash_chunked_string_array_shift(
     hash_all = hash_chunked_array(arr)
     overall_shift = num_chunks * shift
     assert hash_all[overall_shift:] == hash_chunked_array(arr[overall_shift:])
+    hashed_shifted_again = hash_chunked_array(arr[overall_shift:], seed=hash_all[overall_shift:])
+    assert hash_all[overall_shift:] != hashed_shifted_again
 
 
 @pytest.mark.parametrize("shift", range(0, 4))
