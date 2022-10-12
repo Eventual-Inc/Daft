@@ -20,7 +20,7 @@ namespace bit_util = arrow::bit_util;
 
 template <size_t WordSize>
 struct HashingPrimativeArray {
-  static void Exec(const arrow::ArrayData *arr, arrow::ArrayData *result) {
+  static void Exec(const arrow::ArrayData *arr, const arrow::ArrayData *seed, arrow::ArrayData *result) {
     const size_t arr_len = arr->length;
     const size_t bit_offset = arr->offset;
     const uint8_t *data_ptr = arr->GetValues<uint8_t>(1, bit_offset * WordSize);
@@ -31,10 +31,19 @@ struct HashingPrimativeArray {
 
     uint64_t *result_ptr = result->GetMutableValues<uint64_t>(1);
     ARROW_CHECK(result_ptr != NULL);
+    ARROW_CHECK(result->type->id() == arrow::Type::UINT64);
 
     ARROW_CHECK(result->GetMutableValues<uint8_t>(0) == NULL) << "bitmask should be NULL";
     const size_t result_len = result->length;
     ARROW_CHECK(arr_len == result_len);
+
+    const bool has_seed = seed != NULL;
+    const uint64_t *seed_ptr = NULL;
+    if (has_seed) {
+      ARROW_CHECK(arr_len == seed->length);
+      ARROW_CHECK(seed->type->id() == arrow::Type::UINT64);
+      seed_ptr = seed->GetValues<uint64_t>(1);
+    }
 
     for (size_t idx = 0; idx < arr_len; ++idx) {
       size_t length = WordSize;
@@ -45,14 +54,18 @@ struct HashingPrimativeArray {
           length = 0;
         }
       }
-      result_ptr[idx] = XXH3_64bits(data_ptr + idx * WordSize, length);
+      uint64_t seed_val = 0;
+      if (has_seed) {
+        seed_val = seed_ptr[idx];
+      }
+      result_ptr[idx] = XXH3_64bits_withSeed(data_ptr + idx * WordSize, length, seed_val);
     }
   }
 };
 
 template <typename IndexType>
 struct HashingBinaryArray {
-  static void Exec(const arrow::ArrayData *arr, arrow::ArrayData *result) {
+  static void Exec(const arrow::ArrayData *arr, const arrow::ArrayData *seed, arrow::ArrayData *result) {
     ARROW_CHECK(arrow::is_base_binary_like(arr->type->id()));
     ARROW_CHECK(result->type->id() == arrow::Type::UINT64);
     const IndexType *arr_index_ptr = arr->GetValues<IndexType>(1);
@@ -74,6 +87,14 @@ struct HashingBinaryArray {
     const size_t result_len = result->length;
     ARROW_CHECK(arr_len == result_len);
 
+    const bool has_seed = seed != NULL;
+    const uint64_t *seed_ptr = NULL;
+    if (has_seed) {
+      ARROW_CHECK(arr_len == seed->length);
+      ARROW_CHECK(seed->type->id() == arrow::Type::UINT64);
+      seed_ptr = seed->GetValues<uint64_t>(1);
+    }
+
     for (size_t idx = 0; idx < arr_len; ++idx) {
       const size_t curr_offset = arr_index_ptr[idx];
       size_t curr_size = arr_index_ptr[idx + 1] - curr_offset;
@@ -81,40 +102,44 @@ struct HashingBinaryArray {
       if (has_nulls && !bit_util::GetBit(bitmask_ptr, idx + bit_offset)) {
         curr_size = 0;
       }
+      uint64_t seed_val = 0;
+      if (has_seed) {
+        seed_val = seed_ptr[idx];
+      }
 
-      result_ptr[idx] = XXH3_64bits(arr_data_ptr + curr_offset, curr_size);
+      result_ptr[idx] = XXH3_64bits_withSeed(arr_data_ptr + curr_offset, curr_size, seed_val);
     }
   }
 };
 
-void hash_primative_array(const arrow::ArrayData *arr, arrow::ArrayData *result) {
+void hash_primative_array(const arrow::ArrayData *arr, const arrow::ArrayData *seed, arrow::ArrayData *result) {
   switch (arrow::bit_width(arr->type->id()) >> 3) {
     case 1:
-      return HashingPrimativeArray<1>::Exec(arr, result);
+      return HashingPrimativeArray<1>::Exec(arr, seed, result);
     case 2:
-      return HashingPrimativeArray<2>::Exec(arr, result);
+      return HashingPrimativeArray<2>::Exec(arr, seed, result);
     case 4:
-      return HashingPrimativeArray<4>::Exec(arr, result);
+      return HashingPrimativeArray<4>::Exec(arr, seed, result);
     case 8:
-      return HashingPrimativeArray<8>::Exec(arr, result);
+      return HashingPrimativeArray<8>::Exec(arr, seed, result);
     case 16:
-      return HashingPrimativeArray<16>::Exec(arr, result);
+      return HashingPrimativeArray<16>::Exec(arr, seed, result);
     case 32:
-      return HashingPrimativeArray<32>::Exec(arr, result);
+      return HashingPrimativeArray<32>::Exec(arr, seed, result);
     default:
       ARROW_LOG(FATAL) << "Unknown bitwidth for arrow type" << arr->type->id();
   }
 }
 
-void hash_single_array(const arrow::ArrayData *arr, arrow::ArrayData *result) {
+void hash_single_array(const arrow::ArrayData *arr, const arrow::ArrayData *seed, arrow::ArrayData *result) {
   ARROW_CHECK(arr != NULL);
   ARROW_CHECK(result != NULL);
   if (arrow::is_primitive(arr->type->id())) {
-    hash_primative_array(arr, result);
+    hash_primative_array(arr, seed, result);
   } else if (arrow::is_binary_like(arr->type->id())) {
-    HashingBinaryArray<arrow::BinaryType::offset_type>::Exec(arr, result);
+    HashingBinaryArray<arrow::BinaryType::offset_type>::Exec(arr, seed, result);
   } else if (arrow::is_large_binary_like(arr->type->id())) {
-    HashingBinaryArray<arrow::LargeBinaryType::offset_type>::Exec(arr, result);
+    HashingBinaryArray<arrow::LargeBinaryType::offset_type>::Exec(arr, seed, result);
   } else {
     ARROW_LOG(FATAL) << "Unsupported Type " << arr->type->id();
   }
@@ -125,7 +150,7 @@ void hash_single_array(const arrow::ArrayData *arr, arrow::ArrayData *result) {
 namespace daft {
 namespace kernels {
 
-std::shared_ptr<arrow::ChunkedArray> xxhash_chunked_array(const arrow::ChunkedArray *arr) {
+std::shared_ptr<arrow::ChunkedArray> xxhash_chunked_array(const arrow::ChunkedArray *arr, const arrow::ChunkedArray *seed) {
   ARROW_CHECK_NE(arr, NULL);
   size_t num_chunks = arr->num_chunks();
 
@@ -134,14 +159,22 @@ std::shared_ptr<arrow::ChunkedArray> xxhash_chunked_array(const arrow::ChunkedAr
   result_buffers[1] = arrow::AllocateBuffer(sizeof(arrow::UInt64Type::c_type) * size).ValueOrDie();
   std::shared_ptr<arrow::ArrayData> result = arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), size, result_buffers, 0);
 
+  if (seed != NULL) {
+    ARROW_CHECK(seed->num_chunks() == 1);
+    ARROW_CHECK(seed->null_count() == 0);
+    ARROW_CHECK(seed->length() == size);
+    ARROW_CHECK(seed->type()->id() == arrow::UInt64Type);
+  }
+
   std::vector<std::shared_ptr<arrow::Array>> result_arrays;
   size_t offset_so_far = 0;
   for (size_t i = 0; i < num_chunks; ++i) {
     std::shared_ptr<arrow::ArrayData> arr_subslice = arr->chunk(i)->data();
     size_t arr_len = arr_subslice->length;
     std::shared_ptr<arrow::ArrayData> result_subslice = result->Slice(offset_so_far, arr_len);
+    arrow::ArrayData *seed_subslice = seed != NULL ? seed->chunk(0)->Slice(offset_so_far, arr_len)->data().get() : NULL;
 
-    hash_single_array(arr_subslice.get(), result_subslice.get());
+    hash_single_array(arr_subslice.get(), seed_subslice, result_subslice.get());
     offset_so_far += arr_len;
   }
   return arrow::ChunkedArray::Make({arrow::MakeArray(result)}, std::make_shared<arrow::UInt64Type>()).ValueOrDie();

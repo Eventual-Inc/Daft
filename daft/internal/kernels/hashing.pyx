@@ -19,17 +19,18 @@ import cython
 
 
 cdef extern from "hashing.h" namespace "daft::kernels" nogil:
-    cdef shared_ptr[CChunkedArray] xxhash_chunked_array(const CChunkedArray* arr);
+    cdef shared_ptr[CChunkedArray] xxhash_chunked_array(const CChunkedArray* arr, const CChunkedArray* seed);
 
-def hash_chunked_array(data):
+def hash_chunked_array(data, seed=None):
     cdef shared_ptr[CChunkedArray] result
 
-    cdef shared_ptr[CChunkedArray] carr
-    cdef shared_ptr[CTable] ctab
+    cdef shared_ptr[CChunkedArray] carr, cseed
 
-    if isinstance(data, pa.ChunkedArray):
-        carr = pyarrow_unwrap_chunked_array(data)
-        result = xxhash_chunked_array(carr.get())
-    else:
-        raise NotImplementedError()
+    assert isinstance(data, pa.ChunkedArray)
+    assert seed is None or isinstance(seed, pa.ChunkedArray)
+
+    carr = pyarrow_unwrap_chunked_array(data)
+    if seed is not None:
+        cseed = pyarrow_unwrap_chunked_array(seed)
+    result = xxhash_chunked_array(carr.get(), cseed.get())
     return pyarrow_wrap_chunked_array(result)
