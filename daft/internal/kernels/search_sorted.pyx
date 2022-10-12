@@ -17,7 +17,7 @@ from pyarrow.lib cimport (
 import cython
 
 
-cdef extern from "search_sorted.h" namespace "daft::kernels" nogil :
+cdef extern from "search_sorted.h" namespace "daft::kernels" nogil:
     cdef shared_ptr[CChunkedArray] search_sorted_chunked_array(const CChunkedArray* arr, const CChunkedArray* keys, const cbool input_reversed);
     cdef shared_ptr[CChunkedArray] search_sorted_table(const CTable* arr, const CTable* keys, const vector[cbool]& input_reversed);
 
