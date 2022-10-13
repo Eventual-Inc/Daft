@@ -26,7 +26,6 @@ from daft.execution.operators import OperatorEnum
 from daft.expressions import ColID, ColumnExpression, Expression, ExpressionExecutor
 from daft.logical.schema import ExpressionList
 from daft.runners.blocks import ArrowArrType, DataBlock, PyListDataBlock
-from daft.types import ExpressionType
 
 PartID = int
 
@@ -159,8 +158,7 @@ class vPartition:
         for col_expr in column_exprs:
             col_id = col_expr.get_id()
             col_name = col_expr.name()
-            arr = data[col_name] if ExpressionType.is_py(col_expr.resolved_type()) else pa.array(data[col_expr.name()])
-            block: DataBlock = DataBlock.make_block(arr)
+            block = DataBlock.make_block(data[col_name])
             tiles[col_id] = PyListTile(column_id=col_id, column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
