@@ -690,15 +690,9 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
         pl_agged = pl_table.groupby(group_names).agg(exprs)
         agged = pl_agged.to_arrow()
-        gcols: List[DataBlock] = []
-        for g_name, t in zip(group_names, grouped_expected_arrow_type):
-            # Arrow really doesn't like casting to null types, so we corner-case here and construct a null array from scratch
-            block = (
-                DataBlock.make_block(pa.array([None for _ in range(len(agged[g_name]))], type=pa.null()))
-                if pa.types.is_null(t)
-                else DataBlock.make_block(agged[g_name].cast(t))
-            )
-            gcols.append(block)
+        gcols: List[DataBlock] = [
+            DataBlock.make_block(agged[g_name].cast(t)) for g_name, t in zip(group_names, grouped_expected_arrow_type)
+        ]
         acols: List[DataBlock] = [
             DataBlock.make_block(agged[f"{a_name}"].cast(t)) for a_name, t in zip(agg_names, agg_expected_arrow_type)
         ]
