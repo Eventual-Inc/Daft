@@ -51,6 +51,12 @@ struct PrimitiveMemoryView : public MemoryViewBase {
   ~PrimitiveMemoryView() = default;
   int Compare(const MemoryViewBase *other, const uint64_t left_idx, const uint64_t right_idx) const {
     using T = typename ArrowType::c_type;
+    const int left_is_null = !this->isValid(left_idx);
+    const int right_is_null = !other->isValid(right_idx);
+    if (left_is_null || right_is_null) {
+      return left_is_null - right_is_null;
+    }
+
     const T left_val = *(this->data_->template GetValues<T>(1) + left_idx);
     const T right_val = *(other->data_->template GetValues<T>(1) + right_idx);
     const int is_less = std::less<T>{}(left_val, right_val);
@@ -65,6 +71,13 @@ struct BinaryMemoryView : public MemoryViewBase {
   ~BinaryMemoryView() = default;
   int Compare(const MemoryViewBase *other, const uint64_t left_idx, const uint64_t right_idx) const {
     using T = typename ArrowType::offset_type;
+
+    const int left_is_null = !this->isValid(left_idx);
+    const int right_is_null = !other->isValid(right_idx);
+    if (left_is_null || right_is_null) {
+      return left_is_null - right_is_null;
+    }
+
     const T left_offset = *(this->data_->template GetValues<T>(1) + left_idx);
     const T left_size = *(this->data_->template GetValues<T>(1) + left_idx + 1) - left_offset;
 
