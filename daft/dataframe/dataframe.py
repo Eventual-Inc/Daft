@@ -33,7 +33,7 @@ from daft.datasources import (
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression, Expression, col
-from daft.filesystem import get_filesystem_from_path
+from daft.filesystem import get_filesystem_from_path, get_protocol_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionSet
@@ -68,11 +68,12 @@ def _sample_with_pyarrow(
 
 def _get_filepaths(path: str):
     fs = get_filesystem_from_path(path)
+    protocol = get_protocol_from_path(path)
     if fs.isdir(path):
-        return fs.ls(path)
+        return [f"{protocol}://{path}" if protocol != "file" else path for path in fs.ls(path)]
     elif fs.isfile(path):
         return [path]
-    return fs.expand_path(path, recursive=True)
+    return [f"{protocol}://{path}" if protocol != "file" else path for path in fs.expand_path(path, recursive=True)]
 
 
 class DataFrame:

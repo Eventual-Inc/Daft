@@ -10,8 +10,16 @@ import time
 from datetime import datetime, timezone
 from typing import Callable, Optional, Set
 
+import fsspec
+import ray
 from loguru import logger
+from ray.util.placement_group import (
+    placement_group,
+    placement_group_table,
+    remove_placement_group,
+)
 
+import daft
 from benchmarking.tpch import answers, data_generation
 from daft import DataFrame
 from daft.context import get_context
@@ -35,6 +43,7 @@ class MetricsBuilder:
         "github_workflow",
         "github_run_id",
         "github_run_attempt",
+        "github_ref",
     ]
 
     def __init__(self, runner: str):
@@ -48,6 +57,7 @@ class MetricsBuilder:
             "github_workflow": os.getenv("GITHUB_WORKFLOW"),
             "github_run_id": os.getenv("GITHUB_RUN_ID"),
             "github_run_attempt": os.getenv("GITHUB_RUN_ATTEMPT"),
+            "github_ref": os.getenv("GITHUB_REF"),
         }
 
         self._commit_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
@@ -148,6 +158,48 @@ def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: 
     return data_generation.gen_parquet(csv_folder)
 
 
+def setup_ray(daft_wheel_location: Optional[str]):
+    """Performs necessary setup of Daft on the current benchmarking environment"""
+    ctx = daft.context.get_context()
+    if ctx.runner_config.name == "ray":
+
+        if ctx.runner_config.address is not None and daft_wheel_location is None:
+            raise RuntimeError("Running Ray remotely requires a built Daft wheel to provide to Ray cluster")
+
+        ray.init(
+            address=ctx.runner_config.address,
+            runtime_env={"py_modules": [daft_wheel_location], "eager_install": True},
+        )
+
+        logger.info("Warming up Ray cluster with a function...")
+        # NOTE: installation of runtime_env is supposed to be eager but it seems to be happening async.
+        # Here we farm out some work on Ray to warm up all the workers with an import of daft.
+        # (See: https://discuss.ray.io/t/how-to-run-a-function-exactly-once-on-each-node/2178)
+        @ray.remote(num_cpus=1)
+        class WarmUpFunction:
+            def ready(self):
+                import daft
+
+                return f"{daft.__version__}"
+
+        num_nodes = len(ray.nodes())
+        bundles = [{"CPU": 1} for _ in range(num_nodes)]
+        pg = placement_group(bundles=bundles, strategy="STRICT_SPREAD")
+        ray.get(pg.ready())
+        executors = [WarmUpFunction.options(placement_group=pg).remote() for _ in range(num_nodes)]
+        assert ray.get([executor.ready.remote() for executor in executors]) == [
+            f"{daft.__version__}" for _ in range(num_nodes)
+        ]
+        del executors
+
+        # remove_placement_group is async, so we wait here and assert that it was cleaned up
+        # (See: https://docs.ray.io/en/latest/ray-core/placement-group.html?highlight=placement_group#quick-start)
+        remove_placement_group(pg)
+        time.sleep(1)
+        assert placement_group_table(pg)["state"] == "REMOVED"
+        logger.info(f"Ray cluster warmed up with an installation of wheel: {daft_wheel_location}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -155,22 +207,45 @@ if __name__ == "__main__":
         default="data/tpch-dbgen",
         help="Path to the folder containing the TPCH dbgen tool and generated data",
     )
+    parser.add_argument(
+        "--parquet_file_cache",
+        default=None,
+        help="Path to root folder (local or in S3) containing cached Parquet files",
+    )
     parser.add_argument("--scale_factor", default=10.0, help="Scale factor to run on in GB", type=float)
     parser.add_argument(
         "--num_parts", default=None, help="Number of parts to generate (defaults to 1 part per GB)", type=int
     )
-    parser.add_argument("--skip_questions", action="append", default=[], help="Questions to skip", type=int)
+    parser.add_argument("--skip_questions", type=str, default=None, help="Comma-separated list of questions to skip")
     parser.add_argument("--output_csv", default=None, type=str, help="Location to output CSV file")
     parser.add_argument("--output_csv_headers", action="store_true", help="Whether to output headers for the CSV file")
+    parser.add_argument(
+        "--daft_wheel_location", default=None, help="Location to built Daft wheel for installation on Ray cluster"
+    )
     args = parser.parse_args()
     num_parts = math.ceil(args.scale_factor) if args.num_parts is None else args.num_parts
 
     # Generate Parquet data, or skip if data is cached on disk
-    parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
+    parquet_folder: str
+    if args.parquet_file_cache is not None:
+        parquet_folder = (
+            os.path.join(args.parquet_file_cache, str(args.scale_factor).replace(".", "_"), str(num_parts), "parquet")
+            + "/"
+        )
+        fs = fsspec.filesystem("s3" if parquet_folder.startswith("s3://") else "file")
+        if not fs.isdir(parquet_folder):
+            local_parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
+            fs.put(local_parquet_folder, parquet_folder, recursive=True)
+    else:
+        parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
+
+    setup_ray(args.daft_wheel_location)
 
     run_all_benchmarks(
         parquet_folder,
-        skip_questions=set(args.skip_questions),
+        skip_questions=set([int(s) for s in args.skip_questions.split(",")])
+        if args.skip_questions is not None
+        else set(),
         csv_output_location=args.output_csv,
         output_csv_headers=args.output_csv_headers,
     )
