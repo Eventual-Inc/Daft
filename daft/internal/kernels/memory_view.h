@@ -36,7 +36,7 @@ struct MemoryViewBase {
 #endif
     const auto bit_ptr = data_->GetValues<uint8_t>(0, 0);
     if (bit_ptr == NULL) {
-      return false;
+      return true;
     }
     return bit_util::GetBit(bit_ptr, idx + data_->offset);
   }

@@ -404,9 +404,6 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
   uint64_t *result_ptr = result->GetMutableValues<uint64_t>(1);
   ARROW_CHECK(result_ptr != NULL);
 
-  uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0, 0);
-  const size_t result_offset = result->offset;
-
   for (size_t key_idx = 0; key_idx < key_len; key_idx++, result_ptr++) {
     /*
      * Updating only one of the indices based on the previous key
