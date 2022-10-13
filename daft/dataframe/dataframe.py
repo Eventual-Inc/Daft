@@ -36,6 +36,7 @@ from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionSet
+from daft.types import PythonExpressionType
 from daft.viz import DataFrameDisplay
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
@@ -183,26 +184,55 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
-    def from_pydict(cls, data: Dict[str, Any]) -> DataFrame:
-        """Creates a DataFrame from an In-Memory Data columnar source that is passed in as `data`.
+    def from_pydict(cls, data: Dict[str, Union[list, pa.Array]]) -> DataFrame:
+        """Creates a DataFrame from a Python Dictionary.
 
         Example:
             >>> df = DataFrame.from_pydict({"foo": [1, 2]})
 
         Args:
-            data: Key -> Sequence[item] of data. Each Key is created as a column.
+            data: Key -> Sequence[item] of data. Each Key is created as a column, and must have a value that is
+                either a Python list or PyArrow array. Values must be equal in length across all keys.
 
         Returns:
             DataFrame: DataFrame created from dictionary of columns
         """
+
+        block_data: Dict[str, Tuple[ExpressionType, Any]] = {}
+        for header in data:
+            arr = data[header]
+
+            if isinstance(arr, pa.Array) or isinstance(arr, pa.ChunkedArray):
+                expr_type = ExpressionType.from_arrow_type(arr.type)
+                block_data[header] = (expr_type, arr.to_pylist() if ExpressionType.is_py(expr_type) else arr)
+                continue
+
+            try:
+                arrow_type = pa.infer_type(arr)
+            except pa.lib.ArrowInvalid:
+                arrow_type = None
+
+            if arrow_type is None or pa.types.is_nested(arrow_type):
+                found_types = {type(o) for o in data[header]} - {type(None)}
+                block_data[header] = (
+                    (ExpressionType.python_object(), list(arr))
+                    if len(found_types) > 1
+                    else (PythonExpressionType(found_types.pop()), list(arr))
+                )
+                continue
+
+            expr_type = ExpressionType.from_arrow_type(arrow_type)
+            block_data[header] = (expr_type, list(arr) if ExpressionType.is_py(expr_type) else pa.array(arr))
+
         schema = ExpressionList(
-            [ColumnExpression(header, expr_type=ExpressionType.from_py_type(type(data[header][0]))) for header in data]
+            [ColumnExpression(header, expr_type=expr_type) for header, (expr_type, _) in block_data.items()]
         )
+
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
             columns=None,
-            source_info=InMemorySourceInfo(data=data),
+            source_info=InMemorySourceInfo(data={header: arr for header, (_, arr) in block_data.items()}),
         )
         return cls(plan)
 
