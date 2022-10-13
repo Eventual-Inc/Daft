@@ -10,8 +10,8 @@ import time
 from datetime import datetime, timezone
 from typing import Callable, Optional, Set
 
-import ray
 import fsspec
+import ray
 from loguru import logger
 from ray.util.placement_group import (
     placement_group,
@@ -241,7 +241,9 @@ if __name__ == "__main__":
 
     run_all_benchmarks(
         parquet_folder,
-        skip_questions=set(args.skip_questions.split(",")) if args.skip_questions is not None else set(),
+        skip_questions=set([int(s) for s in args.skip_questions.split(",")])
+        if args.skip_questions is not None
+        else set(),
         csv_output_location=args.output_csv,
         output_csv_headers=args.output_csv_headers,
     )
