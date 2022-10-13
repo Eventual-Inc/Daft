@@ -117,7 +117,7 @@ struct SearchSortedPrimitiveSingle {
     const size_t result_offset = result->offset;
 
     uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0, 0);
-    ARROW_CHECK(result_bitmask_ptr != NULL);
+    ARROW_CHECK(result_bitmask_ptr == NULL);
 
     auto cmp = std::less<T>{};
     size_t min_idx = 0;
@@ -133,20 +133,17 @@ struct SearchSortedPrimitiveSingle {
     }
 
     T last_key_val = *keys_ptr;
+    bool last_key_is_valid = bit_util::GetBit(keys_bitmask_ptr, key_offset);
 
     for (size_t key_idx = 0; key_idx < key_len; key_idx++, keys_ptr++, result_ptr++) {
-      const bool key_bit = bit_util::GetBit(keys_bitmask_ptr, key_idx + key_offset);
-      bit_util::SetBitTo(result_bitmask_ptr, key_idx + result_offset, key_bit);
-      if (!key_bit) {
-        continue;
-      }
+      const bool curr_key_is_valid = bit_util::GetBit(keys_bitmask_ptr, key_idx + key_offset);
       const T key_val = *keys_ptr;
       /*
        * Updating only one of the indices based on the previous key
        * gives the search a big boost when keys are sorted, but slightly
        * slows down things for purely random ones.
        */
-      if (cmp(last_key_val, key_val)) {
+      if ((!curr_key_is_valid) || (last_key_is_valid && cmp(last_key_val, key_val))) {
         max_idx = arr_len;
       } else {
         min_idx = 0;
@@ -154,12 +151,13 @@ struct SearchSortedPrimitiveSingle {
       }
 
       last_key_val = key_val;
+      last_key_is_valid = curr_key_is_valid;
 
       while (min_idx < max_idx) {
         const size_t mid_idx = min_idx + ((max_idx - min_idx) >> 1);
         const size_t corrected_idx = input_reversed ? arr_len - mid_idx - 1 : mid_idx;
         const T mid_val = *(arr_ptr + corrected_idx);
-        if (cmp(mid_val, key_val)) {
+        if ((!curr_key_is_valid) || cmp(mid_val, key_val)) {
           min_idx = mid_idx + 1;
         } else {
           max_idx = mid_idx;
@@ -249,8 +247,7 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
   ARROW_CHECK(result_ptr != NULL);
 
   uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0, 0);
-  ARROW_CHECK(!has_nulls || (result_bitmask_ptr != NULL));
-  const size_t result_offset = result->offset;
+  ARROW_CHECK(result_bitmask_ptr == NULL);
 
   size_t min_idx = 0;
   size_t arr_len = arr->length;
@@ -263,14 +260,14 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
   if (key_len == 0) {
     return;
   }
-
+  bool last_key_is_valid = true;
+  if (has_nulls) {
+    last_key_is_valid = bit_util::GetBit(keys_bitmask_ptr, key_offset);
+  }
   for (size_t key_idx = 0; key_idx < key_len; key_idx++, result_ptr++) {
+    bool key_is_valid = true;
     if (has_nulls) {
-      const bool key_bit = bit_util::GetBit(keys_bitmask_ptr, key_idx + key_offset);
-      bit_util::SetBitTo(result_bitmask_ptr, key_idx + result_offset, key_bit);
-      if (!key_bit) {
-        continue;
-      }
+      key_is_valid = bit_util::GetBit(keys_bitmask_ptr, key_idx + key_offset);
     }
     const size_t curr_key_offset = keys_index_ptr[key_idx];
     const size_t curr_key_size = keys_index_ptr[key_idx + 1] - curr_key_offset;
@@ -282,8 +279,9 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
      * gives the search a big boost when keys are sorted, but slightly
      * slows down things for purely random ones.
      */
-    if (daft::kernels::strcmpNoTerminator(keys_data_ptr + last_key_offset, keys_data_ptr + curr_key_offset, last_key_size, curr_key_size) <
-        0) {
+    if ((!key_is_valid) ||
+        (last_key_is_valid && (daft::kernels::strcmpNoTerminator(keys_data_ptr + last_key_offset, keys_data_ptr + curr_key_offset,
+                                                                 last_key_size, curr_key_size) < 0))) {
       max_idx = arr_len;
     } else {
       min_idx = 0;
@@ -291,6 +289,7 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
     }
 
     last_key_idx = key_idx;
+    last_key_is_valid = key_is_valid;
 
     while (min_idx < max_idx) {
       const size_t mid_idx = min_idx + ((max_idx - min_idx) >> 1);
@@ -298,8 +297,8 @@ void search_sorted_binary_single(const arrow::ArrayData *arr, const arrow::Array
       const size_t mid_arr_offset = arr_index_ptr[corrected_idx];
       const size_t mid_arr_size = arr_index_ptr[corrected_idx + 1] - mid_arr_offset;
 
-      if (daft::kernels::strcmpNoTerminator(arr_data_ptr + mid_arr_offset, keys_data_ptr + curr_key_offset, mid_arr_size, curr_key_size) <
-          0) {
+      if ((!key_is_valid) || (daft::kernels::strcmpNoTerminator(arr_data_ptr + mid_arr_offset, keys_data_ptr + curr_key_offset,
+                                                                mid_arr_size, curr_key_size) < 0)) {
         min_idx = mid_idx + 1;
       } else {
         max_idx = mid_idx;
@@ -380,9 +379,9 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
       ARROW_LOG(FATAL) << "Unsupported Type " << arr->type->id();
     }
   }
-  bool key_has_nulls = false;
+  // bool key_has_nulls = false;
   for (auto arr : keys) {
-    key_has_nulls = key_has_nulls | (arr->GetNullCount() > 0);
+    // key_has_nulls = key_has_nulls | (arr->GetNullCount() > 0);
     if (arrow::is_primitive(arr->type->id())) {
       add_primitive_memory_view_to_comp_view(keys_comp_view, arr);
     } else if (arrow::is_base_binary_like(arr->type->id())) {
@@ -399,27 +398,13 @@ std::shared_ptr<arrow::Array> search_sorted_multiple_columns(const std::vector<s
   size_t last_key_idx = 0;
 
   std::vector<std::shared_ptr<arrow::Buffer>> result_buffers{2};
-  if (key_has_nulls) {
-    result_buffers[0] = arrow::AllocateBitmap(key_len).ValueOrDie();
-  }
   result_buffers[1] = arrow::AllocateBuffer(sizeof(arrow::UInt64Type::c_type) * key_len).ValueOrDie();
   std::shared_ptr<arrow::ArrayData> result = arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), key_len, result_buffers);
 
   uint64_t *result_ptr = result->GetMutableValues<uint64_t>(1);
   ARROW_CHECK(result_ptr != NULL);
 
-  uint8_t *result_bitmask_ptr = result->GetMutableValues<uint8_t>(0, 0);
-  const size_t result_offset = result->offset;
-
   for (size_t key_idx = 0; key_idx < key_len; key_idx++, result_ptr++) {
-    if (key_has_nulls) {
-      const bool is_valid = keys_comp_view.isValid(key_idx);
-      bit_util::SetBitTo(result_bitmask_ptr, key_idx + result_offset, is_valid);
-      if (!is_valid) {
-        continue;
-      }
-    }
-
     /*
      * Updating only one of the indices based on the previous key
      * gives the search a big boost when keys are sorted, but slightly
@@ -456,12 +441,8 @@ std::shared_ptr<arrow::Array> search_sorted_single_array(const arrow::Array *arr
   ARROW_CHECK(keys != NULL);
   const size_t size = keys->length();
   std::vector<std::shared_ptr<arrow::Buffer>> result_buffers{2};
-  if (keys->null_count() > 0) {
-    result_buffers[0] = arrow::AllocateBitmap(size).ValueOrDie();
-  }
   result_buffers[1] = arrow::AllocateBuffer(sizeof(arrow::UInt64Type::c_type) * size).ValueOrDie();
-  std::shared_ptr<arrow::ArrayData> result =
-      arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), size, result_buffers, keys->null_count());
+  std::shared_ptr<arrow::ArrayData> result = arrow::ArrayData::Make(std::make_shared<arrow::UInt64Type>(), size, result_buffers, 0);
   ARROW_CHECK(result.get() != NULL);
   if (arrow::is_primitive(arr->type()->id())) {
     search_sorted_primitive_single(arr->data().get(), keys->data().get(), result.get(), input_reversed);
