@@ -43,6 +43,7 @@ class MetricsBuilder:
         "github_workflow",
         "github_run_id",
         "github_run_attempt",
+        "github_ref",
     ]
 
     def __init__(self, runner: str):
@@ -56,6 +57,7 @@ class MetricsBuilder:
             "github_workflow": os.getenv("GITHUB_WORKFLOW"),
             "github_run_id": os.getenv("GITHUB_RUN_ID"),
             "github_run_attempt": os.getenv("GITHUB_RUN_ATTEMPT"),
+            "github_ref": os.getenv("GITHUB_REF"),
         }
 
         self._commit_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
