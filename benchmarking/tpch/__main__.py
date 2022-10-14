@@ -149,7 +149,9 @@ def setup_ray(daft_wheel_location: Optional[str]):
 
         ray.init(
             address=ctx.runner_config.address,
-            runtime_env={"py_modules": [daft_wheel_location], "eager_install": True},
+            runtime_env={"py_modules": [daft_wheel_location], "eager_install": True}
+            if daft_wheel_location is not None
+            else None,
         )
 
         logger.info("Warming up Ray cluster with a function...")
