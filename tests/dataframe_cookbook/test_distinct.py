@@ -3,13 +3,11 @@ import pytest
 from daft.expressions import col
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
-    parametrize_service_requests_csv_daft_df,
     parametrize_service_requests_csv_repartition,
 )
 
 
 @parametrize_service_requests_csv_repartition
-@parametrize_service_requests_csv_daft_df
 @pytest.mark.parametrize(
     "keys",
     [

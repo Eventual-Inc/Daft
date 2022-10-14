@@ -5,7 +5,7 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
-from tests.assets.assets import SERVICE_REQUESTS_CSV, SERVICE_REQUESTS_CSV_FOLDER
+from tests.assets.assets import SERVICE_REQUESTS_CSV
 
 COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
 CsvPathAndColumns = Tuple[str, List[str]]
@@ -21,19 +21,9 @@ def parametrize_sort_desc(arg_name: str):
     return _wrapper
 
 
-def parametrize_service_requests_csv_daft_df(test_case):
-    """Adds a `daft_df` parameter to test cases which is provided as a DataFrame of 100 rows
-    from the 311-service-requests dataset, in various loaded partition configurations.
-    """
-    one_partition_csv = DataFrame.from_csv(SERVICE_REQUESTS_CSV).select(*[col(c) for c in COLUMNS])
-    two_partitions_csv = DataFrame.from_csv(SERVICE_REQUESTS_CSV_FOLDER).select(*[col(c) for c in COLUMNS])
-    return pytest.mark.parametrize(
-        ["daft_df"],
-        [
-            pytest.param(one_partition_csv, id="Source:CSV-NumFiles:1"),
-            pytest.param(two_partitions_csv, id="Source:CSV-NumFiles:2"),
-        ],
-    )(test_case)
+@pytest.fixture(scope="function")
+def daft_df():
+    return DataFrame.from_csv(SERVICE_REQUESTS_CSV).select(*[col(c) for c in COLUMNS])
 
 
 @pytest.fixture(scope="function")

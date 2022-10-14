@@ -10,7 +10,6 @@ from daft.types import ExpressionType
 from daft.udf import polars_udf, udf
 from tests.conftest import assert_df_column_type, assert_df_equals
 from tests.dataframe_cookbook.conftest import (
-    parametrize_service_requests_csv_daft_df,
     parametrize_service_requests_csv_repartition,
 )
 
@@ -66,7 +65,6 @@ def multiply_polars(x, num=2, container="numpy"):
     raise NotImplementedError(container)
 
 
-@parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize("multiply_kwarg", [multiply_np, multiply_polars])
 @pytest.mark.parametrize(
@@ -118,7 +116,6 @@ class RunModelPolars:
         return self._model.predict(x)
 
 
-@parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize("RunModel", [RunModelNumpy, RunModelPolars])
 def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartition_nparts, RunModel):
@@ -141,7 +138,6 @@ def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartiti
 ###
 
 
-@parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
 def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df = daft_df.repartition(repartition_nparts).with_column(
