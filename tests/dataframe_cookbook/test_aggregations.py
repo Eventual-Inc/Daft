@@ -4,14 +4,12 @@ import pytest
 from daft.expressions import col
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
-    parametrize_service_requests_csv_daft_df,
     parametrize_service_requests_csv_repartition,
     parametrize_sort_desc,
 )
 
 
 @parametrize_service_requests_csv_repartition
-@parametrize_service_requests_csv_daft_df
 def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Sums across an entire column for the entire table"""
     daft_df = daft_df.repartition(repartition_nparts).sum(col("Unique Key").alias("unique_key_sum"))
@@ -23,7 +21,6 @@ def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
 
 
 @parametrize_service_requests_csv_repartition
-@parametrize_service_requests_csv_daft_df
 def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Averages across a column for entire table"""
     daft_df = daft_df.repartition(repartition_nparts).mean(col("Unique Key").alias("unique_key_mean"))
@@ -35,7 +32,6 @@ def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
 
 
 @parametrize_service_requests_csv_repartition
-@parametrize_service_requests_csv_daft_df
 def test_global_agg(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Averages across a column for entire table"""
     daft_df = daft_df.repartition(repartition_nparts).agg(
@@ -61,7 +57,6 @@ def test_global_agg(daft_df, service_requests_csv_pd_df, repartition_nparts):
 
 
 @parametrize_service_requests_csv_repartition
-@parametrize_service_requests_csv_daft_df
 def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Sums across an entire column for the entire table filtered by a certain condition"""
     daft_df = (
@@ -83,7 +78,6 @@ def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
 
 
 @parametrize_service_requests_csv_repartition
-@parametrize_service_requests_csv_daft_df
 @pytest.mark.parametrize(
     "keys",
     [
@@ -102,7 +96,6 @@ def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
 # We are skippping due to a bug in polars with groupby aggregations with min
 @pytest.mark.skip()
 @parametrize_service_requests_csv_repartition
-@parametrize_service_requests_csv_daft_df
 @pytest.mark.parametrize(
     "keys",
     [
@@ -125,7 +118,6 @@ def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
 
 
 @parametrize_service_requests_csv_repartition
-@parametrize_service_requests_csv_daft_df
 @parametrize_sort_desc("sort_desc")
 @pytest.mark.parametrize(
     "keys",

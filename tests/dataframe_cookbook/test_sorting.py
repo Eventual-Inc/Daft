@@ -3,13 +3,11 @@ import pytest
 from daft.expressions import col
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
-    parametrize_service_requests_csv_daft_df,
     parametrize_service_requests_csv_repartition,
     parametrize_sort_desc,
 )
 
 
-@parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
 @parametrize_sort_desc("sort_desc")
 @pytest.mark.parametrize(
@@ -32,7 +30,6 @@ def test_get_sorted(sort_desc, daft_df, service_requests_csv_pd_df, repartition_
     )
 
 
-@parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
 @parametrize_sort_desc("sort_desc")
 @pytest.mark.parametrize(
@@ -55,7 +52,6 @@ def test_get_sorted_top_n(sort_desc, daft_df, service_requests_csv_pd_df, repart
     )
 
 
-@parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
 @parametrize_sort_desc("sort_desc")
 @pytest.mark.parametrize(
@@ -80,7 +76,6 @@ def test_get_sorted_top_n_flipped_desc(sort_desc, daft_df, service_requests_csv_
     )
 
 
-@parametrize_service_requests_csv_daft_df
 @parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "daft_df_ops",
