@@ -8,7 +8,7 @@ import socket
 import subprocess
 import time
 from datetime import datetime, timezone
-from typing import Callable, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set
 
 import fsspec
 import ray
@@ -27,16 +27,15 @@ from daft.context import get_context
 
 class MetricsBuilder:
 
+    NUM_TPCH_QUESTIONS = 10
+
     HEADERS = [
-        "finished_at",
-        "benchmark_name",
+        "started_at",
         "runner",
-        "walltime[s]",
         "commit_hash",
         "commit_time",
         "release_tag",
         "env",
-        "success",
         "python_version",
         "github_runner_os",
         "github_runner_arch",
@@ -44,14 +43,26 @@ class MetricsBuilder:
         "github_run_id",
         "github_run_attempt",
         "github_ref",
+        *[f"tpch_q{i}" for i in range(1, NUM_TPCH_QUESTIONS + 1)],
     ]
 
     def __init__(self, runner: str):
-        self._metrics = {header: [] for header in MetricsBuilder.HEADERS}
         self._runner = runner
         self._env = "github_actions" if os.getenv("GITHUB_ACTIONS") else socket.gethostname()
+        self._commit_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
+        self._commit_time = (
+            subprocess.check_output(["git", "show", "-s", "--format=%cI", "HEAD"]).decode("utf-8").strip()
+        )
+        self._release_tag = subprocess.check_output(["git", "tag", "--points-at", "HEAD"]).decode("utf-8").strip()
 
-        self._github_metadata = {
+        self._metrics: Dict[str, Any] = {
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "runner": runner,
+            "commit_hash": self._commit_hash,
+            "commit_time": self._commit_time,
+            "release_tag": self._release_tag,
+            "env": self._env,
+            "python_version": ".".join(platform.python_version_tuple()),
             "github_runner_os": os.getenv("RUNNER_OS"),
             "github_runner_arch": os.getenv("RUNNER_ARCH"),
             "github_workflow": os.getenv("GITHUB_WORKFLOW"),
@@ -60,43 +71,14 @@ class MetricsBuilder:
             "github_ref": os.getenv("GITHUB_REF"),
         }
 
-        self._commit_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
-        self._commit_time = (
-            subprocess.check_output(["git", "show", "-s", "--format=%cI", "HEAD"]).decode("utf-8").strip()
-        )
-        self._release_tag = subprocess.check_output(["git", "tag", "--points-at", "HEAD"]).decode("utf-8").strip()
-
-    def _add_metric(self, benchmark_name: str, walltime_s: float, success: bool):
-        data = {
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-            "benchmark_name": benchmark_name,
-            "runner": self._runner,
-            "walltime[s]": walltime_s,
-            "commit_hash": self._commit_hash,
-            "commit_time": self._commit_time,
-            "release_tag": self._release_tag,
-            "env": self._env,
-            "success": success,
-            "python_version": ".".join(platform.python_version_tuple()),
-            **self._github_metadata,
-        }
-        for header in data:
-            self._metrics[header].append(data[header])
-
     @contextlib.contextmanager
     def collect_metrics(self, qnum: int):
         logger.info(f"Running benchmarks for TPC-H q{qnum}")
-        success = True
         start = time.time()
         yield
         walltime_s = time.time() - start
         logger.info(f"Finished benchmarks for q{qnum}: {walltime_s}s")
-
-        self._add_metric(
-            f"tpch_q{qnum}",
-            walltime_s,
-            success,
-        )
+        self._metrics[f"tpch_q{qnum}"] = walltime_s
 
     def dump_csv(self, csv_output_location: str, output_csv_headers: bool):
         if len(self._metrics) == 0:
@@ -106,8 +88,7 @@ class MetricsBuilder:
             writer = csv.writer(csvfile, delimiter=",")
             if output_csv_headers:
                 writer.writerow(MetricsBuilder.HEADERS)
-            for i in range(len(self._metrics[MetricsBuilder.HEADERS[0]])):
-                writer.writerow([self._metrics[header][i] for header in MetricsBuilder.HEADERS])
+            writer.writerow([self._metrics.get(header, "") for header in MetricsBuilder.HEADERS])
 
 
 def get_df_with_parquet_folder(parquet_folder: str) -> Callable[[str], DataFrame]:
@@ -168,7 +149,9 @@ def setup_ray(daft_wheel_location: Optional[str]):
 
         ray.init(
             address=ctx.runner_config.address,
-            runtime_env={"py_modules": [daft_wheel_location], "eager_install": True},
+            runtime_env={"py_modules": [daft_wheel_location], "eager_install": True}
+            if daft_wheel_location is not None
+            else None,
         )
 
         logger.info("Warming up Ray cluster with a function...")
