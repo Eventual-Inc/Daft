@@ -1,72 +1,75 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: "v0.961"
-    hooks:
-      - id: mypy
-        additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
-        files: "daft"
+- repo: https://github.com/pre-commit/mirrors-mypy
+  rev: v0.961
+  hooks:
+  - id: mypy
+    additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
+    files: daft
 
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.2.0
-    hooks:
-    - id: detect-private-key
-    - id: trailing-whitespace
-    - id: end-of-file-fixer
-    - id: check-yaml
-      exclude: kubernetes-ops
-    - id: pretty-format-json
-      args:
-          - "--autofix"
-          - "--no-sort-keys"
-          - "--indent=  "
-    - id: check-added-large-files
-    - id: requirements-txt-fixer
-    - id: check-merge-conflict
-    - id: check-docstring-first
-    - id: check-toml
-    - id: debug-statements
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v3.2.0
+  hooks:
+  - id: detect-private-key
+  - id: trailing-whitespace
+  - id: end-of-file-fixer
+  - id: check-yaml
+    exclude: kubernetes-ops
+  - id: pretty-format-json
+    args:
+    - --autofix
+    - --no-sort-keys
+    - '--indent=  '
+  - id: check-added-large-files
+  - id: requirements-txt-fixer
+  - id: check-merge-conflict
+  - id: check-docstring-first
+  - id: check-toml
+  - id: debug-statements
 
-  - repo: https://github.com/psf/black
-    rev: "22.6.0"
-    hooks:
-    -   id: black
+- repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
+  rev: v2.4.0
+  hooks:
+  - id: pretty-format-toml
+    args: [--autofix]
+  - id: pretty-format-yaml
+    args: [--autofix]
 
-  - repo: https://github.com/pycqa/isort
-    rev: 5.8.0
-    hooks:
-      - id: isort
-        name: isort (python)
-        args: ["--profile", "black", "--filter-files"]
 
-  - repo: https://github.com/myint/autoflake
-    rev: "v1.4"
-    hooks:
-      - id: autoflake
-        files: .
-        args:
-          [
-            "--in-place",
-            "--remove-all-unused-imports",
-            "--remove-unused-variable",
-            "--ignore-init-module-imports",
-          ]
+- repo: https://github.com/psf/black
+  rev: 22.6.0
+  hooks:
+  - id: black
 
-  - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: 'v14.0.6'
-    hooks:
-      - id: clang-format
-        types_or: [c, c++]
-        exclude_types: [python]
-        args: []
-  - repo: https://github.com/python-poetry/poetry
-    rev: '1.2.2'
-    hooks:
-      - id: poetry-check
-      - id: poetry-lock
-        files: ^pyproject.toml$
-        args: ["--check"]
+- repo: https://github.com/pycqa/isort
+  rev: 5.8.0
+  hooks:
+  - id: isort
+    name: isort (python)
+    args: [--profile, black, --filter-files]
+
+- repo: https://github.com/myint/autoflake
+  rev: v1.4
+  hooks:
+  - id: autoflake
+    files: .
+    args: [--in-place, --remove-all-unused-imports, --remove-unused-variable, --ignore-init-module-imports]
+
+- repo: https://github.com/pre-commit/mirrors-clang-format
+  rev: v14.0.6
+  hooks:
+  - id: clang-format
+    types_or: [c, c++]
+    exclude_types: [python]
+    args: []
+- repo: https://github.com/python-poetry/poetry
+  rev: 1.2.2
+  hooks:
+  - id: poetry-check
+  - id: poetry-lock
+    files: ^pyproject.toml$
+    args: [--check]
 
 
   # - repo: https://github.com/stackrox/kube-linter
