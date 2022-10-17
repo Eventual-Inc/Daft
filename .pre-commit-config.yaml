@@ -66,6 +66,7 @@ repos:
       - id: poetry-check
       - id: poetry-lock
         files: ^pyproject.toml$
+        args: ["--check"]
 
 
   # - repo: https://github.com/stackrox/kube-linter
