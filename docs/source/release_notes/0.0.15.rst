@@ -1,0 +1,31 @@
+Daft 0.0.15 Release Notes
+=========================
+
+Daft 0.0.15 includes big fixes and tests for handling nulls in dataframes:
+
+* Adds null tests and fixes for all global operations: sorts, groupbys, aggregates, joins, distinct
+* Type inference improved for ``DataFrame.from_pydict``
+
+Enhancements
+------------
+
+* Benchmark script fix when using ray runner in local mode `#286 <https://github.com/Eventual-Inc/Daft/pull/286>`_
+* Refactor benchmarking data schema to flatten along columns `#283 <https://github.com/Eventual-Inc/Daft/pull/283>`_
+* Null tests for sorts/aggregates/joins/distinct and fixes `#281 <https://github.com/Eventual-Inc/Daft/pull/281>`_
+* add new kernels for search sorted to handle nulls `#279 <https://github.com/Eventual-Inc/Daft/pull/279>`_
+* Refactor of Hashing module to C++ for handling of seed and nulls `#274 <https://github.com/Eventual-Inc/Daft/pull/274>`_
+* Adds a setup\_ray step in benchmarking `#256 <https://github.com/Eventual-Inc/Daft/pull/256>`_
+
+Bug Fixes
+---------
+
+* Remove dataframe\_cookbook tests with 2 CSVs `#284 <https://github.com/Eventual-Inc/Daft/pull/284>`_
+* Fix type inference in DataFrame.from\_pydict `#280 <https://github.com/Eventual-Inc/Daft/pull/280>`_
+* Search Sorted Offset Fix for Arrow Views `#276 <https://github.com/Eventual-Inc/Daft/pull/276>`_
+
+Closed Issues
+-------------
+
+* Verify offset chunked arrays work with search sorted `#275 <https://github.com/Eventual-Inc/Daft/issues/275>`_
+* Fix hashing of floats `#271 <https://github.com/Eventual-Inc/Daft/issues/271>`_
+* Fix type inference for DataFrame.from\_pydict and DataFrame.from\_pylist `#233 <https://github.com/Eventual-Inc/Daft/issues/233>`_
