@@ -68,7 +68,7 @@ repos:
   hooks:
   - id: poetry-check
   - id: poetry-lock
-    files: ^pyproject.toml$
+    files: ^pyproject.toml$|^poetry.lock$
     args: [--check]
 
 
