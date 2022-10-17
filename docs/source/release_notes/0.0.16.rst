@@ -1,7 +1,11 @@
-Daft 0.0.15 Release Notes
+Daft 0.0.16 Release Notes
 =========================
 
-Daft 0.0.15 includes big fixes and tests for handling nulls in dataframes:
+.. WARNING::
+
+    Daft 0.0.15 was yanked from PyPi due to some issues in some wheels failing to build due to an issue with dependencies. 0.0.16 includes all changes in the yanked 0.0.15 package as well as the necessary fixes to the build.
+
+Daft 0.0.16 includes big fixes and tests for handling nulls in dataframes:
 
 * Adds null tests and fixes for all global operations: sorts, groupbys, aggregates, joins, distinct
 * Type inference improved for ``DataFrame.from_pydict``
