@@ -84,4 +84,4 @@ Schema and Lineage
 
 .. automethod:: daft.DataFrame.plan
 .. automethod:: daft.DataFrame.schema
-.. automethod:: daft.DataFrame.column_names
+.. autoproperty:: daft.DataFrame.column_names

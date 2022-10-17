@@ -3,6 +3,8 @@ DataFrames
 
 Dataframes are the core unit of abstraction in Daft. They represent a table of data with Rows and Columns, and each Column has a type (learn more: :doc:`types_and_ops`).
 
+.. _dataframe-loading-data:
+
 Loading Data
 ------------
 
@@ -29,22 +31,22 @@ From Memory
 DataFrames also :ref:`constructors to load from in-memory datastructures <df-memory-construction-api>` such as Python dictionaries and lists.
 
 
-.. From Filepaths
-.. ^^^^^^^^^^^^^^
+From Filepaths
+^^^^^^^^^^^^^^
 
-.. **[COMING SOON]** Reading filepaths of files on disk, or in remote storage. This is useful when loading a folder of images/PDFs/Protobufs etc into a DataFrame, and will return a DataFrame of filepaths and each file's metadata.
+Reading filepaths of files on disk, or in remote storage. This is useful when loading a folder of images/PDFs/Protobufs etc into a DataFrame, and will return a DataFrame of filepaths and each file's metadata.
 
-.. .. code:: python
+.. code:: python
 
-..     df = DataFrame.from_filepaths("s3://mybucket/path/to/files/*.jpeg")
-..     df.show()
+    df = DataFrame.from_filepaths("s3://mybucket/path/to/files/*.jpeg")
+    df.show()
 
-..     # +----------+------+-----+
-..     # | filepath | size | ... |
-..     # +----------+------+-----+
-..     #   ...
+    # +----------+------+-----+
+    # | name     | size | ... |
+    # +----------+------+-----+
+    #   ...
 
-.. A common pattern is to then use the ``.url.download()`` function to download the contents of each file and manipulate them in Python!
+A common pattern is to then use the ``.url.download()`` function to download the contents of each file and manipulate them in Python!
 
 
 .. From Databases
@@ -100,6 +102,8 @@ Visualization
 
 * :ref:`df.show(N) <df-show>`: execute dataframe and show results in a notebook
 * :ref:`df.to_pandas() <df-to-pandas>`: execute dataframe and return results as a Pandas Dataframe
+
+.. _dataframe-writing-data:
 
 Writing Data
 ^^^^^^^^^^^^
