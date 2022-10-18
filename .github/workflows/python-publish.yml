@@ -3,7 +3,7 @@ name: daft-publish
 on:
   push:
     tags:
-      - v*
+    - v*
 jobs:
   build_bdist_wheels:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && ( ! endsWith(github.ref, 'dev0'))
@@ -13,30 +13,30 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-11]
-        python: ["cp37", "cp38", "cp39", "cp310"]
+        python: [cp37, cp38, cp39, cp310]
 
     steps:
-      - uses: actions/checkout@v3
+    - uses: actions/checkout@v3
 
-      - uses: actions/setup-python@v3
+    - uses: actions/setup-python@v3
 
-      - name: Install cibuildwheel
-        run: python -m pip install cibuildwheel==2.9.0 poetry==1.2.0 twine && poetry self add "poetry-dynamic-versioning[plugin]"
-      - name: Patch local toml with SemVar
-        run: poetry dynamic-versioning
-      - name: Build wheels
-        run: python -m cibuildwheel --output-dir ./wheelhouse
-        env:
-          CIBW_BUILD: ${{ matrix.python }}-*
-      - uses: actions/upload-artifact@v3
-        with:
-          name: ${{ matrix.python }}-${{ matrix.os }}_bdist_wheels
-          path: ./wheelhouse/*.whl
-      - name: Publish package
-        run: python -m twine upload --skip-existing --disable-progress-bar ./wheelhouse/*
-        env:
-          TWINE_USERNAME: "__token__"
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+    - name: Install cibuildwheel
+      run: python -m pip install cibuildwheel==2.9.0 poetry==1.2.0 twine && poetry self add "poetry-dynamic-versioning[plugin]"
+    - name: Patch local toml with SemVar
+      run: poetry dynamic-versioning
+    - name: Build wheels
+      run: python -m cibuildwheel --output-dir ./wheelhouse
+      env:
+        CIBW_BUILD: ${{ matrix.python }}-*
+    - uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.python }}-${{ matrix.os }}_bdist_wheels
+        path: ./wheelhouse/*.whl
+    - name: Publish package
+      run: python -m twine upload --skip-existing --disable-progress-bar ./wheelhouse/*
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
 
   build_sdist_wheels:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && ( ! endsWith(github.ref, 'dev0'))
@@ -45,18 +45,18 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v3
-      - name: Install poetry
-        run: python -m pip install poetry==1.2.0 twine && poetry self add "poetry-dynamic-versioning[plugin]"
-      - name: Build wheels
-        run: poetry build -f sdist
-      - uses: actions/upload-artifact@v3
-        with:
-          name: source_wheels
-          path: ./dist/*
-      - name: Publish package
-        run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
-        env:
-          TWINE_USERNAME: "__token__"
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+    - name: Install poetry
+      run: python -m pip install poetry==1.2.0 twine && poetry self add "poetry-dynamic-versioning[plugin]"
+    - name: Build wheels
+      run: poetry build -f sdist
+    - uses: actions/upload-artifact@v3
+      with:
+        name: source_wheels
+        path: ./dist/*
+    - name: Publish package
+      run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}

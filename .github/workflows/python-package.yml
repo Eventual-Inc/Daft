@@ -5,9 +5,9 @@ name: daft
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   build:
@@ -16,8 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.8"]
-        daft_runner: ["py", "ray"]
+        python-version: ['3.8']
+        daft_runner: [py, ray]
     steps:
     - uses: actions/checkout@v3
     - name: Set up Python ${{ matrix.python-version }}
@@ -49,7 +49,7 @@ jobs:
     - name: Test with pytest
       run: poetry run pytest
       env:
-          DAFT_RUNNER: ${{ matrix.daft_runner }}
+        DAFT_RUNNER: ${{ matrix.daft_runner }}
 
     - uses: actions/cache@v3
       id: pre-commit-cache
