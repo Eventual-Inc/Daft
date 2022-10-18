@@ -3,7 +3,10 @@ from bisect import bisect_right
 from itertools import accumulate
 from typing import Callable, ClassVar, Dict, List, Type, TypeVar
 
+from fsspec.implementations.cached import SimpleCacheFileSystem
+from fsspec.implementations.http import HTTPFileSystem
 from pyarrow import csv, json, parquet
+from pyarrow.fs import FSSpecHandler, PyFileSystem
 
 from daft.datasources import (
     CSVSourceInfo,
@@ -134,7 +137,16 @@ class LogicalPartitionOpRunner:
             return vpart
         elif scan._source_info.scan_type() == StorageType.PARQUET:
             assert isinstance(scan._source_info, ParquetSourceInfo)
-            table = parquet.read_table(scan._source_info.filepaths[partition_id], columns=scan._column_names)
+
+            # PyArrow lacks a HTTP filesystem implementation, so we use FSSpec here to handle that case
+            pyarrow_fs = None
+            fsspec_fs = get_filesystem_from_path(scan._source_info.filepaths[partition_id])
+            if isinstance(fsspec_fs, HTTPFileSystem):
+                pyarrow_fs = PyFileSystem(FSSpecHandler(SimpleCacheFileSystem(fs=fsspec_fs)))
+
+            table = parquet.read_table(
+                scan._source_info.filepaths[partition_id], columns=scan._column_names, filesystem=pyarrow_fs
+            )
             column_ids = [col.get_id() for col in scan.schema().to_column_expressions()]
             vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
             return vpart
