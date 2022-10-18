@@ -1,3 +1,61 @@
+[build-system]
+requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning", "setuptools", "numpy>=1.16.6", "pyarrow==6.0", "Cython>=0.29.32"]
+build-backend = "poetry.core.masonry.api"
+
+[tool]
+
+[tool.black]
+line-length = 120
+target-version = ['py38']
+
+[tool.cibuildwheel]
+build-verbosity = 3
+skip = "*-musllinux*"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+before-build = ""
+repair-wheel-command = ""
+before-test = "pip install poetry>=1.2 && poetry export --extras experimental --with test > test-requirements.txt && pip install -r test-requirements.txt && rm -rf {package}/daft"
+test-command = "pytest {package}/tests"
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+repair-wheel-command = [
+  "mkdir tmp_wheel_dir",
+  "delocate-listdeps {wheel}",
+  "delocate-wheel --ignore-missing-dependencies --require-archs {delocate_archs} -w tmp_wheel_dir {wheel}",
+  "python tools/wheels/fix-and-copy-wheel.py tmp_wheel_dir/* {dest_dir}",
+  "rm -rf tmp_wheel_dir"
+]
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+python_version = "3.8"
+files = ["daft/**/*.py", "daft/**/*.pyx", "tests/**/*.py"]
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pyarrow.*",
+    "fsspec.*",
+    "icebridge.*",
+    "cloudpickle.*",
+    "docker.*",
+    "uvicorn.*",
+    "numba.*"
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "daft.experimental.dataclasses"
+]
+ignore_errors = true
+
 [tool.poetry]
 name = "getdaft"
 version = "0.0.16" # needed for poetry but ignored
@@ -15,22 +73,9 @@ packages = [
     {include = "daft"}
 ]
 
-[build-system]
-requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning", "setuptools", "numpy>=1.16.6", "pyarrow==6.0", "Cython>=0.29.32"]
-build-backend = "poetry.core.masonry.api"
-
 [tool.poetry.build]
 script = "build.py"
 generate-setup-file = true
-
-[tool.poetry-dynamic-versioning]
-enable = true
-vcs = "git"
-style = "semver"
-format = "{base}"
-
-[tool.poetry.scripts]
-build_inplace = 'build:build_inplace'
 
 [tool.poetry.dependencies]
 python = "^3.7.1"
@@ -38,8 +83,6 @@ ray = "1.13.0"
 numpy = "^1.16.6"
 pyarrow = "^6"
 fsspec = "*"
-# Ray-protobuf generation issue requires pinning at 3.19:
-# https://github.com/ray-project/ray/issues/25282
 protobuf = "~3.19.0"
 pydot = "^1.4.2"
 loguru = "^0.6.0"
@@ -48,16 +91,12 @@ pandas = "^1.3.5"
 typing-extensions = { version = ">=4.0.0", python = "<3.8" }
 pickle5 = { version = "^0.0.12", python = "<3.8" }
 polars = { extras = ["timezone"], version = "^0.14.12" }
-
-# Serving deps
 fastapi = {version="^0.79.0", optional=true}
 docker = {version="^5.0.3", optional=true}
 uvicorn = {version="^0.18.2", optional=true}
 cloudpickle = {version="^2.1.0", optional=true}
 boto3 = {version="^1.23.0", optional=true}
 PyYAML = {version="^6.0", optional=true}
-
-# DataRepo Deps
 icebridge = {version="^0.0.4", optional=true}
 Pillow = {version = "^9.2.0", optional=true}
 
@@ -69,21 +108,22 @@ experimental = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"
 [tool.poetry.group.dev.dependencies]
 ipdb = "^0.13.9"
 pre-commit = "^2.20.0"
-Cython="^0.29.32"
+Cython = "^0.29.32"
 viztracer = "^0.15.4"
 Sphinx = "<5"
 sphinx-book-theme = "^0.3.3"
 myst-nb = "^0.16.0"
 
-[tool.poetry.group.test.dependencies]
-pytest = "^7.1.2"
-xxhash = "^3.0.0"
-sentry-sdk = "^1.9.5"
-Pillow = {version = "^9.2.0"}
+[tool.poetry.group.examples]
+optional = true
 
+[tool.poetry.group.examples.dependencies]
+transformers = "^4.21.2"
+diffusers = "^0.2.4"
+spacy = "^3.4.1"
 
 [tool.poetry.group.jupyter]
-optional=true
+optional = true
 
 [tool.poetry.group.jupyter.dependencies]
 jupyter = "^1.0.0"
@@ -91,67 +131,17 @@ jupyterlab = "^3.4.2"
 jupyterhub = "1.5.0"
 jupyterlab-git = "^0.37.1"
 
-[tool.poetry.group.examples]
-optional=true
+[tool.poetry.group.test.dependencies]
+pytest = "^7.1.2"
+xxhash = "^3.0.0"
+sentry-sdk = "^1.9.5"
+Pillow = {version = "^9.2.0"}
 
-[tool.poetry.group.examples.dependencies]
-transformers = "^4.21.2"
-diffusers = "^0.2.4"
-spacy = "^3.4.1"
+[tool.poetry.scripts]
+build_inplace = 'build:build_inplace'
 
-
-[tool.mypy]
-python_version = "3.8"
-# WE NEED TO ENABLE THIS FOR eventual-hub
-files = ["daft/**/*.py", "daft/**/*.pyx", "tests/**/*.py"]
-warn_return_any = true
-warn_unused_configs = true
-
-
-[[tool.mypy.overrides]]
-module = [
-    "pyarrow.*",
-    "fsspec.*",
-    "icebridge.*",
-    "cloudpickle.*",
-    "docker.*",
-    "uvicorn.*",
-    "numba.*"
-]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-# WE ARE IGNORING THIS MODULES UNTIL WE CAN FIX THEM
-module = [
-    "daft.experimental.dataclasses"
-]
-ignore_errors = true
-
-
-
-[tool.black]
-line-length = 120
-target-version = ['py38']
-
-[tool.isort]
-profile = "black"
-
-[tool.cibuildwheel]
-build-verbosity = 3
-skip="*-musllinux*"
-[tool.cibuildwheel.linux]
-
-archs = ["x86_64"]
-before-build = ""
-repair-wheel-command = ""
-before-test="pip install poetry>=1.2 && poetry export --extras experimental --with test > test-requirements.txt && pip install -r test-requirements.txt && rm -rf {package}/daft"
-test-command = "pytest {package}/tests"
-[tool.cibuildwheel.macos]
-archs = ["x86_64", "arm64"]
-repair-wheel-command = [
-  "mkdir tmp_wheel_dir",
-  "delocate-listdeps {wheel}",
-  "delocate-wheel --ignore-missing-dependencies --require-archs {delocate_archs} -w tmp_wheel_dir {wheel}",
-  "python tools/wheels/fix-and-copy-wheel.py tmp_wheel_dir/* {dest_dir}",
-  "rm -rf tmp_wheel_dir"
-]
+[tool.poetry-dynamic-versioning]
+enable = true
+vcs = "git"
+style = "semver"
+format = "{base}"

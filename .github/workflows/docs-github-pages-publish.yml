@@ -4,7 +4,7 @@ name: Deploy static content to Pages
 on:
   # Runs on pushes targeting the default branch
   push:
-    branches: ["main"]
+    branches: [main]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -17,7 +17,7 @@ permissions:
 
 # Allow one concurrent deployment
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: true
 
 jobs:
@@ -28,30 +28,30 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - uses: actions/setup-python@v3
-      - uses: actions/cache@v3
-        id: poetry-cache
-        with:
-          path: ~/.cache/pypoetry/virtualenvs
-          key: python-${{ steps.setup-python.outputs.python-version }}-poetry-${{ hashFiles('poetry.lock') }}
-      - name: Install Dependencies
-        run: |
-          python -m pip install poetry
-          poetry install --all-extras --with dev -vvv
-      - name: Generate Documentation
-        working-directory: ./docs
-        run: |
-          poetry run make html
-          touch build/html/.nojekyll
-      - name: Setup Pages
-        uses: actions/configure-pages@v2
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v1
-        with:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+    - uses: actions/cache@v3
+      id: poetry-cache
+      with:
+        path: ~/.cache/pypoetry/virtualenvs
+        key: python-${{ steps.setup-python.outputs.python-version }}-poetry-${{ hashFiles('poetry.lock') }}
+    - name: Install Dependencies
+      run: |
+        python -m pip install poetry
+        poetry install --all-extras --with dev -vvv
+    - name: Generate Documentation
+      working-directory: ./docs
+      run: |
+        poetry run make html
+        touch build/html/.nojekyll
+    - name: Setup Pages
+      uses: actions/configure-pages@v2
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v1
+      with:
           # Upload the docs/build folder
-          path: 'docs/build/html'
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v1
+        path: docs/build/html
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v1
