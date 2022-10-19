@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections
+import datetime
 import functools
 import math
 import operator
@@ -33,6 +34,7 @@ from pandas.core.reshape.merge import get_join_indexers
 from daft.execution.operators import OperatorEnum, OperatorEvaluator
 from daft.internal.kernels.hashing import hash_chunked_array
 from daft.internal.kernels.search_sorted import search_sorted
+from daft.types import ExpressionType, PrimitiveExpressionType, PythonExpressionType
 
 # A type representing some Python scalar (non-series/array like object)
 PyScalar = Any
@@ -795,6 +797,45 @@ def arrow_str_startswith(arr: pa.ChunkedArray, pattern: pa.StringScalar):
     return pac.starts_with(arr, pattern=pattern.as_py())
 
 
+def arrow_cast(arrow_block: ArrowDataBlock, to: ExpressionType) -> DataBlock:
+    assert not ExpressionType.is_py(
+        to
+    ), "Converting arrow block to Python block not supported and should be caught at operation definition"
+    assert isinstance(to, PrimitiveExpressionType)
+
+    from_type = arrow_block.data.type
+    to_type = to.to_arrow_type()
+
+    if from_type == to_type:
+        return arrow_block
+
+    if pa.types.is_integer(from_type):
+        if pa.types.is_floating(to_type) or pa.types.is_string(to_type):
+            return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
+    elif pa.types.is_floating(from_type):
+        if pa.types.is_integer(to_type):
+            truncated = pac.trunc(arrow_block.data)
+            truncated_replace_nans_with_null = pac.if_else(pac.is_nan(truncated), None, truncated).cast(pa.int64())
+            return ArrowDataBlock(truncated_replace_nans_with_null)
+        elif pa.types.is_string(to_type):
+            return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
+    elif pa.types.is_boolean(from_type):
+        if pa.types.is_integer(to_type) or pa.types.is_string(to_type):
+            return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
+    elif pa.types.is_string(from_type):
+        if pa.types.is_date32(to_type):
+            return ArrowDataBlock(pac.strptime(arrow_block.data, format="%Y-%m-%d", unit="s"))
+        return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
+    elif pa.types.is_date32(from_type):
+        if pa.types.is_string(to_type):
+            return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
+    elif pa.types.is_binary(from_type):
+        if pa.types.is_string(to_type):
+            return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
+
+    raise NotImplementedError(f"Casting from arrow types {from_type} to {to_type} not implemented")
+
+
 def _arr_unary_op(
     fn: Callable[..., pa.ChunkedArray],
 ) -> Callable[[DataBlock[ArrowArrType]], DataBlock[ArrowArrType]]:
@@ -818,6 +859,7 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     POSITIVE = ArrowDataBlock.identity
     ABS = _arr_unary_op(pac.abs)
     INVERT = _arr_unary_op(pac.invert)
+    CAST = arrow_cast
     ADD = _arr_bin_op(pac.add)
     SUB = _arr_bin_op(pac.subtract)
     MUL = _arr_bin_op(pac.multiply)
@@ -893,11 +935,60 @@ def pylist_if_else(
     return PyListDataBlock([xitem if c else yitem for c, xitem, yitem in zip_blocks_as_py(cond, x, y)])
 
 
+def _assert_and_identity(obj: Any, assert_type: Type[T]) -> T:
+    if not isinstance(obj, assert_type):
+        raise TypeError(f"Object {obj} is not of user-requested type {assert_type}")
+    return obj
+
+
+def pylist_cast(pylist_block: PyListDataBlock, to: ExpressionType) -> DataBlock:
+    if ExpressionType.is_primitive(to):
+        assert isinstance(to, PrimitiveExpressionType)
+        arrow_type = to.to_arrow_type()
+
+        if to == ExpressionType.string():
+            return ArrowDataBlock(
+                pa.chunked_array([[str(d) if d is not None else None for d in pylist_block.data]], type=arrow_type)
+            )
+        elif to == ExpressionType.integer():
+            return ArrowDataBlock(
+                pa.chunked_array([[int(d) if d is not None else None for d in pylist_block.data]], type=arrow_type)
+            )
+        elif to == ExpressionType.float():
+            return ArrowDataBlock(
+                pa.chunked_array([[float(d) if d is not None else None for d in pylist_block.data]], type=arrow_type)
+            )
+        elif to == ExpressionType.bytes():
+            return ArrowDataBlock(
+                pa.chunked_array([[bytes(d) if d is not None else None for d in pylist_block.data]], type=arrow_type)
+            )
+        elif to == ExpressionType.logical():
+            return ArrowDataBlock(
+                pa.chunked_array([[bool(d) if d is not None else None for d in pylist_block.data]], type=arrow_type)
+            )
+        elif to == ExpressionType.date():
+            return ArrowDataBlock(
+                pa.chunked_array(
+                    [[_assert_and_identity(d, datetime.date) if d is not None else None for d in pylist_block.data]],
+                    type=arrow_type,
+                )
+            )
+        raise NotImplementedError(f"Casting PY to {to} is not implemented")
+
+    assert isinstance(to, PythonExpressionType)
+    for d in pylist_block.data:
+        if not (d is None or isinstance(d, to.python_cls)):
+            raise TypeError(f"Found object of type {type(d)} when casting types, expected {to}")
+
+    return pylist_block
+
+
 class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
     NEGATE = make_map_unary(operator.neg)
     POSITIVE = PyListDataBlock.identity
     ABS = make_map_unary(operator.abs)
     INVERT = make_map_unary(operator.invert)
+    CAST = pylist_cast
     ADD = make_map_binary(operator.add)
     SUB = make_map_binary(operator.sub)
     MUL = make_map_binary(operator.mul)

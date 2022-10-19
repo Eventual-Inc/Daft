@@ -88,6 +88,7 @@ class ExpressionExecutor:
             return result
         elif isinstance(expr, CallExpression):
             eval_args: Tuple[DataBlock, ...] = tuple(self.eval(a, operands) for a in expr._args)
+            eval_kwargs: Dict[str, Any] = expr._kwargs
 
             # Use a PyListDataBlock evaluator if any of the args are Python types
             op_evaluator = (
@@ -98,7 +99,7 @@ class ExpressionExecutor:
             op = expr._operator
 
             func = getattr(op_evaluator, op.name)
-            result = func(*eval_args)
+            result = func(*eval_args, **eval_kwargs)
             return result
         elif isinstance(expr, UdfExpression):
             eval_args = tuple(self.eval(a, operands) for a in expr._args)
@@ -445,6 +446,35 @@ class Expression(TreeNode["Expression"]):
             (self,),
         )
 
+    def cast(self, to: Type) -> Expression:
+        """Casts an expression to a given type
+
+        Casting defaults to a set of "reasonable behaviors" for each ``(from_type, to_type)`` pair. For more fine-grained control, please consult
+        each type's method accessors or make a feature request for an accessor if none exists for your use-case.
+
+        This method supports:
+
+        1. Casting of a PY type to a Primitive type (e.g. converting a PY[object] column of strings to STRING with ``.cast(str)``) - this will assert
+            that the Python object is indeed the specified primitive type, and convert the data to a more optimized backend representation.
+        2. Casting between Primitive types, with a set of reasonable default behavior for most type pairs
+
+        Example:
+
+            >>> # ["1", "2", None]: STRING -> [1, 2, None]: INTEGER
+            >>> col("string_col").cast(int)
+            >>>
+            >>> # [Path("/tmp1"), Path("/tmp2"), Path("/tmp3")]: PY[Path] -> ["/tmp1", "/tmp1", "/tmp1"]: STRING
+            >>> col("path_obj_col").cast(str)
+
+        Returns:
+            Expression: Expression with the specified new type
+        """
+        return CallExpression(
+            OperatorEnum.CAST,
+            (self,),
+            {"to": ExpressionType.from_py_type(to)},
+        )
+
     ###
     # Accessors
     ###
@@ -485,17 +515,19 @@ class CallExpression(Expression):
         self,
         operator: OperatorEnum,
         func_args: Tuple,
+        func_kwargs: Dict[str, Any] = {},
     ) -> None:
         super().__init__()
         self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         self._operator = operator
+        self._kwargs = func_kwargs
 
     def resolved_type(self) -> Optional[ExpressionType]:
         args_resolved_types = tuple(arg.resolved_type() for arg in self._args)
         if any([arg_type is None for arg_type in args_resolved_types]):
             return None
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
-        ret_type = self._operator.value.get_return_type(args_resolved_types_non_none)
+        ret_type = self._operator.value.get_return_type(args_resolved_types_non_none, **self._kwargs)
         if ret_type == ExpressionType.unknown():
             operator: ExpressionOperator = self._operator.value
             op_pretty_print = ""
