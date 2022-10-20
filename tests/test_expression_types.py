@@ -13,15 +13,6 @@ from daft.types import ExpressionType
 class MyObj:
     pass
 
-    def __int__(self) -> int:
-        return 1
-
-    def __float__(self) -> float:
-        return 1.0
-
-    def __bytes__(self) -> bytes:
-        return b"foo"
-
 
 ALL_TYPES = {
     ExpressionType.from_py_type(str): ["a", "b", "c", None],
