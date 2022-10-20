@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import itertools
 import warnings
 from abc import abstractmethod
@@ -444,6 +445,61 @@ class Expression(TreeNode["Expression"]):
             OperatorEnum.IS_NAN,
             (self,),
         )
+
+    def cast(self, to: Type) -> Expression:
+        """Casts an expression to a given type
+
+        Casting defaults to a set of "reasonable behaviors" for each ``(from_type, to_type)`` pair. For more fine-grained control, please consult
+        each type's method accessors or make a feature request for an accessor if none exists for your use-case.
+
+        This method supports:
+
+        1. Casting of a PY type to a Primitive type (e.g. converting a PY[object] column of strings to STRING with ``.cast(str)``) - this will coerce
+            each Python object into the specified primitive type, and then convert the data to an optimized backend representation.
+        2. Casting between Primitive types, with a set of reasonable default behavior for many type pairs
+
+        Example:
+
+            >>> # ["1", "2", None]: STRING -> [1, 2, None]: INTEGER
+            >>> col("string_col").cast(int)
+            >>>
+            >>> # [Path("/tmp1"), Path("/tmp2"), Path("/tmp3")]: PY[Path] -> ["/tmp1", "/tmp1", "/tmp1"]: STRING
+            >>> col("path_obj_col").cast(str)
+
+        Returns:
+            Expression: Expression with the specified new type
+        """
+        if to == str:
+            return CallExpression(
+                OperatorEnum.CAST_STRING,
+                (self,),
+            )
+        elif to == int:
+            return CallExpression(
+                OperatorEnum.CAST_INT,
+                (self,),
+            )
+        elif to == float:
+            return CallExpression(
+                OperatorEnum.CAST_FLOAT,
+                (self,),
+            )
+        elif to == bool:
+            return CallExpression(
+                OperatorEnum.CAST_LOGICAL,
+                (self,),
+            )
+        elif to == datetime.date:
+            return CallExpression(
+                OperatorEnum.CAST_DATE,
+                (self,),
+            )
+        elif to == bytes:
+            return CallExpression(
+                OperatorEnum.CAST_BYTES,
+                (self,),
+            )
+        raise NotImplementedError(f"Casting to a non-primitive Python object {to} not yet implemented")
 
     ###
     # Accessors

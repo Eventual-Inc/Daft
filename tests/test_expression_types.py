@@ -72,6 +72,13 @@ EXCLUDE_OPS = {
     "MAX",
     "COUNT",
     "EXPLODE",
+    # Tested in test_cast.py
+    "CAST_INT",
+    "CAST_FLOAT",
+    "CAST_STRING",
+    "CAST_LOGICAL",
+    "CAST_BYTES",
+    "CAST_DATE",
 }
 
 # Mapping between ExpressionTypes and (expected_numpy_dtypes, expected_python_types)

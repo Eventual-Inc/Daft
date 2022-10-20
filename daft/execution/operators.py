@@ -210,6 +210,68 @@ class OperatorEnum(Enum):
     # Logical
     INVERT = _UOp(name="invert", symbol="~", type_matrix=_UnaryLogicalTM)
 
+    # Cast
+    CAST_INT = _UOp(
+        name="cast_int",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.integer(),): ExpressionType.integer(),
+                (ExpressionType.float(),): ExpressionType.integer(),
+                (ExpressionType.logical(),): ExpressionType.integer(),
+                (ExpressionType.python_object(),): ExpressionType.integer(),
+            }.items()
+        ),
+    )
+    CAST_FLOAT = _UOp(
+        name="cast_float",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.float(),): ExpressionType.float(),
+                (ExpressionType.integer(),): ExpressionType.float(),
+                (ExpressionType.python_object(),): ExpressionType.float(),
+            }.items()
+        ),
+    )
+    CAST_STRING = _UOp(
+        name="cast_string",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.string(),): ExpressionType.string(),
+                (ExpressionType.integer(),): ExpressionType.string(),
+                (ExpressionType.logical(),): ExpressionType.string(),
+                (ExpressionType.float(),): ExpressionType.string(),
+                (ExpressionType.python_object(),): ExpressionType.string(),
+            }.items()
+        ),
+    )
+    CAST_LOGICAL = _UOp(
+        name="cast_logical",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.logical(),): ExpressionType.logical(),
+                (ExpressionType.python_object(),): ExpressionType.logical(),
+            }.items()
+        ),
+    )
+    CAST_DATE = _UOp(
+        name="cast_date",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.date(),): ExpressionType.date(),
+                (ExpressionType.python_object(),): ExpressionType.date(),
+            }.items()
+        ),
+    )
+    CAST_BYTES = _UOp(
+        name="cast_bytes",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.bytes(),): ExpressionType.bytes(),
+                (ExpressionType.python_object(),): ExpressionType.bytes(),
+            }.items()
+        ),
+    )
+
     # String
     STR_CONTAINS = _LSop(name="str_contains", symbol="contains")
     STR_ENDSWITH = _LSop(name="str_endswith", symbol="endswith")
@@ -274,6 +336,13 @@ class OperatorEvaluator(Protocol[ValueType]):
     MAX: UnaryFunction
     COUNT: UnaryFunction
     INVERT: UnaryFunction
+
+    CAST_INT: UnaryFunction
+    CAST_FLOAT: UnaryFunction
+    CAST_STRING: UnaryFunction
+    CAST_LOGICAL: UnaryFunction
+    CAST_DATE: UnaryFunction
+    CAST_BYTES: UnaryFunction
 
     ADD: BinaryFunction
     SUB: BinaryFunction
