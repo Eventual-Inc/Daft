@@ -13,6 +13,15 @@ from daft.types import ExpressionType
 class MyObj:
     pass
 
+    def __int__(self) -> int:
+        return 1
+
+    def __float__(self) -> float:
+        return 1.0
+
+    def __bytes__(self) -> bytes:
+        return b"foo"
+
 
 ALL_TYPES = {
     ExpressionType.from_py_type(str): ["a", "b", "c", None],
@@ -72,6 +81,13 @@ EXCLUDE_OPS = {
     "MAX",
     "COUNT",
     "EXPLODE",
+    # Tested in test_cast.py
+    "CAST_INT",
+    "CAST_FLOAT",
+    "CAST_STRING",
+    "CAST_LOGICAL",
+    "CAST_BYTES",
+    "CAST_DATE",
 }
 
 # Mapping between ExpressionTypes and (expected_numpy_dtypes, expected_python_types)

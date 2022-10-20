@@ -797,43 +797,18 @@ def arrow_str_startswith(arr: pa.ChunkedArray, pattern: pa.StringScalar):
     return pac.starts_with(arr, pattern=pattern.as_py())
 
 
-def arrow_cast(arrow_block: ArrowDataBlock, to: ExpressionType) -> DataBlock:
-    assert not ExpressionType.is_py(
-        to
-    ), "Converting arrow block to Python block not supported and should be caught at operation definition"
-    assert isinstance(to, PrimitiveExpressionType)
+def arrow_cast(to: pa.DataType, arrow_data: pa.ChunkedArray) -> pa.ChunkedArray:
+    return pac.cast(arrow_data, to)
 
-    from_type = arrow_block.data.type
-    to_type = to.to_arrow_type()
 
-    if from_type == to_type:
-        return arrow_block
-
-    if pa.types.is_integer(from_type):
-        if pa.types.is_floating(to_type) or pa.types.is_string(to_type):
-            return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
-    elif pa.types.is_floating(from_type):
-        if pa.types.is_integer(to_type):
-            truncated = pac.trunc(arrow_block.data)
-            truncated_replace_nans_with_null = pac.if_else(pac.is_nan(truncated), None, truncated).cast(pa.int64())
-            return ArrowDataBlock(truncated_replace_nans_with_null)
-        elif pa.types.is_string(to_type):
-            return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
-    elif pa.types.is_boolean(from_type):
-        if pa.types.is_integer(to_type) or pa.types.is_string(to_type):
-            return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
-    elif pa.types.is_string(from_type):
-        if pa.types.is_date32(to_type):
-            return ArrowDataBlock(pac.strptime(arrow_block.data, format="%Y-%m-%d", unit="s"))
-        return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
-    elif pa.types.is_date32(from_type):
-        if pa.types.is_string(to_type):
-            return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
-    elif pa.types.is_binary(from_type):
-        if pa.types.is_string(to_type):
-            return ArrowDataBlock(pac.cast(arrow_block.data, to_type))
-
-    raise NotImplementedError(f"Casting from arrow types {from_type} to {to_type} not implemented")
+def arrow_cast_integer(arrow_data: pa.ChunkedArray) -> pa.ChunkedArray:
+    arrow_int_type = ExpressionType.integer().to_arrow_type()
+    # FLOAT -> INTEGER cast is a truncation
+    if pa.types.is_floating(arrow_data.type):
+        truncated = pac.trunc(arrow_data)
+        replace_nan_with_0 = pac.if_else(pac.is_nan(truncated), 0, truncated).cast(arrow_int_type)
+        return replace_nan_with_0
+    return arrow_cast(arrow_int_type, arrow_data)
 
 
 def _arr_unary_op(
@@ -859,7 +834,12 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     POSITIVE = ArrowDataBlock.identity
     ABS = _arr_unary_op(pac.abs)
     INVERT = _arr_unary_op(pac.invert)
-    CAST = arrow_cast
+    CAST_INT = _arr_unary_op(arrow_cast_integer)
+    CAST_FLOAT = _arr_unary_op(partial(arrow_cast, ExpressionType.float().to_arrow_type()))
+    CAST_STRING = _arr_unary_op(partial(arrow_cast, ExpressionType.string().to_arrow_type()))
+    CAST_LOGICAL = _arr_unary_op(partial(arrow_cast, ExpressionType.logical().to_arrow_type()))
+    CAST_DATE = _arr_unary_op(partial(arrow_cast, ExpressionType.date().to_arrow_type()))
+    CAST_BYTES = _arr_unary_op(partial(arrow_cast, ExpressionType.bytes().to_arrow_type()))
     ADD = _arr_bin_op(pac.add)
     SUB = _arr_bin_op(pac.subtract)
     MUL = _arr_bin_op(pac.multiply)
@@ -941,7 +921,7 @@ def _assert_and_identity(obj: Any, assert_type: Type[T]) -> T:
     return obj
 
 
-def pylist_cast(pylist_block: PyListDataBlock, to: ExpressionType) -> DataBlock:
+def pylist_cast(to: ExpressionType, pylist_block: PyListDataBlock) -> DataBlock:
     if ExpressionType.is_primitive(to):
         assert isinstance(to, PrimitiveExpressionType)
         arrow_type = to.to_arrow_type()
@@ -988,7 +968,12 @@ class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
     POSITIVE = PyListDataBlock.identity
     ABS = make_map_unary(operator.abs)
     INVERT = make_map_unary(operator.invert)
-    CAST = pylist_cast
+    CAST_INT = partial(pylist_cast, ExpressionType.integer())
+    CAST_FLOAT = partial(pylist_cast, ExpressionType.float())
+    CAST_STRING = partial(pylist_cast, ExpressionType.string())
+    CAST_LOGICAL = partial(pylist_cast, ExpressionType.logical())
+    CAST_DATE = partial(pylist_cast, ExpressionType.date())
+    CAST_BYTES = partial(pylist_cast, ExpressionType.bytes())
     ADD = make_map_binary(operator.add)
     SUB = make_map_binary(operator.sub)
     MUL = make_map_binary(operator.mul)

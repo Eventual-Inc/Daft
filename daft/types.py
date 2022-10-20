@@ -72,6 +72,10 @@ class ExpressionType:
             return ExpressionType.python_object()
         return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
 
+    def to_arrow_type(self) -> pa.DataType:
+        assert not ExpressionType.is_py(self), f"Cannot convert {self} to an Arrow type"
+        return _EXPRESSION_TYPE_TO_PYARROW_TYPE[self]
+
 
 @dataclass(frozen=True, eq=True)
 class PrimitiveExpressionType(ExpressionType):
@@ -90,9 +94,6 @@ class PrimitiveExpressionType(ExpressionType):
 
     def __repr__(self) -> str:
         return self.enum.name
-
-    def to_arrow_type(self) -> pa.DataType:
-        return _EXPRESSION_TYPE_TO_PYARROW_TYPE[self]
 
 
 @dataclass(frozen=True, eq=True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import itertools
 import warnings
 from abc import abstractmethod
@@ -88,7 +89,6 @@ class ExpressionExecutor:
             return result
         elif isinstance(expr, CallExpression):
             eval_args: Tuple[DataBlock, ...] = tuple(self.eval(a, operands) for a in expr._args)
-            eval_kwargs: Dict[str, Any] = expr._kwargs
 
             # Use a PyListDataBlock evaluator if any of the args are Python types
             op_evaluator = (
@@ -99,7 +99,7 @@ class ExpressionExecutor:
             op = expr._operator
 
             func = getattr(op_evaluator, op.name)
-            result = func(*eval_args, **eval_kwargs)
+            result = func(*eval_args)
             return result
         elif isinstance(expr, UdfExpression):
             eval_args = tuple(self.eval(a, operands) for a in expr._args)
@@ -469,11 +469,37 @@ class Expression(TreeNode["Expression"]):
         Returns:
             Expression: Expression with the specified new type
         """
-        return CallExpression(
-            OperatorEnum.CAST,
-            (self,),
-            {"to": ExpressionType.from_py_type(to)},
-        )
+        if to == str:
+            return CallExpression(
+                OperatorEnum.CAST_STRING,
+                (self,),
+            )
+        elif to == int:
+            return CallExpression(
+                OperatorEnum.CAST_INT,
+                (self,),
+            )
+        elif to == float:
+            return CallExpression(
+                OperatorEnum.CAST_FLOAT,
+                (self,),
+            )
+        elif to == bool:
+            return CallExpression(
+                OperatorEnum.CAST_LOGICAL,
+                (self,),
+            )
+        elif to == datetime.date:
+            return CallExpression(
+                OperatorEnum.CAST_DATE,
+                (self,),
+            )
+        elif to == bytes:
+            return CallExpression(
+                OperatorEnum.CAST_BYTES,
+                (self,),
+            )
+        raise NotImplementedError(f"Casting to a non-primitive Python object {to} not yet implemented")
 
     ###
     # Accessors
@@ -515,19 +541,17 @@ class CallExpression(Expression):
         self,
         operator: OperatorEnum,
         func_args: Tuple,
-        func_kwargs: Dict[str, Any] = {},
     ) -> None:
         super().__init__()
         self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         self._operator = operator
-        self._kwargs = func_kwargs
 
     def resolved_type(self) -> Optional[ExpressionType]:
         args_resolved_types = tuple(arg.resolved_type() for arg in self._args)
         if any([arg_type is None for arg_type in args_resolved_types]):
             return None
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
-        ret_type = self._operator.value.get_return_type(args_resolved_types_non_none, **self._kwargs)
+        ret_type = self._operator.value.get_return_type(args_resolved_types_non_none)
         if ret_type == ExpressionType.unknown():
             operator: ExpressionOperator = self._operator.value
             op_pretty_print = ""

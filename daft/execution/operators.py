@@ -5,9 +5,8 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import Any, Callable, FrozenSet, Optional, Tuple, TypeVar, cast
+from typing import Callable, FrozenSet, Optional, Tuple, TypeVar
 
-from daft.errors import ExpressionTypeError
 from daft.types import ExpressionType
 
 if sys.version_info < (3, 8):
@@ -38,7 +37,7 @@ class ExpressionOperator:
     def _type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
         return MappingProxyType(dict(self.type_matrix))
 
-    def get_return_type(self, args: Tuple[ExpressionType, ...], **kwargs: Any) -> Optional[ExpressionType]:
+    def get_return_type(self, args: Tuple[ExpressionType, ...]) -> Optional[ExpressionType]:
         # Treat all Python types as a PY[object] for the purposes of typing
         args = tuple([ExpressionType.python_object() if ExpressionType.is_py(a) else a for a in args])
 
@@ -49,64 +48,6 @@ class ExpressionOperator:
             return ExpressionType.python_object()
 
         return res
-
-
-class CastExpressionOperator(ExpressionOperator):
-
-    CAST_ALLOWED_TYPES = {
-        ExpressionType.integer(): {
-            ExpressionType.float(),
-            ExpressionType.string(),
-        },
-        ExpressionType.float(): {
-            ExpressionType.integer(),
-            ExpressionType.string(),
-        },
-        ExpressionType.string(): {
-            ExpressionType.logical(),
-            ExpressionType.date(),
-            ExpressionType.bytes(),
-            ExpressionType.integer(),
-            ExpressionType.float(),
-        },
-        ExpressionType.logical(): {
-            ExpressionType.integer(),
-            ExpressionType.string(),
-        },
-        ExpressionType.python_object(): {
-            ExpressionType.integer(),
-            ExpressionType.float(),
-            ExpressionType.string(),
-        },
-        ExpressionType.date(): {
-            ExpressionType.string(),
-        },
-        ExpressionType.bytes(): {
-            ExpressionType.string(),
-        },
-    }
-
-    def __init__(self) -> None:
-        super().__init__(name="cast", nargs=1, type_matrix=frozenset())
-
-    def get_return_type(self, args: Tuple[ExpressionType, ...], **kwargs: Any) -> Optional[ExpressionType]:
-        assert len(args) == 1, "CastExpressionOperator only works on single columns"
-        from_type = args[0]
-
-        assert "to" in kwargs
-        to: ExpressionType = kwargs["to"]
-
-        if ExpressionType.is_py(from_type):
-            from_type = ExpressionType.python_object()
-
-        if (
-            from_type != to
-            and not ExpressionType.is_py(from_type)
-            and to not in CastExpressionOperator.CAST_ALLOWED_TYPES[from_type]
-        ):
-            raise ExpressionTypeError(f"Casting from {args[0]} to {to} is not implemented.")
-
-        return to
 
 
 _UnaryNumericalTM = frozenset(
@@ -270,7 +211,66 @@ class OperatorEnum(Enum):
     INVERT = _UOp(name="invert", symbol="~", type_matrix=_UnaryLogicalTM)
 
     # Cast
-    CAST = cast(ExpressionOperator, CastExpressionOperator())
+    CAST_INT = _UOp(
+        name="cast_int",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.integer(),): ExpressionType.integer(),
+                (ExpressionType.float(),): ExpressionType.integer(),
+                (ExpressionType.logical(),): ExpressionType.integer(),
+                (ExpressionType.python_object(),): ExpressionType.integer(),
+            }.items()
+        ),
+    )
+    CAST_FLOAT = _UOp(
+        name="cast_float",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.float(),): ExpressionType.float(),
+                (ExpressionType.integer(),): ExpressionType.float(),
+                (ExpressionType.python_object(),): ExpressionType.float(),
+            }.items()
+        ),
+    )
+    CAST_STRING = _UOp(
+        name="cast_string",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.string(),): ExpressionType.string(),
+                (ExpressionType.integer(),): ExpressionType.string(),
+                (ExpressionType.logical(),): ExpressionType.string(),
+                (ExpressionType.float(),): ExpressionType.string(),
+                (ExpressionType.python_object(),): ExpressionType.string(),
+            }.items()
+        ),
+    )
+    CAST_LOGICAL = _UOp(
+        name="cast_logical",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.logical(),): ExpressionType.logical(),
+                (ExpressionType.python_object(),): ExpressionType.logical(),
+            }.items()
+        ),
+    )
+    CAST_DATE = _UOp(
+        name="cast_date",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.date(),): ExpressionType.date(),
+                (ExpressionType.python_object(),): ExpressionType.date(),
+            }.items()
+        ),
+    )
+    CAST_BYTES = _UOp(
+        name="cast_bytes",
+        type_matrix=frozenset(
+            {
+                (ExpressionType.bytes(),): ExpressionType.bytes(),
+                (ExpressionType.python_object(),): ExpressionType.bytes(),
+            }.items()
+        ),
+    )
 
     # String
     STR_CONTAINS = _LSop(name="str_contains", symbol="contains")
@@ -321,7 +321,6 @@ ValueType = TypeVar("ValueType", covariant=True)
 UnaryFunction = Callable[[ValueType], ValueType]
 BinaryFunction = Callable[[ValueType, ValueType], ValueType]
 TernaryFunction = Callable[[ValueType, ValueType, ValueType], ValueType]
-CastFunction = Callable[[ValueType, ExpressionType], ValueType]
 
 
 class OperatorEvaluator(Protocol[ValueType]):
@@ -337,7 +336,13 @@ class OperatorEvaluator(Protocol[ValueType]):
     MAX: UnaryFunction
     COUNT: UnaryFunction
     INVERT: UnaryFunction
-    CAST: CastFunction
+
+    CAST_INT: UnaryFunction
+    CAST_FLOAT: UnaryFunction
+    CAST_STRING: UnaryFunction
+    CAST_LOGICAL: UnaryFunction
+    CAST_DATE: UnaryFunction
+    CAST_BYTES: UnaryFunction
 
     ADD: BinaryFunction
     SUB: BinaryFunction

@@ -36,56 +36,57 @@ BYTES_DATA = [b"a", b"b", None]
 @pytest.mark.parametrize(
     ["before", "to_type", "expected"],
     [
-        # INTEGER
-        (INT_DATA, int, pa.chunked_array([INT_DATA])),
-        (INT_DATA, float, pa.chunked_array([[1.0, 2.0, None]])),
-        (INT_DATA, bool, None),
-        (INT_DATA, str, pa.chunked_array([["1", "2", None]])),
-        (INT_DATA, datetime.date, None),
-        (INT_DATA, bytes, None),
-        # FLOAT
-        (FLOAT_DATA, float, pa.chunked_array([FLOAT_DATA])),
-        (FLOAT_DATA, int, pa.chunked_array([[1, None, None]])),
-        (FLOAT_DATA, bool, None),
-        (FLOAT_DATA, str, pa.chunked_array([["1.9", "nan", None]])),
-        (FLOAT_DATA, datetime.date, None),
-        (FLOAT_DATA, bytes, None),
-        # LOGICAL
-        (LOGICAL_DATA, bool, pa.chunked_array([LOGICAL_DATA])),
-        (LOGICAL_DATA, int, pa.chunked_array([[1, 0, None]])),
-        (LOGICAL_DATA, float, None),
-        (LOGICAL_DATA, str, pa.chunked_array([["true", "false", None]])),
-        (LOGICAL_DATA, datetime.date, None),
-        (LOGICAL_DATA, bytes, None),
         # STRING
-        (STRING_DATA_INT, str, pa.chunked_array([STRING_DATA_INT])),
-        (STRING_DATA_INT, int, pa.chunked_array([[1, 2, None]])),
-        (STRING_DATA_INT, float, pa.chunked_array([[1.0, 2.0, None]])),
-        (STRING_DATA_BOOL, bool, pa.chunked_array([[True, False, None]])),
-        (
-            STRING_DATA_DATE,
-            datetime.date,
-            pa.chunked_array([[datetime.date(1994, 11, 4), datetime.date(1994, 11, 5), None]]),
-        ),
-        (
-            STRING_DATA_DATE,
-            bytes,
-            pa.chunked_array([["1994-11-04".encode("utf-8"), "1994-11-05".encode("utf-8"), None]]),
-        ),
+        pytest.param(INT_DATA, str, pa.chunked_array([["1", "2", None]]), id="cast_int_to_str"),
+        pytest.param(FLOAT_DATA, str, pa.chunked_array([["1.9", "nan", None]]), id="cast_float_to_str"),
+        pytest.param(LOGICAL_DATA, str, pa.chunked_array([["true", "false", None]]), id="cast_logical_to_str"),
+        pytest.param(STRING_DATA_INT, str, pa.chunked_array([STRING_DATA_INT]), id="cast_str_to_str"),
+        pytest.param(DATE_DATA, str, None, id="cast_date_to_str"),  # should be handled with a .str.strftime instead
+        pytest.param(
+            BYTES_DATA, str, None, id="cast_bytes_to_str"
+        ),  # should be handled with a .bytes.decode("utf-8") instead
+        # INTEGER
+        pytest.param(INT_DATA, int, pa.chunked_array([INT_DATA]), id="cast_int_to_int"),
+        pytest.param(FLOAT_DATA, int, pa.chunked_array([[1, 0, None]]), id="cast_float_to_int"),
+        pytest.param(LOGICAL_DATA, int, pa.chunked_array([[1, 0, None]]), id="cast_logical_to_int"),
+        pytest.param(STRING_DATA_INT, int, None, id="cast_str_to_int"),  # should be handled with .str.to_int() instead
+        pytest.param(DATE_DATA, int, None, id="cast_date_to_int"),  # should be handled with .dt.unix() instead
+        pytest.param(BYTES_DATA, int, None, id="cast_bytes_to_int"),
+        # FLOAT
+        pytest.param(FLOAT_DATA, float, pa.chunked_array([FLOAT_DATA]), id="cast_float_to_float"),
+        pytest.param(INT_DATA, float, pa.chunked_array([[1.0, 2.0, None]]), id="cast_int_to_float"),
+        pytest.param(LOGICAL_DATA, float, None, id="cast_logical_to_float"),
+        pytest.param(
+            STRING_DATA_INT, float, None, id="cast_str_to_float"
+        ),  # should be handled with .str.to_float() instead
+        pytest.param(DATE_DATA, float, None, id="cast_date_to_float"),
+        pytest.param(BYTES_DATA, float, None, id="cast_bytes_to_float"),
+        # LOGICAL
+        # "casts" for bool are usually achieved with comparison operators instead
+        pytest.param(LOGICAL_DATA, bool, pa.chunked_array([LOGICAL_DATA]), id="cast_logical_to_logical"),
+        pytest.param(INT_DATA, bool, None, id="cast_int_to_logical"),
+        pytest.param(FLOAT_DATA, bool, None, id="cast_float_to_logical"),
+        pytest.param(STRING_DATA_BOOL, bool, None, id="cast_str_to_logical"),
+        pytest.param(DATE_DATA, bool, None, id="cast_date_to_logical"),
+        pytest.param(BYTES_DATA, bool, None, id="cast_bytes_to_logical"),
         # DATE
-        (DATE_DATA, datetime.date, pa.chunked_array([DATE_DATA])),
-        (DATE_DATA, int, None),
-        (DATE_DATA, float, None),
-        (DATE_DATA, bool, None),
-        (DATE_DATA, str, pa.chunked_array([["1994-11-04", "1994-11-05", None]])),
-        (DATE_DATA, bytes, None),
+        pytest.param(DATE_DATA, datetime.date, pa.chunked_array([DATE_DATA]), id="cast_date_to_date"),
+        pytest.param(INT_DATA, datetime.date, None, id="cast_int_to_date"),
+        pytest.param(FLOAT_DATA, datetime.date, None, id="cast_float_to_date"),
+        pytest.param(LOGICAL_DATA, datetime.date, None, id="cast_logical_to_date"),
+        pytest.param(
+            STRING_DATA_DATE, datetime.date, None, id="cast_str_to_date"
+        ),  # should be handled with .str.strptime() instead
+        pytest.param(BYTES_DATA, datetime.date, None, id="cast_bytes_to_date"),
         # BYTES
-        (BYTES_DATA, bytes, pa.chunked_array([BYTES_DATA])),
-        (BYTES_DATA, int, None),
-        (BYTES_DATA, float, None),
-        (BYTES_DATA, bool, None),
-        (BYTES_DATA, str, pa.chunked_array([["a", "b", None]])),
-        (BYTES_DATA, datetime.date, None),
+        pytest.param(BYTES_DATA, bytes, pa.chunked_array([BYTES_DATA]), id="cast_bytes_to_bytes"),
+        pytest.param(INT_DATA, bytes, None, id="cast_int_to_bytes"),
+        pytest.param(FLOAT_DATA, bytes, None, id="cast_float_to_bytes"),
+        pytest.param(LOGICAL_DATA, bytes, None, id="cast_logical_to_bytes"),
+        pytest.param(
+            STRING_DATA_DATE, bytes, None, id="cast_str_to_bytes"
+        ),  # should be handled with .str.encode("utf-8") instead
+        pytest.param(DATE_DATA, bytes, None, id="cast_date_to_bytes"),
     ],
 )
 def test_cast_primitives(before, to_type, expected):
@@ -133,7 +134,7 @@ PY_DATA = [MyCastableObj(), MyCastableObj(), None]
 @pytest.mark.parametrize(
     ["before", "method_to_run", "to_type", "expected"],
     [
-        (PY_DATA, None, MyCastableObj, PY_DATA),
+        # (PY_DATA, None, MyCastableObj, PY_DATA),
         (PY_DATA, "get_integer", int, pa.chunked_array([[0, 0, None]])),
         (PY_DATA, "get_float", float, pa.chunked_array([[0.5, 0.5, None]])),
         (PY_DATA, "get_bool", bool, pa.chunked_array([[True, True, None]])),
