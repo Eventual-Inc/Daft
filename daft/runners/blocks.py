@@ -12,6 +12,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
+    Dict,
     Generic,
     Iterable,
     Iterator,
@@ -915,10 +916,20 @@ def pylist_if_else(
     return PyListDataBlock([xitem if c else yitem for c, xitem, yitem in zip_blocks_as_py(cond, x, y)])
 
 
-def _assert_and_identity(obj: Any, assert_type: Type[T]) -> T:
+def _assert_and_identity(assert_type: Type[T], obj: Any) -> T:
     if not isinstance(obj, assert_type):
         raise TypeError(f"Object {obj} is not of user-requested type {assert_type}")
     return obj
+
+
+_PY_TO_PRIMITIVE_CAST_FUNCS: Dict[ExpressionType, Callable] = {
+    ExpressionType.string(): str,
+    ExpressionType.integer(): int,
+    ExpressionType.float(): float,
+    ExpressionType.bytes(): bytes,
+    ExpressionType.logical(): bool,
+    ExpressionType.date(): partial(_assert_and_identity, datetime.date),
+}
 
 
 def pylist_cast(to: ExpressionType, pylist_block: PyListDataBlock) -> DataBlock:
@@ -926,34 +937,12 @@ def pylist_cast(to: ExpressionType, pylist_block: PyListDataBlock) -> DataBlock:
         assert isinstance(to, PrimitiveExpressionType)
         arrow_type = to.to_arrow_type()
 
-        if to == ExpressionType.string():
-            return ArrowDataBlock(
-                pa.chunked_array([[str(d) if d is not None else None for d in pylist_block.data]], type=arrow_type)
-            )
-        elif to == ExpressionType.integer():
-            return ArrowDataBlock(
-                pa.chunked_array([[int(d) if d is not None else None for d in pylist_block.data]], type=arrow_type)
-            )
-        elif to == ExpressionType.float():
-            return ArrowDataBlock(
-                pa.chunked_array([[float(d) if d is not None else None for d in pylist_block.data]], type=arrow_type)
-            )
-        elif to == ExpressionType.bytes():
-            return ArrowDataBlock(
-                pa.chunked_array([[bytes(d) if d is not None else None for d in pylist_block.data]], type=arrow_type)
-            )
-        elif to == ExpressionType.logical():
-            return ArrowDataBlock(
-                pa.chunked_array([[bool(d) if d is not None else None for d in pylist_block.data]], type=arrow_type)
-            )
-        elif to == ExpressionType.date():
-            return ArrowDataBlock(
-                pa.chunked_array(
-                    [[_assert_and_identity(d, datetime.date) if d is not None else None for d in pylist_block.data]],
-                    type=arrow_type,
-                )
-            )
-        raise NotImplementedError(f"Casting PY to {to} is not implemented")
+        assert to in _PY_TO_PRIMITIVE_CAST_FUNCS, f"Casting PY to {to} is not implemented"
+        cast_func = _PY_TO_PRIMITIVE_CAST_FUNCS[to]
+
+        return ArrowDataBlock(
+            pa.chunked_array([[cast_func(d) if d is not None else None for d in pylist_block.data]], type=arrow_type)
+        )
 
     assert isinstance(to, PythonExpressionType)
     for d in pylist_block.data:
