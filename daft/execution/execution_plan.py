@@ -2,19 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import StringIO
-from typing import ClassVar, List
+from typing import ClassVar
 
 from daft.logical.logical_plan import LogicalPlan, OpLevel
 from daft.resource_request import ResourceRequest
 
 
 class ExecutionOp:
-    logical_ops: List[LogicalPlan]
+    logical_ops: list[LogicalPlan]
     num_partitions: int
-    data_deps: List[int]
+    data_deps: list[int]
     is_global_op: ClassVar[bool] = False
 
-    def __init__(self, logical_ops: List[LogicalPlan], num_partitions: int) -> None:
+    def __init__(self, logical_ops: list[LogicalPlan], num_partitions: int) -> None:
         self.logical_ops = logical_ops
         self.num_partitions = num_partitions
         all_deps = set()
@@ -45,7 +45,7 @@ class GlobalOp(ExecutionOp):
 
 @dataclass
 class ExecutionPlan:
-    execution_ops: List[ExecutionOp]
+    execution_ops: list[ExecutionOp]
 
     def __repr__(self) -> str:
         builder = StringIO()
@@ -59,8 +59,8 @@ class ExecutionPlan:
     @classmethod
     def plan_from_logical(cls, lplan: LogicalPlan) -> ExecutionPlan:
         post_order = lplan.post_order()
-        for_each_so_far: List[LogicalPlan] = []
-        exec_plan: List[ExecutionOp] = []
+        for_each_so_far: list[LogicalPlan] = []
+        exec_plan: list[ExecutionOp] = []
         for lop in post_order:
             if lop.op_level() == OpLevel.ROW or lop.op_level() == OpLevel.PARTITION:
                 if len(for_each_so_far) > 0:

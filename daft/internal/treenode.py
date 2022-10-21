@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import typing
-from typing import TYPE_CHECKING, Generic, List, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Generic, List, TypeVar, cast
 
 from loguru import logger
 
@@ -15,19 +15,19 @@ import pydot
 
 
 class TreeNode(Generic[TreeNodeType]):
-    _registered_children: List[TreeNodeType]
+    _registered_children: list[TreeNodeType]
 
     def __init__(self) -> None:
-        self._registered_children: List[TreeNodeType] = []
+        self._registered_children: list[TreeNodeType] = []
 
-    def _children(self) -> List[TreeNodeType]:
+    def _children(self) -> list[TreeNodeType]:
         return self._registered_children
 
     def _register_child(self, child: TreeNodeType) -> int:
         self._registered_children.append(child)
         return len(self._registered_children) - 1
 
-    def apply_and_trickle_down(self, rule: Rule[TreeNodeType]) -> Optional[TreeNodeType]:
+    def apply_and_trickle_down(self, rule: Rule[TreeNodeType]) -> TreeNodeType | None:
         root = cast(TreeNodeType, self)
         continue_looping = True
         made_change = False
@@ -57,7 +57,7 @@ class TreeNode(Generic[TreeNodeType]):
         else:
             return None
 
-    def to_dot_file(self, filename: Optional[str] = None) -> str:
+    def to_dot_file(self, filename: str | None = None) -> str:
         dot_data = self.to_dot()
         base_path = "log"
         if filename is None:
@@ -88,7 +88,7 @@ class TreeNode(Generic[TreeNodeType]):
         recurser(self)
         return graph.to_string()  # type: ignore
 
-    def post_order(self) -> List[TreeNodeType]:
+    def post_order(self) -> list[TreeNodeType]:
         nodes = []
 
         def helper(curr: TreeNode[TreeNodeType]) -> None:

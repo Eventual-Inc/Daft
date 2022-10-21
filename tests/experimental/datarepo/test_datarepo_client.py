@@ -16,7 +16,7 @@ class _TestDc:
 
 def verify_java() -> bool:
     try:
-        subprocess.run(["java", "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(["java", "-version"], capture_output=True)
         return True
     except:
         return False

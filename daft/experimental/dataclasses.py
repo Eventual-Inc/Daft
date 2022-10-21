@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses as pydataclasses
 import sys
-from typing import TYPE_CHECKING, Callable, Optional, OrderedDict, Type, TypeVar, Union
+from typing import TYPE_CHECKING, Callable, OrderedDict, Type, TypeVar
 
 if sys.version_info < (3, 8):
     from typing_extensions import get_origin
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 else:
 
     def dataclass(
-        _cls: Type = None,
+        _cls: type = None,
         *,
         init: bool = True,
         repr: bool = True,
@@ -29,8 +29,8 @@ else:
         match_args: bool = True,
         kw_only: bool = False,
         slots: bool = False,
-    ) -> Union[Type[_T], Callable[[Type[_T]], Type[_T]]]:
-        def wrap(cls: Type) -> Type:
+    ) -> type[_T] | Callable[[type[_T]], type[_T]]:
+        def wrap(cls: type) -> type:
             return __process_class(
                 cls,
                 init=init,
@@ -50,7 +50,7 @@ else:
             return wrap(_cls)
 
 
-def __process_class(cls: Type[_T], **kwargs) -> Type[_T]:
+def __process_class(cls: type[_T], **kwargs) -> type[_T]:
     if not pydataclasses.is_dataclass(cls):
         cls = pydataclasses.dataclass(cls)
     daft_schema = DaftSchema(cls)
@@ -58,7 +58,7 @@ def __process_class(cls: Type[_T], **kwargs) -> Type[_T]:
     return cls
 
 
-def is_daft_dataclass(cls: Type[_T]) -> bool:
+def is_daft_dataclass(cls: type[_T]) -> bool:
     return pydataclasses.is_dataclass(cls) and hasattr(cls, "_daft_schema")
 
 
@@ -66,7 +66,7 @@ class DataclassBuilder:
     def __init__(self) -> None:
         self.fields = OrderedDict()
 
-    def add_field(self, name: str, dtype: Type, field: Optional[pydataclasses.Field] = None) -> None:
+    def add_field(self, name: str, dtype: type, field: pydataclasses.Field | None = None) -> None:
         if name in self.fields:
             raise ValueError(f"{name} already in builder")
 
@@ -76,13 +76,13 @@ class DataclassBuilder:
         else:
             self.fields[name] = (name, dtype, field)
 
-    def remove_field(self, name: str) -> Optional[str]:
+    def remove_field(self, name: str) -> str | None:
         if name in self.fields:
             del self.fields[name]
             return name
         return None
 
-    def generate(self, cls_name: Optional[str] = None) -> Type:
+    def generate(self, cls_name: str | None = None) -> type:
         if cls_name is None:
             cls_name = "GenDataclass" + "".join(f"_{f}" for f in self.fields.keys())
         return dataclass(
@@ -93,7 +93,7 @@ class DataclassBuilder:
         )
 
     @classmethod
-    def from_class(cls, dtype: Type) -> DataclassBuilder:
+    def from_class(cls, dtype: type) -> DataclassBuilder:
         db = DataclassBuilder()
         assert pydataclasses.is_dataclass(dtype)
         for field in getattr(dtype, "__dataclass_fields__").values():

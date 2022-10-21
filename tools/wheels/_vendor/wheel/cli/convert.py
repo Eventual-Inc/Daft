@@ -41,7 +41,7 @@ def egg2wheel(egg_path, dest_dir):
     filename = os.path.basename(egg_path)
     match = egg_info_re.match(filename)
     if not match:
-        raise WheelError("Invalid egg file name: {}".format(filename))
+        raise WheelError(f"Invalid egg file name: {filename}")
 
     egg_info = match.groupdict()
     dir = tempfile.mkdtemp(suffix="_e2w")
@@ -128,13 +128,13 @@ def parse_wininst_info(wininfo_name, egginfo_name):
     if egginfo_name:
         egginfo = egg_info_re.search(egginfo_name)
         if not egginfo:
-            raise ValueError("Egg info filename %s is not valid" % (egginfo_name,))
+            raise ValueError(f"Egg info filename {egginfo_name} is not valid")
 
     # Parse the wininst filename
     # 1. Distribution name (up to the first '-')
     w_name, sep, rest = wininfo_name.partition("-")
     if not sep:
-        raise ValueError("Installer filename %s is not valid" % (wininfo_name,))
+        raise ValueError(f"Installer filename {wininfo_name} is not valid")
 
     # Strip '.exe'
     rest = rest[:-4]
@@ -153,7 +153,7 @@ def parse_wininst_info(wininfo_name, egginfo_name):
     # 3. Version and architecture
     w_ver, sep, w_arch = rest.rpartition(".")
     if not sep:
-        raise ValueError("Installer filename %s is not valid" % (wininfo_name,))
+        raise ValueError(f"Installer filename {wininfo_name} is not valid")
 
     if egginfo:
         w_name = egginfo.group("name")
@@ -264,7 +264,7 @@ def convert(files, dest_dir, verbose):
                 conv = wininst2wheel
 
             if verbose:
-                print("{}... ".format(installer))
+                print(f"{installer}... ")
                 sys.stdout.flush()
 
             conv(installer, dest_dir)

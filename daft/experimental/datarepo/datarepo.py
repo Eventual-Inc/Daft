@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Type
-
 from icebridge.client import IcebergCatalog, IcebergSchema, IcebergTable
 
 from daft.experimental.dataclasses import is_daft_dataclass
@@ -18,7 +16,7 @@ class DataRepo:
         return self._table.name()
 
     @classmethod
-    def create(cls, catalog: IcebergCatalog, name: str, dtype: Type) -> DataRepo:
+    def create(cls, catalog: IcebergCatalog, name: str, dtype: type) -> DataRepo:
         assert dtype is not None and is_daft_dataclass(dtype)
         catalog.client
         new_schema = getattr(dtype, "_daft_schema", None)

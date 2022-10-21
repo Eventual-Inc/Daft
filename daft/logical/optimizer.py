@@ -127,7 +127,7 @@ class PruneColumns(Rule[LogicalPlan]):
     def _projection_aggregate(self, parent: Projection, child: LocalAggregate) -> Optional[LogicalPlan]:
         parent_required_set = parent.required_columns().to_id_set()
         agg_op_pairs = child._agg
-        agg_ids = set([e.get_id() for e, _ in agg_op_pairs])
+        agg_ids = {e.get_id() for e, _ in agg_op_pairs}
         if agg_ids.issubset(parent_required_set):
             return None
 

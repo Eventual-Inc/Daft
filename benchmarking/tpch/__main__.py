@@ -226,9 +226,7 @@ if __name__ == "__main__":
 
     run_all_benchmarks(
         parquet_folder,
-        skip_questions=set([int(s) for s in args.skip_questions.split(",")])
-        if args.skip_questions is not None
-        else set(),
+        skip_questions={int(s) for s in args.skip_questions.split(",")} if args.skip_questions is not None else set(),
         csv_output_location=args.output_csv,
         output_csv_headers=args.output_csv_headers,
     )

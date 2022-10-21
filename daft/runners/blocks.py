@@ -12,15 +12,11 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Dict,
     Generic,
     Iterable,
     Iterator,
     List,
-    Optional,
     Sequence,
-    Tuple,
-    Type,
     TypeVar,
     Union,
     cast,
@@ -47,7 +43,7 @@ BinaryFuncType = Callable[[ArrType, ArrType], ArrType]
 NUMPY_MINOR_VERSION = int(np.version.version.split(".")[1])
 
 
-def zip_blocks_as_py(*blocks: DataBlock) -> Iterator[Tuple[Any, ...]]:
+def zip_blocks_as_py(*blocks: DataBlock) -> Iterator[tuple[Any, ...]]:
     """Utility to zip the data of blocks together, returning a row-based iterator. This utility
     accounts for special-cases such as blocks that contain a single value to be broadcasted,
     differences in the underlying data representation etc.
@@ -80,7 +76,7 @@ def zip_blocks_as_py(*blocks: DataBlock) -> Iterator[Tuple[Any, ...]]:
 
 class DataBlock(Generic[ArrType]):
     data: ArrType
-    evaluator: ClassVar[Type[OperatorEvaluator]]
+    evaluator: ClassVar[type[OperatorEvaluator]]
 
     def __init__(self, data: ArrType) -> None:
         self.data = data
@@ -114,7 +110,7 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @abstractmethod
-    def to_polars(self) -> Union[PyScalar, pl.Series]:
+    def to_polars(self) -> PyScalar | pl.Series:
         raise NotImplementedError()
 
     @abstractmethod
@@ -201,7 +197,7 @@ class DataBlock(Generic[ArrType]):
 
     def partition(
         self, num: int, pivots: np.ndarray, target_partitions: np.ndarray, argsorted_targets: DataBlock[ArrowArrType]
-    ) -> List[DataBlock[ArrType]]:
+    ) -> list[DataBlock[ArrType]]:
         assert not self.is_scalar(), "Cannot partition scalar DataBlock"
 
         # We first argsort the targets to group the same partitions together
@@ -260,11 +256,11 @@ class DataBlock(Generic[ArrType]):
 
     @staticmethod
     @abstractmethod
-    def _argsort(blocks: List[DataBlock[ArrType]], descending: Optional[List[bool]] = None) -> DataBlock[ArrowArrType]:
+    def _argsort(blocks: list[DataBlock[ArrType]], descending: list[bool] | None = None) -> DataBlock[ArrowArrType]:
         raise NotImplementedError()
 
     @classmethod
-    def argsort(cls, blocks: List[DataBlock], descending: Optional[List[bool]] = None) -> DataBlock[ArrowArrType]:
+    def argsort(cls, blocks: list[DataBlock], descending: list[bool] | None = None) -> DataBlock[ArrowArrType]:
         first_type = type(blocks[0])
         assert all(type(b) == first_type for b in blocks), "all block types must match"
         size = len(blocks)
@@ -277,13 +273,13 @@ class DataBlock(Generic[ArrType]):
     @staticmethod
     @abstractmethod
     def _search_sorted(
-        sorted_blocks: List[DataBlock], keys: List[DataBlock], input_reversed: Optional[List[bool]] = None
+        sorted_blocks: list[DataBlock], keys: list[DataBlock], input_reversed: list[bool] | None = None
     ) -> DataBlock[ArrowArrType]:
         raise NotImplementedError()
 
     @classmethod
     def search_sorted(
-        cls, sorted_blocks: List[DataBlock], keys: List[DataBlock], input_reversed: Optional[List[bool]] = None
+        cls, sorted_blocks: list[DataBlock], keys: list[DataBlock], input_reversed: list[bool] | None = None
     ) -> DataBlock[ArrowArrType]:
         first_type = type(sorted_blocks[0])
         assert all(type(b) == first_type for b in sorted_blocks), "all block types must match"
@@ -299,18 +295,18 @@ class DataBlock(Generic[ArrType]):
 
     @staticmethod
     @abstractmethod
-    def _merge_blocks(blocks: List[DataBlock[ArrType]]) -> DataBlock[ArrType]:
+    def _merge_blocks(blocks: list[DataBlock[ArrType]]) -> DataBlock[ArrType]:
         raise NotImplementedError()
 
     @classmethod
-    def merge_blocks(cls, blocks: List[DataBlock[ArrType]]) -> DataBlock[ArrType]:
+    def merge_blocks(cls, blocks: list[DataBlock[ArrType]]) -> DataBlock[ArrType]:
         assert len(blocks) > 0, "no blocks"
         first_type = type(blocks[0])
         assert all(type(b) == first_type for b in blocks), "all block types must match"
         return first_type._merge_blocks(blocks)
 
     @abstractmethod
-    def array_hash(self, seed: Optional[DataBlock[ArrType]] = None) -> DataBlock[ArrowArrType]:
+    def array_hash(self, seed: DataBlock[ArrType] | None = None) -> DataBlock[ArrowArrType]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -320,14 +316,14 @@ class DataBlock(Generic[ArrType]):
     @staticmethod
     @abstractmethod
     def _group_by_agg(
-        group_by: List[DataBlock[ArrType]], to_agg: List[DataBlock[ArrType]], agg_ops: List[str]
-    ) -> Tuple[List[DataBlock[ArrType]], List[DataBlock[ArrType]]]:
+        group_by: list[DataBlock[ArrType]], to_agg: list[DataBlock[ArrType]], agg_ops: list[str]
+    ) -> tuple[list[DataBlock[ArrType]], list[DataBlock[ArrType]]]:
         raise NotImplementedError()
 
     @classmethod
     def group_by_agg(
-        cls, group_by: List[DataBlock[ArrType]], to_agg: List[DataBlock[ArrType]], agg_ops: List[str]
-    ) -> Tuple[List[DataBlock[ArrType]], List[DataBlock[ArrType]]]:
+        cls, group_by: list[DataBlock[ArrType]], to_agg: list[DataBlock[ArrType]], agg_ops: list[str]
+    ) -> tuple[list[DataBlock[ArrType]], list[DataBlock[ArrType]]]:
         assert len(group_by) > 0, "no blocks"
         assert len(to_agg) == len(agg_ops)
         if len(to_agg) > 0:
@@ -346,18 +342,18 @@ class DataBlock(Generic[ArrType]):
     @staticmethod
     @abstractmethod
     def _join_keys(
-        left_keys: List[DataBlock[ArrType]], right_keys: List[DataBlock[ArrType]]
-    ) -> Tuple[DataBlock[ArrType], DataBlock[ArrType]]:
+        left_keys: list[DataBlock[ArrType]], right_keys: list[DataBlock[ArrType]]
+    ) -> tuple[DataBlock[ArrType], DataBlock[ArrType]]:
         raise NotImplementedError()
 
     @classmethod
     def join(
         cls,
-        left_keys: List[DataBlock],
-        right_keys: List[DataBlock],
-        left_columns: List[DataBlock],
-        right_columns: List[DataBlock],
-    ) -> List[DataBlock]:
+        left_keys: list[DataBlock],
+        right_keys: list[DataBlock],
+        left_columns: list[DataBlock],
+        right_columns: list[DataBlock],
+    ) -> list[DataBlock]:
         assert len(left_keys) > 0
         assert len(left_keys) == len(right_keys)
         last_type = None
@@ -381,7 +377,7 @@ class DataBlock(Generic[ArrType]):
         return to_rtn
 
     @abstractmethod
-    def list_explode(self) -> Tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
+    def list_explode(self) -> tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
         """Treats each row as a list and flattens the nested lists. Will throw an error if
         elements in the block cannot be treated as a list.
 
@@ -416,7 +412,7 @@ class PyListDataBlock(DataBlock[List[T]]):
             res[i] = obj
         return res
 
-    def to_polars(self) -> Union[PyScalar, pl.Series]:
+    def to_polars(self) -> PyScalar | pl.Series:
         if self.is_scalar():
             return self.data
         return pl.Series(self.data, dtype=pl.datatypes.Object)
@@ -424,39 +420,39 @@ class PyListDataBlock(DataBlock[List[T]]):
     def to_arrow(self) -> pa.ChunkedArray:
         raise NotImplementedError("can not convert pylist block to arrow")
 
-    def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[List[T]]:
+    def _filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[list[T]]:
         return PyListDataBlock(data=[item for keep, item in zip(mask.iter_py(), self.data) if keep])
 
-    def _take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[List[T]]:
+    def _take(self, indices: DataBlock[ArrowArrType]) -> DataBlock[list[T]]:
         return PyListDataBlock(data=[self.data[i] for i in indices.iter_py()])
 
-    def sample(self, num: int) -> DataBlock[List[T]]:
+    def sample(self, num: int) -> DataBlock[list[T]]:
         return PyListDataBlock(data=random.sample(self.data, num))
 
     @staticmethod
     def _search_sorted(
-        sorted_blocks: List[DataBlock], keys: List[DataBlock], input_reversed: Optional[List[bool]] = None
+        sorted_blocks: list[DataBlock], keys: list[DataBlock], input_reversed: list[bool] | None = None
     ) -> DataBlock[ArrowArrType]:
         raise NotImplementedError()
 
     @staticmethod
-    def _argsort(blocks: List[DataBlock[ArrType]], descending: Optional[List[bool]] = None) -> DataBlock[ArrowArrType]:
+    def _argsort(blocks: list[DataBlock[ArrType]], descending: list[bool] | None = None) -> DataBlock[ArrowArrType]:
         raise NotImplementedError("Sorting by Python objects is not implemented")
 
-    def _make_empty(self) -> DataBlock[List[T]]:
+    def _make_empty(self) -> DataBlock[list[T]]:
         return PyListDataBlock(data=[])
 
-    def _split(self, pivots: np.ndarray) -> Sequence[List[T]]:
+    def _split(self, pivots: np.ndarray) -> Sequence[list[T]]:
         return [list(chunk) for chunk in np.split(self.data, pivots)[1:]]
 
     @staticmethod
-    def _merge_blocks(blocks: List[DataBlock[List[T]]]) -> DataBlock[List[T]]:
+    def _merge_blocks(blocks: list[DataBlock[list[T]]]) -> DataBlock[list[T]]:
         concatted_data = []
         for block in blocks:
             concatted_data.extend(block.data)
         return PyListDataBlock(data=concatted_data)
 
-    def array_hash(self, seed: Optional[DataBlock[ArrType]] = None) -> DataBlock[ArrowArrType]:
+    def array_hash(self, seed: DataBlock[ArrType] | None = None) -> DataBlock[ArrowArrType]:
         # TODO(jay): seed is ignored here, but perhaps we need to set it in PYTHONHASHSEED?
         hashes = [hash(x) for x in self.data]
         return DataBlock.make_block(np.array(hashes))
@@ -466,17 +462,17 @@ class PyListDataBlock(DataBlock[List[T]]):
 
     @staticmethod
     def _group_by_agg(
-        group_by: List[DataBlock[List[T]]], to_agg: List[DataBlock[List[T]]], agg_ops: List[str]
-    ) -> Tuple[List[DataBlock[List[T]]], List[DataBlock[List[T]]]]:
+        group_by: list[DataBlock[list[T]]], to_agg: list[DataBlock[list[T]]], agg_ops: list[str]
+    ) -> tuple[list[DataBlock[list[T]]], list[DataBlock[list[T]]]]:
         raise NotImplementedError("Aggregations on Python objects is not implemented yet")
 
     @staticmethod
     def _join_keys(
-        left_keys: List[DataBlock[List[T]]], right_keys: List[DataBlock[List[T]]]
-    ) -> Tuple[DataBlock[List[T]], DataBlock[List[T]]]:
+        left_keys: list[DataBlock[list[T]]], right_keys: list[DataBlock[list[T]]]
+    ) -> tuple[DataBlock[list[T]], DataBlock[list[T]]]:
         raise NotImplementedError()
 
-    def list_explode(self) -> Tuple[PyListDataBlock, DataBlock[ArrowArrType]]:
+    def list_explode(self) -> tuple[PyListDataBlock, DataBlock[ArrowArrType]]:
         lengths = []
         exploded = []
         for item in self.data:
@@ -507,7 +503,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         ), f"Cannot create ArrowDataBlock with nested type: {data.type}, please report this to Daft developers."
         super().__init__(data)
 
-    def __reduce__(self) -> Tuple:
+    def __reduce__(self) -> tuple:
         if len(self.data) == 0:
             return ArrowDataBlock, (self._make_empty().data,)
         else:
@@ -518,7 +514,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             return self.data.as_py()
         return self.data.to_numpy()
 
-    def to_polars(self) -> Union[PyScalar, pl.Series]:
+    def to_polars(self) -> PyScalar | pl.Series:
         if isinstance(self.data, pa.Scalar):
             return self.data.as_py()
         return pl.Series(self.data)
@@ -542,7 +538,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
     #     return ArrowDataBlock(data=sort_indices)
 
     @staticmethod
-    def _argsort(blocks: List[DataBlock[ArrType]], descending: Optional[List[bool]] = None) -> DataBlock[ArrowArrType]:
+    def _argsort(blocks: list[DataBlock[ArrType]], descending: list[bool] | None = None) -> DataBlock[ArrowArrType]:
         arrs = [a.data for a in blocks]
         arr_names = [f"a_{i}" for i in range(len(blocks))]
         if descending is None:
@@ -554,7 +550,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
     @staticmethod
     def _search_sorted(
-        sorted_blocks: List[DataBlock], keys: List[DataBlock], input_reversed: Optional[List[bool]] = None
+        sorted_blocks: list[DataBlock], keys: list[DataBlock], input_reversed: list[bool] | None = None
     ) -> DataBlock[ArrowArrType]:
         arr_names = [f"a_{i}" for i in range(len(sorted_blocks))]
         if input_reversed is None:
@@ -606,7 +602,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return to_return
 
     @staticmethod
-    def _merge_blocks(blocks: List[DataBlock[ArrowArrType]]) -> DataBlock[ArrowArrType]:
+    def _merge_blocks(blocks: list[DataBlock[ArrowArrType]]) -> DataBlock[ArrowArrType]:
         block_types = {block.data.type for block in blocks}
         assert len(block_types) == 1, f"Unable to merge blocks of different types: {block_types}"
         all_chunks = []
@@ -623,7 +619,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         sampled = np.random.choice(self.data, num, replace=False)
         return DataBlock.make_block(data=pa.chunked_array([sampled]))
 
-    def array_hash(self, seed: Optional[DataBlock[ArrowArrType]] = None) -> DataBlock[ArrowArrType]:
+    def array_hash(self, seed: DataBlock[ArrowArrType] | None = None) -> DataBlock[ArrowArrType]:
         assert isinstance(self.data, pa.ChunkedArray)
         assert seed is None or isinstance(seed.data, pa.ChunkedArray)
 
@@ -656,8 +652,8 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
     @staticmethod
     def _group_by_agg(
-        group_by: List[DataBlock[ArrowArrType]], to_agg: List[DataBlock[ArrowArrType]], agg_ops: List[str]
-    ) -> Tuple[List[DataBlock[ArrowArrType]], List[DataBlock[ArrowArrType]]]:
+        group_by: list[DataBlock[ArrowArrType]], to_agg: list[DataBlock[ArrowArrType]], agg_ops: list[str]
+    ) -> tuple[list[DataBlock[ArrowArrType]], list[DataBlock[ArrowArrType]]]:
         group_arrs = [a.data for a in group_by]
         agg_arrs = [a.data for a in to_agg]
         arrs = group_arrs + agg_arrs
@@ -693,10 +689,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
         pl_agged = pl_table.groupby(group_names).agg(exprs)
         agged = pl_agged.to_arrow()
-        gcols: List[DataBlock] = [
+        gcols: list[DataBlock] = [
             DataBlock.make_block(agged[g_name].cast(t)) for g_name, t in zip(group_names, grouped_expected_arrow_type)
         ]
-        acols: List[DataBlock] = [
+        acols: list[DataBlock] = [
             DataBlock.make_block(agged[f"{a_name}"].cast(t)) for a_name, t in zip(agg_names, agg_expected_arrow_type)
         ]
 
@@ -706,7 +702,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         return gcols, acols
 
     @staticmethod
-    def _get_null_nan_mask(keys: List[DataBlock[ArrowArrType]]) -> pa.Array:
+    def _get_null_nan_mask(keys: list[DataBlock[ArrowArrType]]) -> pa.Array:
         """Returns a mask which indicates the presence of nulls/nans across a list of DataBlocks"""
         mask_list = [pac.invert(pac.is_null(k.data, nan_is_null=True)) for k in keys]
         mask = functools.reduce(lambda a, b: pac.and_(a, b), mask_list)
@@ -714,8 +710,8 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
     @staticmethod
     def _join_keys(
-        left_keys: List[DataBlock[ArrowArrType]], right_keys: List[DataBlock[ArrowArrType]]
-    ) -> Tuple[DataBlock[ArrowArrType], DataBlock[ArrowArrType]]:
+        left_keys: list[DataBlock[ArrowArrType]], right_keys: list[DataBlock[ArrowArrType]]
+    ) -> tuple[DataBlock[ArrowArrType], DataBlock[ArrowArrType]]:
         assert len(left_keys) == len(right_keys)
         left_null_nan_mask = ArrowDataBlock._get_null_nan_mask(left_keys)
         left_no_nulls = pac.all(left_null_nan_mask).as_py()
@@ -749,7 +745,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         # NOTE: the results presented here are always an INNER join because all the NaN/Null keys are always filtered out
         return DataBlock.make_block(left_index), DataBlock.make_block(right_index)
 
-    def list_explode(self) -> Tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
+    def list_explode(self) -> tuple[DataBlock[ArrType], DataBlock[ArrowArrType]]:
         """Treats each row as a list and flattens the nested lists. Will throw an error if
         elements in the block cannot be treated as a list.
         """
@@ -916,13 +912,13 @@ def pylist_if_else(
     return PyListDataBlock([xitem if c else yitem for c, xitem, yitem in zip_blocks_as_py(cond, x, y)])
 
 
-def _assert_and_identity(assert_type: Type[T], obj: Any) -> T:
+def _assert_and_identity(assert_type: type[T], obj: Any) -> T:
     if not isinstance(obj, assert_type):
         raise TypeError(f"Object {obj} is not of user-requested type {assert_type}")
     return obj
 
 
-_PY_TO_PRIMITIVE_CAST_FUNCS: Dict[ExpressionType, Callable] = {
+_PY_TO_PRIMITIVE_CAST_FUNCS: dict[ExpressionType, Callable] = {
     ExpressionType.string(): str,
     ExpressionType.integer(): int,
     ExpressionType.float(): float,

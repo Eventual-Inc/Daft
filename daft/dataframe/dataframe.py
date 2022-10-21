@@ -3,18 +3,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from functools import partial
-from typing import (
-    IO,
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Tuple,
-    TypeVar,
-    Union,
-)
+from typing import IO, Any, Callable, Iterable, TypeVar, Union
 
 import pandas
 import pyarrow as pa
@@ -89,7 +78,7 @@ class DataFrame:
             plan: LogicalPlan describing the steps required to arrive at this DataFrame
         """
         self._plan = plan
-        self._result: Optional[PartitionSet] = None
+        self._result: PartitionSet | None = None
 
     def plan(self) -> logical_plan.LogicalPlan:
         """Returns `LogicalPlan` that will be executed to compute the result of this DataFrame.
@@ -111,7 +100,7 @@ class DataFrame:
         return DataFrameSchema.from_expression_list(self._plan.schema())
 
     @property
-    def column_names(self) -> List[str]:
+    def column_names(self) -> list[str]:
         """Returns column names of DataFrame as a list of strings.
 
         Returns:
@@ -120,7 +109,7 @@ class DataFrame:
         return [expr.name() for expr in self._plan.schema()]
 
     @property
-    def columns(self) -> List[ColumnExpression]:
+    def columns(self) -> list[ColumnExpression]:
         """Returns column of DataFrame as a list of ColumnExpressions.
 
         Returns:
@@ -157,7 +146,7 @@ class DataFrame:
     ###
 
     @classmethod
-    def from_pylist(cls, data: List[Dict[str, Any]]) -> DataFrame:
+    def from_pylist(cls, data: list[dict[str, Any]]) -> DataFrame:
         """Creates a DataFrame from a list of dictionaries
 
         Example:
@@ -186,7 +175,7 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
-    def from_pydict(cls, data: Dict[str, Union[list, pa.Array]]) -> DataFrame:
+    def from_pydict(cls, data: dict[str, list | pa.Array]) -> DataFrame:
         """Creates a DataFrame from a Python Dictionary.
 
         Example:
@@ -200,7 +189,7 @@ class DataFrame:
             DataFrame: DataFrame created from dictionary of columns
         """
 
-        block_data: Dict[str, Tuple[ExpressionType, Any]] = {}
+        block_data: dict[str, tuple[ExpressionType, Any]] = {}
         for header in data:
             arr = data[header]
 
@@ -277,7 +266,7 @@ class DataFrame:
         cls,
         path: str,
         has_headers: bool = True,
-        column_names: Optional[List[str]] = None,
+        column_names: list[str] | None = None,
         delimiter: str = ",",
     ) -> DataFrame:
         """Creates a DataFrame from CSV file(s)
@@ -395,7 +384,7 @@ class DataFrame:
     ###
 
     def write_parquet(
-        self, root_dir: str, compression: str = "snappy", partition_cols: Optional[List[ColumnInputType]] = None
+        self, root_dir: str, compression: str = "snappy", partition_cols: list[ColumnInputType] | None = None
     ) -> DataFrame:
         """Writes the DataFrame to parquet files using a `root_dir` and randomly generated UUIDs as the filepath and returns the filepaths.
         Currently generates a parquet file per partition unless `partition_cols` are used, then the number of files can equal the number of partitions times the number of values of partition col.
@@ -411,7 +400,7 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
-        cols: Optional[ExpressionList] = None
+        cols: ExpressionList | None = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
@@ -434,7 +423,7 @@ class DataFrame:
         data = write_df._result.to_pydict()
         return DataFrame.from_pydict(data)
 
-    def write_csv(self, root_dir: str, partition_cols: Optional[List[ColumnInputType]] = None) -> DataFrame:
+    def write_csv(self, root_dir: str, partition_cols: list[ColumnInputType] | None = None) -> DataFrame:
         """Writes the DataFrame to CSV files using a `root_dir` and randomly generated UUIDs as the filepath and returns the filepaths.
         Currently generates a csv file per partition unless `partition_cols` are used, then the number of files can equal the number of partitions times the number of values of partition col.
 
@@ -449,7 +438,7 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
-        cols: Optional[ExpressionList] = None
+        cols: ExpressionList | None = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
@@ -479,10 +468,8 @@ class DataFrame:
         expressions = [col(c) if isinstance(c, str) else c for c in columns]
         return ExpressionList(expressions)
 
-    def __getitem__(
-        self, item: Union[slice, int, str, Iterable[Union[str, int]]]
-    ) -> Union[ColumnExpression, DataFrame]:
-        result: Optional[ColumnExpression]
+    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> ColumnExpression | DataFrame:
+        result: ColumnExpression | None
 
         if isinstance(item, int):
             exprs = self._plan.schema()
@@ -622,9 +609,7 @@ class DataFrame:
         )
         return DataFrame(projection)
 
-    def sort(
-        self, by: Union[ColumnInputType, List[ColumnInputType]], desc: Union[bool, List[bool]] = False
-    ) -> DataFrame:
+    def sort(self, by: ColumnInputType | list[ColumnInputType], desc: bool | list[bool] = False) -> DataFrame:
         """Sorts DataFrame globally according to column.
 
         Example:
@@ -697,9 +682,9 @@ class DataFrame:
     def join(
         self,
         other: DataFrame,
-        on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
-        left_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
-        right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
+        on: list[ColumnInputType] | ColumnInputType | None = None,
+        left_on: list[ColumnInputType] | ColumnInputType | None = None,
+        right_on: list[ColumnInputType] | ColumnInputType | None = None,
         how: str = "inner",
     ) -> DataFrame:
         """Joins left (self) DataFrame on the right on a set of keys.
@@ -787,7 +772,7 @@ class DataFrame:
         )
         return DataFrame(explode_op)
 
-    def _agg(self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionList] = None) -> DataFrame:
+    def _agg(self, to_agg: list[tuple[ColumnInputType, str]], group_by: ExpressionList | None = None) -> DataFrame:
         assert len(to_agg) > 0, "no columns to aggregate."
         exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))
         ops = [op for _, op in to_agg]
@@ -811,9 +796,9 @@ class DataFrame:
 
         finalizer_ops_funcs = {"mean": lambda x, y: (x + 0.0) / (y + 0.0)}
 
-        first_phase_ops: List[Tuple[Expression, str]] = []
-        second_phase_ops: List[Tuple[Expression, str]] = []
-        finalizer_phase_ops: List[Expression] = []
+        first_phase_ops: list[tuple[Expression, str]] = []
+        second_phase_ops: list[tuple[Expression, str]] = []
+        finalizer_phase_ops: list[Expression] = []
         need_final_projection = False
         for e, op in zip(exprs_to_agg, ops):
             assert op in intermediate_ops
@@ -943,7 +928,7 @@ class DataFrame:
         assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "count") for c in cols])
 
-    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
+    def agg(self, to_agg: list[tuple[ColumnInputType, str]]) -> DataFrame:
         """Perform aggregations on this DataFrame. Allows for mixed aggregations for multiple columns
         Will return a single row that aggregated the entire DataFrame.
 
@@ -1061,7 +1046,7 @@ class GroupedDataFrame:
 
         return self.df._agg([(c, "max") for c in cols], group_by=self.group_by)
 
-    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
+    def agg(self, to_agg: list[tuple[ColumnInputType, str]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
 
         Example:

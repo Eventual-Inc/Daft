@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Type, TypeVar
+from typing import TypeVar
 
 from icebridge.client import IcebergCatalog, IceBridgeClient
 
@@ -20,7 +20,7 @@ class DatarepoClient:
         self._client = IceBridgeClient()
         self._iceberg_catalog = IcebergCatalog.from_hadoop_catalog(self._client, path)
 
-    def list_ids(self) -> List[str]:
+    def list_ids(self) -> list[str]:
         """List the IDs of all datarepos
 
         Returns:
@@ -32,7 +32,7 @@ class DatarepoClient:
         table = self._iceberg_catalog.load_table(repo_id)
         return DataRepo(table=table)
 
-    def create(self, repo_id: str, dtype: Type, exists_ok=False) -> DataRepo:
+    def create(self, repo_id: str, dtype: type, exists_ok=False) -> DataRepo:
         return DataRepo.create(self._iceberg_catalog, repo_id, dtype)
 
     def delete(self, repo_id: str) -> bool:

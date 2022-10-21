@@ -4,7 +4,7 @@ import io
 import json
 from abc import abstractmethod
 from enum import Enum
-from typing import Any, Dict
+from typing import Any
 
 import numpy as np
 import PIL.Image
@@ -23,7 +23,7 @@ class DaftType:
         raise NotImplementedError()
 
     @abstractmethod
-    def args(self) -> Dict[str, str]:
+    def args(self) -> dict[str, str]:
         raise NotImplementedError()
 
     def serialize_type_info(self) -> str:
@@ -52,7 +52,7 @@ class DaftImageType(DaftType):
     def name(self) -> str:
         return "DaftImageType"
 
-    def args(self) -> Dict[str, str]:
+    def args(self) -> dict[str, str]:
         return {"encoding": self.encoding.value}
 
     def serialize(self, obj) -> bytes:

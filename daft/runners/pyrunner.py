@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import multiprocessing
 from dataclasses import dataclass
-from typing import Callable, ClassVar, Dict, List, Type
+from typing import Callable, ClassVar
 
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
@@ -37,9 +37,9 @@ from daft.runners.shuffle_ops import (
 
 @dataclass
 class LocalPartitionSet(PartitionSet[vPartition]):
-    _partitions: Dict[PartID, vPartition]
+    _partitions: dict[PartID, vPartition]
 
-    def _get_all_vpartitions(self) -> List[vPartition]:
+    def _get_all_vpartitions(self) -> list[vPartition]:
         partition_ids = sorted(list(self._partitions.keys()))
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
@@ -60,7 +60,7 @@ class LocalPartitionSet(PartitionSet[vPartition]):
     def __len__(self) -> int:
         return sum(self.len_of_partitions())
 
-    def len_of_partitions(self) -> List[int]:
+    def len_of_partitions(self) -> list[int]:
         partition_ids = sorted(list(self._partitions.keys()))
         return [len(self._partitions[pid]) for pid in partition_ids]
 
@@ -107,8 +107,8 @@ class PyRunnerSortOp(PyRunnerSimpleShuffler, SortOp):
 class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
     def run_node_list(
         self,
-        inputs: Dict[int, PartitionSet],
-        nodes: List[LogicalPlan],
+        inputs: dict[int, PartitionSet],
+        nodes: list[LogicalPlan],
         num_partitions: int,
         resource_request: ResourceRequest,
     ) -> PartitionSet:
@@ -122,7 +122,7 @@ class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
 
 
 class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
-    shuffle_ops: ClassVar[Dict[Type[ShuffleOp], Type[Shuffler]]] = {
+    shuffle_ops: ClassVar[dict[type[ShuffleOp], type[Shuffler]]] = {
         RepartitionRandomOp: PyRunnerRepartitionRandom,
         RepartitionHashOp: PyRunnerRepartitionHash,
         CoalesceOp: PyRunnerCoalesceOp,
@@ -135,7 +135,7 @@ class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
         # NOTE: resource_request is ignored since there isn't any actual distribution of workloads in PyRunner
         return LocalPartitionSet({i: func(pset.get_partition(i)) for i in range(pset.num_partitions())})
 
-    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], ReduceType]) -> ReduceType:
+    def reduce_partitions(self, pset: PartitionSet, func: Callable[[list[vPartition]], ReduceType]) -> ReduceType:
         data = [pset.get_partition(i) for i in range(pset.num_partitions())]
         return func(data)
 

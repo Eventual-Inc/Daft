@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Type
 
 import pyarrow as pa
 
@@ -54,7 +53,7 @@ class ExpressionType:
         return _TYPE_REGISTRY["null"]
 
     @staticmethod
-    def from_py_type(obj_type: Type) -> ExpressionType:
+    def from_py_type(obj_type: type) -> ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
         if unable to find the appropriate type. ExpressionTypes.Python is never returned.
         """
@@ -98,13 +97,13 @@ class PrimitiveExpressionType(ExpressionType):
 
 @dataclass(frozen=True, eq=True)
 class PythonExpressionType(ExpressionType):
-    python_cls: Type
+    python_cls: type
 
     def __repr__(self) -> str:
         return f"PY[{self.python_cls.__name__}]"
 
 
-_TYPE_REGISTRY: Dict[str, ExpressionType] = {
+_TYPE_REGISTRY: dict[str, ExpressionType] = {
     "unknown": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.UNKNOWN),
     "integer": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.INTEGER),
     "float": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.FLOAT),

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, List, Type, Union
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -14,7 +14,7 @@ from daft.udf import polars_udf, udf
 from tests.conftest import assert_df_equals
 
 
-def parametrize_udfs(name: str, funcs: Union[Callable, List[Callable]], return_type: Type):
+def parametrize_udfs(name: str, funcs: Callable | list[Callable], return_type: type):
     """Parametrizes a test with the different variants of UDFs (numpy and polars) when given
     a function to wrap.
 
