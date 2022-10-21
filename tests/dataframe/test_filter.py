@@ -1,4 +1,4 @@
-from typing import Dict, List
+from __future__ import annotations
 
 import pytest
 
@@ -24,7 +24,7 @@ def optimizer() -> RuleRunner[LogicalPlan]:
     )
 
 
-def test_filter_pushdown_select(valid_data: List[Dict[str, float]], optimizer) -> None:
+def test_filter_pushdown_select(valid_data: list[dict[str, float]], optimizer) -> None:
     df = DataFrame.from_pylist(valid_data)
     unoptimized = df.select("sepal_length", "sepal_width").where(col("sepal_length") > 4.8)
     optimized = df.where(col("sepal_length") > 4.8).select("sepal_length", "sepal_width")
@@ -32,7 +32,7 @@ def test_filter_pushdown_select(valid_data: List[Dict[str, float]], optimizer) -
     assert optimizer(unoptimized.plan()).is_eq(optimized.plan())
 
 
-def test_filter_pushdown_with_column(valid_data: List[Dict[str, float]], optimizer) -> None:
+def test_filter_pushdown_with_column(valid_data: list[dict[str, float]], optimizer) -> None:
     df = DataFrame.from_pylist(valid_data)
     unoptimized = df.with_column("foo", col("sepal_length") + 1).where(col("sepal_length") > 4.8)
     optimized = df.where(col("sepal_length") > 4.8).with_column("foo", col("sepal_length") + 1)
@@ -41,20 +41,20 @@ def test_filter_pushdown_with_column(valid_data: List[Dict[str, float]], optimiz
 
 
 @pytest.mark.skip(reason="Currently fails until we implement breaking up & expressions into expression lists")
-def test_filter_merge(valid_data: List[Dict[str, float]]) -> None:
+def test_filter_merge(valid_data: list[dict[str, float]]) -> None:
     df = DataFrame.from_pylist(valid_data)
     unoptimized = df.where(col("sepal_length") > 4.8).where(col("sepal_width") > 2.4)
     optimized = df.where((col("sepal_width") > 2.4) & (col("sepal_length") > 4.8))
     assert optimizer(unoptimized.plan()).is_eq(optimized.plan())
 
 
-def test_filter_missing_column(valid_data: List[Dict[str, float]], optimizer) -> None:
+def test_filter_missing_column(valid_data: list[dict[str, float]], optimizer) -> None:
     df = DataFrame.from_pylist(valid_data)
     with pytest.raises(ValueError):
         df.select("sepal_length", "sepal_width").where(col("petal_length") > 4.8)
 
 
-def test_filter_pushdown_sort(valid_data: List[Dict[str, float]], optimizer) -> None:
+def test_filter_pushdown_sort(valid_data: list[dict[str, float]], optimizer) -> None:
     df = DataFrame.from_pylist(valid_data)
     unoptimized = df.sort("sepal_length").select("sepal_length", "sepal_width").where(col("sepal_length") > 4.8)
     optimized = df.where(col("sepal_length") > 4.8).sort("sepal_length").select("sepal_length", "sepal_width")

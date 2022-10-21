@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import pathlib
 import uuid
-from typing import List
 
 import pandas as pd
 import pytest
@@ -11,7 +12,7 @@ from tests.conftest import assert_df_equals
 
 
 @pytest.fixture(scope="function")
-def files(tmpdir) -> List[str]:
+def files(tmpdir) -> list[str]:
     filepaths = [pathlib.Path(tmpdir) / str(uuid.uuid4()) for _ in range(10)]
     for fp in filepaths:
         fp.write_bytes(fp.name.encode("utf-8"))

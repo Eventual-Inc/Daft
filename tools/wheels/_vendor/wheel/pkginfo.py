@@ -1,5 +1,7 @@
-"""Tools for reading and writing PKG-INFO / METADATA without caring
-about the encoding."""
+# Tools for reading and writing PKG-INFO / METADATA without caring
+# about the encoding.
+
+from __future__ import annotations
 
 from email.parser import Parser
 

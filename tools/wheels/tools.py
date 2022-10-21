@@ -1,12 +1,14 @@
+from __future__ import annotations
+
 import argparse
 import os
 import subprocess
 import zipfile
 from datetime import datetime, timezone
-from typing import Any, Iterable, List, Optional
+from typing import Any, Iterable
 
 
-def unique_by_index(sequence: Iterable[Any]) -> List[Any]:
+def unique_by_index(sequence: Iterable[Any]) -> list[Any]:
     """unique elements in `sequence` in the order in which they occur
 
     Parameters
@@ -50,7 +52,7 @@ def zip2dir(zip_fname: str, out_dir: str) -> None:
                 os.chmod(extracted_path, attr)
 
 
-def dir2zip(in_dir: str, zip_fname: str, date_time: Optional[datetime] = None) -> None:
+def dir2zip(in_dir: str, zip_fname: str, date_time: datetime | None = None) -> None:
     """Make a zip file `zip_fname` with contents of directory `in_dir`
 
     The recorded filenames are relative to `in_dir`, so doing a standard zip

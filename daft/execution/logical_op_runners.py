@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from abc import abstractmethod
 from bisect import bisect_right
 from itertools import accumulate
-from typing import Callable, ClassVar, Dict, List, Type, TypeVar
+from typing import Callable, ClassVar, TypeVar
 
 from fsspec.implementations.cached import SimpleCacheFileSystem
 from fsspec.implementations.http import HTTPFileSystem
@@ -52,15 +54,15 @@ class LogicalPartitionOpRunner:
     @abstractmethod
     def run_node_list(
         self,
-        inputs: Dict[int, PartitionSet],
-        nodes: List[LogicalPlan],
+        inputs: dict[int, PartitionSet],
+        nodes: list[LogicalPlan],
         num_partitions: int,
         resource_request: ResourceRequest,
     ):
         raise NotImplementedError()
 
     def run_node_list_single_partition(
-        self, inputs: Dict[int, vPartition], nodes: List[LogicalPlan], partition_id: int
+        self, inputs: dict[int, vPartition], nodes: list[LogicalPlan], partition_id: int
     ) -> vPartition:
         part_set = {nid: part for nid, part in inputs.items()}
         for node in nodes:
@@ -70,7 +72,7 @@ class LogicalPartitionOpRunner:
                 del part_set[child.id()]
         return output
 
-    def run_single_node(self, inputs: Dict[int, vPartition], node: LogicalPlan, partition_id: int) -> vPartition:
+    def run_single_node(self, inputs: dict[int, vPartition], node: LogicalPlan, partition_id: int) -> vPartition:
         if isinstance(node, Scan):
             return self._handle_scan(inputs, node, partition_id=partition_id)
         elif isinstance(node, Projection):
@@ -92,7 +94,7 @@ class LogicalPartitionOpRunner:
         else:
             raise NotImplementedError(f"{type(node)} not implemented")
 
-    def _handle_scan(self, inputs: Dict[int, vPartition], scan: Scan, partition_id: int) -> vPartition:
+    def _handle_scan(self, inputs: dict[int, vPartition], scan: Scan, partition_id: int) -> vPartition:
         schema = scan._schema
         if scan._source_info.scan_type() == StorageType.IN_MEMORY:
             assert isinstance(scan._source_info, InMemorySourceInfo)
@@ -153,38 +155,38 @@ class LogicalPartitionOpRunner:
         else:
             raise NotImplementedError(f"PyRunner has not implemented scan: {scan._source_info.scan_type()}")
 
-    def _handle_projection(self, inputs: Dict[int, vPartition], proj: Projection, partition_id: int) -> vPartition:
+    def _handle_projection(self, inputs: dict[int, vPartition], proj: Projection, partition_id: int) -> vPartition:
         child_id = proj._children()[0].id()
         prev_partition = inputs[child_id]
         return prev_partition.eval_expression_list(proj._projection)
 
-    def _handle_filter(self, inputs: Dict[int, vPartition], filter: Filter, partition_id: int) -> vPartition:
+    def _handle_filter(self, inputs: dict[int, vPartition], filter: Filter, partition_id: int) -> vPartition:
         predicate = filter._predicate
         child_id = filter._children()[0].id()
         prev_partition = inputs[child_id]
         return prev_partition.filter(predicate)
 
-    def _handle_local_limit(self, inputs: Dict[int, vPartition], limit: LocalLimit, partition_id: int) -> vPartition:
+    def _handle_local_limit(self, inputs: dict[int, vPartition], limit: LocalLimit, partition_id: int) -> vPartition:
         num = limit._num
         child_id = limit._children()[0].id()
         prev_partition = inputs[child_id]
         return prev_partition.head(num)
 
     def _handle_local_aggregate(
-        self, inputs: Dict[int, vPartition], agg: LocalAggregate, partition_id: int
+        self, inputs: dict[int, vPartition], agg: LocalAggregate, partition_id: int
     ) -> vPartition:
         child_id = agg._children()[0].id()
         prev_partition = inputs[child_id]
         return prev_partition.agg(agg._agg, group_by=agg._group_by)
 
     def _handle_local_distinct(
-        self, inputs: Dict[int, vPartition], agg: LocalDistinct, partition_id: int
+        self, inputs: dict[int, vPartition], agg: LocalDistinct, partition_id: int
     ) -> vPartition:
         child_id = agg._children()[0].id()
         prev_partition = inputs[child_id]
         return prev_partition.agg([], group_by=agg._group_by)
 
-    def _handle_join(self, inputs: Dict[int, vPartition], join: Join, partition_id: int) -> vPartition:
+    def _handle_join(self, inputs: dict[int, vPartition], join: Join, partition_id: int) -> vPartition:
         left_id = join._children()[0].id()
         right_id = join._children()[1].id()
         left_partition = inputs[left_id]
@@ -197,7 +199,7 @@ class LogicalPartitionOpRunner:
             how=join._how.value,
         )
 
-    def _handle_file_write(self, inputs: Dict[int, vPartition], file_write: FileWrite, partition_id: int) -> vPartition:
+    def _handle_file_write(self, inputs: dict[int, vPartition], file_write: FileWrite, partition_id: int) -> vPartition:
         child_id = file_write._children()[0].id()
         assert file_write._storage_type == StorageType.PARQUET or file_write._storage_type == StorageType.CSV
         if file_write._storage_type == StorageType.PARQUET:
@@ -217,7 +219,7 @@ class LogicalPartitionOpRunner:
         assert len(output_schema) == 1
         file_name_expr = output_schema.exprs[0]
         file_name_col_id = file_name_expr.get_id()
-        columns: Dict[ColID, PyListTile] = {}
+        columns: dict[ColID, PyListTile] = {}
         columns[file_name_col_id] = PyListTile(
             file_name_col_id,
             file_name_expr.name(),
@@ -230,7 +232,7 @@ class LogicalPartitionOpRunner:
         )
 
     def _handle_map_partition(
-        self, inputs: Dict[int, vPartition], map_partition: MapPartition, partition_id: int
+        self, inputs: dict[int, vPartition], map_partition: MapPartition, partition_id: int
     ) -> vPartition:
         child_id = map_partition._children()[0].id()
         prev_partition = inputs[child_id]
@@ -241,9 +243,9 @@ ReduceType = TypeVar("ReduceType")
 
 
 class LogicalGlobalOpRunner:
-    shuffle_ops: ClassVar[Dict[Type[ShuffleOp], Type[Shuffler]]]
+    shuffle_ops: ClassVar[dict[type[ShuffleOp], type[Shuffler]]]
 
-    def run_node_list(self, inputs: Dict[int, PartitionSet], nodes: List[LogicalPlan]) -> PartitionSet:
+    def run_node_list(self, inputs: dict[int, PartitionSet], nodes: list[LogicalPlan]) -> PartitionSet:
         part_set = inputs.copy()
         for node in nodes:
             output = self.run_single_node(inputs=part_set, node=node)
@@ -252,7 +254,7 @@ class LogicalGlobalOpRunner:
                 del part_set[child.id()]
         return output
 
-    def run_single_node(self, inputs: Dict[int, PartitionSet], node: LogicalPlan) -> PartitionSet:
+    def run_single_node(self, inputs: dict[int, PartitionSet], node: LogicalPlan) -> PartitionSet:
         if isinstance(node, GlobalLimit):
             return self._handle_global_limit(inputs, node)
         elif isinstance(node, Repartition):
@@ -271,13 +273,13 @@ class LogicalGlobalOpRunner:
         raise NotImplementedError()
 
     @abstractmethod
-    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], ReduceType]) -> ReduceType:
+    def reduce_partitions(self, pset: PartitionSet, func: Callable[[list[vPartition]], ReduceType]) -> ReduceType:
         raise NotImplementedError()
 
-    def _get_shuffle_op_klass(self, t: Type[ShuffleOp]) -> Type[Shuffler]:
+    def _get_shuffle_op_klass(self, t: type[ShuffleOp]) -> type[Shuffler]:
         return self.__class__.shuffle_ops[t]
 
-    def _handle_global_limit(self, inputs: Dict[int, PartitionSet], limit: GlobalLimit) -> PartitionSet:
+    def _handle_global_limit(self, inputs: dict[int, PartitionSet], limit: GlobalLimit) -> PartitionSet:
         child_id = limit._children()[0].id()
         prev_part = inputs[child_id]
 
@@ -303,7 +305,7 @@ class LogicalGlobalOpRunner:
 
         return self.map_partitions(prev_part, limit_map_func, limit.resource_request())
 
-    def _handle_repartition(self, inputs: Dict[int, PartitionSet], repartition: Repartition) -> PartitionSet:
+    def _handle_repartition(self, inputs: dict[int, PartitionSet], repartition: Repartition) -> PartitionSet:
         child_id = repartition._children()[0].id()
         repartitioner: ShuffleOp
         if repartition._scheme == PartitionScheme.RANDOM:
@@ -320,7 +322,7 @@ class LogicalGlobalOpRunner:
         prev_part = inputs[child_id]
         return repartitioner.run(input=prev_part, num_target_partitions=repartition.num_partitions())
 
-    def _handle_sort(self, inputs: Dict[int, PartitionSet], sort: Sort) -> PartitionSet:
+    def _handle_sort(self, inputs: dict[int, PartitionSet], sort: Sort) -> PartitionSet:
 
         child_id = sort._children()[0].id()
 
@@ -336,7 +338,7 @@ class LogicalGlobalOpRunner:
                 .filter(ExpressionList([~e.to_column_expression().is_null() for e in exprs]).resolve(exprs))
             )
 
-        def quantile_reduce_func(to_reduce: List[vPartition]) -> vPartition:
+        def quantile_reduce_func(to_reduce: list[vPartition]) -> vPartition:
             merged = vPartition.merge_partitions(to_reduce, verify_partition_id=False)
             merged_sorted = merged.sort(exprs, descending=descending)
             return merged_sorted.quantiles(num_partitions)
@@ -353,7 +355,7 @@ class LogicalGlobalOpRunner:
 
         return sort_op.run(input=prev_part, num_target_partitions=num_partitions)
 
-    def _handle_coalesce(self, inputs: Dict[int, PartitionSet], coal: Coalesce) -> PartitionSet:
+    def _handle_coalesce(self, inputs: dict[int, PartitionSet], coal: Coalesce) -> PartitionSet:
         child_id = coal._children()[0].id()
         num_partitions = coal.num_partitions()
         prev_part = inputs[child_id]

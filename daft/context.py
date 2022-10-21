@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import dataclasses
 import os
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 from loguru import logger
 
@@ -21,7 +23,7 @@ class _PyRunnerConfig(_RunnerConfig):
 @dataclasses.dataclass(frozen=True)
 class _RayRunnerConfig(_RunnerConfig):
     name = "ray"
-    address: Optional[str]
+    address: str | None
 
 
 def _get_runner_config_from_env() -> _RunnerConfig:
@@ -43,7 +45,7 @@ def _get_runner_config_from_env() -> _RunnerConfig:
 
 
 # Global Runner singleton, initialized when accessed through the DaftContext
-_RUNNER: Optional[Runner] = None
+_RUNNER: Runner | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -85,7 +87,7 @@ def get_context() -> DaftContext:
     return _DaftContext
 
 
-def set_runner_ray(address: Optional[str] = None) -> DaftContext:
+def set_runner_ray(address: str | None = None) -> DaftContext:
     """Sets the runner for executing Daft dataframes to the RayRunner
 
     Alternatively, users can set this behavior via environment variables:

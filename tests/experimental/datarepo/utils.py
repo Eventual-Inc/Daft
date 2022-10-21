@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from icebridge.client import IcebergCatalog, IceBridgeClient
 
 

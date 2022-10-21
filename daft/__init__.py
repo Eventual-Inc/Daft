@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from daft.dataframe import DataFrame
 from daft.expressions import col
 from daft.logging import setup_logger

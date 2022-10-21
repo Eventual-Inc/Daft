@@ -1,4 +1,4 @@
-from typing import List
+from __future__ import annotations
 
 import numpy as np
 import pyarrow as pa
@@ -33,7 +33,7 @@ def test_vpartition_eval_expression() -> None:
 
 
 def test_vpartition_eval_expression_list() -> None:
-    list_of_expr: List[Expression] = []
+    list_of_expr: list[Expression] = []
     # we do this to have the same col ids for column access
     base_expr = col("a") + col("b")
     base_expr = resolve_expr(base_expr)

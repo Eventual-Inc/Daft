@@ -1,9 +1,10 @@
 """ Contexts for *with* statement providing temporary directories
 """
+from __future__ import annotations
+
 import os
 from tempfile import TemporaryDirectory
 from types import TracebackType
-from typing import Optional, Type
 
 
 class InTemporaryDirectory:
@@ -37,9 +38,9 @@ class InTemporaryDirectory:
 
     def __exit__(
         self,
-        exc: Optional[Type[BaseException]],
-        value: Optional[BaseException],
-        tb: Optional[TracebackType],
+        exc: type[BaseException] | None,
+        value: BaseException | None,
+        tb: TracebackType | None,
     ) -> None:
         os.chdir(self._pwd)
         return self._tmpdir.__exit__(exc, value, tb)
@@ -69,7 +70,7 @@ class InGivenDirectory:
     again.
     """
 
-    def __init__(self, path: Optional[str] = None) -> None:
+    def __init__(self, path: str | None = None) -> None:
         """Initialize directory context manager
 
         Parameters
@@ -91,8 +92,8 @@ class InGivenDirectory:
 
     def __exit__(
         self,
-        exc: Optional[Type[BaseException]],
-        value: Optional[BaseException],
-        tb: Optional[TracebackType],
+        exc: type[BaseException] | None,
+        value: BaseException | None,
+        tb: TracebackType | None,
     ) -> None:
         os.chdir(self._pwd)

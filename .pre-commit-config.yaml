@@ -47,7 +47,7 @@ repos:
   hooks:
   - id: isort
     name: isort (python)
-    args: [--profile, black, --filter-files]
+    args: [--profile, black, --filter-files, -a, from __future__ import annotations]
 
 - repo: https://github.com/myint/autoflake
   rev: v1.4

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import os
 from contextlib import contextmanager
@@ -9,7 +11,7 @@ if TYPE_CHECKING:
     from viztracer import VizTracer
 
 
-def profiler(filename: str) -> "VizTracer":
+def profiler(filename: str) -> VizTracer:
     if int(os.environ.get("DAFT_PROFILING", 0)) == 1:
         from viztracer import VizTracer
 

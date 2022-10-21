@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import fields, is_dataclass
 from typing import Dict, List
 
@@ -44,11 +46,11 @@ def test_dataclass_with_nested_structures() -> None:
     class DataclassWithDaftImage:
         x: int
         y: int
-        list_x: List[int]
-        dict_x: Dict[str, int]
+        list_x: list[int]
+        dict_x: dict[str, int]
         array: np.ndarray
         subclass: SomeSubClass
-        list_subclass: List[SomeSubClass]
+        list_subclass: list[SomeSubClass]
 
     assert is_dataclass(DataclassWithDaftImage) and isinstance(DataclassWithDaftImage, type)
 

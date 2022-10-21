@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import multiprocessing
 import os
 import sysconfig
 import warnings
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 import pyarrow as pa
@@ -15,11 +17,11 @@ SOURCE_DIR = Path("daft")
 BUILD_DIR = Path(".cython_build")
 
 
-def get_extension_modules() -> List[Extension]:
+def get_extension_modules() -> list[Extension]:
     """Collect all .py files and turn them into Distutils/Setuptools
     Extensions"""
 
-    extension_modules: List[Extension] = []
+    extension_modules: list[Extension] = []
 
     for py_file in SOURCE_DIR.rglob("*.pyx"):
         # Get path (not just name) without .py extension
@@ -52,7 +54,7 @@ def get_extension_modules() -> List[Extension]:
     return extension_modules
 
 
-def cythonize_helper(extension_modules: List[Extension]) -> List[Extension]:
+def cythonize_helper(extension_modules: list[Extension]) -> list[Extension]:
     """Cythonize all Python extensions"""
     num_threads = multiprocessing.cpu_count()
     if multiprocessing.get_start_method() == "spawn":
@@ -74,7 +76,7 @@ def cythonize_helper(extension_modules: List[Extension]) -> List[Extension]:
     )
 
 
-def build(setup_kwargs: Dict[str, Any]) -> None:
+def build(setup_kwargs: dict[str, Any]) -> None:
     extension_modules = cythonize_helper(get_extension_modules())
     print(f"Building on platform: {sysconfig.get_platform()}")
 

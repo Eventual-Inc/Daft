@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import dataclasses
 import logging
 import os
@@ -6,7 +8,7 @@ import socket
 import subprocess
 import sys
 import tempfile
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 if sys.version_info < (3, 8):
     from typing_extensions import Literal
@@ -31,11 +33,11 @@ logger = logging.getLogger(__name__)
 
 @dataclasses.dataclass
 class MultiprocessingServerEndpoint:
-    process: Optional[subprocess.Popen]
+    process: subprocess.Popen | None
     endpoint_name: str
     endpoint_version: int
     port: int
-    custom_env: Optional[DaftEnv]
+    custom_env: DaftEnv | None
     conda_env_path: tempfile.TemporaryDirectory
     endpoint_pkl_file: tempfile._TemporaryFileWrapper
 
@@ -108,7 +110,7 @@ class MultiprocessingEndpointBackend(AbstractEndpointBackend):
     """Manages Daft Serving endpoints for a Multiprocessing backend"""
 
     def __init__(self):
-        self.multiprocessing_servers: Dict[str, MultiprocessingServerEndpoint] = {}
+        self.multiprocessing_servers: dict[str, MultiprocessingServerEndpoint] = {}
 
     def __del__(self):
         # Best effort cleanup of all resources used
@@ -120,7 +122,7 @@ class MultiprocessingEndpointBackend(AbstractEndpointBackend):
         return "multiprocessing"
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> AbstractEndpointBackend:
+    def from_config(cls, config: dict[str, Any]) -> AbstractEndpointBackend:
         assert config["type"] == cls.config_type_id()
         return cls()
 
@@ -130,7 +132,7 @@ class MultiprocessingEndpointBackend(AbstractEndpointBackend):
         sock.bind(("", 0))
         return int(sock.getsockname()[1])
 
-    def list_endpoints(self) -> List[Endpoint]:
+    def list_endpoints(self) -> list[Endpoint]:
         """Lists all endpoints managed by this endpoint manager"""
         return [
             Endpoint(name=e.endpoint_name, version=e.endpoint_version, addr=f"http://localhost:{e.port}")
@@ -141,7 +143,7 @@ class MultiprocessingEndpointBackend(AbstractEndpointBackend):
         self,
         endpoint_name: str,
         endpoint: Callable[[Any], Any],
-        custom_env: Optional[DaftEnv] = None,
+        custom_env: DaftEnv | None = None,
     ) -> Endpoint:
 
         # Get correct endpoint_version

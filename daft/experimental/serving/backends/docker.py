@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 import pathlib
 import re
@@ -5,7 +7,7 @@ import socket
 import sys
 import tarfile
 import tempfile
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 if sys.version_info < (3, 8):
     from typing_extensions import Literal
@@ -55,7 +57,7 @@ class DockerEndpointBackend(AbstractEndpointBackend):
         return "docker"
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> AbstractEndpointBackend:
+    def from_config(cls, config: dict[str, Any]) -> AbstractEndpointBackend:
         assert config["type"] == cls.config_type_id()
         return cls()
 
@@ -107,7 +109,7 @@ class DockerEndpointBackend(AbstractEndpointBackend):
         sock.bind(("", 0))
         return int(sock.getsockname()[1])
 
-    def _get_daft_serving_containers(self, running_only: bool = True) -> List[docker.models.containers.Container]:
+    def _get_daft_serving_containers(self, running_only: bool = True) -> list[docker.models.containers.Container]:
         """Returns all Daft Serving containers"""
         return [
             container
@@ -115,7 +117,7 @@ class DockerEndpointBackend(AbstractEndpointBackend):
             if container.labels.get(DockerEndpointBackend.DAFT_ENDPOINT_NAME_LABEL)
         ]
 
-    def list_endpoints(self) -> List[Endpoint]:
+    def list_endpoints(self) -> list[Endpoint]:
         """Lists all endpoints managed by this endpoint manager"""
         containers = self._get_daft_serving_containers(running_only=True)
         return [
@@ -131,7 +133,7 @@ class DockerEndpointBackend(AbstractEndpointBackend):
         self,
         endpoint_name: str,
         endpoint: Callable[[Any], Any],
-        custom_env: Optional[DaftEnv] = None,
+        custom_env: DaftEnv | None = None,
     ) -> Endpoint:
         img = build_serving_docker_image(custom_env if custom_env is not None else DaftEnv(), endpoint_name, endpoint)
         container = self._run_container(endpoint_name, img)

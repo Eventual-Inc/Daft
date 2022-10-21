@@ -1,6 +1,8 @@
 # distutils: language=c++
 # distutils: sources = daft/internal/kernels/hashing.cc daft/internal/kernels/xxhash.cc
 
+from __future__ import annotations
+
 import pyarrow as pa
 
 from libcpp cimport bool as cbool

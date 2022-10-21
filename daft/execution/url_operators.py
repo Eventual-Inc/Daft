@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import pathlib
-from typing import Dict, List, Optional
 
 import pyarrow as pa
 from loguru import logger
@@ -8,7 +9,7 @@ from daft import filesystem
 from daft.runners.blocks import ArrowDataBlock
 
 
-def download(url_block: ArrowDataBlock) -> List[Optional[bytes]]:
+def download(url_block: ArrowDataBlock) -> list[bytes | None]:
     assert isinstance(
         url_block, ArrowDataBlock
     ), f"Can only download from columns containing strings, found non-arrow block"
@@ -16,10 +17,10 @@ def download(url_block: ArrowDataBlock) -> List[Optional[bytes]]:
         url_block.data.type
     ), f"Can only download from columns containing strings, found {url_block.data.type}"
 
-    results: List[Optional[bytes]] = [None for _ in range(len(url_block))]
+    results: list[bytes | None] = [None for _ in range(len(url_block))]
 
     path_to_result_idx = {}
-    to_download: Dict[str, List[str]] = {}
+    to_download: dict[str, list[str]] = {}
     for i, path in enumerate(url_block.iter_py()):
         if path is None:
             continue

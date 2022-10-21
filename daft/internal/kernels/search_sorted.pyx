@@ -1,5 +1,7 @@
 # distutils: language=c++
 # distutils: sources = daft/internal/kernels/search_sorted.cc
+from __future__ import annotations
+
 import pyarrow as pa
 
 from libcpp cimport bool as cbool

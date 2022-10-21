@@ -1,4 +1,4 @@
-from typing import Dict, List
+from __future__ import annotations
 
 import pytest
 
@@ -25,7 +25,7 @@ def optimizer() -> RuleRunner[LogicalPlan]:
 
 # Disabled due to predicate not being pushed into scan
 @pytest.mark.skip()
-def test_filter_scan_pushdown(valid_data: List[Dict[str, float]], optimizer) -> None:
+def test_filter_scan_pushdown(valid_data: list[dict[str, float]], optimizer) -> None:
     predicate_expr = col("sepal_length") > 4.8
     df = DataFrame.from_pylist(valid_data)
 
@@ -43,7 +43,7 @@ def test_filter_scan_pushdown(valid_data: List[Dict[str, float]], optimizer) -> 
     assert optimized.is_eq(expected)
 
 
-def test_projection_scan_pushdown(valid_data: List[Dict[str, float]], optimizer) -> None:
+def test_projection_scan_pushdown(valid_data: list[dict[str, float]], optimizer) -> None:
     selected_columns = ["sepal_length", "sepal_width"]
     df = DataFrame.from_pylist(valid_data)
     original_schema = df._plan.schema()

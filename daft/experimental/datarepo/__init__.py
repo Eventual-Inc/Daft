@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .client import DatarepoClient, get_client
 
 __all__ = [

@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import io
-from typing import Dict
 
 import numpy as np
 import PIL.Image
@@ -75,7 +76,7 @@ def test_schema_nested() -> None:
         x: int
         y: float
         q: Nested
-        nd: Dict[str, int]
+        nd: dict[str, int]
 
     source_data = [TestDC(i, 2.0, Nested(1, "oh wow"), {f"{i}": i}) for i in range(10)]
     daft_schema: DaftSchema = getattr(TestDC, "_daft_schema")

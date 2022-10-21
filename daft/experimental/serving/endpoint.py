@@ -1,4 +1,4 @@
-from typing import Optional
+from __future__ import annotations
 
 from daft.experimental.serving.backend import (
     AbstractEndpointBackend,
@@ -16,11 +16,11 @@ class HTTPEndpoint:
     def __init__(
         self,
         request_schema: ExpressionList,
-        backend: Optional[AbstractEndpointBackend] = None,
-        custom_env: Optional[DaftEnv] = None,
+        backend: AbstractEndpointBackend | None = None,
+        custom_env: DaftEnv | None = None,
     ):
         self._request_schema = request_schema
-        self._plan: Optional[LogicalPlan] = None
+        self._plan: LogicalPlan | None = None
         self._backend = backend if backend is not None else get_serving_backend()
         self._custom_env = custom_env
 
