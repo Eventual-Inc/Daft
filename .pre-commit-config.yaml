@@ -47,13 +47,13 @@ repos:
   hooks:
   - id: isort
     name: isort (python)
+    files: \.py$
     args: [--profile, black, --filter-files, -a, from __future__ import annotations]
 
 - repo: https://github.com/myint/autoflake
   rev: v1.4
   hooks:
   - id: autoflake
-    files: .
     args: [--in-place, --remove-all-unused-imports, --remove-unused-variable, --ignore-init-module-imports]
 
 - repo: https://github.com/pre-commit/mirrors-clang-format
