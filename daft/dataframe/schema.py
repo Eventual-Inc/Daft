@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, cast
+from typing import cast
 
 import pandas as pd
 
@@ -16,7 +16,7 @@ class DataFrameSchemaField:
 
 
 class DataFrameSchema:
-    def __init__(self, fields: List[DataFrameSchemaField]):
+    def __init__(self, fields: list[DataFrameSchemaField]):
         self._fields = {f.name: f for f in fields}
 
     def __getitem__(self, key: str) -> DataFrameSchemaField:
@@ -25,7 +25,7 @@ class DataFrameSchema:
     def __len__(self) -> int:
         return len(self._fields)
 
-    def column_names(self) -> List[str]:
+    def column_names(self) -> list[str]:
         return list(self._fields.keys())
 
     @classmethod

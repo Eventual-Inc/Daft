@@ -1,5 +1,7 @@
-"""Tools for reading and writing PKG-INFO / METADATA without caring
-about the encoding."""
+# Tools for reading and writing PKG-INFO / METADATA without caring
+# about the encoding.
+
+from __future__ import annotations
 
 from email.parser import Parser
 
@@ -16,7 +18,7 @@ if not _PY3:
         return Parser().parsestr(bytestr)
 
     def read_pkg_info(path):
-        with open(path, "r") as headers:
+        with open(path) as headers:
             message = Parser().parse(headers)
         return message
 
@@ -33,7 +35,7 @@ else:
         return message
 
     def read_pkg_info(path):
-        with open(path, "r", encoding="ascii", errors="surrogateescape") as headers:
+        with open(path, encoding="ascii", errors="surrogateescape") as headers:
             message = Parser().parse(headers)
         return message
 

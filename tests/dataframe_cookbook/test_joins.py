@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from daft.expressions import col
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (

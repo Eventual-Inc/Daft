@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import Callable, FrozenSet, Optional, Tuple, TypeVar
+from typing import Callable, FrozenSet, Tuple, TypeVar
 
 from daft.types import ExpressionType
 
@@ -23,7 +23,7 @@ class ExpressionOperator:
     name: str
     nargs: int
     type_matrix: TypeMatrix
-    symbol: Optional[str] = None
+    symbol: str | None = None
 
     def __post_init__(self) -> None:
         for k, v in self.type_matrix:
@@ -34,10 +34,10 @@ class ExpressionOperator:
             assert isinstance(v, ExpressionType), f"{v} is not an ExpressionType"
 
     @lru_cache(maxsize=1)
-    def _type_matrix_dict(self) -> MappingProxyType[Tuple[ExpressionType, ...], ExpressionType]:
+    def _type_matrix_dict(self) -> MappingProxyType[tuple[ExpressionType, ...], ExpressionType]:
         return MappingProxyType(dict(self.type_matrix))
 
-    def get_return_type(self, args: Tuple[ExpressionType, ...]) -> Optional[ExpressionType]:
+    def get_return_type(self, args: tuple[ExpressionType, ...]) -> ExpressionType | None:
         # Treat all Python types as a PY[object] for the purposes of typing
         args = tuple([ExpressionType.python_object() if ExpressionType.is_py(a) else a for a in args])
 

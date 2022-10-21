@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Generic, List, TypeVar
+from typing import Generic, TypeVar
 
 from loguru import logger
 
@@ -22,11 +24,11 @@ Once = FixedPointPolicy(1)
 class RuleBatch(Generic[TreeNodeType]):
     name: str
     mode: FixedPointPolicy
-    rules: List[Rule[TreeNodeType]]
+    rules: list[Rule[TreeNodeType]]
 
 
 class RuleRunner(Generic[TreeNodeType]):
-    def __init__(self, batches: List[RuleBatch[TreeNodeType]]) -> None:
+    def __init__(self, batches: list[RuleBatch[TreeNodeType]]) -> None:
         self._batches = batches
 
     def optimize(self, root: TreeNodeType) -> TreeNodeType:

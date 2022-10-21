@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import math
 from abc import abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -15,8 +17,8 @@ class ShuffleOp:
     def __init__(
         self,
         expr_eval_resource_request: ResourceRequest,
-        map_args: Optional[Dict[str, Any]] = None,
-        reduce_args: Optional[Dict[str, Any]] = None,
+        map_args: dict[str, Any] | None = None,
+        reduce_args: dict[str, Any] | None = None,
     ) -> None:
         self._map_args = map_args
         self._reduce_args = reduce_args
@@ -24,18 +26,18 @@ class ShuffleOp:
 
     @staticmethod
     @abstractmethod
-    def map_fn(input: vPartition, output_partitions: int) -> Dict[PartID, vPartition]:
+    def map_fn(input: vPartition, output_partitions: int) -> dict[PartID, vPartition]:
         ...
 
     @staticmethod
     @abstractmethod
-    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+    def reduce_fn(mapped_outputs: list[vPartition]) -> vPartition:
         ...
 
 
 class RepartitionRandomOp(ShuffleOp):
     @staticmethod
-    def map_fn(input: vPartition, output_partitions: int, seed: Optional[int] = None) -> Dict[PartID, vPartition]:
+    def map_fn(input: vPartition, output_partitions: int, seed: int | None = None) -> dict[PartID, vPartition]:
         if seed is None:
             seed = input.partition_id
         else:
@@ -49,29 +51,29 @@ class RepartitionRandomOp(ShuffleOp):
         return {PartID(i): part for i, part in enumerate(new_parts)}
 
     @staticmethod
-    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+    def reduce_fn(mapped_outputs: list[vPartition]) -> vPartition:
         return vPartition.merge_partitions(mapped_outputs)
 
 
 class RepartitionHashOp(ShuffleOp):
     @staticmethod
     def map_fn(
-        input: vPartition, output_partitions: int, exprs: Optional[ExpressionList] = None
-    ) -> Dict[PartID, vPartition]:
+        input: vPartition, output_partitions: int, exprs: ExpressionList | None = None
+    ) -> dict[PartID, vPartition]:
         assert exprs is not None
         new_parts = input.split_by_hash(exprs, num_partitions=output_partitions)
         return {PartID(i): part for i, part in enumerate(new_parts)}
 
     @staticmethod
-    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+    def reduce_fn(mapped_outputs: list[vPartition]) -> vPartition:
         return vPartition.merge_partitions(mapped_outputs)
 
 
 class CoalesceOp(ShuffleOp):
     @staticmethod
     def map_fn(
-        input: vPartition, output_partitions: int, num_input_partitions: Optional[int] = None
-    ) -> Dict[PartID, vPartition]:
+        input: vPartition, output_partitions: int, num_input_partitions: int | None = None
+    ) -> dict[PartID, vPartition]:
         assert num_input_partitions is not None
         assert output_partitions <= num_input_partitions
 
@@ -79,7 +81,7 @@ class CoalesceOp(ShuffleOp):
         return {PartID(tgt_idx): input}
 
     @staticmethod
-    def reduce_fn(mapped_outputs: List[vPartition]) -> vPartition:
+    def reduce_fn(mapped_outputs: list[vPartition]) -> vPartition:
         return vPartition.merge_partitions(mapped_outputs, verify_partition_id=False)
 
 
@@ -88,10 +90,10 @@ class SortOp(ShuffleOp):
     def map_fn(
         input: vPartition,
         output_partitions: int,
-        exprs: Optional[ExpressionList] = None,
-        boundaries: Optional[vPartition] = None,
-        descending: Optional[List[bool]] = None,
-    ) -> Dict[PartID, vPartition]:
+        exprs: ExpressionList | None = None,
+        boundaries: vPartition | None = None,
+        descending: list[bool] | None = None,
+    ) -> dict[PartID, vPartition]:
         assert exprs is not None and boundaries is not None and descending is not None
         assert len(boundaries) == (output_partitions - 1)
         assert len(exprs) == len(descending)
@@ -104,9 +106,9 @@ class SortOp(ShuffleOp):
 
     @staticmethod
     def reduce_fn(
-        mapped_outputs: List[vPartition],
-        exprs: Optional[ExpressionList] = None,
-        descending: Optional[List[bool]] = None,
+        mapped_outputs: list[vPartition],
+        exprs: ExpressionList | None = None,
+        descending: list[bool] | None = None,
     ) -> vPartition:
         assert exprs is not None and descending is not None
         assert len(exprs) == len(descending)

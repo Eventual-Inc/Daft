@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fsspec import AbstractFileSystem, get_filesystem_class
 
 

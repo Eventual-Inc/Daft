@@ -6,19 +6,7 @@ import warnings
 from abc import abstractmethod
 from copy import deepcopy
 from functools import partial, partialmethod
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    NewType,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    TypeVar,
-    cast,
-)
+from typing import Any, Callable, NewType, Sequence, Tuple, TypeVar, cast
 
 import numpy as np
 import pandas as pd
@@ -74,7 +62,7 @@ ColID = NewType("ColID", int)
 
 
 class ExpressionExecutor:
-    def eval(self, expr: Expression, operands: Dict[str, Any]) -> DataBlock:
+    def eval(self, expr: Expression, operands: dict[str, Any]) -> DataBlock:
         result: DataBlock
         if isinstance(expr, ColumnExpression):
             name = expr.name()
@@ -88,7 +76,7 @@ class ExpressionExecutor:
             result = self.eval(expr._expr, operands)
             return result
         elif isinstance(expr, CallExpression):
-            eval_args: Tuple[DataBlock, ...] = tuple(self.eval(a, operands) for a in expr._args)
+            eval_args: tuple[DataBlock, ...] = tuple(self.eval(a, operands) for a in expr._args)
 
             # Use a PyListDataBlock evaluator if any of the args are Python types
             op_evaluator = (
@@ -115,7 +103,7 @@ class ExpressionExecutor:
 class Expression(TreeNode["Expression"]):
     def __init__(self) -> None:
         super().__init__()
-        self._id: Optional[ColID] = None
+        self._id: ColID | None = None
 
     def __repr__(self) -> str:
         if self.has_id():
@@ -130,10 +118,8 @@ class Expression(TreeNode["Expression"]):
 
     def __bool__(self) -> bool:
         raise ValueError(
-            (
-                "Expressions don't have a truth value until executed. "
-                "If you reached this error using `and` / `or`, use `&` / `|` instead."
-            )
+            "Expressions don't have a truth value until executed. "
+            "If you reached this error using `and` / `or`, use `&` / `|` instead."
         )
 
     def _unary_op(
@@ -169,11 +155,11 @@ class Expression(TreeNode["Expression"]):
         )
 
     @abstractmethod
-    def resolved_type(self) -> Optional[ExpressionType]:
+    def resolved_type(self) -> ExpressionType | None:
         """Expressions have a resolved_type only if they are resolved"""
         return None
 
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         for child in self._children():
             name = child.name()
             if name is not None:
@@ -191,7 +177,7 @@ class Expression(TreeNode["Expression"]):
                 assert self._id is not None
                 return self._id
 
-    def get_id(self) -> Optional[ColID]:
+    def get_id(self) -> ColID | None:
         return self._id
 
     def has_id(self) -> bool:
@@ -207,8 +193,8 @@ class Expression(TreeNode["Expression"]):
         ce.resolve_to_expression(self)
         return ce
 
-    def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
-        to_rtn: List[ColumnExpression] = []
+    def required_columns(self, unresolved_only: bool = False) -> list[ColumnExpression]:
+        to_rtn: list[ColumnExpression] = []
         for child in self._children():
             to_rtn.extend(child.required_columns(unresolved_only))
         return to_rtn
@@ -305,7 +291,7 @@ class Expression(TreeNode["Expression"]):
         """
         return AliasExpression(self, name)
 
-    def as_py(self, type_: Type) -> AsPyExpression:
+    def as_py(self, type_: type) -> AsPyExpression:
         """Treats every value on the given expression as an object of the specified type. Users can then call
         methods on this object, which will be translated into a method call on every value on the Expression.
 
@@ -324,7 +310,7 @@ class Expression(TreeNode["Expression"]):
         """
         return AsPyExpression(self, ExpressionType.from_py_type(type_))
 
-    def apply(self, func: Callable, return_type: Optional[Type] = None) -> Expression:
+    def apply(self, func: Callable, return_type: type | None = None) -> Expression:
         """Apply a function on a given expression
 
         Example:
@@ -446,7 +432,7 @@ class Expression(TreeNode["Expression"]):
             (self,),
         )
 
-    def cast(self, to: Type) -> Expression:
+    def cast(self, to: type) -> Expression:
         """Casts an expression to a given type
 
         Casting defaults to a set of "reasonable behaviors" for each ``(from_type, to_type)`` pair. For more fine-grained control, please consult
@@ -526,7 +512,7 @@ class LiteralExpression(Expression):
         super().__init__()
         self._value = value
 
-    def resolved_type(self) -> Optional[ExpressionType]:
+    def resolved_type(self) -> ExpressionType | None:
         return ExpressionType.from_py_type(type(self._value))
 
     def _display_str(self) -> str:
@@ -540,13 +526,13 @@ class CallExpression(Expression):
     def __init__(
         self,
         operator: OperatorEnum,
-        func_args: Tuple,
+        func_args: tuple,
     ) -> None:
         super().__init__()
         self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         self._operator = operator
 
-    def resolved_type(self) -> Optional[ExpressionType]:
+    def resolved_type(self) -> ExpressionType | None:
         args_resolved_types = tuple(arg.resolved_type() for arg in self._args)
         if any([arg_type is None for arg_type in args_resolved_types]):
             return None
@@ -566,7 +552,7 @@ class CallExpression(Expression):
         return ret_type
 
     @property
-    def _args(self) -> Tuple[Expression, ...]:
+    def _args(self) -> tuple[Expression, ...]:
         return tuple(self._children()[i] for i in self._args_ids)
 
     def _display_str(self) -> str:
@@ -592,9 +578,9 @@ class UdfExpression(Expression):
         self,
         func: Callable[..., Sequence],
         func_ret_type: ExpressionType,
-        func_args: Tuple,
-        func_kwargs: Dict[str, Any],
-        resource_request: Optional[ResourceRequest] = None,
+        func_args: tuple,
+        func_kwargs: dict[str, Any],
+        resource_request: ResourceRequest | None = None,
     ) -> None:
         super().__init__()
         self._func = func
@@ -609,14 +595,14 @@ class UdfExpression(Expression):
         return ResourceRequest.default()
 
     @property
-    def _args(self) -> Tuple[Expression, ...]:
+    def _args(self) -> tuple[Expression, ...]:
         return tuple(self._children()[i] for i in self._args_ids)
 
     @property
-    def _kwargs(self) -> Dict[str, Expression]:
+    def _kwargs(self) -> dict[str, Expression]:
         return {kw: self._children()[i] for kw, i in self._kwargs_ids.items()}
 
-    def resolved_type(self) -> Optional[ExpressionType]:
+    def resolved_type(self) -> ExpressionType | None:
         return self._func_ret_type
 
     def _display_str(self) -> str:
@@ -674,14 +660,14 @@ T = TypeVar("T")
 
 
 class ColumnExpression(Expression):
-    def __init__(self, name: str, expr_type: Optional[ExpressionType] = None) -> None:
+    def __init__(self, name: str, expr_type: ExpressionType | None = None) -> None:
         super().__init__()
         if not isinstance(name, str):
             raise TypeError(f"Expected name to be type str, is {type(name)}")
         self._name = name
         self._type = expr_type
 
-    def resolved_type(self) -> Optional[ExpressionType]:
+    def resolved_type(self) -> ExpressionType | None:
         return self._type
 
     def _display_str(self) -> str:
@@ -696,10 +682,10 @@ class ColumnExpression(Expression):
     def __repr__(self) -> str:
         return self._display_str()
 
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         return self._name
 
-    def required_columns(self, unresolved_only: bool = False) -> List[ColumnExpression]:
+    def required_columns(self, unresolved_only: bool = False) -> list[ColumnExpression]:
         if unresolved_only and self.has_id():
             return []
         return [self]
@@ -724,7 +710,7 @@ class AliasExpression(Expression):
         self._register_child(expr)
         self._name = name
 
-    def resolved_type(self) -> Optional[ExpressionType]:
+    def resolved_type(self) -> ExpressionType | None:
         return self._expr.resolved_type()
 
     @property
@@ -734,10 +720,10 @@ class AliasExpression(Expression):
     def _display_str(self) -> str:
         return f"[{self._expr}].alias({self._name})"
 
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         return self._name
 
-    def get_id(self) -> Optional[ColID]:
+    def get_id(self) -> ColID | None:
         return self._expr.get_id()
 
     def _assign_id(self, strict: bool = True) -> ColID:
@@ -752,7 +738,7 @@ class AsPyExpression(Expression):
         self,
         expr: Expression,
         type_: ExpressionType,
-        attr_name: Optional[str] = "__call__",
+        attr_name: str | None = "__call__",
     ) -> None:
         super().__init__()
         self._type = type_
@@ -815,10 +801,10 @@ class AsPyExpression(Expression):
     def _expr(self) -> Expression:
         return self._children()[0]
 
-    def resolved_type(self) -> Optional[ExpressionType]:
+    def resolved_type(self) -> ExpressionType | None:
         return self._type
 
-    def get_id(self) -> Optional[ColID]:
+    def get_id(self) -> ColID | None:
         return self._expr.get_id()
 
     def _assign_id(self, strict: bool = True) -> ColID:

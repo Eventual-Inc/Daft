@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import datetime
-from typing import Dict, Set, Tuple, Type
 
 import numpy as np
 import pyarrow as pa
@@ -82,7 +83,7 @@ EXCLUDE_OPS = {
 }
 
 # Mapping between ExpressionTypes and (expected_numpy_dtypes, expected_python_types)
-CHECK_TYPE_FUNC: Dict[ExpressionType, Tuple[Set[np.dtype], Type]] = {
+CHECK_TYPE_FUNC: dict[ExpressionType, tuple[set[np.dtype], type]] = {
     ExpressionType.from_py_type(str): lambda arr: pa.types.is_string(arr.type),
     ExpressionType.from_py_type(bytes): lambda arr: pa.types.is_binary(arr.type),
     ExpressionType.from_py_type(bool): lambda arr: pa.types.is_boolean(arr.type),
@@ -105,7 +106,7 @@ CHECK_TYPE_FUNC: Dict[ExpressionType, Tuple[Set[np.dtype], Type]] = {
         if op_name not in EXCLUDE_OPS
     ],
 )
-def test_type_matrix_execution(op_name: str, arg_types: Tuple[ExpressionType, ...], ret_type: ExpressionType):
+def test_type_matrix_execution(op_name: str, arg_types: tuple[ExpressionType, ...], ret_type: ExpressionType):
     df = DataFrame.from_pydict({str(et): ALL_TYPES[et] for et in ALL_TYPES})
     op = OPS[op_name]
     df = df.with_column("bar", op(*[col(str(et)) for et in arg_types]))

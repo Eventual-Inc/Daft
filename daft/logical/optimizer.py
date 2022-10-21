@@ -1,4 +1,4 @@
-from typing import Optional, Set, Type
+from __future__ import annotations
 
 from loguru import logger
 
@@ -32,7 +32,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
             self.register_fn(Filter, op, self._filter_through_unary_node)
         self.register_fn(Filter, Join, self._filter_through_join)
 
-    def _filter_through_projection(self, parent: Filter, child: Projection) -> Optional[LogicalPlan]:
+    def _filter_through_projection(self, parent: Filter, child: Projection) -> LogicalPlan | None:
         filter_predicate = parent._predicate
 
         grandchild = child._children()[0]
@@ -57,13 +57,13 @@ class PushDownPredicates(Rule[LogicalPlan]):
         else:
             return Filter(pushed_down_filter, ExpressionList(can_not_push_down))
 
-    def _filter_through_unary_node(self, parent: Filter, child: UnaryNode) -> Optional[LogicalPlan]:
+    def _filter_through_unary_node(self, parent: Filter, child: UnaryNode) -> LogicalPlan | None:
         assert type(child) in self._supported_unary_nodes
         grandchild = child._children()[0]
         logger.debug(f"Pushing Filter {parent} through {child}")
         return child.copy_with_new_children([Filter(grandchild, parent._predicate)])
 
-    def _filter_through_join(self, parent: Filter, child: Join) -> Optional[LogicalPlan]:
+    def _filter_through_join(self, parent: Filter, child: Join) -> LogicalPlan | None:
         left = child._children()[0]
         right = child._children()[1]
         left_ids = left.schema().to_id_set()
@@ -99,7 +99,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
             return Filter(new_join, ExpressionList(can_not_push_down))
 
     @property
-    def _supported_unary_nodes(self) -> Set[Type[UnaryNode]]:
+    def _supported_unary_nodes(self) -> set[type[UnaryNode]]:
         return {Sort, Repartition, Coalesce}
 
 
@@ -112,7 +112,7 @@ class PruneColumns(Rule[LogicalPlan]):
         self.register_fn(Projection, LocalAggregate, self._projection_aggregate, override=True)
         self.register_fn(LocalAggregate, LogicalPlan, self._aggregate_logical_plan)
 
-    def _projection_projection(self, parent: Projection, child: Projection) -> Optional[LogicalPlan]:
+    def _projection_projection(self, parent: Projection, child: Projection) -> LogicalPlan | None:
         parent_required_set = parent.required_columns().to_id_set()
         child_output_set = child.schema().to_id_set()
         if child_output_set.issubset(parent_required_set):
@@ -124,10 +124,10 @@ class PruneColumns(Rule[LogicalPlan]):
         grandchild = child._children()[0]
         return parent.copy_with_new_children([Projection(grandchild, projection=ExpressionList(new_child_exprs))])
 
-    def _projection_aggregate(self, parent: Projection, child: LocalAggregate) -> Optional[LogicalPlan]:
+    def _projection_aggregate(self, parent: Projection, child: LocalAggregate) -> LogicalPlan | None:
         parent_required_set = parent.required_columns().to_id_set()
         agg_op_pairs = child._agg
-        agg_ids = set([e.get_id() for e, _ in agg_op_pairs])
+        agg_ids = {e.get_id() for e, _ in agg_op_pairs}
         if agg_ids.issubset(parent_required_set):
             return None
 
@@ -139,7 +139,7 @@ class PruneColumns(Rule[LogicalPlan]):
             [LocalAggregate(input=grandchild, agg=new_agg_pairs, group_by=child._group_by)]
         )
 
-    def _aggregate_logical_plan(self, parent: LocalAggregate, child: LogicalPlan) -> Optional[LogicalPlan]:
+    def _aggregate_logical_plan(self, parent: LocalAggregate, child: LogicalPlan) -> LogicalPlan | None:
         parent_required_set = parent.required_columns().to_id_set()
         child_output_set = child.schema().to_id_set()
         if child_output_set.issubset(parent_required_set):
@@ -149,7 +149,7 @@ class PruneColumns(Rule[LogicalPlan]):
 
         return parent.copy_with_new_children([self._create_pruning_child(child, parent_required_set)])
 
-    def _projection_logical_plan(self, parent: Projection, child: LogicalPlan) -> Optional[LogicalPlan]:
+    def _projection_logical_plan(self, parent: Projection, child: LogicalPlan) -> LogicalPlan | None:
         if isinstance(child, Projection) or isinstance(child, LocalAggregate):
             return None
         if len(child._children()) == 0:
@@ -163,7 +163,7 @@ class PruneColumns(Rule[LogicalPlan]):
         new_grandchildren = [self._create_pruning_child(gc, required_set) for gc in child._children()]
         return parent.copy_with_new_children([child.copy_with_new_children(new_grandchildren)])
 
-    def _create_pruning_child(self, child: LogicalPlan, parent_id_set: Set[ColID]) -> LogicalPlan:
+    def _create_pruning_child(self, child: LogicalPlan, parent_id_set: set[ColID]) -> LogicalPlan:
         child_ids = child.schema().to_id_set()
         if child_ids.issubset(parent_id_set):
             return child
@@ -188,7 +188,7 @@ class DropRepartition(Rule[LogicalPlan]):
         self.register_fn(Repartition, LogicalPlan, self._drop_repartition_if_same_spec)
         self.register_fn(Repartition, Repartition, self._drop_double_repartition, override=True)
 
-    def _drop_repartition_if_same_spec(self, parent: Repartition, child: LogicalPlan) -> Optional[LogicalPlan]:
+    def _drop_repartition_if_same_spec(self, parent: Repartition, child: LogicalPlan) -> LogicalPlan | None:
         if (
             parent.partition_spec() == child.partition_spec()
             and parent.partition_spec().scheme != PartitionScheme.RANGE
@@ -222,7 +222,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
     #         schema=child._schema, predicate=new_predicate, columns=child_schema.names, source_info=child._source_info
     #     )
 
-    def _push_down_projections_into_scan(self, parent: Projection, child: Scan) -> Optional[LogicalPlan]:
+    def _push_down_projections_into_scan(self, parent: Projection, child: Scan) -> LogicalPlan | None:
         required_columns = parent.schema().required_columns()
         scan_columns = child.schema()
         if required_columns.to_id_set() == scan_columns.to_id_set():
@@ -245,7 +245,7 @@ class FoldProjections(Rule[LogicalPlan]):
         super().__init__()
         self.register_fn(Projection, Projection, self._drop_double_projection)
 
-    def _drop_double_projection(self, parent: Projection, child: Projection) -> Optional[LogicalPlan]:
+    def _drop_double_projection(self, parent: Projection, child: Projection) -> LogicalPlan | None:
         required_columns = parent._projection.required_columns()
         grandchild = child._children()[0]
         grandchild_output = grandchild.schema()
@@ -280,16 +280,16 @@ class PushDownLimit(Rule[LogicalPlan]):
             self.register_fn(LocalLimit, op, self._push_down_local_limit_into_unary_node)
             self.register_fn(GlobalLimit, op, self._push_down_global_limit_into_unary_node)
 
-    def _push_down_local_limit_into_unary_node(self, parent: LocalLimit, child: UnaryNode) -> Optional[LogicalPlan]:
+    def _push_down_local_limit_into_unary_node(self, parent: LocalLimit, child: UnaryNode) -> LogicalPlan | None:
         logger.debug(f"pushing {parent} into {child}")
         grandchild = child._children()[0]
         return child.copy_with_new_children([LocalLimit(grandchild, num=parent._num)])
 
-    def _push_down_global_limit_into_unary_node(self, parent: GlobalLimit, child: UnaryNode) -> Optional[LogicalPlan]:
+    def _push_down_global_limit_into_unary_node(self, parent: GlobalLimit, child: UnaryNode) -> LogicalPlan | None:
         logger.debug(f"pushing {parent} into {child}")
         grandchild = child._children()[0]
         return child.copy_with_new_children([GlobalLimit(grandchild, num=parent._num)])
 
     @property
-    def _supported_unary_nodes(self) -> Set[Type[LogicalPlan]]:
+    def _supported_unary_nodes(self) -> set[type[LogicalPlan]]:
         return {Repartition, Coalesce, Projection}

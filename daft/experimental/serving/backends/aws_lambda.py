@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import base64
 import os
 import pathlib
@@ -5,7 +7,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 import boto3
 import cloudpickle
@@ -71,10 +73,10 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
         return "aws_lambda"
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> AbstractEndpointBackend:
+    def from_config(cls, config: dict[str, Any]) -> AbstractEndpointBackend:
         return cls(AWSLambdaBackendConfig.parse_obj(config))
 
-    def _list_daft_serving_lambda_functions(self) -> List[dict]:
+    def _list_daft_serving_lambda_functions(self) -> list[dict]:
         aws_lambda_functions = []
         function_paginator = self.lambda_client.get_paginator("list_functions")
         for page in function_paginator.paginate():
@@ -98,7 +100,7 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
             return function_arn.rsplit(":", 1)[0]
         return function_arn
 
-    def list_endpoints(self) -> List[Endpoint]:
+    def list_endpoints(self) -> list[Endpoint]:
         aws_lambda_functions = self._list_daft_serving_lambda_functions()
 
         # Each function should have been created with a corresponding URL config, but if it hasn't we will
@@ -125,7 +127,7 @@ class AWSLambdaEndpointBackend(AbstractEndpointBackend):
         self,
         endpoint_name: str,
         endpoint: Callable[[Any], Any],
-        custom_env: Optional[DaftEnv] = None,
+        custom_env: DaftEnv | None = None,
     ) -> Endpoint:
         lambda_function_name = f"{AWSLambdaEndpointBackend.FUNCTION_NAME_PREFIX}{endpoint_name}"
         lambda_function_version = 1

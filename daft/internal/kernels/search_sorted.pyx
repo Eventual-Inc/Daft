@@ -1,5 +1,6 @@
 # distutils: language=c++
 # distutils: sources = daft/internal/kernels/search_sorted.cc
+
 import pyarrow as pa
 
 from libcpp cimport bool as cbool

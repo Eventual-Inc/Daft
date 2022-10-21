@@ -1,4 +1,4 @@
-from typing import Dict, List
+from __future__ import annotations
 
 import pytest
 
@@ -14,7 +14,7 @@ def optimizer() -> RuleRunner[LogicalPlan]:
     return RuleRunner([RuleBatch("push_into_join", Once, [PushDownPredicates()])])
 
 
-def test_filter_join_pushdown(valid_data: List[Dict[str, float]], optimizer) -> None:
+def test_filter_join_pushdown(valid_data: list[dict[str, float]], optimizer) -> None:
     df1 = DataFrame.from_pylist(valid_data)
     df2 = DataFrame.from_pylist(valid_data)
 
@@ -32,7 +32,7 @@ def test_filter_join_pushdown(valid_data: List[Dict[str, float]], optimizer) -> 
     assert optimized.is_eq(expected.plan())
 
 
-def test_filter_join_pushdown_nonvalid(valid_data: List[Dict[str, float]], optimizer) -> None:
+def test_filter_join_pushdown_nonvalid(valid_data: list[dict[str, float]], optimizer) -> None:
     df1 = DataFrame.from_pylist(valid_data)
     df2 = DataFrame.from_pylist(valid_data)
 

@@ -4,17 +4,7 @@ import dataclasses
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    TypeVar,
-)
+from typing import Any, Callable, Generic, Sequence, TypeVar
 from uuid import uuid4
 
 import numpy as np
@@ -49,7 +39,7 @@ class PyListTile:
         pivots: np.ndarray,
         target_partitions: np.ndarray,
         argsorted_target_partition_indices: DataBlock,
-    ) -> List[PyListTile]:
+    ) -> list[PyListTile]:
         assert len(argsorted_target_partition_indices) == len(self)
         new_blocks = self.block.partition(
             num_partitions,
@@ -61,7 +51,7 @@ class PyListTile:
         return [dataclasses.replace(self, block=nb, partition_id=i) for i, nb in enumerate(new_blocks)]
 
     @classmethod
-    def merge_tiles(cls, to_merge: List[PyListTile], verify_partition_id: bool = True) -> PyListTile:
+    def merge_tiles(cls, to_merge: list[PyListTile], verify_partition_id: bool = True) -> PyListTile:
         assert len(to_merge) > 0
 
         if len(to_merge) == 1:
@@ -85,7 +75,7 @@ class PyListTile:
 
 @dataclass(frozen=True)
 class vPartition:
-    columns: Dict[ColID, PyListTile]
+    columns: dict[ColID, PyListTile]
     partition_id: PartID
 
     def __post_init__(self) -> None:
@@ -141,7 +131,7 @@ class vPartition:
         return vPartition(columns=new_columns, partition_id=self.partition_id)
 
     @classmethod
-    def from_arrow_table(cls, table: pa.Table, column_ids: List[ColID], partition_id: PartID) -> vPartition:
+    def from_arrow_table(cls, table: pa.Table, column_ids: list[ColID], partition_id: PartID) -> vPartition:
         names = table.column_names
         assert len(names) == len(column_ids)
         tiles = {}
@@ -152,7 +142,7 @@ class vPartition:
         return vPartition(columns=tiles, partition_id=partition_id)
 
     @classmethod
-    def from_pydict(cls, data: Dict[str, List[Any]], schema: ExpressionList, partition_id: PartID) -> vPartition:
+    def from_pydict(cls, data: dict[str, list[Any]], schema: ExpressionList, partition_id: PartID) -> vPartition:
         column_exprs = schema.to_column_expressions()
         tiles = {}
         for col_expr in column_exprs:
@@ -162,11 +152,11 @@ class vPartition:
             tiles[col_id] = PyListTile(column_id=col_id, column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
-    def to_pydict(self) -> Dict[str, Sequence]:
+    def to_pydict(self) -> dict[str, Sequence]:
         output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
         return {name: self.columns[id].block.data for name, id in output_schema}
 
-    def to_pandas(self, schema: Optional[ExpressionList] = None) -> pd.DataFrame:
+    def to_pandas(self, schema: ExpressionList | None = None) -> pd.DataFrame:
         if schema is not None:
             output_schema = [(expr.name(), expr.get_id()) for expr in schema]
         else:
@@ -201,7 +191,7 @@ class vPartition:
             mask = mask.run_binary_operator(to_and.block, OperatorEnum.AND)
         return self.for_each_column_block(partial(DataBlock.filter, mask=mask))
 
-    def argsort(self, sort_keys: ExpressionList, descending: Optional[List[bool]] = None) -> DataBlock:
+    def argsort(self, sort_keys: ExpressionList, descending: list[bool] | None = None) -> DataBlock:
         sorted = self.eval_expression_list(sort_keys)
         keys = list(sorted.columns.keys())
 
@@ -211,11 +201,11 @@ class vPartition:
         idx = DataBlock.argsort([sorted.columns[k].block for k in keys], descending=descending)
         return idx
 
-    def sort(self, sort_keys: ExpressionList, descending: Optional[List[bool]] = None) -> vPartition:
+    def sort(self, sort_keys: ExpressionList, descending: list[bool] | None = None) -> vPartition:
         idx = self.argsort(sort_keys=sort_keys, descending=descending)
         return self.take(idx)
 
-    def search_sorted(self, keys: vPartition, input_reversed: Optional[List[bool]] = None) -> DataBlock:
+    def search_sorted(self, keys: vPartition, input_reversed: list[bool] | None = None) -> DataBlock:
         assert self.columns.keys() == keys.columns.keys()
         col_ids = list(self.columns.keys())
         idx = DataBlock.search_sorted(
@@ -228,7 +218,7 @@ class vPartition:
     def take(self, indices: DataBlock) -> vPartition:
         return self.for_each_column_block(partial(DataBlock.take, indices=indices))
 
-    def agg(self, to_agg: List[Tuple[Expression, str]], group_by: Optional[ExpressionList] = None) -> vPartition:
+    def agg(self, to_agg: list[tuple[Expression, str]], group_by: ExpressionList | None = None) -> vPartition:
         evaled_expressions = self.eval_expression_list(ExpressionList([e for e, _ in to_agg]))
         ops = [op for _, op in to_agg]
         if group_by is None:
@@ -253,7 +243,7 @@ class vPartition:
                 new_columns[col_id] = dataclasses.replace(tile, block=block)
             return vPartition(partition_id=self.partition_id, columns=new_columns)
 
-    def split_by_hash(self, exprs: ExpressionList, num_partitions: int) -> List[vPartition]:
+    def split_by_hash(self, exprs: ExpressionList, num_partitions: int) -> list[vPartition]:
         values_to_hash = self.eval_expression_list(exprs)
         keys = list(values_to_hash.columns.keys())
         keys.sort()
@@ -266,9 +256,9 @@ class vPartition:
         target_idx = hsf.run_binary_operator(num_partitions, OperatorEnum.MOD)
         return self.split_by_index(num_partitions, target_partition_indices=target_idx)
 
-    def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> List[vPartition]:
+    def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> list[vPartition]:
         assert len(target_partition_indices) == len(self)
-        new_partition_to_columns: List[Dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]
+        new_partition_to_columns: list[dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]
         argsort_targets = DataBlock.argsort([target_partition_indices])
         sorted_targets = target_partition_indices.take(argsort_targets)
         sorted_targets_np = sorted_targets.to_numpy()
@@ -393,9 +383,9 @@ class vPartition:
         self,
         file_format: str,
         root_path: str,
-        partition_cols: Optional[ExpressionList] = None,
-        compression: Optional[str] = None,
-    ) -> List[str]:
+        partition_cols: ExpressionList | None = None,
+        compression: str | None = None,
+    ) -> list[str]:
         keys = [col_id for col_id in self.columns.keys()]
         names = [self.columns[k].column_name for k in keys]
         data = [self.columns[k].block.to_arrow() for k in keys]
@@ -440,17 +430,17 @@ class vPartition:
         return visited_paths
 
     def to_parquet(
-        self, root_path: str, partition_cols: Optional[ExpressionList] = None, compression: Optional[str] = None
-    ) -> List[str]:
+        self, root_path: str, partition_cols: ExpressionList | None = None, compression: str | None = None
+    ) -> list[str]:
         return self._to_file("parquet", root_path=root_path, partition_cols=partition_cols, compression=compression)
 
     def to_csv(
-        self, root_path: str, partition_cols: Optional[ExpressionList] = None, compression: Optional[str] = None
-    ) -> List[str]:
+        self, root_path: str, partition_cols: ExpressionList | None = None, compression: str | None = None
+    ) -> list[str]:
         return self._to_file("csv", root_path=root_path, partition_cols=partition_cols, compression=compression)
 
     @classmethod
-    def merge_partitions(cls, to_merge: List[vPartition], verify_partition_id: bool = True) -> vPartition:
+    def merge_partitions(cls, to_merge: list[vPartition], verify_partition_id: bool = True) -> vPartition:
         assert len(to_merge) > 0
 
         if len(to_merge) == 1:
@@ -475,16 +465,16 @@ PartitionT = TypeVar("PartitionT")
 
 
 class PartitionSet(Generic[PartitionT]):
-    def _get_all_vpartitions(self) -> List[vPartition]:
+    def _get_all_vpartitions(self) -> list[vPartition]:
         raise NotImplementedError()
 
-    def to_pydict(self) -> Dict[str, Sequence]:
+    def to_pydict(self) -> dict[str, Sequence]:
         """Retrieves all the data in a PartitionSet as a Python dictionary. Values are the raw data from each Block."""
         all_partitions = self._get_all_vpartitions()
         merged_partition = vPartition.merge_partitions(all_partitions, verify_partition_id=False)
         return merged_partition.to_pydict()
 
-    def to_pandas(self, schema: Optional[ExpressionList] = None) -> "pd.DataFrame":
+    def to_pandas(self, schema: ExpressionList | None = None) -> pd.DataFrame:
         all_partitions = self._get_all_vpartitions()
         part_dfs = [part.to_pandas(schema=schema) for part in all_partitions]
         return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
@@ -510,7 +500,7 @@ class PartitionSet(Generic[PartitionT]):
         return sum(self.len_of_partitions())
 
     @abstractmethod
-    def len_of_partitions(self) -> List[int]:
+    def len_of_partitions(self) -> list[int]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -520,7 +510,7 @@ class PartitionSet(Generic[PartitionT]):
 
 class PartitionManager:
     def __init__(self, pset_default: Callable[[], PartitionSet]) -> None:
-        self._nid_to_partition_set: Dict[int, PartitionSet] = {}
+        self._nid_to_partition_set: dict[int, PartitionSet] = {}
         self._pset_default_list = [pset_default]
 
     def new_partition_set(self) -> PartitionSet:
@@ -534,7 +524,7 @@ class PartitionManager:
     def put_partition_set(self, node_id: int, pset: PartitionSet) -> None:
         self._nid_to_partition_set[node_id] = pset
 
-    def rm(self, node_id: int, partition_id: Optional[int] = None):
+    def rm(self, node_id: int, partition_id: int | None = None):
         if partition_id is None:
             del self._nid_to_partition_set[node_id]
         else:

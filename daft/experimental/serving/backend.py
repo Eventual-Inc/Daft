@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict
 
 from daft.experimental.serving.definitions import Endpoint
 from daft.experimental.serving.env import DaftEnv
@@ -16,7 +16,7 @@ DEFAULT_CONFIGS = {"default": {"type": "docker"}}
 
 
 def get_serving_backend(
-    name: str = "default", configs: Optional[Dict[str, BackendConfigRaw]] = None
+    name: str = "default", configs: dict[str, BackendConfigRaw] | None = None
 ) -> AbstractEndpointBackend:
     # TODO(jay): Ensure that all endpoint subclasses have been imported and registered with factory - is there a better way to do this?
     from daft.experimental.serving import backends  # noqa: F401
@@ -31,14 +31,14 @@ def get_serving_backend(
 
 class EndpointBackendFactory:
 
-    registry: Dict[str, Type[AbstractEndpointBackend]] = {}
+    registry: dict[str, type[AbstractEndpointBackend]] = {}
 
     @classmethod
-    def register(cls, backend_class: Type[AbstractEndpointBackend]):
+    def register(cls, backend_class: type[AbstractEndpointBackend]):
         cls.registry[backend_class.config_type_id()] = backend_class
 
     @classmethod
-    def create(cls, config: Dict[str, Any]) -> AbstractEndpointBackend:
+    def create(cls, config: dict[str, Any]) -> AbstractEndpointBackend:
         backend_type = config["type"]
         if backend_type not in cls.registry:
             raise ValueError(f"Unknown backend type {backend_type}, expected one of {list(cls.registry.keys())}")
@@ -53,7 +53,7 @@ class AbstractEndpointBackend(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def from_config(cls, config: Dict[str, Any]) -> AbstractEndpointBackend:
+    def from_config(cls, config: dict[str, Any]) -> AbstractEndpointBackend:
         """Instantiates an endpoint manager for the given backend configuration"""
         ...
 
@@ -64,7 +64,7 @@ class AbstractEndpointBackend(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def list_endpoints(self) -> List[Endpoint]:
+    def list_endpoints(self) -> list[Endpoint]:
         """Lists all endpoints managed by this endpoint manager"""
         ...
 
@@ -73,7 +73,7 @@ class AbstractEndpointBackend(abc.ABC):
         self,
         endpoint_name: str,
         endpoint: Callable[[Any], Any],
-        custom_env: Optional[DaftEnv] = None,
+        custom_env: DaftEnv | None = None,
     ) -> Endpoint:
         """Deploys an endpoint managed by this endpoint manager"""
         ...

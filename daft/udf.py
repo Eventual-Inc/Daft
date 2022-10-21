@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import functools
 import logging
 import warnings
-from typing import Callable, Optional, Sequence, Type, Union
+from typing import Callable, Sequence, Union
 
 from daft.execution.operators import ExpressionType
 from daft.expressions import UdfExpression
@@ -26,11 +28,11 @@ def _initialize_func(func):
 
 
 def udf(
-    f: Optional[Callable] = None,
+    f: Callable | None = None,
     *,
-    return_type: Type,
-    num_gpus: Optional[int] = None,
-    num_cpus: Optional[int] = None,
+    return_type: type,
+    num_gpus: int | None = None,
+    num_cpus: int | None = None,
 ) -> Callable:
     """Decorator for creating a UDF
 
@@ -120,11 +122,11 @@ def udf(
 
 
 def polars_udf(
-    f: Optional[Callable] = None,
+    f: Callable | None = None,
     *,
-    return_type: Type,
-    num_gpus: Optional[int] = None,
-    num_cpus: Optional[int] = None,
+    return_type: type,
+    num_gpus: int | None = None,
+    num_cpus: int | None = None,
 ) -> Callable:
     """Decorator for creating a Polars UDF
 

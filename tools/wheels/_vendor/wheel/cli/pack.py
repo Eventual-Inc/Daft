@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import annotations
 
 import os.path
 import re
@@ -25,9 +25,9 @@ def pack(directory, dest_dir, build_number):
         fn for fn in os.listdir(directory) if os.path.isdir(os.path.join(directory, fn)) and DIST_INFO_RE.match(fn)
     ]
     if len(dist_info_dirs) > 1:
-        raise WheelError("Multiple .dist-info directories found in {}".format(directory))
+        raise WheelError(f"Multiple .dist-info directories found in {directory}")
     elif not dist_info_dirs:
-        raise WheelError("No .dist-info directories found in {}".format(directory))
+        raise WheelError(f"No .dist-info directories found in {directory}")
 
     # Determine the target wheel filename
     dist_info_dir = dist_info_dirs[0]
@@ -45,9 +45,7 @@ def pack(directory, dest_dir, build_number):
                 existing_build_number = line.split(" ")[1].rstrip()
 
         if not tags:
-            raise WheelError(
-                "No tags present in {}/WHEEL; cannot determine target wheel filename".format(dist_info_dir)
-            )
+            raise WheelError(f"No tags present in {dist_info_dir}/WHEEL; cannot determine target wheel filename")
 
     # Set the wheel file name and add/replace/remove the Build tag in .dist-info/WHEEL
     build_number = build_number if build_number is not None else existing_build_number
@@ -72,9 +70,9 @@ def pack(directory, dest_dir, build_number):
     tagline = "-".join([".".join(impls), ".".join(abivers), ".".join(platforms)])
 
     # Repack the wheel
-    wheel_path = os.path.join(dest_dir, "{}-{}.whl".format(name_version, tagline))
+    wheel_path = os.path.join(dest_dir, f"{name_version}-{tagline}.whl")
     with WheelFile(wheel_path, "w") as wf:
-        print("Repacking wheel as {}...".format(wheel_path), end="")
+        print(f"Repacking wheel as {wheel_path}...", end="")
         sys.stdout.flush()
         wf.write_files(directory)
 

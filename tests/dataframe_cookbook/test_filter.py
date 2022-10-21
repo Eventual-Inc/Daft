@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pytest
 
 from daft.expressions import col
@@ -91,10 +93,8 @@ def test_complex_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repart
 
     pd_noise_complaints_brooklyn = service_requests_csv_pd_df[
         (
-            (
-                (service_requests_csv_pd_df["Complaint Type"] == "Noise - Street/Sidewalk")
-                | (service_requests_csv_pd_df["Complaint Type"] == "Noise - Commercial")
-            )
+            (service_requests_csv_pd_df["Complaint Type"] == "Noise - Street/Sidewalk")
+            | (service_requests_csv_pd_df["Complaint Type"] == "Noise - Commercial")
         )
         & (service_requests_csv_pd_df["Borough"] == "BROOKLYN")
     ][COL_SUBSET]

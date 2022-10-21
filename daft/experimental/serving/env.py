@@ -6,7 +6,7 @@ import pathlib
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import docker
 
@@ -39,14 +39,14 @@ def get_conda_executable() -> pathlib.Path:
 @dataclass(frozen=True)
 class DaftEnv:
     python_version: str = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    requirements_txt: Optional[str] = None
-    pip_packages: List[str] = field(default_factory=list)
+    requirements_txt: str | None = None
+    pip_packages: list[str] = field(default_factory=list)
     # local_packages: List[str] = field(default_factory=list)
     # platform: Union[Literal["linux"], Literal["darwin"]] = sys.platform
     # arch: Union[Literal[32], Literal[64]] = 64 if sys.maxsize > 2**32 else 32
 
-    def get_conda_environment(self) -> Dict[str, Any]:
-        dependencies: List[Any] = [
+    def get_conda_environment(self) -> dict[str, Any]:
+        dependencies: list[Any] = [
             f"python=={self.python_version}",
         ]
 

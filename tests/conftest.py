@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import argparse
 import os
-from typing import Dict, List, Optional, Type, Union
 
 import pandas as pd
 import pyarrow as pa
@@ -78,7 +79,7 @@ def run_tdd():
 def assert_df_column_type(
     partition_set: PartitionSet,
     colname: str,
-    type_: Type,
+    type_: type,
 ):
     """Asserts that all tiles for a given column is of the implementation, given a type"""
     et = ExpressionType.from_py_type(type_)
@@ -101,7 +102,7 @@ def assert_df_column_type(
 def assert_df_equals(
     daft_df: pd.DataFrame,
     pd_df: pd.DataFrame,
-    sort_key: Union[str, List[str]] = "Unique Key",
+    sort_key: str | list[str] = "Unique Key",
     assert_ordering: bool = False,
 ):
     """Asserts that a Daft Dataframe is equal to a Pandas Dataframe.
@@ -115,7 +116,7 @@ def assert_df_equals(
 
     # If we are not asserting on the ordering being equal, we run a sort operation on both dataframes using the provided sort key
     if not assert_ordering:
-        sort_key_list: List[str] = [sort_key] if isinstance(sort_key, str) else sort_key
+        sort_key_list: list[str] = [sort_key] if isinstance(sort_key, str) else sort_key
         for key in sort_key_list:
             assert key in daft_pd_df.columns, (
                 f"DaFt Dataframe missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
@@ -143,9 +144,9 @@ def assert_df_equals(
 
 
 def assert_arrow_equals(
-    daft_columns: Dict[str, Union[pa.Array, pa.ChunkedArray]],
-    expected_columns: Dict[str, Union[pa.Array, pa.ChunkedArray]],
-    sort_key: Union[str, List[str]] = "id",
+    daft_columns: dict[str, pa.Array | pa.ChunkedArray],
+    expected_columns: dict[str, pa.Array | pa.ChunkedArray],
+    sort_key: str | list[str] = "id",
     assert_ordering: bool = False,
 ):
     """Asserts that two dictionaries of columns are equal.
@@ -153,10 +154,10 @@ def assert_arrow_equals(
     However, if asserting on ordering is intended behavior, set `assert_ordering=True` and this function will
     no longer run sorting before running the equality comparison.
     """
-    daft_sort_indices: Optional[pa.Array] = None
-    expected_sort_indices: Optional[pa.Array] = None
+    daft_sort_indices: pa.Array | None = None
+    expected_sort_indices: pa.Array | None = None
     if not assert_ordering:
-        sort_key_list: List[str] = [sort_key] if isinstance(sort_key, str) else sort_key
+        sort_key_list: list[str] = [sort_key] if isinstance(sort_key, str) else sort_key
         for key in sort_key_list:
             assert key in daft_columns, (
                 f"DaFt Data missing key: {key}\nNOTE: This doesn't necessarily mean your code is "

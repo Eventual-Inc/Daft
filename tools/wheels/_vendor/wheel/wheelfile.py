@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import annotations
 
 import csv
 import hashlib
@@ -47,7 +47,7 @@ class WheelFile(ZipFile):
         basename = os.path.basename(file)
         self.parsed_filename = WHEEL_INFO_RE.match(basename)
         if not basename.endswith(".whl") or self.parsed_filename is None:
-            raise WheelError("Bad wheel filename {!r}".format(basename))
+            raise WheelError(f"Bad wheel filename {basename!r}")
 
         ZipFile.__init__(self, file, mode, compression=compression, allowZip64=True)
 
@@ -65,7 +65,7 @@ class WheelFile(ZipFile):
             try:
                 record = self.open(self.record_path)
             except KeyError:
-                raise WheelError("Missing {} file".format(self.record_path))
+                raise WheelError(f"Missing {self.record_path} file")
 
             with record:
                 for line in record:
@@ -76,10 +76,10 @@ class WheelFile(ZipFile):
                         try:
                             hashlib.new(algorithm)
                         except ValueError:
-                            raise WheelError("Unsupported hash algorithm: {}".format(algorithm))
+                            raise WheelError(f"Unsupported hash algorithm: {algorithm}")
 
                         if algorithm.lower() in {"md5", "sha1"}:
-                            raise WheelError("Weak hash algorithm ({}) is not permitted by PEP 427".format(algorithm))
+                            raise WheelError(f"Weak hash algorithm ({algorithm}) is not permitted by PEP 427")
 
                         self._file_hashes[path] = (algorithm, urlsafe_b64decode(hash_sum.encode("ascii")))
 
@@ -93,11 +93,11 @@ class WheelFile(ZipFile):
 
             running_hash.update(newdata)
             if eof and running_hash.digest() != expected_hash:
-                raise WheelError("Hash mismatch for file '{}'".format(native(ef_name)))
+                raise WheelError(f"Hash mismatch for file '{native(ef_name)}'")
 
         ef_name = as_unicode(name_or_info.filename if isinstance(name_or_info, ZipInfo) else name_or_info)
         if mode == "r" and not ef_name.endswith("/") and ef_name not in self._file_hashes:
-            raise WheelError("No hash found for file '{}'".format(native(ef_name)))
+            raise WheelError(f"No hash found for file '{native(ef_name)}'")
 
         ef = ZipFile.open(self, name_or_info, mode, pwd)
         if mode == "r" and not ef_name.endswith("/"):

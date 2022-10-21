@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, cast
+from typing import Any, Callable, ClassVar, List, cast
 
 import ray
 from loguru import logger
@@ -38,9 +38,9 @@ from daft.runners.shuffle_ops import (
 
 @dataclass
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
-    _partitions: Dict[PartID, ray.ObjectRef]
+    _partitions: dict[PartID, ray.ObjectRef]
 
-    def _get_all_vpartitions(self) -> List[vPartition]:
+    def _get_all_vpartitions(self) -> list[vPartition]:
         partition_ids = sorted(list(self._partitions.keys()))
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
@@ -61,14 +61,14 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     def __len__(self) -> int:
         return sum(self.len_of_partitions())
 
-    def len_of_partitions(self) -> List[int]:
+    def len_of_partitions(self) -> list[int]:
         partition_ids = sorted(list(self._partitions.keys()))
 
         @ray.remote
         def remote_len(p: vPartition) -> int:
             return len(p)
 
-        result: List[int] = ray.get([remote_len.remote(self._partitions[pid]) for pid in partition_ids])
+        result: list[int] = ray.get([remote_len.remote(self._partitions[pid]) for pid in partition_ids])
         return result
 
     def num_partitions(self) -> int:
@@ -90,7 +90,7 @@ class RayRunnerSimpleShuffler(Shuffler):
         @ray.remote(num_returns=num_target_partitions)
         def map_wrapper(input: vPartition):
             output_dict = self.map_fn(input=input, output_partitions=num_target_partitions, **map_args)
-            output_list: List[Optional[vPartition]] = [None for _ in range(num_target_partitions)]
+            output_list: list[vPartition | None] = [None for _ in range(num_target_partitions)]
             for part_id, part in output_dict.items():
                 output_list[part_id] = part
 
@@ -143,15 +143,15 @@ class RayRunnerSortOp(RayRunnerSimpleShuffler, SortOp):
 def _ray_partition_single_part_runner(
     *input_parts: vPartition,
     op_runner: RayLogicalPartitionOpRunner,
-    input_node_ids: List[int],
-    nodes: List[LogicalPlan],
+    input_node_ids: list[int],
+    nodes: list[LogicalPlan],
     partition_id: int,
 ) -> vPartition:
     input_partitions = {id: val for id, val in zip(input_node_ids, input_parts)}
     return op_runner.run_node_list_single_partition(input_partitions, nodes=nodes, partition_id=partition_id)
 
 
-def _get_ray_task_options(resource_request: ResourceRequest) -> Dict[str, Any]:
+def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
     options = {}
     if resource_request.num_cpus is not None:
         options["num_cpus"] = resource_request.num_cpus
@@ -163,8 +163,8 @@ def _get_ray_task_options(resource_request: ResourceRequest) -> Dict[str, Any]:
 class RayLogicalPartitionOpRunner(LogicalPartitionOpRunner):
     def run_node_list(
         self,
-        inputs: Dict[int, PartitionSet],
-        nodes: List[LogicalPlan],
+        inputs: dict[int, PartitionSet],
+        nodes: list[LogicalPlan],
         num_partitions: int,
         resource_request: ResourceRequest,
     ) -> PartitionSet:
@@ -181,7 +181,7 @@ class RayLogicalPartitionOpRunner(LogicalPartitionOpRunner):
 
 
 class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
-    shuffle_ops: ClassVar[Dict[Type[ShuffleOp], Type[Shuffler]]] = {
+    shuffle_ops: ClassVar[dict[type[ShuffleOp], type[Shuffler]]] = {
         RepartitionRandomOp: RayRunnerRepartitionRandom,
         RepartitionHashOp: RayRunnerRepartitionHash,
         CoalesceOp: RayRunnerCoalesceOp,
@@ -194,7 +194,7 @@ class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
         remote_func = ray.remote(func).options(**_get_ray_task_options(resource_request))
         return RayPartitionSet({i: remote_func.remote(pset.get_partition(i)) for i in range(pset.num_partitions())})
 
-    def reduce_partitions(self, pset: PartitionSet, func: Callable[[List[vPartition]], ReduceType]) -> ReduceType:
+    def reduce_partitions(self, pset: PartitionSet, func: Callable[[list[vPartition]], ReduceType]) -> ReduceType:
         # @ray.remote
         # def remote_func(*parts: vPartition) -> ReduceType:
         #     return func(list(parts))
@@ -205,7 +205,7 @@ class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
 
 
 class RayRunner(Runner):
-    def __init__(self, address: Optional[str]) -> None:
+    def __init__(self, address: str | None) -> None:
         if ray.is_initialized():
             logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context")
         else:

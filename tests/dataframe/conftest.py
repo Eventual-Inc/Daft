@@ -1,10 +1,12 @@
-from typing import Any, Dict, List
+from __future__ import annotations
+
+from typing import Any
 
 import pytest
 
 
 @pytest.fixture(scope="function")
-def valid_data() -> List[Dict[str, Any]]:
+def valid_data() -> list[dict[str, Any]]:
     items = [
         {"sepal_length": 5.1, "sepal_width": 3.5, "petal_length": 1.4, "petal_width": 0.2, "variety": "Setosa"},
         {"sepal_length": 4.9, "sepal_width": 3.0, "petal_length": 1.4, "petal_width": 0.2, "variety": "Setosa"},

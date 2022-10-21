@@ -2,21 +2,20 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-from typing import List, Optional
 
 
 @dataclasses.dataclass(frozen=True)
 class ResourceRequest:
 
-    num_cpus: Optional[float]
-    num_gpus: Optional[float]
+    num_cpus: float | None
+    num_gpus: float | None
 
     @classmethod
     def default(cls) -> ResourceRequest:
         return ResourceRequest(num_cpus=None, num_gpus=None)
 
     @staticmethod
-    def max_resources(resource_requests: List[ResourceRequest]) -> ResourceRequest:
+    def max_resources(resource_requests: list[ResourceRequest]) -> ResourceRequest:
         """Gets the maximum of all resources in a list of ResourceRequests, including self, as a new ResourceRequest"""
         return functools.reduce(
             lambda acc, req: acc._max_for_each_resource(req),

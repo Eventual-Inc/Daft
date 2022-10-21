@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import sys
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
@@ -29,7 +31,7 @@ class SourceInfo(Protocol):
 @dataclass(frozen=True)
 class CSVSourceInfo(SourceInfo):
 
-    filepaths: List[str]
+    filepaths: list[str]
     delimiter: str
     has_headers: bool
 
@@ -43,7 +45,7 @@ class CSVSourceInfo(SourceInfo):
 @dataclass(frozen=True)
 class JSONSourceInfo(SourceInfo):
 
-    filepaths: List[str]
+    filepaths: list[str]
 
     def scan_type(self):
         return StorageType.JSON
@@ -55,7 +57,7 @@ class JSONSourceInfo(SourceInfo):
 @dataclass(frozen=True)
 class InMemorySourceInfo(SourceInfo):
 
-    data: Dict[str, List[Any]]
+    data: dict[str, list[Any]]
     num_partitions: int = 1
 
     def scan_type(self):
@@ -68,7 +70,7 @@ class InMemorySourceInfo(SourceInfo):
 @dataclass(frozen=True)
 class ParquetSourceInfo(SourceInfo):
 
-    filepaths: List[str]
+    filepaths: list[str]
 
     def scan_type(self):
         return StorageType.PARQUET

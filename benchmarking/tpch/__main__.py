@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import contextlib
 import csv
@@ -8,7 +10,7 @@ import socket
 import subprocess
 import time
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional, Set
+from typing import Any, Callable
 
 import fsspec
 import ray
@@ -55,7 +57,7 @@ class MetricsBuilder:
         )
         self._release_tag = subprocess.check_output(["git", "tag", "--points-at", "HEAD"]).decode("utf-8").strip()
 
-        self._metrics: Dict[str, Any] = {
+        self._metrics: dict[str, Any] = {
             "started_at": datetime.now(timezone.utc).isoformat(),
             "runner": runner,
             "commit_hash": self._commit_hash,
@@ -99,7 +101,7 @@ def get_df_with_parquet_folder(parquet_folder: str) -> Callable[[str], DataFrame
 
 
 def run_all_benchmarks(
-    parquet_folder: str, skip_questions: Set[int], csv_output_location: Optional[str], output_csv_headers: bool
+    parquet_folder: str, skip_questions: set[int], csv_output_location: str | None, output_csv_headers: bool
 ):
     get_df = get_df_with_parquet_folder(parquet_folder)
 
@@ -139,7 +141,7 @@ def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: 
     return data_generation.gen_parquet(csv_folder)
 
 
-def setup_ray(daft_wheel_location: Optional[str]):
+def setup_ray(daft_wheel_location: str | None):
     """Performs necessary setup of Daft on the current benchmarking environment"""
     ctx = daft.context.get_context()
     if ctx.runner_config.name == "ray":
@@ -226,9 +228,7 @@ if __name__ == "__main__":
 
     run_all_benchmarks(
         parquet_folder,
-        skip_questions=set([int(s) for s in args.skip_questions.split(",")])
-        if args.skip_questions is not None
-        else set(),
+        skip_questions={int(s) for s in args.skip_questions.split(",")} if args.skip_questions is not None else set(),
         csv_output_location=args.output_csv,
         output_csv_headers=args.output_csv_headers,
     )
