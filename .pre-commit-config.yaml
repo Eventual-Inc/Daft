@@ -49,6 +49,11 @@ repos:
     name: isort (python)
     files: \.py$
     args: [--profile, black, --filter-files, -a, from __future__ import annotations]
+  - id: isort
+    name: isort (cython)
+    files: \.pyx$
+    args: [--profile, black, --filter-files]
+
 
 - repo: https://github.com/myint/autoflake
   rev: v1.4
