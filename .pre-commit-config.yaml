@@ -36,12 +36,6 @@ repos:
   - id: pretty-format-yaml
     args: [--autofix]
 
-
-- repo: https://github.com/psf/black
-  rev: 22.6.0
-  hooks:
-  - id: black
-
 - repo: https://github.com/pycqa/isort
   rev: 5.8.0
   hooks:
@@ -55,11 +49,23 @@ repos:
     args: [--profile, black, --filter-files]
 
 
+- repo: https://github.com/asottile/pyupgrade
+  rev: v3.1.0
+  hooks:
+  - id: pyupgrade
+    args: [--py37-plus]
+
 - repo: https://github.com/myint/autoflake
   rev: v1.4
   hooks:
   - id: autoflake
     args: [--in-place, --remove-all-unused-imports, --remove-unused-variable, --ignore-init-module-imports]
+
+
+- repo: https://github.com/psf/black
+  rev: 22.6.0
+  hooks:
+  - id: black
 
 - repo: https://github.com/pre-commit/mirrors-clang-format
   rev: v14.0.6
@@ -75,12 +81,6 @@ repos:
   - id: poetry-lock
     files: (^pyproject.toml$)|(^poetry.lock$)
     args: [--check]
-
-- repo: https://github.com/asottile/pyupgrade
-  rev: v3.1.0
-  hooks:
-  - id: pyupgrade
-    args: [--py37-plus]
 
 
 
