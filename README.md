@@ -68,15 +68,19 @@ from daft import DataFrame
 URL = "https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz"
 
 df = DataFrame.from_json(URL)
-df.show(8)
+df.show(4)
 ```
+
+<img width="359" alt="image" src="https://user-images.githubusercontent.com/17691182/197297244-79672651-0229-4763-9258-45d8afd48bae.png">
 
 Filter the dataframe
 
 ```python
 df = df.where(df["label"] == 5)
-df.show(8)
+df.show(4)
 ```
+
+<img width="359" alt="image" src="https://user-images.githubusercontent.com/17691182/197297274-3ae82ec2-a4bb-414c-b765-2a25c2933e34.png">
 
 Run any function on the dataframe (here we convert a list of pixels into an image using Numpy and the Pillow libraries)
 
@@ -91,8 +95,10 @@ df = df.with_column(
         return_type=Image.Image,
     )
 )
-df.show(8)
+df.show(4)
 ```
+
+<img width="427" alt="image" src="https://user-images.githubusercontent.com/17691182/197297304-9d25b7da-bbbd-4f82-b9e1-97cd4fb5187f.png">
 
 ### More Resources
 
