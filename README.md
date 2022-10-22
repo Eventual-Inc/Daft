@@ -4,13 +4,16 @@
 
 # Daft: the distributed Python dataframe
 
-[Daft](https://www.getdaft.io) is a fast, Pythonic and scalable open-source dataframe library built for Python and Machine Learning workloads.
+[Daft](https://www.getdaft.io) is a fast, Pythonic and scalable open-source dataframe library built for Python Machine Learning workloads.
+
+> **Daft is currently in its Alpha release phase - please expect bugs and rapid improvements to the project.**
+> **We welcome user feedback/feature requests in our [Discussions forums](https://github.com/Eventual-Inc/Daft/discussions).**
 
 <!-- toc -->
 
 - [About Daft](#about-daft)
-- [Installation](#installation)
 - [Getting Started](#getting-started)
+  - [Installation](#installation)
   - [Quickstart](#quickstart)
   - [More Resources](#more-resources)
 - [License](#license)
@@ -21,40 +24,17 @@
 
 ![Daft dataframes make it easy to load any data such as PDF documents, images, protobufs, csv, parquet and audio files into a table dataframe structure for easy querying](https://user-images.githubusercontent.com/17691182/190476440-28f29e87-8e3b-41c4-9c28-e112e595f558.png)
 
-The Daft dataframe is a table of data with rows and columns.
+The Daft dataframe is a table of data with rows and columns. Columns can contain any Python objects, which allows Daft to support rich data types such as images, audio, video and more.
 
-Like many other dataframe libraries such as Pandas and PySpark, columns have a schema type and can hold values such as text, integers, floats and dates.
-
-Additionally, Daft can handle **any type of data** and does so by providing first-class support for Python objects in your column. This means you can continue to use any open source libraries you might already be using such as Numpy, OpenCV, Pillow and PyTorch, or seamlessly integrate your own Python classes and modules.
-
-### Interactive Computing
-
-Daft :heart: Python for its interactive computing capabilities, which enables fast, iterative experimentation on data.
-
-Daft embraces this philosophy by working seamlessly in a REPL environment such as a Jupyter notebook. It provides the best experience for working with messy real-world datasets consisting of a mishmash of documents, images and associated metadata by performing optimizations such as:
-
-1. Intelligent caching
-2. Selective scanning of source data
-3. Visualization of common media types
-
-### Distributed Computing
-
-At its core Daft is built for distributed computing and we are obsessed with performance and scalability.
-
-Daft outperforms Pandas when you are running locally. When your dataframe inevitably grows to gigabytes in size and can no longer fit on your local machine, Daft integrates with frameworks such as [Ray](https://www.ray.io) for running on a large cluster of machines in the cloud.
-
-### Open Source
-
-Daft is completely open sourced and integrates with many open data formats such as CSV, Apache Parquet and Apache Iceberg. It also supports all major cloud vendors' object storage options, allowing you to easily integrate with your existing storage solutions.
-
-> **Daft is currently in its Alpha release phase - please expect bugs and rapid improvements to the project.**
-> **We welcome user feedback/feature requests in our [Discussions forums](https://github.com/Eventual-Inc/Daft/discussions).**
-
-## Installation
-
-Install Daft with `pip install getdaft`.
+1. **Any Data**: Columns can contain any Python objects, which means that the Python libraries you already use for running machine learning or custom data processing will work natively with Daft!
+2. **Notebook Computing**: Daft is built for the interactive developer experience on a notebook - intelligent caching/query optimizations accelerates your experimentation and data exploration.
+3. **Distributed Computing**: Rich data formats such as images can quickly outgrow your local laptop's computational resources - Daft integrates natively with [Ray](https://www.ray.io) for running dataframes on large clusters of machines with thousands of CPUs/GPUs.
 
 ## Getting Started
+
+### Installation
+
+Install Daft with `pip install getdaft`.
 
 ### Quickstart
 
