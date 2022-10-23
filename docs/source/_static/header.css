@@ -1,0 +1,31 @@
+.header-container {
+    padding-left: 10vw;
+    padding-right: 10vw;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-around;
+    border-bottom: 1px solid rgba(0,0,0,.1)
+}
+
+.header-nav {
+    flex-grow: 1;
+}
+
+.header-nav-list {
+    display: flex;
+    flex-direction: row;
+    margin: 0;
+    padding: 24px;
+    justify-content: space-around;
+}
+
+.header-nav-listitem {
+    list-style: none;
+    font-weight: 450;
+}
+
+.header-logo {
+    height: 36px;
+    width: auto;
+}

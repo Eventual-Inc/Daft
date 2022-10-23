@@ -14,3 +14,21 @@
   gtag('config', 'G-YN4QSRPV0K');
 </script>
 {% endblock %}
+
+{% block docs_sidebar %}
+<!-- OVERRIDE: if this is the landing page, we remove the sidebar -->
+{%- if not pagename == "index" %}
+  {{ super() }}
+{%- endif %}
+{% endblock %}
+
+{% block docs_main %}
+<!-- OVERRIDE: if this is the landing page, we remove navigational elements -->
+<!-- This section is adapted from the original theme's template -->
+<!-- https://github.com/executablebooks/sphinx-book-theme/blob/047375811755c7894df66491d7f85aa0de6a5d05/src/sphinx_book_theme/theme/sphinx_book_theme/layout.html -->
+{%- if pagename == "index" %}
+{% include "sections/landing-page-body.html" %}
+{%- else %}
+  {{ super() }}
+{%- endif %}
+{% endblock %}
