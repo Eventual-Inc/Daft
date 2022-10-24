@@ -4,11 +4,11 @@
 
 `Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io>`_ • `Installation`_ • `10-minute tour of Daft <https://getdaft.io/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
-Daft: the distributed Python dataframe
-======================================
+Daft: Python distributed dataframe
+==================================
 
 
-`Daft <https://www.getdaft.io>`_ is a fast, Pythonic and scalable open-source dataframe library built for Python Machine Learning workloads.
+`Daft <https://www.getdaft.io>`_ is a fast, Pythonic and scalable open-source dataframe library built for Python and Machine Learning workloads.
 
   **Daft is currently in its Alpha release phase - please expect bugs and rapid improvements to the project.**
   **We welcome user feedback/feature requests in our** `Discussions forums <https://github.com/Eventual-Inc/Daft/discussions>`_
@@ -69,13 +69,14 @@ Run any function on the dataframe (here we convert a list of pixels into an imag
 
   import numpy as np
   from PIL import Image
+  
+  def image_from_pixel_list(pixels: list) -> Image.Image:
+      arr = np.array(pixels).astype(np.uint8)
+      return Image.fromarray(arr.reshape(28, 28))
 
   df = df.with_column(
       "image_pil",
-      df["image"].apply(
-          lambda pixels: Image.fromarray(np.array(pixels).reshape(28, 28).astype(np.uint8)),
-          return_type=Image.Image,
-      )
+      df["image"].apply(image_from_pixel_list),
   )
   df.show(4)
 
@@ -91,7 +92,7 @@ More Resources
 License
 -------
 
-Daft has a Apache 2.0 license - please see the LICENSE file.
+Daft has an Apache 2.0 license - please see the LICENSE file.
 
 
 .. |Banner| image:: https://user-images.githubusercontent.com/17691182/190476440-28f29e87-8e3b-41c4-9c28-e112e595f558.png
