@@ -4,8 +4,8 @@
 
 `Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io>`_ • `Installation`_ • `10-minute tour of Daft <https://getdaft.io/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
-Daft: Python distributed dataframe
-==================================
+Daft: Python distributed dataframe for Complex Data
+===================================================
 
 
 `Daft <https://www.getdaft.io>`_ is a fast, Pythonic and scalable open-source dataframe library built for Python and Machine Learning workloads.
