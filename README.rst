@@ -69,7 +69,7 @@ Run any function on the dataframe (here we convert a list of pixels into an imag
 
   import numpy as np
   from PIL import Image
-  
+
   def image_from_pixel_list(pixels: list) -> Image.Image:
       arr = np.array(pixels).astype(np.uint8)
       return Image.fromarray(arr.reshape(28, 28))
