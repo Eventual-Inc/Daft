@@ -65,7 +65,7 @@ maintainers = [
     "Sammy Sidhu <sammy@eventualcomputing.com>",
     "Jay Chia <jay@eventualcomputing.com>",
 ]
-readme = "README.md"
+readme = "README.rst"
 license = "Apache-2.0"
 homepage = "https://getdaft.io"
 repository = "https://github.com/Eventual-Inc/Daft"
