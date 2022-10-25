@@ -508,7 +508,7 @@ class PartitionSet(Generic[PartitionT]):
         raise NotImplementedError()
 
 
-class PartitionManager:
+class PartitionCache:
     def __init__(self, pset_default: Callable[[], PartitionSet]) -> None:
         self._nid_to_partition_set: dict[int, PartitionSet] = {}
         self._pset_default_list = [pset_default]

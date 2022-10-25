@@ -23,7 +23,7 @@ from daft.logical.optimizer import (
     PushDownPredicates,
 )
 from daft.resource_request import ResourceRequest
-from daft.runners.partitioning import PartID, PartitionManager, PartitionSet, vPartition
+from daft.runners.partitioning import PartID, PartitionSet, vPartition
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
@@ -195,10 +195,6 @@ class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
         return RayPartitionSet({i: remote_func.remote(pset.get_partition(i)) for i in range(pset.num_partitions())})
 
     def reduce_partitions(self, pset: PartitionSet, func: Callable[[list[vPartition]], ReduceType]) -> ReduceType:
-        # @ray.remote
-        # def remote_func(*parts: vPartition) -> ReduceType:
-        #     return func(list(parts))
-
         data = [pset.get_partition(i) for i in range(pset.num_partitions())]
         result: ReduceType = func(ray.get(data))
         return result
@@ -210,7 +206,6 @@ class RayRunner(Runner):
             logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context")
         else:
             ray.init(address=address)
-        self._part_manager = PartitionManager(lambda: RayPartitionSet({}))
         self._part_op_runner = RayLogicalPartitionOpRunner()
         self._global_op_runner = RayLogicalGlobalOpRunner()
         self._optimizer = RuleRunner(
@@ -238,13 +233,15 @@ class RayRunner(Runner):
         plan = self._optimizer.optimize(plan)
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         result_partition_set: PartitionSet
+        partition_intermediate_results: dict[int, PartitionSet] = {}
         with profiler("profile.json"):
             for exec_op in exec_plan.execution_ops:
+
                 data_deps = exec_op.data_deps
-                input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
+                input_partition_set = {nid: partition_intermediate_results[nid] for nid in data_deps}
 
                 if exec_op.is_global_op:
-                    input_partition_set = {nid: self._part_manager.get_partition_set(nid) for nid in data_deps}
+                    input_partition_set = {nid: partition_intermediate_results[nid] for nid in data_deps}
                     result_partition_set = self._global_op_runner.run_node_list(
                         input_partition_set, exec_op.logical_ops
                     )
@@ -252,12 +249,11 @@ class RayRunner(Runner):
                     result_partition_set = self._part_op_runner.run_node_list(
                         input_partition_set, exec_op.logical_ops, exec_op.num_partitions, exec_op.resource_request()
                     )
-                del input_partition_set
+
                 for child_id in data_deps:
-                    self._part_manager.rm(child_id)
-                self._part_manager.put_partition_set(exec_op.logical_ops[-1].id(), result_partition_set)
-                del result_partition_set
-            last_id = exec_plan.execution_ops[-1].logical_ops[-1].id()
-            last_pset = self._part_manager.get_partition_set(last_id)
-            self._part_manager.clear()
-            return last_pset
+                    del partition_intermediate_results[child_id]
+
+                partition_intermediate_results[exec_op.logical_ops[-1].id()] = result_partition_set
+
+            last = exec_plan.execution_ops[-1].logical_ops[-1]
+            return partition_intermediate_results[last.id()]
