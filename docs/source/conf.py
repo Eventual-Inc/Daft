@@ -10,7 +10,7 @@ from __future__ import annotations
 project = "Daft"
 copyright = "2022, Eventual"
 author = "Eventual"
-html_logo = "_static/daft-logo.png"
+# html_logo = "_static/daft-logo.png"
 html_favicon = "_static/daft-favicon.png"
 
 # -- General configuration ---------------------------------------------------
@@ -25,7 +25,7 @@ extensions = [
 ]
 
 templates_path = ["_templates"]
-exclude_patterns = []
+exclude_patterns = ["docs/release_notes/_template.rst"]
 
 
 # -- Options for Notebook rendering
@@ -39,6 +39,7 @@ nb_execution_mode = "off"
 
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
+html_css_files = ["header.css", "landing-page.css"]
 html_theme_options = {
     # This is the footer of the primary sidebar as HTML
     "extra_navbar": "",
@@ -46,9 +47,6 @@ html_theme_options = {
     "show_toc_level": 2,
     # Remove title under the logo on the left sidebar
     "logo_only": True,
-    # Show github button
-    "repository_url": "https://github.com/Eventual-Inc/Daft",
-    "use_repository_button": True,
 }
 
 # Resolving code links to github

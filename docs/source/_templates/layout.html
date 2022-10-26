@@ -14,3 +14,27 @@
   gtag('config', 'G-YN4QSRPV0K');
 </script>
 {% endblock %}
+
+{% block docs_sidebar %}
+<!-- OVERRIDE: if this is the landing page, we remove the sidebar -->
+{%- if not pagename == "index" %}
+  {{ super() }}
+{%- endif %}
+{% endblock %}
+
+{% block docs_main %}
+<!-- OVERRIDE: if this is the landing page, we remove navigational elements -->
+{%- if pagename == "index" %}
+{% include "sections/landing-page-body.html" %}
+{%- else %}
+  {{ super() }}
+{%- endif %}
+
+<!-- Mobile menu that pops up when hamburger menu is clicked -->
+{% include "sections/mobile-menu.html" %}
+<script src="{{ pathto('_static/mobile-menu.js', 1) }}"></script>
+<script type="text/javascript">
+    mobileMenu.bind();
+</script>
+
+{% endblock %}
