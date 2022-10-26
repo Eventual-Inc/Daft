@@ -141,7 +141,7 @@ def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: 
     return data_generation.gen_parquet(csv_folder)
 
 
-def setup_ray(daft_wheel_location: str | None):
+def setup_ray(daft_wheel_location: str | None, requirements: str | None):
     """Performs necessary setup of Daft on the current benchmarking environment"""
     ctx = daft.context.get_context()
     if ctx.runner_config.name == "ray":
@@ -149,11 +149,17 @@ def setup_ray(daft_wheel_location: str | None):
         if ctx.runner_config.address is not None and daft_wheel_location is None:
             raise RuntimeError("Running Ray remotely requires a built Daft wheel to provide to Ray cluster")
 
+        runtime_env = {}
+        if daft_wheel_location:
+            runtime_env.update({"py_modules": [daft_wheel_location]})
+        if requirements:
+            runtime_env.update({"pip": [l.strip() for l in open(requirements).readlines()]})
+        if runtime_env:
+            runtime_env.update({"eager_install": True})
+
         ray.init(
             address=ctx.runner_config.address,
-            runtime_env={"py_modules": [daft_wheel_location], "eager_install": True}
-            if daft_wheel_location is not None
-            else None,
+            runtime_env=runtime_env,
         )
 
         logger.info("Warming up Ray cluster with a function...")
@@ -207,6 +213,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--daft_wheel_location", default=None, help="Location to built Daft wheel for installation on Ray cluster"
     )
+    parser.add_argument(
+        "--requirements",
+        default=None,
+        help="Path to pip-style requirements.txt file to bootstrap environment on remote Ray cluster",
+    )
     args = parser.parse_args()
     num_parts = math.ceil(args.scale_factor) if args.num_parts is None else args.num_parts
 
@@ -224,7 +235,7 @@ if __name__ == "__main__":
     else:
         parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
 
-    setup_ray(args.daft_wheel_location)
+    setup_ray(args.daft_wheel_location, args.requirements)
 
     run_all_benchmarks(
         parquet_folder,
