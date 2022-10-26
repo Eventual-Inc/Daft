@@ -508,30 +508,23 @@ class PartitionSet(Generic[PartitionT]):
         raise NotImplementedError()
 
 
-class PartitionCache:
-    def __init__(self, pset_default: Callable[[], PartitionSet]) -> None:
-        self._nid_to_partition_set: dict[int, PartitionSet] = {}
-        self._pset_default_list = [pset_default]
+class PartitionSetCache:
+    def __init__(self) -> None:
+        self._uuid_to_partition_set: dict[str, PartitionSet] = {}
 
-    def new_partition_set(self) -> PartitionSet:
-        func = self._pset_default_list[0]
-        return func()
+    def get_partition_set(self, pset_id: str) -> PartitionSet:
+        assert pset_id in self._uuid_to_partition_set
+        return self._uuid_to_partition_set[pset_id]
 
-    def get_partition_set(self, node_id: int) -> PartitionSet:
-        assert node_id in self._nid_to_partition_set
-        return self._nid_to_partition_set[node_id]
+    def put_partition_set(self, pset: PartitionSet) -> str:
+        pset_id = uuid4().hex
+        self._uuid_to_partition_set[pset_id] = pset
+        return pset_id
 
-    def put_partition_set(self, node_id: int, pset: PartitionSet) -> None:
-        self._nid_to_partition_set[node_id] = pset
-
-    def rm(self, node_id: int, partition_id: int | None = None):
-        if partition_id is None:
-            del self._nid_to_partition_set[node_id]
-        else:
-            self._nid_to_partition_set[node_id].delete_partition(partition_id)
-            if self._nid_to_partition_set[node_id].num_partitions() == 0:
-                del self._nid_to_partition_set[node_id]
+    def rm(self, pset_id: str) -> None:
+        if pset_id in self._uuid_to_partition_set:
+            del self._uuid_to_partition_set[pset_id]
 
     def clear(self) -> None:
-        del self._nid_to_partition_set
-        self._nid_to_partition_set = {}
+        del self._uuid_to_partition_set
+        self._uuid_to_partition_set = {}

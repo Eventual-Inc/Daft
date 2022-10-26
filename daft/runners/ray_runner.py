@@ -202,6 +202,7 @@ class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
 
 class RayRunner(Runner):
     def __init__(self, address: str | None) -> None:
+        super().__init__()
         if ray.is_initialized():
             logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context")
         else:
@@ -229,7 +230,7 @@ class RayRunner(Runner):
             ]
         )
 
-    def run(self, plan: LogicalPlan) -> PartitionSet:
+    def run(self, plan: LogicalPlan) -> str:
         plan = self._optimizer.optimize(plan)
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         result_partition_set: PartitionSet
@@ -256,4 +257,6 @@ class RayRunner(Runner):
                 partition_intermediate_results[exec_op.logical_ops[-1].id()] = result_partition_set
 
             last = exec_plan.execution_ops[-1].logical_ops[-1]
-            return partition_intermediate_results[last.id()]
+            final_result = partition_intermediate_results[last.id()]
+            pset_id = self._part_set_cache.put_partition_set(final_result)
+            return pset_id

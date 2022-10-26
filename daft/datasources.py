@@ -55,7 +55,7 @@ class JSONSourceInfo(SourceInfo):
 
 
 @dataclass(frozen=True)
-class InMemorySourceInfo(SourceInfo):
+class DebugInMemorySourceInfo(SourceInfo):
 
     data: dict[str, list[Any]]
     num_partitions: int = 1

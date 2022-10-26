@@ -163,6 +163,37 @@ class Scan(LogicalPlan):
         return self
 
 
+class InMemoryScan(UnaryNode):
+    def __init__(self, cache_id: str, schema: ExpressionList, partition_spec: PartitionSpec | None = None) -> None:
+
+        if partition_spec is None:
+            partition_spec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=1)
+
+        super().__init__(schema=schema.resolve(), partition_spec=partition_spec, op_level=OpLevel.GLOBAL)
+        self._cache_id = cache_id
+
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, InMemoryScan) and self._cache_id == other._cache_id and self.schema() == other.schema()
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
+
+    def rebuild(self) -> LogicalPlan:
+        # if we are rebuilding, this will be cached when this is ran
+        return InMemoryScan(
+            cache_id=self._cache_id,
+            schema=self.schema(),
+            partition_spec=self.partition_spec(),
+        )
+
+    def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 0
+        return self
+
+
 class FileWrite(UnaryNode):
     def __init__(
         self,

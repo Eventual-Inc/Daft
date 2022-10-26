@@ -112,7 +112,7 @@ def test_load_pydict():
     daft_df = DataFrame.from_pydict(data)
 
     daft_df.collect()
-    collected_data = daft_df._result.to_pydict()
+    collected_data = daft_df.to_pydict()
 
     expected = {
         "arrow_int": ExpressionType.integer(),

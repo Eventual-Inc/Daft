@@ -24,7 +24,7 @@ def test_int_sort_with_nulls(repartition_nparts):
     }
     daft_df.collect()
 
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, assert_ordering=True)
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, assert_ordering=True)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -42,7 +42,7 @@ def test_str_sort_with_nulls(repartition_nparts):
         "values": pa.array(["a1", "c1", None]),
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, assert_ordering=True)
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, assert_ordering=True)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 4, 6])
@@ -62,7 +62,7 @@ def test_sort_with_nulls_multikey(repartition_nparts):
         "values": pa.array(["e1", "c1", "a1", "d1", "b1"]),
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, assert_ordering=True)
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, assert_ordering=True)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -76,7 +76,7 @@ def test_sort_with_all_nulls(repartition_nparts):
     daft_df = daft_df.sort(daft_df["id"])
     daft_df.collect()
 
-    resultset = daft_df._result.to_pydict()
+    resultset = daft_df.to_pydict()
     assert len(resultset["id"]) == 3
     assert len(resultset["values"]) == 3
 
@@ -92,7 +92,7 @@ def test_sort_with_empty(repartition_nparts):
     daft_df = daft_df.where(daft_df["id"] != 1).sort(daft_df["id"])
     daft_df.collect()
 
-    resultset = daft_df._result.to_pydict()
+    resultset = daft_df.to_pydict()
     assert len(resultset["id"]) == 0
     assert len(resultset["values"]) == 0
 

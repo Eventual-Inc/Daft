@@ -12,7 +12,6 @@ from pyarrow.fs import FSSpecHandler, PyFileSystem
 
 from daft.datasources import (
     CSVSourceInfo,
-    InMemorySourceInfo,
     JSONSourceInfo,
     ParquetSourceInfo,
     StorageType,
@@ -24,6 +23,7 @@ from daft.logical.logical_plan import (
     FileWrite,
     Filter,
     GlobalLimit,
+    InMemoryScan,
     Join,
     LocalAggregate,
     LocalDistinct,
@@ -96,22 +96,7 @@ class LogicalPartitionOpRunner:
 
     def _handle_scan(self, inputs: dict[int, vPartition], scan: Scan, partition_id: int) -> vPartition:
         schema = scan._schema
-        if scan._source_info.scan_type() == StorageType.IN_MEMORY:
-            assert isinstance(scan._source_info, InMemorySourceInfo)
-            table_len = [len(scan._source_info.data[key]) for key in scan._source_info.data][0]
-            partition_size = table_len // scan._source_info.num_partitions
-            start, end = (partition_size * partition_id, partition_size * (partition_id + 1))
-
-            columns_subset = schema.names
-            if scan._column_names is not None:
-                columns_subset = scan._column_names
-
-            data = {
-                key: scan._source_info.data[key][start:end] for key in scan._source_info.data if key in columns_subset
-            }
-            vpart = vPartition.from_pydict(data, schema=scan.schema(), partition_id=partition_id)
-            return vpart
-        elif scan._source_info.scan_type() == StorageType.CSV:
+        if scan._source_info.scan_type() == StorageType.CSV:
             assert isinstance(scan._source_info, CSVSourceInfo)
             path = scan._source_info.filepaths[partition_id]
             fs = get_filesystem_from_path(path)
@@ -263,6 +248,8 @@ class LogicalGlobalOpRunner:
             return self._handle_sort(inputs, node)
         elif isinstance(node, Coalesce):
             return self._handle_coalesce(inputs, node)
+        elif isinstance(node, InMemoryScan):
+            return self._handle_in_memory_scan(inputs, node)
         else:
             raise NotImplementedError(f"{type(node)} not implemented")
 
@@ -278,6 +265,14 @@ class LogicalGlobalOpRunner:
 
     def _get_shuffle_op_klass(self, t: type[ShuffleOp]) -> type[Shuffler]:
         return self.__class__.shuffle_ops[t]
+
+    def _handle_in_memory_scan(self, inputs: dict[int, PartitionSet], im_scan: InMemoryScan) -> PartitionSet:
+        from daft.context import get_context
+
+        cache_id = im_scan._cache_id
+        runner = get_context().runner()
+        result: PartitionSet = runner.partition_cache().get_partition_set(cache_id)
+        return result
 
     def _handle_global_limit(self, inputs: dict[int, PartitionSet], limit: GlobalLimit) -> PartitionSet:
         child_id = limit._children()[0].id()

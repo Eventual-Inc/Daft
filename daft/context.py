@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import dataclasses
 import os
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from loguru import logger
 
-from daft.runners.pyrunner import PyRunner
-from daft.runners.ray_runner import RayRunner
-from daft.runners.runner import Runner
+if TYPE_CHECKING:
+    from daft.runners.runner import Runner
 
 
 class _RunnerConfig:
@@ -60,10 +59,14 @@ class DaftContext:
         if _RUNNER is not None:
             return _RUNNER
         if self.runner_config.name == "ray":
+            from daft.runners.ray_runner import RayRunner
+
             logger.info("Using RayRunner")
             assert isinstance(self.runner_config, _RayRunnerConfig)
             _RUNNER = RayRunner(address=self.runner_config.address)
         elif self.runner_config.name == "py":
+            from daft.runners.pyrunner import PyRunner
+
             logger.info("Using PyRunner")
             _RUNNER = PyRunner()
         else:

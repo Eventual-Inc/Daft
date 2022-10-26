@@ -33,7 +33,7 @@ def test_agg_global(repartition_nparts):
         "count": pa.array([2], type=pa.int64()),
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="sum")
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="sum")
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -65,7 +65,7 @@ def test_agg_global_all_null(repartition_nparts):
         "count": pa.array([0]),
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="sum")
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="sum")
 
 
 def test_agg_global_null_type_column():
@@ -111,7 +111,7 @@ def test_agg_global_empty():
         "count": pa.array([], type=pa.int64()),
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="sum")
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="sum")
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 7])
@@ -144,7 +144,7 @@ def test_agg_groupby(repartition_nparts):
         "count": pa.array([2, 2], type=pa.int64()),
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="group")
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="group")
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
@@ -178,7 +178,7 @@ def test_agg_groupby_all_null(repartition_nparts):
     }
 
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="group")
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="group")
 
 
 def test_agg_groupby_null_type_column():
@@ -224,7 +224,7 @@ def test_null_groupby_keys(repartition_nparts):
         "mean": pa.array([0.0, 1.0, 2.0, 3.0]),
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="group")
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="group")
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -252,7 +252,7 @@ def test_all_null_groupby_keys(repartition_nparts):
         "mean": pa.array([2.0]),
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="group")
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="group")
 
 
 def test_null_type_column_groupby_keys():
@@ -298,4 +298,4 @@ def test_agg_groupby_empty():
     }
 
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="group")
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="group")

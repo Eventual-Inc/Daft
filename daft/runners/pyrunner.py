@@ -142,7 +142,7 @@ class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
 
 class PyRunner(Runner):
     def __init__(self) -> None:
-        # self._part_manager = PartitionManager(lambda: LocalPartitionSet({}))
+        super().__init__()
         self._part_op_runner = LocalLogicalPartitionOpRunner()
         self._global_op_runner = LocalLogicalGlobalOpRunner()
         self._optimizer = RuleRunner(
@@ -166,7 +166,7 @@ class PyRunner(Runner):
             ]
         )
 
-    def run(self, plan: LogicalPlan) -> PartitionSet:
+    def run(self, plan: LogicalPlan) -> str:
         optimized_plan = self._optimizer.optimize(plan)
         exec_plan = ExecutionPlan.plan_from_logical(optimized_plan)
         result_partition_set: PartitionSet
@@ -205,4 +205,6 @@ class PyRunner(Runner):
                 partition_intermediate_results[exec_op.logical_ops[-1].id()] = result_partition_set
 
             last = exec_plan.execution_ops[-1].logical_ops[-1]
-            return partition_intermediate_results[last.id()]
+            final_result = partition_intermediate_results[last.id()]
+            pset_id = self._part_set_cache.put_partition_set(final_result)
+            return pset_id
