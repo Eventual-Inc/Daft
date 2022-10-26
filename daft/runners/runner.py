@@ -21,5 +21,5 @@ class Runner:
         return self._part_set_cache.put_partition_set(pset=pset)
 
     @abstractmethod
-    def run(self, plan: LogicalPlan) -> str:
+    def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
         ...

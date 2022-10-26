@@ -245,7 +245,7 @@ class RayRunner(Runner):
 
         return self._part_set_cache.put_partition_set(pset=pset)
 
-    def run(self, plan: LogicalPlan) -> str:
+    def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
         plan = self._optimizer.optimize(plan)
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         result_partition_set: PartitionSet

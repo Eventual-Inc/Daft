@@ -82,7 +82,7 @@ class DataFrame:
 
     @property
     def _plan(self) -> logical_plan.LogicalPlan:
-        if self._result is None:
+        if self._result_cache is None:
             return self.__plan
         else:
             return logical_plan.InMemoryScan(

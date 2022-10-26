@@ -513,13 +513,16 @@ class PartitionSet(Generic[PartitionT]):
         raise NotImplementedError()
 
 
-@dataclass(eq=False)
+@dataclass(eq=False, repr=False)
 class PartitionCacheEntry:
     key: str
     value: PartitionSet | None
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, PartitionCacheEntry) and self.key == other.key
+
+    def __repr__(self) -> str:
+        return f"PartitionCacheEntry: {self.key}"
 
     def __getstate__(self):
         return self.key
@@ -531,7 +534,9 @@ class PartitionCacheEntry:
 
 class PartitionSetCache:
     def __init__(self) -> None:
-        self._uuid_to_partition_set: dict[str, PartitionCacheEntry] = weakref.WeakValueDictionary()
+        self._uuid_to_partition_set: weakref.WeakValueDictionary[
+            str, PartitionCacheEntry
+        ] = weakref.WeakValueDictionary()
 
     def get_partition_set(self, pset_id: str) -> PartitionCacheEntry:
         assert pset_id in self._uuid_to_partition_set

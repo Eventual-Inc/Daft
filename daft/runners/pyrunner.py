@@ -22,7 +22,12 @@ from daft.logical.optimizer import (
     PushDownPredicates,
 )
 from daft.resource_request import ResourceRequest
-from daft.runners.partitioning import PartID, PartitionSet, vPartition
+from daft.runners.partitioning import (
+    PartID,
+    PartitionCacheEntry,
+    PartitionSet,
+    vPartition,
+)
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
@@ -169,7 +174,7 @@ class PyRunner(Runner):
             ]
         )
 
-    def run(self, plan: LogicalPlan) -> str:
+    def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
         optimized_plan = self._optimizer.optimize(plan)
         exec_plan = ExecutionPlan.plan_from_logical(optimized_plan)
         result_partition_set: PartitionSet

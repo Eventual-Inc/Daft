@@ -271,7 +271,8 @@ class LogicalGlobalOpRunner:
 
         cache_entry = im_scan._cache_entry
         runner = get_context().runner()
-        result: PartitionSet = runner.get_partition_set_from_cache(cache_entry.key).value
+        result: PartitionSet | None = runner.get_partition_set_from_cache(cache_entry.key).value
+        assert result is not None
         return result
 
     def _handle_global_limit(self, inputs: dict[int, PartitionSet], limit: GlobalLimit) -> PartitionSet:

@@ -190,7 +190,7 @@ class InMemoryScan(UnaryNode):
     def rebuild(self) -> LogicalPlan:
         # if we are rebuilding, this will be cached when this is ran
         return InMemoryScan(
-            cache_id=self._cache_entry,
+            cache_entry=self._cache_entry,
             schema=self.schema(),
             partition_spec=self.partition_spec(),
         )
