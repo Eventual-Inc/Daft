@@ -1,11 +1,11 @@
 |Banner|
 
-|CI| |Python Version| |PyPI| |Latest Tag|
+|CI| |PyPI| |Latest Tag|
 
 `Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io>`_ • `Installation`_ • `10-minute tour of Daft <https://getdaft.io/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
-Daft: Python distributed dataframe for Complex Data
-===================================================
+Daft: distributed Python dataframe for Unstructured Data
+========================================================
 
 
 `Daft <https://www.getdaft.io>`_ is a fast, Pythonic and scalable open-source dataframe library built for Python and Machine Learning workloads.
@@ -22,7 +22,7 @@ Daft: Python distributed dataframe for Complex Data
 About Daft
 ----------
 
-The Daft dataframe is a table of data with rows and columns. Columns can contain any Python objects, which allows Daft to support rich data types such as images, audio, video and more.
+The Daft dataframe is a table of data with rows and columns. Columns can contain any Python objects, which allows Daft to support rich unstructured data types such as images, audio, video and more.
 
 1. **Any Data**: Columns can contain any Python objects, which means that the Python libraries you already use for running machine learning or custom data processing will work natively with Daft!
 2. **Notebook Computing**: Daft is built for the interactive developer experience on a notebook - intelligent caching/query optimizations accelerates your experimentation and data exploration.
@@ -102,10 +102,6 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |CI| image:: https://github.com/Eventual-Inc/Daft/actions/workflows/python-package.yml/badge.svg
    :target: https://github.com/Eventual-Inc/Daft/actions/workflows/python-package.yml?query=branch:main
    :alt: Github Actions tests
-
-.. |Python Version| image:: https://img.shields.io/pypi/pyversions/getdaft
-   :target: https://pypi.org/project/getdaft/
-   :alt: Supported Python Versions
 
 .. |PyPI| image:: https://img.shields.io/pypi/v/getdaft.svg?label=pip&logo=PyPI&logoColor=white
    :target: https://pypi.org/project/getdaft
