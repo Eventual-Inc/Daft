@@ -50,4 +50,8 @@
     .features-row-box-col-2 {
         max-width: 50%;
     }
+
+    .main-menu-open-button {
+        display: none;
+    }
 }
