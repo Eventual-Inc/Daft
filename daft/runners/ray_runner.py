@@ -23,8 +23,14 @@ from daft.logical.optimizer import (
     PushDownPredicates,
 )
 from daft.resource_request import ResourceRequest
-from daft.runners.partitioning import PartID, PartitionSet, vPartition
+from daft.runners.partitioning import (
+    PartID,
+    PartitionCacheEntry,
+    PartitionSet,
+    vPartition,
+)
 from daft.runners.profiler import profiler
+from daft.runners.pyrunner import LocalPartitionSet
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
     CoalesceOp,
@@ -232,6 +238,12 @@ class RayRunner(Runner):
                 ),
             ]
         )
+
+    def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
+        if isinstance(pset, LocalPartitionSet):
+            pset = RayPartitionSet({pid: ray.put(val) for pid, val in pset._partitions.items()})
+
+        return self._part_set_cache.put_partition_set(pset=pset)
 
     def run(self, plan: LogicalPlan) -> str:
         plan = self._optimizer.optimize(plan)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
@@ -512,18 +513,35 @@ class PartitionSet(Generic[PartitionT]):
         raise NotImplementedError()
 
 
+@dataclass(eq=False)
+class PartitionCacheEntry:
+    key: str
+    value: PartitionSet | None
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, PartitionCacheEntry) and self.key == other.key
+
+    def __getstate__(self):
+        return self.key
+
+    def __setstate__(self, key):
+        self.key = key
+        self.value = None
+
+
 class PartitionSetCache:
     def __init__(self) -> None:
-        self._uuid_to_partition_set: dict[str, PartitionSet] = {}
+        self._uuid_to_partition_set: dict[str, PartitionCacheEntry] = weakref.WeakValueDictionary()
 
-    def get_partition_set(self, pset_id: str) -> PartitionSet:
+    def get_partition_set(self, pset_id: str) -> PartitionCacheEntry:
         assert pset_id in self._uuid_to_partition_set
         return self._uuid_to_partition_set[pset_id]
 
-    def put_partition_set(self, pset: PartitionSet) -> str:
+    def put_partition_set(self, pset: PartitionSet) -> PartitionCacheEntry:
         pset_id = uuid4().hex
-        self._uuid_to_partition_set[pset_id] = pset
-        return pset_id
+        part_entry = PartitionCacheEntry(pset_id, pset)
+        self._uuid_to_partition_set[pset_id] = part_entry
+        return part_entry
 
     def rm(self, pset_id: str) -> None:
         if pset_id in self._uuid_to_partition_set:
@@ -531,4 +549,4 @@ class PartitionSetCache:
 
     def clear(self) -> None:
         del self._uuid_to_partition_set
-        self._uuid_to_partition_set = {}
+        self._uuid_to_partition_set = weakref.WeakValueDictionary()

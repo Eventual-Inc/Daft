@@ -24,7 +24,7 @@ from daft.expressions import ColumnExpression, Expression, col
 from daft.filesystem import get_filesystem_from_path, get_protocol_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
-from daft.runners.partitioning import PartitionSet, vPartition
+from daft.runners.partitioning import PartitionCacheEntry, PartitionSet, vPartition
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.types import PythonExpressionType
 from daft.viz import DataFrameDisplay
@@ -78,24 +78,23 @@ class DataFrame:
             plan: LogicalPlan describing the steps required to arrive at this DataFrame
         """
         self.__plan = plan
-        self._result_id: str | None = None
+        self._result_cache: PartitionCacheEntry | None = None
 
     @property
     def _plan(self) -> logical_plan.LogicalPlan:
-        if self._result_id is None:
+        if self._result is None:
             return self.__plan
         else:
             return logical_plan.InMemoryScan(
-                self._result_id, self.__plan.schema().to_column_expressions(), self.__plan.partition_spec()
+                self._result_cache, self.__plan.schema().to_column_expressions(), self.__plan.partition_spec()
             )
 
     @property
     def _result(self) -> PartitionSet | None:
-        if self._result_id is None:
+        if self._result_cache is None:
             return None
         else:
-            context = get_context()
-            return context.runner().partition_cache().get_partition_set(self._result_id)
+            return self._result_cache.value
 
     def plan(self) -> logical_plan.LogicalPlan:
         """Returns `LogicalPlan` that will be executed to compute the result of this DataFrame.
@@ -134,7 +133,7 @@ class DataFrame:
         """
         return [expr.to_column_expression() for expr in self.__plan.schema()]
 
-    def show(self, n: int = -1) -> DataFrameDisplay:
+    def show(self, n: int | None = None) -> DataFrameDisplay:
         """Executes and displays the executed dataframe as a table
 
         Args:
@@ -147,8 +146,9 @@ class DataFrame:
                 This call is **blocking** and will execute the DataFrame when called
         """
         df = self
-        if n != -1:
+        if n is not None:
             df = df.limit(n)
+
         execution_result = df.to_pandas()
         return DataFrameDisplay(execution_result, df.schema())
 
@@ -228,10 +228,10 @@ class DataFrame:
         )
         result_pset = LocalPartitionSet({0: data_vpartition})
 
-        cache_id = get_context().runner().partition_cache().put_partition_set(result_pset)
+        cache_entry = get_context().runner().put_partition_set_into_cache(result_pset)
 
         plan = logical_plan.InMemoryScan(
-            cache_id=cache_id,
+            cache_entry=cache_entry,
             schema=schema,
         )
         return cls(plan)
@@ -428,7 +428,7 @@ class DataFrame:
         # Block and write, then retrieve data and return a new disconnected DataFrame
         write_df = DataFrame(plan)
         write_df.collect()
-        assert write_df._result_id is not None
+        assert write_df._result is not None
         return DataFrame(write_df._plan)
 
     def write_csv(self, root_dir: str, partition_cols: list[ColumnInputType] | None = None) -> DataFrame:
@@ -464,7 +464,7 @@ class DataFrame:
         # Block and write, then retrieve data and return a new disconnected DataFrame
         write_df = DataFrame(plan)
         write_df.collect()
-        assert write_df._result_id is not None
+        assert write_df._result is not None
         return DataFrame(write_df._plan)
 
     ###
@@ -974,8 +974,8 @@ class DataFrame:
             DataFrame: DataFrame with cached results.
         """
         context = get_context()
-        if self._result_id is None:
-            self._result_id = context.runner().run(self._plan)
+        if self._result is None:
+            self._result_cache = context.runner().run(self._plan)
             result = self._result
             assert result is not None
             result.wait()

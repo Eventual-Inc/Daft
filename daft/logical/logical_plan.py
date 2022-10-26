@@ -14,7 +14,7 @@ from daft.internal.treenode import TreeNode
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
-from daft.runners.partitioning import vPartition
+from daft.runners.partitioning import PartitionCacheEntry, vPartition
 from daft.types import ExpressionType
 
 
@@ -164,16 +164,22 @@ class Scan(LogicalPlan):
 
 
 class InMemoryScan(UnaryNode):
-    def __init__(self, cache_id: str, schema: ExpressionList, partition_spec: PartitionSpec | None = None) -> None:
+    def __init__(
+        self, cache_entry: PartitionCacheEntry, schema: ExpressionList, partition_spec: PartitionSpec | None = None
+    ) -> None:
 
         if partition_spec is None:
             partition_spec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=1)
 
         super().__init__(schema=schema.resolve(), partition_spec=partition_spec, op_level=OpLevel.GLOBAL)
-        self._cache_id = cache_id
+        self._cache_entry = cache_entry
 
     def _local_eq(self, other: Any) -> bool:
-        return isinstance(other, InMemoryScan) and self._cache_id == other._cache_id and self.schema() == other.schema()
+        return (
+            isinstance(other, InMemoryScan)
+            and self._cache_entry == other._cache_entry
+            and self.schema() == other.schema()
+        )
 
     def required_columns(self) -> ExpressionList:
         return ExpressionList([])
@@ -184,7 +190,7 @@ class InMemoryScan(UnaryNode):
     def rebuild(self) -> LogicalPlan:
         # if we are rebuilding, this will be cached when this is ran
         return InMemoryScan(
-            cache_id=self._cache_id,
+            cache_id=self._cache_entry,
             schema=self.schema(),
             partition_spec=self.partition_spec(),
         )

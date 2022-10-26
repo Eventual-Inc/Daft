@@ -269,9 +269,9 @@ class LogicalGlobalOpRunner:
     def _handle_in_memory_scan(self, inputs: dict[int, PartitionSet], im_scan: InMemoryScan) -> PartitionSet:
         from daft.context import get_context
 
-        cache_id = im_scan._cache_id
+        cache_entry = im_scan._cache_entry
         runner = get_context().runner()
-        result: PartitionSet = runner.partition_cache().get_partition_set(cache_id)
+        result: PartitionSet = runner.get_partition_set_from_cache(cache_entry.key).value
         return result
 
     def _handle_global_limit(self, inputs: dict[int, PartitionSet], limit: GlobalLimit) -> PartitionSet:
