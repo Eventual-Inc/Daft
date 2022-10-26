@@ -74,6 +74,9 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     def num_partitions(self) -> int:
         return len(self._partitions)
 
+    def wait(self) -> None:
+        ray.wait([o for o in self._partitions.values()])
+
 
 class RayRunnerSimpleShuffler(Shuffler):
     def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:

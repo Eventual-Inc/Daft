@@ -507,6 +507,10 @@ class PartitionSet(Generic[PartitionT]):
     def num_partitions(self) -> int:
         raise NotImplementedError()
 
+    @abstractmethod
+    def wait(self) -> None:
+        raise NotImplementedError()
+
 
 class PartitionSetCache:
     def __init__(self) -> None:

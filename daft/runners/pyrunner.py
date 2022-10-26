@@ -67,6 +67,9 @@ class LocalPartitionSet(PartitionSet[vPartition]):
     def num_partitions(self) -> int:
         return len(self._partitions)
 
+    def wait(self) -> None:
+        pass
+
 
 class PyRunnerSimpleShuffler(Shuffler):
     def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:

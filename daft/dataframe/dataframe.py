@@ -976,6 +976,9 @@ class DataFrame:
         context = get_context()
         if self._result_id is None:
             self._result_id = context.runner().run(self._plan)
+            result = self._result
+            assert result is not None
+            result.wait()
         return self
 
     def to_pandas(self) -> pandas.DataFrame:
