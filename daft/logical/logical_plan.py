@@ -14,7 +14,7 @@ from daft.internal.treenode import TreeNode
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
-from daft.runners.partitioning import vPartition
+from daft.runners.partitioning import PartitionCacheEntry, vPartition
 from daft.types import ExpressionType
 
 
@@ -156,6 +156,46 @@ class Scan(LogicalPlan):
             source_info=self._source_info,
             predicate=self._predicate.unresolve() if self._predicate is not None else None,
             columns=self._column_names,
+        )
+
+    def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 0
+        return self
+
+
+class InMemoryScan(UnaryNode):
+    def __init__(
+        self, cache_entry: PartitionCacheEntry, schema: ExpressionList, partition_spec: PartitionSpec | None = None
+    ) -> None:
+
+        if partition_spec is None:
+            partition_spec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=1)
+
+        super().__init__(schema=schema.resolve(), partition_spec=partition_spec, op_level=OpLevel.GLOBAL)
+        self._cache_entry = cache_entry
+
+    def __repr__(self) -> str:
+        return f"InMemoryScan\n\toutput={self.schema()}\n\tcache_id={self._cache_entry.key}"
+
+    def _local_eq(self, other: Any) -> bool:
+        return (
+            isinstance(other, InMemoryScan)
+            and self._cache_entry == other._cache_entry
+            and self.schema() == other.schema()
+        )
+
+    def required_columns(self) -> ExpressionList:
+        return ExpressionList([])
+
+    def resource_request(self) -> ResourceRequest:
+        return ResourceRequest.default()
+
+    def rebuild(self) -> LogicalPlan:
+        # if we are rebuilding, this will be cached when this is ran
+        return InMemoryScan(
+            cache_entry=self._cache_entry,
+            schema=self.schema(),
+            partition_spec=self.partition_spec(),
         )
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:

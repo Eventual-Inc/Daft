@@ -14,7 +14,6 @@ from daft.context import get_context
 from daft.dataframe.schema import DataFrameSchema
 from daft.datasources import (
     CSVSourceInfo,
-    InMemorySourceInfo,
     JSONSourceInfo,
     ParquetSourceInfo,
     StorageType,
@@ -25,7 +24,8 @@ from daft.expressions import ColumnExpression, Expression, col
 from daft.filesystem import get_filesystem_from_path, get_protocol_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
-from daft.runners.partitioning import PartitionSet
+from daft.runners.partitioning import PartitionCacheEntry, PartitionSet, vPartition
+from daft.runners.pyrunner import LocalPartitionSet
 from daft.types import PythonExpressionType
 from daft.viz import DataFrameDisplay
 
@@ -77,8 +77,24 @@ class DataFrame:
         Args:
             plan: LogicalPlan describing the steps required to arrive at this DataFrame
         """
-        self._plan = plan
-        self._result: PartitionSet | None = None
+        self.__plan = plan
+        self._result_cache: PartitionCacheEntry | None = None
+
+    @property
+    def _plan(self) -> logical_plan.LogicalPlan:
+        if self._result_cache is None:
+            return self.__plan
+        else:
+            return logical_plan.InMemoryScan(
+                self._result_cache, self.__plan.schema().to_column_expressions(), self.__plan.partition_spec()
+            )
+
+    @property
+    def _result(self) -> PartitionSet | None:
+        if self._result_cache is None:
+            return None
+        else:
+            return self._result_cache.value
 
     def plan(self) -> logical_plan.LogicalPlan:
         """Returns `LogicalPlan` that will be executed to compute the result of this DataFrame.
@@ -86,10 +102,10 @@ class DataFrame:
         Returns:
             logical_plan.LogicalPlan: LogicalPlan to compute this DataFrame.
         """
-        return self._plan
+        return self.__plan
 
     def num_partitions(self) -> int:
-        return self._plan.num_partitions()
+        return self.__plan.num_partitions()
 
     def schema(self) -> DataFrameSchema:
         """Returns the DataFrameSchema of the DataFrame, which provides information about each column
@@ -97,7 +113,7 @@ class DataFrame:
         Returns:
             DataFrameSchema: schema of the DataFrame
         """
-        return DataFrameSchema.from_expression_list(self._plan.schema())
+        return DataFrameSchema.from_expression_list(self.__plan.schema())
 
     @property
     def column_names(self) -> list[str]:
@@ -106,7 +122,7 @@ class DataFrame:
         Returns:
             List[str]: Column names of this DataFrame.
         """
-        return [expr.name() for expr in self._plan.schema()]
+        return [expr.name() for expr in self.__plan.schema()]
 
     @property
     def columns(self) -> list[ColumnExpression]:
@@ -115,9 +131,9 @@ class DataFrame:
         Returns:
             List[ColumnExpression]: Columns of this DataFrame.
         """
-        return [expr.to_column_expression() for expr in self._plan.schema()]
+        return [expr.to_column_expression() for expr in self.__plan.schema()]
 
-    def show(self, n: int = -1) -> DataFrameDisplay:
+    def show(self, n: int | None = None) -> DataFrameDisplay:
         """Executes and displays the executed dataframe as a table
 
         Args:
@@ -130,8 +146,9 @@ class DataFrame:
                 This call is **blocking** and will execute the DataFrame when called
         """
         df = self
-        if n != -1:
+        if n is not None:
             df = df.limit(n)
+
         execution_result = df.to_pandas()
         return DataFrameDisplay(execution_result, df.schema())
 
@@ -160,19 +177,7 @@ class DataFrame:
         """
         if not data:
             raise ValueError("Unable to create DataFrame from empty list")
-        schema = ExpressionList(
-            [
-                ColumnExpression(header, expr_type=ExpressionType.from_py_type(type(data[0][header])))
-                for header in data[0]
-            ]
-        )
-        plan = logical_plan.Scan(
-            schema=schema,
-            predicate=None,
-            columns=None,
-            source_info=InMemorySourceInfo(data={header: [row[header] for row in data] for header in data[0]}),
-        )
-        return cls(plan)
+        return cls.from_pydict(data={header: [row[header] for row in data] for header in data[0]})
 
     @classmethod
     def from_pydict(cls, data: dict[str, list | pa.Array]) -> DataFrame:
@@ -217,13 +222,17 @@ class DataFrame:
 
         schema = ExpressionList(
             [ColumnExpression(header, expr_type=expr_type) for header, (expr_type, _) in block_data.items()]
+        ).resolve()
+        data_vpartition = vPartition.from_pydict(
+            data={header: arr for header, (_, arr) in block_data.items()}, schema=schema, partition_id=0
         )
+        result_pset = LocalPartitionSet({0: data_vpartition})
 
-        plan = logical_plan.Scan(
+        cache_entry = get_context().runner().put_partition_set_into_cache(result_pset)
+
+        plan = logical_plan.InMemoryScan(
+            cache_entry=cache_entry,
             schema=schema,
-            predicate=None,
-            columns=None,
-            source_info=InMemorySourceInfo(data={header: arr for header, (_, arr) in block_data.items()}),
         )
         return cls(plan)
 
@@ -420,8 +429,7 @@ class DataFrame:
         write_df = DataFrame(plan)
         write_df.collect()
         assert write_df._result is not None
-        data = write_df._result.to_pydict()
-        return DataFrame.from_pydict(data)
+        return DataFrame(write_df._plan)
 
     def write_csv(self, root_dir: str, partition_cols: list[ColumnInputType] | None = None) -> DataFrame:
         """Writes the DataFrame to CSV files using a `root_dir` and randomly generated UUIDs as the filepath and returns the filepaths.
@@ -457,8 +465,7 @@ class DataFrame:
         write_df = DataFrame(plan)
         write_df.collect()
         assert write_df._result is not None
-        data = write_df._result.to_pydict()
-        return DataFrame.from_pydict(data)
+        return DataFrame(write_df._plan)
 
     ###
     # DataFrame operations
@@ -968,7 +975,10 @@ class DataFrame:
         """
         context = get_context()
         if self._result is None:
-            self._result = context.runner().run(self._plan)
+            self._result_cache = context.runner().run(self._plan)
+            result = self._result
+            assert result is not None
+            result.wait()
         return self
 
     def to_pandas(self) -> pandas.DataFrame:
@@ -982,11 +992,26 @@ class DataFrame:
                 This call is **blocking** and will execute the DataFrame when called
         """
         self.collect()
-        assert self._result is not None
-        pd_df = self._result.to_pandas(schema=self._plan.schema())
-        del self._result
-        self._result = None
+        result = self._result
+        assert result is not None
+
+        pd_df = result.to_pandas(schema=self._plan.schema())
         return pd_df
+
+    def to_pydict(self) -> pandas.DataFrame:
+        """Converts the current DataFrame to a python dict.
+        If results have not computed yet, collect will be called.
+
+        Returns:
+            dict[str, list[Any]]: python dict converted from a Daft DataFrame
+
+            .. NOTE::
+                This call is **blocking** and will execute the DataFrame when called
+        """
+        self.collect()
+        result = self._result
+        assert result is not None
+        return result.to_pydict()
 
 
 @dataclass

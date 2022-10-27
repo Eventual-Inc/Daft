@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from daft.datasources import InMemorySourceInfo
 from daft.expressions import ColumnExpression, col
-from daft.logical.logical_plan import Filter, Projection, Scan
+from daft.logical.logical_plan import Filter, InMemoryScan, Projection
 from daft.logical.schema import ExpressionList
+from daft.runners.partitioning import PartitionCacheEntry
 from daft.types import ExpressionType
 
 
@@ -21,33 +21,12 @@ def schema():
     )
 
 
-@pytest.fixture(scope="function")
-def source_info():
-    return InMemorySourceInfo(data={})
-
-
-def test_scan_predicates(schema, source_info) -> None:
-    scan = Scan(schema=schema, source_info=source_info)
-    assert scan.schema() == schema
-
-    proj_scan = Scan(schema=schema, source_info=source_info, columns=["a"])
-    assert proj_scan.schema().names == ["a"]
-
-    filter_scan = Scan(schema=schema, source_info=source_info, predicate=ExpressionList([col("a") < 10]))
-    assert filter_scan.schema() == schema
-
-    both_scan = Scan(
-        schema=schema, source_info=source_info, predicate=ExpressionList([col("a") < 10]), columns=["b", "c"]
-    )
-    assert both_scan.schema() == schema.keep(["b", "c"])
-
-
-def test_projection_logical_plan(schema, source_info) -> None:
-    scan = Scan(schema=schema, source_info=source_info)
+def test_projection_logical_plan(schema) -> None:
+    scan = InMemoryScan(cache_entry=PartitionCacheEntry("", None), schema=schema)
     assert scan.schema() == schema
 
     full_project = Projection(scan, ExpressionList([col("a"), col("b"), col("c")]))
-    # Projection(full_project, ExpressionList([col("a"), col("b"), col("c")]))
+
     assert full_project.schema() == schema
 
     project = Projection(scan, ExpressionList([col("b")]))
@@ -60,16 +39,16 @@ def test_projection_logical_plan(schema, source_info) -> None:
     )
 
 
-def test_projection_logical_plan_bad_input(schema, source_info) -> None:
-    scan = Scan(schema=schema, source_info=source_info)
+def test_projection_logical_plan_bad_input(schema) -> None:
+    scan = InMemoryScan(cache_entry=PartitionCacheEntry("", None), schema=schema)
     assert scan.schema() == schema
 
     with pytest.raises(ValueError):
         Projection(scan, ExpressionList([col("d")]))
 
 
-def test_filter_logical_plan(schema, source_info) -> None:
-    scan = Scan(schema=schema, source_info=source_info)
+def test_filter_logical_plan(schema) -> None:
+    scan = InMemoryScan(cache_entry=PartitionCacheEntry("", None), schema=schema)
     assert scan.schema() == schema
 
     full_filter = Filter(scan, ExpressionList([col("a") == 1, col("b") < 10, col("c") > 10]))
@@ -79,16 +58,16 @@ def test_filter_logical_plan(schema, source_info) -> None:
     assert project.schema() == schema
 
 
-def test_filter_logical_plan_bad_input(schema, source_info) -> None:
-    scan = Scan(schema=schema, source_info=source_info)
+def test_filter_logical_plan_bad_input(schema) -> None:
+    scan = InMemoryScan(cache_entry=PartitionCacheEntry("", None), schema=schema)
     assert scan.schema() == schema
 
     with pytest.raises(ValueError):
         filter = Filter(scan, ExpressionList([col("d") == 1]))
 
 
-def test_projection_new_columns_logical_plan(schema, source_info) -> None:
-    scan = Scan(schema=schema, source_info=source_info)
+def test_projection_new_columns_logical_plan(schema) -> None:
+    scan = InMemoryScan(cache_entry=PartitionCacheEntry("", None), schema=schema)
     assert scan.schema() == schema
 
     hstacked = Projection(scan, schema.union(ExpressionList([(col("a") + col("b")).alias("d")])))
@@ -127,16 +106,16 @@ def test_projection_new_columns_logical_plan(schema, source_info) -> None:
     assert projection_reorder.schema() == hstacked_on_proj.schema().keep(["a", "b", "c"])
 
 
-def test_filter_logical_plan_bad_input(schema, source_info) -> None:
-    scan = Scan(schema=schema, source_info=source_info)
+def test_filter_logical_plan_bad_input(schema) -> None:
+    scan = InMemoryScan(cache_entry=PartitionCacheEntry("", None), schema=schema)
     assert scan.schema() == schema
 
     with pytest.raises(ValueError):
         scan = Projection(scan, ExpressionList([col("a"), (col("b") + 1).alias("a")]))
 
 
-def test_scan_projection_filter_projection_chain(schema, source_info) -> None:
-    scan = Scan(schema=schema, source_info=source_info)
+def test_scan_projection_filter_projection_chain(schema) -> None:
+    scan = InMemoryScan(cache_entry=PartitionCacheEntry("", None), schema=schema)
     assert scan.schema() == schema
 
     hstacked = Projection(scan, schema.union(ExpressionList([(col("a") + col("b")).alias("d")])))

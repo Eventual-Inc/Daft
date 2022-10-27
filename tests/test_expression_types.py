@@ -114,8 +114,7 @@ def test_type_matrix_execution(op_name: str, arg_types: tuple[ExpressionType, ..
     assert df.schema()["bar"].daft_type == ret_type
 
     df.collect()
-    assert df._result is not None
-    collected_columns = df._result.to_pydict()
+    collected_columns = df.to_pydict()
 
     check_type_func = CHECK_TYPE_FUNC[ret_type]
     assert check_type_func(

@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
@@ -52,19 +51,6 @@ class JSONSourceInfo(SourceInfo):
 
     def get_num_partitions(self) -> int:
         return len(self.filepaths)
-
-
-@dataclass(frozen=True)
-class InMemorySourceInfo(SourceInfo):
-
-    data: dict[str, list[Any]]
-    num_partitions: int = 1
-
-    def scan_type(self):
-        return StorageType.IN_MEMORY
-
-    def get_num_partitions(self) -> int:
-        return self.num_partitions
 
 
 @dataclass(frozen=True)

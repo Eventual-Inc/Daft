@@ -46,7 +46,7 @@ def test_explode_single_col_pylist(nrepartitions):
     pd_df = pd_df[["explode_plus1", "repeat"]]
 
     df.collect()
-    daft_pd_df = pd.DataFrame(df._result.to_pydict())
+    daft_pd_df = pd.DataFrame(df.to_pydict())
 
     assert_df_equals(daft_pd_df, pd_df, sort_key=["explode_plus1", "repeat"])
 
@@ -65,7 +65,7 @@ def test_explode_single_col_arrow(nrepartitions):
     df = df.select(col("explode"), col("repeat"))
 
     df.collect()
-    daft_pd_df = pd.DataFrame(df._result.to_pydict())
+    daft_pd_df = pd.DataFrame(df.to_pydict())
 
     pd_df = pd.DataFrame(data)
     pd_df = pd_df.explode("explode")
@@ -89,7 +89,7 @@ def test_explode_multi_col(nrepartitions):
     assert df.schema()["explode2"].daft_type == ExpressionType.python_object()
 
     df.collect()
-    daft_pd_df = pd.DataFrame(df._result.to_pydict())
+    daft_pd_df = pd.DataFrame(df.to_pydict())
 
     pd_df = pd.DataFrame(data)
     pd_df = pd_df.explode(["explode1", "explode2"])

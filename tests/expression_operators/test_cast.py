@@ -103,7 +103,7 @@ def test_cast_primitives(before, to_type, expected):
 
     df = df.with_column("after", df["before"].cast(to_type))
     df.collect()
-    collected = df._result.to_pydict()
+    collected = df.to_pydict()
     assert_chunkedarray_eq(collected["after"], expected)
 
 
@@ -164,7 +164,7 @@ def test_cast_py(before, method_to_run, to_type, expected):
 
     df = df.with_column("after", df["before"].cast(to_type))
     df.collect()
-    collected = df._result.to_pydict()
+    collected = df.to_pydict()
 
     if isinstance(expected, pa.ChunkedArray):
         assert_chunkedarray_eq(collected["after"], expected)

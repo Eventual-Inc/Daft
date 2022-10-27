@@ -31,7 +31,7 @@ def test_inner_join(repartition_nparts):
     }
     daft_df.collect()
 
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="id")
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="id")
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -59,7 +59,7 @@ def test_inner_join_multikey(repartition_nparts):
         "values_right": pa.array(["c2"]),
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="id")
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="id")
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -84,7 +84,7 @@ def test_inner_join_all_null(repartition_nparts):
         "values_right": pa.array([], pa.string()),
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df._result.to_pydict(), expected_arrow_table, sort_key="id")
+    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="id")
 
 
 def test_inner_join_null_type_column():

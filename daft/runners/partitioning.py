@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
@@ -507,31 +508,50 @@ class PartitionSet(Generic[PartitionT]):
     def num_partitions(self) -> int:
         raise NotImplementedError()
 
+    @abstractmethod
+    def wait(self) -> None:
+        raise NotImplementedError()
 
-class PartitionManager:
-    def __init__(self, pset_default: Callable[[], PartitionSet]) -> None:
-        self._nid_to_partition_set: dict[int, PartitionSet] = {}
-        self._pset_default_list = [pset_default]
 
-    def new_partition_set(self) -> PartitionSet:
-        func = self._pset_default_list[0]
-        return func()
+@dataclass(eq=False, repr=False)
+class PartitionCacheEntry:
+    key: str
+    value: PartitionSet | None
 
-    def get_partition_set(self, node_id: int) -> PartitionSet:
-        assert node_id in self._nid_to_partition_set
-        return self._nid_to_partition_set[node_id]
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, PartitionCacheEntry) and self.key == other.key
 
-    def put_partition_set(self, node_id: int, pset: PartitionSet) -> None:
-        self._nid_to_partition_set[node_id] = pset
+    def __repr__(self) -> str:
+        return f"PartitionCacheEntry: {self.key}"
 
-    def rm(self, node_id: int, partition_id: int | None = None):
-        if partition_id is None:
-            del self._nid_to_partition_set[node_id]
-        else:
-            self._nid_to_partition_set[node_id].delete_partition(partition_id)
-            if self._nid_to_partition_set[node_id].num_partitions() == 0:
-                del self._nid_to_partition_set[node_id]
+    def __getstate__(self):
+        return self.key
+
+    def __setstate__(self, key):
+        self.key = key
+        self.value = None
+
+
+class PartitionSetCache:
+    def __init__(self) -> None:
+        self._uuid_to_partition_set: weakref.WeakValueDictionary[
+            str, PartitionCacheEntry
+        ] = weakref.WeakValueDictionary()
+
+    def get_partition_set(self, pset_id: str) -> PartitionCacheEntry:
+        assert pset_id in self._uuid_to_partition_set
+        return self._uuid_to_partition_set[pset_id]
+
+    def put_partition_set(self, pset: PartitionSet) -> PartitionCacheEntry:
+        pset_id = uuid4().hex
+        part_entry = PartitionCacheEntry(pset_id, pset)
+        self._uuid_to_partition_set[pset_id] = part_entry
+        return part_entry
+
+    def rm(self, pset_id: str) -> None:
+        if pset_id in self._uuid_to_partition_set:
+            del self._uuid_to_partition_set[pset_id]
 
     def clear(self) -> None:
-        del self._nid_to_partition_set
-        self._nid_to_partition_set = {}
+        del self._uuid_to_partition_set
+        self._uuid_to_partition_set = weakref.WeakValueDictionary()
