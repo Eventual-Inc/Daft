@@ -174,6 +174,9 @@ class InMemoryScan(UnaryNode):
         super().__init__(schema=schema.resolve(), partition_spec=partition_spec, op_level=OpLevel.GLOBAL)
         self._cache_entry = cache_entry
 
+    def __repr__(self) -> str:
+        return f"InMemoryScan\n\toutput={self.schema()}\n\tcache_id={self._cache_entry.key}"
+
     def _local_eq(self, other: Any) -> bool:
         return (
             isinstance(other, InMemoryScan)
