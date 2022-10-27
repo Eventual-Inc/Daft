@@ -9,6 +9,7 @@ import pandas
 import pyarrow as pa
 import pyarrow.parquet as papq
 from pyarrow import csv, json
+from ray.data.dataset import Dataset as RayDataset
 
 from daft.context import get_context
 from daft.dataframe.schema import DataFrameSchema
@@ -1042,6 +1043,12 @@ class DataFrame:
         result = self._result
         assert result is not None
         return result.to_pydict()
+
+    def to_ray_dataset(self) -> RayDataset:
+        self.collect()
+        partition_set = self._result
+        assert partition_set is not None
+        return partition_set.to_ray_dataset()
 
 
 @dataclass

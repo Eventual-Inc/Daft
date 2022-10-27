@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 from pyarrow import dataset as pada
+from ray.data.dataset import Dataset as RayDataset
 
 from daft.execution.operators import OperatorEnum
 from daft.expressions import ColID, ColumnExpression, Expression, ExpressionExecutor
@@ -483,6 +484,9 @@ class PartitionSet(Generic[PartitionT]):
         all_partitions = self._get_all_vpartitions()
         part_dfs = [part.to_pandas(schema=schema) for part in all_partitions]
         return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
+
+    def to_ray_dataset(self) -> RayDataset:
+        raise NotImplementedError()
 
     @abstractmethod
     def get_partition(self, idx: PartID) -> PartitionT:
