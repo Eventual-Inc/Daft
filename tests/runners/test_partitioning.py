@@ -6,7 +6,7 @@ import pytest
 
 from daft.expressions import ColID, Expression, col
 from daft.logical.schema import ExpressionList
-from daft.runners.blocks import DataBlock
+from daft.runners.blocks import ArrowDataBlock, DataBlock
 from daft.runners.partitioning import PyListTile, vPartition
 
 
@@ -262,3 +262,11 @@ def test_hash_partition(n) -> None:
                 values_expected = pylist
             assert values_expected == pylist
         values_seen.update(pylist)
+
+
+def test_partition_quantiles_small_sample_large_partitions():
+    data = [1, 2, 3]
+    partition = vPartition({1: PyListTile(1, "foo", 1, ArrowDataBlock(pa.chunked_array([data])))}, 1)
+    quantiled_partition = partition.quantiles(10)
+    quantile_boundaries = quantiled_partition.columns[1].block.data.to_pylist()
+    assert sorted(quantile_boundaries) == quantile_boundaries, "quantile boundaries should be in sorted order"
