@@ -179,7 +179,7 @@ class vPartition:
         return self.for_each_column_block(partial(DataBlock.head, num=num))
 
     def sample(self, num: int) -> vPartition:
-        if len(self) == 0:
+        if len(self) <= num:
             return self
         sample_idx: DataBlock[ArrowArrType] = DataBlock.make_block(data=np.random.randint(0, len(self), num))
         return self.for_each_column_block(partial(DataBlock.take, indices=sample_idx))
@@ -280,7 +280,7 @@ class vPartition:
 
     def quantiles(self, num: int) -> vPartition:
         self_size = len(self)
-        sample_idx_np = np.linspace(self_size / num, self_size, num)[:-1].round().astype(np.int32)
+        sample_idx_np = np.minimum(np.linspace(self_size / num, self_size, num), self_size - 1).round().astype(np.int32)
         return self.take(DataBlock.make_block(sample_idx_np))
 
     def explode(self, columns: ExpressionList) -> vPartition:
