@@ -95,7 +95,6 @@ class SortOp(ShuffleOp):
         descending: list[bool] | None = None,
     ) -> dict[PartID, vPartition]:
         assert exprs is not None and boundaries is not None and descending is not None
-        assert len(boundaries) == (output_partitions - 1)
         assert len(exprs) == len(descending)
         if output_partitions == 1:
             return {PartID(0): input}

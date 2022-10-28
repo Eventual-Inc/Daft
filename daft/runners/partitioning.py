@@ -280,7 +280,11 @@ class vPartition:
 
     def quantiles(self, num: int) -> vPartition:
         self_size = len(self)
-        sample_idx_np = np.minimum(np.linspace(self_size / num, self_size, num), self_size - 1).round().astype(np.int32)
+        if self_size == 0:
+            return self
+        sample_idx_np = (
+            np.minimum(np.linspace(self_size / num, self_size, num), self_size - 1).round().astype(np.int32)[:-1]
+        )
         return self.take(DataBlock.make_block(sample_idx_np))
 
     def explode(self, columns: ExpressionList) -> vPartition:
