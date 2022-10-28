@@ -6,14 +6,11 @@ from typing import Any, Callable, ClassVar, List, cast
 import pyarrow as pa
 import ray
 from loguru import logger
-from ray.data.block import Block as RayDatasetBlock
-from ray.data.block import BlockAccessor, BlockExecStats, BlockMetadata
 
 # HACK: These are actually _internal imports, but we can pull them from the ray.data.dataset module
-from ray.data.dataset import BlockList
+from ray.data import from_arrow_refs
+from ray.data.block import Block as RayDatasetBlock
 from ray.data.dataset import Dataset as RayDataset
-from ray.data.dataset import DatasetStats
-from ray.data.dataset import ExecutionPlan as RayDatasetExecutionPlan
 
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
@@ -65,12 +62,6 @@ def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
     return [dict(zip(colnames, row_tuple)) for row_tuple in zip_blocks_as_py(*blocks)]
 
 
-@ray.remote
-def _get_metadata(block: RayDatasetBlock) -> BlockMetadata:
-    stats = BlockExecStats.builder()
-    return BlockAccessor.for_block(block).get_metadata(input_files=None, exec_stats=stats.build())
-
-
 @dataclass
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     _partitions: dict[PartID, ray.ObjectRef]
@@ -83,22 +74,9 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 
     def to_ray_dataset(self) -> RayDataset:
         blocks = [_make_ray_block_from_vpartition.remote(self._partitions[k]) for k in self._partitions.keys()]
-        metadata = ray.get([_get_metadata.remote(b) for b in blocks])
-        return RayDataset(
-            RayDatasetExecutionPlan(
-                BlockList(
-                    blocks,
-                    metadata,
-                    # TODO: Ray >2.0.0 this kwarg is required
-                    # owned_by_consumer=False,
-                ),
-                DatasetStats(stages={"from_daft_dataframe": metadata}, parent=None),
-                # TODO: Ray >2.0.0 this kwarg is required
-                # run_by_consumer=False,
-            ),
-            0,
-            False,
-        )
+        # NOTE: although the Ray method is called `from_arrow_refs`, this method works also when the blocks are List[T] types
+        # instead of Arrow tables as the codepath for Dataset creation is the same.
+        return from_arrow_refs(blocks)
 
     def get_partition(self, idx: PartID) -> ray.ObjectRef:
         return self._partitions[idx]

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import multiprocessing
 from dataclasses import dataclass
-from typing import Callable, ClassVar
+from typing import Any, Callable, ClassVar
+
+import pyarrow as pa
+from ray.data import from_arrow, from_items
+from ray.data.block import Block as RayDatasetBlock
+from ray.data.dataset import Dataset as RayDataset
 
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
@@ -28,6 +33,7 @@ from daft.runners.partitioning import (
     PartitionSet,
     vPartition,
 )
+from daft.runners.blocks import ArrowDataBlock, zip_blocks_as_py
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
@@ -40,6 +46,18 @@ from daft.runners.shuffle_ops import (
 )
 
 
+def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
+    daft_blocks = {tile.column_name: tile.block for _, tile in partition.columns.items()}
+
+    all_arrow = all(isinstance(daft_block, ArrowDataBlock) for daft_block in daft_blocks.values())
+    if all_arrow:
+        return pa.Table.from_pydict({colname: daft_block.data for colname, daft_block in daft_blocks.items()})
+
+    colnames = list(daft_blocks.keys())
+    blocks = list(daft_blocks.values())
+    return [dict(zip(colnames, row_tuple)) for row_tuple in zip_blocks_as_py(*blocks)]
+
+
 @dataclass
 class LocalPartitionSet(PartitionSet[vPartition]):
     _partitions: dict[PartID, vPartition]
@@ -49,6 +67,27 @@ class LocalPartitionSet(PartitionSet[vPartition]):
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
         return [self._partitions[pid] for pid in partition_ids]
+
+    def to_ray_dataset(self) -> RayDataset:
+        ray_dataset_arrow_blocks: list[pa.Table] = []
+        ray_dataset_nonarrow_data: list[dict[str, Any]] = []
+        for part_id in self._partitions:
+            partition = self._partitions[part_id]
+            block = _make_ray_block_from_vpartition(partition)
+
+            if isinstance(block, list):
+                ray_dataset_nonarrow_data.extend(block)
+            else:
+                assert isinstance(block, pa.Table)
+                ray_dataset_arrow_blocks.append(block)
+
+        assert (len(ray_dataset_arrow_blocks) > 0) ^ (
+            len(ray_dataset_nonarrow_data) > 0
+        ), "Datasets must either be arrow blocks or nonarrow blocks, not both"
+        if len(ray_dataset_arrow_blocks) > 0:
+            return from_arrow(ray_dataset_arrow_blocks)
+        else:
+            return from_items(ray_dataset_nonarrow_data)
 
     def get_partition(self, idx: PartID) -> vPartition:
         return self._partitions[idx]
