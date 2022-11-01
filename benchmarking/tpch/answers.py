@@ -139,7 +139,7 @@ def q5(get_df: GetDFFunc) -> DataFrame:
         .join(lineitem, left_on=col("S_SUPPKEY"), right_on=col("L_SUPPKEY"))
         .select(col("N_NAME"), col("L_EXTENDEDPRICE"), col("L_DISCOUNT"), col("L_ORDERKEY"), col("N_NATIONKEY"))
         .join(orders, left_on=col("L_ORDERKEY"), right_on=col("O_ORDERKEY"))
-        .join(customer, left_on=[col("N_NATIONKEY"), col("O_CUSTKEY")], right_on=[col("C_CUSTKEY"), col("C_NATIONKEY")])
+        .join(customer, left_on=[col("O_CUSTKEY"), col("N_NATIONKEY")], right_on=[col("C_CUSTKEY"), col("C_NATIONKEY")])
         .select(col("N_NAME"), (col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))).alias("value"))
         .groupby(col("N_NAME"))
         .agg([(col("value").alias("revenue"), "sum")])
