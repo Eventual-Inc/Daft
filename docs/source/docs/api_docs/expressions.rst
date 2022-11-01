@@ -147,6 +147,7 @@ Ternary
 Changing Column Names/Types
 ###########################
 .. automethod:: daft.expressions.Expression.alias
+.. automethod:: daft.expressions.Expression.cast
 
 Running Python Functions
 ########################
