@@ -870,7 +870,7 @@ class Join(BinaryNode):
             num_partitions = right.num_partitions()
             raise NotImplementedError()
         elif how == JoinType.INNER:
-            num_partitions = min(left.num_partitions(), right.num_partitions())
+            num_partitions = max(left.num_partitions(), right.num_partitions())
             right_id_set = self._right_on.to_id_set()
             filtered_right = [e for e in right.schema() if e.get_id() not in right_id_set]
             schema = left.schema().union(ExpressionList(filtered_right), rename_dup="right.")
