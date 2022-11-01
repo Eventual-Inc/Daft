@@ -111,7 +111,14 @@ class DataFrame:
         Args:
             show_optimized (bool): shows the optimized QueryPlan instead of the unoptimized one.
         """
-        plan = self.plan()
+
+        if self._result_cache is not None:
+            print("Result is cached and will skip computation\n")
+            print(self._plan.pretty_print())
+
+            print("However here is the logical plan used to produce this result:\n")
+
+        plan = self.__plan
         if show_optimized:
             plan = get_context().runner().optimize(plan)
         print(plan.pretty_print())
