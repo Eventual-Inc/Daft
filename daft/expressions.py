@@ -440,14 +440,13 @@ class Expression(TreeNode["Expression"]):
 
         This method supports:
 
-        1. Casting of a PY type to a Primitive type (e.g. converting a PY[object] column of strings to STRING with ``.cast(str)``) - this will coerce
-            each Python object into the specified primitive type, and then convert the data to an optimized backend representation.
+        1. Casting of a PY type to a Primitive type (e.g. converting a PY[object] column of strings to STRING with ``.cast(str)``) - this will coerce each Python object into the specified primitive type, and then convert the data to an optimized backend representation.
         2. Casting between Primitive types, with a set of reasonable default behavior for many type pairs
 
         Example:
 
-            >>> # ["1", "2", None]: STRING -> [1, 2, None]: INTEGER
-            >>> col("string_col").cast(int)
+            >>> # [1.0, 2.5, None]: FLOAT -> [1, 2, None]: INTEGER
+            >>> col("float").cast(int)
             >>>
             >>> # [Path("/tmp1"), Path("/tmp2"), Path("/tmp3")]: PY[Path] -> ["/tmp1", "/tmp1", "/tmp1"]: STRING
             >>> col("path_obj_col").cast(str)
