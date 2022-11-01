@@ -105,12 +105,14 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
             builder.append(f"{prefix}{header}{obj_repr_lines[0]}\n")
 
             if len(children) > 0:
-                second_line = "│   "
+                body_prefix = prefix + "│"
             else:
-                second_line = "    "
+                body_prefix = prefix + " "
+
             for line in obj_repr_lines[1:]:
-                builder.append(f"{prefix}{second_line}{line}\n")
-            builder.append(f"{prefix}{second_line}\n")
+                builder.append(f"{body_prefix}{line}\n")
+            builder.append(f"{body_prefix}\n")
+
             if len(children) < 2:
                 for child in children:
                     has_grandchild = len(child._children()) > 0
@@ -122,25 +124,23 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
 
                     helper(child, depth=depth, index=index + 1, prefix=prefix, header=header)
             else:
+
                 connector = "└─"
-                int_child_header = "─┬─"
+                middle_child_header = "─┬─"
+
                 for i, child in enumerate(children):
-
                     has_grandchild = len(child._children()) > 0
-
                     if has_grandchild:
                         final_header = "─┬─"
                     else:
                         final_header = "───"
 
                     position = len(children) - i
+                    header = ("\b\b\b" * position) + connector + (middle_child_header * (position - 1)) + final_header
                     if i != len(children) - 1:
                         next_child_prefix = prefix + ("   │  " * (position - 1))
                     else:
-                        next_child_prefix = prefix + ("      " * position)
-                        # header = f"\b\b\b{connector}{per_child}"
-
-                    header = ("\b\b\b" * position) + connector + (int_child_header * (position - 1)) + final_header
+                        next_child_prefix = prefix + "      "
 
                     helper(child, depth=depth + 1, index=i, prefix=next_child_prefix, header=header)
 
@@ -240,7 +240,7 @@ class InMemoryScan(UnaryNode):
         self._cache_entry = cache_entry
 
     def __repr__(self) -> str:
-        return f"InMemoryScan\n\toutput={self.schema()}\n\tcache_id={self._cache_entry.key}"
+        return f"InMemoryScan\n     output={self.schema()}\n     cache_id={self._cache_entry.key}"
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -299,7 +299,7 @@ class FileWrite(UnaryNode):
         self._register_child(input)
 
     def __repr__(self) -> str:
-        return f"FileWrite\n\toutput={self.schema()}"
+        return f"FileWrite\n     output={self.schema()}"
 
     def required_columns(self) -> ExpressionList:
         return self._partition_cols.required_columns()
@@ -347,7 +347,7 @@ class Filter(UnaryNode):
             )
 
     def __repr__(self) -> str:
-        return f"Filter\n\toutput={self.schema()}\n\tpredicate={self._predicate}"
+        return f"Filter\n     output={self.schema()}\n     predicate={self._predicate}"
 
     def resource_request(self) -> ResourceRequest:
         return self._predicate.resource_request()
@@ -376,7 +376,7 @@ class Projection(UnaryNode):
         self._projection = projection
 
     def __repr__(self) -> str:
-        return f"Projection\n\toutput={self.schema()}"
+        return f"Projection\n     output={self.schema()}"
 
     def resource_request(self) -> ResourceRequest:
         return self._projection.resource_request()
@@ -414,7 +414,7 @@ class Sort(UnaryNode):
             self._descending = descending
 
     def __repr__(self) -> str:
-        return f"Sort\n\toutput={self.schema()}\n\tsort_by={self._sort_by}\n\tdesc={self._descending}"
+        return f"Sort\n     output={self.schema()}\n     sort_by={self._sort_by}\n     desc={self._descending}"
 
     def resource_request(self) -> ResourceRequest:
         return self._sort_by.resource_request()
@@ -452,7 +452,7 @@ class MapPartition(UnaryNode, Generic[TMapPartitionOp]):
         self._register_child(input)
 
     def __repr__(self) -> str:
-        return f"MapPartition\n\top={self._map_partition_op}"
+        return f"MapPartition\n     op={self._map_partition_op}"
 
     def resource_request(self) -> ResourceRequest:
         return self._map_partition_op.resource_request()
@@ -502,7 +502,7 @@ class LocalLimit(UnaryNode):
         self._num = num
 
     def __repr__(self) -> str:
-        return f"LocalLimit\n\toutput={self.schema()}\n\tN={self._num}"
+        return f"LocalLimit\n     output={self.schema()}\n     N={self._num}"
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -528,7 +528,7 @@ class GlobalLimit(UnaryNode):
         self._num = num
 
     def __repr__(self) -> str:
-        return f"GlobalLimit\n\toutput={self.schema()}\n\tN={self._num}"
+        return f"GlobalLimit\n     output={self.schema()}\n     N={self._num}"
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -580,8 +580,8 @@ class Repartition(UnaryNode):
 
     def __repr__(self) -> str:
         return (
-            f"Repartition\n\toutput={self.schema()}\n\tpartition_by={self._partition_by}"
-            f"\n\tnum_partitions={self.num_partitions()}\n\tscheme={self._scheme}"
+            f"Repartition\n     output={self.schema()}\n     partition_by={self._partition_by}"
+            f"\n     num_partitions={self.num_partitions()}\n     scheme={self._scheme}"
         )
 
     def resource_request(self) -> ResourceRequest:
@@ -630,7 +630,7 @@ class Coalesce(UnaryNode):
             )
 
     def __repr__(self) -> str:
-        return f"Coalesce\n\toutput={self.schema()}" f"\n\tnum_partitions={self.num_partitions()}"
+        return f"Coalesce\n     output={self.schema()}" f"\n     num_partitions={self.num_partitions()}"
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -680,7 +680,7 @@ class LocalAggregate(UnaryNode):
         self._agg = [(e, op) for e, (_, op) in zip(cols_to_agg, agg)]
 
     def __repr__(self) -> str:
-        return f"LocalAggregate\n\toutput={self.schema()}\n\tgroup_by={self._group_by}"
+        return f"LocalAggregate\n     output={self.schema()}\n     group_by={self._group_by}"
 
     def resource_request(self) -> ResourceRequest:
         req = ResourceRequest.default()
@@ -725,7 +725,7 @@ class LocalDistinct(UnaryNode):
         self._register_child(input)
 
     def __repr__(self) -> str:
-        return f"LocalDistinct\n\toutput={self.schema()}\n\tgroup_by={self._group_by}"
+        return f"LocalDistinct\n     output={self.schema()}\n     group_by={self._group_by}"
 
     def resource_request(self) -> ResourceRequest:
         req = ResourceRequest.default()
@@ -763,7 +763,7 @@ class HTTPRequest(LogicalPlan):
         return self._output_schema
 
     def __repr__(self) -> str:
-        return f"HTTPRequest\n\toutput={self.schema()}"
+        return f"HTTPRequest\n     output={self.schema()}"
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -794,7 +794,7 @@ class HTTPResponse(UnaryNode):
         return self._schema
 
     def __repr__(self) -> str:
-        return f"HTTPResponse\n\toutput={self.schema()}"
+        return f"HTTPResponse\n     output={self.schema()}"
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -886,10 +886,10 @@ class Join(BinaryNode):
 
     def __repr__(self) -> str:
         return (
-            f"Join\n\toutput={self.schema()}"
-            f"\n\tnum_partitions={self.num_partitions()}"
-            f"\n\tleft_on={self._left_on}"
-            f"\n\tright_on={self._right_on}"
+            f"Join\n     output={self.schema()}"
+            f"\n     num_partitions={self.num_partitions()}"
+            f"\n     left_on={self._left_on}"
+            f"\n     right_on={self._right_on}"
         )
 
     def resource_request(self) -> ResourceRequest:
