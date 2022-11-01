@@ -3,12 +3,21 @@ Daft 0.0.17 Release Notes
 
 Highlights from 0.0.17:
 
+* Improved local development experience with caching of intermediate steps
 * ``.cast`` is now available for casting between types - users can now coerce Python types such as ``PY[int]`` to Daft-native primitives such as ``INTEGER``
 * Daft now includes a ``.explain`` operation on dataframes, which explains how a dataframe will be executed by pretty-printing the execution graph
 
 
 New Features
 ------------
+
+Caching of intermediate steps
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The Dataframe now caches intermediate steps whenever a user executes the dataframe. Subsequent operations on an executed dataframe will perform an in-memory scan of the
+materialized data instead of re-executing the entire plan.
+
+See: `#297 <https://github.com/Eventual-Inc/Daft/pull/297>`_
 
 Cast Expression
 ^^^^^^^^^^^^^^^
