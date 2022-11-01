@@ -174,8 +174,11 @@ class PyRunner(Runner):
             ]
         )
 
+    def optimize(self, plan: LogicalPlan) -> LogicalPlan:
+        return self._optimizer.optimize(plan)
+
     def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
-        optimized_plan = self._optimizer.optimize(plan)
+        optimized_plan = self.optimize(plan)
 
         exec_plan = ExecutionPlan.plan_from_logical(optimized_plan)
         result_partition_set: PartitionSet

@@ -104,6 +104,18 @@ class DataFrame:
         """
         return self.__plan
 
+    def explain(self, show_optimized: bool = False) -> None:
+        """Prints the LogicalPlan that will be executed to produce this DataFrame.
+        Defaults to showing the unoptimized plan. Use `show_optimized` to show the optimized one.
+
+        Args:
+            show_optimized (bool): shows the optimized QueryPlan instead of the unoptimized one.
+        """
+        plan = self.plan()
+        if show_optimized:
+            plan = get_context().runner().optimize(plan)
+        print(plan.pretty_print())
+
     def num_partitions(self) -> int:
         return self.__plan.num_partitions()
 
@@ -553,15 +565,16 @@ class DataFrame:
             DataFrame: DataFrame that has only  unique rows.
         """
         all_exprs = self._plan.schema()
-        local_distinct = logical_plan.LocalDistinct(self._plan, all_exprs)
-        repartition = logical_plan.Repartition(
-            local_distinct,
-            partition_by=all_exprs,
-            num_partitions=self.num_partitions(),
-            scheme=logical_plan.PartitionScheme.HASH,
-        )
-        global_distinct = logical_plan.LocalDistinct(repartition, all_exprs)
-        return DataFrame(global_distinct)
+        plan: logical_plan.LogicalPlan = logical_plan.LocalDistinct(self._plan, all_exprs)
+        if self.num_partitions() > 1:
+            plan = logical_plan.Repartition(
+                plan,
+                partition_by=all_exprs,
+                num_partitions=self.num_partitions(),
+                scheme=logical_plan.PartitionScheme.HASH,
+            )
+            plan = logical_plan.LocalDistinct(plan, all_exprs)
+        return DataFrame(plan)
 
     def exclude(self, *names: str) -> DataFrame:
         """Drops columns from the current DataFrame by name.
@@ -787,10 +800,20 @@ class DataFrame:
         function_lookup = {
             "sum": Expression._sum,
             "count": Expression._count,
+            "mean": Expression._mean,
             "min": Expression._min,
             "max": Expression._max,
-            "count": Expression._count,
         }
+
+        if self.num_partitions() == 1:
+            agg_exprs = []
+
+            for e, op_name in zip(exprs_to_agg, ops):
+                assert op_name in function_lookup
+                agg_exprs.append((function_lookup[op_name](e).alias(e.name()), op_name))
+            plan = logical_plan.LocalAggregate(self._plan, agg=agg_exprs, group_by=group_by)
+            return DataFrame(plan)
+
         intermediate_ops = {
             "sum": ("sum",),
             "count": ("count",),

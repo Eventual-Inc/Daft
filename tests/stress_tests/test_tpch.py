@@ -107,8 +107,6 @@ def test_tpch_q3(tmp_path, check_answer, get_df):
 def test_tpch_q4(tmp_path, check_answer, get_df):
     daft_df = answers.q4(get_df)
 
-    print(daft_df._plan.pretty_print())
-
     with start_transaction(op="task", name=f"tpch_q4:runner={get_context().runner_config.name.upper()}"):
         daft_pd_df = daft_df.to_pandas()
 

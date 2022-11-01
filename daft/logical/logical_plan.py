@@ -147,16 +147,28 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         helper(self, 0, 0, header="┌─")
         return "".join(builder)
 
-    def _repr_helper(self, **fields: dict[str, Any]) -> str:
+    def _repr_helper(self, **fields: Any) -> str:
+
+        fields_to_print: dict[str, Any] = {}
+        if "output" not in fields:
+            fields_to_print["output"] = self.schema()
+
+        fields_to_print.update(fields)
+        fields_to_print["partitioning"] = self.partition_spec()
         reduced_types = {}
-        for k, v in fields.items():
+        for k, v in fields_to_print.items():
             if isinstance(v, ExpressionList):
                 v = v.exprs
             reduced_types[k] = v
+        to_render: list[str] = [f"{self.__class__.__name__}\n"]
+        space = "    "
+        for key, value in reduced_types.items():
+            repr_ed = pformat(value, width=80, compact=True).splitlines()
+            to_render.append(f"{space}{key}={repr_ed[0]}\n")
+            for line in repr_ed[1:]:
+                to_render.append(f"{space*2}{line}\n")
 
-        return f"{self.__class__.__name__}\n" + "".join(
-            f"    {key}={pformat(value, width=80, indent=8, compact=True)}\n" for key, value in reduced_types.items()
-        )
+        return "".join(to_render)
 
 
 class UnaryNode(LogicalPlan):
@@ -198,7 +210,7 @@ class Scan(LogicalPlan):
         return self._output_schema
 
     def __repr__(self) -> str:
-        return self._repr_helper(output=self.schema(), columns=self._columns, source_info=self._source_info)
+        return self._repr_helper(columns_pruned=len(self._columns) - len(self.schema()), source_info=self._source_info)
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -240,7 +252,7 @@ class InMemoryScan(UnaryNode):
         self._cache_entry = cache_entry
 
     def __repr__(self) -> str:
-        return f"InMemoryScan\n     output={self.schema()}\n     cache_id={self._cache_entry.key}"
+        return self._repr_helper(cache_id=self._cache_entry.key)
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -299,7 +311,7 @@ class FileWrite(UnaryNode):
         self._register_child(input)
 
     def __repr__(self) -> str:
-        return f"FileWrite\n     output={self.schema()}"
+        return self._repr_helper()
 
     def required_columns(self) -> ExpressionList:
         return self._partition_cols.required_columns()
@@ -347,7 +359,7 @@ class Filter(UnaryNode):
             )
 
     def __repr__(self) -> str:
-        return f"Filter\n     output={self.schema()}\n     predicate={self._predicate}"
+        return self._repr_helper(predicate=self._predicate)
 
     def resource_request(self) -> ResourceRequest:
         return self._predicate.resource_request()
@@ -376,7 +388,7 @@ class Projection(UnaryNode):
         self._projection = projection
 
     def __repr__(self) -> str:
-        return f"Projection\n     output={self.schema()}"
+        return self._repr_helper()
 
     def resource_request(self) -> ResourceRequest:
         return self._projection.resource_request()
@@ -414,7 +426,7 @@ class Sort(UnaryNode):
             self._descending = descending
 
     def __repr__(self) -> str:
-        return f"Sort\n     output={self.schema()}\n     sort_by={self._sort_by}\n     desc={self._descending}"
+        return self._repr_helper(sort_by=self._sort_by, desc=self._descending)
 
     def resource_request(self) -> ResourceRequest:
         return self._sort_by.resource_request()
@@ -452,7 +464,7 @@ class MapPartition(UnaryNode, Generic[TMapPartitionOp]):
         self._register_child(input)
 
     def __repr__(self) -> str:
-        return f"MapPartition\n     op={self._map_partition_op}"
+        return self._repr_helper(op=self._map_partition_op)
 
     def resource_request(self) -> ResourceRequest:
         return self._map_partition_op.resource_request()
@@ -481,6 +493,9 @@ class Explode(MapPartition[ExplodeOp]):
             map_partition_op,
         )
 
+    def __repr__(self) -> str:
+        return self._repr_helper()
+
     def required_columns(self) -> ExpressionList:
         return self._map_partition_op.explode_columns.required_columns()
 
@@ -502,7 +517,7 @@ class LocalLimit(UnaryNode):
         self._num = num
 
     def __repr__(self) -> str:
-        return f"LocalLimit\n     output={self.schema()}\n     N={self._num}"
+        return self._repr_helper(num=self._num)
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -528,7 +543,7 @@ class GlobalLimit(UnaryNode):
         self._num = num
 
     def __repr__(self) -> str:
-        return f"GlobalLimit\n     output={self.schema()}\n     N={self._num}"
+        return self._repr_helper(num=self._num)
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -552,6 +567,9 @@ class PartitionScheme(Enum):
     RANGE = "RANGE"
     HASH = "HASH"
     RANDOM = "RANDOM"
+
+    def __repr__(self) -> str:
+        return self.value
 
 
 @dataclass(frozen=True)
@@ -579,9 +597,8 @@ class Repartition(UnaryNode):
             raise ValueError("Can not pass in random partitioning and partition_by args")
 
     def __repr__(self) -> str:
-        return (
-            f"Repartition\n     output={self.schema()}\n     partition_by={self._partition_by}"
-            f"\n     num_partitions={self.num_partitions()}\n     scheme={self._scheme}"
+        return self._repr_helper(
+            partition_by=self._partition_by, num_partitions=self.num_partitions(), scheme=self._scheme
         )
 
     def resource_request(self) -> ResourceRequest:
@@ -630,7 +647,7 @@ class Coalesce(UnaryNode):
             )
 
     def __repr__(self) -> str:
-        return f"Coalesce\n     output={self.schema()}" f"\n     num_partitions={self.num_partitions()}"
+        return self._repr_helper(num_partitions=self.num_partitions())
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -680,7 +697,7 @@ class LocalAggregate(UnaryNode):
         self._agg = [(e, op) for e, (_, op) in zip(cols_to_agg, agg)]
 
     def __repr__(self) -> str:
-        return f"LocalAggregate\n     output={self.schema()}\n     group_by={self._group_by}"
+        return self._repr_helper(agg=[e for e, _ in self._agg], group_by=self._group_by)
 
     def resource_request(self) -> ResourceRequest:
         req = ResourceRequest.default()
@@ -725,7 +742,7 @@ class LocalDistinct(UnaryNode):
         self._register_child(input)
 
     def __repr__(self) -> str:
-        return f"LocalDistinct\n     output={self.schema()}\n     group_by={self._group_by}"
+        return self._repr_helper(group_by=self._group_by)
 
     def resource_request(self) -> ResourceRequest:
         req = ResourceRequest.default()
@@ -763,7 +780,7 @@ class HTTPRequest(LogicalPlan):
         return self._output_schema
 
     def __repr__(self) -> str:
-        return f"HTTPRequest\n     output={self.schema()}"
+        return self._repr_helper()
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -794,7 +811,7 @@ class HTTPResponse(UnaryNode):
         return self._schema
 
     def __repr__(self) -> str:
-        return f"HTTPResponse\n     output={self.schema()}"
+        return self._repr_helper()
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -885,12 +902,7 @@ class Join(BinaryNode):
         self._register_child(right)
 
     def __repr__(self) -> str:
-        return (
-            f"Join\n     output={self.schema()}"
-            f"\n     num_partitions={self.num_partitions()}"
-            f"\n     left_on={self._left_on}"
-            f"\n     right_on={self._right_on}"
-        )
+        return self._repr_helper(left_on=self._left_on, right_on=self._right_on, num_partitions=self.num_partitions())
 
     def resource_request(self) -> ResourceRequest:
         # Note that this join creates two Repartition LogicalPlans using the left_on and right_on ExpressionLists
