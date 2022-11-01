@@ -82,6 +82,6 @@ Writing Data
 Schema and Lineage
 ##################
 
-.. automethod:: daft.DataFrame.plan
+.. automethod:: daft.DataFrame.explain
 .. automethod:: daft.DataFrame.schema
 .. autoproperty:: daft.DataFrame.column_names

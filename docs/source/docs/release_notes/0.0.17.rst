@@ -1,0 +1,41 @@
+Daft 0.0.17 Release Notes
+=========================
+
+Highlights from 0.0.17:
+
+* ``.cast`` is now available for casting between types - users can now coerce Python types such as ``PY[int]`` to Daft-native primitives such as ``INTEGER``
+* Daft now includes a ``.explain`` operation on dataframes, which explains how a dataframe will be executed by pretty-printing the execution graph
+
+
+New Features
+------------
+
+Cast Expression
+^^^^^^^^^^^^^^^
+
+Users can now cast between types, such as ``INTEGER`` to ``FLOAT`` or ``PY[int]`` to ``INTEGER``.
+
+See: `#204 <https://github.com/Eventual-Inc/Daft/pull/293>`_
+
+Explain Dataframe Operation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Users can now view the tree of operations that Daft will execute for their dataframe, allowing for optimizations and debugging.
+
+See: `#204 <https://github.com/Eventual-Inc/Daft/pull/301>`_
+
+Enhancements
+------------
+
+* Add HTTP URL handling for DataFrame.from\_parquet `#292 <https://github.com/Eventual-Inc/Daft/pull/292>`_
+
+Bug Fixes
+---------
+
+* Fix quantile calculations in sort `#300 <https://github.com/Eventual-Inc/Daft/pull/300>`_
+
+Closed Issues
+-------------
+
+* Fix loading Parquet file from https URLs `#288 <https://github.com/Eventual-Inc/Daft/issues/288>`_
+* Cast operator for Expressions `#180 <https://github.com/Eventual-Inc/Daft/issues/180>`_
