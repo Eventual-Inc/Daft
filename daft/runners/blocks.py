@@ -634,11 +634,11 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         elif op == "mean":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.float64()))
-            return ArrowDataBlock(data=pa.chunked_array([[pac.mean(self.data).as_py()]]))
+            return ArrowDataBlock(data=pa.chunked_array([[pac.mean(self.data).as_py()]], type=pa.float64()))
         elif op == "count":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.int64()))
-            return ArrowDataBlock(data=pa.chunked_array([[pac.count(self.data).as_py()]]))
+            return ArrowDataBlock(data=pa.chunked_array([[pac.count(self.data).as_py()]], type=pa.int64()))
         elif op == "min":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
