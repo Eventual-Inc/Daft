@@ -4,6 +4,7 @@ import itertools
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum, IntEnum
+from pprint import pformat
 from typing import Any, Generic, TypeVar
 
 from daft.datasources import SourceInfo, StorageType
@@ -93,6 +94,70 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         raise NotImplementedError()
 
+    def pretty_print(
+        self,
+    ) -> str:
+        builder: list[str] = []
+
+        def helper(node: LogicalPlan, depth: int = 0, index: int = 0, prefix: str = "", header: str = ""):
+            children: list[LogicalPlan] = node._children()
+            obj_repr_lines = repr(node).splitlines()
+            builder.append(f"{prefix}{header}{obj_repr_lines[0]}\n")
+
+            if len(children) > 0:
+                second_line = "│   "
+            else:
+                second_line = "    "
+            for line in obj_repr_lines[1:]:
+                builder.append(f"{prefix}{second_line}{line}\n")
+            builder.append(f"{prefix}{second_line}\n")
+            if len(children) < 2:
+                for child in children:
+                    has_grandchild = len(child._children()) > 0
+
+                    if has_grandchild:
+                        header = "├──"
+                    else:
+                        header = "└──"
+
+                    helper(child, depth=depth, index=index + 1, prefix=prefix, header=header)
+            else:
+                connector = "└─"
+                int_child_header = "─┬─"
+                for i, child in enumerate(children):
+
+                    has_grandchild = len(child._children()) > 0
+
+                    if has_grandchild:
+                        final_header = "─┬─"
+                    else:
+                        final_header = "───"
+
+                    position = len(children) - i
+                    if i != len(children) - 1:
+                        next_child_prefix = prefix + ("   │  " * (position - 1))
+                    else:
+                        next_child_prefix = prefix + ("      " * position)
+                        # header = f"\b\b\b{connector}{per_child}"
+
+                    header = ("\b\b\b" * position) + connector + (int_child_header * (position - 1)) + final_header
+
+                    helper(child, depth=depth + 1, index=i, prefix=next_child_prefix, header=header)
+
+        helper(self, 0, 0, header="┌─")
+        return "".join(builder)
+
+    def _repr_helper(self, **fields: dict[str, Any]) -> str:
+        reduced_types = {}
+        for k, v in fields.items():
+            if isinstance(v, ExpressionList):
+                v = v.exprs
+            reduced_types[k] = v
+
+        return f"{self.__class__.__name__}\n" + "".join(
+            f"    {key}={pformat(value, width=80, indent=8, compact=True)}\n" for key, value in reduced_types.items()
+        )
+
 
 class UnaryNode(LogicalPlan):
     ...
@@ -133,7 +198,7 @@ class Scan(LogicalPlan):
         return self._output_schema
 
     def __repr__(self) -> str:
-        return f"Scan\n\toutput={self.schema()}\n\tpredicate={self._predicate}\n\tcolumns={self._columns}\n\t{self._source_info}"
+        return self._repr_helper(output=self.schema(), columns=self._columns, source_info=self._source_info)
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
