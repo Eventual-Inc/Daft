@@ -23,3 +23,6 @@ class Runner:
     @abstractmethod
     def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
         ...
+
+    def optimize(self, plan: LogicalPlan) -> LogicalPlan:
+        return plan
