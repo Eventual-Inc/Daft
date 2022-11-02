@@ -139,9 +139,7 @@ def q5(get_df: GetDFFunc) -> DataFrame:
         .join(lineitem, left_on=col("S_SUPPKEY"), right_on=col("L_SUPPKEY"))
         .select(col("N_NAME"), col("L_EXTENDEDPRICE"), col("L_DISCOUNT"), col("L_ORDERKEY"), col("N_NATIONKEY"))
         .join(orders, left_on=col("L_ORDERKEY"), right_on=col("O_ORDERKEY"))
-        # Multiple && join conditions expressed as a JOIN and a WHERE instead
-        .join(customer, left_on=col("O_CUSTKEY"), right_on=col("C_CUSTKEY"))
-        .where(col("N_NATIONKEY") == col("C_NATIONKEY"))
+        .join(customer, left_on=[col("O_CUSTKEY"), col("N_NATIONKEY")], right_on=[col("C_CUSTKEY"), col("C_NATIONKEY")])
         .select(col("N_NAME"), (col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))).alias("value"))
         .groupby(col("N_NAME"))
         .agg([(col("value").alias("revenue"), "sum")])
@@ -275,8 +273,7 @@ def q9(get_df: GetDFFunc) -> DataFrame:
 
     daft_df = (
         linepart.join(natsup, left_on=col("L_SUPPKEY"), right_on=col("S_SUPPKEY"))
-        .join(partsupp, left_on=col("L_SUPPKEY"), right_on=col("PS_SUPPKEY"))
-        .where(col("P_PARTKEY") == col("PS_PARTKEY"))
+        .join(partsupp, left_on=[col("L_SUPPKEY"), col("P_PARTKEY")], right_on=[col("PS_SUPPKEY"), col("PS_PARTKEY")])
         .join(orders, left_on=col("L_ORDERKEY"), right_on=col("O_ORDERKEY"))
         .select(
             col("N_NAME"),
