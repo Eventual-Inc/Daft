@@ -140,6 +140,20 @@ def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartiti
 ###
 
 
+def test_apply_type_inference(daft_df):
+    def to_string(data: Any) -> str:
+        return str(data)
+
+    daft_df = daft_df.with_column("string_key", col("Unique Key").apply(to_string))
+
+    daft_df.collect()
+    assert_df_column_type(
+        daft_df._result,
+        "string_key",
+        str,
+    )
+
+
 @parametrize_service_requests_csv_repartition
 def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df = daft_df.repartition(repartition_nparts).with_column(

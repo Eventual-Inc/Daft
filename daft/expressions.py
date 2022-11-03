@@ -6,7 +6,16 @@ import warnings
 from abc import abstractmethod
 from copy import deepcopy
 from functools import partial, partialmethod
-from typing import Any, Callable, NewType, Sequence, Tuple, TypeVar, cast
+from typing import (
+    Any,
+    Callable,
+    NewType,
+    Sequence,
+    Tuple,
+    TypeVar,
+    cast,
+    get_type_hints,
+)
 
 import numpy as np
 import pandas as pd
@@ -326,10 +335,12 @@ class Expression(TreeNode["Expression"]):
         Returns:
             Expression: New expression after having run the function on the expression
         """
+        inferred_type = get_type_hints(func).get("return", None)
+        return_type = inferred_type if inferred_type is not None else return_type
         if return_type is None:
             warnings.warn(
-                "No `return_type` keyword argument specified in `.apply`. It is highly recommended to "
-                "specify a return_type for Daft to perform optimizations and for access to vectorized expression operators."
+                f"Supplied function {func} was not annotated with a return type and no `return_type` keyword argument specified in `.apply`."
+                "It is highly recommended to specify a return_type for Daft to perform optimizations and for access to vectorized expression operators."
             )
 
         expression_type = (
