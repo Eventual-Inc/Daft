@@ -156,7 +156,13 @@ _DatetimeExtractionTM = frozenset(
     }.items()
 )
 
-_LengthTM = frozenset(
+_StrConcatTM = frozenset(
+    {
+        (ExpressionType.string(), ExpressionType.string()): ExpressionType.string(),
+    }.items()
+)
+
+_StrLengthTM = frozenset(
     {
         (ExpressionType.string(),): ExpressionType.integer(),
     }.items()
@@ -273,10 +279,11 @@ class OperatorEnum(Enum):
     )
 
     # String
+    STR_CONCAT = _BOp(name="str_concat", symbol="concat", type_matrix=_StrConcatTM)
     STR_CONTAINS = _LSop(name="str_contains", symbol="contains")
     STR_ENDSWITH = _LSop(name="str_endswith", symbol="endswith")
     STR_STARTSWITH = _LSop(name="str_startswith", symbol="startswith")
-    STR_LENGTH = _UOp(name="str_length", symbol="len", type_matrix=_LengthTM)
+    STR_LENGTH = _UOp(name="str_length", symbol="len", type_matrix=_StrLengthTM)
 
     # Null
     IS_NULL = _UOp(name="is_null", symbol="is_null", type_matrix=_AllLogicalTM)
@@ -360,6 +367,7 @@ class OperatorEvaluator(Protocol[ValueType]):
     GT: BinaryFunction
     GE: BinaryFunction
 
+    STR_CONCAT: BinaryFunction
     STR_CONTAINS: BinaryFunction
     STR_ENDSWITH: BinaryFunction
     STR_STARTSWITH: BinaryFunction

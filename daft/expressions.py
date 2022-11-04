@@ -846,6 +846,23 @@ class UrlMethodAccessor(BaseMethodAccessor):
 
 
 class StringMethodAccessor(BaseMethodAccessor):
+    def concat(self, other: Any) -> CallExpression:
+        """Concatenates two string expressions together
+
+        Args:
+            other (Expression): a string expression to concatenate with
+
+        Returns:
+            CallExpression: a STRING expression which is `self` concatenated with `other`
+        """
+        if isinstance(other, str):
+            other = lit(other)
+        assert isinstance(other, Expression)
+        return CallExpression(
+            OperatorEnum.STR_CONCAT,
+            (self._expr, other),
+        )
+
     def contains(self, pattern: str) -> CallExpression:
         """Checks whether each string contains the given pattern in a string column
 

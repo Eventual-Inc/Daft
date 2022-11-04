@@ -808,6 +808,10 @@ def arrow_cast_integer(arrow_data: pa.ChunkedArray) -> pa.ChunkedArray:
     return arrow_cast(arrow_int_type, arrow_data)
 
 
+def arrow_str_concat(prefix: pa.ChunkedArray, suffix: pa.ChunkedArray) -> pa.ChunkedArray:
+    return pac.binary_join_element_wise(prefix, suffix, pa.scalar(""))
+
+
 def _arr_unary_op(
     fn: Callable[..., pa.ChunkedArray],
 ) -> Callable[[DataBlock[ArrowArrType]], DataBlock[ArrowArrType]]:
@@ -852,6 +856,7 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     NEQ = _arr_bin_op(pac.not_equal)
     GT = _arr_bin_op(pac.greater)
     GE = _arr_bin_op(pac.greater_equal)
+    STR_CONCAT = _arr_bin_op(arrow_str_concat)
     STR_CONTAINS = _arr_bin_op(arrow_str_contains)
     STR_ENDSWITH = _arr_bin_op(arrow_str_endswith)
     STR_STARTSWITH = _arr_bin_op(arrow_str_startswith)
@@ -989,6 +994,7 @@ class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
 
     # Unary operations that should never run on a PyListDataBlock because they are represented by
     # Arrow primitives and should always be housed in an ArrowDataBlock
+    STR_CONCAT = assert_invalid_pylist_operation
     STR_CONTAINS = assert_invalid_pylist_operation
     STR_ENDSWITH = assert_invalid_pylist_operation
     STR_STARTSWITH = assert_invalid_pylist_operation
