@@ -45,3 +45,12 @@ def test_string_length():
     pd_df["str_len"] = pd_df["str_len"].astype("int32")
 
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
+
+
+def test_string_concat():
+    data = {"id": [str(i) for i in range(20)]}
+    df = DataFrame.from_pydict(data)
+    df = df.with_column("str_concat", df["id"].str.concat("_foo"))
+    pd_df = pd.DataFrame.from_dict(data)
+    pd_df["str_concat"] = pd_df["id"] + "_foo"
+    assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
