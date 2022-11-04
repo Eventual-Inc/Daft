@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+from urllib.parse import urlparse
 
 import pyarrow as pa
 from loguru import logger
@@ -26,9 +27,13 @@ def download(url_block: ArrowDataBlock) -> list[bytes | None]:
             continue
         protocol = filesystem.get_protocol_from_path(path)
 
-        # fsspec returns data keyed by absolute paths, so we do a conversion here to match up later
+        # fsspec returns data keyed by absolute paths
         if protocol == "file":
             path = str(pathlib.Path(path).resolve())
+        # fsspec strips the s3:// scheme from the path after .cat
+        elif protocol == "s3":
+            parsed_url = urlparse(path)
+            path = parsed_url.netloc + parsed_url.path
 
         if protocol not in to_download:
             to_download[protocol] = []
