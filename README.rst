@@ -41,46 +41,37 @@ Quickstart
 
   Check out our `full quickstart tutorial <https://getdaft.io/learn/quickstart.html>`_!
 
-Load a dataframe - in this example we load the MNIST dataset from a JSON file, but Daft also supports many other formats such as CSV, Parquet and folders/buckets of files.
+In this example, we load images from an AWS S3 bucket and run a simple function to generate thumbnails for each image:
 
 .. code:: python
 
-  from daft import DataFrame
+    from daft import DataFrame, lit
 
-  URL = "https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz"
+    import io
+    from PIL import Image
 
-  df = DataFrame.from_json(URL)
-  df.show(4)
+    def get_thumbnail(img: Image.Image) -> Image.Image:
+        """Simple function to make an image thumbnail"""
+        imgcopy = img.copy()
+        imgcopy.thumbnail((48, 48))
+        return imgcopy
 
-|MNIST dataframe show|
+    # Load a dataframe from files in an S3 bucket
+    df = DataFrame.from_files("s3://daft-public-data/laion-sample-images/*")
 
-Filter the dataframe for rows where the ``"label"`` column is equal to 5
+    # Get the AWS S3 url of each image
+    df = df.select(lit("s3://").str.concat(df["name"]).alias("s3_url"))
 
-.. code:: python
+    # Download images and load as a PIL Image object
+    df = df.with_column("image", df["s3_url"].url.download().apply(lambda data: Image.open(io.BytesIO(data))))
 
-  df = df.where(df["label"] == 5)
-  df.show(4)
+    # Generate thumbnails from images
+    df = df.with_column("thumbnail", df["image"].apply(get_thumbnail))
 
-|MNIST filtered dataframe show|
+    df.show(3)
 
-Run any function on the dataframe (here we convert a list of pixels into an image using Numpy and the Pillow libraries)
+|Quickstart Image|
 
-.. code:: python
-
-  import numpy as np
-  from PIL import Image
-
-  def image_from_pixel_list(pixels: list) -> Image.Image:
-      arr = np.array(pixels).astype(np.uint8)
-      return Image.fromarray(arr.reshape(28, 28))
-
-  df = df.with_column(
-      "image_pil",
-      df["image"].apply(image_from_pixel_list),
-  )
-  df.show(4)
-
-|MNIST dataframe with Pillow show|
 
 More Resources
 ^^^^^^^^^^^^^^
@@ -94,6 +85,9 @@ License
 
 Daft has an Apache 2.0 license - please see the LICENSE file.
 
+.. |Quickstart Image| image:: https://user-images.githubusercontent.com/17691182/200086119-fb73037b-8b4e-414a-9060-a44122f0c290.png
+   :alt: Dataframe code to load a folder of images from AWS S3 and create thumbnails
+   :height: 256
 
 .. |Banner| image:: https://user-images.githubusercontent.com/17691182/190476440-28f29e87-8e3b-41c4-9c28-e112e595f558.png
    :target: https://www.getdaft.io
@@ -110,12 +104,3 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |Latest Tag| image:: https://img.shields.io/github/v/tag/Eventual-Inc/Daft?label=latest&logo=GitHub
    :target: https://github.com/Eventual-Inc/Daft/tags
    :alt: latest tag
-
-.. |MNIST dataframe show| image:: https://user-images.githubusercontent.com/17691182/197297244-79672651-0229-4763-9258-45d8afd48bae.png
-  :alt: dataframe of MNIST dataset with Python list of pixels
-
-.. |MNIST filtered dataframe show| image:: https://user-images.githubusercontent.com/17691182/197297274-3ae82ec2-a4bb-414c-b765-2a25c2933e34.png
-  :alt: dataframe of MNIST dataset filtered for rows where the label is the digit 5
-
-.. |MNIST dataframe with Pillow show| image:: https://user-images.githubusercontent.com/17691182/197297304-9d25b7da-bbbd-4f82-b9e1-97cd4fb5187f.png
-  :alt: dataframe of MNIST dataset with the Python list of pixel values converted to a Pillow image
