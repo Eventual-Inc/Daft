@@ -37,6 +37,7 @@ OPS = {
     "POSITIVE": lambda ex: +ex,
     "ABS": lambda ex: abs(ex),
     "INVERT": lambda ex: ~ex,
+    "STR_CONCAT": lambda ex1, ex2: ex1.str.concat(ex2),
     "STR_CONTAINS": lambda ex, _: ex.str.contains("foo"),
     "STR_ENDSWITH": lambda ex, _: ex.str.endswith("foo"),
     "STR_STARTSWITH": lambda ex, _: ex.str.startswith("foo"),
