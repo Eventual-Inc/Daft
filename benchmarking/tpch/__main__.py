@@ -173,7 +173,7 @@ def setup_ray(daft_wheel_location: str | None, requirements: str | None):
 
                 return f"{daft.__version__}"
 
-        num_nodes = len([n for n in ray.nodes() if n["Alive"]])
+        num_nodes = len([n for n in ray.nodes() if n["Alive"] and n["Resources"]["CPU"] > 0])
         bundles = [{"CPU": 1} for _ in range(num_nodes)]
         pg = placement_group(bundles=bundles, strategy="STRICT_SPREAD")
         ray.get(pg.ready())
