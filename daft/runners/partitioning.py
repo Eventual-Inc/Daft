@@ -19,7 +19,7 @@ from daft.logical.schema import ExpressionList
 from daft.runners.blocks import ArrowArrType, DataBlock, PyListDataBlock
 
 if TYPE_CHECKING:
-    from ray.data.dataset import Dataset as RayDataset
+    pass
 
 PartID = int
 
@@ -486,9 +486,6 @@ class PartitionSet(Generic[PartitionT]):
         all_partitions = self._get_all_vpartitions()
         part_dfs = [part.to_pandas(schema=schema) for part in all_partitions]
         return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
-
-    def to_ray_dataset(self) -> RayDataset:
-        raise NotImplementedError()
 
     @abstractmethod
     def get_partition(self, idx: PartID) -> PartitionT:

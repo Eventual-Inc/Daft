@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from daft import DataFrame
+from daft.context import get_context
 
 
 class MyObj:
@@ -21,6 +22,7 @@ DATA = {
 }
 
 
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_ray_dataset_all_arrow(n_partitions: int):
     df = DataFrame.from_pydict(DATA).repartition(n_partitions)
@@ -35,6 +37,7 @@ def test_ray_dataset_all_arrow(n_partitions: int):
     ]
 
 
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_ray_dataset_with_py(n_partitions: int):
     df = DataFrame.from_pydict(DATA).repartition(n_partitions)

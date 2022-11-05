@@ -26,6 +26,7 @@ from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet, vPartition
 from daft.runners.pyrunner import LocalPartitionSet
+from daft.runners.ray_runner import RayPartitionSet
 from daft.types import PythonExpressionType
 from daft.viz import DataFrameDisplay
 
@@ -1050,6 +1051,7 @@ class DataFrame:
         self.collect()
         partition_set = self._result
         assert partition_set is not None
+        assert isinstance(partition_set, RayPartitionSet), "Cannot convert to Ray Dataset if not running on Ray backend"
         return partition_set.to_ray_dataset()
 
 
