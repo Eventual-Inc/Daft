@@ -5,19 +5,21 @@ import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, Sequence, TypeVar
 from uuid import uuid4
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 from pyarrow import dataset as pada
-from ray.data.dataset import Dataset as RayDataset
 
 from daft.execution.operators import OperatorEnum
 from daft.expressions import ColID, ColumnExpression, Expression, ExpressionExecutor
 from daft.logical.schema import ExpressionList
 from daft.runners.blocks import ArrowArrType, DataBlock, PyListDataBlock
+
+if TYPE_CHECKING:
+    from ray.data.dataset import Dataset as RayDataset
 
 PartID = int
 

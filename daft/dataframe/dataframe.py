@@ -3,13 +3,12 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from functools import partial
-from typing import IO, Any, Callable, Iterable, TypeVar, Union
+from typing import IO, TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
 
 import pandas
 import pyarrow as pa
 import pyarrow.parquet as papq
 from pyarrow import csv, json
-from ray.data.dataset import Dataset as RayDataset
 
 from daft.context import get_context
 from daft.dataframe.schema import DataFrameSchema
@@ -29,6 +28,9 @@ from daft.runners.partitioning import PartitionCacheEntry, PartitionSet, vPartit
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.types import PythonExpressionType
 from daft.viz import DataFrameDisplay
+
+if TYPE_CHECKING:
+    from ray.data.dataset import Dataset as RayDataset
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 

@@ -1,16 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, List, cast
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, cast
 
 import pyarrow as pa
 import ray
 from loguru import logger
-
-# HACK: These are actually _internal imports, but we can pull them from the ray.data.dataset module
-from ray.data import from_arrow_refs
-from ray.data.block import Block as RayDatasetBlock
-from ray.data.dataset import Dataset as RayDataset
 
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
@@ -29,13 +24,13 @@ from daft.logical.optimizer import (
     PushDownPredicates,
 )
 from daft.resource_request import ResourceRequest
+from daft.runners.blocks import ArrowDataBlock, zip_blocks_as_py
 from daft.runners.partitioning import (
     PartID,
     PartitionCacheEntry,
     PartitionSet,
     vPartition,
 )
-from daft.runners.blocks import ArrowDataBlock, zip_blocks_as_py
 from daft.runners.profiler import profiler
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.runners.runner import Runner
@@ -47,6 +42,10 @@ from daft.runners.shuffle_ops import (
     Shuffler,
     SortOp,
 )
+
+if TYPE_CHECKING:
+    from ray.data.block import Block as RayDatasetBlock
+    from ray.data.dataset import Dataset as RayDataset
 
 
 @ray.remote
@@ -73,6 +72,8 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         return cast(List[vPartition], ray.get([self._partitions[pid] for pid in partition_ids]))
 
     def to_ray_dataset(self) -> RayDataset:
+        from ray.data import from_arrow_refs
+
         blocks = [_make_ray_block_from_vpartition.remote(self._partitions[k]) for k in self._partitions.keys()]
         # NOTE: although the Ray method is called `from_arrow_refs`, this method works also when the blocks are List[T] types
         # instead of Arrow tables as the codepath for Dataset creation is the same.

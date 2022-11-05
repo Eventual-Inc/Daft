@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import multiprocessing
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 import pyarrow as pa
-from ray.data import from_arrow, from_items
-from ray.data.block import Block as RayDatasetBlock
-from ray.data.dataset import Dataset as RayDataset
 
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
@@ -27,13 +24,13 @@ from daft.logical.optimizer import (
     PushDownPredicates,
 )
 from daft.resource_request import ResourceRequest
+from daft.runners.blocks import ArrowDataBlock, zip_blocks_as_py
 from daft.runners.partitioning import (
     PartID,
     PartitionCacheEntry,
     PartitionSet,
     vPartition,
 )
-from daft.runners.blocks import ArrowDataBlock, zip_blocks_as_py
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import (
@@ -44,6 +41,10 @@ from daft.runners.shuffle_ops import (
     Shuffler,
     SortOp,
 )
+
+if TYPE_CHECKING:
+    from ray.data.block import Block as RayDatasetBlock
+    from ray.data.dataset import Dataset as RayDataset
 
 
 def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
@@ -69,6 +70,8 @@ class LocalPartitionSet(PartitionSet[vPartition]):
         return [self._partitions[pid] for pid in partition_ids]
 
     def to_ray_dataset(self) -> RayDataset:
+        from ray.data import from_arrow, from_items
+
         ray_dataset_arrow_blocks: list[pa.Table] = []
         ray_dataset_nonarrow_data: list[dict[str, Any]] = []
         for part_id in self._partitions:
