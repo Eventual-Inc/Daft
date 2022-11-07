@@ -1048,6 +1048,14 @@ class DataFrame:
         return result.to_pydict()
 
     def to_ray_dataset(self) -> RayDataset:
+        """Converts the current DataFrame to a Ray Dataset which is useful for running distributed ML model training in Ray
+
+        .. NOTE::
+            This function can only work if Daft is running using the RayRunner
+
+        Returns:
+            RayDataset: Ray dataset
+        """
         self.collect()
         partition_set = self._result
         assert partition_set is not None

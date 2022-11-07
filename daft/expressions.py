@@ -330,7 +330,8 @@ class Expression(TreeNode["Expression"]):
 
         Args:
             func (Callable): Function to run per value of the expression
-            return_type (Optional[Type], optional): Return type of the function that was ran. Defaults to None.
+            return_type (Optional[Type], optional): Return type of the function that was ran. This defaults to None and Daft will infer the return_type
+                from the function's type annotations if available.
 
         Returns:
             Expression: New expression after having run the function on the expression

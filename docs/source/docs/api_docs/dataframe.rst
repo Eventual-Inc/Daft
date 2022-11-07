@@ -79,6 +79,11 @@ Writing Data
 .. automethod:: daft.DataFrame.write_parquet
 .. automethod:: daft.DataFrame.write_csv
 
+Integrations
+************
+
+.. automethod:: daft.DataFrame.to_ray_dataset
+
 Schema and Lineage
 ##################
 
