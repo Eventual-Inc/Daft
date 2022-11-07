@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from functools import partial
-from typing import IO, Any, Callable, Iterable, TypeVar, Union
+from typing import IO, TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
 
 import pandas
 import pyarrow as pa
@@ -26,8 +26,12 @@ from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet, vPartition
 from daft.runners.pyrunner import LocalPartitionSet
+from daft.runners.ray_runner import RayPartitionSet
 from daft.types import PythonExpressionType
 from daft.viz import DataFrameDisplay
+
+if TYPE_CHECKING:
+    from ray.data.dataset import Dataset as RayDataset
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
@@ -1042,6 +1046,13 @@ class DataFrame:
         result = self._result
         assert result is not None
         return result.to_pydict()
+
+    def to_ray_dataset(self) -> RayDataset:
+        self.collect()
+        partition_set = self._result
+        assert partition_set is not None
+        assert isinstance(partition_set, RayPartitionSet), "Cannot convert to Ray Dataset if not running on Ray backend"
+        return partition_set.to_ray_dataset()
 
 
 @dataclass

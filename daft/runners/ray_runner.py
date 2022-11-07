@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, List, cast
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, cast
 
+import pyarrow as pa
 import ray
 from loguru import logger
 
@@ -23,6 +24,7 @@ from daft.logical.optimizer import (
     PushDownPredicates,
 )
 from daft.resource_request import ResourceRequest
+from daft.runners.blocks import ArrowDataBlock, zip_blocks_as_py
 from daft.runners.partitioning import (
     PartID,
     PartitionCacheEntry,
@@ -41,6 +43,23 @@ from daft.runners.shuffle_ops import (
     SortOp,
 )
 
+if TYPE_CHECKING:
+    from ray.data.block import Block as RayDatasetBlock
+    from ray.data.dataset import Dataset as RayDataset
+
+
+@ray.remote
+def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
+    daft_blocks = {tile.column_name: tile.block for _, tile in partition.columns.items()}
+
+    all_arrow = all(isinstance(daft_block, ArrowDataBlock) for daft_block in daft_blocks.values())
+    if all_arrow:
+        return pa.Table.from_pydict({colname: daft_block.data for colname, daft_block in daft_blocks.items()})
+
+    colnames = list(daft_blocks.keys())
+    blocks = list(daft_blocks.values())
+    return [dict(zip(colnames, row_tuple)) for row_tuple in zip_blocks_as_py(*blocks)]
+
 
 @dataclass
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
@@ -51,6 +70,14 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
         return cast(List[vPartition], ray.get([self._partitions[pid] for pid in partition_ids]))
+
+    def to_ray_dataset(self) -> RayDataset:
+        from ray.data import from_arrow_refs
+
+        blocks = [_make_ray_block_from_vpartition.remote(self._partitions[k]) for k in self._partitions.keys()]
+        # NOTE: although the Ray method is called `from_arrow_refs`, this method works also when the blocks are List[T] types
+        # instead of Arrow tables as the codepath for Dataset creation is the same.
+        return from_arrow_refs(blocks)
 
     def get_partition(self, idx: PartID) -> ray.ObjectRef:
         return self._partitions[idx]
