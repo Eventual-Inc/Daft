@@ -1,0 +1,49 @@
+Daft 0.0.18 Release Notes
+=========================
+
+
+The Daft 0.0.18 adds bugfixes and new functionality - highlights:
+
+* `Ray Datasets <https://docs.ray.io/en/latest/data/dataset.html>`_ integration - Daft Dataframes can now feed into ML training on Ray easily using the ``.to_ray_dataset()`` method
+* Big performance improvements from fixes in join algorithm
+* ``.apply`` now infers the return type from the function's type annotation if available
+
+
+New Features
+------------
+
+Ray Datasets Integration
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Daft Dataframes can now be converted easily into a `Ray Datasets <https://docs.ray.io/en/latest/data/dataset.html>`_, which makes it really easy to go from preprocessing/analyzing your data in Daft to ML training using the Ray ecosystem of tools, all on the same Ray cluster.
+
+See: `#316 <https://github.com/Eventual-Inc/Daft/pull/316>`_
+
+String Concatenation
+^^^^^^^^^^^^^^^^^^^^
+
+``Expression.str.concat`` now allows for concatenation of strings in a Daft Dataframe.
+
+See: `#313 <https://github.com/Eventual-Inc/Daft/pull/313>`_
+
+Enhancements
+------------
+
+* Infer return type of function from type annotations in .apply `#311 <https://github.com/Eventual-Inc/Daft/pull/311>`_
+* Import `lit` from daft top-level module `#315 <https://github.com/Eventual-Inc/Daft/pull/315>`_
+* Fix placement group for benchmarking script `#312 <https://github.com/Eventual-Inc/Daft/pull/312>`_
+* Run 10-min quickstart in documentation `#305 <https://github.com/Eventual-Inc/Daft/pull/305>`_
+* Cleanup multicolumn joins in tpch `#304 <https://github.com/Eventual-Inc/Daft/pull/304>`_
+* Change min\(left, right\) to max\(left, right\) for join partitioning `#303 <https://github.com/Eventual-Inc/Daft/pull/303>`_
+
+Bug Fixes
+---------
+
+* Fix .url.download\(\) for s3 URLs `#310 <https://github.com/Eventual-Inc/Daft/pull/310>`_
+
+
+Closed Issues
+-------------
+
+* .apply should infer the return\_type from type annotations if available `#309 <https://github.com/Eventual-Inc/Daft/issues/309>`_
+* Add .str.concat expression operator `#306 <https://github.com/Eventual-Inc/Daft/issues/306>`_
