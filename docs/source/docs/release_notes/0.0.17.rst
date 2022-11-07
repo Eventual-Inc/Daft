@@ -24,14 +24,14 @@ Cast Expression
 
 Users can now cast between types, such as ``INTEGER`` to ``FLOAT`` or ``PY[int]`` to ``INTEGER``.
 
-See: `#204 <https://github.com/Eventual-Inc/Daft/pull/293>`_
+See: `#293 <https://github.com/Eventual-Inc/Daft/pull/293>`_
 
 Explain Dataframe Operation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Users can now view the tree of operations that Daft will execute for their dataframe, allowing for optimizations and debugging.
 
-See: `#204 <https://github.com/Eventual-Inc/Daft/pull/301>`_
+See: `#301 <https://github.com/Eventual-Inc/Daft/pull/301>`_
 
 Enhancements
 ------------
