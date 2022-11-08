@@ -2,7 +2,7 @@
 
 |CI| |PyPI| |Latest Tag|
 
-`Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io>`_ • `Installation`_ • `10-minute tour of Daft <https://getdaft.io/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
+`Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io>`_ • `Installation`_ • `10-minute tour of Daft <https://getdaft.io/docs/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
 Daft: the distributed Python dataframe for media data
 =====================================================
@@ -39,7 +39,7 @@ Install Daft with ``pip install getdaft``.
 Quickstart
 ^^^^^^^^^^
 
-  Check out our `full quickstart tutorial <https://getdaft.io/learn/quickstart.html>`_!
+  Check out our `full quickstart tutorial <https://getdaft.io/docs/learn/quickstart.html>`_!
 
 In this example, we load images from an AWS S3 bucket and run a simple function to generate thumbnails for each image:
 
