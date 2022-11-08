@@ -2,7 +2,7 @@
 
 |CI| |PyPI| |Latest Tag|
 
-`Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io>`_ • `Installation`_ • `10-minute tour of Daft <https://getdaft.io/docs/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
+`Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io/docs>`_ • `Installation`_ • `10-minute tour of Daft <https://getdaft.io/docs/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
 Daft: the distributed Python dataframe for media data
 =====================================================
@@ -76,9 +76,9 @@ In this example, we load images from an AWS S3 bucket and run a simple function 
 More Resources
 ^^^^^^^^^^^^^^
 
-* `10-minute tour of Daft <https://getdaft.io/learn/10-min.html>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
-* `User Guide <https://getdaft.io/learn/user_guides.html>`_ - take a deep-dive into each topic within Daft
-* `API Reference <https://getdaft.io/api_docs.html>`_ - API reference for public classes/functions of Daft
+* `10-minute tour of Daft <https://getdaft.io/docs/learn/10-min.html>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
+* `User Guide <https://getdaft.io/docs/learn/user_guides.html>`_ - take a deep-dive into each topic within Daft
+* `API Reference <https://getdaft.io/docs/api_docs/index.html>`_ - API reference for public classes/functions of Daft
 
 License
 -------
