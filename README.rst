@@ -4,8 +4,8 @@
 
 `Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io/docs>`_ • `Installation`_ • `10-minute tour of Daft <https://getdaft.io/docs/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
-Daft: the distributed Python dataframe for media data
-=====================================================
+Daft: the distributed Python dataframe for complex data
+=======================================================
 
 
 `Daft <https://www.getdaft.io>`_ is a fast, Pythonic and scalable open-source dataframe library built for Python and Machine Learning workloads.
@@ -22,11 +22,11 @@ Daft: the distributed Python dataframe for media data
 About Daft
 ----------
 
-The Daft dataframe is a table of data with rows and columns. Columns can contain any Python objects, which allows Daft to support rich media data types such as images, audio, video and more.
+The Daft dataframe is a table of data with rows and columns. Columns can contain any Python objects, which allows Daft to support rich complex data types such as images, audio, video and more.
 
 1. **Any Data**: Columns can contain any Python objects, which means that the Python libraries you already use for running machine learning or custom data processing will work natively with Daft!
 2. **Notebook Computing**: Daft is built for the interactive developer experience on a notebook - intelligent caching/query optimizations accelerates your experimentation and data exploration.
-3. **Distributed Computing**: Rich media formats such as images can quickly outgrow your local laptop's computational resources - Daft integrates natively with `Ray <https://www.ray.io>`_ for running dataframes on large clusters of machines with thousands of CPUs/GPUs.
+3. **Distributed Computing**: Rich complex formats such as images can quickly outgrow your local laptop's computational resources - Daft integrates natively with `Ray <https://www.ray.io>`_ for running dataframes on large clusters of machines with thousands of CPUs/GPUs.
 
 Getting Started
 ---------------
