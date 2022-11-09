@@ -5,7 +5,7 @@ name: Check Broken Links on getdaft.io
 
 on:
   schedule:
-  - cron:  '0 3 * * *'
+  - cron: 0 3 * * *
   workflow_dispatch:
 
 jobs:
@@ -16,8 +16,8 @@ jobs:
       uses: actions/setup-node@v3
       with:
         node-version: 19.*
-        cache: 'npm'
+        cache: npm
     - name: setup broken link checker
-      run: npm install -g broken-link-checker 
+      run: npm install -g broken-link-checker
     - name: Check getdaft.io
       run: blc https://getdaft.io -ro --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/
