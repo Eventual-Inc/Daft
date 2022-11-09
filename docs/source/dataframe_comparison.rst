@@ -7,7 +7,7 @@ A Dataframe can be thought of conceptually as a "table of data", with rows and c
 * Extract/Transform/Load (ETL): Defining data pipelines that clean and process data for consumption by other users
 * Data Analytics: Analyzing data by producing summaries and reports
 
-Daft Dataframe focuses on Machine Learning/Deep Learning workloads that often involve Complex and unstructured data (images, video, audio, text documents and more).
+Daft Dataframe focuses on Machine Learning/Deep Learning workloads that often involve Complex media data (images, video, audio, text documents and more).
 
 Below we discuss some other Dataframe libraries and compare them to Daft.
 
