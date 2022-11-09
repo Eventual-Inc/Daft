@@ -12,11 +12,6 @@ jobs:
   check-links:
     runs-on: ubuntu-latest
     steps:
-    - name: Setup npm
-      uses: actions/setup-node@v3
-      with:
-        node-version: 19.*
-        cache: npm
     - name: setup broken link checker
       run: npm install -g broken-link-checker
     - name: Check getdaft.io
