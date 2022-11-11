@@ -9,6 +9,7 @@ import platform
 import socket
 import subprocess
 import time
+import warnings
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -46,6 +47,8 @@ class MetricsBuilder:
         "github_run_attempt",
         "github_ref",
         *[f"tpch_q{i}" for i in range(1, NUM_TPCH_QUESTIONS + 1)],
+        "worker_count",
+        "worker_instance_name",
     ]
 
     def __init__(self, runner: str):
@@ -71,6 +74,8 @@ class MetricsBuilder:
             "github_run_id": os.getenv("GITHUB_RUN_ID"),
             "github_run_attempt": os.getenv("GITHUB_RUN_ATTEMPT"),
             "github_ref": os.getenv("GITHUB_REF"),
+            "worker_count": os.getenv("WORKER_COUNT"),
+            "worker_instance_name": os.getenv("WORKER_INSTANCE_NAME"),
         }
 
     @contextlib.contextmanager
@@ -82,14 +87,13 @@ class MetricsBuilder:
         logger.info(f"Finished benchmarks for q{qnum}: {walltime_s}s")
         self._metrics[f"tpch_q{qnum}"] = walltime_s
 
-    def dump_csv(self, csv_output_location: str, output_csv_headers: bool):
+    def dump_csv(self, csv_output_location: str):
         if len(self._metrics) == 0:
             logger.warning("No metrics to upload!")
 
         with open(csv_output_location, "w", newline="") as csvfile:
             writer = csv.writer(csvfile, delimiter=",")
-            if output_csv_headers:
-                writer.writerow(MetricsBuilder.HEADERS)
+            writer.writerow(MetricsBuilder.HEADERS)
             writer.writerow([self._metrics.get(header, "") for header in MetricsBuilder.HEADERS])
 
 
@@ -100,9 +104,7 @@ def get_df_with_parquet_folder(parquet_folder: str) -> Callable[[str], DataFrame
     return _get_df
 
 
-def run_all_benchmarks(
-    parquet_folder: str, skip_questions: set[int], csv_output_location: str | None, output_csv_headers: bool
-):
+def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output_location: str | None):
     get_df = get_df_with_parquet_folder(parquet_folder)
 
     daft_context = get_context()
@@ -122,7 +124,7 @@ def run_all_benchmarks(
 
     if csv_output_location:
         logger.info(f"Writing CSV to: {csv_output_location}")
-        metrics_builder.dump_csv(csv_output_location, output_csv_headers)
+        metrics_builder.dump_csv(csv_output_location)
     else:
         logger.info(f"No CSV location specified, skipping CSV write")
 
@@ -209,7 +211,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--skip_questions", type=str, default=None, help="Comma-separated list of questions to skip")
     parser.add_argument("--output_csv", default=None, type=str, help="Location to output CSV file")
-    parser.add_argument("--output_csv_headers", action="store_true", help="Whether to output headers for the CSV file")
+    parser.add_argument(
+        "--output_csv_headers",
+        action="store_true",
+        help="DEPRECATED: We always output CSV headers regardless of this flag",
+    )
     parser.add_argument(
         "--daft_wheel_location", default=None, help="Location to built Daft wheel for installation on Ray cluster"
     )
@@ -219,6 +225,10 @@ if __name__ == "__main__":
         help="Path to pip-style requirements.txt file to bootstrap environment on remote Ray cluster",
     )
     args = parser.parse_args()
+
+    if args.output_csv_headers:
+        warnings.warn("Detected --output_csv_headers flag, but this flag is deprecated - CSVs always output headers")
+
     num_parts = math.ceil(args.scale_factor) if args.num_parts is None else args.num_parts
 
     # Generate Parquet data, or skip if data is cached on disk
@@ -241,5 +251,4 @@ if __name__ == "__main__":
         parquet_folder,
         skip_questions={int(s) for s in args.skip_questions.split(",")} if args.skip_questions is not None else set(),
         csv_output_location=args.output_csv,
-        output_csv_headers=args.output_csv_headers,
     )
