@@ -72,7 +72,7 @@ For example, let's try writing a function that will clip Videos in a column, bas
     )
 
 1. The ``@polars_udf`` decorator wraps a normal Python function as a Daft UDF. You can define the return type of the UDF by passing in the ``return_type=`` keyword argument.
-2. Daft will pass columns into your UDF as a `Polars Series <https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.Series.html>`_. If the UDF operates on multiple columns, all columns will be represented by Polars Series of the same length.
+2. Daft will pass columns into your UDF as a `Polars Series <https://pola-rs.github.io/polars/py-polars/html/reference/series/index.html>`_. If the UDF operates on multiple columns, all columns will be represented by Polars Series of the same length.
 3. Your UDF can execute any arbitrary user-defined logic, but needs to return a sequence equal to the lengths of the inputs. Valid DaFt UDF return sequence types are: ``list``, ``numpy.ndarray``, ``pandas.Series`` and ``polars.Series``.
 4. To obtain a new column with our intended results, we simply run our UDF on columns in the DataFrame.
 
