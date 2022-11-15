@@ -21,7 +21,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
-from multiprocessing import Pool
+from multiprocessing import Pool, set_start_method
 
 from loguru import logger
 
@@ -108,6 +108,7 @@ if __name__ == "__main__":
         help="Number of partitions to generate per pipeline window",
     )
     args = parser.parse_args()
+    set_start_method("spawn")
     with tempfile.TemporaryDirectory() as tmpdir:
         pipelined_data_generation(
             tmpdir, args.scale_factor, args.num_parts, args.aws_s3_sync_location, parallelism=args.parallelism
