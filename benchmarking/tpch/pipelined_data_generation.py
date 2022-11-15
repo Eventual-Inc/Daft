@@ -20,8 +20,7 @@ import pathlib
 import shlex
 import shutil
 import subprocess
-import tempfile
-from multiprocessing import Pool, set_start_method
+from multiprocessing import Pool
 
 from loguru import logger
 
@@ -92,6 +91,11 @@ def pipelined_data_generation(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--tpch_gen_folder",
+        default="data/tpch-dbgen",
+        help="Path to the folder containing the TPCH dbgen tool and generated data",
+    )
     parser.add_argument("--scale-factor", default=10.0, help="Scale factor to run on in GB", type=float)
     parser.add_argument(
         "--num-parts", default=32, help="Number of parts to generate (defaults to 1 part per GB)", type=int
@@ -108,8 +112,6 @@ if __name__ == "__main__":
         help="Number of partitions to generate per pipeline window",
     )
     args = parser.parse_args()
-    set_start_method("spawn")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        pipelined_data_generation(
-            tmpdir, args.scale_factor, args.num_parts, args.aws_s3_sync_location, parallelism=args.parallelism
-        )
+    pipelined_data_generation(
+        args.tpch_gen_folder, args.scale_factor, args.num_parts, args.aws_s3_sync_location, parallelism=args.parallelism
+    )
