@@ -10,6 +10,7 @@ import socket
 import subprocess
 import time
 import warnings
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -186,11 +187,18 @@ def warmup_environment(daft_wheel_location: str | None, requirements: str | None
                 import daft
                 from daft.filesystem import get_filesystem_from_path
 
-                # Download all files in the provided parquet_folder by reading a single byte from them using fsspec
+                # Download all files in the provided parquet_folder by reading a single byte from each of them
+                def head(parquet_folder, filepath):
+                    fs = get_filesystem_from_path(parquet_folder)
+                    fs.head(filepath, size=1)
+
                 fs = get_filesystem_from_path(parquet_folder)
                 all_files = fs.find(parquet_folder)
-                for f in all_files:
-                    fs.head(f, size=1)
+                futures = []
+                with ThreadPoolExecutor(max_workers=16) as executor:
+                    for f in all_files:
+                        futures.append(executor.submit(head, parquet_folder, f))
+                wait(futures)
                 cache_location = get_context().cache_location
                 print(
                     f"Daft cache at {cache_location} warmed up with size: {sum(f.stat().st_size for f in cache_location.glob('**/*') if f.is_file())}"
