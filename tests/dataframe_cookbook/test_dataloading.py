@@ -43,8 +43,8 @@ def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts):
 @pytest.mark.parametrize(
     "daft_df",
     [
-        DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET).select(*[col(c) for c in COLUMNS]),
-        DataFrame.from_parquet(SERVICE_REQUESTS_PARQUET_FOLDER).select(*[col(c) for c in COLUMNS]),
+        DataFrame.read_parquet(SERVICE_REQUESTS_PARQUET).select(*[col(c) for c in COLUMNS]),
+        DataFrame.read_parquet(SERVICE_REQUESTS_PARQUET_FOLDER).select(*[col(c) for c in COLUMNS]),
     ],
 )
 @parametrize_service_requests_csv_repartition
@@ -60,7 +60,7 @@ def test_load_csv_no_headers(tmp_path: pathlib.Path):
     """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
     csv.write_text("\n".join(pathlib.Path(IRIS_CSV).read_text().split("\n")[1:]))
-    daft_df = DataFrame.from_csv(str(csv), has_headers=False)
+    daft_df = DataFrame.read_csv(str(csv), has_headers=False)
     pd_df = pd.read_csv(csv, header=None)
     pd_df.columns = [f"f{i}" for i in range(5)]
     daft_pd_df = daft_df.to_pandas()
@@ -71,7 +71,7 @@ def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
     """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
     csv.write_text(pathlib.Path(IRIS_CSV).read_text().replace(",", "\t"))
-    daft_df = DataFrame.from_csv(str(csv), delimiter="\t")
+    daft_df = DataFrame.read_csv(str(csv), delimiter="\t")
     pd_df = pd.read_csv(csv, delimiter="\t")
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, assert_ordering=True)
@@ -87,7 +87,7 @@ def test_load_json(tmp_path: pathlib.Path):
     pd_df["lists"] = pd.Series([[1 for _ in range(i)] for i in range(len(pd_df))])
 
     pd_df.to_json(json_file, lines=True, orient="records")
-    daft_df = DataFrame.from_json(str(json_file))
+    daft_df = DataFrame.read_json(str(json_file))
 
     assert daft_df.schema()["dicts"].daft_type == PythonExpressionType(dict)
     assert daft_df.schema()["lists"].daft_type == PythonExpressionType(list)

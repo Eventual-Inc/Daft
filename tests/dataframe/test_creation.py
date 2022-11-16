@@ -25,7 +25,7 @@ def test_create_dataframe_csv(valid_data: list[dict[str, float]]) -> None:
         writer.writerows([[item[col] for col in header] for item in valid_data])
         f.flush()
 
-        df = DataFrame.from_csv(f.name)
+        df = DataFrame.read_csv(f.name)
         assert df.column_names == [
             "sepal_length",
             "sepal_width",

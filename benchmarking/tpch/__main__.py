@@ -111,7 +111,7 @@ class MetricsBuilder:
 
 def get_df_with_parquet_folder(parquet_folder: str) -> Callable[[str], DataFrame]:
     def _get_df(table_name: str) -> DataFrame:
-        return DataFrame.from_parquet(os.path.join(parquet_folder, table_name, "*.parquet"))
+        return DataFrame.read_parquet(os.path.join(parquet_folder, table_name, "*.parquet"))
 
     return _get_df
 

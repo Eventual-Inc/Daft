@@ -25,7 +25,7 @@ def parametrize_sort_desc(arg_name: str):
 
 @pytest.fixture(scope="function")
 def daft_df():
-    return DataFrame.from_csv(SERVICE_REQUESTS_CSV).select(*[col(c) for c in COLUMNS])
+    return DataFrame.read_csv(SERVICE_REQUESTS_CSV).select(*[col(c) for c in COLUMNS])
 
 
 @pytest.fixture(scope="function")

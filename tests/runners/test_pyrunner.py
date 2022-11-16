@@ -18,7 +18,7 @@ def test_pyrunner_with_pandas():
     pd_df = pd_df.head(10)
 
     # Daft Query
-    df = DataFrame.from_csv(IRIS_CSV)
+    df = DataFrame.read_csv(IRIS_CSV)
     df = df.with_column("area", col("sepal.width") * col("sepal.length"))
     df = df.repartition(3, "variety")
     df = df.where(col("area") < 20)
