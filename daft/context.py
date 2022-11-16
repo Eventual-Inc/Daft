@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import pathlib
+import tempfile
 from typing import TYPE_CHECKING, ClassVar
 
 from loguru import logger
 
 if TYPE_CHECKING:
     from daft.runners.runner import Runner
+
+
+DEFAULT_DAFT_CACHE_LOCATION = pathlib.Path(tempfile.gettempdir()) / "daft"
 
 
 class _RunnerConfig:
@@ -53,6 +58,7 @@ class DaftContext:
 
     runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
     disallow_set_runner: bool = False
+    cache_location: pathlib.Path | None = DEFAULT_DAFT_CACHE_LOCATION
 
     def runner(self) -> Runner:
         global _RUNNER
@@ -87,6 +93,26 @@ _DaftContext = DaftContext()
 
 
 def get_context() -> DaftContext:
+    return _DaftContext
+
+
+def set_daft_cache(cache_location: pathlib.Path | None) -> DaftContext:
+    """Sets the location of the Daft cache
+
+    By default Daft will use /tmp/daft as the cache location, but it may be useful for applications
+    to set a better location for example to take advantage of SSD scratch space.
+
+    Args:
+        cache_location (Optional[pathlib.Path]): Location for caching Daft data
+
+    Returns:
+        DaftContext: Daft context after setting the cache location
+    """
+    global _DaftContext
+    _DaftContext = dataclasses.replace(
+        _DaftContext,
+        cache_location=cache_location,
+    )
     return _DaftContext
 
 
