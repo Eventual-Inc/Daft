@@ -66,7 +66,11 @@ def _get_filepaths(path: str):
         return [f"{protocol}://{path}" if protocol != "file" else path for path in fs.ls(path)]
     elif fs.isfile(path):
         return [path]
-    return [f"{protocol}://{path}" if protocol != "file" else path for path in fs.expand_path(path, recursive=True)]
+    try:
+        expanded = fs.expand_path(path, recursive=True)
+    except FileNotFoundError:
+        return []
+    return [f"{protocol}://{path}" if protocol != "file" else path for path in expanded]
 
 
 class DataFrame:
