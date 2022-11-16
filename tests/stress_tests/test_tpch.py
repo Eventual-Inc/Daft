@@ -56,7 +56,7 @@ def get_df(gen_tpch):
         except FileNotFoundError:
             fp = nonchunked_filepath
 
-        df = DataFrame.from_csv(
+        df = DataFrame.read_csv(
             fp,
             has_headers=False,
             column_names=data_generation.SCHEMA[tbl_name],

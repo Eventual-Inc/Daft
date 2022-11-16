@@ -8,9 +8,9 @@ Construction
 
 .. _df-file-construction-api:
 
-.. automethod:: daft.DataFrame.from_csv
-.. automethod:: daft.DataFrame.from_json
-.. automethod:: daft.DataFrame.from_parquet
+.. automethod:: daft.DataFrame.read_csv
+.. automethod:: daft.DataFrame.read_json
+.. automethod:: daft.DataFrame.read_parquet
 .. automethod:: daft.DataFrame.from_files
 
 .. _df-memory-construction-api:

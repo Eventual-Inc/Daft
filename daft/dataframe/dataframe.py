@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import warnings
 from dataclasses import dataclass
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
@@ -264,17 +265,22 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
-    def from_json(
+    def from_json(cls, *args, **kwargs) -> DataFrame:
+        warnings.warn(f"DataFrame.from_json will be deprecated in 0.1.0 in favor of DataFrame.read_json")
+        return cls.read_json(*args, **kwargs)
+
+    @classmethod
+    def read_json(
         cls,
         path: str,
     ) -> DataFrame:
         """Creates a DataFrame from line-delimited JSON file(s)
 
         Example:
-            >>> df = DataFrame.from_json("/path/to/file.json")
-            >>> df = DataFrame.from_json("/path/to/directory")
-            >>> df = DataFrame.from_json("/path/to/files-*.json")
-            >>> df = DataFrame.from_json("s3://path/to/files-*.json")
+            >>> df = DataFrame.read_json("/path/to/file.json")
+            >>> df = DataFrame.read_json("/path/to/directory")
+            >>> df = DataFrame.read_json("/path/to/files-*.json")
+            >>> df = DataFrame.read_json("s3://path/to/files-*.json")
 
         Args:
             path (str): Path to JSON files (allows for wildcards)
@@ -298,7 +304,12 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
-    def from_csv(
+    def from_csv(cls, *args, **kwargs) -> DataFrame:
+        warnings.warn(f"DataFrame.from_csv will be deprecated in 0.1.0 in favor of DataFrame.read_csv")
+        return cls.read_csv(*args, **kwargs)
+
+    @classmethod
+    def read_csv(
         cls,
         path: str,
         has_headers: bool = True,
@@ -308,10 +319,10 @@ class DataFrame:
         """Creates a DataFrame from CSV file(s)
 
         Example:
-            >>> df = DataFrame.from_csv("/path/to/file.csv")
-            >>> df = DataFrame.from_csv("/path/to/directory")
-            >>> df = DataFrame.from_csv("/path/to/files-*.csv")
-            >>> df = DataFrame.from_csv("s3://path/to/files-*.csv")
+            >>> df = DataFrame.read_csv("/path/to/file.csv")
+            >>> df = DataFrame.read_csv("/path/to/directory")
+            >>> df = DataFrame.read_csv("/path/to/files-*.csv")
+            >>> df = DataFrame.read_csv("s3://path/to/files-*.csv")
 
         Args:
             path (str): Path to CSV (allows for wildcards)
@@ -356,14 +367,19 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
-    def from_parquet(cls, path: str) -> DataFrame:
+    def from_parquet(cls, *args, **kwargs) -> DataFrame:
+        warnings.warn(f"DataFrame.from_parquet will be deprecated in 0.1.0 in favor of DataFrame.read_parquet")
+        return cls.read_parquet(*args, **kwargs)
+
+    @classmethod
+    def read_parquet(cls, path: str) -> DataFrame:
         """Creates a DataFrame from Parquet file(s)
 
         Example:
-            >>> df = DataFrame.from_parquet("/path/to/file.parquet")
-            >>> df = DataFrame.from_parquet("/path/to/directory")
-            >>> df = DataFrame.from_parquet("/path/to/files-*.parquet")
-            >>> df = DataFrame.from_parquet("s3://path/to/files-*.parquet")
+            >>> df = DataFrame.read_parquet("/path/to/file.parquet")
+            >>> df = DataFrame.read_parquet("/path/to/directory")
+            >>> df = DataFrame.read_parquet("/path/to/files-*.parquet")
+            >>> df = DataFrame.read_parquet("s3://path/to/files-*.parquet")
 
         Args:
             path (str): Path to Parquet file (allows for wildcards)
