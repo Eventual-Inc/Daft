@@ -10,6 +10,7 @@ import socket
 import subprocess
 import time
 import warnings
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -26,6 +27,17 @@ import daft
 from benchmarking.tpch import answers, data_generation
 from daft import DataFrame
 from daft.context import get_context
+
+ALL_TABLES = [
+    "part",
+    "supplier",
+    "partsupp",
+    "customer",
+    "orders",
+    "lineitem",
+    "nation",
+    "region",
+]
 
 
 class MetricsBuilder:
@@ -143,9 +155,10 @@ def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: 
     return data_generation.gen_parquet(csv_folder)
 
 
-def setup_ray(daft_wheel_location: str | None, requirements: str | None):
+def warmup_environment(daft_wheel_location: str | None, requirements: str | None, parquet_folder: str):
     """Performs necessary setup of Daft on the current benchmarking environment"""
     ctx = daft.context.get_context()
+
     if ctx.runner_config.name == "ray":
 
         if ctx.runner_config.address is not None and daft_wheel_location is None:
@@ -166,12 +179,30 @@ def setup_ray(daft_wheel_location: str | None, requirements: str | None):
 
         logger.info("Warming up Ray cluster with a function...")
         # NOTE: installation of runtime_env is supposed to be eager but it seems to be happening async.
-        # Here we farm out some work on Ray to warm up all the workers with an import of daft.
+        # Here we farm out some work on Ray to warm up all the workers by downloading data
         # (See: https://discuss.ray.io/t/how-to-run-a-function-exactly-once-on-each-node/2178)
         @ray.remote(num_cpus=1)
         class WarmUpFunction:
-            def ready(self):
+            def ready(self, parquet_folder):
                 import daft
+                from daft.filesystem import get_filesystem_from_path
+
+                # Download all files in the provided parquet_folder by reading a single byte from each of them
+                def head(parquet_folder, filepath):
+                    fs = get_filesystem_from_path(parquet_folder)
+                    fs.head(filepath, size=1)
+
+                fs = get_filesystem_from_path(parquet_folder)
+                all_files = fs.find(parquet_folder)
+                futures = []
+                with ThreadPoolExecutor() as executor:
+                    for f in all_files:
+                        futures.append(executor.submit(head, parquet_folder, f))
+                wait(futures)
+                cache_location = get_context().cache_location
+                print(
+                    f"Daft cache at {cache_location} warmed up with size: {sum(f.stat().st_size for f in cache_location.glob('**/*') if f.is_file())}"
+                )
 
                 return f"{daft.__version__}"
 
@@ -180,7 +211,7 @@ def setup_ray(daft_wheel_location: str | None, requirements: str | None):
         pg = placement_group(bundles=bundles, strategy="STRICT_SPREAD")
         ray.get(pg.ready())
         executors = [WarmUpFunction.options(placement_group=pg).remote() for _ in range(num_nodes)]
-        assert ray.get([executor.ready.remote() for executor in executors]) == [
+        assert ray.get([executor.ready.remote(parquet_folder) for executor in executors]) == [
             f"{daft.__version__}" for _ in range(num_nodes)
         ]
         del executors
@@ -191,6 +222,14 @@ def setup_ray(daft_wheel_location: str | None, requirements: str | None):
         time.sleep(1)
         assert placement_group_table(pg)["state"] == "REMOVED"
         logger.info(f"Ray cluster warmed up with an installation of wheel: {daft_wheel_location}")
+
+    elif ctx.runner_config.name == "py":
+        get_df = get_df_with_parquet_folder(parquet_folder)
+        for table in ALL_TABLES:
+            df = get_df(table)
+            logger.info(
+                f"Warming up local execution environment by loading table {table} and counting rows: {df.count(df.columns[0]).to_pandas()}"
+            )
 
 
 if __name__ == "__main__":
@@ -245,7 +284,7 @@ if __name__ == "__main__":
     else:
         parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
 
-    setup_ray(args.daft_wheel_location, args.requirements)
+    warmup_environment(args.daft_wheel_location, args.requirements, parquet_folder)
 
     run_all_benchmarks(
         parquet_folder,
