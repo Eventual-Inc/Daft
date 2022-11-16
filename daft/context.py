@@ -48,6 +48,15 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     return _PyRunnerConfig()
 
 
+def _get_cache_location_from_env() -> pathlib.Path | None:
+    envvar = os.getenv("DAFT_CACHE")
+    if envvar is None:
+        return DEFAULT_DAFT_CACHE_LOCATION
+    elif envvar == "":
+        return None
+    return pathlib.Path(envvar)
+
+
 # Global Runner singleton, initialized when accessed through the DaftContext
 _RUNNER: Runner | None = None
 
@@ -58,7 +67,7 @@ class DaftContext:
 
     runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
     disallow_set_runner: bool = False
-    cache_location: pathlib.Path | None = DEFAULT_DAFT_CACHE_LOCATION
+    cache_location: pathlib.Path | None = dataclasses.field(default_factory=_get_cache_location_from_env)
 
     def runner(self) -> Runner:
         global _RUNNER
