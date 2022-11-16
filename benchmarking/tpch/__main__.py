@@ -195,7 +195,7 @@ def warmup_environment(daft_wheel_location: str | None, requirements: str | None
                 fs = get_filesystem_from_path(parquet_folder)
                 all_files = fs.find(parquet_folder)
                 futures = []
-                with ThreadPoolExecutor(max_workers=16) as executor:
+                with ThreadPoolExecutor() as executor:
                     for f in all_files:
                         futures.append(executor.submit(head, parquet_folder, f))
                 wait(futures)
