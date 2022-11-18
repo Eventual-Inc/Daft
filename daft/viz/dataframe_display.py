@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
-
-import pandas
 
 from daft.dataframe.schema import DataFrameSchema
-from daft.viz.repr_html import pd_df_repr_html
+from daft.runners.partitioning import vPartition
+from daft.viz.repr import vpartition_repr, vpartition_repr_html
 
 HAS_PILLOW = False
 try:
@@ -22,13 +20,13 @@ if HAS_PILLOW:
 @dataclass(frozen=True)
 class DataFrameDisplay:
 
-    pd_df: pandas.DataFrame
+    vpartition: vPartition
     schema: DataFrameSchema
     column_char_width: int = 20
     max_col_rows: int = 3
 
     def _repr_html_(self) -> str:
-        return pd_df_repr_html(self.pd_df, self.schema)
+        return vpartition_repr_html(self.vpartition, self.schema)
 
     def __repr__(self) -> str:
-        return cast(str, self.pd_df.__repr__())
+        return vpartition_repr(self.vpartition, self.schema)

@@ -44,11 +44,11 @@ from daft.runners.shuffle_ops import (
 class LocalPartitionSet(PartitionSet[vPartition]):
     _partitions: dict[PartID, vPartition]
 
-    def _get_all_vpartitions(self) -> list[vPartition]:
+    def _get_merged_vpartition(self) -> vPartition:
         partition_ids = sorted(list(self._partitions.keys()))
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
-        return [self._partitions[pid] for pid in partition_ids]
+        return vPartition.merge_partitions([self._partitions[pid] for pid in partition_ids], verify_partition_id=False)
 
     def get_partition(self, idx: PartID) -> vPartition:
         return self._partitions[idx]

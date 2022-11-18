@@ -470,19 +470,17 @@ PartitionT = TypeVar("PartitionT")
 
 
 class PartitionSet(Generic[PartitionT]):
-    def _get_all_vpartitions(self) -> list[vPartition]:
+    def _get_merged_vpartition(self) -> vPartition:
         raise NotImplementedError()
 
     def to_pydict(self) -> dict[str, Sequence]:
         """Retrieves all the data in a PartitionSet as a Python dictionary. Values are the raw data from each Block."""
-        all_partitions = self._get_all_vpartitions()
-        merged_partition = vPartition.merge_partitions(all_partitions, verify_partition_id=False)
+        merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pydict()
 
     def to_pandas(self, schema: ExpressionList | None = None) -> pd.DataFrame:
-        all_partitions = self._get_all_vpartitions()
-        part_dfs = [part.to_pandas(schema=schema) for part in all_partitions]
-        return pd.concat([pdf for pdf in part_dfs if not pdf.empty], ignore_index=True)
+        merged_partition = self._get_merged_vpartition()
+        return merged_partition.to_pandas(schema=schema)
 
     @abstractmethod
     def get_partition(self, idx: PartID) -> PartitionT:

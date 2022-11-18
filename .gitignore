@@ -9,6 +9,8 @@ requirements.txt
 build
 .cython_build
 
+**/.ipynb_checkpoints/
+
 **/node_modules/**
 data/**
 *.so

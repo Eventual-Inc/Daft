@@ -177,8 +177,11 @@ class DataFrame:
         if n is not None:
             df = df.limit(n)
 
-        execution_result = df.to_pandas()
-        return DataFrameDisplay(execution_result, df.schema())
+        df.collect()
+        result = df._result
+        assert result is not None
+
+        return DataFrameDisplay(result._get_merged_vpartition(), df.schema())
 
     def __repr__(self) -> str:
         return self.schema().__repr__()

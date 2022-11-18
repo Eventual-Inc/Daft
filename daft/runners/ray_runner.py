@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, cast
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 import pyarrow as pa
 import ray
@@ -65,11 +65,12 @@ def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     _partitions: dict[PartID, ray.ObjectRef]
 
-    def _get_all_vpartitions(self) -> list[vPartition]:
+    def _get_merged_vpartition(self) -> vPartition:
         partition_ids = sorted(list(self._partitions.keys()))
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
-        return cast(List[vPartition], ray.get([self._partitions[pid] for pid in partition_ids]))
+        all_partitions = ray.get([self._partitions[pid] for pid in partition_ids])
+        return vPartition.merge_partitions(all_partitions, verify_partition_id=False)
 
     def to_ray_dataset(self) -> RayDataset:
         from ray.data import from_arrow_refs

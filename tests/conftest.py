@@ -83,20 +83,19 @@ def assert_df_column_type(
 ):
     """Asserts that all tiles for a given column is of the implementation, given a type"""
     et = ExpressionType.from_py_type(type_)
-    vpartitions = partition_set._get_all_vpartitions()
-    for vpart in vpartitions:
-        blocks = [tile.block for tile in vpart.columns.values() if tile.column_name == colname]
-        assert len(blocks) == 1, f"cannot find block with provided colname {colname}"
-        block = blocks[0]
+    vpart = partition_set._get_merged_vpartition()
+    blocks = [tile.block for tile in vpart.columns.values() if tile.column_name == colname]
+    assert len(blocks) == 1, f"cannot find block with provided colname {colname}"
+    block = blocks[0]
 
-        if ExpressionType.is_py(et):
-            assert isinstance(block, PyListDataBlock)
-        elif ExpressionType.is_primitive(et):
-            assert isinstance(block, ArrowDataBlock)
-            assert isinstance(block.data, pa.ChunkedArray)
-            assert block.data.type == et.to_arrow_type()
-        else:
-            raise NotImplementedError(f"assert_df_column_type not implemented for {et}")
+    if ExpressionType.is_py(et):
+        assert isinstance(block, PyListDataBlock)
+    elif ExpressionType.is_primitive(et):
+        assert isinstance(block, ArrowDataBlock)
+        assert isinstance(block.data, pa.ChunkedArray)
+        assert block.data.type == et.to_arrow_type()
+    else:
+        raise NotImplementedError(f"assert_df_column_type not implemented for {et}")
 
 
 def assert_df_equals(
