@@ -1,7 +1,7 @@
 Daft: The Distributed Python Dataframe
 ======================================
 
-Daft is a **fast and scalable Python dataframe** for Unstructured Data and Machine Learning workloads.
+Daft is a **fast and scalable Python dataframe** for Complex Data and Machine Learning workloads.
 
 .. image:: /_static/daft_illustration.png
    :alt: Daft python dataframes make it easy to load any data such as PDF documents, images, protobufs, csv, parquet and audio files into a table dataframe structure for easy querying
@@ -121,11 +121,11 @@ Use-Cases
    <div class="features-row">
       <div class="features-row-box features-row-box-col-2">
          <h4>Data Science Experimentation</h4>
-         <p>Daft enables data scientists/engineers to work from their preferred Python notebook environment for interactive experimentation on unstructured data</p>
+         <p>Daft enables data scientists/engineers to work from their preferred Python notebook environment for interactive experimentation on complex data</p>
       </div>
       <div class="features-row-box features-row-box-col-2">
-         <h4>Unstructured Data Warehousing</h4>
-         <p>The Daft Python dataframe efficiently pipelines unstructured data from raw data lakes to clean, queryable datasets for analysis and reporting.</p>
+         <h4>Complex Data Warehousing</h4>
+         <p>The Daft Python dataframe efficiently pipelines complex data from raw data lakes to clean, queryable datasets for analysis and reporting.</p>
       </div>
       <div class="features-row-box features-row-box-col-2">
          <h4>Machine Learning Training Dataset Curation</h4>
@@ -165,6 +165,7 @@ Key Features
 
    docs/index
    dataframe_comparison
+   blog/index
 
 .. .. Indices and tables
 .. .. ==================

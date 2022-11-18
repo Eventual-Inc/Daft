@@ -1,7 +1,7 @@
 Daft Documentation
 ==================
 
-Daft is a **fast and scalable Python dataframe** for Unstructured Data and Machine Learning workloads.
+Daft is a **fast and scalable Python dataframe** for Complex Data and Machine Learning workloads.
 
 .. NOTE::
 
