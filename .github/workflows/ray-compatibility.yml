@@ -1,6 +1,6 @@
 # This workflow checks Daft against various versions of Ray nightly
 
-name: daft
+name: Check Ray version compatibility
 
 on:
   schedule:
