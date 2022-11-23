@@ -7,7 +7,7 @@ serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.1"
-content-hash = "b2679001d60a9bfe825ada177c679cecd7bc639ed02ba772527a8ce955f90231"
+content-hash = "58231cc6003b2cb0f08bf55ed672c16903ce82e78b139b1edbb50722788a2662"
 
 [metadata.files]
 aiobotocore = [
