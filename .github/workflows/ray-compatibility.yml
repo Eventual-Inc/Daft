@@ -15,7 +15,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.8']
-        daft_runner: ray
         ray-version: [2.1.0, 2.0.0, 1.13.0, 1.12.0, 1.11.0, 1.10.0, 1.9.0, 1.8.0]
 
     steps:
@@ -50,4 +49,4 @@ jobs:
     - name: Test with pytest
       run: poetry run pytest
       env:
-        DAFT_RUNNER: ${{ matrix.daft_runner }}
+        DAFT_RUNNER: ray
