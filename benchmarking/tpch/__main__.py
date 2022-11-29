@@ -160,10 +160,6 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
     ctx = daft.context.get_context()
 
     if ctx.runner_config.name == "ray":
-
-        if ctx.runner_config.address is not None and daft_wheel_location is None:
-            raise RuntimeError("Running Ray remotely requires a built Daft wheel to provide to Ray cluster")
-
         runtime_env = {"py_modules": [daft]}
         if requirements:
             runtime_env.update({"pip": requirements})
