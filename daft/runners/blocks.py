@@ -603,12 +603,23 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
 
     @staticmethod
     def _merge_blocks(blocks: list[DataBlock[ArrowArrType]]) -> DataBlock[ArrowArrType]:
-        block_types = {block.data.type for block in blocks}
-        assert len(block_types) == 1, f"Unable to merge blocks of different types: {block_types}"
+        unique_block_types = {block.data.type for block in blocks}
+        blocks_to_merge = blocks
+        if len(unique_block_types) == 1:
+            default_type = unique_block_types.pop()
+        elif len(unique_block_types) == 2:
+            if any(pa.types.is_null(type) for type in unique_block_types):
+                default_type = [type for type in unique_block_types if not pa.types.is_null(type)][0]
+                blocks_to_merge = [ArrowDataBlock(block.data.cast(default_type)) for block in blocks]
+            else:
+                raise ValueError(f"can not merge different block types {unique_block_types}")
+        else:
+            raise ValueError(f"can not merge different block types {unique_block_types}")
+
         all_chunks = []
-        for block in blocks:
+        for block in blocks_to_merge:
             all_chunks.extend(block.data.chunks)
-        return DataBlock.make_block(pa.chunked_array(all_chunks, type=block_types.pop()))
+        return DataBlock.make_block(pa.chunked_array(all_chunks, type=default_type))
 
     def _make_empty(self) -> DataBlock[ArrowArrType]:
         return DataBlock.make_block(data=pa.chunked_array([[]], type=self.data.type))
