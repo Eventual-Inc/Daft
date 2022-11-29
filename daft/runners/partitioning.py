@@ -92,7 +92,8 @@ class vPartition:
                 raise ValueError(f"mismatch of column id: {col_id} vs {tile.column_id}")
 
     def __len__(self) -> int:
-        assert len(self.columns) > 0
+        if len(self.columns) == 0:
+            return 0
         return len(next(iter(self.columns.values())))
 
     def eval_expression(self, expr: Expression) -> PyListTile:
