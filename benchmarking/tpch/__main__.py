@@ -155,20 +155,14 @@ def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: 
     return data_generation.gen_parquet(csv_folder)
 
 
-def warmup_environment(daft_wheel_location: str | None, requirements: str | None, parquet_folder: str):
+def warmup_environment(requirements: str | None, parquet_folder: str):
     """Performs necessary setup of Daft on the current benchmarking environment"""
     ctx = daft.context.get_context()
 
     if ctx.runner_config.name == "ray":
-
-        if ctx.runner_config.address is not None and daft_wheel_location is None:
-            raise RuntimeError("Running Ray remotely requires a built Daft wheel to provide to Ray cluster")
-
-        runtime_env = {}
-        if daft_wheel_location:
-            runtime_env.update({"py_modules": [daft_wheel_location]})
+        runtime_env = {"py_modules": [daft]}
         if requirements:
-            runtime_env.update({"pip": [l.strip() for l in open(requirements).readlines()]})
+            runtime_env.update({"pip": requirements})
         if runtime_env:
             runtime_env.update({"eager_install": True})
 
@@ -221,7 +215,7 @@ def warmup_environment(daft_wheel_location: str | None, requirements: str | None
         remove_placement_group(pg)
         time.sleep(1)
         assert placement_group_table(pg)["state"] == "REMOVED"
-        logger.info(f"Ray cluster warmed up with an installation of wheel: {daft_wheel_location}")
+        logger.info("Ray cluster warmed up")
 
     elif ctx.runner_config.name == "py":
         get_df = get_df_with_parquet_folder(parquet_folder)
@@ -256,9 +250,6 @@ if __name__ == "__main__":
         help="DEPRECATED: We always output CSV headers regardless of this flag",
     )
     parser.add_argument(
-        "--daft_wheel_location", default=None, help="Location to built Daft wheel for installation on Ray cluster"
-    )
-    parser.add_argument(
         "--requirements",
         default=None,
         help="Path to pip-style requirements.txt file to bootstrap environment on remote Ray cluster",
@@ -284,7 +275,7 @@ if __name__ == "__main__":
     else:
         parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
 
-    warmup_environment(args.daft_wheel_location, args.requirements, parquet_folder)
+    warmup_environment(args.requirements, parquet_folder)
 
     run_all_benchmarks(
         parquet_folder,
