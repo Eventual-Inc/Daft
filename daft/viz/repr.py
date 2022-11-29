@@ -125,12 +125,21 @@ def vpartition_repr_html(
     assert tabulate_html_string.startswith("<table")
     tabulate_html_string = '<table class="dataframe"' + tabulate_html_string[len("<table") :]
 
-    return f"""
-        <div>
-            {tabulate_html_string}
-            <small>(Showing first {len(vpartition)} rows)</small>
-        </div>
-    """
+    if len(vpartition) == 0:
+        return f"""
+            <div>
+                {tabulate_html_string}
+                <small>(No rows to show)</small>
+            </div>
+        """
+
+    else:
+        return f"""
+            <div>
+                {tabulate_html_string}
+                <small>(Showing first {len(vpartition)} rows)</small>
+            </div>
+        """
 
 
 def vpartition_repr(
