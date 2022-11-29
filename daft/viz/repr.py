@@ -97,7 +97,7 @@ def vpartition_repr_html(
         max_lines=max_lines,
     )
 
-    headers=[f"{name}<br>{daft_schema[name].daft_type}" for name in daft_schema.column_names()]
+    headers = [f"{name}<br>{daft_schema[name].daft_type}" for name in daft_schema.column_names()]
 
     # Workaround for https://github.com/astanin/python-tabulate/issues/224
     # tabulate library doesn't render header if there are no rows;
@@ -118,7 +118,7 @@ def vpartition_repr_html(
         )
 
     # tabulate generates empty HTML string for empty table.
-    if tabulate_html_string == '':
+    if tabulate_html_string == "":
         tabulate_html_string = "<table></table>"
 
     # Appending class="dataframe" here helps Google Colab with applying CSS
@@ -148,15 +148,12 @@ def vpartition_repr(
         max_lines=max_lines,
     )
 
-    # Workaround for https://github.com/astanin/python-tabulate/issues/223
-    # If table has no rows, specifying maxcolwidths always raises error.
-    if len(vpartition) == 0:
-        max_col_width = None
-
     return tabulate(
         data_stringified,
         headers=[f"{name}\n{daft_schema[name].daft_type}" for name in daft_schema.column_names()],
         tablefmt="grid",
         missingval="None",
-        maxcolwidths=max_col_width,
+        # Workaround for https://github.com/astanin/python-tabulate/issues/223
+        # If table has no rows, specifying maxcolwidths always raises error.
+        maxcolwidths=max_col_width if len(vpartition) else None,
     )
