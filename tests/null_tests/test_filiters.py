@@ -16,9 +16,7 @@ def test_filter_on_partial_empty_columns():
     assert (pd_df["Agency"] == "NYPD").all()
 
 
-pytest.mark.skip()
-
-
+@pytest.mark.skip
 def test_filter_on_partial_empty_files():
     df = DataFrame.read_csv(SERVICE_REQUESTS_PARTIAL_EMPTY_CSV_FOLDER)
     df = df.where(df["Agency"] == "NYPD")
