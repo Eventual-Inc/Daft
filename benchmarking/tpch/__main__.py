@@ -14,14 +14,19 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-import daft
 import fsspec
 import ray
+from loguru import logger
+from ray.util.placement_group import (
+    placement_group,
+    placement_group_table,
+    remove_placement_group,
+)
+
+import daft
 from benchmarking.tpch import answers, data_generation
 from daft import DataFrame
 from daft.context import get_context
-from loguru import logger
-from ray.util.placement_group import placement_group, placement_group_table, remove_placement_group
 
 ALL_TABLES = [
     "part",
