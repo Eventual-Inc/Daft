@@ -1097,6 +1097,9 @@ class GroupedDataFrame:
             if e.resolved_type() == ExpressionType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
+    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> ColumnExpression | DataFrame:
+        return self.df.__getitem__(item)
+
     def sum(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped sum on this GroupedDataFrame.
 
