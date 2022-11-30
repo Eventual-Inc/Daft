@@ -16,6 +16,7 @@ from daft.execution.logical_op_runners import (
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import (
+    DropProjections,
     DropRepartition,
     FoldProjections,
     PruneColumns,
@@ -262,7 +263,7 @@ class RayRunner(Runner):
                 RuleBatch(
                     "PushDownLimitsAndRepartitions",
                     FixedPointPolicy(3),
-                    [PushDownLimit(), DropRepartition()],
+                    [PushDownLimit(), DropRepartition(), DropProjections()],
                 ),
             ]
         )
