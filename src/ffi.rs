@@ -1,8 +1,8 @@
 use arrow2::{array::Array, datatypes::Field, ffi};
 
 use pyo3::ffi::Py_uintptr_t;
-use pyo3::{PyAny, PyObject, PyResult, Python};
 use pyo3::prelude::*;
+use pyo3::{PyAny, PyObject, PyResult, Python};
 
 pub type ArrayRef = Box<dyn Array>;
 

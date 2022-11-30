@@ -1,14 +1,20 @@
 mod ffi;
 
-use pyo3::prelude::*;
-use arrow2::compute::arithmetics::basic::add_scalar;
 use arrow2::array::PrimitiveArray;
+use arrow2::compute::arithmetics::basic::add_scalar;
+use pyo3::prelude::*;
 
 /// Formats the sum of two numbers as string.
 #[pyfunction]
 fn add_1(array: &PyAny, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
     let rarray = ffi::array_to_rust(array);
-    let added = add_scalar(rarray?.as_any().downcast_ref::<PrimitiveArray<i64>>().unwrap(), &10);
+    let added = add_scalar(
+        rarray?
+            .as_any()
+            .downcast_ref::<PrimitiveArray<i64>>()
+            .unwrap(),
+        &10,
+    );
     ffi::to_py_array(Box::new(added), py, pyarrow)
 }
 
