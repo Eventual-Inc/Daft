@@ -174,6 +174,19 @@ _ExplodeTM = frozenset(
     }.items()
 )
 
+_ListTM = frozenset(
+    {
+        (ExpressionType.integer(),): ExpressionType.python_object(),
+        (ExpressionType.float(),): ExpressionType.python_object(),
+        (ExpressionType.logical(),): ExpressionType.python_object(),
+        (ExpressionType.string(),): ExpressionType.python_object(),
+        (ExpressionType.date(),): ExpressionType.python_object(),
+        (ExpressionType.bytes(),): ExpressionType.python_object(),
+        (ExpressionType.null(),): ExpressionType.python_object(),
+        (ExpressionType.python_object(),): ExpressionType.python_object(),
+    }.items()
+)
+
 _UOp = partial(ExpressionOperator, nargs=1)
 # Numerical Unary Ops
 _NUop = partial(_UOp, type_matrix=_UnaryNumericalTM)
@@ -208,6 +221,7 @@ class OperatorEnum(Enum):
     # Reductions
     SUM = _NUop(name="sum", symbol="sum")
     MEAN = _NUop(name="mean", symbol="mean")
+    LIST = _UOp(name="list", symbol="list", type_matrix=_ListTM)
     MIN = _ComparibleUop(name="min", symbol="min")
     MAX = _ComparibleUop(name="max", symbol="max")
 
@@ -339,6 +353,7 @@ class OperatorEvaluator(Protocol[ValueType]):
     ABS: UnaryFunction
     SUM: UnaryFunction
     MEAN: UnaryFunction
+    LIST: UnaryFunction
     MIN: UnaryFunction
     MAX: UnaryFunction
     COUNT: UnaryFunction

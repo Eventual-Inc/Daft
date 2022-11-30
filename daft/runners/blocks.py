@@ -646,6 +646,8 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.float64()))
             return ArrowDataBlock(data=pa.chunked_array([[pac.mean(self.data).as_py()]], type=pa.float64()))
+        elif op == "list":
+            return PyListDataBlock([self.data.to_pylist()])
         elif op == "count":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.int64()))
@@ -885,6 +887,7 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     # They exist on the Evaluator only to provide correct typing information
     SUM = ArrowDataBlock.identity
     MEAN = ArrowDataBlock.identity
+    LIST = ArrowDataBlock.identity
     MIN = ArrowDataBlock.identity
     MAX = ArrowDataBlock.identity
     COUNT = ArrowDataBlock.identity

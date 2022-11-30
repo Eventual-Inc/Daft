@@ -835,10 +835,12 @@ class DataFrame:
             "sum": Expression._sum,
             "count": Expression._count,
             "mean": Expression._mean,
+            "list": Expression._list,
             "min": Expression._min,
             "max": Expression._max,
         }
 
+        print("num_partitions: ", self.num_partitions())
         if self.num_partitions() == 1:
             agg_exprs = []
 
@@ -847,6 +849,8 @@ class DataFrame:
                 agg_exprs.append((function_lookup[op_name](e).alias(e.name()), op_name))
             plan = logical_plan.LocalAggregate(self._plan, agg=agg_exprs, group_by=group_by)
             return DataFrame(plan)
+
+        # TODO(charles): handle multipart for list
 
         intermediate_ops = {
             "sum": ("sum",),
