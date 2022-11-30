@@ -633,7 +633,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
     def array_hash(self, seed: DataBlock[ArrowArrType] | None = None) -> DataBlock[ArrowArrType]:
         assert isinstance(self.data, pa.ChunkedArray)
         assert seed is None or isinstance(seed.data, pa.ChunkedArray)
-
         hashed = hash_chunked_array(self.data, seed.data if seed is not None else None)
         return DataBlock.make_block(data=hashed)
 

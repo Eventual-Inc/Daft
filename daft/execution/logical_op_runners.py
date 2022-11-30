@@ -5,6 +5,7 @@ from bisect import bisect_right
 from itertools import accumulate
 from typing import Callable, ClassVar, TypeVar
 
+from loguru import logger
 from pyarrow import csv, json, parquet
 
 from daft.datasources import (
@@ -63,6 +64,7 @@ class LogicalPartitionOpRunner:
     ) -> vPartition:
         part_set = {nid: part for nid, part in inputs.items()}
         for node in nodes:
+            logger.debug(f"Running Op: {node}")
             output = self.run_single_node(inputs=part_set, node=node, partition_id=partition_id)
             part_set[node.id()] = output
             for child in node._children():
@@ -227,6 +229,7 @@ class LogicalGlobalOpRunner:
     def run_node_list(self, inputs: dict[int, PartitionSet], nodes: list[LogicalPlan]) -> PartitionSet:
         part_set = inputs.copy()
         for node in nodes:
+            logger.debug(f"Running Op: {node}")
             output = self.run_single_node(inputs=part_set, node=node)
             part_set[node.id()] = output
             for child in node._children():

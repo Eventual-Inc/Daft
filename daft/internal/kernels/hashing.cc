@@ -168,7 +168,8 @@ std::shared_ptr<arrow::ChunkedArray> xxhash_chunked_array(const arrow::ChunkedAr
     std::shared_ptr<arrow::ArrayData> arr_subslice = arr->chunk(i)->data();
     int64_t arr_len = arr_subslice->length;
     std::shared_ptr<arrow::ArrayData> result_subslice = result->Slice(offset_so_far, arr_len);
-    arrow::ArrayData *seed_subslice = seed != NULL ? seed->chunk(0)->Slice(offset_so_far, arr_len)->data().get() : NULL;
+    arrow::ArrayData *seed_subslice =
+        (seed != NULL) && (num_chunks > 1) ? seed->chunk(0)->Slice(offset_so_far, arr_len)->data().get() : NULL;
 
     hash_single_array(arr_subslice.get(), seed_subslice, result_subslice.get());
     offset_so_far += arr_len;

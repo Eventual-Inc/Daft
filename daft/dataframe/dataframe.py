@@ -27,7 +27,6 @@ from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet, vPartition
 from daft.runners.pyrunner import LocalPartitionSet
-from daft.runners.ray_runner import RayPartitionSet
 from daft.types import PythonExpressionType
 from daft.viz import DataFrameDisplay
 
@@ -1079,6 +1078,8 @@ class DataFrame:
         Returns:
             RayDataset: Ray dataset
         """
+        from daft.runners.ray_runner import RayPartitionSet
+
         self.collect()
         partition_set = self._result
         assert partition_set is not None
