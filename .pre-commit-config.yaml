@@ -81,15 +81,8 @@ repos:
   - id: poetry-lock
     files: (^pyproject.toml$)|(^poetry.lock$)
     args: [--check]
-
-
-
-  # - repo: https://github.com/stackrox/kube-linter
-  #   rev: "v0.4.0"
-  #   hooks:
-  #     - id: kube-linter
-  #       exclude: kubernetes-ops/sandboxes
-  #       args:
-  #         [
-  #           lint
-  #         ]
+- repo: https://github.com/doublify/pre-commit-rust
+  rev: master
+  hooks:
+  - id: fmt
+  - id: cargo-check
