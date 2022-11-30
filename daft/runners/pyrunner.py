@@ -14,6 +14,7 @@ from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import (
+    DropProjections,
     DropRepartition,
     FoldProjections,
     PruneColumns,
@@ -169,7 +170,7 @@ class PyRunner(Runner):
                 RuleBatch(
                     "PushDownLimitsAndRepartitions",
                     FixedPointPolicy(3),
-                    [PushDownLimit(), DropRepartition()],
+                    [PushDownLimit(), DropRepartition(), DropProjections()],
                 ),
             ]
         )

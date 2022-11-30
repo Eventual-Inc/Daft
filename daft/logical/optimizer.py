@@ -214,14 +214,6 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
         # self.register_fn(Filter, Scan, self._push_down_predicates_into_scan)
         self.register_fn(Projection, Scan, self._push_down_projections_into_scan)
 
-    # def _push_down_predicates_into_scan(self, parent: Filter, child: Scan) -> Scan:
-    #     new_predicate = parent._predicate.union(child._predicate, rename_dup="right.")
-    #     child_schema = child.schema()
-    #     assert new_predicate.required_columns().to_id_set().issubset(child_schema.to_id_set())
-    #     return Scan(
-    #         schema=child._schema, predicate=new_predicate, columns=child_schema.names, source_info=child._source_info
-    #     )
-
     def _push_down_projections_into_scan(self, parent: Projection, child: Scan) -> LogicalPlan | None:
         required_columns = parent.schema().required_columns()
         scan_columns = child.schema()
@@ -269,6 +261,24 @@ class FoldProjections(Rule[LogicalPlan]):
                         e = e._replace_column_with_expression(rc, child._projection.get_expression_by_name(name))
                 new_exprs.append(e)
             return Projection(grandchild, ExpressionList(new_exprs))
+        else:
+            return None
+
+
+class DropProjections(Rule[LogicalPlan]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_fn(Projection, LogicalPlan, self._drop_unneeded_projection)
+
+    def _drop_unneeded_projection(self, parent: Projection, child: LogicalPlan) -> LogicalPlan | None:
+        parent_projection = parent._projection
+        child_output = child.schema()
+        if (
+            all(isinstance(expr, ColumnExpression) for expr in parent_projection)
+            and len(parent_projection) == len(child_output)
+            and all(p.get_id() == c.get_id() for p, c in zip(parent_projection, child_output))
+        ):
+            return child
         else:
             return None
 
