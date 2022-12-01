@@ -145,5 +145,12 @@ build_inplace = 'build:build_inplace'
 [tool.poetry-dynamic-versioning]
 enable = true
 vcs = "git"
-style = "semver"
-format = "{base}"
+format-jinja = """
+    {%- if distance == 0 -%}
+        {{ serialize_pep440(base, stage, revision) }}
+    {%- elif revision is not none -%}
+        {{ serialize_pep440(base, stage, revision + 1, dev=distance, metadata=[commit]) }}
+    {%- else -%}
+        {{ serialize_pep440(bump_version(base), stage, revision, dev=distance, metadata=[commit]) }}
+    {%- endif -%}
+"""
