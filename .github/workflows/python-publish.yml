@@ -53,6 +53,11 @@ jobs:
         channels: conda-forge
         channel-priority: true
         mamba-version: '*'
+
+    - name: Install anaconda client
+      shell: bash -el {0}
+      run: conda install -q -y anaconda-client
+
     - name: Upload wheels to anaconda nightly
       if: ${{ success() && (env.IS_SCHEDULE_DISPATCH == 'true' || env.IS_PUSH == 'true') }}
       shell: bash -el {0}
@@ -105,6 +110,11 @@ jobs:
         channels: conda-forge
         channel-priority: true
         mamba-version: '*'
+
+    - name: Install anaconda client
+      shell: bash -el {0}
+      run: conda install -q -y anaconda-client
+
     - name: Upload wheels to anaconda nightly
       if: ${{ success() && (env.IS_SCHEDULE_DISPATCH == 'true' || env.IS_PUSH == 'true') }}
       shell: bash -el {0}
