@@ -212,7 +212,8 @@ def test_agg_groupby(repartition_nparts):
     )
 
 
-@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
+# @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
+@pytest.mark.parametrize("repartition_nparts", [2])
 def test_agg_groupby_all_null(repartition_nparts):
     daft_df = DataFrame.from_pydict(
         {

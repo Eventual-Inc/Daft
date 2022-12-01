@@ -690,14 +690,23 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
                 exprs.append(pl.list(an))
                 agg_expected_arrow_type.append(pa.list_(arr.type))
             elif op == "concat":
-                if len(arr) != 0:
-                    exprs.append(pl.col(an).explode().list())
-                    agg_expected_arrow_type.append(table[an].type)
-                else:
+                if len(arr) == 0:
                     # If the column is empty, explode() will not work due to type information being missing.
                     # Manually construct the result in that case (by passsing through the empty column).
                     exprs.append(pl.col(an))
                     agg_expected_arrow_type.append(pa.list_(table[an].type))
+                elif table[an].type == pa.list_(pa.null()):
+                    # Force a polars cast to list[i8]
+                    # (since polars cannot aggregate list[null])
+                    # TODO: File polars issue.
+                    exprs.append(pl.col(an).cast(pl.List(pl.Int8())).explode().list())
+                    # Polars convers Polars list[null] to Arrow list[i8].
+                    # TODO: File polars issue.
+                    agg_expected_arrow_type.append(pa.list_(pa.int8()))
+                else:
+                    # Regular case.
+                    exprs.append(pl.col(an).explode().list())
+                    agg_expected_arrow_type.append(table[an].type)
             elif op == "min":
                 exprs.append(pl.min(an))
                 agg_expected_arrow_type.append(arr.type)
