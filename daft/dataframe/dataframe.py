@@ -836,11 +836,11 @@ class DataFrame:
             "count": Expression._count,
             "mean": Expression._mean,
             "list": Expression._list,
+            "concat": Expression._concat,
             "min": Expression._min,
             "max": Expression._max,
         }
 
-        print("num_partitions: ", self.num_partitions())
         if self.num_partitions() == 1:
             agg_exprs = []
 
@@ -850,17 +850,23 @@ class DataFrame:
             plan = logical_plan.LocalAggregate(self._plan, agg=agg_exprs, group_by=group_by)
             return DataFrame(plan)
 
-        # TODO(charles): handle multipart for list
-
         intermediate_ops = {
             "sum": ("sum",),
+            "list": ("list",),
             "count": ("count",),
             "mean": ("sum", "count"),
             "min": ("min",),
             "max": ("max",),
         }
 
-        reduction_ops = {"sum": ("sum",), "count": ("sum",), "mean": ("sum", "sum"), "min": ("min",), "max": ("max",)}
+        reduction_ops = {
+            "sum": ("sum",),
+            "list": ("concat",),
+            "count": ("sum",),
+            "mean": ("sum", "sum"),
+            "min": ("min",),
+            "max": ("max",),
+        }
 
         finalizer_ops_funcs = {"mean": lambda x, y: (x + 0.0) / (y + 0.0)}
 

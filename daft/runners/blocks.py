@@ -458,6 +458,13 @@ class PyListDataBlock(DataBlock[List[T]]):
         return DataBlock.make_block(np.array(hashes))
 
     def agg(self, op: str) -> DataBlock[ArrowArrType]:
+        if op == "concat":
+            import IPython
+
+            IPython.embed()
+            if len(self) == 0:
+                return PyListDataBlock([])
+            return PyListDataBlock([sum(self.data, [])])
         raise NotImplementedError("Aggregations on Python objects is not implemented yet")
 
     @staticmethod
@@ -647,6 +654,8 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.float64()))
             return ArrowDataBlock(data=pa.chunked_array([[pac.mean(self.data).as_py()]], type=pa.float64()))
         elif op == "list":
+            if len(self) == 0:
+                return PyListDataBlock([])
             return PyListDataBlock([self.data.to_pylist()])
         elif op == "count":
             if len(self) == 0:
@@ -888,6 +897,7 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     SUM = ArrowDataBlock.identity
     MEAN = ArrowDataBlock.identity
     LIST = ArrowDataBlock.identity
+    CONCAT = ArrowDataBlock.identity
     MIN = ArrowDataBlock.identity
     MAX = ArrowDataBlock.identity
     COUNT = ArrowDataBlock.identity
@@ -1001,6 +1011,8 @@ class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
     # They exist on the Evaluator only to provide correct typing information
     SUM = PyListDataBlock.identity
     MEAN = PyListDataBlock.identity
+    LIST = PyListDataBlock.identity
+    CONCAT = PyListDataBlock.identity
     MIN = PyListDataBlock.identity
     MAX = PyListDataBlock.identity
     COUNT = PyListDataBlock.identity

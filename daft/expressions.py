@@ -241,6 +241,7 @@ class Expression(TreeNode["Expression"]):
     _count = partialmethod(_unary_op, OperatorEnum.COUNT)
     _mean = partialmethod(_unary_op, OperatorEnum.MEAN)
     _list = partialmethod(_unary_op, OperatorEnum.LIST)
+    _concat = partialmethod(_unary_op, OperatorEnum.CONCAT)
     _min = partialmethod(_unary_op, OperatorEnum.MIN)
     _max = partialmethod(_unary_op, OperatorEnum.MAX)
     _explode = partialmethod(_unary_op, OperatorEnum.EXPLODE)
