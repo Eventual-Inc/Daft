@@ -459,9 +459,6 @@ class PyListDataBlock(DataBlock[List[T]]):
 
     def agg(self, op: str) -> DataBlock[ArrowArrType]:
         if op == "concat":
-            import IPython
-
-            IPython.embed()
             if len(self) == 0:
                 return PyListDataBlock([])
             return PyListDataBlock([sum(self.data, [])])
@@ -694,6 +691,9 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             elif op == "mean":
                 exprs.append(pl.mean(an))
                 agg_expected_arrow_type.append(pa.float64())
+            elif op == "list":
+                exprs.append(pl.list(an))
+                agg_expected_arrow_type.append(pa.list_(arr.type))
             elif op == "min":
                 exprs.append(pl.min(an))
                 agg_expected_arrow_type.append(arr.type)
