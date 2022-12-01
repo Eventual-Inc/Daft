@@ -16,7 +16,7 @@ jobs:
         os: [ubuntu-latest, macos-11]
         python: [cp37, cp38, cp39, cp310]
     env:
-      IS_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && ( ! endsWith(github.ref, 'dev0') }}
+      IS_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && ( ! endsWith(github.ref, 'dev0')) }}
       IS_SCHEDULE_DISPATCH: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
 
     steps:
