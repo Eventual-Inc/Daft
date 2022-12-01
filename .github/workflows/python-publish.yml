@@ -8,7 +8,7 @@ on:
   #        │  │ │ ┌───────────── month (1 - 12 or JAN-DEC)
   #        │  │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
   #        │  │ │ │ │
-  - cron: 0 21 * * *
+  - cron: 0 5 * * *
 
   push:
     tags:
