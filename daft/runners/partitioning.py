@@ -471,7 +471,7 @@ PartitionT = TypeVar("PartitionT")
 
 
 class PartitionSet(Generic[PartitionT]):
-    def _get_merged_vpartition(self) -> vPartition:
+    def _get_merged_vpartition(self, partition_indices: list[int] | None = None) -> vPartition:
         raise NotImplementedError()
 
     def to_pydict(self) -> dict[str, Sequence]:

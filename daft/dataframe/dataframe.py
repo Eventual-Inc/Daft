@@ -181,13 +181,20 @@ class DataFrame:
         result = df._result
         assert result is not None
 
-        return DataFrameDisplay(result._get_merged_vpartition(), df.schema())
+        options: dict[str, Any] = {}
+        if n is not None:
+            options["num_rows"] = n
+            options["user_message"] = f"(Showing first {n} rows)"
+
+        return DataFrameDisplay(result, df.schema(), **options)
 
     def __repr__(self) -> str:
-        return self.schema().__repr__()
+        display = DataFrameDisplay(self._result, self.schema())
+        return display.__repr__()
 
     def _repr_html_(self) -> str:
-        return self.schema()._repr_html_()
+        display = DataFrameDisplay(self._result, self.schema())
+        return display._repr_html_()
 
     ###
     # Creation methods
@@ -1028,7 +1035,7 @@ class DataFrame:
         """Computes LogicalPlan to materialize DataFrame. This is a blocking operation.
 
         Returns:
-            DataFrame: DataFrame with cached results.
+            DataFrame: DataFrame with materialized results.
         """
         context = get_context()
         if self._result is None:
