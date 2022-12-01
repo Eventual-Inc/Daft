@@ -326,15 +326,9 @@ class DataBlock(Generic[ArrType]):
     ) -> tuple[list[DataBlock[ArrType]], list[DataBlock[ArrType]]]:
         assert len(group_by) > 0, "no blocks"
         assert len(to_agg) == len(agg_ops)
-        if len(to_agg) > 0:
-            first_type = type(to_agg[0])
-            assert all(type(b) == first_type for b in to_agg), "all block types must match"
-        else:
-            first_type = type(group_by[0])
+        assert all(type(b) == ArrowDataBlock for b in group_by), "Groupby columns must all be Arrow"
 
-        assert all(type(b) == first_type for b in group_by), "all block types must match"
-
-        return first_type._group_by_agg(group_by, to_agg, agg_ops)
+        return ArrowDataBlock._group_by_agg(group_by, to_agg, agg_ops)
 
     def identity(self) -> DataBlock[ArrType]:
         return self
@@ -652,7 +646,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             return ArrowDataBlock(data=pa.chunked_array([[pac.mean(self.data).as_py()]], type=pa.float64()))
         elif op == "list":
             if len(self) == 0:
-                return PyListDataBlock([])
+                return PyListDataBlock([[]])
             return PyListDataBlock([self.data.to_pylist()])
         elif op == "count":
             if len(self) == 0:
@@ -678,6 +672,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         arrs = group_arrs + agg_arrs
         group_names = [f"g_{i}" for i in range(len(group_by))]
         agg_names = [f"a_{i}" for i in range(len(to_agg))]
+
         table = pa.table(arrs, names=group_names + agg_names)
         pl_table = pl.from_arrow(table, rechunk=True)
 
@@ -694,6 +689,15 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             elif op == "list":
                 exprs.append(pl.list(an))
                 agg_expected_arrow_type.append(pa.list_(arr.type))
+            elif op == "concat":
+                if len(arr) != 0:
+                    exprs.append(pl.col(an).explode().list())
+                    agg_expected_arrow_type.append(table[an].type)
+                else:
+                    # If the column is empty, explode() will not work due to type information being missing.
+                    # Manually construct the result in that case (by passsing through the empty column).
+                    exprs.append(pl.col(an))
+                    agg_expected_arrow_type.append(pa.list_(table[an].type))
             elif op == "min":
                 exprs.append(pl.min(an))
                 agg_expected_arrow_type.append(arr.type)
@@ -714,6 +718,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         gcols: list[DataBlock] = [
             DataBlock.make_block(agged[g_name].cast(t)) for g_name, t in zip(group_names, grouped_expected_arrow_type)
         ]
+        # import IPython; IPython.embed()
         acols: list[DataBlock] = [
             DataBlock.make_block(agged[f"{a_name}"].cast(t)) for a_name, t in zip(agg_names, agg_expected_arrow_type)
         ]
