@@ -231,7 +231,6 @@ class vPartition:
         else:
             grouped_blocked = self.eval_expression_list(group_by)
             assert len(evaled_expressions.columns) == len(ops)
-            # import IPython ; IPython.embed()
             gcols, acols = DataBlock.group_by_agg(
                 list(tile.block for tile in grouped_blocked.columns.values()),
                 list(tile.block for tile in evaled_expressions.columns.values()),
