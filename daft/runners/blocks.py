@@ -646,7 +646,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             return ArrowDataBlock(data=pa.chunked_array([[pac.mean(self.data).as_py()]], type=pa.float64()))
         elif op == "list":
             if len(self) == 0:
-                return PyListDataBlock([[]])
+                return PyListDataBlock([])
             return PyListDataBlock([self.data.to_pylist()])
         elif op == "count":
             if len(self) == 0:
@@ -718,7 +718,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         gcols: list[DataBlock] = [
             DataBlock.make_block(agged[g_name].cast(t)) for g_name, t in zip(group_names, grouped_expected_arrow_type)
         ]
-        # import IPython; IPython.embed()
         acols: list[DataBlock] = [
             DataBlock.make_block(agged[f"{a_name}"].cast(t)) for a_name, t in zip(agg_names, agg_expected_arrow_type)
         ]

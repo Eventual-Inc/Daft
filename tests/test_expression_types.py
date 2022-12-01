@@ -73,6 +73,8 @@ EXCLUDE_OPS = {
     "MIN",
     "MAX",
     "COUNT",
+    "LIST",
+    "CONCAT",
     "EXPLODE",
     # Tested in test_cast.py
     "CAST_INT",
