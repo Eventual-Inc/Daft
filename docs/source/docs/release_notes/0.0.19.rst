@@ -1,0 +1,69 @@
+Daft 0.0.19 Release Notes
+=========================
+
+The Daft 0.0.19 release packs a bunch of new features and bugfixes from our new contributors! The highlights are:
+
+* New list aggregation for aggregating items into a list (`#346 <https://github.com/Eventual-Inc/Daft/issues/346>`_)
+
+
+New Features
+------------
+
+New List aggregation
+^^^^^^^^^^^^^^^^^^^^
+
+Users can now groupby and then aggregate each group into a Python list!
+
+See: `#346 <https://github.com/Eventual-Inc/Daft/issues/346>`_
+
+Enhancements
+------------
+
+* Add visualizations to Dataframe repr `#359 <https://github.com/Eventual-Inc/Daft/pull/359>`_
+* Allow subscripting of GroupedDataFrame to access its columns `#285 <https://github.com/Eventual-Inc/Daft/issues/285>`_
+* Support wider ray version range in requirements `#234 <https://github.com/Eventual-Inc/Daft/issues/234>`_
+* Rename `from_parquet` and `from_csv` to `read_*`, deprecate the former `#218 <https://github.com/Eventual-Inc/Daft/issues/218>`_
+* Use a simple disk-based cache for remote file scans `#329 <https://github.com/Eventual-Inc/Daft/pull/329>`_
+* Fix daft install during cluster warm-up `#341 <https://github.com/Eventual-Inc/Daft/pull/341>`_
+* Cache files locally during setup phase in benchmarking `#330 <https://github.com/Eventual-Inc/Daft/pull/330>`_
+* Add pipelined script for generating parquet files in s3 `#328 <https://github.com/Eventual-Inc/Daft/pull/328>`_
+* Fix broken links in documentation using relative links `#327 <https://github.com/Eventual-Inc/Daft/pull/327>`_
+* Add new benchmarking fields and remove --output\_csv\_headers `#326 <https://github.com/Eventual-Inc/Daft/pull/326>`_
+* Fix Broken Link Checker `#323 <https://github.com/Eventual-Inc/Daft/pull/323>`_
+* Rename "unstructured" data to "complex" data `#321 <https://github.com/Eventual-Inc/Daft/pull/321>`_
+
+
+Bug Fixes
+---------
+
+* .show on an empty dataframe should return a friendlier output `#307 <https://github.com/Eventual-Inc/Daft/issues/307>`_
+* Fix DataFrame.show\(\) display of null integers `#241 <https://github.com/Eventual-Inc/Daft/issues/241>`_
+* Fix DataFrameDisplay to take in a vPartition instead of pandas dataframe `#334 <https://github.com/Eventual-Inc/Daft/pull/334>`_
+* Drop use of backspace to render explain correctly in notebook `#362 <https://github.com/Eventual-Inc/Daft/pull/362>`_
+* add drop projections pass to drop no-op projections `#349 <https://github.com/Eventual-Inc/Daft/pull/349>`_
+* Add support for merging NullType Arrowblocks with regular ArrowTypes `#343 <https://github.com/Eventual-Inc/Daft/pull/343>`_
+* Support empty dataframes, with and without schema info. `#342 <https://github.com/Eventual-Inc/Daft/pull/342>`_
+
+Build Changes
+-------------
+
+Daft now is tested against a matrix of Ray versions:
+
+* Pin Daft requirements to Ray \>= 1.10.0 `#337 <https://github.com/Eventual-Inc/Daft/pull/337>`_
+* Add CI nightly job for checking compatibility with a list of Ray versions `#336 <https://github.com/Eventual-Inc/Daft/pull/336>`_
+
+Added nightly builds!
+
+* Publish nightly releases `#354 <https://github.com/Eventual-Inc/Daft/issues/354>`_
+
+Associated PRs:
+
+* Daft nightly fix -- add correct git clone for tag pickup `#357 <https://github.com/Eventual-Inc/Daft/pull/357>`_
+* Fixes for anaconda publishing and enable CRON publishing `#356 <https://github.com/Eventual-Inc/Daft/pull/356>`_
+* workflow for anaconda upload to daft / daft-nightly org `#355 <https://github.com/Eventual-Inc/Daft/pull/355>`_
+
+
+Deprecations
+------------
+
+* `from_parquet` and `from_csv` are deprecated in favor of `read_parquet` and `read_csv` (`#218 <https://github.com/Eventual-Inc/Daft/issues/218>`_)
