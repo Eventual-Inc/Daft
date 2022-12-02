@@ -65,10 +65,8 @@ def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     _partitions: dict[PartID, ray.ObjectRef]
 
-    def _get_merged_vpartition(self, partition_indices: list[int] | None = None) -> vPartition:
+    def _get_merged_vpartition(self) -> vPartition:
         partition_ids = sorted(list(self._partitions.keys()))
-        if partition_indices is not None:
-            partition_ids = [partition_ids[i] for i in partition_indices]
         assert partition_ids[0] == 0
         assert partition_ids[-1] + 1 == len(partition_ids)
         all_partitions = ray.get([self._partitions[pid] for pid in partition_ids])

@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import io
 import warnings
-from bisect import bisect_left
 from dataclasses import dataclass
 from functools import partial
-from itertools import accumulate
 from typing import IO, TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
 
 import pandas
@@ -1038,6 +1036,15 @@ class DataFrame:
         """
         return GroupedDataFrame(self, self.__column_input_to_expression(group_by))
 
+    def _materialize_results(self) -> None:
+        """Materializes the results of for this DataFrame and hold a pointer to the results."""
+        context = get_context()
+        if self._result is None:
+            self._result_cache = context.runner().run(self._plan)
+            result = self._result
+            assert result is not None
+            result.wait()
+
     def collect(self, num_preview_rows: int | None = 10) -> DataFrame:
         """Computes LogicalPlan to materialize DataFrame. This is a blocking operation.
 
@@ -1047,26 +1054,29 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with materialized results.
         """
-        context = get_context()
-        if self._result is None:
-            self._result_cache = context.runner().run(self._plan)
-            result = self._result
-            assert result is not None
-            result.wait()
+        self._materialize_results()
 
         # All rows requested for preview
+        assert self._result is not None
+        dataframe_len = len(self._result)
         if num_preview_rows is None:
-            num_preview_rows = len(self._result)
+            num_preview_rows = dataframe_len
 
-        # No preview rows cached, or insufficient preview rows cached
+        # Build a DataFramePreview and cache it if we need to
         if self._preview.preview_partition is None or len(self._preview.preview_partition) < num_preview_rows:
-            partition_lengths = self._result.len_of_partitions()
-            partition_lengths_cumsum = list(accumulate(partition_lengths))
-            where_to_cut_idx = bisect_left(partition_lengths_cumsum, num_preview_rows)
-            # TODO: perform a .head(num_rows) remotely on the partition to avoid pulling the entire partition
-            preview_partition = self._result._get_merged_vpartition(partition_indices=list(range(where_to_cut_idx + 1)))
+
+            # Add a limit onto self and materialize limited data
+            preview_df = self
+            if num_preview_rows is not None:
+                preview_df = preview_df.limit(num_preview_rows)
+            preview_df._materialize_results()
+            preview_results = preview_df._result
+            assert preview_results is not None
+
+            preview_partition = preview_results._get_merged_vpartition()
             self._preview = DataFramePreview(
-                preview_partition=preview_partition, dataframe_num_rows=sum(partition_lengths)
+                preview_partition=preview_partition,
+                dataframe_num_rows=dataframe_len,
             )
 
         return self
