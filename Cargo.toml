@@ -2,6 +2,10 @@
 pyo3 = { version = "0.17.3", features = ["extension-module"] }
 arrow2 = { version = "0.14.2", features = ["compute"]}
 
+[dependencies.xxhash-rust]
+version = "0.8.5"
+features = ["xxh3", "const_xxh3"]
+
 [lib]
 name = "daft_core"
 crate-type = ["cdylib"]
