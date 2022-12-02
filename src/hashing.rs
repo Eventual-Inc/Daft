@@ -6,7 +6,7 @@ use arrow2::{
     types::{NativeType, Offset},
 };
 
-use xxhash_rust::const_xxh3::{xxh3_64, xxh3_64_with_seed};
+use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
 
 fn hash_primitive<T: NativeType>(
     array: &PrimitiveArray<T>,
