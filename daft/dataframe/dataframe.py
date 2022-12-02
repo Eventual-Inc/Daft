@@ -1056,14 +1056,12 @@ class DataFrame:
         """
         self._materialize_results()
 
-        # All rows requested for preview
         assert self._result is not None
         dataframe_len = len(self._result)
-        if num_preview_rows is None:
-            num_preview_rows = dataframe_len
+        requested_rows = dataframe_len if num_preview_rows is None else num_preview_rows
 
         # Build a DataFramePreview and cache it if we need to
-        if self._preview.preview_partition is None or len(self._preview.preview_partition) < num_preview_rows:
+        if self._preview.preview_partition is None or len(self._preview.preview_partition) < requested_rows:
 
             # Add a limit onto self and materialize limited data
             preview_df = self
