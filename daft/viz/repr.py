@@ -57,14 +57,13 @@ def _stringify_object_html(val: Any, max_col_width: int, max_lines: int):
 
 
 def _stringify_vpartition(
-    vpartition: vPartition,
+    data: dict[str, Sequence[Any]],
     daft_schema: DataFrameSchema,
     custom_stringify_object: Callable = _stringify_object_default,
     max_col_width: int = DEFAULT_MAX_COL_WIDTH,
     max_lines: int = DEFAULT_MAX_LINES,
 ) -> dict[str, Iterable[str]]:
     """Converts a vPartition into a dictionary of display-friendly stringified values"""
-    data: dict[str, Sequence[Any]] = vpartition.to_pydict()
     assert all(
         colname in data for colname in daft_schema.column_names()
     ), f"Data does not contain columns: {set(daft_schema.column_names()) - set(data.keys())}"
@@ -83,14 +82,21 @@ def _stringify_vpartition(
 
 
 def vpartition_repr_html(
-    vpartition: vPartition,
+    vpartition: vPartition | None,
     daft_schema: DataFrameSchema,
+    num_rows: int,
+    user_message: str,
     max_col_width: int = DEFAULT_MAX_COL_WIDTH,
     max_lines: int = DEFAULT_MAX_LINES,
 ) -> str:
     """Converts a vPartition into a HTML string"""
+    data = (
+        {k: v[:num_rows] for k, v in vpartition.to_pydict().items()}
+        if vpartition is not None
+        else {colname: [] for colname in daft_schema.column_names()}
+    )
     data_stringified = _stringify_vpartition(
-        vpartition,
+        data,
         daft_schema,
         custom_stringify_object=_stringify_object_html,
         max_col_width=max_col_width,
@@ -102,7 +108,7 @@ def vpartition_repr_html(
     # Workaround for https://github.com/astanin/python-tabulate/issues/224
     # tabulate library doesn't render header if there are no rows;
     # in that case, work around by printing header as single row.
-    if len(vpartition) == 0:
+    if vpartition is None or len(vpartition) == 0:
         tabulate_html_string = tabulate(
             [headers],
             tablefmt="unsafehtml",
@@ -125,46 +131,45 @@ def vpartition_repr_html(
     assert tabulate_html_string.startswith("<table")
     tabulate_html_string = '<table class="dataframe"' + tabulate_html_string[len("<table") :]
 
-    if len(vpartition) == 0:
-        result = f"""
-            <div>
-                {tabulate_html_string}
-                <small>(No rows to show)</small>
-            </div>
-        """
-
-    else:
-        result = f"""
-            <div>
-                {tabulate_html_string}
-                <small>(Showing first {len(vpartition)} rows)</small>
-            </div>
-        """
-
-    return result
+    return f"""
+        <div>
+            {tabulate_html_string}
+            <small>{user_message}</small>
+        </div>
+    """
 
 
 def vpartition_repr(
-    vpartition: vPartition,
+    vpartition: vPartition | None,
     daft_schema: DataFrameSchema,
+    num_rows: int,
+    user_message: str,
     max_col_width: int = DEFAULT_MAX_COL_WIDTH,
     max_lines: int = DEFAULT_MAX_LINES,
 ) -> str:
     """Converts a vPartition into a prettified string for display in a REPL"""
+    data = (
+        {k: v[:num_rows] for k, v in vpartition.to_pydict().items()}
+        if vpartition is not None
+        else {colname: [] for colname in daft_schema.column_names()}
+    )
     data_stringified = _stringify_vpartition(
-        vpartition,
+        data,
         daft_schema,
         custom_stringify_object=_stringify_object_default,
         max_col_width=max_col_width,
         max_lines=max_lines,
     )
 
-    return tabulate(
-        data_stringified,
-        headers=[f"{name}\n{daft_schema[name].daft_type}" for name in daft_schema.column_names()],
-        tablefmt="grid",
-        missingval="None",
-        # Workaround for https://github.com/astanin/python-tabulate/issues/223
-        # If table has no rows, specifying maxcolwidths always raises error.
-        maxcolwidths=max_col_width if len(vpartition) else None,
+    return (
+        tabulate(
+            data_stringified,
+            headers=[f"{name}\n{daft_schema[name].daft_type}" for name in daft_schema.column_names()],
+            tablefmt="grid",
+            missingval="None",
+            # Workaround for https://github.com/astanin/python-tabulate/issues/223
+            # If table has no rows, specifying maxcolwidths always raises error.
+            maxcolwidths=max_col_width if vpartition is not None and len(vpartition) else None,
+        )
+        + f"\n{user_message}"
     )

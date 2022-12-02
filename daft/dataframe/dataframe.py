@@ -12,6 +12,7 @@ import pyarrow.parquet as papq
 from pyarrow import csv, json
 
 from daft.context import get_context
+from daft.dataframe.preview import DataFramePreview
 from daft.dataframe.schema import DataFrameSchema
 from daft.datasources import (
     CSVSourceInfo,
@@ -88,6 +89,7 @@ class DataFrame:
         """
         self.__plan = plan
         self._result_cache: PartitionCacheEntry | None = None
+        self._preview = DataFramePreview(preview_partition=None, dataframe_num_rows=None)
 
     @property
     def _plan(self) -> logical_plan.LogicalPlan:
@@ -165,7 +167,7 @@ class DataFrame:
         """Executes and displays the executed dataframe as a table
 
         Args:
-            n: number of rows to show. Defaults to -1.
+            n: number of rows to show. Defaults to None which indicates showing the entire Dataframe.
 
         Returns:
             DataFrameDisplay: object that has a rich tabular display
@@ -177,17 +179,27 @@ class DataFrame:
         if n is not None:
             df = df.limit(n)
 
-        df.collect()
+        df.collect(num_preview_rows=n)
         result = df._result
         assert result is not None
 
-        return DataFrameDisplay(result._get_merged_vpartition(), df.schema())
+        # If showing all rows, then we can use the resulting DataFramePreview's dataframe_num_rows since no limit was applied
+        dataframe_num_rows = df._preview.dataframe_num_rows if n is None else None
+
+        preview = DataFramePreview(
+            preview_partition=df._preview.preview_partition,
+            dataframe_num_rows=dataframe_num_rows,
+        )
+
+        return DataFrameDisplay(preview, df.schema())
 
     def __repr__(self) -> str:
-        return self.schema().__repr__()
+        display = DataFrameDisplay(self._preview, self.schema())
+        return display.__repr__()
 
     def _repr_html_(self) -> str:
-        return self.schema()._repr_html_()
+        display = DataFrameDisplay(self._preview, self.schema())
+        return display._repr_html_()
 
     ###
     # Creation methods
@@ -1034,18 +1046,47 @@ class DataFrame:
         """
         return GroupedDataFrame(self, self.__column_input_to_expression(group_by))
 
-    def collect(self) -> DataFrame:
-        """Computes LogicalPlan to materialize DataFrame. This is a blocking operation.
-
-        Returns:
-            DataFrame: DataFrame with cached results.
-        """
+    def _materialize_results(self) -> None:
+        """Materializes the results of for this DataFrame and hold a pointer to the results."""
         context = get_context()
         if self._result is None:
             self._result_cache = context.runner().run(self._plan)
             result = self._result
             assert result is not None
             result.wait()
+
+    def collect(self, num_preview_rows: int | None = 10) -> DataFrame:
+        """Computes LogicalPlan to materialize DataFrame. This is a blocking operation.
+
+        Args:
+            num_preview_rows: Number of rows to preview. Defaults to 10
+
+        Returns:
+            DataFrame: DataFrame with materialized results.
+        """
+        self._materialize_results()
+
+        assert self._result is not None
+        dataframe_len = len(self._result)
+        requested_rows = dataframe_len if num_preview_rows is None else num_preview_rows
+
+        # Build a DataFramePreview and cache it if we need to
+        if self._preview.preview_partition is None or len(self._preview.preview_partition) < requested_rows:
+
+            # Add a limit onto self and materialize limited data
+            preview_df = self
+            if num_preview_rows is not None:
+                preview_df = preview_df.limit(num_preview_rows)
+            preview_df._materialize_results()
+            preview_results = preview_df._result
+            assert preview_results is not None
+
+            preview_partition = preview_results._get_merged_vpartition()
+            self._preview = DataFramePreview(
+                preview_partition=preview_partition,
+                dataframe_num_rows=dataframe_len,
+            )
+
         return self
 
     def to_pandas(self) -> pandas.DataFrame:
