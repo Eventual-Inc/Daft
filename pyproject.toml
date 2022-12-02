@@ -58,7 +58,7 @@ ignore_errors = true
 
 [tool.poetry]
 name = "getdaft"
-version = "0.0.16" # needed for poetry but ignored
+version = "0.0.19" # needed for poetry but ignored
 description = "A Distributed DataFrame library for large scale complex data processing."
 authors = ["Eventual Inc <daft@eventualcomputing.com>"]
 maintainers = [
