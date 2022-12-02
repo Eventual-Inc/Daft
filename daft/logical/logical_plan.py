@@ -102,7 +102,7 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         def helper(node: LogicalPlan, depth: int = 0, index: int = 0, prefix: str = "", header: str = ""):
             children: list[LogicalPlan] = node._children()
             obj_repr_lines = repr(node).splitlines()
-            builder.append(f"{prefix}{header}{obj_repr_lines[0]}\n")
+            builder.append(f"{header}{obj_repr_lines[0]}\n")
 
             if len(children) > 0:
                 body_prefix = prefix + "│"
@@ -118,9 +118,9 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
                     has_grandchild = len(child._children()) > 0
 
                     if has_grandchild:
-                        header = "├──"
+                        header = prefix + "├──"
                     else:
-                        header = "└──"
+                        header = prefix + "└──"
 
                     helper(child, depth=depth, index=index + 1, prefix=prefix, header=header)
             else:
@@ -136,11 +136,16 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
                         final_header = "───"
 
                     position = len(children) - i
-                    header = ("\b\b\b" * position) + connector + (middle_child_header * (position - 1)) + final_header
                     if i != len(children) - 1:
                         next_child_prefix = prefix + ("   │  " * (position - 1))
                     else:
                         next_child_prefix = prefix + "      "
+                    header = (
+                        next_child_prefix[: -3 * position]
+                        + connector
+                        + (middle_child_header * (position - 1))
+                        + final_header
+                    )
 
                     helper(child, depth=depth + 1, index=i, prefix=next_child_prefix, header=header)
 
