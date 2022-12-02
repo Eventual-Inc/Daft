@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import io
 import warnings
+from bisect import bisect_left
 from dataclasses import dataclass
 from functools import partial
+from itertools import accumulate
 from typing import IO, TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
 
 import pandas
@@ -12,6 +14,7 @@ import pyarrow.parquet as papq
 from pyarrow import csv, json
 
 from daft.context import get_context
+from daft.dataframe.preview import DataFramePreview
 from daft.dataframe.schema import DataFrameSchema
 from daft.datasources import (
     CSVSourceInfo,
@@ -88,6 +91,7 @@ class DataFrame:
         """
         self.__plan = plan
         self._result_cache: PartitionCacheEntry | None = None
+        self._preview = DataFramePreview(preview_partition=None, dataframe_num_rows=None)
 
     @property
     def _plan(self) -> logical_plan.LogicalPlan:
@@ -165,7 +169,7 @@ class DataFrame:
         """Executes and displays the executed dataframe as a table
 
         Args:
-            n: number of rows to show. Defaults to -1.
+            n: number of rows to show. Defaults to None which indicates showing the entire Dataframe.
 
         Returns:
             DataFrameDisplay: object that has a rich tabular display
@@ -177,23 +181,26 @@ class DataFrame:
         if n is not None:
             df = df.limit(n)
 
-        df.collect()
+        df.collect(num_preview_rows=n)
         result = df._result
         assert result is not None
 
-        options: dict[str, Any] = {}
-        if n is not None:
-            options["num_rows"] = n
-            options["user_message"] = f"(Showing first {n} rows)"
+        # If showing all rows, then we can use the resulting DataFramePreview's dataframe_num_rows since no limit was applied
+        dataframe_num_rows = df._preview.dataframe_num_rows if n is None else None
 
-        return DataFrameDisplay(result, df.schema(), **options)
+        preview = DataFramePreview(
+            preview_partition=df._preview.preview_partition,
+            dataframe_num_rows=dataframe_num_rows,
+        )
+
+        return DataFrameDisplay(preview, df.schema())
 
     def __repr__(self) -> str:
-        display = DataFrameDisplay(self._result, self.schema())
+        display = DataFrameDisplay(self._preview, self.schema())
         return display.__repr__()
 
     def _repr_html_(self) -> str:
-        display = DataFrameDisplay(self._result, self.schema())
+        display = DataFrameDisplay(self._preview, self.schema())
         return display._repr_html_()
 
     ###
@@ -1031,8 +1038,11 @@ class DataFrame:
         """
         return GroupedDataFrame(self, self.__column_input_to_expression(group_by))
 
-    def collect(self) -> DataFrame:
+    def collect(self, num_preview_rows: int | None = 10) -> DataFrame:
         """Computes LogicalPlan to materialize DataFrame. This is a blocking operation.
+
+        Args:
+            num_preview_rows: Number of rows to preview. Defaults to 10
 
         Returns:
             DataFrame: DataFrame with materialized results.
@@ -1043,6 +1053,22 @@ class DataFrame:
             result = self._result
             assert result is not None
             result.wait()
+
+        # All rows requested for preview
+        if num_preview_rows is None:
+            num_preview_rows = len(self._result)
+
+        # No preview rows cached, or insufficient preview rows cached
+        if self._preview.preview_partition is None or len(self._preview.preview_partition) < num_preview_rows:
+            partition_lengths = self._result.len_of_partitions()
+            partition_lengths_cumsum = list(accumulate(partition_lengths))
+            where_to_cut_idx = bisect_left(partition_lengths_cumsum, num_preview_rows)
+            # TODO: perform a .head(num_rows) remotely on the partition to avoid pulling the entire partition
+            preview_partition = self._result._get_merged_vpartition(partition_indices=list(range(where_to_cut_idx + 1)))
+            self._preview = DataFramePreview(
+                preview_partition=preview_partition, dataframe_num_rows=sum(partition_lengths)
+            )
+
         return self
 
     def to_pandas(self) -> pandas.DataFrame:
