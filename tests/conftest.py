@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from itertools import chain
 
 import pandas as pd
 import pyarrow as pa
@@ -140,6 +141,30 @@ def assert_df_equals(
         except AssertionError:
             print(f"Failed assertion for col: {col}")
             raise
+
+
+def assert_list_columns_equal(
+    daft_columns: dict[str, list[list]],
+    expected_columns: dict[str, list[list]],
+    daft_col_keys: list | None = None,
+    assert_list_element_ordering: bool = False,
+) -> None:
+    """Assert that two dictionaries of columns with list elements are equal.
+
+    Special cased because:
+        1. list element column implementation is currently not in Arrow;
+        2. individual elements need to be sorted for the equality check.
+    """
+    if not assert_list_element_ordering:
+        for col in chain(daft_columns.values(), expected_columns.values()):
+            for elem in col:
+                elem.sort(key=lambda x: (x is None, x))
+
+    if daft_col_keys:
+        for key in daft_columns:
+            daft_columns[key] = [elem for key, elem in sorted(zip(daft_col_keys, daft_columns[key]))]
+
+    assert daft_columns == expected_columns
 
 
 def assert_arrow_equals(

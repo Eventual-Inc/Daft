@@ -5,7 +5,7 @@ import pytest
 
 from daft import DataFrame, col
 from daft.errors import ExpressionTypeError
-from tests.conftest import assert_arrow_equals
+from tests.conftest import assert_arrow_equals, assert_list_columns_equal
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -23,6 +23,7 @@ def test_agg_global(repartition_nparts):
             (col("values").alias("min"), "min"),
             (col("values").alias("max"), "max"),
             (col("values").alias("count"), "count"),
+            (col("values").alias("list"), "list"),
         ]
     )
     expected_arrow_table = {
@@ -32,8 +33,23 @@ def test_agg_global(repartition_nparts):
         "max": pa.array([2], type=pa.int64()),
         "count": pa.array([2], type=pa.int64()),
     }
+    expected_list_cols = {
+        "list": [[1, None, 2]],
+    }
+
     daft_df.collect()
-    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="sum")
+    daft_cols = daft_df.to_pydict()
+
+    assert_arrow_equals(
+        {key: col for key, col in daft_cols.items() if key in expected_arrow_table},
+        expected_arrow_table,
+        sort_key="sum",
+    )
+
+    assert_list_columns_equal(
+        {key: col for key, col in daft_cols.items() if key in expected_list_cols},
+        expected_list_cols,
+    )
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -54,6 +70,7 @@ def test_agg_global_all_null(repartition_nparts):
                 (col("values").alias("min"), "min"),
                 (col("values").alias("max"), "max"),
                 (col("values").alias("count"), "count"),
+                (col("values").alias("list"), "list"),
             ]
         )
     )
@@ -64,8 +81,23 @@ def test_agg_global_all_null(repartition_nparts):
         "max": pa.array([None], type=pa.int64()),
         "count": pa.array([0]),
     }
+    expected_list_cols = {
+        "list": [[None, None, None]],
+    }
+
     daft_df.collect()
-    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="sum")
+    daft_cols = daft_df.to_pydict()
+
+    assert_arrow_equals(
+        {key: col for key, col in daft_cols.items() if key in expected_arrow_table},
+        expected_arrow_table,
+        sort_key="sum",
+    )
+
+    assert_list_columns_equal(
+        {key: col for key, col in daft_cols.items() if key in expected_list_cols},
+        expected_list_cols,
+    )
 
 
 def test_agg_global_null_type_column():
@@ -100,6 +132,7 @@ def test_agg_global_empty():
                 (col("values").alias("min"), "min"),
                 (col("values").alias("max"), "max"),
                 (col("values").alias("count"), "count"),
+                (col("values").alias("list"), "list"),
             ]
         )
     )
@@ -110,8 +143,23 @@ def test_agg_global_empty():
         "max": pa.array([], type=pa.int64()),
         "count": pa.array([], type=pa.int64()),
     }
+    expected_list_cols = {
+        "list": [],
+    }
+
     daft_df.collect()
-    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="sum")
+    daft_cols = daft_df.to_pydict()
+
+    assert_arrow_equals(
+        {key: col for key, col in daft_cols.items() if key in expected_arrow_table},
+        expected_arrow_table,
+        sort_key="sum",
+    )
+
+    assert_list_columns_equal(
+        {key: col for key, col in daft_cols.items() if key in expected_list_cols},
+        expected_list_cols,
+    )
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 7])
@@ -132,6 +180,7 @@ def test_agg_groupby(repartition_nparts):
                 (col("values").alias("min"), "min"),
                 (col("values").alias("max"), "max"),
                 (col("values").alias("count"), "count"),
+                (col("values").alias("list"), "list"),
             ]
         )
     )
@@ -143,11 +192,28 @@ def test_agg_groupby(repartition_nparts):
         "max": pa.array([2, 4], type=pa.int64()),
         "count": pa.array([2, 2], type=pa.int64()),
     }
+    expected_list_cols = {
+        "list": [[1, None, 2], [2, None, 4]],
+    }
+
     daft_df.collect()
-    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="group")
+    daft_cols = daft_df.to_pydict()
+
+    assert_arrow_equals(
+        {key: col for key, col in daft_cols.items() if key in expected_arrow_table},
+        expected_arrow_table,
+        sort_key="group",
+    )
+
+    assert_list_columns_equal(
+        {key: col for key, col in daft_cols.items() if key in expected_list_cols},
+        expected_list_cols,
+        daft_col_keys=daft_cols["group"].to_pylist(),
+    )
 
 
-@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
+# @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
+@pytest.mark.parametrize("repartition_nparts", [2])
 def test_agg_groupby_all_null(repartition_nparts):
     daft_df = DataFrame.from_pydict(
         {
@@ -165,6 +231,7 @@ def test_agg_groupby_all_null(repartition_nparts):
             (col("values").alias("min"), "min"),
             (col("values").alias("max"), "max"),
             (col("values").alias("count"), "count"),
+            (col("values").alias("list"), "list"),
         ]
     )
 
@@ -177,8 +244,24 @@ def test_agg_groupby_all_null(repartition_nparts):
         "count": pa.array([0, 0]),
     }
 
+    expected_list_cols = {
+        "list": [[None, None], [None, None]],
+    }
+
     daft_df.collect()
-    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="group")
+    daft_cols = daft_df.to_pydict()
+
+    assert_arrow_equals(
+        {key: col for key, col in daft_cols.items() if key in expected_arrow_table},
+        expected_arrow_table,
+        sort_key="group",
+    )
+
+    assert_list_columns_equal(
+        {key: col for key, col in daft_cols.items() if key in expected_list_cols},
+        expected_list_cols,
+        daft_col_keys=daft_cols["group"].to_pylist(),
+    )
 
 
 def test_agg_groupby_null_type_column():
@@ -285,6 +368,7 @@ def test_agg_groupby_empty():
             (col("values").alias("min"), "min"),
             (col("values").alias("max"), "max"),
             (col("values").alias("count"), "count"),
+            (col("values").alias("list"), "list"),
         ]
     )
 
@@ -296,6 +380,21 @@ def test_agg_groupby_empty():
         "max": pa.array([], type=pa.int64()),
         "count": pa.array([], type=pa.int64()),
     }
+    expected_list_cols = {
+        "list": [],
+    }
 
     daft_df.collect()
-    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, sort_key="group")
+    daft_cols = daft_df.to_pydict()
+
+    assert_arrow_equals(
+        {key: col for key, col in daft_cols.items() if key in expected_arrow_table},
+        expected_arrow_table,
+        sort_key="group",
+    )
+
+    assert_list_columns_equal(
+        {key: col for key, col in daft_cols.items() if key in expected_list_cols},
+        expected_list_cols,
+        daft_col_keys=daft_cols["group"].to_pylist(),
+    )

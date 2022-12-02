@@ -835,6 +835,8 @@ class DataFrame:
             "sum": Expression._sum,
             "count": Expression._count,
             "mean": Expression._mean,
+            "list": Expression._list,
+            "concat": Expression._concat,
             "min": Expression._min,
             "max": Expression._max,
         }
@@ -850,13 +852,21 @@ class DataFrame:
 
         intermediate_ops = {
             "sum": ("sum",),
+            "list": ("list",),
             "count": ("count",),
             "mean": ("sum", "count"),
             "min": ("min",),
             "max": ("max",),
         }
 
-        reduction_ops = {"sum": ("sum",), "count": ("sum",), "mean": ("sum", "sum"), "min": ("min",), "max": ("max",)}
+        reduction_ops = {
+            "sum": ("sum",),
+            "list": ("concat",),
+            "count": ("sum",),
+            "mean": ("sum", "sum"),
+            "min": ("min",),
+            "max": ("max",),
+        }
 
         finalizer_ops_funcs = {"mean": lambda x, y: (x + 0.0) / (y + 0.0)}
 
