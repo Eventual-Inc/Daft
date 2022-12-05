@@ -31,8 +31,9 @@ def udf(
     f: Callable | None = None,
     *,
     return_type: type,
-    num_gpus: int | None = None,
-    num_cpus: int | None = None,
+    num_gpus: int | float | None = None,
+    num_cpus: int | float | None = None,
+    memory_bytes: int | float | None = None,
 ) -> Callable:
     """Decorator for creating a UDF
 
@@ -110,7 +111,7 @@ def udf(
                 func_ret_type=func_ret_type,
                 func_args=args,
                 func_kwargs=kwargs,
-                resource_request=ResourceRequest(num_cpus=num_cpus, num_gpus=num_gpus),
+                resource_request=ResourceRequest(num_cpus=num_cpus, num_gpus=num_gpus, memory_bytes=memory_bytes),
             )
             return out_expr
 
@@ -125,8 +126,9 @@ def polars_udf(
     f: Callable | None = None,
     *,
     return_type: type,
-    num_gpus: int | None = None,
-    num_cpus: int | None = None,
+    num_gpus: int | float | None = None,
+    num_cpus: int | float | None = None,
+    memory_bytes: int | float | None = None,
 ) -> Callable:
     """Decorator for creating a Polars UDF
 
@@ -168,6 +170,7 @@ def polars_udf(
         return_type: The return type of the UDF
         num_gpus: How many GPUs the UDF requires for execution, used for resource allocation when running in a distributed setting
         num_cpus: How many CPUs the UDF requires for execution, used for resource allocation when running in a distributed setting
+        memory_bytes: How many bytes of memory this UDF requires for execution, used for resource allocation when running in a distributed setting
     """
     func_ret_type = ExpressionType.from_py_type(return_type)
 
@@ -198,7 +201,7 @@ def polars_udf(
                 func_ret_type=func_ret_type,
                 func_args=args,
                 func_kwargs=kwargs,
-                resource_request=ResourceRequest(num_cpus=num_cpus, num_gpus=num_gpus),
+                resource_request=ResourceRequest(num_cpus=num_cpus, num_gpus=num_gpus, memory_bytes=memory_bytes),
             )
             return out_expr
 

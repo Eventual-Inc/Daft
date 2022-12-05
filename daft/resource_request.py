@@ -7,12 +7,13 @@ import functools
 @dataclasses.dataclass(frozen=True)
 class ResourceRequest:
 
-    num_cpus: float | None
-    num_gpus: float | None
+    num_cpus: int | float | None
+    num_gpus: int | float | None
+    memory_bytes: int | float | None
 
     @classmethod
     def default(cls) -> ResourceRequest:
-        return ResourceRequest(num_cpus=None, num_gpus=None)
+        return ResourceRequest(num_cpus=None, num_gpus=None, memory_bytes=None)
 
     @staticmethod
     def max_resources(resource_requests: list[ResourceRequest]) -> ResourceRequest:
@@ -20,7 +21,7 @@ class ResourceRequest:
         return functools.reduce(
             lambda acc, req: acc._max_for_each_resource(req),
             resource_requests,
-            ResourceRequest(num_cpus=None, num_gpus=None),
+            ResourceRequest(num_cpus=None, num_gpus=None, memory_bytes=None),
         )
 
     def _max_for_each_resource(self, other: ResourceRequest) -> ResourceRequest:
