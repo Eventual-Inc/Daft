@@ -111,7 +111,7 @@ experimental = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"
 ipdb = "^0.13.9"
 pre-commit = "^2.20.0"
 Cython = "^0.29.32"
-ray = {version = ">=1.10.0", extras = ["default"]}
+ray = {version = "*", extras = ["default"]}  # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
 viztracer = "^0.15.4"
 Sphinx = "<5"
 sphinx-book-theme = "^0.3.3"
