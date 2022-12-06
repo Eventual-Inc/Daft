@@ -4,6 +4,8 @@ import multiprocessing
 from dataclasses import dataclass
 from typing import Callable, ClassVar
 
+import psutil
+
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
     LogicalGlobalOpRunner,
@@ -194,6 +196,13 @@ class PyRunner(Runner):
             if resource_request.num_gpus is not None and resource_request.num_gpus > cuda_device_count():
                 raise RuntimeError(
                     f"Requested {resource_request.num_gpus} GPUs but found only {cuda_device_count()} available"
+                )
+            if (
+                resource_request.memory_bytes is not None
+                and resource_request.memory_bytes > psutil.virtual_memory().total
+            ):
+                raise RuntimeError(
+                    f"Requested {resource_request.memory_bytes} GPUs but found only {psutil.virtual_memory().total} available"
                 )
         partition_intermediate_results: dict[int, PartitionSet] = {}
         with profiler("profile.json"):
