@@ -191,10 +191,14 @@ def _ray_partition_single_part_runner(
 
 def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
     options = {}
+    # FYI: Ray's default resource behaviour is documented here:
+    # https://docs.ray.io/en/latest/ray-core/tasks/resources.html
     if resource_request.num_cpus is not None:
         options["num_cpus"] = resource_request.num_cpus
     if resource_request.num_gpus is not None:
         options["num_gpus"] = resource_request.num_gpus
+    if resource_request.memory_bytes is not None:
+        options["memory"] = resource_request.memory_bytes
     return options
 
 
