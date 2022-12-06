@@ -202,7 +202,7 @@ class PyRunner(Runner):
                 and resource_request.memory_bytes > psutil.virtual_memory().total
             ):
                 raise RuntimeError(
-                    f"Requested {resource_request.memory_bytes} GPUs but found only {psutil.virtual_memory().total} available"
+                    f"Requested {resource_request.memory_bytes} bytes of memory but found only {psutil.virtual_memory().total} available"
                 )
         partition_intermediate_results: dict[int, PartitionSet] = {}
         with profiler("profile.json"):
