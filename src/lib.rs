@@ -1,5 +1,6 @@
 mod ffi;
 mod hashing;
+mod search_sorted;
 
 use arrow2::array::{Array, PrimitiveArray};
 use arrow2::datatypes::DataType;
@@ -51,6 +52,20 @@ fn hash_pyarrow_array(
     ffi::to_py_array(Box::new(hashed.unwrap()), py, pyarrow)
 }
 
+#[pyfunction]
+fn search_sorted_pyarrow_array(
+    sorted_array: &PyAny,
+    keys: &PyAny,
+    py: Python,
+    pyarrow: &PyModule,
+) -> PyResult<PyObject> {
+    let rsorted_array = ffi::array_to_rust(sorted_array)?;
+    let rkeys_array = ffi::array_to_rust(keys)?;
+    let result_idx = search_sorted::search_sorted(rsorted_array.as_ref(), rkeys_array.as_ref());
+
+    ffi::to_py_array(Box::new(result_idx.unwrap()), py, pyarrow)
+}
+
 /// A Python module implemented in Rust. The name of this function must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
 /// import the module.
@@ -58,6 +73,7 @@ fn hash_pyarrow_array(
 fn daft_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(add_1, m)?)?;
     m.add_function(wrap_pyfunction!(hash_pyarrow_array, m)?)?;
+    m.add_function(wrap_pyfunction!(search_sorted_pyarrow_array, m)?)?;
 
     Ok(())
 }
