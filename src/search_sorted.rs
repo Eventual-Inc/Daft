@@ -69,6 +69,66 @@ fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
     PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
 }
 
+fn search_sorted_utf_array<O: Offset>(
+    sorted_array: &Utf8Array<O>,
+    keys: &Utf8Array<O>,
+) -> PrimitiveArray<u64> {
+    let array_size = sorted_array.len() as usize;
+    let mut left = 0 as usize;
+    let mut right = array_size;
+    let input_reversed = false;
+
+    let mut results: Vec<u64> = Vec::with_capacity(array_size);
+    let mut last_key = keys.iter().next().unwrap();
+    for key_val in keys.iter() {
+        let is_last_key_le = match (last_key, key_val) {
+            (None, None) => false,
+            (Some(last_key), Some(key_val)) => last_key.le(key_val),
+            (None, _) => false,
+            (_, None) => true,
+        };
+        if is_last_key_le {
+            right = array_size;
+        } else {
+            left = 0;
+            right = if right < array_size {
+                right + 1
+            } else {
+                array_size
+            };
+        }
+        while left < right {
+            let mid_idx = left + ((right - left) >> 1);
+            let corrected_idx = if input_reversed {
+                array_size - mid_idx - 1
+            } else {
+                mid_idx
+            };
+            let mid_val = unsafe { sorted_array.value_unchecked(corrected_idx) };
+            let is_key_val_le = match (key_val, sorted_array.is_valid(corrected_idx)) {
+                (None, true) => false,
+                (None, false) => true,
+                (Some(key_val), true) => key_val.le(&mid_val),
+                (_, false) => true,
+            };
+            if is_key_val_le {
+                right = mid_idx;
+            } else {
+                left = mid_idx + 1;
+            }
+        }
+        let result_idx = if input_reversed {
+            array_size - left
+        } else {
+            left
+        };
+        results.push(result_idx.try_into().unwrap());
+        last_key = key_val;
+    }
+
+    PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
+}
+
 macro_rules! with_match_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
@@ -103,9 +163,17 @@ pub fn search_sorted(sorted_array: &dyn Array, keys: &dyn Array) -> Result<Primi
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             search_sorted_primitive_array::<$T>(sorted_array.as_any().downcast_ref().unwrap(), keys.as_any().downcast_ref().unwrap())
         }),
+        Utf8 => search_sorted_utf_array::<i32>(
+            sorted_array.as_any().downcast_ref().unwrap(),
+            keys.as_any().downcast_ref().unwrap(),
+        ),
+        LargeUtf8 => search_sorted_utf_array::<i64>(
+            sorted_array.as_any().downcast_ref().unwrap(),
+            keys.as_any().downcast_ref().unwrap(),
+        ),
         t => {
             return Err(Error::NotYetImplemented(format!(
-                "Hash not implemented for type {:?}",
+                "search_sorted not implemented for type {:?}",
                 t
             )))
         }
