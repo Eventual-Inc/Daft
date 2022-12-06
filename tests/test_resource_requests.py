@@ -4,6 +4,7 @@ import multiprocessing
 import os
 
 import pandas as pd
+import psutil
 import pytest
 
 from daft import DataFrame, udf
@@ -44,6 +45,11 @@ def requesting_too_many_cpus(c):
     return [1] * len(c)
 
 
+@udf(return_type=int, memory_bytes=psutil.virtual_memory().total + 1)
+def requesting_too_much_memory(c):
+    return [1] * len(c)
+
+
 ###
 # Assert PyRunner behavior for GPU requests:
 # Fail if requesting more GPUs than is available, but otherwise we do not modify anything
@@ -65,6 +71,15 @@ def test_requesting_too_many_cpus():
 def test_requesting_too_many_gpus():
     df = DataFrame.from_pydict(DATA)
     df = df.with_column("foo", requesting_too_many_gpus(col("id")))
+
+    with pytest.raises(RuntimeError):
+        df.to_pandas()
+
+
+@pytest.mark.skipif(get_context().runner_config.name != "py", reason="requires PyRunner to be in use")
+def test_requesting_too_much_memory():
+    df = DataFrame.from_pydict(DATA)
+    df = df.with_column("foo", requesting_too_much_memory(col("id")))
 
     with pytest.raises(RuntimeError):
         df.to_pandas()
