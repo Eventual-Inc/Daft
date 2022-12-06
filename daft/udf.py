@@ -77,6 +77,7 @@ def udf(
         return_type: The return type of the UDF
         num_gpus: How many GPUs the UDF requires for execution, used for resource allocation when running in a distributed setting
         num_cpus: How many CPUs the UDF requires for execution, used for resource allocation when running in a distributed setting
+        memory_bytes: How many bytes of memory this UDF requires for execution, used for resource allocation when running in a distributed setting
     """
     warnings.warn(
         "DEPRECATION WARNING: @udf will be deprecated in 0.1.0 in favor of @polars_udf which is much more efficient and handles Null/NaN semantics correctly"
