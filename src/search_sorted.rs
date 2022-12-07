@@ -1,8 +1,9 @@
-use std::{cmp::Ordering, collections::btree_map::Keys};
+use std::{cmp::Ordering, iter::zip};
 
 use arrow2::{
+    array::ord::build_compare,
     array::Array,
-    array::{BinaryArray, PrimitiveArray, Utf8Array},
+    array::{ord::DynComparator, BinaryArray, PrimitiveArray, Utf8Array},
     compute::sort,
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
@@ -155,6 +156,98 @@ macro_rules! with_match_primitive_type {(
         )))
     }
 })}
+
+type IsValid = Box<dyn Fn(usize) -> bool + Send + Sync>;
+fn build_is_valid(array: &dyn Array) -> IsValid {
+    if let Some(validity) = array.validity() {
+        let validity = validity.clone();
+        Box::new(move |x| unsafe { validity.get_bit_unchecked(x) })
+    } else {
+        Box::new(move |_| true)
+    }
+}
+
+fn build_compare_with_nulls(
+    left: &dyn Array,
+    right: &dyn Array,
+    reversed: bool,
+) -> Result<DynComparator> {
+    let comparator = build_compare(left, right)?;
+    let left_is_valid = build_is_valid(left);
+    let right_is_valid = build_is_valid(right);
+    if reversed {
+        Ok(Box::new(move |i: usize, j: usize| {
+            match (left_is_valid(i), right_is_valid(j)) {
+                (true, true) => comparator(i, j).reverse(),
+                (false, true) => Ordering::Less,
+                (false, false) => Ordering::Equal,
+                (true, false) => Ordering::Greater,
+            }
+        }))
+    } else {
+        Ok(Box::new(move |i: usize, j: usize| {
+            match (left_is_valid(i), right_is_valid(j)) {
+                (true, true) => comparator(i, j),
+                (false, true) => Ordering::Greater,
+                (false, false) => Ordering::Equal,
+                (true, false) => Ordering::Less,
+            }
+        }))
+    }
+}
+
+pub fn search_sorted_multi_array(
+    sorted_arrays: &Vec<&dyn Array>,
+    key_arrays: &Vec<&dyn Array>,
+    input_reversed: &Vec<bool>,
+) -> Result<PrimitiveArray<u64>> {
+    assert!(sorted_arrays.len() > 0);
+    assert!(key_arrays.len() > 0);
+    assert_eq!(sorted_arrays.len(), key_arrays.len());
+
+    let sorted_array_size = sorted_arrays[0].len();
+    for sorted_arr in sorted_arrays {
+        assert_eq!(sorted_arr.len(), sorted_array_size);
+    }
+    let key_array_size = key_arrays[0].len();
+    for key_arr in key_arrays {
+        assert_eq!(key_arr.len(), key_array_size);
+    }
+    let mut cmp_list = Vec::with_capacity(sorted_arrays.len());
+    for ((sorted_arr, key_arr), reversed) in zip(sorted_arrays, key_arrays).zip(input_reversed) {
+        cmp_list.push(build_compare_with_nulls(*sorted_arr, *key_arr, *reversed).unwrap());
+    }
+
+    let combined_comparator = |a_idx: usize, b_idx: usize| -> Ordering {
+        for comparator in cmp_list.iter() {
+            match comparator(a_idx, b_idx) {
+                Ordering::Equal => continue,
+                other => return other,
+            }
+        }
+        Ordering::Equal
+    };
+    let mut results: Vec<u64> = Vec::with_capacity(key_array_size);
+
+    for key_idx in 0..key_array_size {
+        let mut left = 0;
+        let mut right = sorted_array_size;
+        while left < right {
+            let mid_idx = left + ((right - left) >> 1);
+            if combined_comparator(mid_idx, key_idx).is_ge() {
+                right = mid_idx;
+            } else {
+                left = mid_idx + 1;
+            }
+        }
+        results.push(left.try_into().unwrap());
+    }
+    Ok(PrimitiveArray::<u64>::new(
+        DataType::UInt64,
+        results.into(),
+        None,
+    ))
+}
 
 pub fn search_sorted(sorted_array: &dyn Array, keys: &dyn Array) -> Result<PrimitiveArray<u64>> {
     use PhysicalType::*;
