@@ -13,11 +13,11 @@ use arrow2::{
 fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
     sorted_array: &PrimitiveArray<T>,
     keys: &PrimitiveArray<T>,
+    input_reversed: bool,
 ) -> PrimitiveArray<u64> {
     let array_size = sorted_array.len() as usize;
     let mut left = 0 as usize;
     let mut right = array_size;
-    let input_reversed = false;
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
     let mut last_key = keys.iter().next().unwrap();
@@ -73,11 +73,11 @@ fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
 fn search_sorted_utf_array<O: Offset>(
     sorted_array: &Utf8Array<O>,
     keys: &Utf8Array<O>,
+    input_reversed: bool,
 ) -> PrimitiveArray<u64> {
     let array_size = sorted_array.len() as usize;
     let mut left = 0 as usize;
     let mut right = array_size;
-    let input_reversed = false;
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
     let mut last_key = keys.iter().next().unwrap();
@@ -249,20 +249,26 @@ pub fn search_sorted_multi_array(
     ))
 }
 
-pub fn search_sorted(sorted_array: &dyn Array, keys: &dyn Array) -> Result<PrimitiveArray<u64>> {
+pub fn search_sorted(
+    sorted_array: &dyn Array,
+    keys: &dyn Array,
+    input_reversed: bool,
+) -> Result<PrimitiveArray<u64>> {
     use PhysicalType::*;
     Ok(match sorted_array.data_type().to_physical_type() {
         // Boolean => hash_boolean(array.as_any().downcast_ref().unwrap()),
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
-            search_sorted_primitive_array::<$T>(sorted_array.as_any().downcast_ref().unwrap(), keys.as_any().downcast_ref().unwrap())
+            search_sorted_primitive_array::<$T>(sorted_array.as_any().downcast_ref().unwrap(), keys.as_any().downcast_ref().unwrap(), input_reversed)
         }),
         Utf8 => search_sorted_utf_array::<i32>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
+            input_reversed,
         ),
         LargeUtf8 => search_sorted_utf_array::<i64>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
+            input_reversed,
         ),
         t => {
             return Err(Error::NotYetImplemented(format!(
