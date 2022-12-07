@@ -3,8 +3,7 @@ use std::{cmp::Ordering, iter::zip};
 use arrow2::{
     array::ord::build_compare,
     array::Array,
-    array::{ord::DynComparator, BinaryArray, PrimitiveArray, Utf8Array},
-    compute::sort,
+    array::{ord::DynComparator, PrimitiveArray, Utf8Array},
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
     types::{NativeType, Offset},
@@ -135,7 +134,7 @@ macro_rules! with_match_primitive_type {(
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use arrow2::datatypes::PrimitiveType::*;
-    use arrow2::types::{days_ms, months_days_ns};
+    // use arrow2::types::{days_ms, months_days_ns};
     match $key_type {
         Int8 => __with_ty__! { i8 },
         Int16 => __with_ty__! { i16 },
