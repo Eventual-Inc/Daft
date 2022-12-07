@@ -60,12 +60,14 @@ fn hash_pyarrow_array(
 fn search_sorted_pyarrow_array(
     sorted_array: &PyAny,
     keys: &PyAny,
+    input_reversed: bool,
     py: Python,
     pyarrow: &PyModule,
 ) -> PyResult<PyObject> {
     let rsorted_array = ffi::array_to_rust(sorted_array)?;
     let rkeys_array = ffi::array_to_rust(keys)?;
-    let result_idx = search_sorted::search_sorted(rsorted_array.as_ref(), rkeys_array.as_ref());
+    let result_idx =
+        search_sorted::search_sorted(rsorted_array.as_ref(), rkeys_array.as_ref(), input_reversed);
 
     ffi::to_py_array(Box::new(result_idx.unwrap()), py, pyarrow)
 }
@@ -74,12 +76,12 @@ fn search_sorted_pyarrow_array(
 fn search_sorted_multiple_pyarrow_array(
     sorted_arrays: &PyList,
     key_arrays: &PyList,
-    input_reversed: Vec<bool>,
+    descending_array: Vec<bool>,
     py: Python,
     pyarrow: &PyModule,
 ) -> PyResult<PyObject> {
     assert_eq!(sorted_arrays.len(), key_arrays.len());
-    assert_eq!(sorted_arrays.len(), input_reversed.len());
+    assert_eq!(sorted_arrays.len(), descending_array.len());
     let mut rsorted_arrays: Vec<Box<dyn Array>> = Vec::with_capacity(sorted_arrays.len());
     let mut rkeys_arrays: Vec<Box<dyn Array>> = Vec::with_capacity(key_arrays.len());
 
@@ -100,7 +102,7 @@ fn search_sorted_multiple_pyarrow_array(
     let result_idx = search_sorted::search_sorted_multi_array(
         &rsorted_arrays_refs,
         &key_arrays_refs,
-        &input_reversed,
+        &descending_array,
     );
 
     ffi::to_py_array(Box::new(result_idx.unwrap()), py, pyarrow)
