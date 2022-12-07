@@ -33,11 +33,10 @@ fn hash_pyarrow_array(
             .as_any()
             .downcast_ref::<PrimitiveArray<u64>>()
             .unwrap();
-        hashed = hashing::hash(rarray.as_ref(), Some(downcasted_seed));
+        hashed = py.allow_threads(move || hashing::hash(rarray.as_ref(), Some(downcasted_seed)));
     } else {
-        hashed = hashing::hash(rarray.as_ref(), None);
+        hashed = py.allow_threads(move || hashing::hash(rarray.as_ref(), None));
     }
-
     ffi::to_py_array(Box::new(hashed.unwrap()), py, pyarrow)
 }
 
@@ -51,8 +50,9 @@ fn search_sorted_pyarrow_array(
 ) -> PyResult<PyObject> {
     let rsorted_array = ffi::array_to_rust(sorted_array)?;
     let rkeys_array = ffi::array_to_rust(keys)?;
-    let result_idx =
-        search_sorted::search_sorted(rsorted_array.as_ref(), rkeys_array.as_ref(), input_reversed);
+    let result_idx = py.allow_threads(move || {
+        search_sorted::search_sorted(rsorted_array.as_ref(), rkeys_array.as_ref(), input_reversed)
+    });
 
     ffi::to_py_array(Box::new(result_idx.unwrap()), py, pyarrow)
 }
@@ -84,11 +84,13 @@ fn search_sorted_multiple_pyarrow_array(
         .map(Box::as_ref)
         .collect::<Vec<&dyn Array>>();
 
-    let result_idx = search_sorted::search_sorted_multi_array(
-        &rsorted_arrays_refs,
-        &key_arrays_refs,
-        &descending_array,
-    );
+    let result_idx = py.allow_threads(move || {
+        search_sorted::search_sorted_multi_array(
+            &rsorted_arrays_refs,
+            &key_arrays_refs,
+            &descending_array,
+        )
+    });
 
     ffi::to_py_array(Box::new(result_idx.unwrap()), py, pyarrow)
 }
