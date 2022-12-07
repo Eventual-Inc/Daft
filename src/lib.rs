@@ -7,25 +7,10 @@ use std::iter::zip;
 use arrow2::array::{Array, PrimitiveArray};
 use arrow2::datatypes::DataType;
 
-use arrow2::compute::arithmetics::basic::add_scalar;
-use pyo3::ffi::PyListObject;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
 /// Formats the sum of two numbers as string.
-#[pyfunction]
-fn add_1(array: &PyAny, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
-    let rarray = ffi::array_to_rust(array);
-    let added = add_scalar(
-        rarray?
-            .as_any()
-            .downcast_ref::<PrimitiveArray<i64>>()
-            .unwrap(),
-        &10,
-    );
-    ffi::to_py_array(Box::new(added), py, pyarrow)
-}
-
 #[pyfunction]
 fn hash_pyarrow_array(
     pyarray: &PyAny,
@@ -113,7 +98,6 @@ fn search_sorted_multiple_pyarrow_array(
 /// import the module.
 #[pymodule]
 fn daft_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(add_1, m)?)?;
     m.add_function(wrap_pyfunction!(hash_pyarrow_array, m)?)?;
     m.add_function(wrap_pyfunction!(search_sorted_pyarrow_array, m)?)?;
     m.add_function(wrap_pyfunction!(search_sorted_multiple_pyarrow_array, m)?)?;
