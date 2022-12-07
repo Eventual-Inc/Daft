@@ -61,7 +61,7 @@ def _sample_with_pyarrow(
     return schema
 
 
-def _get_filepaths(path: str):
+def _get_filepaths(path: str) -> list[str]:
     fs = get_filesystem_from_path(path)
     protocol = get_protocol_from_path(path)
     if fs.isdir(path):
@@ -310,11 +310,14 @@ class DataFrame:
 
         schema = _sample_with_pyarrow(json.read_json, filepaths[0])
 
+        fs = get_filesystem_from_path(filepaths[0])
+        sizes_bytes = fs.sizes(filepaths)
+
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
             columns=None,
-            source_info=JSONSourceInfo(filepaths=filepaths),
+            source_info=JSONSourceInfo(filepaths=filepaths, sizes_bytes=sizes_bytes),
         )
         return cls(plan)
 
@@ -369,12 +372,17 @@ class DataFrame:
             ),
             filepaths[0],
         )
+
+        fs = get_filesystem_from_path(filepaths[0])
+        sizes_bytes = fs.sizes(filepaths)
+
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
             columns=None,
             source_info=CSVSourceInfo(
                 filepaths=filepaths,
+                sizes_bytes=sizes_bytes,
                 delimiter=delimiter,
                 has_headers=has_headers,
             ),
@@ -409,6 +417,7 @@ class DataFrame:
 
         filepath = filepaths[0]
         fs = get_filesystem_from_path(filepath)
+        sizes_bytes = fs.sizes(filepaths)
         with fs.open(filepath, "rb") as f:
             # Read first Parquet file to ascertain schema
             schema = ExpressionList(
@@ -422,9 +431,7 @@ class DataFrame:
             schema=schema,
             predicate=None,
             columns=None,
-            source_info=ParquetSourceInfo(
-                filepaths=filepaths,
-            ),
+            source_info=ParquetSourceInfo(filepaths=filepaths, sizes_bytes=sizes_bytes),
         )
         return cls(plan)
 

@@ -28,9 +28,15 @@ class SourceInfo(Protocol):
 
 
 @dataclass(frozen=True)
-class CSVSourceInfo(SourceInfo):
+class FileBasedSourceInfo(SourceInfo):
 
     filepaths: list[str]
+    sizes_bytes: list[int | None]
+
+
+@dataclass(frozen=True)
+class CSVSourceInfo(FileBasedSourceInfo):
+
     delimiter: str
     has_headers: bool
 
@@ -42,10 +48,7 @@ class CSVSourceInfo(SourceInfo):
 
 
 @dataclass(frozen=True)
-class JSONSourceInfo(SourceInfo):
-
-    filepaths: list[str]
-
+class JSONSourceInfo(FileBasedSourceInfo):
     def scan_type(self):
         return StorageType.JSON
 
@@ -54,10 +57,7 @@ class JSONSourceInfo(SourceInfo):
 
 
 @dataclass(frozen=True)
-class ParquetSourceInfo(SourceInfo):
-
-    filepaths: list[str]
-
+class ParquetSourceInfo(FileBasedSourceInfo):
     def scan_type(self):
         return StorageType.PARQUET
 
