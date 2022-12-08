@@ -7,9 +7,9 @@ import functools
 @dataclasses.dataclass(frozen=True)
 class ResourceRequest:
 
-    num_cpus: int | float | None
-    num_gpus: int | float | None
-    memory_bytes: int | float | None
+    num_cpus: int | float | None = None
+    num_gpus: int | float | None = None
+    memory_bytes: int | float | None = None
 
     @classmethod
     def default(cls) -> ResourceRequest:

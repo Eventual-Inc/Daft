@@ -7,7 +7,7 @@ from enum import Enum, IntEnum
 from pprint import pformat
 from typing import Any, Generic, TypeVar
 
-from daft.datasources import SourceInfo, StorageType
+from daft.datasources import FileBasedSourceInfo, StorageType
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import OperatorEnum
 from daft.expressions import CallExpression, ColumnExpression, Expression
@@ -189,7 +189,7 @@ class Scan(LogicalPlan):
         self,
         *,
         schema: ExpressionList,
-        source_info: SourceInfo,
+        source_info: FileBasedSourceInfo,
         predicate: ExpressionList | None = None,
         columns: list[str] | None = None,
     ) -> None:
@@ -218,7 +218,9 @@ class Scan(LogicalPlan):
         return self._repr_helper(columns_pruned=len(self._columns) - len(self.schema()), source_info=self._source_info)
 
     def resource_request(self) -> ResourceRequest:
-        return ResourceRequest.default()
+        nonvacuous_sizes = [i for i in self._source_info.sizes_bytes if i is not None]
+        memory_request = max(nonvacuous_sizes) if nonvacuous_sizes else None
+        return ResourceRequest(memory_bytes=memory_request)
 
     def required_columns(self) -> ExpressionList:
         return self._predicate.required_columns()

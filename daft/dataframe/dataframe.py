@@ -451,6 +451,7 @@ class DataFrame:
         """
         fs = get_filesystem_from_path(path)
         file_details = fs.glob(path, detail=True)
+        # TODO sizing
         return cls.from_pylist(list(file_details.values()))
 
     ###
