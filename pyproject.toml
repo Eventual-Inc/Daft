@@ -99,14 +99,13 @@ cloudpickle = {version="^2.1.0", optional=true}
 boto3 = {version="^1.23.0", optional=true}
 PyYAML = {version="^6.0", optional=true}
 icebridge = {version="^0.0.4", optional=true}
-Pillow = {version = "^9.2.0", optional=true}
 s3fs = {version = "*", optional=true}
 
 [tool.poetry.extras]
 aws = ["boto3", "s3fs"]
 serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
 iceberg = ["icebridge"]
-experimental = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML", "icebridge", "Pillow"]
+experimental = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML", "icebridge"]
 
 [tool.poetry.group.dev.dependencies]
 ipdb = "^0.13.9"
@@ -117,14 +116,6 @@ viztracer = "^0.15.4"
 Sphinx = "<5"
 sphinx-book-theme = "^0.3.3"
 myst-nb = "^0.16.0"
-
-[tool.poetry.group.examples]
-optional = true
-
-[tool.poetry.group.examples.dependencies]
-transformers = "^4.21.2"
-diffusers = "^0.2.4"
-spacy = "^3.4.1"
 
 [tool.poetry.group.jupyter]
 optional = true
@@ -139,7 +130,6 @@ jupyterlab-git = "^0.37.1"
 pytest = "^7.1.2"
 xxhash = "^3.0.0"
 sentry-sdk = "^1.9.5"
-Pillow = {version = "^9.2.0"}
 
 [tool.poetry.scripts]
 build_inplace = 'build:build_inplace'
