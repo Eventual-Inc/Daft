@@ -5,8 +5,6 @@ from bisect import bisect_right
 from itertools import accumulate
 from typing import Callable, ClassVar, TypeVar
 
-from pyarrow import csv, json, parquet
-
 from daft.datasources import (
     CSVSourceInfo,
     JSONSourceInfo,
@@ -14,7 +12,6 @@ from daft.datasources import (
     StorageType,
 )
 from daft.expressions import ColID
-from daft.filesystem import get_filesystem_from_path
 from daft.logical.logical_plan import (
     Coalesce,
     FileWrite,
@@ -95,42 +92,27 @@ class LogicalPartitionOpRunner:
         schema = scan._schema
         if scan._source_info.scan_type() == StorageType.CSV:
             assert isinstance(scan._source_info, CSVSourceInfo)
-            path = scan._source_info.filepaths[partition_id]
-            fs = get_filesystem_from_path(path)
-            table = csv.read_csv(
-                fs.open(path, compression="infer"),
-                parse_options=csv.ParseOptions(
-                    delimiter=scan._source_info.delimiter,
-                ),
-                read_options=csv.ReadOptions(
-                    column_names=[expr.name() for expr in schema],
-                    skip_rows_after_names=1 if scan._source_info.has_headers else 0,
-                ),
-                convert_options=csv.ConvertOptions(include_columns=scan._column_names),
+            return vPartition.from_csv(
+                path=scan._source_info.filepaths[partition_id],
+                delimiter=scan._source_info.delimiter,
+                has_headers=scan._source_info.has_headers,
+                partition_id=partition_id,
+                schema=schema,
             )
-            column_ids = [col.get_id() for col in scan.schema().to_column_expressions()]
-            vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
-            return vpart
         elif scan._source_info.scan_type() == StorageType.JSON:
             assert isinstance(scan._source_info, JSONSourceInfo)
-            path = scan._source_info.filepaths[partition_id]
-            fs = get_filesystem_from_path(path)
-            table = json.read_json(fs.open(path, compression="infer")).select([col.name() for col in scan.schema()])
-            column_ids = [col.get_id() for col in scan.schema().to_column_expressions()]
-            vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
-            return vpart
+            return vPartition.from_json(
+                path=scan._source_info.filepaths[partition_id],
+                partition_id=partition_id,
+                schema=schema,
+            )
         elif scan._source_info.scan_type() == StorageType.PARQUET:
             assert isinstance(scan._source_info, ParquetSourceInfo)
-
-            filepath = scan._source_info.filepaths[partition_id]
-            fs = get_filesystem_from_path(filepath)
-            table = parquet.read_table(
-                fs.open(filepath),
-                columns=scan._column_names,
+            return vPartition.from_parquet(
+                path=scan._source_info.filepaths[partition_id],
+                partition_id=partition_id,
+                schema=schema,
             )
-            column_ids = [col.get_id() for col in scan.schema().to_column_expressions()]
-            vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
-            return vpart
         else:
             raise NotImplementedError(f"PyRunner has not implemented scan: {scan._source_info.scan_type()}")
 

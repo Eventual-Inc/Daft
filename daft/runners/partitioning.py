@@ -11,12 +11,16 @@ from uuid import uuid4
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+from pyarrow import csv
 from pyarrow import dataset as pada
+from pyarrow import json, parquet
 
 from daft.execution.operators import OperatorEnum
 from daft.expressions import ColID, ColumnExpression, Expression, ExpressionExecutor
+from daft.filesystem import get_filesystem_from_path
 from daft.logical.schema import ExpressionList
-from daft.runners.blocks import ArrowArrType, DataBlock, PyListDataBlock
+from daft.runners.blocks import ArrowArrType, ArrowDataBlock, DataBlock, PyListDataBlock
+from daft.types import ExpressionType, PythonExpressionType
 
 PartID = int
 
@@ -96,6 +100,30 @@ class vPartition:
             return 0
         return len(next(iter(self.columns.values())))
 
+    @property
+    def column_types(self) -> dict[str, ExpressionType]:
+        """Schema of the columns present in this vPartition as {column_name: str, type: ExpressionType}"""
+        # NOTE: The types of columns are currently inferred by introspecting into each block. However, when vPartitions
+        # eventually become schema-ful, this should be refactored to simply retrieve the types from the schema.
+        if len(self) == 0:
+            raise RuntimeError("Cannot infer column types from empty vPartition")
+        blocks = {tile.column_name: tile.block for tile in self.columns.values()}
+        colname_to_type: dict[str, ExpressionType] = {}
+        for col_name, block in blocks.items():
+            if isinstance(block, PyListDataBlock):
+                set_of_types = {type(obj) for obj in block.data} - {type(None)}
+                if len(set_of_types) == 0:
+                    colname_to_type[col_name] = PythonExpressionType(python_cls=type(None))
+                elif len(set_of_types) == 1:
+                    colname_to_type[col_name] = PythonExpressionType(python_cls=set_of_types.pop())
+                else:
+                    colname_to_type[col_name] = ExpressionType.python_object()
+            elif isinstance(block, ArrowDataBlock):
+                colname_to_type[col_name] = ExpressionType.from_arrow_type(block.data.type)
+            else:
+                raise NotImplementedError(f"Cannot infer type of block {type(block)}")
+        return colname_to_type
+
     def eval_expression(self, expr: Expression) -> PyListTile:
         expr_col_id = expr.get_id()
         expr_name = expr.name()
@@ -153,6 +181,111 @@ class vPartition:
             block = DataBlock.make_block(data[col_name])
             tiles[col_id] = PyListTile(column_id=col_id, column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
+
+    @classmethod
+    def from_csv(
+        cls,
+        path: str,
+        delimiter: str,
+        has_headers: bool,
+        partition_id: PartID,
+        schema: ExpressionList | None,
+    ) -> vPartition:
+        """Gets a vPartition from a CSV file.
+
+        Args:
+            path: FSSpec compatible path to the CSV file.
+            delimiter: Delimiter used in the CSV file.
+            has_headers: Whether the CSV file has a header row.
+            schema: Schema to parse from the CSV file. If None, the schema will be inferred from the CSV file and resolved.
+        """
+        infer_schema = schema is None
+
+        fs = get_filesystem_from_path(path)
+        column_names = None if schema is None else [e.name() for e in schema]
+        skip_row_after_names = 1 if has_headers and not infer_schema else 0  # Skip header row if schema is provided
+        table = csv.read_csv(
+            fs.open(path, compression="infer"),
+            parse_options=csv.ParseOptions(
+                delimiter=delimiter,
+            ),
+            read_options=csv.ReadOptions(
+                column_names=column_names,
+                skip_rows_after_names=skip_row_after_names,
+            ),
+            convert_options=csv.ConvertOptions(include_columns=column_names),
+        )
+
+        if infer_schema:
+            fields = [(field.name, field.type) for field in table.schema]
+            schema = ExpressionList(
+                [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
+            ).resolve()
+        assert schema is not None, "Schema is either passed in or inferred"
+
+        column_ids = [col.get_id() for col in schema.to_column_expressions()]
+        vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+        return vpart
+
+    @classmethod
+    def from_json(
+        cls,
+        path: str,
+        partition_id: PartID,
+        schema: ExpressionList | None,
+    ) -> vPartition:
+        """Gets a vPartition from a Line-delimited JSON file
+
+        Args:
+            path: FSSpec compatible path to the Line-delimited JSON file.
+            schema: Schema to parse from the JSON file. If None, the schema will be inferred from the JSOn file and resolved.
+        """
+        infer_schema = schema is None
+
+        fs = get_filesystem_from_path(path)
+        table = json.read_json(fs.open(path, compression="infer"))
+
+        if infer_schema:
+            fields = [(field.name, field.type) for field in table.schema]
+            schema = ExpressionList(
+                [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
+            ).resolve()
+        assert schema is not None, "Schema is either passed in or inferred"
+
+        colnames = [col.name() for col in schema]
+        if set(colnames) != set(table.column_names):
+            table = table.select(colnames)
+
+        column_ids = [col.get_id() for col in schema.to_column_expressions()]
+        vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+        return vpart
+
+    @classmethod
+    def from_parquet(
+        cls,
+        path: str,
+        partition_id: PartID,
+        schema: ExpressionList | None,
+    ) -> vPartition:
+        infer_schema = schema is None
+        column_names = None if schema is None else [e.name() for e in schema]
+
+        fs = get_filesystem_from_path(path)
+        table = parquet.read_table(
+            fs.open(path),
+            columns=column_names,
+        )
+
+        if infer_schema:
+            fields = [(field.name, field.type) for field in table.schema]
+            schema = ExpressionList(
+                [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
+            ).resolve()
+        assert schema is not None, "Schema is either passed in or inferred"
+
+        column_ids = [col.get_id() for col in schema.to_column_expressions()]
+        vpart = vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+        return vpart
 
     def to_pydict(self) -> dict[str, Sequence]:
         output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
