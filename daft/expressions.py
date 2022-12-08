@@ -19,7 +19,13 @@ from typing import (
 
 import numpy as np
 import pandas as pd
-import polars as pl
+
+_POLARS_AVAILABLE = True
+try:
+    import polars as pl
+except ImportError:
+    _POLARS_AVAILABLE = False
+
 import pyarrow as pa
 
 from daft.errors import ExpressionTypeError
@@ -110,7 +116,7 @@ class ExpressionExecutor:
             # Convert these user-provided types to pa.ChunkedArray for making blocks
             if isinstance(results, pa.Array):
                 results = pa.chunked_array([results])
-            elif isinstance(results, pl.Series):
+            elif _POLARS_AVAILABLE and isinstance(results, pl.Series):
                 results = pa.chunked_array([results.to_arrow()])
             elif isinstance(results, np.ndarray):
                 results = pa.chunked_array([pa.array(results)])

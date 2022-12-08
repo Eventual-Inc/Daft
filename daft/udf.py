@@ -10,6 +10,12 @@ from daft.expressions import UdfExpression
 from daft.resource_request import ResourceRequest
 from daft.runners.blocks import DataBlock
 
+_POLARS_AVAILABLE = True
+try:
+    import polars  # noqa: F401
+except ImportError:
+    _POLARS_AVAILABLE = False
+
 StatefulUDF = type  # stateful UDFs are provided as Python Classes
 StatelessUDF = Callable[..., Sequence]
 UDF = Union[StatefulUDF, StatelessUDF]
@@ -173,6 +179,9 @@ def polars_udf(
         num_cpus: How many CPUs the UDF requires for execution, used for resource allocation when running in a distributed setting
         memory_bytes: How many bytes of memory this UDF requires for execution, used for resource allocation when running in a distributed setting
     """
+    if not _POLARS_AVAILABLE:
+        raise ImportError("polars_udf requires polars to be installed")
+
     func_ret_type = ExpressionType.from_py_type(return_type)
 
     def udf_decorator(func: UDF) -> Callable:
