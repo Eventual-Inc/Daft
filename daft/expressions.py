@@ -101,8 +101,35 @@ class ExpressionExecutor:
         elif isinstance(expr, UdfExpression):
             eval_args = tuple(self.eval(a, operands) for a in expr._args)
             eval_kwargs = {kw: self.eval(a, operands) for kw, a in expr._kwargs.items()}
-            result = expr.eval_blocks(*eval_args, **eval_kwargs)
-            return result
+
+            results = expr._func(*eval_args, **eval_kwargs)
+
+            if ExpressionType.is_py(expr._func_ret_type):
+                return PyListDataBlock(results if isinstance(results, list) else list(results))
+
+            # Convert these user-provided types to pa.ChunkedArray for making blocks
+            if isinstance(results, pa.Array):
+                results = pa.chunked_array([results])
+            elif isinstance(results, pl.Series):
+                results = pa.chunked_array([results.to_arrow()])
+            elif isinstance(results, np.ndarray):
+                results = pa.chunked_array([pa.array(results)])
+            elif isinstance(results, pd.Series):
+                results = pa.chunked_array([pa.array(results)])
+            elif isinstance(results, list):
+                results = pa.chunked_array([pa.array(results)])
+
+            if not isinstance(results, pa.ChunkedArray):
+                raise NotImplementedError(f"Cannot make block for data of type: {type(results)}")
+
+            # Explcitly cast results of the UDF here for these primitive types:
+            #   1. Ensures that all blocks across all partitions will have the same underlying Arrow type after the UDF
+            #   2. Ensures that any null blocks from empty partitions or partitions with all nulls have the correct type
+            assert isinstance(expr._func_ret_type, PrimitiveExpressionType)
+            expected_arrow_type = expr._func_ret_type.to_arrow_type()
+            results = results.cast(expected_arrow_type)
+
+            return ArrowDataBlock(results)
         elif isinstance(expr, AsPyExpression):
             raise NotImplementedError("AsPyExpressions need to be evaluated with a method call")
         else:
@@ -625,36 +652,6 @@ class UdfExpression(Expression):
         if kwargs:
             return f"{func_name}({args}, {kwargs})"
         return f"{func_name}({args})"
-
-    def eval_blocks(self, *args: DataBlock, **kwargs: DataBlock) -> DataBlock:
-        results = self._func(*args, **kwargs)
-
-        if ExpressionType.is_py(self._func_ret_type):
-            return PyListDataBlock(results if isinstance(results, list) else list(results))
-
-        # Convert these user-provided types to pa.ChunkedArray for making blocks
-        if isinstance(results, pa.Array):
-            results = pa.chunked_array([results])
-        elif isinstance(results, pl.Series):
-            results = pa.chunked_array([results.to_arrow()])
-        elif isinstance(results, np.ndarray):
-            results = pa.chunked_array([pa.array(results)])
-        elif isinstance(results, pd.Series):
-            results = pa.chunked_array([pa.array(results)])
-        elif isinstance(results, list):
-            results = pa.chunked_array([pa.array(results)])
-
-        if not isinstance(results, pa.ChunkedArray):
-            raise NotImplementedError(f"Cannot make block for data of type: {type(results)}")
-
-        # Explcitly cast results of the UDF here for these primitive types:
-        #   1. Ensures that all blocks across all partitions will have the same underlying Arrow type after the UDF
-        #   2. Ensures that any null blocks from empty partitions or partitions with all nulls have the correct type
-        assert isinstance(self._func_ret_type, PrimitiveExpressionType)
-        expected_arrow_type = self._func_ret_type.to_arrow_type()
-        results = results.cast(expected_arrow_type)
-
-        return ArrowDataBlock(results)
 
     def _is_eq_local(self, other: Expression) -> bool:
         return (
