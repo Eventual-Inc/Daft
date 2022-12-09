@@ -287,6 +287,7 @@ class DataFrame:
             filepaths[0],
             partition_id=0,
             schema=None,
+            num_rows=100,  # sample 100 rows for schema inference
         ).get_col_expressions()
 
         plan = logical_plan.Scan(
@@ -339,6 +340,7 @@ class DataFrame:
             partition_id=0,
             schema=None,
             schema_inference_column_names=column_names,
+            num_rows=100,  # sample 100 rows for schema inference
         ).get_col_expressions()
 
         plan = logical_plan.Scan(
@@ -382,6 +384,7 @@ class DataFrame:
             filepaths[0],
             partition_id=0,
             schema=None,
+            num_rows=0,
         ).get_col_expressions()
         plan = logical_plan.Scan(
             schema=schema,
