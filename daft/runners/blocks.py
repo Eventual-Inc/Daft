@@ -40,8 +40,6 @@ ArrType = TypeVar("ArrType", bound=collections.abc.Sequence)
 UnaryFuncType = Callable[[ArrType], ArrType]
 BinaryFuncType = Callable[[ArrType, ArrType], ArrType]
 
-NUMPY_MINOR_VERSION = int(np.version.version.split(".")[1])
-
 
 def zip_blocks_as_py(*blocks: DataBlock) -> Iterator[tuple[Any, ...]]:
     """Utility to zip the data of blocks together, returning a row-based iterator. This utility

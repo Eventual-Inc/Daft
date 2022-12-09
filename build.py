@@ -7,7 +7,6 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pyarrow as pa
 from Cython.Build import cythonize
 from Cython.Distutils.build_ext import new_build_ext as cython_build_ext
