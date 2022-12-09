@@ -33,7 +33,14 @@ from daft.logical.logical_plan import (
 from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.blocks import DataBlock
-from daft.runners.partitioning import PartitionSet, PyListTile, vPartition
+from daft.runners.partitioning import (
+    PartitionSet,
+    PyListTile,
+    vPartition,
+    vPartitionParseCSVOptions,
+    vPartitionReadOptions,
+    vPartitionSchemaInferenceOptions,
+)
 from daft.runners.shuffle_ops import (
     CoalesceOp,
     RepartitionHashOp,
@@ -90,28 +97,41 @@ class LogicalPartitionOpRunner:
 
     def _handle_scan(self, inputs: dict[int, vPartition], scan: Scan, partition_id: int) -> vPartition:
         schema = scan._schema
+        schema_options = vPartitionSchemaInferenceOptions(schema=schema)
+        read_options = vPartitionReadOptions(
+            num_rows=None,  # read all rows
+            column_names=scan._column_names,  # read only specified columns
+        )
         if scan._source_info.scan_type() == StorageType.CSV:
             assert isinstance(scan._source_info, CSVSourceInfo)
-            return vPartition.from_csv(
+            vpart = vPartition.from_csv(
                 path=scan._source_info.filepaths[partition_id],
-                delimiter=scan._source_info.delimiter,
-                has_headers=scan._source_info.has_headers,
                 partition_id=partition_id,
-                schema=schema,
+                csv_options=vPartitionParseCSVOptions(
+                    delimiter=scan._source_info.delimiter,
+                    has_headers=scan._source_info.has_headers,
+                    skip_rows_before_header=0,
+                    skip_rows_after_header=0,
+                ),
+                schema_options=schema_options,
+                read_options=read_options,
             )
+            return vpart
         elif scan._source_info.scan_type() == StorageType.JSON:
             assert isinstance(scan._source_info, JSONSourceInfo)
             return vPartition.from_json(
                 path=scan._source_info.filepaths[partition_id],
                 partition_id=partition_id,
-                schema=schema,
+                schema_options=schema_options,
+                read_options=read_options,
             )
         elif scan._source_info.scan_type() == StorageType.PARQUET:
             assert isinstance(scan._source_info, ParquetSourceInfo)
             return vPartition.from_parquet(
                 path=scan._source_info.filepaths[partition_id],
                 partition_id=partition_id,
-                schema=schema,
+                schema_options=schema_options,
+                read_options=read_options,
             )
         else:
             raise NotImplementedError(f"PyRunner has not implemented scan: {scan._source_info.scan_type()}")
