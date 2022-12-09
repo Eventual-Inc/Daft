@@ -32,6 +32,9 @@ repair-wheel-command = [
 [tool.isort]
 profile = "black"
 
+[tool.maturin]
+python-source = "daft"
+
 [tool.mypy]
 python_version = "3.8"
 files = ["daft/**/*.py", "daft/**/*.pyx", "tests/**/*.py"]
@@ -116,6 +119,7 @@ viztracer = "^0.15.4"
 Sphinx = "<5"
 sphinx-book-theme = "^0.3.3"
 myst-nb = "^0.16.0"
+maturin = "^0.14.2"
 
 [tool.poetry.group.jupyter]
 optional = true
