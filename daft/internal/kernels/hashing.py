@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import pyarrow as pa
-from daft_core import hash_pyarrow_array
+
+from daft.daft import hash_pyarrow_array
 
 
 def hash_chunked_array(arr, seed=None):
+
     assert isinstance(arr, pa.ChunkedArray)
     result_chunks = []
     offset = 0
