@@ -48,11 +48,17 @@ def _sample_with_pyarrow(
         sampled_bytes = fs.open(filepath, compression="infer")
     else:
         sampled_bytes = io.BytesIO()
+        chunk_size = 5 * 1024 * 1024
+        read_lines = 0
         with fs.open(filepath, compression="infer") as f:
-            for i, line in enumerate(f):
-                sampled_bytes.write(line)
-                if max_rows is not None and i >= max_rows:
+            lines = f.readlines(chunk_size)
+            while lines:
+                for line in lines:
+                    sampled_bytes.write(line)
+                read_lines += len(lines)
+                if max_rows is not None and read_lines >= max_rows:
                     break
+                lines = f.readlines(chunk_size)
         sampled_bytes.seek(0)
 
     sampled_tbl = loader_func(sampled_bytes)
