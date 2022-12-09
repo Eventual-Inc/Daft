@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import dataclasses
+import io
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic, Sequence, TypeVar
+from typing import IO, Any, Callable, Generic, Sequence, TypeVar
 from uuid import uuid4
 
 import numpy as np
@@ -19,9 +20,105 @@ from daft.execution.operators import OperatorEnum
 from daft.expressions import ColID, ColumnExpression, Expression, ExpressionExecutor
 from daft.filesystem import get_filesystem_from_path
 from daft.logical.schema import ExpressionList
-from daft.runners.blocks import ArrowArrType, DataBlock, PyListDataBlock
+from daft.runners.blocks import ArrowArrType, ArrowDataBlock, DataBlock, PyListDataBlock
+from daft.types import ExpressionType, PythonExpressionType
 
 PartID = int
+
+
+def _sample_with_pyarrow(
+    loader_func: Callable[[IO], pa.Table],
+    filepath: str,
+    max_bytes: int = 5 * 1024**2,
+) -> ExpressionList:
+    """Helper to sample a Daft logical schema using a PyArrow and a function to load a PyArrow table from a file
+
+    Args:
+        loader_func (Callable[[IO], pa.Table]): function to load PyArrow table from a file
+        filepath (str): path to file
+        max_bytes (int, optional): maximum number of bytes to read from file. Defaults to 5MB.
+
+    Returns:
+        ExpressionList: Sampled schema
+    """
+    fs = get_filesystem_from_path(filepath)
+    sampled_bytes = io.BytesIO()
+    with fs.open(filepath, compression="infer") as f:
+        lines = f.readlines(max_bytes)
+        for line in lines:
+            sampled_bytes.write(line)
+    sampled_bytes.seek(0)
+    sampled_tbl = loader_func(sampled_bytes)
+    fields = [(field.name, field.type) for field in sampled_tbl.schema]
+    schema = ExpressionList(
+        [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
+    ).resolve()
+    return schema
+
+
+def sample_json(filepaths: list[str], max_bytes: int = 5 * 1024**2) -> ExpressionList:
+    """Samples a Daft logical schema from a JSON file."""
+    if len(filepaths) == 0:
+        raise ValueError("No files provided to sample")
+
+    # TODO: We currently only read the first file to sample the schema, but in the future could do more sophisticated
+    # reads in parallel and a schema resolution depending on current runner
+    filepath = filepaths[0]
+
+    return _sample_with_pyarrow(json.read_json, filepath, max_bytes)
+
+
+def sample_csv(
+    filepaths: list[str],
+    delimiter: str,
+    has_headers: bool,
+    column_names: list[str] | None,
+    max_bytes: int = 5 * 1024**2,
+) -> ExpressionList:
+    """Samples a Daft logical schema from a CSV file."""
+    if len(filepaths) == 0:
+        raise ValueError("No files provided to sample")
+
+    # TODO: We currently only read the first file to sample the schema, but in the future could do more sophisticated
+    # reads in parallel and a schema resolution depending on current runner
+    filepath = filepaths[0]
+
+    return _sample_with_pyarrow(
+        partial(
+            csv.read_csv,
+            parse_options=csv.ParseOptions(
+                delimiter=delimiter,
+            ),
+            read_options=csv.ReadOptions(
+                # Column names will be read from the first CSV row if column_names is None/empty and has_headers
+                autogenerate_column_names=(not has_headers) and (column_names is None),
+                column_names=column_names,
+                # If user specifies that CSV has headers, and also provides column names, we skip the header row
+                skip_rows_after_names=1 if has_headers and column_names is not None else 0,
+            ),
+        ),
+        filepath,
+        max_bytes=max_bytes,
+    )
+
+
+def sample_parquet(filepaths: list[str]) -> ExpressionList:
+    """Samples a Daft logical schema from a Parquet file."""
+    if len(filepaths) == 0:
+        raise ValueError("No files provided to sample")
+
+    # TODO: We currently only read the first file to sample the schema, but in the future could do more sophisticated
+    # reads in parallel and a schema resolution depending on current runner
+    filepath = filepaths[0]
+
+    fs = get_filesystem_from_path(filepath)
+    with fs.open(filepath, "rb") as f:
+        return ExpressionList(
+            [
+                ColumnExpression(field.name, expr_type=ExpressionType.from_arrow_type(field.type))
+                for field in parquet.ParquetFile(f).metadata.schema.to_arrow_schema()
+            ]
+        ).resolve()
 
 
 @dataclass(frozen=True)
@@ -99,6 +196,27 @@ class vPartition:
             return 0
         return len(next(iter(self.columns.values())))
 
+    def get_col_expressions(self) -> ExpressionList:
+        """Generates column expressions that represent the vPartition's schema"""
+        colexprs = []
+        for col_id, tile in self.columns.items():
+            col_name = tile.column_name
+            col_type: ExpressionType
+            if isinstance(tile.block, ArrowDataBlock):
+                col_type = ExpressionType.from_arrow_type(tile.block.data.type)
+            else:
+                py_types = {type(obj) for obj in tile.block.data} - {type(None)}
+                if len(py_types) == 0:
+                    col_type = PythonExpressionType(type(None))
+                elif len(py_types) == 1:
+                    col_type = PythonExpressionType(py_types.pop())
+                else:
+                    col_type = ExpressionType.python_object()
+            colexpr = ColumnExpression(name=col_name, expr_type=col_type)
+            colexpr._id = col_id
+            colexprs.append(colexpr)
+        return ExpressionList(colexprs)
+
     def eval_expression(self, expr: Expression) -> PyListTile:
         expr_col_id = expr.get_id()
         expr_name = expr.name()
@@ -164,7 +282,8 @@ class vPartition:
         delimiter: str,
         has_headers: bool,
         partition_id: PartID,
-        schema: ExpressionList,
+        schema: ExpressionList | None,
+        schema_inference_column_names: list[str] | None = None,
     ) -> vPartition:
         """Gets a vPartition from a CSV file.
 
@@ -173,7 +292,15 @@ class vPartition:
             delimiter: Delimiter used in the CSV file.
             has_headers: Whether the CSV file has a header row.
             schema: Schema to parse from the CSV file. If None, the schema will be inferred from the CSV file and resolved.
+            schema_inference_column_names: If schema is None, the column names to use for schema inference. If None, names are inferred from first row in the CSV.
         """
+
+        if schema is None:
+            schema = sample_csv(
+                [path], delimiter=delimiter, has_headers=has_headers, column_names=schema_inference_column_names
+            )
+        assert schema is not None
+
         fs = get_filesystem_from_path(path)
         column_names = [e.name() for e in schema]
         skip_row_after_names = 1 if has_headers else 0
@@ -197,14 +324,20 @@ class vPartition:
         cls,
         path: str,
         partition_id: PartID,
-        schema: ExpressionList,
+        schema: ExpressionList | None,
     ) -> vPartition:
         """Gets a vPartition from a Line-delimited JSON file
 
         Args:
             path: FSSpec compatible path to the Line-delimited JSON file.
-            schema: Schema to parse from the JSON file. If None, the schema will be inferred from the JSOn file and resolved.
+            partition_id: Partition ID to assign to the vPartition.
+            schema: Schema to parse from the JSON file. If None, the schema will be inferred from the JSON file and resolved.
         """
+
+        if schema is None:
+            schema = sample_json([path])
+        assert schema is not None
+
         fs = get_filesystem_from_path(path)
         table = json.read_json(fs.open(path, compression="infer"))
         colnames = [col.name() for col in schema]
@@ -219,8 +352,19 @@ class vPartition:
         cls,
         path: str,
         partition_id: PartID,
-        schema: ExpressionList,
+        schema: ExpressionList | None,
     ) -> vPartition:
+        """Gets a vPartition from a Parquet file
+
+        Args:
+            path: FSSpec compatible path to the Parquet file.
+            partition_id: Partition ID to assign to the vPartition.
+            schema: Schema to parse from the Parquet file. If None, the schema will be inferred from the Parquet file and resolved.
+        """
+        if schema is None:
+            schema = sample_parquet([path])
+        assert schema is not None
+
         column_names = [e.name() for e in schema]
         fs = get_filesystem_from_path(path)
         table = parquet.read_table(

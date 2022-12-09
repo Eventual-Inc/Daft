@@ -25,7 +25,6 @@ from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet, vPartition
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.runners.ray_runner import RayPartitionSet
-from daft.runners.schema_sampling import sample_csv, sample_json, sample_parquet
 from daft.types import PythonExpressionType
 from daft.viz import DataFrameDisplay
 
@@ -284,7 +283,11 @@ class DataFrame:
         if len(filepaths) == 0:
             raise ValueError(f"No JSON files found at {path}")
 
-        schema = sample_json(filepaths)
+        schema = vPartition.from_json(
+            filepaths[0],
+            partition_id=0,
+            schema=None,
+        ).get_col_expressions()
 
         plan = logical_plan.Scan(
             schema=schema,
@@ -329,7 +332,15 @@ class DataFrame:
         if len(filepaths) == 0:
             raise ValueError(f"No CSV files found at {path}")
 
-        schema = sample_csv(filepaths, delimiter=delimiter, has_headers=has_headers, column_names=column_names)
+        schema = vPartition.from_csv(
+            path=filepaths[0],
+            delimiter=delimiter,
+            has_headers=has_headers,
+            partition_id=0,
+            schema=None,
+            schema_inference_column_names=column_names,
+        ).get_col_expressions()
+
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
@@ -367,7 +378,11 @@ class DataFrame:
 
         if len(filepaths) == 0:
             raise ValueError(f"No Parquet files found at {path}")
-        schema = sample_parquet(filepaths)
+        schema = vPartition.from_parquet(
+            filepaths[0],
+            partition_id=0,
+            schema=None,
+        ).get_col_expressions()
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
