@@ -29,25 +29,32 @@ PartID = int
 def _sample_with_pyarrow(
     loader_func: Callable[[IO], pa.Table],
     filepath: str,
-    max_bytes: int = 5 * 1024**2,
+    max_rows: int | None = 100,
 ) -> ExpressionList:
     """Helper to sample a Daft logical schema using a PyArrow and a function to load a PyArrow table from a file
 
     Args:
         loader_func (Callable[[IO], pa.Table]): function to load PyArrow table from a file
         filepath (str): path to file
-        max_bytes (int, optional): maximum number of bytes to read from file. Defaults to 5MB.
+        max_rows (int, optional): maximum number of rows. Defaults to 100.
 
     Returns:
         ExpressionList: Sampled schema
     """
     fs = get_filesystem_from_path(filepath)
-    sampled_bytes = io.BytesIO()
-    with fs.open(filepath, compression="infer") as f:
-        lines = f.readlines(max_bytes)
-        for line in lines:
-            sampled_bytes.write(line)
-    sampled_bytes.seek(0)
+
+    sampled_bytes: IO
+    if max_rows is None:
+        sampled_bytes = fs.open(filepath, compression="infer")
+    else:
+        sampled_bytes = io.BytesIO()
+        with fs.open(filepath, compression="infer") as f:
+            for i, line in enumerate(f):
+                sampled_bytes.write(line)
+                if max_rows is not None and i >= max_rows:
+                    break
+        sampled_bytes.seek(0)
+
     sampled_tbl = loader_func(sampled_bytes)
     fields = [(field.name, field.type) for field in sampled_tbl.schema]
     schema = ExpressionList(
@@ -56,33 +63,19 @@ def _sample_with_pyarrow(
     return schema
 
 
-def sample_json(filepaths: list[str], max_bytes: int = 5 * 1024**2) -> ExpressionList:
+def _sample_json(filepath: str, max_rows: int | None = 100) -> ExpressionList:
     """Samples a Daft logical schema from a JSON file."""
-    if len(filepaths) == 0:
-        raise ValueError("No files provided to sample")
-
-    # TODO: We currently only read the first file to sample the schema, but in the future could do more sophisticated
-    # reads in parallel and a schema resolution depending on current runner
-    filepath = filepaths[0]
-
-    return _sample_with_pyarrow(json.read_json, filepath, max_bytes)
+    return _sample_with_pyarrow(json.read_json, filepath, max_rows=max_rows)
 
 
-def sample_csv(
-    filepaths: list[str],
+def _sample_csv(
+    filepath: str,
     delimiter: str,
     has_headers: bool,
     column_names: list[str] | None,
-    max_bytes: int = 5 * 1024**2,
+    max_rows: int | None = 100,
 ) -> ExpressionList:
     """Samples a Daft logical schema from a CSV file."""
-    if len(filepaths) == 0:
-        raise ValueError("No files provided to sample")
-
-    # TODO: We currently only read the first file to sample the schema, but in the future could do more sophisticated
-    # reads in parallel and a schema resolution depending on current runner
-    filepath = filepaths[0]
-
     return _sample_with_pyarrow(
         partial(
             csv.read_csv,
@@ -98,19 +91,12 @@ def sample_csv(
             ),
         ),
         filepath,
-        max_bytes=max_bytes,
+        max_rows=max_rows,
     )
 
 
-def sample_parquet(filepaths: list[str]) -> ExpressionList:
+def _sample_parquet(filepath: str) -> ExpressionList:
     """Samples a Daft logical schema from a Parquet file."""
-    if len(filepaths) == 0:
-        raise ValueError("No files provided to sample")
-
-    # TODO: We currently only read the first file to sample the schema, but in the future could do more sophisticated
-    # reads in parallel and a schema resolution depending on current runner
-    filepath = filepaths[0]
-
     fs = get_filesystem_from_path(filepath)
     with fs.open(filepath, "rb") as f:
         return ExpressionList(
@@ -284,6 +270,7 @@ class vPartition:
         partition_id: PartID,
         schema: ExpressionList | None,
         schema_inference_column_names: list[str] | None = None,
+        schema_inference_max_rows: int | None = 100,
     ) -> vPartition:
         """Gets a vPartition from a CSV file.
 
@@ -291,13 +278,19 @@ class vPartition:
             path: FSSpec compatible path to the CSV file.
             delimiter: Delimiter used in the CSV file.
             has_headers: Whether the CSV file has a header row.
+            partition_id: Partition ID to assign to the vPartition.
             schema: Schema to parse from the CSV file. If None, the schema will be inferred from the CSV file and resolved.
             schema_inference_column_names: If schema is None, the column names to use for schema inference. If None, names are inferred from first row in the CSV.
+            schema_inference_max_rows: If schema is None, the maximum number of rows to use for schema inference. If None, all rows are used.
         """
 
         if schema is None:
-            schema = sample_csv(
-                [path], delimiter=delimiter, has_headers=has_headers, column_names=schema_inference_column_names
+            schema = _sample_csv(
+                path,
+                delimiter=delimiter,
+                has_headers=has_headers,
+                column_names=schema_inference_column_names,
+                max_rows=schema_inference_max_rows,
             )
         assert schema is not None
 
@@ -325,6 +318,7 @@ class vPartition:
         path: str,
         partition_id: PartID,
         schema: ExpressionList | None,
+        schema_inference_max_rows: int | None = 100,
     ) -> vPartition:
         """Gets a vPartition from a Line-delimited JSON file
 
@@ -332,10 +326,11 @@ class vPartition:
             path: FSSpec compatible path to the Line-delimited JSON file.
             partition_id: Partition ID to assign to the vPartition.
             schema: Schema to parse from the JSON file. If None, the schema will be inferred from the JSON file and resolved.
+            schema_inference_max_rows: If schema is None, the maximum number of rows to use for schema inference. If None, all rows are used.
         """
 
         if schema is None:
-            schema = sample_json([path])
+            schema = _sample_json(path, max_rows=schema_inference_max_rows)
         assert schema is not None
 
         fs = get_filesystem_from_path(path)
@@ -362,7 +357,7 @@ class vPartition:
             schema: Schema to parse from the Parquet file. If None, the schema will be inferred from the Parquet file and resolved.
         """
         if schema is None:
-            schema = sample_parquet([path])
+            schema = _sample_parquet(path)
         assert schema is not None
 
         column_names = [e.name() for e in schema]
