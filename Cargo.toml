@@ -7,13 +7,13 @@ version = "0.8.5"
 features = ["xxh3", "const_xxh3"]
 
 [lib]
-name = "daft_core"
+name = "daft"
 crate-type = ["cdylib"]
 
 [net]
 git-fetch-with-cli = true
 
 [package]
-name = "daft_core"
+name = "daft"
 version = "0.1.0"
 edition = "2021"

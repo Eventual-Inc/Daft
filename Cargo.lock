@@ -95,7 +95,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft_core"
+name = "daft"
 version = "0.1.0"
 dependencies = [
  "arrow2",

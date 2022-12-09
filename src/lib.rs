@@ -99,7 +99,7 @@ fn search_sorted_multiple_pyarrow_array(
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
 /// import the module.
 #[pymodule]
-fn daft_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn daft(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hash_pyarrow_array, m)?)?;
     m.add_function(wrap_pyfunction!(search_sorted_pyarrow_array, m)?)?;
     m.add_function(wrap_pyfunction!(search_sorted_multiple_pyarrow_array, m)?)?;
