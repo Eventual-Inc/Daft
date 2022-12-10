@@ -13,25 +13,24 @@ fn hash_primitive<T: NativeType>(
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
     let null_hash = xxh3_64(b"");
-    let hashes;
-    if seed.is_none() {
-        hashes = array
+    let hashes = if let Some(seed) = seed {
+        array
+            .iter()
+            .zip(seed.values_iter())
+            .map(|(v, s)| match v {
+                Some(v) => xxh3_64_with_seed(v.to_le_bytes().as_ref(), *s),
+                None => null_hash,
+            })
+            .collect::<Vec<_>>()
+    } else {
+        array
             .iter()
             .map(|v| match v {
                 Some(v) => xxh3_64(v.to_le_bytes().as_ref()),
                 None => null_hash,
             })
-            .collect::<Vec<_>>();
-    } else {
-        hashes = array
-            .iter()
-            .zip(seed.unwrap().values_iter())
-            .map(|(v, s)| match v {
-                Some(v) => xxh3_64_with_seed(v.to_le_bytes().as_ref(), *s),
-                None => null_hash,
-            })
-            .collect::<Vec<_>>();
-    }
+            .collect::<Vec<_>>()
+    };
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
@@ -39,16 +38,15 @@ fn hash_binary<O: Offset>(
     array: &BinaryArray<O>,
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
-    let hashes;
-    if seed.is_none() {
-        hashes = array.values_iter().map(|v| xxh3_64(v)).collect::<Vec<_>>();
-    } else {
-        hashes = array
+    let hashes = if let Some(seed) = seed {
+        array
             .values_iter()
-            .zip(seed.unwrap().values_iter())
+            .zip(seed.values_iter())
             .map(|(v, s)| xxh3_64_with_seed(v, *s))
-            .collect::<Vec<_>>();
-    }
+            .collect::<Vec<_>>()
+    } else {
+        array.values_iter().map(xxh3_64).collect::<Vec<_>>()
+    };
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
@@ -56,19 +54,18 @@ fn hash_utf8<O: Offset>(
     array: &Utf8Array<O>,
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
-    let hashes;
-    if seed.is_none() {
-        hashes = array
+    let hashes = if let Some(seed) = seed {
+        array
+            .values_iter()
+            .zip(seed.values_iter())
+            .map(|(v, s)| xxh3_64_with_seed(v.as_bytes(), *s))
+            .collect::<Vec<_>>()
+    } else {
+        array
             .values_iter()
             .map(|v| xxh3_64(v.as_bytes()))
-            .collect::<Vec<_>>();
-    } else {
-        hashes = array
-            .values_iter()
-            .zip(seed.unwrap().values_iter())
-            .map(|(v, s)| xxh3_64_with_seed(v.as_bytes(), *s))
-            .collect::<Vec<_>>();
-    }
+            .collect::<Vec<_>>()
+    };
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
