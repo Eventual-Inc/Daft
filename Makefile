@@ -25,6 +25,10 @@ else
 	$(VENV_BIN)/pip install -r requirements-dev.txt
 endif
 
+.PHONY: hooks
+hooks: venv
+	source $(VENV_BIN)/activate && pre-commit install-hooks
+
 .PHONY: build
 build: venv  ## Compile and install Daft for development
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
