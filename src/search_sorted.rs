@@ -227,7 +227,7 @@ pub fn search_sorted_multi_array(
     }
     let key_array_size = key_arrays[0].len();
     for key_arr in key_arrays {
-        if key_arr.len() != sorted_array_size {
+        if key_arr.len() != key_array_size {
             return Err(Error::InvalidArgumentError(format!(
                 "Mismatch in number of rows: {} vs {}",
                 key_arr.len(),
