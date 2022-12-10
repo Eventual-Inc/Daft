@@ -7,6 +7,7 @@ use std::iter::zip;
 use arrow2::array::{Array, PrimitiveArray};
 use arrow2::datatypes::DataType;
 
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
@@ -19,16 +20,24 @@ fn hash_pyarrow_array(
     seed: Option<&PyAny>,
 ) -> PyResult<PyObject> {
     let rarray = ffi::array_to_rust(pyarray)?;
-    let rseed: Option<Box<dyn Array>> = match seed {
-        Some(seed) => Some(ffi::array_to_rust(seed)?),
-        None => None,
-    };
     let hashed;
-    if rseed.is_some() {
-        let rseed_val = rseed.unwrap();
-        assert_eq!(rseed_val.len(), rarray.len());
-        assert_eq!(*rseed_val.data_type(), DataType::UInt64);
-        let downcasted_seed = rseed_val
+    if let Some(seed) = seed {
+        let rseed = ffi::array_to_rust(seed)?;
+        if rseed.len() != rarray.len() {
+            return Err(PyValueError::new_err(format!(
+                "seed length does not match array length: {} vs {}",
+                rseed.len(),
+                rarray.len()
+            )));
+        }
+        if *rseed.data_type() != DataType::UInt64 {
+            return Err(PyValueError::new_err(format!(
+                "seed data type expected to be UInt64, got {:?}",
+                *rseed.data_type()
+            )));
+        }
+
+        let downcasted_seed = rseed
             .as_ref()
             .as_any()
             .downcast_ref::<PrimitiveArray<u64>>()
@@ -37,7 +46,10 @@ fn hash_pyarrow_array(
     } else {
         hashed = py.allow_threads(move || hashing::hash(rarray.as_ref(), None));
     }
-    ffi::to_py_array(Box::new(hashed.unwrap()), py, pyarrow)
+    match hashed {
+        Err(e) => return Err(PyValueError::new_err(e.to_string())),
+        Ok(s) => return ffi::to_py_array(Box::new(s), py, pyarrow),
+    }
 }
 
 #[pyfunction]
@@ -54,7 +66,10 @@ fn search_sorted_pyarrow_array(
         search_sorted::search_sorted(rsorted_array.as_ref(), rkeys_array.as_ref(), input_reversed)
     });
 
-    ffi::to_py_array(Box::new(result_idx.unwrap()), py, pyarrow)
+    match result_idx {
+        Err(e) => return Err(PyValueError::new_err(e.to_string())),
+        Ok(s) => return ffi::to_py_array(Box::new(s), py, pyarrow),
+    }
 }
 
 #[pyfunction]
@@ -65,8 +80,16 @@ fn search_sorted_multiple_pyarrow_array(
     py: Python,
     pyarrow: &PyModule,
 ) -> PyResult<PyObject> {
-    assert_eq!(sorted_arrays.len(), key_arrays.len());
-    assert_eq!(sorted_arrays.len(), descending_array.len());
+    if sorted_arrays.len() != key_arrays.len() {
+        return Err(PyValueError::new_err(
+            "number of columns for sorted arrays and key arrays does not match",
+        ));
+    }
+    if sorted_arrays.len() != descending_array.len() {
+        return Err(PyValueError::new_err(
+            "number of columns for sorted arrays and descending_array does not match",
+        ));
+    }
     let mut rsorted_arrays: Vec<Box<dyn Array>> = Vec::with_capacity(sorted_arrays.len());
     let mut rkeys_arrays: Vec<Box<dyn Array>> = Vec::with_capacity(key_arrays.len());
 
@@ -91,8 +114,10 @@ fn search_sorted_multiple_pyarrow_array(
             &descending_array,
         )
     });
-
-    ffi::to_py_array(Box::new(result_idx.unwrap()), py, pyarrow)
+    match result_idx {
+        Err(e) => return Err(PyValueError::new_err(e.to_string())),
+        Ok(s) => return ffi::to_py_array(Box::new(s), py, pyarrow),
+    }
 }
 
 /// A Python module implemented in Rust. The name of this function must match

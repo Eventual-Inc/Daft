@@ -100,6 +100,22 @@ macro_rules! with_match_primitive_type {(
 })}
 
 pub fn hash(array: &dyn Array, seed: Option<&PrimitiveArray<u64>>) -> Result<PrimitiveArray<u64>> {
+    if let Some(s) = seed {
+        if s.len() != array.len() {
+            return Err(Error::InvalidArgumentError(format!(
+                "seed length does not match array length: {} vs {}",
+                s.len(),
+                array.len()
+            )));
+        }
+        if *s.data_type() != DataType::UInt64 {
+            return Err(Error::InvalidArgumentError(format!(
+                "seed data type expected to be uint64, got {:?}",
+                *s.data_type()
+            )));
+        }
+    }
+
     use PhysicalType::*;
     Ok(match array.data_type().to_physical_type() {
         // Boolean => hash_boolean(array.as_any().downcast_ref().unwrap()),

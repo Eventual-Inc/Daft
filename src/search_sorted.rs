@@ -203,21 +203,41 @@ pub fn search_sorted_multi_array(
     key_arrays: &Vec<&dyn Array>,
     input_reversed: &Vec<bool>,
 ) -> Result<PrimitiveArray<u64>> {
-    assert!(sorted_arrays.len() > 0);
-    assert!(key_arrays.len() > 0);
-    assert_eq!(sorted_arrays.len(), key_arrays.len());
+    if sorted_arrays.len() == 0 || key_arrays.len() == 0 {
+        return Err(Error::InvalidArgumentError(
+            "Passed in empty number of columns".to_string(),
+        ));
+    }
+
+    if sorted_arrays.len() != key_arrays.len() {
+        return Err(Error::InvalidArgumentError(
+            "Mismatch in number of columns".to_string(),
+        ));
+    }
 
     let sorted_array_size = sorted_arrays[0].len();
     for sorted_arr in sorted_arrays {
-        assert_eq!(sorted_arr.len(), sorted_array_size);
+        if sorted_arr.len() != sorted_array_size {
+            return Err(Error::InvalidArgumentError(format!(
+                "Mismatch in number of rows: {} vs {}",
+                sorted_arr.len(),
+                sorted_array_size
+            )));
+        }
     }
     let key_array_size = key_arrays[0].len();
     for key_arr in key_arrays {
-        assert_eq!(key_arr.len(), key_array_size);
+        if key_arr.len() != sorted_array_size {
+            return Err(Error::InvalidArgumentError(format!(
+                "Mismatch in number of rows: {} vs {}",
+                key_arr.len(),
+                sorted_array_size
+            )));
+        }
     }
     let mut cmp_list = Vec::with_capacity(sorted_arrays.len());
     for ((sorted_arr, key_arr), reversed) in zip(sorted_arrays, key_arrays).zip(input_reversed) {
-        cmp_list.push(build_compare_with_nulls(*sorted_arr, *key_arr, *reversed).unwrap());
+        cmp_list.push(build_compare_with_nulls(*sorted_arr, *key_arr, *reversed)?);
     }
 
     let combined_comparator = |a_idx: usize, b_idx: usize| -> Ordering {
@@ -257,6 +277,14 @@ pub fn search_sorted(
     input_reversed: bool,
 ) -> Result<PrimitiveArray<u64>> {
     use PhysicalType::*;
+    if sorted_array.data_type() != keys.data_type() {
+        let error_string = format!(
+            "sorted array data type does not match keys data type: {:?} vs {:?}",
+            sorted_array.data_type(),
+            keys.data_type()
+        );
+        return Err(Error::InvalidArgumentError(error_string));
+    }
     Ok(match sorted_array.data_type().to_physical_type() {
         // Boolean => hash_boolean(array.as_any().downcast_ref().unwrap()),
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
