@@ -51,8 +51,10 @@ jobs:
         pip install --upgrade pip
         pip install -r requirements-dev.txt
 
-    - name: Build Rust
-      run: maturin develop
+    - name: Build Rust Library
+      run: |
+        source activate
+        maturin develop
 
     - name: Clone TPCH SQlite repository
       uses: actions/checkout@v2
