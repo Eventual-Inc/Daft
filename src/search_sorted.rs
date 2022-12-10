@@ -16,7 +16,7 @@ fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
 ) -> PrimitiveArray<u64> {
     let array_size = sorted_array.len() as usize;
 
-    let mut left = 0 as usize;
+    let mut left = 0_usize;
     let mut right = array_size;
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
@@ -78,7 +78,7 @@ fn search_sorted_utf_array<O: Offset>(
     input_reversed: bool,
 ) -> PrimitiveArray<u64> {
     let array_size = sorted_array.len() as usize;
-    let mut left = 0 as usize;
+    let mut left = 0_usize;
     let mut right = array_size;
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
@@ -111,7 +111,7 @@ fn search_sorted_utf_array<O: Offset>(
             let is_key_val_le = match (key_val, sorted_array.is_valid(corrected_idx)) {
                 (None, true) => false,
                 (None, false) => true,
-                (Some(key_val), true) => key_val.le(&mid_val),
+                (Some(key_val), true) => key_val.le(mid_val),
                 (_, false) => true,
             };
             if is_key_val_le {
@@ -203,7 +203,7 @@ pub fn search_sorted_multi_array(
     key_arrays: &Vec<&dyn Array>,
     input_reversed: &Vec<bool>,
 ) -> Result<PrimitiveArray<u64>> {
-    if sorted_arrays.len() == 0 || key_arrays.len() == 0 {
+    if sorted_arrays.is_empty() || key_arrays.is_empty() {
         return Err(Error::InvalidArgumentError(
             "Passed in empty number of columns".to_string(),
         ));

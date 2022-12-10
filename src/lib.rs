@@ -47,8 +47,8 @@ fn hash_pyarrow_array(
         hashed = py.allow_threads(move || hashing::hash(rarray.as_ref(), None));
     }
     match hashed {
-        Err(e) => return Err(PyValueError::new_err(e.to_string())),
-        Ok(s) => return ffi::to_py_array(Box::new(s), py, pyarrow),
+        Err(e) => Err(PyValueError::new_err(e.to_string())),
+        Ok(s) => ffi::to_py_array(Box::new(s), py, pyarrow),
     }
 }
 
@@ -67,8 +67,8 @@ fn search_sorted_pyarrow_array(
     });
 
     match result_idx {
-        Err(e) => return Err(PyValueError::new_err(e.to_string())),
-        Ok(s) => return ffi::to_py_array(Box::new(s), py, pyarrow),
+        Err(e) => Err(PyValueError::new_err(e.to_string())),
+        Ok(s) => ffi::to_py_array(Box::new(s), py, pyarrow),
     }
 }
 
@@ -115,8 +115,8 @@ fn search_sorted_multiple_pyarrow_array(
         )
     });
     match result_idx {
-        Err(e) => return Err(PyValueError::new_err(e.to_string())),
-        Ok(s) => return ffi::to_py_array(Box::new(s), py, pyarrow),
+        Err(e) => Err(PyValueError::new_err(e.to_string())),
+        Ok(s) => ffi::to_py_array(Box::new(s), py, pyarrow),
     }
 }
 
