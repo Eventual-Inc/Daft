@@ -20,23 +20,40 @@ jobs:
         daft_runner: [py, ray]
     steps:
     - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: nightly-2022-11-01
+        override: true
+    - uses: actions/cache@v3
+      env:
+        cache-name: cache-cargo
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
-    - uses: actions/cache@v3
-      id: poetry-cache
-      with:
-        path: ~/.cache/pypoetry/virtualenvs
-        key: ${{ runner.os }}-python-${{ steps.setup-python.outputs.python-version }}-poetry-${{ hashFiles('poetry.lock') }}
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/py-polars/venv/bin" >> $GITHUB_PATH
     - name: Install dependencies
       run: |
-        # Install Poetry and deps
-        python -m pip install poetry
-        poetry install --all-extras --with dev,test -vvv
-    - name: Build Extensions Locally
-      run: |
-        poetry run build_inplace
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt
+
+    - name: Build Rust
+      run: maturin develop
+
     - name: Clone TPCH SQlite repository
       uses: actions/checkout@v2
       with:
@@ -47,7 +64,7 @@ jobs:
       working-directory: data/tpch-sqlite
       run: SCALE_FACTOR=0.2 make
     - name: Test with pytest
-      run: poetry run pytest
+      run: pytest
       env:
         DAFT_RUNNER: ${{ matrix.daft_runner }}
 
@@ -58,4 +75,4 @@ jobs:
         key: ${{ runner.os }}-python-${{ steps.setup-python.outputs.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
     - name: Python Style Check
       run: |
-        poetry run pre-commit run --all-files
+        pre-commit run --all-files
