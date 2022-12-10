@@ -15,11 +15,14 @@ fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
     input_reversed: bool,
 ) -> PrimitiveArray<u64> {
     let array_size = sorted_array.len() as usize;
+
     let mut left = 0 as usize;
     let mut right = array_size;
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
-    let mut last_key = keys.iter().next().unwrap();
+
+    let mut last_key = keys.iter().next().unwrap_or(None);
+
     for key_val in keys.iter() {
         let is_last_key_le = match (last_key, key_val) {
             (None, None) => false,
@@ -79,7 +82,7 @@ fn search_sorted_utf_array<O: Offset>(
     let mut right = array_size;
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
-    let mut last_key = keys.iter().next().unwrap();
+    let mut last_key = keys.iter().next().unwrap_or(None);
     for key_val in keys.iter() {
         let is_last_key_le = match (last_key, key_val) {
             (None, None) => false,
