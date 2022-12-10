@@ -13,9 +13,6 @@ maintainers = [
 ]
 readme = "README.rst"
 license = {file="LICENSE"}
-homepage = "https://getdaft.io"
-repository = "https://github.com/Eventual-Inc/Daft"
-packages_dir = "daft"
 requires-python = ">=3.7.1"
 dependencies = [
     "ray>=1.10.0",
@@ -40,6 +37,10 @@ iceberg = ["icebridge"]
 experimental = ["daft[serving, iceberg]"]
 ray = ["ray[default]"] # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
 all = ["daft[aws, ray]"]
+
+[project.urls]
+homepage = "https://getdaft.io"
+repository = "https://github.com/Eventual-Inc/Daft"
 
 [tool]
 
