@@ -8,5 +8,3 @@ from daft.udf import polars_udf, udf
 __all__ = ["DataFrame", "col", "lit", "udf", "polars_udf"]
 
 setup_logger()
-
-__version__ = "0"

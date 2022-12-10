@@ -4,8 +4,8 @@ build-backend = "maturin"
 
 [project]
 name = "getdaft"
-version = "0.0.19" # needed for poetry but ignored
 description = "A Distributed DataFrame library for large scale complex data processing."
+dynamic = ["version"]
 authors = [{name="Eventual Inc", email="daft@eventualcomputing.com"}]
 maintainers = [
     {name="Sammy Sidhu", email="sammy@eventualcomputing.com"},
