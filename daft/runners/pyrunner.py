@@ -212,7 +212,6 @@ class PyRunner(Runner):
                 input_partition_set = {nid: partition_intermediate_results[nid] for nid in data_deps}
 
                 if exec_op.is_global_op:
-                    input_partition_set = {nid: partition_intermediate_results[nid] for nid in data_deps}
                     result_partition_set = self._global_op_runner.run_node_list(
                         input_partition_set, exec_op.logical_ops
                     )
@@ -228,5 +227,5 @@ class PyRunner(Runner):
 
             last = exec_plan.execution_ops[-1].logical_ops[-1]
             final_result = partition_intermediate_results[last.id()]
-            pset_id = self._part_set_cache.put_partition_set(final_result)
-            return pset_id
+            pset_entry = self._part_set_cache.put_partition_set(final_result)
+            return pset_entry
