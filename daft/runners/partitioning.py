@@ -334,7 +334,7 @@ class vPartition:
             table = json.read_json(f)
 
         if read_options.column_names is not None:
-            table = table.select([read_options.column_names])
+            table = table.select(read_options.column_names)
 
         schema = _infer_schema_from_arrow(table, schema_options)
         column_ids = _get_column_ids_for_table(table, schema)
