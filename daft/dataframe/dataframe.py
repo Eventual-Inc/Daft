@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import io
 import warnings
 from dataclasses import dataclass
-from functools import partial
-from typing import IO, TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Iterable, TypeVar, Union
 
 import pandas
 import pyarrow as pa
-import pyarrow.parquet as papq
-from pyarrow import csv, json
 
 from daft.context import get_context
 from daft.dataframe.preview import DataFramePreview
@@ -26,7 +22,14 @@ from daft.expressions import ColumnExpression, Expression, col
 from daft.filesystem import get_filesystem_from_path, get_protocol_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
-from daft.runners.partitioning import PartitionCacheEntry, PartitionSet, vPartition
+from daft.runners.partitioning import (
+    PartitionCacheEntry,
+    PartitionSet,
+    vPartition,
+    vPartitionParseCSVOptions,
+    vPartitionReadOptions,
+    vPartitionSchemaInferenceOptions,
+)
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.runners.ray_runner import RayPartitionSet
 from daft.types import PythonExpressionType
@@ -38,27 +41,6 @@ if TYPE_CHECKING:
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
-
-
-def _sample_with_pyarrow(
-    loader_func: Callable[[IO], pa.Table],
-    filepath: str,
-    max_bytes: int = 5 * 1024**2,
-) -> ExpressionList:
-    fs = get_filesystem_from_path(filepath)
-    sampled_bytes = io.BytesIO()
-    with fs.open(filepath, compression="infer") as f:
-        lines = f.readlines(max_bytes)
-        for line in lines:
-            sampled_bytes.write(line)
-    sampled_bytes.seek(0)
-    sampled_tbl = loader_func(sampled_bytes)
-    fields = [(field.name, field.type) for field in sampled_tbl.schema]
-    schema = ExpressionList(
-        [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
-    )
-    assert schema is not None, f"Unable to read file {filepath} to determine schema"
-    return schema
 
 
 def _get_filepaths(path: str):
@@ -308,7 +290,18 @@ class DataFrame:
         if len(filepaths) == 0:
             raise ValueError(f"No JSON files found at {path}")
 
-        schema = _sample_with_pyarrow(json.read_json, filepaths[0])
+        schema = vPartition.from_json(
+            filepaths[0],
+            partition_id=0,
+            schema_options=vPartitionSchemaInferenceOptions(
+                schema=None,
+                inference_column_names=None,  # has no effect on inferring schema from JSON
+            ),
+            read_options=vPartitionReadOptions(
+                num_rows=100,  # sample 100 rows for inferring schema
+                column_names=None,  # read all columns
+            ),
+        ).get_col_expressions()
 
         plan = logical_plan.Scan(
             schema=schema,
@@ -353,22 +346,25 @@ class DataFrame:
         if len(filepaths) == 0:
             raise ValueError(f"No CSV files found at {path}")
 
-        schema = _sample_with_pyarrow(
-            partial(
-                csv.read_csv,
-                parse_options=csv.ParseOptions(
-                    delimiter=delimiter,
-                ),
-                read_options=csv.ReadOptions(
-                    # Column names will be read from the first CSV row if column_names is None/empty and has_headers
-                    autogenerate_column_names=(not has_headers) and (column_names is None),
-                    column_names=column_names,
-                    # If user specifies that CSV has headers, and also provides column names, we skip the header row
-                    skip_rows_after_names=1 if has_headers and column_names is not None else 0,
-                ),
+        schema = vPartition.from_csv(
+            path=filepaths[0],
+            partition_id=0,
+            csv_options=vPartitionParseCSVOptions(
+                delimiter=delimiter,
+                has_headers=has_headers,
+                skip_rows_before_header=0,
+                skip_rows_after_header=0,
             ),
-            filepaths[0],
-        )
+            schema_options=vPartitionSchemaInferenceOptions(
+                schema=None,
+                inference_column_names=column_names,  # pass in user-provided column names
+            ),
+            read_options=vPartitionReadOptions(
+                num_rows=100,  # sample 100 rows for schema inference
+                column_names=None,  # read all columns
+            ),
+        ).get_col_expressions()
+
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,
@@ -406,18 +402,18 @@ class DataFrame:
 
         if len(filepaths) == 0:
             raise ValueError(f"No Parquet files found at {path}")
-
-        filepath = filepaths[0]
-        fs = get_filesystem_from_path(filepath)
-        with fs.open(filepath, "rb") as f:
-            # Read first Parquet file to ascertain schema
-            schema = ExpressionList(
-                [
-                    ColumnExpression(field.name, expr_type=ExpressionType.from_arrow_type(field.type))
-                    for field in papq.ParquetFile(f).metadata.schema.to_arrow_schema()
-                ]
-            )
-
+        schema = vPartition.from_parquet(
+            filepaths[0],
+            partition_id=0,
+            schema_options=vPartitionSchemaInferenceOptions(
+                schema=None,
+                inference_column_names=None,  # has no effect on schema inferencing Parquet
+            ),
+            read_options=vPartitionReadOptions(
+                num_rows=0,  # sample 0 rows since Parquet has metadata
+                column_names=None,  # read all columns
+            ),
+        ).get_col_expressions()
         plan = logical_plan.Scan(
             schema=schema,
             predicate=None,

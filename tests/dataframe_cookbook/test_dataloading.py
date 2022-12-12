@@ -57,7 +57,7 @@ def test_load_parquet(daft_df, service_requests_csv_pd_df, repartition_nparts):
 
 
 def test_load_csv_no_headers(tmp_path: pathlib.Path):
-    """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers"""
+    """Generate a default set of headers `f0, f1, ... f{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
     csv.write_text("\n".join(pathlib.Path(IRIS_CSV).read_text().split("\n")[1:]))
     daft_df = DataFrame.read_csv(str(csv), has_headers=False)

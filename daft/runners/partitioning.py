@@ -1,24 +1,106 @@
 from __future__ import annotations
 
 import dataclasses
+import io
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic, Sequence, TypeVar
+from typing import IO, Any, Callable, Generic, Sequence, TypeVar
 from uuid import uuid4
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+from pyarrow import csv
 from pyarrow import dataset as pada
+from pyarrow import json, parquet
 
 from daft.execution.operators import OperatorEnum
 from daft.expressions import ColID, ColumnExpression, Expression, ExpressionExecutor
+from daft.filesystem import get_filesystem_from_path
 from daft.logical.schema import ExpressionList
-from daft.runners.blocks import ArrowArrType, DataBlock, PyListDataBlock
+from daft.runners.blocks import ArrowArrType, ArrowDataBlock, DataBlock, PyListDataBlock
+from daft.types import ExpressionType, PythonExpressionType
 
 PartID = int
+
+
+@dataclass(frozen=True)
+class vPartitionReadOptions:
+    """Options for reading a vPartition
+
+    Args:
+        num_rows: Number of rows to read, or None to read all rows
+        column_names: Column names to include when reading, or None to read all columns
+    """
+
+    num_rows: int | None = None
+    column_names: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class vPartitionSchemaInferenceOptions:
+    """Options for schema inference when reading a vPartition
+
+    Args:
+        schema: A schema to use when reading the vPartition. If provided, all schema inference should be skipped.
+        inference_column_names: Column names to use when performing schema inference
+    """
+
+    schema: ExpressionList | None = None
+    inference_column_names: list[str] | None = None
+
+    def full_schema_column_names(self) -> list[str] | None:
+        """Returns all column names for the schema, or None if not provided."""
+        if self.schema is not None:
+            return [expr.name() for expr in self.schema]
+        return self.inference_column_names
+
+
+@dataclass(frozen=True)
+class vPartitionParseCSVOptions:
+    """Options for parsing CSVs
+
+    Args:
+        delimiter: The delimiter to use when parsing CSVs, defaults to ","
+        has_headers: Whether the CSV has headers, defaults to True
+        skip_rows_before_header: Number of rows to skip before the header, defaults to 0
+        skip_rows_after_header: Number of rows to skip after the header, defaults to 0
+    """
+
+    delimiter: str = ","
+    has_headers: bool = True
+    skip_rows_before_header: int = 0
+    skip_rows_after_header: int = 0
+
+
+def _limit_num_rows(buf: IO, num_rows: int) -> IO:
+    """Limites a buffer to a certain number of rows using an in-memory buffer."""
+    sampled_bytes = io.BytesIO()
+    for i, line in enumerate(buf):
+        if i >= num_rows:
+            break
+        sampled_bytes.write(line)
+    sampled_bytes.seek(0)
+    return sampled_bytes
+
+
+def _infer_schema_from_arrow(table: pa.Table, schema_options: vPartitionSchemaInferenceOptions) -> ExpressionList:
+    if schema_options.schema is not None:
+        return schema_options.schema
+    fields = [(field.name, field.type) for field in table.schema]
+    return ExpressionList(
+        [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
+    ).resolve()
+
+
+def _get_column_ids_for_table(table: pa.Table, schema: ExpressionList) -> list[ColID]:
+    name_to_exprs = {colname: schema.get_expression_by_name(colname) for colname in table.column_names}
+    name_to_col_ids = {colname: expr.get_id() for colname, expr in name_to_exprs.items() if expr is not None}
+    if name_to_col_ids.keys() - name_to_exprs.keys():
+        raise ValueError(f"Schema not provided for columns: {name_to_col_ids.keys() - name_to_exprs.keys()}")
+    return [name_to_col_ids[name] for name in table.column_names]
 
 
 @dataclass(frozen=True)
@@ -96,6 +178,27 @@ class vPartition:
             return 0
         return len(next(iter(self.columns.values())))
 
+    def get_col_expressions(self) -> ExpressionList:
+        """Generates column expressions that represent the vPartition's schema"""
+        colexprs = []
+        for col_id, tile in self.columns.items():
+            col_name = tile.column_name
+            col_type: ExpressionType
+            if isinstance(tile.block, ArrowDataBlock):
+                col_type = ExpressionType.from_arrow_type(tile.block.data.type)
+            else:
+                py_types = {type(obj) for obj in tile.block.data} - {type(None)}
+                if len(py_types) == 0:
+                    col_type = PythonExpressionType(type(None))
+                elif len(py_types) == 1:
+                    col_type = PythonExpressionType(py_types.pop())
+                else:
+                    col_type = ExpressionType.python_object()
+            colexpr = ColumnExpression(name=col_name, expr_type=col_type)
+            colexpr._id = col_id
+            colexprs.append(colexpr)
+        return ExpressionList(colexprs)
+
     def eval_expression(self, expr: Expression) -> PyListTile:
         expr_col_id = expr.get_id()
         expr_name = expr.name()
@@ -153,6 +256,129 @@ class vPartition:
             block = DataBlock.make_block(data[col_name])
             tiles[col_id] = PyListTile(column_id=col_id, column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
+
+    @classmethod
+    def from_csv(
+        cls,
+        path: str,
+        partition_id: PartID,
+        csv_options: vPartitionParseCSVOptions = vPartitionParseCSVOptions(),
+        schema_options: vPartitionSchemaInferenceOptions = vPartitionSchemaInferenceOptions(),
+        read_options: vPartitionReadOptions = vPartitionReadOptions(),
+    ) -> vPartition:
+        """Gets a vPartition from a CSV file.
+
+        Args:
+            path: FSSpec compatible path to the CSV file.
+            partition_id: Partition ID to assign to the vPartition.
+            csv_options: Options for parsing the CSV file.
+            schema_options: Options for inferring the schema from the CSV file.
+            read_options: Options for building a vPartition.
+        """
+        # Use provided CSV column names, or None if nothing provided
+        full_column_names = schema_options.full_schema_column_names()
+
+        # Have PyArrow generate the column names if the CSV has no header and no column names were provided
+        pyarrow_autogenerate_column_names = (not csv_options.has_headers) and (full_column_names is None)
+
+        # Have Pyarrow skip the header row if column names were provided, and a header exists in the CSV
+        skip_header_row = full_column_names is not None and csv_options.has_headers
+        pyarrow_skip_rows_after_names = (1 if skip_header_row else 0) + csv_options.skip_rows_after_header
+
+        fs = get_filesystem_from_path(path)
+        with fs.open(path, compression="infer") as f:
+
+            if read_options.num_rows is not None:
+                f = _limit_num_rows(f, read_options.num_rows)
+
+            table = csv.read_csv(
+                f,
+                parse_options=csv.ParseOptions(
+                    delimiter=csv_options.delimiter,
+                ),
+                # skip_rows applied, header row is read if column_names is not None, skip_rows_after_names is applied
+                read_options=csv.ReadOptions(
+                    autogenerate_column_names=pyarrow_autogenerate_column_names,
+                    column_names=full_column_names,
+                    skip_rows_after_names=pyarrow_skip_rows_after_names,
+                    skip_rows=csv_options.skip_rows_before_header,
+                ),
+                convert_options=csv.ConvertOptions(include_columns=read_options.column_names),
+            )
+
+        schema = _infer_schema_from_arrow(table, schema_options)
+        column_ids = _get_column_ids_for_table(table, schema)
+
+        return vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+
+    @classmethod
+    def from_json(
+        cls,
+        path: str,
+        partition_id: PartID,
+        schema_options: vPartitionSchemaInferenceOptions = vPartitionSchemaInferenceOptions(),
+        read_options: vPartitionReadOptions = vPartitionReadOptions(),
+    ) -> vPartition:
+        """Gets a vPartition from a Line-delimited JSON file
+
+        Args:
+            path: FSSpec compatible path to the Line-delimited JSON file.
+            partition_id: Partition ID to assign to the vPartition.
+            schema_options: Options for inferring the schema from the JSON file.
+            read_options: Options for building a vPartition.
+        """
+        fs = get_filesystem_from_path(path)
+        with fs.open(path, compression="infer") as f:
+            if read_options.num_rows is not None:
+                f = _limit_num_rows(f, read_options.num_rows)
+            table = json.read_json(f)
+
+        if read_options.column_names is not None:
+            table = table.select(read_options.column_names)
+
+        schema = _infer_schema_from_arrow(table, schema_options)
+        column_ids = _get_column_ids_for_table(table, schema)
+
+        return vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+
+    @classmethod
+    def from_parquet(
+        cls,
+        path: str,
+        partition_id: PartID,
+        schema_options: vPartitionSchemaInferenceOptions = vPartitionSchemaInferenceOptions(),
+        read_options: vPartitionReadOptions = vPartitionReadOptions(),
+    ) -> vPartition:
+        """Gets a vPartition from a Parquet file
+
+        Args:
+            path: FSSpec compatible path to the Parquet file.
+            partition_id: Partition ID to assign to the vPartition.
+            schema_options: Options for inferring the schema from the Parquet file.
+            read_options: Options for building a vPartition.
+        """
+        fs = get_filesystem_from_path(path)
+
+        with fs.open(path) as f:
+            # If no rows required, we manually construct an empty table with the right schema
+            if read_options.num_rows == 0:
+                arrow_schema = parquet.ParquetFile(f).metadata.schema.to_arrow_schema()
+                table = pa.Table.from_arrays(
+                    [pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema
+                )
+            else:
+                table = parquet.read_table(
+                    f,
+                    columns=read_options.column_names,
+                )
+                # PyArrow API does not provide a way to limit the number of rows read from a Parquet file
+                if read_options.num_rows is not None:
+                    table = table.slice(length=read_options.num_rows)
+
+        schema = _infer_schema_from_arrow(table, schema_options)
+        column_ids = _get_column_ids_for_table(table, schema)
+
+        return vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
 
     def to_pydict(self) -> dict[str, Sequence]:
         output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
