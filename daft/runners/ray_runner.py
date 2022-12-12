@@ -318,5 +318,5 @@ class RayRunner(Runner):
 
             last = exec_plan.execution_ops[-1].logical_ops[-1]
             final_result = partition_intermediate_results[last.id()]
-            pset_id = self._part_set_cache.put_partition_set(final_result)
-            return pset_id
+            pset_entry = self._part_set_cache.put_partition_set(final_result)
+            return pset_entry
