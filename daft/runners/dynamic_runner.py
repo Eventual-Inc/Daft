@@ -92,9 +92,9 @@ class DynamicScheduler:
         return self
 
     def __next__(self):
-        return self.next_computable_partition(self._root_plan_node)
+        return self._next_computable_partition(self._root_plan_node, True)
 
-    def _next_computable_partition(self, plan_node: LogicalPlan) -> PartitionInstructions | None:
+    def _next_computable_partition(self, plan_node: LogicalPlan, must_materialize: bool) -> PartitionInstructions | None:
         """
         Raises StopIteration if all partitions are finished for this plan node.
         Returns None if there is nothing we can do for now (i.e. must wait for other partitions to finish).
@@ -114,15 +114,42 @@ class DynamicScheduler:
 
         # There are undispatched partitions for this plan_node.
 
+        result: PartitionInstructions | None
+
         # Leaf nodes.
         if isinstance(plan_node, (
             logical_plan.InMemoryScan,
             # XXX TODO
-        ):
-            return self._next_impl_leaf_node(plan_node)
+        )):
+            result = self._next_impl_leaf_node(plan_node)
 
+
+        # Pipelineable nodes.
+        elif isinstance(plan_node, (
+            logical_plan.Filter,
+        )):
+            result = self._next_impl_pipeable_node(plan_node)
+
+        # Compulsory materialization nodes.
         # XXX TODO
-        raise
+        elif isinstance(plan_node, (
+            # XXX TODO
+        )):
+            result = self._next_impl_materialize_node(plan_node)
+
+        if result is not None and result.marked_for_materialization():
+            return result
+
+        if must_materialize:
+            if result is not None:
+                result.mark_for_materialization(
+                    nid=plan_node.id(),
+                    partno=len(self._partitions_by_node_id[plan_node.id()]),
+                )
+
+        return result
+
+
 
     def _next_impl_leaf_node(self, plan_node: LogicalPlan) -> PartitionInstructions:
         """
@@ -139,6 +166,17 @@ class DynamicScheduler:
             partition = pset.items()[next_partno][1]
             return PartitionInstructions([partition])
 
+    def _next_impl_pipeable_node(self, plan_node: LogicalPlan) -> PartitionInstructions | None:
+        """
+        Precondition: There are undispatched partitions for this plan node.
+        """
+
+
+    def _next_impl_materialize_node(self, plan_node: LogicalPlan) -> PartitionInstructions | None:
+        """
+        Precondition: There are undispatched partitions for this plan node.
+        """
+        raise # XXX TODO
 
 
     def register_completed_partition(self, instructions: PartitionInstructions, partition: vPartition) -> None:
