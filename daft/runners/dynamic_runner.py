@@ -85,9 +85,8 @@ class DynamicScheduler:
     def __init__(self, root_plan_node: LogicalPlan) -> None:
         self._root_plan_node = root_plan_node
         # Logical plan node IDs and their completed partitions.
-        # `None` denotes that the partition is under construction.
+        # `None` denotes that the partition has been dispatched but is under construction.
         self._partitions_by_node_id: dict[int, list[vPartition | None]] = {}
-        self._is_node_ready: dict[int, bool] = {}
 
     def __iter__(self):
         return self
@@ -101,24 +100,40 @@ class DynamicScheduler:
         Returns None if there is nothing we can do for now (i.e. must wait for other partitions to finish).
         """
 
+        # Initialize state tracking for this plan node if not yet seen.
         if plan_node.id() not in self._partitions_by_node_id:
             self._partitions_by_node_id[plan_node.id()] = list()
-        if plan_node.id() not in self._is_node_ready:
-            self._is_node_ready[plan_node.id()] = False
+
+        # Check if all partitions have been dispatched.
+        if len(self._partitions_by_node_id[plan_node.id()]) == plan_node.num_partitions():
+            # Check if all partitions have also been completed.
+            if all(maybe_part is not None for maybe_part in self._partitions_by_node_id[plan_node.id()]):
+                raise StopIteration
+            else:
+                return None
+
+        # There are undispatched partitions for this plan_node.
+        # This is the next partition to dispatch.
+        next_partno = len(self._partitions_by_node_id[plan_node.id()])
 
         # Leaf nodes.
         if isinstance(plan_node, (
             logical_plan.InMemoryScan,
             # XXX TODO
         ):
-            return self._next_impl_leaf_node(plan_node)
+            return self._next_impl_leaf_node(plan_node, next_partno)
 
         # XXX TODO
         raise
 
-    def _next_impl_leaf_node(self, plan_node: LogicalPlan) -> PartitionInstructions:
+    def _next_impl_leaf_node(self, plan_node: LogicalPlan, partno: int) -> PartitionInstructions:
+        """
+        Precondition: There are undispatched partitions for this plan node.
+        """
+
         if isinstance(plan_node, logical_plan.InMemoryScan):
-            # InMemoryScan is a single
+
+
 
 
     def register_completed_partition(self, instructions: PartitionInstructions, partition: vPartition) -> None:
@@ -132,11 +147,41 @@ class DynamicScheduler:
             result.set_partition(i, partition)
         return result
 
-@dataclass(frozen=True)
 class PartitionInstructions:
-    # This is partition partno for plan node nid.
-    nid: int
-    partno: int
-    # Function stack to execute.
-    # This can be logical nodes for now.
-    function_stack: list[LogicalPlan]
+
+    def __init__(self, inputs: list[vPartition]) -> None:
+        # Input partitions to run over.
+        self.inputs = inputs
+
+        # Instruction stack to execute.
+        # This can be logical nodes for now.
+        self.instruction_stack: list[LogicalPlan] = list()
+
+        # Materialization location: materialize as partition partno for plan node nid.
+        self.nid: int | None = None
+        self.partno: int | None = None
+
+    def add_instruction(self, instruction: LogicalPlan) -> None:
+        """Add an instruction to the stack that will run for this partition."""
+        self.assert_not_marked()
+        self.instruction_stack.append(instruction)
+
+    def mark_for_materialization(self, nid: int, partno: int) -> None:
+        """Mark this list of instructions to be materialized.
+
+        nid: Node ID to materialize for.
+        partno: The index within the plan node to materialize this partition at.
+
+        Once marked for materialization, this object cannot be further modified.
+        """
+        self.assert_not_marked()
+        self.nid = nid
+        self.partno = partno
+
+    def marked_for_materialization(self, nid: int, partno: int) -> bool:
+        return self.nid is not None and self.partno is not None
+
+    def assert_not_marked(self) -> None:
+        assert not self.marked_for_materialization(), (
+            f"Partition already instructed to materialize for node ID {self.nid}, partition index {self.partno}"
+        )

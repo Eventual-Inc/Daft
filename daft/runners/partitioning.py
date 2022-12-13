@@ -6,7 +6,11 @@ import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
+<<<<<<< HEAD
 from typing import IO, Any, Callable, Generic, Sequence, TypeVar
+=======
+from typing import Any, Callable, Generic, Iterable, Sequence, Tuple, TypeVar
+>>>>>>> fd012b9 (Fleshed out PartitionInstructions. Mega WIP)
 from uuid import uuid4
 
 import numpy as np
@@ -708,6 +712,13 @@ class PartitionSet(Generic[PartitionT]):
     def to_pandas(self, schema: ExpressionList | None = None) -> pd.DataFrame:
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pandas(schema=schema)
+
+    def items(self) -> Iterable[Tuple[PartID, PartitionT]]:
+        """
+        Returns all (partition id, partition) in this PartitionSet,
+        ordered by partition ID.
+        """
+        raise NotImplementedError()
 
     @abstractmethod
     def get_partition(self, idx: PartID) -> PartitionT:
