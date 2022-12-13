@@ -48,6 +48,12 @@ if TYPE_CHECKING:
     from ray.data.block import Block as RayDatasetBlock
     from ray.data.dataset import Dataset as RayDataset
 
+_RAY_FROM_ARROW_REFS_AVAILABLE = True
+try:
+    from ray.data import from_arrow_refs
+except ImportError:
+    _RAY_FROM_ARROW_REFS_AVAILABLE = False
+
 
 @ray.remote
 def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
@@ -74,7 +80,10 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         return vPartition.merge_partitions(all_partitions, verify_partition_id=False)
 
     def to_ray_dataset(self) -> RayDataset:
-        from ray.data import from_arrow_refs
+        if not _RAY_FROM_ARROW_REFS_AVAILABLE:
+            raise ImportError(
+                "Unable to import `ray.data.from_arrow_refs`. Please ensure that you have a compatible version of Ray >= 1.10 installed."
+            )
 
         blocks = [_make_ray_block_from_vpartition.remote(self._partitions[k]) for k in self._partitions.keys()]
         # NOTE: although the Ray method is called `from_arrow_refs`, this method works also when the blocks are List[T] types

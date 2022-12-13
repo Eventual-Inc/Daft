@@ -9,6 +9,7 @@ import random
 from abc import abstractmethod
 from functools import partial
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     ClassVar,
@@ -22,8 +23,13 @@ from typing import (
     cast,
 )
 
+_POLARS_AVAILABLE = True
+try:
+    import polars as pl
+except ImportError:
+    _POLARS_AVAILABLE = False
+
 import numpy as np
-import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pac
 from pandas.core.reshape.merge import get_join_indexers
@@ -32,6 +38,9 @@ from daft.execution.operators import OperatorEnum, OperatorEvaluator
 from daft.internal.kernels.hashing import hash_chunked_array
 from daft.internal.kernels.search_sorted import search_sorted
 from daft.types import ExpressionType, PrimitiveExpressionType, PythonExpressionType
+
+if TYPE_CHECKING:
+    import polars as pl
 
 # A type representing some Python scalar (non-series/array like object)
 PyScalar = Any
@@ -109,8 +118,13 @@ class DataBlock(Generic[ArrType]):
     def to_numpy(self) -> np.ndarray:
         raise NotImplementedError()
 
-    @abstractmethod
     def to_polars(self) -> PyScalar | pl.Series:
+        if not _POLARS_AVAILABLE:
+            raise ImportError("Polars library is not available")
+        return self._to_polars()
+
+    @abstractmethod
+    def _to_polars(self) -> PyScalar | pl.Series:
         raise NotImplementedError()
 
     @abstractmethod
@@ -406,7 +420,7 @@ class PyListDataBlock(DataBlock[List[T]]):
             res[i] = obj
         return res
 
-    def to_polars(self) -> PyScalar | pl.Series:
+    def _to_polars(self) -> PyScalar | pl.Series:
         if self.is_scalar():
             return self.data
         return pl.Series(self.data, dtype=pl.datatypes.Object)
@@ -512,7 +526,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             return self.data.as_py()
         return self.data.to_numpy()
 
-    def to_polars(self) -> PyScalar | pl.Series:
+    def _to_polars(self) -> PyScalar | pl.Series:
         if isinstance(self.data, pa.Scalar):
             return self.data.as_py()
         return pl.Series(self.data)
