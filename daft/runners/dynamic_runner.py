@@ -69,23 +69,16 @@ class DynamicPyRunner(Runner):
 
 
     def _build_partition(self, partspec: PartitionInstructions) -> vPartition:
-        """
-        Postcondition:
-        """
-
         partitions = partspec.inputs
 
         for instruction in partspec.instruction_stack:
-            if isinstance(instruction, logical_plan.Filter):
-                [input] = partitions
-                partitions = [input.filter(instruction._predicate)]
-            elif isinstance(instruction, logical_plan.InMemoryScan):
-
-
-
+            partitions = instruction(partitions)
 
         [result] = partitions
         return result
+
+
+Instruction = Callable[[list[vPartition]], list[vPartition]]
 
 
 class DynamicScheduler:
@@ -159,6 +152,8 @@ class DynamicScheduler:
         )):
             return self._next_impl_materialize_node(plan_node)
 
+        raise
+
 
 
 
@@ -176,11 +171,16 @@ class DynamicScheduler:
 
         if isinstance(plan_node, logical_plan.InMemoryScan):
             # The backing partitions are already materialized.
-            # Pick out the appropriate one and initialize an instruction wrapper around it.
+            # Pick out the appropriate one and initialize an empty instruction wrapper around it.
             pset = self.get_partition_set_from_cache(im_scan._cache_entry.key).value
-            partition = pset.items()[next_partno][1]
+            partition = pset.items()[partno][1]
+
+            result = PartitionInstructions([partition])
+
             self._leaf_node_progress[plan_node.id()] += 1
-            return PartitionInstructions([partition])
+            return result
+
+        raise
 
     def _next_impl_pipeable_node(self, plan_node: LogicalPlan) -> PartitionInstructions | None:
         # Just unary nodes so far.
@@ -218,6 +218,16 @@ class DynamicScheduler:
             result.set_partition(i, partition)
         return result
 
+    @staticmethod
+    def instruction_filter(predicate: ExpressionList) -> Instruction:
+        def result(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [input.filter(predicate)]
+        return result
+
+
+
+
 
 class PartitionInstructions:
 
@@ -226,14 +236,13 @@ class PartitionInstructions:
         self.inputs = inputs
 
         # Instruction stack to execute.
-        # This can be logical nodes for now.
-        self.instruction_stack: list[LogicalPlan] = list()
+        self.instruction_stack: list[Callable] = list()
 
         # Materialization location: materialize as partition partno for plan node nid.
         self.nid: int | None = None
         self.partno: int | None = None
 
-    def add_instruction(self, instruction: LogicalPlan) -> None:
+    def add_instruction(self, instruction: Callable) -> None:
         """Add an instruction to the stack that will run for this partition."""
         self.assert_not_marked()
         self.instruction_stack.append(instruction)
