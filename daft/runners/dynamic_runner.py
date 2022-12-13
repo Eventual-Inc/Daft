@@ -113,26 +113,31 @@ class DynamicScheduler:
                 return None
 
         # There are undispatched partitions for this plan_node.
-        # This is the next partition to dispatch.
-        next_partno = len(self._partitions_by_node_id[plan_node.id()])
 
         # Leaf nodes.
         if isinstance(plan_node, (
             logical_plan.InMemoryScan,
             # XXX TODO
         ):
-            return self._next_impl_leaf_node(plan_node, next_partno)
+            return self._next_impl_leaf_node(plan_node)
 
         # XXX TODO
         raise
 
-    def _next_impl_leaf_node(self, plan_node: LogicalPlan, partno: int) -> PartitionInstructions:
+    def _next_impl_leaf_node(self, plan_node: LogicalPlan) -> PartitionInstructions:
         """
         Precondition: There are undispatched partitions for this plan node.
         """
 
-        if isinstance(plan_node, logical_plan.InMemoryScan):
+        # This is the next partition to dispatch.
+        next_partno = len(self._partitions_by_node_id[plan_node.id()])
 
+        if isinstance(plan_node, logical_plan.InMemoryScan):
+            # The backing partitions are already materialized.
+            # Pick out the appropriate one and initialize an instruction wrapper around it.
+            pset = self.get_partition_set_from_cache(im_scan._cache_entry.key).value
+            partition = pset.items()[next_partno][1]
+            return PartitionInstructions([partition])
 
 
 
