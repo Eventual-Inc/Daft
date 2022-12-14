@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import multiprocessing
 from dataclasses import dataclass
-from typing import Callable, ClassVar, Generator, Tuple
+from typing import Callable, ClassVar
 
 import psutil
 
@@ -47,13 +47,13 @@ from daft.runners.shuffle_ops import (
 class LocalPartitionSet(PartitionSet[vPartition]):
     _partitions: dict[PartID, vPartition]
 
-    def items(self) -> list[Tuple[PartID, vPartition]]:
+    def items(self) -> list[tuple[PartID, vPartition]]:
         return sorted(self._partitions.items())
 
     def _get_merged_vpartition(self) -> vPartition:
         ids_and_partitions = self.items()
         assert ids_and_partitions[0][0] == 0
-        assert ids_and_partitions[-1][0] + 1 == len(partition_ids)
+        assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         return vPartition.merge_partitions([part for id, part in ids_and_partitions], verify_partition_id=False)
 
     def get_partition(self, idx: PartID) -> vPartition:
