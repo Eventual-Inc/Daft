@@ -245,7 +245,24 @@ class DynamicScheduler:
             remaining_global_limit = node_state["total_rows"] - node_state["rows_so_far"]
             assert remaining_global_limit >= 0, f"{node_state}"
             if remaining_global_limit == 0:
-                raise StopIteration
+
+                # The current implementation of LogicalPlan still requires
+                # a mandated number of partitions to be returned.
+                # Return empty partitions until we have returned enough.
+
+                if node_state["continue_from_partition"] < plan_node.num_partitions():
+                    empty_partition = vPartition.from_pydict(
+                        data=defaultdict(list),
+                        schema=plan_node.schema(),
+                        partition_id=node_state["continue_from_partition"],
+                    )
+                    next_instructions = PartitionInstructions([empty_partition])
+
+                    node_state["continue_from_partition"]
+                    return next_instructions
+
+                else:
+                    raise StopIteration
 
             # We're not done; check to see if we can return a global limit partition.
             # Is the next local limit partition materialized?
@@ -254,7 +271,6 @@ class DynamicScheduler:
             if node_state["continue_from_partition"] < len(dependencies):
                 next_partition = dependencies[node_state["continue_from_partition"]]
                 if next_partition is not None:
-                    node_state["continue_from_partition"] += 1
                     next_limit = min(remaining_global_limit, len(next_partition))
                     node_state["rows_so_far"] += next_limit
 
@@ -262,6 +278,7 @@ class DynamicScheduler:
                     if next_limit < len(next_partition):
                         next_instructions.add_instruction(self._runner.instruction_local_limit(next_limit))
 
+                    node_state["continue_from_partition"] += 1
                     return next_instructions
 
             # We cannot return a global limit partition,
