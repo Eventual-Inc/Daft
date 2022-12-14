@@ -5,7 +5,7 @@ import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic, Iterable, Sequence, Tuple, TypeVar
+from typing import Any, Callable, Generic, Sequence, TypeVar
 from uuid import uuid4
 
 import numpy as np
@@ -483,7 +483,7 @@ class PartitionSet(Generic[PartitionT]):
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pandas(schema=schema)
 
-    def items(self) -> Iterable[Tuple[PartID, PartitionT]]:
+    def items(self) -> list[tuple[PartID, PartitionT]]:
         """
         Returns all (partition id, partition) in this PartitionSet,
         ordered by partition ID.

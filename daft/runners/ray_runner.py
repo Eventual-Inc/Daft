@@ -66,13 +66,13 @@ def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     _partitions: dict[PartID, ray.ObjectRef]
 
-    def items(self) -> list[Tuple[PartID, ray.ObjectRef]]
+    def items(self) -> list[tuple[PartID, ray.ObjectRef]]:
         return sorted(self._partitions.items())
 
     def _get_merged_vpartition(self) -> vPartition:
         ids_and_partitions = self.items()
         assert ids_and_partitions[0][0] == 0
-        assert ids_and_partitions[-1][0] + 1 == len(partition_ids)
+        assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         all_partitions = ray.get([part for id, part in ids_and_partitions])
         return vPartition.merge_partitions(all_partitions, verify_partition_id=False)
 

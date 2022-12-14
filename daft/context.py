@@ -25,6 +25,11 @@ class _PyRunnerConfig(_RunnerConfig):
 
 
 @dataclasses.dataclass(frozen=True)
+class _DynamicRunnerConfig(_RunnerConfig):
+    name = "dynamic"
+
+
+@dataclasses.dataclass(frozen=True)
 class _RayRunnerConfig(_RunnerConfig):
     name = "ray"
     address: str | None
@@ -84,6 +89,12 @@ class DaftContext:
 
             logger.info("Using PyRunner")
             _RUNNER = PyRunner()
+
+        elif self.runner_config.name == "dynamic":
+            from daft.runners.dynamic_runner import DynamicRunner
+
+            logger.info("Using DynamicRunner")
+            _RUNNER = DynamicRunner()
         else:
             raise NotImplementedError(f"Runner config implemented: {self.runner_config.name}")
 
@@ -164,6 +175,18 @@ def set_runner_py() -> DaftContext:
     _DaftContext = dataclasses.replace(
         _DaftContext,
         runner_config=_PyRunnerConfig(),
+        disallow_set_runner=True,
+    )
+    return _DaftContext
+
+
+def set_runner_dynamic() -> DaftContext:
+    global _DaftContext
+    if _DaftContext.disallow_set_runner:
+        raise RuntimeError("Cannot set runner more than once")
+    _DaftContext = dataclasses.replace(
+        _DaftContext,
+        runner_config=_DynamicRunnerConfig(),
         disallow_set_runner=True,
     )
     return _DaftContext
