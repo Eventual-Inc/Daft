@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable
+from collections import defaultdict
+from typing import Any, Callable
 
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
@@ -78,6 +79,14 @@ class DynamicRunner(Runner):
 
         return instruction
 
+    @staticmethod
+    def instruction_local_limit(limit: int) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [input.head(limit)]
+
+        return instruction
+
 
 class DynamicScheduler:
     """Dynamically generates an execution schedule for the given logical plan."""
@@ -89,11 +98,12 @@ class DynamicScheduler:
         self._materializations_by_node_id: dict[int, list[vPartition | None]] = dict()
         self._materializations_by_node_id[root_plan_node.id()] = list()
 
-        # Number of partitions dispatched from leaf nodes.
-        self._leaf_node_progress: dict[int, int] = dict()
-
         # The runner calling this scheduler, which determines the implementation of instructions.
         self._runner = runner
+
+        # Arbitrary dictionaries to track in-progress state of logical nodes.
+        # TODO: refactor elsewhere.
+        self._node_states: dict[int, dict[str, Any]] = defaultdict(dict)
 
     def __iter__(self):
         return self
@@ -144,32 +154,33 @@ class DynamicScheduler:
             return self._next_impl_leaf_node(plan_node)
 
         # Pipelineable nodes.
-        elif isinstance(plan_node, (logical_plan.Filter,)):
-            return self._next_impl_pipeable_node(plan_node)
-
-        # Compulsory materialization nodes.
-        # XXX TODO
         elif isinstance(
             plan_node,
             (
-                # XXX TODO
+                logical_plan.Filter,
+                logical_plan.LocalLimit,
             ),
         ):
-            return self._next_impl_materialize_node(plan_node)
+            return self._next_impl_pipeable_node(plan_node)
+
+        # Nodes that might need dependencies materialized.
+        elif isinstance(plan_node, (logical_plan.GlobalLimit,)):
+            return self._next_impl_matdeps_node(plan_node)
 
         raise
 
     def _next_impl_leaf_node(self, plan_node: LogicalPlan) -> PartitionInstructions:
         # Initialize state tracking for this leaf node if not yet seen.
-        if plan_node.id() not in self._leaf_node_progress:
-            self._leaf_node_progress[plan_node.id()] = 0
+        node_state = self._node_states[plan_node.id()]
+        if "num_dispatched" not in node_state:
+            node_state["num_dispatched"] = 0
 
         # Check if we're done with this leaf node.
-        if self._leaf_node_progress[plan_node.id()] == plan_node.num_partitions():
+        if node_state["num_dispatched"] == plan_node.num_partitions():
             raise StopIteration
 
         # This is the next partition to dispatch.
-        partno = self._leaf_node_progress[plan_node.id()]
+        partno = node_state["num_dispatched"]
 
         if isinstance(plan_node, logical_plan.InMemoryScan):
             # The backing partitions are already materialized.
@@ -180,7 +191,7 @@ class DynamicScheduler:
 
             result = PartitionInstructions([partition])
 
-            self._leaf_node_progress[plan_node.id()] += 1
+            node_state["num_dispatched"] += 1
             return result
 
         raise
@@ -203,15 +214,66 @@ class DynamicScheduler:
         if isinstance(plan_node, logical_plan.Filter):
             instructions = self._runner.instruction_filter(plan_node._predicate)
             child_instructions.add_instruction(instructions)
+        elif isinstance(plan_node, logical_plan.LocalLimit):
+            # In DynamicRunner, the local limit computation will actually be dispatched by the global limit node,
+            # since global limit is tracking the global row progresss and can fine-tune the local limit for each paritition.
+            # This original "LocalLimit" node will thus just be treated as a no-op here.
+            pass
         else:
             raise
 
         return child_instructions
 
-    def _next_impl_materialize_node(self, plan_node: LogicalPlan) -> PartitionInstructions | None:
-        """
-        Precondition: There are undispatched partitions for this plan node.
-        """
+    def _next_impl_matdeps_node(self, plan_node: LogicalPlan) -> PartitionInstructions | None:
+        # Just unary nodes so far.
+        # TODO: binary nodes.
+        [child_node] = plan_node._children()
+        node_state = self._node_states[plan_node.id()]
+
+        if child_node.id() not in self._materializations_by_node_id:
+            self._materializations_by_node_id[child_node.id()] = list()
+
+        if isinstance(plan_node, logical_plan.GlobalLimit):
+            # Instantiate node state if not yet seen.
+            if not node_state:
+                node_state["total_rows"] = plan_node._num
+                node_state["rows_so_far"] = 0
+                node_state["continue_from_partition"] = 0
+
+            # Evaluate progress so far.
+            # Are we done with the limit?
+            remaining_global_limit = node_state["total_rows"] - node_state["rows_so_far"]
+            assert remaining_global_limit >= 0, f"{node_state}"
+            if remaining_global_limit == 0:
+                raise StopIteration
+
+            # We're not done; check to see if we can return a global limit partition.
+            # Is the next local limit partition materialized?
+            # If so, update global limit progress, and return the local limit.
+            dependencies = self._materializations_by_node_id[child_node.id()]
+            if node_state["continue_from_partition"] < len(dependencies):
+                next_partition = dependencies[node_state["continue_from_partition"]]
+                if next_partition is not None:
+                    node_state["continue_from_partition"] += 1
+                    next_limit = min(remaining_global_limit, len(next_partition))
+                    node_state["rows_so_far"] += next_limit
+
+                    next_instructions = PartitionInstructions([next_partition])
+                    if next_limit < len(next_partition):
+                        next_instructions.add_instruction(self._runner.instruction_local_limit(next_limit))
+
+                    return next_instructions
+
+            # We cannot return a global limit partition,
+            # so return instructions to materialize the next local limit partition.
+
+            child_instructions = self._next_computable_partition(child_node)
+            if child_instructions is None or child_instructions.marked_for_materialization():
+                return child_instructions
+
+            child_instructions.add_instruction(self._runner.instruction_local_limit(remaining_global_limit))
+            return child_instructions
+
         raise  # XXX TODO
 
     def register_completed_partition(self, instructions: PartitionInstructions, partition: vPartition) -> None:
