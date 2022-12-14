@@ -6,11 +6,7 @@ import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-<<<<<<< HEAD
-from typing import IO, Any, Callable, Generic, Sequence, TypeVar
-=======
 from typing import Any, Callable, Generic, Iterable, Sequence, Tuple, TypeVar
->>>>>>> fd012b9 (Fleshed out PartitionInstructions. Mega WIP)
 from uuid import uuid4
 
 import numpy as np
