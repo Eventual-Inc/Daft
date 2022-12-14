@@ -258,7 +258,7 @@ class DynamicScheduler:
                     )
                     next_instructions = PartitionInstructions([empty_partition])
 
-                    node_state["continue_from_partition"]
+                    node_state["continue_from_partition"] += 1
                     return next_instructions
 
                 else:
