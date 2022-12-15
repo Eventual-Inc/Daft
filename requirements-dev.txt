@@ -21,7 +21,7 @@ pyarrow
 pytest>=7.1.2
 PyYAML
 
-ray[default]
+ray[data, default]
 s3fs
 sentry-sdk>=1.9.5
 

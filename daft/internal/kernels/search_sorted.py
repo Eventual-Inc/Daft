@@ -1,18 +1,24 @@
 from __future__ import annotations
 
+import numpy as np
 import pyarrow as pa
 
 from daft import daft as _daft
 
 
 def search_sorted(data, keys, input_reversed=None):
-
     if isinstance(data, pa.ChunkedArray):
         assert isinstance(keys, pa.ChunkedArray), "expected keys to be a chunked_array since data is one"
         if input_reversed is not None:
             assert isinstance(input_reversed, bool), "expect input_reversed to be a bool got : " + type(input_reversed)
         else:
             input_reversed = False
+
+        if len(keys) == 0:
+            return pa.chunked_array([[]], type=pa.uint64())
+        if len(data) == 0:
+            return pa.chunked_array([np.full(len(keys), fill_value=0, dtype=np.uint64)], type=pa.uint64())
+
         if data.num_chunks != 1:
             data = data.combine_chunks()
         else:
@@ -43,6 +49,12 @@ def search_sorted(data, keys, input_reversed=None):
 
         if num_columns == 1:
             return search_sorted(data.columns[0], keys.columns[0], table_input_reversed[0])
+
+        if len(keys) == 0:
+            return pa.chunked_array([[]], type=pa.uint64())
+        if len(data) == 0:
+            return pa.chunked_array([np.full(len(keys), fill_value=0, dtype=np.uint64)], type=pa.uint64())
+
         result = _daft.search_sorted_multiple_pyarrow_array(
             [c.combine_chunks() for c in data.columns],
             [c.combine_chunks() for c in keys.columns],
