@@ -112,6 +112,6 @@ jobs:
       with:
         path: ~/.cache/pre-commit/
         key: ${{ runner.os }}-python-${{ steps.setup-python.outputs.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
-    - name: Python Style Check
+    - name: Python And Rust Style Check
       run: |
         pre-commit run --all-files
