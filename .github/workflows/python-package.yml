@@ -78,6 +78,15 @@ jobs:
       matrix:
         python-version: ['3.8']
     steps:
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install pre-commit
+      run: |
+        pip install --upgrade pip
+        pip install pre-commit
+
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
