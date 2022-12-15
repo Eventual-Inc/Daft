@@ -2,14 +2,14 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 - repo: https://github.com/pre-commit/mirrors-mypy
-  rev: v0.961
+  rev: v0.991
   hooks:
   - id: mypy
     additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
     files: daft
 
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v3.2.0
+  rev: v4.4.0
   hooks:
   - id: detect-private-key
   - id: trailing-whitespace
@@ -29,7 +29,7 @@ repos:
   - id: debug-statements
 
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
-  rev: v2.4.0
+  rev: v2.5.0
   hooks:
   - id: pretty-format-toml
     args: [--autofix]
@@ -37,7 +37,7 @@ repos:
     args: [--autofix]
 
 - repo: https://github.com/pycqa/isort
-  rev: 5.8.0
+  rev: 5.10.1
   hooks:
   - id: isort
     name: isort (python)
@@ -50,46 +50,30 @@ repos:
 
 
 - repo: https://github.com/asottile/pyupgrade
-  rev: v3.1.0
+  rev: v3.3.1
   hooks:
   - id: pyupgrade
     args: [--py37-plus]
 
 - repo: https://github.com/myint/autoflake
-  rev: v1.4
+  rev: v2.0.0
   hooks:
   - id: autoflake
     args: [--in-place, --remove-all-unused-imports, --remove-unused-variable, --ignore-init-module-imports]
 
-
 - repo: https://github.com/psf/black
-  rev: 22.6.0
+  rev: 22.12.0
   hooks:
   - id: black
 
-- repo: https://github.com/pre-commit/mirrors-clang-format
-  rev: v14.0.6
+- repo: https://github.com/doublify/pre-commit-rust
+  rev: v1.0
   hooks:
-  - id: clang-format
-    types_or: [c, c++]
-    exclude_types: [python]
-    args: []
-- repo: https://github.com/python-poetry/poetry
-  rev: 1.2.2
+  - id: fmt
+  - id: cargo-check
+  - id: clippy
+
+- repo: https://github.com/abravalheri/validate-pyproject
+  rev: v0.10.1
   hooks:
-  - id: poetry-check
-  - id: poetry-lock
-    files: (^pyproject.toml$)|(^poetry.lock$)
-    args: [--check]
-
-
-
-  # - repo: https://github.com/stackrox/kube-linter
-  #   rev: "v0.4.0"
-  #   hooks:
-  #     - id: kube-linter
-  #       exclude: kubernetes-ops/sandboxes
-  #       args:
-  #         [
-  #           lint
-  #         ]
+  - id: validate-pyproject

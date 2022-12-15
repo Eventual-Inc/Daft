@@ -1,0 +1,19 @@
+[dependencies]
+pyo3 = { version = "0.17.3", features = ["extension-module"] }
+arrow2 = { version = "0.14.2", features = ["compute"]}
+
+[dependencies.xxhash-rust]
+version = "0.8.5"
+features = ["xxh3", "const_xxh3"]
+
+[lib]
+name = "daft"
+crate-type = ["cdylib"]
+
+[net]
+git-fetch-with-cli = true
+
+[package]
+name = "daft"
+version = "0.0.20"
+edition = "2021"

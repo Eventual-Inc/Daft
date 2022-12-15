@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from daft.dataframe import DataFrame
 from daft.expressions import col, lit
 from daft.logging import setup_logger
@@ -9,4 +11,7 @@ __all__ = ["DataFrame", "col", "lit", "udf", "polars_udf"]
 
 setup_logger()
 
-__version__ = "0"
+if TYPE_CHECKING:
+
+    class daft:
+        pass

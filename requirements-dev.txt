@@ -1,0 +1,34 @@
+boto3
+cloudpickle
+docker
+
+# For aws and serving
+fastapi
+icebridge
+
+# DevTools
+ipdb
+maturin
+myst-nb>=0.16.0
+numpy
+pandas
+pre-commit
+pyarrow
+
+# Tooling
+
+# needed for testing
+pytest>=7.1.2
+PyYAML
+
+ray[data, default]
+s3fs
+sentry-sdk>=1.9.5
+
+# needed for Docs
+
+Sphinx <= 5
+sphinx-book-theme>=0.3.3
+uvicorn
+viztracer
+xxhash>=3.0.0
