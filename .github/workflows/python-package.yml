@@ -23,7 +23,7 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: nightly-2022-11-01
+        toolchain: stable
         override: true
     - uses: actions/cache@v3
       env:
@@ -69,6 +69,33 @@ jobs:
       run: pytest
       env:
         DAFT_RUNNER: ${{ matrix.daft_runner }}
+
+  style:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.8']
+    steps:
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+        components: clippy
+    - uses: actions/cache@v3
+      env:
+        cache-name: cache-cargo
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
 
     - uses: actions/cache@v3
       id: pre-commit-cache
