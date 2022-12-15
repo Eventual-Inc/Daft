@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
-from daft.logical.logical_plan import LogicalPlan
+from daft.logical.logical_plan import LogicalPlan, PartitionScheme
 from daft.logical.optimizer import (
     DropProjections,
     DropRepartition,
@@ -19,6 +19,7 @@ from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet, vPartition
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.runners.runner import Runner
+from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp
 
 
 class DynamicRunner(Runner):
@@ -87,12 +88,38 @@ class DynamicRunner(Runner):
         return instruction
 
     @staticmethod
-    def instruction_shufflemap(*n, **kw) -> Callable[[list[vPartition]], list[vPartition]]:
-        raise  # XXX TODO
+    def instruction_fanout_hash(
+        num_outputs: int, partition_by: ExpressionList
+    ) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            partitions_with_ids = RepartitionHashOp.map_fn(
+                input=input,
+                output_partitions=num_outputs,
+                exprs=partition_by,
+            )
+            return [partition for i, partition in sorted(partitions_with_ids.items())]
+
+        return instruction
 
     @staticmethod
-    def instruction_reduce(*n, **kw) -> Callable[[list[vPartition]], list[vPartition]]:
-        raise  # XXX TODO
+    def instruction_fanout_random(num_outputs: int) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            partitions_with_ids = RepartitionRandomOp.map_fn(
+                input=input,
+                output_partitions=num_outputs,
+            )
+            return [partition for i, partition in sorted(partitions_with_ids.items())]
+
+        return instruction
+
+    @staticmethod
+    def instruction_merge() -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            return [vPartition.merge_partitions(inputs)]
+
+        return instruction
 
 
 class DynamicScheduler:
@@ -159,10 +186,7 @@ class DynamicScheduler:
         # Leaf nodes.
         if isinstance(
             plan_node,
-            (
-                logical_plan.InMemoryScan,
-                # XXX TODO
-            ),
+            (logical_plan.InMemoryScan,),
         ):
             return self._next_impl_leaf_node(plan_node)
 
@@ -186,7 +210,8 @@ class DynamicScheduler:
         ):
             return self._next_impl_matdeps_node(plan_node)
 
-        raise
+        else:
+            raise RuntimeError(f"Unsupported plan type {plan_node}")
 
     def _next_impl_leaf_node(self, plan_node: LogicalPlan) -> PartitionInstructions:
         # Initialize state tracking for this leaf node if not yet seen.
@@ -213,7 +238,8 @@ class DynamicScheduler:
             node_state["num_dispatched"] += 1
             return result
 
-        raise
+        else:
+            raise NotImplementedError(f"Plan node {plan_node} is not supported yet.")
 
     def _next_impl_pipeable_node(self, plan_node: LogicalPlan) -> PartitionInstructions | None:
         # Just unary nodes so far.
@@ -239,7 +265,7 @@ class DynamicScheduler:
             # This original "LocalLimit" node will thus just be treated as a no-op here.
             pass
         else:
-            raise
+            raise NotImplementedError(f"Plan node {plan_node} is not supported yet.")
 
         return child_instructions
 
@@ -330,7 +356,17 @@ class DynamicScheduler:
                 if child_instructions is None or child_instructions.marked_for_materialization():
                     return child_instructions
 
-                child_instructions.add_instruction(self._runner.instruction_shufflemap(...))
+                # Choose the correct instruction to dispatch based on shuffle op.
+                if plan_node._scheme == PartitionScheme.RANDOM:
+                    child_instructions.add_instruction(self._runner.instruction_fanout_random(num_outputs=num_reduces))
+                elif plan_node._scheme == PartitionScheme.HASH:
+                    child_instructions.add_instruction(
+                        self._runner.instruction_fanout_hash(
+                            num_outputs=num_reduces, partition_by=plan_node._partition_by
+                        )
+                    )
+                else:
+                    raise RuntimeError(f"Unrecognized partitioning scheme {plan_node._scheme}")
                 for i in range(num_reduces):
                     dependencies.append(None)
 
@@ -342,6 +378,7 @@ class DynamicScheduler:
 
             # All shufflemaps have been dispatched; see if we can dispatch the next reduce.
             # The kth reduce's dependencies are the kth element of every batch of shufflemap outputs.
+            # Here, k := node_state["reduces_emitted"] and batchlength := num_reduces
             maybe_reduce_dependencies = [
                 partition
                 for i, partition in enumerate(dependencies)
@@ -353,12 +390,12 @@ class DynamicScheduler:
                 return None
 
             next_construction = PartitionInstructions(reduce_dependencies)
-            next_construction.add_instruction(self._runner.instruction_reduce(...))
+            next_construction.add_instruction(self._runner.instruction_merge())
             node_state["reduces_emitted"] += 1
             return next_construction
 
         else:
-            raise  # XXX TODO
+            raise NotImplementedError(f"Plan node {plan_node} is not supported yet.")
 
     def register_completed_partitions(self, instructions: PartitionInstructions, partitions: list[vPartition]) -> None:
         # for mypy

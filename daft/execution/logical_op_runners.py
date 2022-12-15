@@ -305,7 +305,7 @@ class LogicalGlobalOpRunner:
         elif repartition._scheme == PartitionScheme.HASH:
             repartitioner = self._get_shuffle_op_klass(RepartitionHashOp)(
                 expr_eval_resource_request=repartition.resource_request(),
-                map_args={"exprs": repartition._partition_by.exprs},
+                map_args={"exprs": repartition._partition_by},
             )
         else:
             raise NotImplementedError()
