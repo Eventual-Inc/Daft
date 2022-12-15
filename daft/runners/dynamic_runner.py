@@ -367,6 +367,11 @@ class DynamicScheduler:
                     )
                 else:
                     raise RuntimeError(f"Unrecognized partitioning scheme {plan_node._scheme}")
+
+                child_instructions.mark_for_materialization(
+                    nid=plan_node.id(),
+                    partno=len(dependencies),
+                )
                 for i in range(num_reduces):
                     dependencies.append(None)
 
