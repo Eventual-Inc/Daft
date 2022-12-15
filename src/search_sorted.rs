@@ -14,7 +14,7 @@ fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
     keys: &PrimitiveArray<T>,
     input_reversed: bool,
 ) -> PrimitiveArray<u64> {
-    let array_size = sorted_array.len() as usize;
+    let array_size = sorted_array.len();
 
     let mut left = 0_usize;
     let mut right = array_size;
@@ -77,7 +77,7 @@ fn search_sorted_utf_array<O: Offset>(
     keys: &Utf8Array<O>,
     input_reversed: bool,
 ) -> PrimitiveArray<u64> {
-    let array_size = sorted_array.len() as usize;
+    let array_size = sorted_array.len();
     let mut left = 0_usize;
     let mut right = array_size;
 
