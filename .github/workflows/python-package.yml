@@ -117,13 +117,12 @@ jobs:
 
     - name: Test Imports in Clean Env
       run: |
-        deactivate
         rm -rf daft
         rm -rf venv
         python -m venv venv
         source venv/bin/activate
-        pip install targets/wheels/*.whl
-        python -c 'import daft; from daft import *'
+        venv/bin/pip install targets/wheels/*.whl
+        venv/bin/python -c 'import daft; from daft import *'
 
   style:
     runs-on: ubuntu-latest
