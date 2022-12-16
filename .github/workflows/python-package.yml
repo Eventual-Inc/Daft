@@ -10,7 +10,7 @@ on:
     branches: [main]
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
