@@ -18,7 +18,7 @@ on:
 
 jobs:
   build_bdist_wheels:
-    name: platform wheels for ${{ matrix.python }}-${{ matrix.os }}
+    name: build on ${{ matrix.platform || matrix.os }} (${{ matrix.target }} - ${{ matrix.manylinux || 'auto' }})
     strategy:
       fail-fast: false
       matrix:
@@ -78,7 +78,7 @@ jobs:
         python-version: '3.11'
         architecture: ${{ matrix.python-architecture || 'x64' }}
 
-    - run: pip install -U twine
+    - run: pip install -U twine toml
 
     - name: Patch local cargo toml
       run: python tools/patch_package_version.py
