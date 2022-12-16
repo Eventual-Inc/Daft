@@ -33,19 +33,13 @@ jobs:
     - uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-    - uses: actions/cache@v3
-      id: poetry-cache
-      with:
-        path: ~/.cache/pypoetry/virtualenvs
-        key: python-${{ steps.setup-python.outputs.python-version }}-poetry-${{ hashFiles('poetry.lock') }}
+        cache: pip
     - name: Install Dependencies
-      run: |
-        python -m pip install poetry
-        poetry install --all-extras --with dev -vvv
+      run: pip install -r requirements-dev.txt
     - name: Generate Documentation
       working-directory: ./docs
       run: |
-        poetry run make html
+        make html
         touch build/html/.nojekyll
     - name: Setup Pages
       uses: actions/configure-pages@v2
