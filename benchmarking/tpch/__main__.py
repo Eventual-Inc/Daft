@@ -156,14 +156,7 @@ def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: 
 
 
 def get_daft_version() -> str:
-    try:
-        from importlib.metadata import version
-
-        return version("getdaft")
-    except ImportError:
-        import pkg_resources
-
-        pkg_resources.get_distribution("getdaft").version
+    return daft.get_version()
 
 
 def warmup_environment(requirements: str | None, parquet_folder: str):
