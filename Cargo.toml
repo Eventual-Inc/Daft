@@ -4,7 +4,7 @@ features = [ "compute",]
 
 [dependencies.pyo3]
 version = "0.17.3"
-features = [ "extension-module", "abi3-py37"]
+features = [ "extension-module", "abi3-py37",]
 
 [dependencies.xxhash-rust]
 version = "0.8.5"
@@ -19,5 +19,5 @@ git-fetch-with-cli = true
 
 [package]
 name = "daft"
-version = "0.0.20+dev11.g913a4e9"
+version = "0.0.20"
 edition = "2021"
