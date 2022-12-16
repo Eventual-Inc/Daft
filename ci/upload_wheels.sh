@@ -25,10 +25,10 @@ upload_wheels() {
         if [ -z ${TOKEN} ]; then
             echo no token set, not uploading
         else
-            if compgen -G "./dist/*.gz"; then
+            if compgen -G "./dist/*"; then
                 echo "Found in dist"
                 anaconda -q -t ${TOKEN} upload --skip -u ${ANACONDA_ORG} ./dist/*.gz
-            elif compgen -G "./wheelhouse/*.whl"; then
+            elif compgen -G "./wheelhouse/*"; then
                 echo "Found in wheelhouse"
                 anaconda -q -t ${TOKEN} upload --skip -u ${ANACONDA_ORG} ./wheelhouse/*.whl
             else

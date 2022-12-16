@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, macos]
+        os: [ubuntu] #,macos]
     steps:
     - uses: actions/checkout@v3
       with:
@@ -55,18 +55,18 @@ jobs:
         target: x86_64
         args: --release --out dist --sdist
 
-    - name: Build wheels - arm64
-      uses: messense/maturin-action@v1
-      with:
-        target: aarch64
-        args: --release --out dist
+    # - name: Build wheels - arm64
+    #   uses: messense/maturin-action@v1
+    #   with:
+    #     target: aarch64
+    #     args: --release --out dist
 
-    - name: Install and test built wheel - x86_64
-      run: |
-        pip install -r requirements-dev.txt
-        pip install dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
-        rm -rf daft
-        pytest -v
+    # - name: Install and test built wheel - x86_64
+    #   run: |
+    #     pip install -r requirements-dev.txt
+    #     pip install dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
+    #     rm -rf daft
+    #     pytest -v
 
     - name: Upload wheels
       uses: actions/upload-artifact@v2
