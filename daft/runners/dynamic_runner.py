@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import itertools
 from abc import abstractmethod
 from collections import defaultdict
-from typing import Any, Callable
+from typing import Callable
 
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
-from daft.logical.logical_plan import LogicalPlan, PartitionScheme
+from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import (
     DropProjections,
     DropRepartition,
@@ -56,38 +55,23 @@ class DynamicRunner(Runner):
     def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
         plan = self.optimize(plan)
 
-        scheduler = DynamicScheduler(plan, self)
-        for next_construction in scheduler:
-            partitions = self._build_partitions(next_construction)
-            scheduler.register_completed_partitions(next_construction, partitions)
+        schedule = DynamicSchedule.handle_logical_node(plan)
+        schedule = ExecuteMaterialize(schedule)
 
-        final_result = scheduler.result_partition_set()
+        for next_construction in schedule:
+            self._build_partitions(next_construction)
+
+        final_result = schedule.result_partition_set()
         pset_entry = self.put_partition_set_into_cache(final_result)
         return pset_entry
 
-    def _build_partitions(self, partspec: PartitionInstructions) -> list[vPartition]:
+    def _build_partitions(self, partspec: ConstructionInstructions) -> None:
         partitions = partspec.inputs
 
         for instruction in partspec.instruction_stack:
             partitions = instruction(partitions)
 
-        return partitions
-
-    @staticmethod
-    def instruction_filter(predicate: ExpressionList) -> Callable[[list[vPartition]], list[vPartition]]:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            return [input.filter(predicate)]
-
-        return instruction
-
-    @staticmethod
-    def instruction_local_limit(limit: int) -> Callable[[list[vPartition]], list[vPartition]]:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            return [input.head(limit)]
-
-        return instruction
+        partspec.report_completed(partitions)
 
     @staticmethod
     def instruction_fanout_hash(
@@ -124,90 +108,225 @@ class DynamicRunner(Runner):
         return instruction
 
 
-class ExecutionProcess:
-    _ID_ITER = itertools.count()
+class DynamicSchedule:
+    """DynamicSchedule just-in-time computes the sequence of execution steps necessary to generate a target.
 
-    def __init__(self) -> None:
-        self.id = next(self._ID_ITER)
-
-    @abstractmethod
-    def _next_computable_partition(self) -> PartitionInstructions | None:
-        raise NotImplementedError
-
-
-class DynamicScheduler:
-    """Dynamically generates an execution schedule for the given logical plan."""
-
-    FINAL_RESULT = -1
-
-    def __init__(self, root_plan_node: LogicalPlan, runner: DynamicRunner) -> None:
-        self._root_plan_node = root_plan_node
-        # Materialized partitions by the node ID requesting them
-        # (or FINAL_RESULT if being requested by the caller).
-        # `None` denotes that the partition has been dispatched but is still under construction.
-        #
-        # Eventually we should make this the ID of the consistuting node (instead of its parent)
-        # and create node types for all intermediate materializations.
-        self._materializations_by_node_id: dict[int, list[vPartition | None]] = dict()
-        self._materializations_by_node_id[self.FINAL_RESULT] = list()
-
-        # The runner calling this scheduler, which determines the implementation of instructions.
-        self._runner = runner
-
-        # Arbitrary dictionaries to track in-progress state of logical nodes.
-        # TODO: refactor elsewhere.
-        self._node_states: dict[int, dict[str, Any]] = defaultdict(dict)
+    The target is typically a given LogicalPlan.
+    The sequence of execution steps is exposed as an iterator (__next__).
+    """
 
     def __iter__(self):
         return self
 
-    def __next__(self) -> PartitionInstructions | None:
+    @abstractmethod
+    def __next__(self) -> ConstructionInstructions | None:
         """
-        Raises StopIteration if there are no further instructions to give for this plan node.
+        Raises StopIteration if there are no further instructions to give for this schedule.
         Returns None if there is nothing we can do for now (i.e. must wait for other partitions to finish).
         """
+        raise NotImplementedError()
 
-        result = self._next_computable_partition(self._root_plan_node)
-        if result is not None and not result.marked_for_materialization():
-            self._prepare_to_materialize(
-                instructions=result,
-                nid=self.FINAL_RESULT,
-                partno=len(self._materializations_by_node_id[self.FINAL_RESULT]),
-            )
+    @staticmethod
+    def handle_logical_node(node: LogicalPlan) -> DynamicSchedule:
+        if isinstance(node, logical_plan.InMemoryScan):
+            return HandlerInMemoryScan(node)
+        elif isinstance(node, logical_plan.Filter):
+            return HandlerFilter(node)
+        elif isinstance(node, logical_plan.GlobalLimit):
+            return HandlerGlobalLimit(node)
+        else:
+            raise RuntimeError(f"Unsupported plan type {node}")
+
+
+class RequiresMaterialization(DynamicSchedule):
+    def __init__(self) -> None:
+        super().__init__()
+        self._materializing_dependencies: list[vPartition | None] = list()
+
+    def register_completed_dependencies(self, partitions: list[vPartition], partno: int) -> None:
+        for i, partition in enumerate(partitions):
+            assert self._materializing_dependencies[partno + i] is None, self._materializing_dependencies[partno + i]
+            self._materializing_dependencies[partno + i] = partition
+
+    def _prepare_to_materialize(self, instructions: ConstructionInstructions, num_results: int = 1) -> None:
+        instructions.mark_for_materialization(self, len(self._materializing_dependencies))
+        self._materializing_dependencies += [None] * num_results
+
+
+class HandlerInMemoryScan(DynamicSchedule):
+    def __init__(self, im_scan: logical_plan.InMemoryScan) -> None:
+        super().__init__()
+        self._im_scan = im_scan
+        self._num_dispatched = 0
+
+    def __next__(self) -> ConstructionInstructions | None:
+        # Check if we're done with this leaf node.
+        if self._num_dispatched == self._im_scan.num_partitions():
+            raise StopIteration
+
+        # The backing partitions are already materialized.
+        # Pick out the appropriate one and initialize an empty instruction wrapper around it.
+        from daft.context import get_context
+
+        pset = get_context().runner().get_partition_set_from_cache(self._im_scan._cache_entry.key).value
+        assert pset is not None
+        partition = pset.items()[self._num_dispatched][1]
+
+        new_construct = ConstructionInstructions([partition])
+
+        self._num_dispatched += 1
+        return new_construct
+
+
+class HandlerFilter(DynamicSchedule):
+    def __init__(self, filter_node: logical_plan.Filter) -> None:
+        super().__init__()
+        self._filter_node = filter_node
+        [child_node] = filter_node._children()
+        self.source = self.handle_logical_node(child_node)
+
+    def __next__(self) -> ConstructionInstructions | None:
+        construct = next(self.source)
+        if construct is None or construct.marked_for_materialization():
+            return construct
+
+        construct.add_instruction(self._filter(self._filter_node._predicate))
+
+        return construct
+
+    @staticmethod
+    def _filter(predicate: ExpressionList) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [input.filter(predicate)]
+
+        return instruction
+
+
+class HandlerGlobalLimit(RequiresMaterialization):
+    def __init__(self, global_limit: logical_plan.GlobalLimit) -> None:
+        super().__init__()
+        self._global_limit = global_limit
+        self._remaining_limit = self._global_limit._num
+        self._continue_from_partition = 0
+        [child_node] = self._global_limit._children()
+        if isinstance(child_node, logical_plan.LocalLimit):
+            # Ignore LocalLimit logical nodes; the GlobalLimit handles everything
+            # and will dynamically dispatch appropriate local limit instructions.
+            [child_node] = child_node._children()
+        self._source = DynamicSchedule.handle_logical_node(child_node)
+
+    def __next__(self) -> ConstructionInstructions | None:
+        # Evaluate progress so far.
+        # Are we done with the limit?
+        if self._remaining_limit == 0:
+
+            # We are done with the limit,
+            # but the current implementation of LogicalPlan still requires
+            # a mandated number of partitions to be returned.
+            # Return empty partitions until we have returned enough.
+            if self._continue_from_partition < self._global_limit.num_partitions():
+                empty_partition = vPartition.from_pydict(
+                    data=defaultdict(list),
+                    schema=self._global_limit.schema(),
+                    partition_id=self._continue_from_partition,
+                )
+                new_construct = ConstructionInstructions([empty_partition])
+
+                self._continue_from_partition += 1
+                return new_construct
+
+            else:
+                raise StopIteration
+
+        # We're not done; check to see if we can return a global limit partition.
+        # Is the next local limit partition materialized?
+        # If so, update global limit progress, and return the local limit.
+        if self._continue_from_partition < len(self._materializing_dependencies):
+            next_partition = self._materializing_dependencies[self._continue_from_partition]
+            if next_partition is not None:
+                next_limit = min(self._remaining_limit, len(next_partition))
+                self._remaining_limit -= next_limit
+
+                new_construct = ConstructionInstructions([next_partition])
+                if next_limit < len(next_partition):
+                    new_construct.add_instruction(self._local_limit(next_limit))
+
+                self._continue_from_partition += 1
+                return new_construct
+
+        # We cannot return a global limit partition,
+        # so return instructions to materialize the next local limit partition.
+        try:
+            construct = next(self._source)
+        except StopIteration:
+            construct = None
+
+        if construct is None or construct.marked_for_materialization():
+            return construct
+
+        construct.add_instruction(self._local_limit(self._remaining_limit))
+        self._prepare_to_materialize(construct)
+        return construct
+
+    @staticmethod
+    def _local_limit(limit: int) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [input.head(limit)]
+
+        return instruction
+
+
+class ExecuteMaterialize(RequiresMaterialization):
+    """Materializes its dependencies and does nothing else."""
+
+    def __init__(self, source: DynamicSchedule) -> None:
+        super().__init__()
+        self.source = source
+
+    def __next__(self) -> ConstructionInstructions | None:
+        construct = next(self.source)
+        if construct is not None and not construct.marked_for_materialization():
+            self._prepare_to_materialize(construct)
+        return construct
+
+    def result_partition_set(self) -> PartitionSet[vPartition]:
+        # Ensure that the plan has finished executing.
+        try:
+            unexpected_construct = next(self.source)
+            assert False, f"The plan has not finished executing yet, got {unexpected_construct}"
+        except StopIteration:
+            pass
+
+        # Ensure that all partitions have finished materializing.
+        finished_partitions = [p for p in self._materializing_dependencies if p is not None]
+        assert len(finished_partitions) == len(
+            self._materializing_dependencies
+        ), f"Not all partitions have finished materializing yet in results: {self._materializing_dependencies}"
+
+        # Return the result partition set.
+        result = LocalPartitionSet({})
+        for i, partition in enumerate(finished_partitions):
+            result.set_partition(i, partition)
+
         return result
 
-    def _next_computable_partition(self, plan_node: LogicalPlan) -> PartitionInstructions | None:
+
+'''
+class DynamicScheduler:
+    """Dynamically generates an execution schedule for the given logical plan."""
+
+    def _next_computable_partition(self, plan_node: LogicalPlan) -> ConstructionInstructions | None:
         """
         Raises StopIteration if there are no further instructions to give for this plan node.
         Returns None if there is nothing we can do for now (i.e. must wait for other partitions to finish).
         """
-
-        """
-        # Initialize state tracking for this plan node if not yet seen.
-        if plan_node.id() not in self._partitions_by_node_id:
-            self._partitions_by_node_id[plan_node.id()] = list()
-
-        # Check if all partitions have been dispatched.
-        if len(self._partitions_by_node_id[plan_node.id()]) == plan_node.num_partitions():
-            # Check if all partitions have also been completed.
-            if all(maybe_part is not None for maybe_part in self._partitions_by_node_id[plan_node.id()]):
-                raise StopIteration
-            else:
-                return None
-        """
-
-        # Leaf nodes.
-        if isinstance(
-            plan_node,
-            (logical_plan.InMemoryScan,),
-        ):
-            return self._next_impl_leaf_node(plan_node)
 
         # Pipelineable nodes.
         elif isinstance(
             plan_node,
             (
-                logical_plan.Filter,
                 logical_plan.LocalLimit,
             ),
         ):
@@ -218,39 +337,13 @@ class DynamicScheduler:
             return self._next_impl_global_limit(plan_node)
         elif isinstance(plan_node, logical_plan.Repartition):
             return self._next_impl_repartition(plan_node)
+        elif isinstance(plan_node, logical_plan.Sort):
+            return self._next_impl_sort(plan_node)
 
         else:
             raise RuntimeError(f"Unsupported plan type {plan_node}")
 
-    def _next_impl_leaf_node(self, plan_node: LogicalPlan) -> PartitionInstructions:
-        # Initialize state tracking for this leaf node if not yet seen.
-        node_state = self._node_states[plan_node.id()]
-        if "num_dispatched" not in node_state:
-            node_state["num_dispatched"] = 0
-
-        # Check if we're done with this leaf node.
-        if node_state["num_dispatched"] == plan_node.num_partitions():
-            raise StopIteration
-
-        # This is the next partition to dispatch.
-        partno = node_state["num_dispatched"]
-
-        if isinstance(plan_node, logical_plan.InMemoryScan):
-            # The backing partitions are already materialized.
-            # Pick out the appropriate one and initialize an empty instruction wrapper around it.
-            pset = self._runner.get_partition_set_from_cache(plan_node._cache_entry.key).value
-            assert pset is not None
-            partition = pset.items()[partno][1]
-
-            result = PartitionInstructions([partition])
-
-            node_state["num_dispatched"] += 1
-            return result
-
-        else:
-            raise NotImplementedError(f"Plan node {plan_node} is not supported yet.")
-
-    def _next_impl_pipeable_node(self, plan_node: LogicalPlan) -> PartitionInstructions | None:
+    def _next_impl_pipeable_node(self, plan_node: LogicalPlan) -> ConstructionInstructions | None:
         # Just unary nodes so far.
         # TODO: binary nodes.
         [child_node] = plan_node._children()
@@ -278,7 +371,10 @@ class DynamicScheduler:
 
         return child_instructions
 
-    def _next_impl_repartition(self, plan_node: logical_plan.Repartition) -> PartitionInstructions | None:
+    def _next_impl_sort(self, plan_node: logical_plan.Sort) -> ConstructionInstructions | None:
+        #
+
+    def _next_impl_repartition(self, plan_node: logical_plan.Repartition) -> ConstructionInstructions | None:
         [child_node] = plan_node._children()
         node_state = self._node_states[plan_node.id()]
 
@@ -337,12 +433,12 @@ class DynamicScheduler:
             # Need to wait for some shufflemaps to complete.
             return None
 
-        next_construction = PartitionInstructions(reduce_dependencies)
+        next_construction = ConstructionInstructions(reduce_dependencies)
         next_construction.add_instruction(self._runner.instruction_merge())
         node_state["reduces_emitted"] += 1
         return next_construction
 
-    def _next_impl_global_limit(self, plan_node: logical_plan.GlobalLimit) -> PartitionInstructions | None:
+    def _next_impl_global_limit(self, plan_node: logical_plan.GlobalLimit) -> ConstructionInstructions | None:
         # Just unary nodes so far.
         # TODO: binary nodes.
         [child_node] = plan_node._children()
@@ -373,7 +469,7 @@ class DynamicScheduler:
                     schema=plan_node.schema(),
                     partition_id=node_state["continue_from_partition"],
                 )
-                next_instructions = PartitionInstructions([empty_partition])
+                next_instructions = ConstructionInstructions([empty_partition])
 
                 node_state["continue_from_partition"] += 1
                 return next_instructions
@@ -391,7 +487,7 @@ class DynamicScheduler:
                 next_limit = min(remaining_global_limit, len(next_partition))
                 node_state["rows_so_far"] += next_limit
 
-                next_instructions = PartitionInstructions([next_partition])
+                next_instructions = ConstructionInstructions([next_partition])
                 if next_limit < len(next_partition):
                     next_instructions.add_instruction(self._runner.instruction_local_limit(next_limit))
 
@@ -402,29 +498,35 @@ class DynamicScheduler:
         # We cannot return a global limit partition,
         # so return instructions to materialize the next local limit partition.
 
-        child_instructions = None
         try:
             child_instructions = self._next_computable_partition(child_node)
         except StopIteration:
-            pass
+            child_instructions = None
 
         if child_instructions is None or child_instructions.marked_for_materialization():
             return child_instructions
 
         child_instructions.add_instruction(self._runner.instruction_local_limit(remaining_global_limit))
-        child_instructions.mark_for_materialization(plan_node.id(), len(dependencies))
-        dependencies.append(None)
+        self._prepare_to_materialize(
+            instructions=child_instructions,
+            nid=plan_node.id(),
+            partno=len(dependencies),
+        )
         return child_instructions
 
     def _prepare_to_materialize(
-        self, instructions: PartitionInstructions, nid: int, partno: int, num_results: int = 1
+        self,
+        instructions: ConstructionInstructions,
+        nid: int,
+        partno: int,
+        num_results: int = 1,
     ) -> None:
         for i in range(num_results):
             self._materializations_by_node_id[nid].append(None)
 
         instructions.mark_for_materialization(nid, partno)
 
-    def register_completed_partitions(self, instructions: PartitionInstructions, partitions: list[vPartition]) -> None:
+    def register_completed_partitions(self, instructions: ConstructionInstructions, partitions: list[vPartition]) -> None:
         # for mypy
         assert instructions.nid is not None
         assert instructions.partno is not None
@@ -453,9 +555,10 @@ class DynamicScheduler:
             result.set_partition(i, partition)
 
         return result
+'''
 
 
-class PartitionInstructions:
+class ConstructionInstructions:
     def __init__(self, inputs: list[vPartition]) -> None:
         # Input partitions to run over.
         self.inputs = inputs
@@ -463,16 +566,16 @@ class PartitionInstructions:
         # Instruction stack to execute.
         self.instruction_stack: list[Callable[[list[vPartition]], list[vPartition]]] = list()
 
-        # Materialization location: materialize as partition partno for plan node nid.
-        self.nid: int | None = None
-        self.partno: int | None = None
+        # Materialization location: materialize as partition partno for the given execution node.
+        self._dynamic_schedule: RequiresMaterialization | None = None
+        self._partno: int | None = None
 
     def add_instruction(self, instruction: Callable[[list[vPartition]], list[vPartition]]) -> None:
         """Add an instruction to the stack that will run for this partition."""
         self.assert_not_marked()
         self.instruction_stack.append(instruction)
 
-    def mark_for_materialization(self, nid: int, partno: int) -> None:
+    def mark_for_materialization(self, dynamic_schedule: RequiresMaterialization, partno: int) -> None:
         """Mark this list of instructions to be materialized.
 
         nid: Node ID to materialize for.
@@ -481,13 +584,18 @@ class PartitionInstructions:
         Once marked for materialization, this object cannot be further modified.
         """
         self.assert_not_marked()
-        self.nid = nid
-        self.partno = partno
+        self._dynamic_schedule = dynamic_schedule
+        self._partno = partno
 
     def marked_for_materialization(self) -> bool:
-        return self.nid is not None and self.partno is not None
+        return self._dynamic_schedule is not None and self._partno is not None
 
     def assert_not_marked(self) -> None:
         assert (
             not self.marked_for_materialization()
-        ), f"Partition already instructed to materialize for node ID {self.nid}, partition index {self.partno}"
+        ), f"Partition already instructed to materialize for node ID {self._dynamic_schedule}, partition index {self._partno}"
+
+    def report_completed(self, results: list[vPartition]) -> None:
+        assert self._dynamic_schedule is not None
+        assert self._partno is not None
+        self._dynamic_schedule.register_completed_dependencies(results, self._partno)
