@@ -155,6 +155,17 @@ def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: 
     return data_generation.gen_parquet(csv_folder)
 
 
+def get_daft_version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("getdaft")
+    except ImportError:
+        import pkg_resources
+
+        pkg_resources.get_distribution("getdaft").version
+
+
 def warmup_environment(requirements: str | None, parquet_folder: str):
     """Performs necessary setup of Daft on the current benchmarking environment"""
     ctx = daft.context.get_context()
@@ -178,7 +189,6 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
         @ray.remote(num_cpus=1)
         class WarmUpFunction:
             def ready(self, parquet_folder):
-                import daft
                 from daft.filesystem import get_filesystem_from_path
 
                 # Download all files in the provided parquet_folder by reading a single byte from each of them
@@ -198,7 +208,7 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
                     f"Daft cache at {cache_location} warmed up with size: {sum(f.stat().st_size for f in cache_location.glob('**/*') if f.is_file())}"
                 )
 
-                return f"{daft.__version__}"
+                return get_daft_version()
 
         num_nodes = len([n for n in ray.nodes() if n["Alive"] and n["Resources"].get("CPU", 0.0) > 0])
         bundles = [{"CPU": 1} for _ in range(num_nodes)]
@@ -206,7 +216,7 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
         ray.get(pg.ready())
         executors = [WarmUpFunction.options(placement_group=pg).remote() for _ in range(num_nodes)]
         assert ray.get([executor.ready.remote(parquet_folder) for executor in executors]) == [
-            f"{daft.__version__}" for _ in range(num_nodes)
+            get_daft_version() for _ in range(num_nodes)
         ]
         del executors
 
