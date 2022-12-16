@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pyarrow as pa
 
-from daft import daft as _daft
+from daft.daft import kernels
 
 
 def search_sorted(data, keys, input_reversed=None):
@@ -24,7 +24,7 @@ def search_sorted(data, keys, input_reversed=None):
         else:
             data = data.chunk(0)
         result_chunks = [
-            _daft.search_sorted_pyarrow_array(data, key_chunk, input_reversed, pa) for key_chunk in keys.chunks
+            kernels.search_sorted_pyarrow_array(data, key_chunk, input_reversed, pa) for key_chunk in keys.chunks
         ]
 
         return pa.chunked_array(result_chunks, type=pa.uint64())
@@ -55,7 +55,7 @@ def search_sorted(data, keys, input_reversed=None):
         if len(data) == 0:
             return pa.chunked_array([np.full(len(keys), fill_value=0, dtype=np.uint64)], type=pa.uint64())
 
-        result = _daft.search_sorted_multiple_pyarrow_array(
+        result = kernels.search_sorted_multiple_pyarrow_array(
             [c.combine_chunks() for c in data.columns],
             [c.combine_chunks() for c in keys.columns],
             table_input_reversed,
