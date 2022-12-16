@@ -3,6 +3,8 @@ from __future__ import annotations
 import shlex
 import subprocess
 
+import toml
+
 
 def calculate_version() -> str:
     match_for_tag = r"v[0-9]*\.[0-9]*\.[0-9]*"
@@ -17,13 +19,27 @@ def calculate_version() -> str:
 
     git_full_tag_version_output = subprocess.check_output(shlex.split(git_describe_base_cmd))
     assert git_full_tag_version_output is not None
-    _, distance, commit = git_full_tag_version_output.decode().strip().split("-")
-    if int(distance) > 0:
+    split_full_tag_version = git_full_tag_version_output.decode().strip().split("-")
+
+    if len(split_full_tag_version) > 1:
+        _, distance, commit = split_full_tag_version
         version = f"{MAJOR}.{MINOR}.{PATCH + 1}+dev{distance}.{commit}"
     else:
         version = f"{MAJOR}.{MINOR}.{PATCH}"
     return version
 
 
+def patch_cargo_toml_version(version: str):
+    CARGO_TOML = "Cargo.toml"
+    source = toml.load(CARGO_TOML)
+    assert "package" in source
+    package = source["package"]
+    assert "version" in package
+    package["version"] = version
+    with open("Cargo.toml", "w") as out_file:
+        toml.dump(source, out_file)
+
+
 if __name__ == "__main__":
-    print(calculate_version())
+    version = calculate_version()
+    patch_cargo_toml_version(version=version)
