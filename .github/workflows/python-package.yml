@@ -72,6 +72,59 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft_runner }}
 
+  test-imports:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.8']
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+    - uses: actions/cache@v3
+      env:
+        cache-name: cache-cargo
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+        pip install maturin
+
+    - name: Build Rust Library
+      run: |
+        venv/bin/maturin build --out dist
+
+    - name: Test Imports in Clean Env
+      run: |
+        rm -rf daft
+        rm -rf venv
+        python -m venv venv
+        source venv/bin/activate
+        ls -R ./dist
+        venv/bin/pip install dist/*.whl
+        venv/bin/python -c 'import daft; from daft import *'
+
   style:
     runs-on: ubuntu-latest
     timeout-minutes: 15
