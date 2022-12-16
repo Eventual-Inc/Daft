@@ -113,7 +113,7 @@ jobs:
 
     - name: Build Rust Library
       run: |
-        maturin build
+        venv/bin/maturin build
 
     - name: Test Imports in Clean Env
       run: |
