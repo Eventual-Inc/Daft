@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-aws = ["boto3", "s3fs"]
+aws = ["s3fs"]
 serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
 iceberg = ["icebridge"]
 experimental = ["daft[serving, iceberg]"]
