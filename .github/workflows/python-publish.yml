@@ -53,12 +53,14 @@ jobs:
       uses: messense/maturin-action@v1
       with:
         target: x86_64
+        manylinux: auto
         args: --release --out dist --sdist
 
     - name: Build wheels - arm64
       uses: messense/maturin-action@v1
       with:
         target: aarch64
+        manylinux: auto
         args: --release --out dist
 
     - name: Install and test built wheel - x86_64
