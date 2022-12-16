@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import itertools
+from abc import abstractmethod
 from collections import defaultdict
 from typing import Any, Callable
 
@@ -122,6 +124,17 @@ class DynamicRunner(Runner):
         return instruction
 
 
+class ExecutionProcess:
+    _ID_ITER = itertools.count()
+
+    def __init__(self) -> None:
+        self.id = next(self._ID_ITER)
+
+    @abstractmethod
+    def _next_computable_partition(self) -> PartitionInstructions | None:
+        raise NotImplementedError
+
+
 class DynamicScheduler:
     """Dynamically generates an execution schedule for the given logical plan."""
 
@@ -156,11 +169,11 @@ class DynamicScheduler:
 
         result = self._next_computable_partition(self._root_plan_node)
         if result is not None and not result.marked_for_materialization():
-            result.mark_for_materialization(
+            self._prepare_to_materialize(
+                instructions=result,
                 nid=self.FINAL_RESULT,
                 partno=len(self._materializations_by_node_id[self.FINAL_RESULT]),
             )
-            self._materializations_by_node_id[self.FINAL_RESULT].append(None)
         return result
 
     def _next_computable_partition(self, plan_node: LogicalPlan) -> PartitionInstructions | None:
@@ -300,12 +313,12 @@ class DynamicScheduler:
             else:
                 raise RuntimeError(f"Unrecognized partitioning scheme {plan_node._scheme}")
 
-            child_instructions.mark_for_materialization(
+            self._prepare_to_materialize(
+                instructions=child_instructions,
                 nid=plan_node.id(),
                 partno=len(dependencies),
+                num_results=num_reduces,
             )
-            for i in range(num_reduces):
-                dependencies.append(None)
 
             return child_instructions
 
@@ -383,18 +396,33 @@ class DynamicScheduler:
                     next_instructions.add_instruction(self._runner.instruction_local_limit(next_limit))
 
                 node_state["continue_from_partition"] += 1
-                dependencies.append(None)
+                print(f"rows_so_far: {node_state['rows_so_far']}, limit: {next_limit}")
                 return next_instructions
 
         # We cannot return a global limit partition,
         # so return instructions to materialize the next local limit partition.
 
-        child_instructions = self._next_computable_partition(child_node)
+        child_instructions = None
+        try:
+            child_instructions = self._next_computable_partition(child_node)
+        except StopIteration:
+            pass
+
         if child_instructions is None or child_instructions.marked_for_materialization():
             return child_instructions
 
         child_instructions.add_instruction(self._runner.instruction_local_limit(remaining_global_limit))
+        child_instructions.mark_for_materialization(plan_node.id(), len(dependencies))
+        dependencies.append(None)
         return child_instructions
+
+    def _prepare_to_materialize(
+        self, instructions: PartitionInstructions, nid: int, partno: int, num_results: int = 1
+    ) -> None:
+        for i in range(num_results):
+            self._materializations_by_node_id[nid].append(None)
+
+        instructions.mark_for_materialization(nid, partno)
 
     def register_completed_partitions(self, instructions: PartitionInstructions, partitions: list[vPartition]) -> None:
         # for mypy
