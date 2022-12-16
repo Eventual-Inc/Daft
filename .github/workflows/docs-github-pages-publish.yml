@@ -30,13 +30,44 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
-    - uses: actions/setup-python@v4
+    - uses: actions-rs/toolchain@v1
       with:
-        python-version: '3.10'
-        cache: pip
-        cache-dependency-path: requirements-dev.txt
-    - name: Install Dependencies
-      run: pip install -r requirements-dev.txt
+        profile: minimal
+        toolchain: stable
+        override: true
+    - uses: actions/cache@v3
+      env:
+        cache-name: cache-cargo
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt
+
+    - name: Build Rust Library
+      run: |
+        source activate
+        maturin develop
+
     - name: Generate Documentation
       working-directory: ./docs
       run: |
