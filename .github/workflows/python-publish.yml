@@ -18,11 +18,18 @@ on:
 env:
   PACKAGE_NAME: getdaft
   PYTHON_VERSION: '3.7' # to build abi3 wheels
+  INTERPRETER: 3.7 3.8 3.9 3.10 3.11
 
 
 jobs:
-  macos:
-    runs-on: macos-latest
+  build-and-test:
+
+    name: platform wheels for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu, macos]
     steps:
     - uses: actions/checkout@v3
       with:
@@ -44,18 +51,18 @@ jobs:
       uses: messense/maturin-action@v1
       with:
         target: x86_64
-        args: --release --out dist --sdist
-    - name: Install built wheel - x86_64
+        args: --release --out dist --interpreter ${{ env.INTERPRETER }}
+    - name: Install and test built wheel - x86_64
       run: |
-        pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
         pip install -r requirements-dev.txt
+        pip install dist/${{ env.PACKAGE_NAME }}-*-cp37-*.whl --force-reinstall
         rm -rf daft
         pytest -v
 
     - name: Build wheels - arm64
       uses: messense/maturin-action@v1
       with:
-        args: --release --out dist
+        args: --release --out dist --interpreter ${{ env.INTERPRETER }}
         target: aarch64
 
     - name: Upload wheels
