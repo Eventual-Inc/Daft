@@ -25,12 +25,11 @@ upload_wheels() {
         if [ -z ${TOKEN} ]; then
             echo no token set, not uploading
         else
-            # sdists are located under dist folder when built through setup.py
             if compgen -G "./dist/*.gz"; then
-                echo "Found sdist"
+                echo "Found in dist"
                 anaconda -q -t ${TOKEN} upload --skip -u ${ANACONDA_ORG} ./dist/*.gz
             elif compgen -G "./wheelhouse/*.whl"; then
-                echo "Found wheel"
+                echo "Found in wheelhouse"
                 anaconda -q -t ${TOKEN} upload --skip -u ${ANACONDA_ORG} ./wheelhouse/*.whl
             else
                 echo "Files do not exist"
