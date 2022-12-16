@@ -108,14 +108,22 @@ jobs:
     - name: Setup Virtual Env
       run: |
         python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        source venv/bin/activate
+        pip install maturin
 
     - name: Build Rust Library
       run: |
-        source activate
-        maturin develop
-    - name: Test Imports
-      run: python -c 'import daft; from daft import *'
+        maturin build
+
+    - name: Test Imports in Clean Env
+      run: |
+        deactivate
+        rm -rf daft
+        rm -rf venv
+        python -m venv venv
+        source venv/bin/activate
+        pip install targets/wheels/*.whl
+        python -c 'import daft; from daft import *'
 
   style:
     runs-on: ubuntu-latest
