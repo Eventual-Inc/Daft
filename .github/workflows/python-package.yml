@@ -113,7 +113,7 @@ jobs:
 
     - name: Build Rust Library
       run: |
-        venv/bin/maturin build
+        venv/bin/maturin build --out dist
 
     - name: Test Imports in Clean Env
       run: |
@@ -121,7 +121,8 @@ jobs:
         rm -rf venv
         python -m venv venv
         source venv/bin/activate
-        venv/bin/pip install targets/wheels/*.whl
+        ls -R ./dist
+        venv/bin/pip install dist/*.whl
         venv/bin/python -c 'import daft; from daft import *'
 
   style:
