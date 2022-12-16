@@ -4,7 +4,7 @@ features = [ "compute",]
 
 [dependencies.pyo3]
 version = "0.17.3"
-features = [ "extension-module",]
+features = [ "extension-module", "abi3-py37"]
 
 [dependencies.xxhash-rust]
 version = "0.8.5"

@@ -18,8 +18,6 @@ on:
 env:
   PACKAGE_NAME: getdaft
   PYTHON_VERSION: '3.7' # to build abi3 wheels
-  INTERPRETER: 3.7 3.8 3.9 3.10 3.11
-
 
 jobs:
   build-and-test:
@@ -47,23 +45,25 @@ jobs:
         toolchain: stable
         profile: minimal
         default: true
+
     - name: Build wheels - x86_64
       uses: messense/maturin-action@v1
       with:
         target: x86_64
-        args: --release --out dist --interpreter ${{ env.INTERPRETER }}
+        args: --release --out dist --sdist
+
+    - name: Build wheels - arm64
+      uses: messense/maturin-action@v1
+      with:
+        target: aarch64
+        args: --release --out dist
+
     - name: Install and test built wheel - x86_64
       run: |
         pip install -r requirements-dev.txt
         pip install dist/${{ env.PACKAGE_NAME }}-*-cp37-*.whl --force-reinstall
         rm -rf daft
         pytest -v
-
-    - name: Build wheels - arm64
-      uses: messense/maturin-action@v1
-      with:
-        args: --release --out dist --interpreter ${{ env.INTERPRETER }}
-        target: aarch64
 
     - name: Upload wheels
       uses: actions/upload-artifact@v2
