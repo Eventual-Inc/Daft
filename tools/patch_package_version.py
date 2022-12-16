@@ -38,6 +38,7 @@ def patch_cargo_toml_version(version: str):
     package["version"] = version
     with open("Cargo.toml", "w") as out_file:
         toml.dump(source, out_file)
+    print(f"Patched {CARGO_TOML} to version: {version}")
 
 
 if __name__ == "__main__":
