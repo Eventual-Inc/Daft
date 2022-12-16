@@ -42,10 +42,12 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
+
     - name: Setup Virtual Env
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+
     - name: Install dependencies
       run: |
         pip install --upgrade pip
