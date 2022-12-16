@@ -15,7 +15,6 @@ readme = "README.rst"
 license = {file="LICENSE"}
 requires-python = ">=3.7"
 dependencies = [
-    "ray>=1.10.0",
     "numpy",
     "pyarrow",
     "fsspec",
@@ -35,7 +34,7 @@ aws = ["boto3", "s3fs"]
 serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
 iceberg = ["icebridge"]
 experimental = ["daft[serving, iceberg]"]
-ray = ["ray[data, default]"] # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
+ray = ["ray[data, default]>=1.10.0"] # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
 all = ["daft[aws, ray]"]
 
 [project.urls]

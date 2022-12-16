@@ -15,115 +15,85 @@ on:
     - v*
   workflow_dispatch:
 
+env:
+  PACKAGE_NAME: getdaft
+  PYTHON_VERSION: '3.7' # to build abi3 wheels
+
+  IS_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && ( ! endsWith(github.ref, 'dev0')) }}
+  IS_SCHEDULE_DISPATCH: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
 
 jobs:
-  build_bdist_wheels:
-    name: platform wheels for ${{ matrix.python }}-${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+  build-and-test:
+
+    name: platform wheels for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-11]
-        python: [cp37, cp38, cp39, cp310]
-    env:
-      IS_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && ( ! endsWith(github.ref, 'dev0')) }}
-      IS_SCHEDULE_DISPATCH: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-
+        os: [ubuntu, macos]
     steps:
     - uses: actions/checkout@v3
       with:
         submodules: true
         fetch-depth: 0
-
     - uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
-
-    - name: Install cibuildwheel
-      run: python -m pip install cibuildwheel==2.9.0 poetry==1.2.0 twine && poetry self add "poetry-dynamic-versioning[plugin]"
-    - name: Patch local toml with SemVar
-      run: poetry dynamic-versioning
-    - name: Build wheels
-      run: python -m cibuildwheel --output-dir ./wheelhouse
-      env:
-        CIBW_BUILD: ${{ matrix.python }}-*
-    - uses: actions/upload-artifact@v3
+        python-version: ${{ env.PYTHON_VERSION }}
+        architecture: x64
+    - run: pip install -U twine toml
+    - run: python tools/patch_package_version.py
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
       with:
-        name: ${{ matrix.python }}-${{ matrix.os }}_bdist_wheels
-        path: ./wheelhouse/*.whl
-    - name: Publish bdist package to PYPI
-      if: ${{ success() && (env.IS_PUSH == 'true') }}
-      run: python -m twine upload --skip-existing --disable-progress-bar ./wheelhouse/*
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-    - uses: conda-incubator/setup-miniconda@v2
+        toolchain: stable
+        profile: minimal
+        default: true
+
+    - name: Build wheels - x86_64
+      uses: messense/maturin-action@v1
       with:
-        auto-update-conda: true
-        # Really doesn't matter what version we upload with
-        # just the version we test with
-        python-version: '3.8'
-        channels: conda-forge
-        channel-priority: true
-        mamba-version: '*'
+        target: x86_64
+        args: --release --out dist --sdist
 
-    - name: Install anaconda client
-      shell: bash -el {0}
-      run: conda install -q -y anaconda-client
+    - name: Build wheels - arm64
+      uses: messense/maturin-action@v1
+      with:
+        target: aarch64
+        args: --release --out dist
 
-    - name: Upload wheels to anaconda nightly
-      if: ${{ success() && (env.IS_SCHEDULE_DISPATCH == 'true' || env.IS_PUSH == 'true') }}
-      shell: bash -el {0}
-      env:
-        DAFT_STAGING_UPLOAD_TOKEN: ${{ secrets.DAFT_STAGING_UPLOAD_TOKEN }}
-        DAFT_NIGHTLY_UPLOAD_TOKEN: ${{ secrets.DAFT_NIGHTLY_UPLOAD_TOKEN }}
+    - name: Install and test built wheel - x86_64
       run: |
-        source ci/upload_wheels.sh
-        set_upload_vars
-        # trigger an upload to
-        # https://anaconda.org/daft-nightly/getdaft
-        # for cron jobs or "Run workflow" (restricted to main branch).
-        # Tags will upload to
-        # https://anaconda.org/daft/getdaft
-        # The tokens were originally generated at anaconda.org
-        upload_wheels
+        pip install -r requirements-dev.txt
+        pip install dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
+        rm -rf daft
+        pytest -v
 
-  build_sdist_wheels:
-    name: source wheel
+    - name: Upload wheels
+      uses: actions/upload-artifact@v2
+      with:
+        name: wheels
+        path: dist
+
+
+  publish:
+    name: Publish wheels to PYPI and Anaconda
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-
-    env:
-      IS_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && ( ! endsWith(github.ref, 'dev0')) }}
-      IS_SCHEDULE_DISPATCH: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-
+    needs:
+    - build-and-test
     steps:
     - uses: actions/checkout@v3
+    - uses: actions/download-artifact@v2
       with:
-        submodules: true
-        fetch-depth: 0
-
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    - name: Install poetry
-      run: python -m pip install poetry==1.2.0 twine && poetry self add "poetry-dynamic-versioning[plugin]"
-    - name: Patch local toml with SemVar
-      run: poetry dynamic-versioning
-    - name: Build wheels
-      run: poetry build -f sdist
-    - uses: actions/upload-artifact@v3
-      with:
-        name: source_wheels
-        path: ./dist/*
-    - name: Publish sdist package to PYPI
+        name: wheels
+        path: dist
+    - run: ls -R ./dist
+    - name: Publish bdist package to PYPI
       if: ${{ success() && (env.IS_PUSH == 'true') }}
       run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      # Used to push the built sdist
+
     - uses: conda-incubator/setup-miniconda@v2
       with:
         auto-update-conda: true
