@@ -51,7 +51,6 @@ jobs:
 
     - name: Build Rust Library
       run: |
-        source activate
         maturin develop
 
     - name: Clone TPCH SQlite repository
