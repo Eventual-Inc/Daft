@@ -189,7 +189,6 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
         @ray.remote(num_cpus=1)
         class WarmUpFunction:
             def ready(self, parquet_folder):
-                import daft
                 from daft.filesystem import get_filesystem_from_path
 
                 # Download all files in the provided parquet_folder by reading a single byte from each of them
