@@ -8,6 +8,11 @@ use arrow2::{
 
 use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
 
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+
+use crate::ffi;
+
 fn hash_primitive<T: NativeType>(
     array: &PrimitiveArray<T>,
     seed: Option<&PrimitiveArray<u64>>,
@@ -131,4 +136,44 @@ pub fn hash(array: &dyn Array, seed: Option<&PrimitiveArray<u64>>) -> Result<Pri
             )))
         }
     })
+}
+
+#[pyfunction]
+pub fn hash_pyarrow_array(
+    pyarray: &PyAny,
+    py: Python,
+    pyarrow: &PyModule,
+    seed: Option<&PyAny>,
+) -> PyResult<PyObject> {
+    let rarray = ffi::array_to_rust(pyarray)?;
+    let hashed;
+    if let Some(seed) = seed {
+        let rseed = ffi::array_to_rust(seed)?;
+        if rseed.len() != rarray.len() {
+            return Err(PyValueError::new_err(format!(
+                "seed length does not match array length: {} vs {}",
+                rseed.len(),
+                rarray.len()
+            )));
+        }
+        if *rseed.data_type() != DataType::UInt64 {
+            return Err(PyValueError::new_err(format!(
+                "seed data type expected to be UInt64, got {:?}",
+                *rseed.data_type()
+            )));
+        }
+
+        let downcasted_seed = rseed
+            .as_ref()
+            .as_any()
+            .downcast_ref::<PrimitiveArray<u64>>()
+            .unwrap();
+        hashed = py.allow_threads(move || hash(rarray.as_ref(), Some(downcasted_seed)));
+    } else {
+        hashed = py.allow_threads(move || hash(rarray.as_ref(), None));
+    }
+    match hashed {
+        Err(e) => Err(PyValueError::new_err(e.to_string())),
+        Ok(s) => ffi::to_py_array(Box::new(s), py, pyarrow),
+    }
 }
