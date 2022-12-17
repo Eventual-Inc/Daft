@@ -1,5 +1,6 @@
 use crate::datatypes::DataType;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
     pub name: String,
     pub dtype: DataType,

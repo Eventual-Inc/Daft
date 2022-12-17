@@ -2,6 +2,7 @@ use std::result;
 
 #[derive(Debug)]
 pub enum DaftError {
+    NotFound(String),
     SchemaMismatch(String),
 }
 

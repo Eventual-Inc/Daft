@@ -1,4 +1,7 @@
-use crate::{datatypes::DataType, dsl::lit, field::Field, schema::Schema};
+use crate::{
+    datatypes::DataType, dsl::lit, error::DaftError, error::DaftResult, field::Field,
+    schema::Schema,
+};
 use std::{fmt::Debug, sync::Arc};
 
 type ExprRef = Arc<Expr>;
@@ -17,12 +20,13 @@ pub enum Expr {
 }
 
 impl Expr {
-    pub fn to_field(&self, schema: &Schema) -> Field {
+    pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use Expr::*;
 
         match self {
-            Alias(expr, name) => Field::new(name, expr.get_type(schema)),
-            _ => Field::new("x", self.get_type(schema)),
+            Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema))),
+            Column(name) => Ok(schema.get_field(name)?.clone()),
+            _ => Err(DaftError::NotFound("no found".into())),
         }
     }
     pub fn get_type(&self, schema: &Schema) -> DataType {
