@@ -13,6 +13,11 @@ pub struct Schema {
 }
 
 impl Schema {
+    pub fn new() -> Schema {
+        Schema {
+            fields: indexmap::IndexMap::new(),
+        }
+    }
     pub fn get_field(&self, name: &str) -> DaftResult<&Field> {
         match self.fields.get(name) {
             None => Err(DaftError::NotFound(name.into())),

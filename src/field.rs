@@ -10,7 +10,7 @@ impl Field {
     pub fn new(name: &str, dtype: DataType) -> Self {
         Field {
             name: name.to_string(),
-            dtype: dtype,
+            dtype,
         }
     }
 }
