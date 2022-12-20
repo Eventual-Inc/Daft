@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import Callable, Iterator
 
 from daft.context import get_context
+from daft.expressions import Expression
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
 from daft.logical.logical_plan import LogicalPlan, PartitionScheme
@@ -127,6 +128,12 @@ class DynamicSchedule:
             return ProjectionHandler(node)
         elif isinstance(node, logical_plan.MapPartition):
             return MapPartitionHandler(node)
+        elif isinstance(node, logical_plan.LocalAggregate):
+            return LocalAggregateHandler(node)
+        elif isinstance(node, logical_plan.LocalDistinct):
+            return LocalDistinctHandler(node)
+        elif isinstance(node, logical_plan.Join):
+            return JoinHandler(node)
 
         # -- Nodes requiring intermediate materialization. --
         elif isinstance(node, logical_plan.GlobalLimit):
@@ -144,6 +151,16 @@ class DynamicSchedule:
     def _merge() -> Callable[[list[vPartition]], list[vPartition]]:
         def instruction(inputs: list[vPartition]) -> list[vPartition]:
             return [vPartition.merge_partitions(inputs, verify_partition_id=False)]
+
+        return instruction
+
+    @staticmethod
+    def _agg(
+        to_agg: list[tuple[Expression, str]], group_by: ExpressionList | None
+    ) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [input.agg(to_agg, group_by)]
 
         return instruction
 
@@ -253,6 +270,40 @@ class MapPartitionHandler(DynamicSchedule):
         return instruction
 
 
+class LocalAggregateHandler(DynamicSchedule):
+    def __init__(self, local_aggregate_node: logical_plan.LocalAggregate) -> None:
+        super().__init__()
+
+        [child_node] = local_aggregate_node._children()
+        child_source = self.handle_logical_node(child_node)
+
+        agg_fn = self._agg(local_aggregate_node._agg, local_aggregate_node._group_by)
+        self._pipenode = ExecutePipeableFunction(
+            source=child_source,
+            pipeable_fn=agg_fn,
+        )
+
+    def __next__(self) -> ConstructionInstructions | None:
+        return next(self._pipenode)
+
+
+class LocalDistinctHandler(DynamicSchedule):
+    def __init__(self, local_distinct_node: logical_plan.LocalDistinct) -> None:
+        super().__init__()
+
+        [child_node] = local_distinct_node._children()
+        child_source = self.handle_logical_node(child_node)
+
+        agg_fn = self._agg([], local_distinct_node._group_by)
+        self._pipenode = ExecutePipeableFunction(
+            source=child_source,
+            pipeable_fn=agg_fn,
+        )
+
+    def __next__(self) -> ConstructionInstructions | None:
+        return next(self._pipenode)
+
+
 class ExecutePipeableFunction(DynamicSchedule):
     def __init__(self, source: DynamicSchedule, pipeable_fn: Callable[[list[vPartition]], list[vPartition]]) -> None:
         super().__init__()
@@ -267,6 +318,75 @@ class ExecutePipeableFunction(DynamicSchedule):
         construct.add_instruction(self._pipeable_fn)
 
         return construct
+
+
+class JoinHandler(DynamicSchedule):
+    LEFTS = "lefts"
+    RIGHTS = "rights"
+
+    def __init__(self, join: logical_plan.Join) -> None:
+        super().__init__()
+        self._join_node = join
+
+        [left_child, right_child] = join._children()
+        self._left_source = self.handle_logical_node(left_child)
+        self._right_source = self.handle_logical_node(right_child)
+        self._next_to_emit = 0
+
+    def __next__(self) -> ConstructionInstructions | None:
+        lefts = self._materializations[self.LEFTS]
+        rights = self._materializations[self.RIGHTS]
+
+        # Try emitting a join.
+        if self._next_to_emit < len(lefts) and self._next_to_emit < len(rights):
+            next_left = lefts[self._next_to_emit]
+            next_right = rights[self._next_to_emit]
+            if next_left is not None and next_right is not None:
+                construct_join = ConstructionInstructions([next_left, next_right])
+                construct_join.add_instruction(self._join(self._join_node))
+
+                self._next_to_emit += 1
+                return construct_join
+
+        # Can't emit a join just yet; materialize more dependencies.
+        _, next_label, next_deps, next_source = list(
+            sorted(
+                [
+                    (len(lefts), self.LEFTS, lefts, self._left_source),
+                    (len(rights), self.RIGHTS, rights, self._right_source),
+                ]
+            )
+        )[0]
+
+        construct = None
+        try:
+            construct = next(next_source)
+
+        except StopIteration:
+            # Source is dry; is there remaining work to do with what we have materializing so far?
+            if self._next_to_emit >= len(next_deps):
+                raise
+
+        if construct is None or construct.marked_for_materialization():
+            return construct
+
+        self._prepare_to_materialize(construct, next_label)
+        return construct
+
+    @staticmethod
+    def _join(join: logical_plan.Join) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [left, right] = inputs
+            result = left.join(
+                right,
+                left_on=join._left_on,
+                right_on=join._right_on,
+                output_schema=join.schema(),
+                how=join._how.value,
+            )
+            return [result]
+
+        return instruction
 
 
 class GlobalLimitHandler(DynamicSchedule):
