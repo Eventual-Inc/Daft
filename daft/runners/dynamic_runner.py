@@ -9,6 +9,7 @@ from daft.context import get_context
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
 from daft.logical.logical_plan import LogicalPlan, PartitionScheme
+from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.optimizer import (
     DropProjections,
     DropRepartition,
@@ -124,6 +125,8 @@ class DynamicSchedule:
             return FilterHandler(node)
         elif isinstance(node, logical_plan.Projection):
             return ProjectionHandler(node)
+        elif isinstance(node, logical_plan.MapPartition):
+            return MapPartitionHandler(node)
 
         # -- Nodes requiring intermediate materialization. --
         elif isinstance(node, logical_plan.GlobalLimit):
@@ -221,6 +224,31 @@ class ProjectionHandler(DynamicSchedule):
         def instruction(inputs: list[vPartition]) -> list[vPartition]:
             [input] = inputs
             return [input.eval_expression_list(projection)]
+
+        return instruction
+
+
+class MapPartitionHandler(DynamicSchedule):
+    def __init__(self, map_partition_node: logical_plan.MapPartition) -> None:
+        super().__init__()
+
+        [child_node] = map_partition_node._children()
+        child_source = self.handle_logical_node(child_node)
+
+        map_fn = self._map_partition(map_partition_node._map_partition_op)
+        self._pipenode = ExecutePipeableFunction(
+            source=child_source,
+            pipeable_fn=map_fn,
+        )
+
+    def __next__(self) -> ConstructionInstructions | None:
+        return next(self._pipenode)
+
+    @staticmethod
+    def _map_partition(map_op: MapPartitionOp) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [map_op.run(input)]
 
         return instruction
 
