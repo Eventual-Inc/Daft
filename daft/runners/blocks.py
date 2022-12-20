@@ -274,7 +274,7 @@ class DataBlock(Generic[ArrType]):
     @classmethod
     def argsort(cls, blocks: list[DataBlock], descending: list[bool] | None = None) -> DataBlock[ArrowArrType]:
         first_type = type(blocks[0])
-        assert all(type(b) == first_type for b in blocks), "all block types must match"
+        assert all(type(b) == first_type for b in blocks), f"all block types must match: {[type(b) for b in blocks]}"
         size = len(blocks)
         if descending is None:
             descending = [False for _ in range(size)]
@@ -294,8 +294,10 @@ class DataBlock(Generic[ArrType]):
         cls, sorted_blocks: list[DataBlock], keys: list[DataBlock], input_reversed: list[bool] | None = None
     ) -> DataBlock[ArrowArrType]:
         first_type = type(sorted_blocks[0])
-        assert all(type(b) == first_type for b in sorted_blocks), "all block types must match"
-        assert all(type(b) == first_type for b in keys), "all block types must match"
+        assert all(
+            type(b) == first_type for b in sorted_blocks
+        ), f"all block types must match: {[type(b) for b in sorted_blocks]}"
+        assert all(type(b) == first_type for b in keys), f"all block types must match: {[type(b) for b in keys]}"
 
         size = len(sorted_blocks)
         if input_reversed is None:
@@ -314,7 +316,7 @@ class DataBlock(Generic[ArrType]):
     def merge_blocks(cls, blocks: list[DataBlock[ArrType]]) -> DataBlock[ArrType]:
         assert len(blocks) > 0, "no blocks"
         first_type = type(blocks[0])
-        assert all(type(b) == first_type for b in blocks), "all block types must match"
+        assert all(type(b) == first_type for b in blocks), f"all block types must match: {[type(b) for b in blocks]}"
         return first_type._merge_blocks(blocks)
 
     @abstractmethod

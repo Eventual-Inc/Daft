@@ -189,6 +189,7 @@ class GlobalLimitHandler(DynamicSchedule):
         self._global_limit = global_limit
         self._remaining_limit = self._global_limit._num
         self._continue_from_partition = 0
+
         [child_node] = self._global_limit._children()
         if isinstance(child_node, logical_plan.LocalLimit):
             # Ignore LocalLimit logical nodes; the GlobalLimit handles everything
@@ -197,6 +198,9 @@ class GlobalLimitHandler(DynamicSchedule):
         self._source = DynamicSchedule.handle_logical_node(child_node)
 
     def __next__(self) -> ConstructionInstructions | None:
+
+        dependencies = self._materializations[self.DEPENDENCIES]
+
         # Evaluate progress so far.
         # Are we done with the limit?
         if self._remaining_limit == 0:
@@ -205,13 +209,17 @@ class GlobalLimitHandler(DynamicSchedule):
             # but the current implementation of LogicalPlan still requires
             # a mandated number of partitions to be returned.
             # Return empty partitions until we have returned enough.
-            if self._continue_from_partition < self._global_limit.num_partitions():
-                empty_partition = vPartition.from_pydict(
-                    data=defaultdict(list),
-                    schema=self._global_limit.schema(),
-                    partition_id=self._continue_from_partition,
-                )
-                new_construct = ConstructionInstructions([empty_partition])
+            if not dependencies:
+                # We need at least one materialized partition to get the correct schema to return.
+                pass
+
+            elif self._continue_from_partition < self._global_limit.num_partitions():
+                # We need at least one materialized partition to get the correct schema to return.
+                if dependencies[0] is None:
+                    return None
+
+                new_construct = ConstructionInstructions([dependencies[0]])
+                new_construct.add_instruction(self._local_limit(0))
 
                 self._continue_from_partition += 1
                 return new_construct
@@ -222,7 +230,6 @@ class GlobalLimitHandler(DynamicSchedule):
         # We're not done; check to see if we can return a global limit partition.
         # Is the next local limit partition materialized?
         # If so, update global limit progress, and return the local limit.
-        dependencies = self._materializations[self.DEPENDENCIES]
         if self._continue_from_partition < len(dependencies):
             next_partition = dependencies[self._continue_from_partition]
             if next_partition is not None:
