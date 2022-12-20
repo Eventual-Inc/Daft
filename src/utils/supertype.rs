@@ -1,0 +1,124 @@
+use crate::datatypes::ArrowType;
+use crate::datatypes::DataType;
+use crate::error::DaftError;
+use crate::error::DaftResult;
+
+/// Largely influenced by polars supertype logic which is based on numpy / python type propagation
+
+pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
+    match get_supertype(l, r) {
+        Some(dt) => Ok(dt),
+        None => Err(DaftError::TypeError(format!(
+            "could not determine supertype of {:?} and {:?}",
+            l, r
+        ))),
+    }
+}
+
+pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
+    use DataType::*;
+    println!("get_supertype: {:?}, {:?}", l, r);
+
+    match (l, r) {
+        (Arrow(l), Arrow(r)) => get_arrow_supertype(l, r),
+        _ => None,
+    }
+}
+
+fn get_arrow_supertype(l: &ArrowType, r: &ArrowType) -> Option<DataType> {
+    fn inner(l: &ArrowType, r: &ArrowType) -> Option<DataType> {
+        use ArrowType::*;
+
+        if l == r {
+            return Some(DataType::Arrow(l.clone()));
+        }
+
+        let arrow_dtype = match (l, r) {
+            (Int8, Boolean) => Some(Int8),
+            (Int8, Int16) => Some(Int16),
+            (Int8, Int32) => Some(Int32),
+            (Int8, Int64) => Some(Int64),
+            (Int8, UInt8) => Some(Int16),
+            (Int8, UInt16) => Some(Int32),
+            (Int8, UInt32) => Some(Int64),
+            (Int8, UInt64) => Some(Float64), // Follow numpy
+            (Int8, Float32) => Some(Float32),
+            (Int8, Float64) => Some(Float64),
+
+            (Int16, Boolean) => Some(Int16),
+            (Int16, Int8) => Some(Int16),
+            (Int16, Int32) => Some(Int32),
+            (Int16, Int64) => Some(Int64),
+            (Int16, UInt8) => Some(Int16),
+            (Int16, UInt16) => Some(Int32),
+            (Int16, UInt32) => Some(Int64),
+            (Int16, UInt64) => Some(Float64), // Follow numpy
+            (Int16, Float32) => Some(Float32),
+            (Int16, Float64) => Some(Float64),
+
+            (Int32, Boolean) => Some(Int32),
+            (Int32, Int8) => Some(Int32),
+            (Int32, Int16) => Some(Int32),
+            (Int32, Int64) => Some(Int64),
+            (Int32, UInt8) => Some(Int32),
+            (Int32, UInt16) => Some(Int32),
+            (Int32, UInt32) => Some(Int64),
+            (Int32, UInt64) => Some(Float64),  // Follow numpy
+            (Int32, Float32) => Some(Float64), // Follow numpy
+            (Int32, Float64) => Some(Float64),
+
+            (Int64, Boolean) => Some(Int64),
+            (Int64, Int8) => Some(Int64),
+            (Int64, Int16) => Some(Int64),
+            (Int64, Int32) => Some(Int64),
+            (Int64, UInt8) => Some(Int64),
+            (Int64, UInt16) => Some(Int64),
+            (Int64, UInt32) => Some(Int64),
+            (Int64, UInt64) => Some(Float64),  // Follow numpy
+            (Int64, Float32) => Some(Float64), // Follow numpy
+            (Int64, Float64) => Some(Float64),
+
+            (UInt16, UInt8) => Some(UInt16),
+            (UInt16, UInt32) => Some(UInt32),
+            (UInt16, UInt64) => Some(UInt64),
+
+            (UInt8, UInt32) => Some(UInt32),
+            (UInt8, UInt64) => Some(UInt64),
+            (UInt32, UInt64) => Some(UInt64),
+
+            (Boolean, UInt8) => Some(UInt8),
+            (Boolean, UInt16) => Some(UInt16),
+            (Boolean, UInt32) => Some(UInt32),
+            (Boolean, UInt64) => Some(UInt64),
+
+            (Float32, UInt8) => Some(Float32),
+            (Float32, UInt16) => Some(Float32),
+            (Float32, UInt32) => Some(Float64),
+            (Float32, UInt64) => Some(Float64),
+
+            (Float64, UInt8) => Some(Float64),
+            (Float64, UInt16) => Some(Float64),
+            (Float64, UInt32) => Some(Float64),
+            (Float64, UInt64) => Some(Float64),
+
+            (Float64, Float32) => Some(Float64),
+            //TODO(sammy): add time and struct related dtypes
+            (Boolean, Float32) => Some(Float32),
+            (Boolean, Float64) => Some(Float64),
+
+            // every known type can be casted to a string except binary
+            (dt, LargeUtf8) if dt.ne(&LargeBinary) => Some(Utf8),
+            (dt, Null) => Some(dt.clone()), // Drop Null Type
+
+            _ => None,
+        };
+        match arrow_dtype {
+            Some(atype) => Some(DataType::Arrow(atype)),
+            None => None,
+        }
+    }
+    match inner(l, r) {
+        Some(dt) => Some(dt),
+        None => inner(r, l),
+    }
+}

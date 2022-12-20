@@ -1,4 +1,4 @@
-use crate::datatypes::DataType;
+use crate::datatypes::{ArrowType, DataType};
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
@@ -19,15 +19,14 @@ pub enum LiteralValue {
 
 impl LiteralValue {
     pub fn get_type(&self) -> DataType {
-        use arrow2::datatypes::DataType as ArrowType;
+        use LiteralValue::*;
         match self {
-            Null => DataType::ArrowType(ArrowType::Null),
-            Boolean => DataType::ArrowType(ArrowType::Boolean),
-            Utf8 => DataType::ArrowType(ArrowType::LargeUtf8),
-            Binary => DataType::ArrowType(ArrowType::LargeBinary),
-            Int64 => DataType::ArrowType(ArrowType::Int64),
-            Float64 => DataType::ArrowType(ArrowType::Float64),
-            _ => panic!("Undefined Type"),
+            Null => DataType::Arrow(ArrowType::Null),
+            Boolean(_) => DataType::Arrow(ArrowType::Boolean),
+            Utf8(_) => DataType::Arrow(ArrowType::LargeUtf8),
+            Binary(_) => DataType::Arrow(ArrowType::LargeBinary),
+            Int64(_) => DataType::Arrow(ArrowType::Int64),
+            Float64(_) => DataType::Arrow(ArrowType::Float64),
         }
     }
 }

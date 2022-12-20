@@ -5,6 +5,7 @@ mod ffi;
 mod field;
 mod kernels;
 mod schema;
+mod utils;
 
 use pyo3::prelude::*;
 

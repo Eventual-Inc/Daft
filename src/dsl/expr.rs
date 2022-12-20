@@ -1,6 +1,11 @@
 use crate::{
-    datatypes::DataType, dsl::lit, error::DaftError, error::DaftResult, field::Field,
+    datatypes::{ArrowType, DataType},
+    dsl::lit,
+    error::DaftError,
+    error::DaftResult,
+    field::Field,
     schema::Schema,
+    utils::supertype::{get_supertype, try_get_supertype},
 };
 use std::{
     fmt::{Debug, Display, Formatter},
@@ -27,22 +32,37 @@ impl Expr {
         use Expr::*;
 
         match self {
-            Alias(_, name) => Ok(Field::new(name, self.get_type(schema)?)),
+            Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema)?)),
             Column(name) => Ok(schema.get_field(name).cloned()?),
-            Literal(_) => Ok(Field::new("literal", self.get_type(schema)?)),
+            Literal(value) => Ok(Field::new("literal", value.get_type())),
+
+            BinaryOp { op, left, right } => {
+                let result = match op {
+                    Operator::Lt
+                    | Operator::Gt
+                    | Operator::Eq
+                    | Operator::NotEq
+                    | Operator::And
+                    | Operator::LtEq
+                    | Operator::GtEq
+                    | Operator::Or => Field::new(
+                        left.to_field(schema)?.name.as_str(),
+                        DataType::Arrow(ArrowType::Boolean),
+                    ),
+                    _ => Field::new(
+                        left.to_field(schema)?.name.as_str(),
+                        try_get_supertype(&left.get_type(schema)?, &right.get_type(schema)?)?,
+                    ),
+                };
+                Ok(result)
+            }
+
             _ => Err(DaftError::NotFound("no found".into())),
         }
     }
 
     pub fn get_type(&self, schema: &Schema) -> DaftResult<DataType> {
-        use Expr::*;
-
-        match self {
-            Alias(expr, _) => expr.get_type(schema),
-            Column(name) => Ok(schema.get_field(name).cloned()?.dtype),
-            Literal(value) => Ok(value.get_type()),
-            _ => Err(DaftError::NotFound("no found".into())),
-        }
+        Ok(self.to_field(schema)?.dtype)
     }
 }
 
@@ -121,14 +141,22 @@ mod tests {
 
     #[test]
     fn it_adds_two() {
-        let x = Expr::Literal(LiteralValue::Int64(10));
+        let x = Expr::Literal(LiteralValue::Float64(10.));
         let y = Expr::Literal(LiteralValue::Int64(12));
+        let schema = Schema::new();
+
+        println!(
+            "hello: {:?}, {:?}",
+            &x.get_type(&schema),
+            &y.get_type(&schema)
+        );
+
         let z = Expr::BinaryOp {
             left: x.into(),
             right: y.into(),
             op: Operator::Plus,
         };
 
-        println!("hello: {:?}", z.to_field(&Schema::new()));
+        println!("hello: {:?}", z.to_field(&schema));
     }
 }

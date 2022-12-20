@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use arrow2::datatypes::DataType as ArrowDataType;
+pub use arrow2::datatypes::DataType as ArrowType;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DataType {
-    ArrowType(ArrowDataType),
+    Arrow(ArrowType),
     DaftType,
     PythonType(Arc<str>),
     Unknown,
