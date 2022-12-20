@@ -49,6 +49,8 @@ def _get_runner_config_from_env() -> _RunnerConfig:
             return _RayRunnerConfig(address=os.getenv("DAFT_RAY_ADDRESS"))
         elif runner.upper() == "PY":
             return _PyRunnerConfig()
+        elif runner.upper() == "DYNAMIC":
+            return _DynamicRunnerConfig()
         raise ValueError(f"Unsupported DAFT_RUNNER variable: {os.environ['DAFT_RUNNER']}")
     return _PyRunnerConfig()
 
