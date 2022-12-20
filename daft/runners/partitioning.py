@@ -490,6 +490,9 @@ class PartitionSet(Generic[PartitionT]):
         """
         raise NotImplementedError()
 
+    def values(self) -> list[PartitionT]:
+        return [value for _, value in self.items()]
+
     @abstractmethod
     def get_partition(self, idx: PartID) -> PartitionT:
         raise NotImplementedError()
