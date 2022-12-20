@@ -121,7 +121,7 @@ class DynamicSchedule:
         if isinstance(node, logical_plan.InMemoryScan):
             return InMemoryScanHandler(node)
         elif isinstance(node, logical_plan.Scan):
-            return FileScanHandler(node)
+            return FileReadHandler(node)
 
         # -- Fully pipelineable nodes. --
         elif isinstance(node, logical_plan.Filter):
@@ -136,6 +136,8 @@ class DynamicSchedule:
             return LocalDistinctHandler(node)
         elif isinstance(node, logical_plan.Join):
             return JoinHandler(node)
+        elif isinstance(node, logical_plan.FileWrite):
+            return FileWriteHandler(node)
 
         # -- Nodes requiring intermediate materialization. --
         elif isinstance(node, logical_plan.GlobalLimit):
@@ -197,7 +199,7 @@ class FromPartitions(DynamicSchedule):
         return new_construct
 
 
-class FileScanHandler(DynamicSchedule):
+class FileReadHandler(DynamicSchedule):
     def __init__(self, scan_node: logical_plan.Scan) -> None:
         super().__init__()
         self._scan_node = scan_node
@@ -221,6 +223,41 @@ class FileScanHandler(DynamicSchedule):
             partition = LocalLogicalPartitionOpRunner()._handle_scan(
                 inputs=dict(),
                 scan=scan_node,
+                partition_id=index,
+            )
+            return [partition]
+
+        return instruction
+
+
+class FileWriteHandler(DynamicSchedule):
+    def __init__(self, write_node: logical_plan.FileWrite) -> None:
+        super().__init__()
+        self._write_node = write_node
+
+        [child_node] = write_node._children()
+        self._source = self.handle_logical_node(child_node)
+        self._writes_so_far = 0
+
+    def __next__(self) -> ConstructionInstructions | None:
+        construct = next(self._source)
+        if construct is None or construct.marked_for_materialization():
+            return construct
+
+        construct.add_instruction(self._write(node=self._write_node, index=self._writes_so_far))
+        self._writes_so_far += 1
+
+        return construct
+
+    @staticmethod
+    def _write(node: logical_plan.FileWrite, index: int) -> Callable[[list[vPartition]], list[vPartition]]:
+        child_id = node._children()[0].id()
+
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            partition = LocalLogicalPartitionOpRunner()._handle_file_write(
+                inputs={child_id: input},
+                file_write=node,
                 partition_id=index,
             )
             return [partition]
