@@ -22,7 +22,7 @@ from daft.logical.optimizer import (
 )
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet, vPartition
-from daft.runners.pyrunner import LocalPartitionSet
+from daft.runners.pyrunner import LocalLogicalPartitionOpRunner, LocalPartitionSet
 from daft.runners.runner import Runner
 from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, SortOp
 
@@ -120,6 +120,8 @@ class DynamicSchedule:
         # -- Leaf nodes. --
         if isinstance(node, logical_plan.InMemoryScan):
             return InMemoryScanHandler(node)
+        elif isinstance(node, logical_plan.Scan):
+            return FileScanHandler(node)
 
         # -- Fully pipelineable nodes. --
         elif isinstance(node, logical_plan.Filter):
@@ -193,6 +195,37 @@ class FromPartitions(DynamicSchedule):
 
         new_construct = ConstructionInstructions([partition])
         return new_construct
+
+
+class FileScanHandler(DynamicSchedule):
+    def __init__(self, scan_node: logical_plan.Scan) -> None:
+        super().__init__()
+        self._scan_node = scan_node
+        self._next_index = 0
+
+    def __next__(self) -> ConstructionInstructions | None:
+        if self._next_index < self._scan_node.num_partitions():
+            construct_new = ConstructionInstructions([])
+            construct_new.add_instruction(self._read_file(self._scan_node, self._next_index))
+
+            self._next_index += 1
+            return construct_new
+
+        else:
+            raise StopIteration
+
+    @staticmethod
+    def _read_file(scan_node: logical_plan.Scan, index: int) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            assert len(inputs) == 0
+            partition = LocalLogicalPartitionOpRunner()._handle_scan(
+                inputs=dict(),
+                scan=scan_node,
+                partition_id=index,
+            )
+            return [partition]
+
+        return instruction
 
 
 class FilterHandler(DynamicSchedule):
