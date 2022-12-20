@@ -122,6 +122,8 @@ class DynamicSchedule:
         # -- Fully pipelineable nodes. --
         elif isinstance(node, logical_plan.Filter):
             return FilterHandler(node)
+        elif isinstance(node, logical_plan.Projection):
+            return ProjectionHandler(node)
 
         # -- Nodes requiring intermediate materialization. --
         elif isinstance(node, logical_plan.GlobalLimit):
@@ -176,18 +178,18 @@ class FromPartitions(DynamicSchedule):
 class FilterHandler(DynamicSchedule):
     def __init__(self, filter_node: logical_plan.Filter) -> None:
         super().__init__()
-        self._filter_node = filter_node
+
         [child_node] = filter_node._children()
-        self.source = self.handle_logical_node(child_node)
+        child_source = self.handle_logical_node(child_node)
+
+        filter_fn = self._filter(filter_node._predicate)
+        self._pipenode = ExecutePipeableFunction(
+            source=child_source,
+            pipeable_fn=filter_fn,
+        )
 
     def __next__(self) -> ConstructionInstructions | None:
-        construct = next(self.source)
-        if construct is None or construct.marked_for_materialization():
-            return construct
-
-        construct.add_instruction(self._filter(self._filter_node._predicate))
-
-        return construct
+        return next(self._pipenode)
 
     @staticmethod
     def _filter(predicate: ExpressionList) -> Callable[[list[vPartition]], list[vPartition]]:
@@ -196,6 +198,47 @@ class FilterHandler(DynamicSchedule):
             return [input.filter(predicate)]
 
         return instruction
+
+
+class ProjectionHandler(DynamicSchedule):
+    def __init__(self, projection_node: logical_plan.Projection) -> None:
+        super().__init__()
+
+        [child_node] = projection_node._children()
+        child_source = self.handle_logical_node(child_node)
+
+        project_fn = self._project(projection_node._projection)
+        self._pipenode = ExecutePipeableFunction(
+            source=child_source,
+            pipeable_fn=project_fn,
+        )
+
+    def __next__(self) -> ConstructionInstructions | None:
+        return next(self._pipenode)
+
+    @staticmethod
+    def _project(projection: ExpressionList) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [input.eval_expression_list(projection)]
+
+        return instruction
+
+
+class ExecutePipeableFunction(DynamicSchedule):
+    def __init__(self, source: DynamicSchedule, pipeable_fn: Callable[[list[vPartition]], list[vPartition]]) -> None:
+        super().__init__()
+        self._source = source
+        self._pipeable_fn = pipeable_fn
+
+    def __next__(self) -> ConstructionInstructions | None:
+        construct = next(self._source)
+        if construct is None or construct.marked_for_materialization():
+            return construct
+
+        construct.add_instruction(self._pipeable_fn)
+
+        return construct
 
 
 class GlobalLimitHandler(DynamicSchedule):
