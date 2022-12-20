@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from abc import abstractmethod
 from collections import defaultdict
 from typing import Callable, Iterator
@@ -114,18 +115,32 @@ class DynamicSchedule:
 
     @staticmethod
     def handle_logical_node(node: LogicalPlan) -> DynamicSchedule:
+        # -- Leaf nodes. --
         if isinstance(node, logical_plan.InMemoryScan):
             return InMemoryScanHandler(node)
+
+        # -- Fully pipelineable nodes. --
         elif isinstance(node, logical_plan.Filter):
             return FilterHandler(node)
+
+        # -- Nodes requiring intermediate materialization. --
         elif isinstance(node, logical_plan.GlobalLimit):
             return GlobalLimitHandler(node)
         elif isinstance(node, logical_plan.Repartition):
             return RepartitionHandler(node)
         elif isinstance(node, logical_plan.Sort):
             return SortHandler(node)
+        elif isinstance(node, logical_plan.Coalesce):
+            return CoalesceHandler(node)
         else:
             raise RuntimeError(f"Unsupported plan type {node}")
+
+    @staticmethod
+    def _merge() -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            return [vPartition.merge_partitions(inputs, verify_partition_id=False)]
+
+        return instruction
 
 
 class InMemoryScanHandler(DynamicSchedule):
@@ -264,6 +279,56 @@ class GlobalLimitHandler(DynamicSchedule):
             return [input.head(limit)]
 
         return instruction
+
+
+class CoalesceHandler(DynamicSchedule):
+    def __init__(self, coalesce: logical_plan.Coalesce) -> None:
+        [child_node] = coalesce._children()
+        self._source = DynamicSchedule.handle_logical_node(child_node)
+
+        coalesce_from = child_node.num_partitions()
+        coalesce_to = coalesce.num_partitions()
+        self._num_emitted = 0
+
+        assert (
+            coalesce_to <= coalesce_from
+        ), f"Cannot coalesce upwards from {coalesce_from} to {coalesce_to} partitions."
+
+        starts = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(coalesce_to)]
+        stops = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(1, coalesce_to + 1)]
+
+        self._coalesce_boundaries = list(zip(starts, stops))
+
+    def __next__(self) -> ConstructionInstructions | None:
+
+        if self._num_emitted == len(self._coalesce_boundaries):
+            raise StopIteration
+
+        # See if we can emit a coalesced partition.
+        dependencies = self._materializations[self.DEPENDENCIES]
+        next_start, next_stop = self._coalesce_boundaries[self._num_emitted]
+        if next_stop <= len(dependencies):
+            to_coalesce = dependencies[next_start:next_stop]
+            # for mypy
+            ready_to_coalesce = [_ for _ in to_coalesce if _ is not None]
+            if len(ready_to_coalesce) == len(to_coalesce):
+                construct_merge = ConstructionInstructions(ready_to_coalesce)
+                construct_merge.add_instruction(self._merge())
+                self._num_emitted += 1
+                return construct_merge
+
+        # We cannot emit a coalesced partition;
+        # try materializing more dependencies.
+        try:
+            construct = next(self._source)
+        except StopIteration:
+            construct = None
+
+        if construct is None or construct.marked_for_materialization():
+            return construct
+
+        self._prepare_to_materialize(construct)
+        return construct
 
 
 class SortHandler(DynamicSchedule):
@@ -468,13 +533,6 @@ class RepartitionHandler(DynamicSchedule):
                 output_partitions=num_outputs,
             )
             return [partition for _, partition in sorted(partitions_with_ids.items())]
-
-        return instruction
-
-    @staticmethod
-    def _merge() -> Callable[[list[vPartition]], list[vPartition]]:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            return [vPartition.merge_partitions(inputs)]
 
         return instruction
 
