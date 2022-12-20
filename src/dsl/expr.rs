@@ -5,7 +5,7 @@ use crate::{
     error::DaftResult,
     field::Field,
     schema::Schema,
-    utils::supertype::{get_supertype, try_get_supertype},
+    utils::supertype::try_get_supertype,
 };
 use std::{
     fmt::{Debug, Display, Formatter},
@@ -140,23 +140,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_adds_two() {
+    fn check_comparision_type() -> DaftResult<()> {
         let x = Expr::Literal(LiteralValue::Float64(10.));
         let y = Expr::Literal(LiteralValue::Int64(12));
         let schema = Schema::new();
 
-        println!(
-            "hello: {:?}, {:?}",
-            &x.get_type(&schema),
-            &y.get_type(&schema)
-        );
+        let z = Expr::BinaryOp {
+            left: x.into(),
+            right: y.into(),
+            op: Operator::Lt,
+        };
+        assert_eq!(z.get_type(&schema)?, DataType::Arrow(ArrowType::Boolean));
+        Ok(())
+    }
+
+    #[test]
+    fn check_arithmetic_type() -> DaftResult<()> {
+        let x = Expr::Literal(LiteralValue::Float64(10.));
+        let y = Expr::Literal(LiteralValue::Int64(12));
+        let schema = Schema::new();
 
         let z = Expr::BinaryOp {
             left: x.into(),
             right: y.into(),
             op: Operator::Plus,
         };
+        assert_eq!(z.get_type(&schema)?, DataType::Arrow(ArrowType::Float64));
 
-        println!("hello: {:?}", z.to_field(&schema));
+        let x = Expr::Literal(LiteralValue::Float64(10.));
+        let y = Expr::Literal(LiteralValue::Int64(12));
+
+        let z = Expr::BinaryOp {
+            left: y.into(),
+            right: x.into(),
+            op: Operator::Plus,
+        };
+        assert_eq!(z.get_type(&schema)?, DataType::Arrow(ArrowType::Float64));
+
+        Ok(())
     }
 }
