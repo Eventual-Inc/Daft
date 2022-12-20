@@ -550,6 +550,7 @@ class GlobalLimitHandler(DynamicSchedule):
 
 class CoalesceHandler(DynamicSchedule):
     def __init__(self, coalesce: logical_plan.Coalesce) -> None:
+        super().__init__()
         [child_node] = coalesce._children()
         self._source = DynamicSchedule.handle_logical_node(child_node)
 
