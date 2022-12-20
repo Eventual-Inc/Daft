@@ -63,6 +63,10 @@ class DynamicRunner(Runner):
         schedule = ExecuteMaterialize(schedule)
 
         for next_construction in schedule:
+            if next_construction is None:
+                import IPython
+
+                IPython.embed()
             assert next_construction is not None
             self._build_partitions(next_construction)
 
@@ -521,10 +525,12 @@ class GlobalLimitHandler(DynamicSchedule):
 
         # We cannot return a global limit partition,
         # so return instructions to materialize the next local limit partition.
+        construct = None
         try:
             construct = next(self._source)
         except StopIteration:
-            construct = None
+            if self._continue_from_partition >= len(dependencies):
+                raise
 
         if construct is None or construct.marked_for_materialization():
             return construct
