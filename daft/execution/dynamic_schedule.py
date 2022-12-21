@@ -24,7 +24,7 @@ from daft.runners.pyrunner import LocalPartitionSet
 
 
 class DynamicSchedule(Iterator[Optional[Construction]]):
-    """DynamicSchedule dynamically generates a sequence of execution steps to compute some target.
+    """Recursively dynamically generate a sequence of execution steps to compute some target.
 
     - The execution steps (Constructions) are exposed via the iterator interface.
     - If the Construction is marked for materialization, it should be materialized and reported as completed.

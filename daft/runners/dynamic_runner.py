@@ -41,6 +41,8 @@ from daft.runners.runner import Runner
 
 
 class DynamicRunner(Runner):
+    """A dynamic version of PyRunner that uses DynamicSchedule to determine execution steps."""
+
     def __init__(self) -> None:
         super().__init__()
         # From PyRunner
@@ -76,11 +78,7 @@ class DynamicRunner(Runner):
         schedule = ScheduleMaterialize(schedule)
 
         for next_construction in schedule:
-            if next_construction is None:
-                import IPython
-
-                IPython.embed()
-            assert next_construction is not None
+            assert next_construction is not None, "Got a None construction in singlethreaded mode"
             self._build_partitions(next_construction)
 
         final_result = schedule.result_partition_set()
