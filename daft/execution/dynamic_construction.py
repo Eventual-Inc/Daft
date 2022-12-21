@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Callable
 
-import daft
 from daft.expressions import Expression
 from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
@@ -26,44 +25,43 @@ class Construction:
         # Instruction stack to execute.
         self.instruction_stack: list[Callable[[list[vPartition]], list[vPartition]]] = list()
 
-        # Materialization location: which DynamicSchedule requested materialization of this construction.
-        self._schedule: daft.execution.dynamic_schedule.DynamicSchedule | None = None
-        self._label: str | None = None
-        self._partno: int | None = None
+        # Where to put the materialized results.
+        self._destination_array: None | list[vPartition | None]
+        self._partno: None | int = None
 
     def add_instruction(self, instruction: Callable[[list[vPartition]], list[vPartition]]) -> None:
         """Add an instruction to the stack that will run for this partition."""
         self.assert_not_marked()
         self.instruction_stack.append(instruction)
 
-    def mark_for_materialization(
-        self, schedule: daft.execution.dynamic_schedule.DynamicSchedule, label: str, partno: int
-    ) -> None:
+    def mark_for_materialization(self, destination_array: list[vPartition | None], num_results: int = 1) -> None:
         """Mark this Construction for materialization.
 
         1. Prevents further instructions from being added to this Construction.
-        2. Records the DynamicSchedule that needs this the materialized result of this Construction.
+        2. Saves a reference to where the materialized results should be placed.
         """
         self.assert_not_marked()
-        self._schedule = schedule
-        self._label = label
-        self._partno = partno
+        self._destination_array = destination_array
+        self._partno = len(destination_array)
+        self._destination_array += [None] * num_results
 
     def report_completed(self, results: list[vPartition]) -> None:
         """Give the materialized result of this Construction to the DynamicSchedule who asked for it."""
 
-        assert self._schedule is not None
-        assert self._label is not None
+        assert self._destination_array is not None
         assert self._partno is not None
-        self._schedule.register_completed_materialization(results, self._label, self._partno)
+
+        for i, partition in enumerate(results):
+            assert self._destination_array[self._partno + i] is None, self._destination_array[self._partno + i]
+            self._destination_array[self._partno + i] = partition
 
     def is_marked_for_materialization(self) -> bool:
-        return all(_ is not None for _ in (self._schedule, self._label, self._partno))
+        return all(_ is not None for _ in (self._destination_array, self._partno))
 
     def assert_not_marked(self) -> None:
         assert (
             not self.is_marked_for_materialization()
-        ), f"Partition already instructed to materialize for {self._schedule}, label {self._label}, partition index {self._partno}"
+        ), f"Partition already instructed to materialize into {self._destination_array}, partition index {self._partno}"
 
 
 # -- Various instructions. --

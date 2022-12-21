@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import math
 from abc import abstractmethod
-from collections import defaultdict
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from daft.execution.dynamic_construction import (
@@ -31,12 +31,14 @@ class DynamicSchedule(Iterator[Optional[Construction]]):
     - If None is returned, it means that the next execution step is waiting for some previous Construction to materialize.
     """
 
-    DEPENDENCIES = "dependencies"
+    @dataclass
+    class Materializations:
+        dependencies: list[vPartition | None] = field(default_factory=list)
 
     def __init__(self) -> None:
         # Materialized partitions that this dynamic schedule needs to do its job.
         # `None` denotes a partition whose materialization is in-progress.
-        self._materializations: dict[str, list[vPartition | None]] = defaultdict(list)
+        self._materializations: DynamicSchedule.Materializations = self.Materializations()
         self._completed = False
 
     def __next__(self) -> Construction | None:
@@ -49,7 +51,7 @@ class DynamicSchedule(Iterator[Optional[Construction]]):
         except StopIteration:
             self._completed = True
             # Drop references to dependencies.
-            self._materializations = dict()
+            self._materializations = self.Materializations()
             raise
 
     @abstractmethod
@@ -60,27 +62,16 @@ class DynamicSchedule(Iterator[Optional[Construction]]):
         """
         raise NotImplementedError()
 
-    def register_completed_materialization(self, partitions: list[vPartition], label: str, partno: int) -> None:
-        for i, partition in enumerate(partitions):
-            assert self._materializations[label][partno + i] is None, self._materializations[label][partno + i]
-            self._materializations[label][partno + i] = partition
-
-    def _prepare_to_materialize(
-        self, instructions: Construction, label: str = DEPENDENCIES, num_results: int = 1
-    ) -> None:
-        instructions.mark_for_materialization(self, label, len(self._materializations[label]))
-        self._materializations[label] += [None] * num_results
-
 
 class SchedulePartitionRead(DynamicSchedule):
     def __init__(self, partitions: list[vPartition]) -> None:
         super().__init__()
-        self._materializations[self.DEPENDENCIES] += partitions
+        self._materializations.dependencies += partitions
         self._num_dispatched = 0
 
     def _next_impl(self) -> Construction | None:
 
-        dependencies = self._materializations[self.DEPENDENCIES]
+        dependencies = self._materializations.dependencies
         if self._num_dispatched == len(dependencies):
             raise StopIteration
 
@@ -147,19 +138,22 @@ class SchedulePipelineInstruction(DynamicSchedule):
 
 
 class ScheduleJoin(DynamicSchedule):
-    LEFTS = "lefts"
-    RIGHTS = "rights"
+    @dataclass
+    class Materializations(DynamicSchedule.Materializations):
+        lefts: list[vPartition | None] = field(default_factory=list)
+        rights: list[vPartition | None] = field(default_factory=list)
 
     def __init__(self, left_source: DynamicSchedule, right_source: DynamicSchedule, join: logical_plan.Join) -> None:
         super().__init__()
+        self._materializations: ScheduleJoin.Materializations = self.Materializations()
         self._left_source = left_source
         self._right_source = right_source
         self._join_node = join
         self._next_to_emit = 0
 
     def _next_impl(self) -> Construction | None:
-        lefts = self._materializations[self.LEFTS]
-        rights = self._materializations[self.RIGHTS]
+        lefts = self._materializations.lefts
+        rights = self._materializations.rights
 
         # Try emitting a join.
         if self._next_to_emit < len(lefts) and self._next_to_emit < len(rights):
@@ -173,11 +167,11 @@ class ScheduleJoin(DynamicSchedule):
                 return construct_join
 
         # Can't emit a join just yet; materialize more dependencies.
-        _, next_label, next_deps, next_source = list(
+        _, next_deps, next_source = list(
             sorted(
                 [
-                    (len(lefts), self.LEFTS, lefts, self._left_source),
-                    (len(rights), self.RIGHTS, rights, self._right_source),
+                    (len(lefts), lefts, self._left_source),
+                    (len(rights), rights, self._right_source),
                 ]
             )
         )[0]
@@ -194,7 +188,7 @@ class ScheduleJoin(DynamicSchedule):
         if construct is None or construct.is_marked_for_materialization():
             return construct
 
-        self._prepare_to_materialize(construct, next_label)
+        construct.mark_for_materialization(next_deps)
         return construct
 
 
@@ -208,7 +202,7 @@ class ScheduleGlobalLimit(DynamicSchedule):
 
     def _next_impl(self) -> Construction | None:
 
-        dependencies = self._materializations[self.DEPENDENCIES]
+        dependencies = self._materializations.dependencies
 
         # Evaluate progress so far.
         # Are we done with the limit?
@@ -265,7 +259,8 @@ class ScheduleGlobalLimit(DynamicSchedule):
             return construct
 
         construct.add_instruction(make_local_limit_instruction(self._remaining_limit))
-        self._prepare_to_materialize(construct)
+
+        construct.mark_for_materialization(dependencies)
         return construct
 
 
@@ -293,7 +288,7 @@ class ScheduleCoalesce(DynamicSchedule):
             raise StopIteration
 
         # See if we can emit a coalesced partition.
-        dependencies = self._materializations[self.DEPENDENCIES]
+        dependencies = self._materializations.dependencies
         next_start, next_stop = self._coalesce_boundaries[self._num_emitted]
         if next_stop <= len(dependencies):
             to_coalesce = dependencies[next_start:next_stop]
@@ -315,19 +310,20 @@ class ScheduleCoalesce(DynamicSchedule):
         if construct is None or construct.is_marked_for_materialization():
             return construct
 
-        self._prepare_to_materialize(construct)
+        construct.mark_for_materialization(dependencies)
         return construct
 
 
 class ScheduleSort(DynamicSchedule):
-
-    SAMPLES = "samples"
-    BOUNDARIES = "boundaries"
+    @dataclass
+    class Materializations(DynamicSchedule.Materializations):
+        samples: list[vPartition | None] = field(default_factory=list)
+        boundaries: list[vPartition | None] = field(default_factory=list)
 
     def __init__(self, child_schedule: DynamicSchedule, sort: logical_plan.Sort) -> None:
         super().__init__()
+        self._materializations: ScheduleSort.Materializations = self.Materializations()
         self._sort = sort
-
         self._child_schedule = child_schedule
 
         # The final step of the sort.
@@ -341,7 +337,7 @@ class ScheduleSort(DynamicSchedule):
             if construct is None or construct.is_marked_for_materialization():
                 return construct
 
-            self._prepare_to_materialize(construct)
+            construct.mark_for_materialization(self._materializations.dependencies)
 
             return construct
 
@@ -350,19 +346,19 @@ class ScheduleSort(DynamicSchedule):
             pass
 
         # Sample partitions to get sort boundaries.
-        source_partitions = self._materializations[self.DEPENDENCIES]
-        sample_partitions = self._materializations[self.SAMPLES]
+        source_partitions = self._materializations.dependencies
+        sample_partitions = self._materializations.samples
         if len(sample_partitions) < len(source_partitions):
             source = source_partitions[len(sample_partitions)]
             if source is None:
                 return None
             construct_sample = Construction([source])
             construct_sample.add_instruction(make_map_to_samples_instruction(self._sort._sort_by))
-            self._prepare_to_materialize(construct_sample, label=self.SAMPLES)
+            construct_sample.mark_for_materialization(sample_partitions)
             return construct_sample
 
         # Sample partitions are done, reduce to get quantiles.
-        if not len(self._materializations[self.BOUNDARIES]):
+        if not len(self._materializations.boundaries):
             finished_samples = [_ for _ in sample_partitions if _ is not None]
             if len(finished_samples) != len(sample_partitions):
                 return None
@@ -375,10 +371,10 @@ class ScheduleSort(DynamicSchedule):
                     num_quantiles=self._sort.num_partitions(),
                 )
             )
-            self._prepare_to_materialize(construct_boundaries, label=self.BOUNDARIES)
+            construct_boundaries.mark_for_materialization(self._materializations.boundaries)
             return construct_boundaries
 
-        [boundaries_partition] = self._materializations[self.BOUNDARIES]
+        [boundaries_partition] = self._materializations.boundaries
         if boundaries_partition is None:
             return None
 
@@ -433,7 +429,7 @@ class ScheduleFanoutReduce(DynamicSchedule):
 
             construct.add_instruction(self._fanout_fn)
 
-            self._prepare_to_materialize(construct, num_results=self._num_outputs)
+            construct.mark_for_materialization(self._materializations.dependencies, num_results=self._num_outputs)
             return construct
 
         except StopIteration:
@@ -448,7 +444,7 @@ class ScheduleFanoutReduce(DynamicSchedule):
 
         kth_reduce_dependencies = [
             partition
-            for i, partition in enumerate(self._materializations[self.DEPENDENCIES])
+            for i, partition in enumerate(self._materializations.dependencies)
             if i % self._num_outputs == self._reduces_emitted
         ]
         finished_reduce_dependencies = [_ for _ in kth_reduce_dependencies if _ is not None]
@@ -468,13 +464,13 @@ class ScheduleMaterialize(DynamicSchedule):
     def __init__(self, child_schedule: DynamicSchedule) -> None:
         super().__init__()
         self.child_schedule = child_schedule
-        self._materializing_results = self._materializations[self.DEPENDENCIES]
+        self._materializing_results: list[vPartition | None] = []
         self._returned = False
 
     def _next_impl(self) -> Construction | None:
         construct = next(self.child_schedule)
         if construct is not None and not construct.is_marked_for_materialization():
-            self._prepare_to_materialize(construct)
+            construct.mark_for_materialization(self._materializing_results)
         return construct
 
     def result_partition_set(self) -> PartitionSet[vPartition]:
