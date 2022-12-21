@@ -6,7 +6,7 @@ import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic, Sequence, TypeVar
+from typing import IO, Any, Callable, Generic, Sequence, TypeVar
 from uuid import uuid4
 
 import numpy as np
