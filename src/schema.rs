@@ -2,6 +2,7 @@ use indexmap::IndexMap;
 use std::sync::Arc;
 
 use crate::{
+    datatypes::DataType,
     error::{DaftError, DaftResult},
     field::Field,
 };
@@ -13,11 +14,27 @@ pub struct Schema {
 }
 
 impl Schema {
-    pub fn new() -> Schema {
+    pub fn new(fields: &[(String, DataType)]) -> Self {
+        let mut map = indexmap::IndexMap::new();
+
+        for (name, dt) in fields.iter() {
+            map.insert(
+                name.clone(),
+                Field {
+                    name: name.clone(),
+                    dtype: dt.clone(),
+                },
+            );
+        }
+
+        Schema { fields: map }
+    }
+    pub fn empty() -> Self {
         Schema {
             fields: indexmap::IndexMap::new(),
         }
     }
+
     pub fn get_field(&self, name: &str) -> DaftResult<&Field> {
         match self.fields.get(name) {
             None => Err(DaftError::NotFound(name.into())),

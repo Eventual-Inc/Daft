@@ -27,6 +27,12 @@ pub enum Expr {
     Literal(lit::LiteralValue),
 }
 
+pub fn col(name: &str) -> Expr {
+    Expr::Column(name.into())
+}
+
+use lit::lit;
+
 impl Expr {
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use Expr::*;
@@ -56,8 +62,6 @@ impl Expr {
                 };
                 Ok(result)
             }
-
-            _ => Err(DaftError::NotFound("no found".into())),
         }
     }
 
@@ -141,9 +145,9 @@ mod tests {
 
     #[test]
     fn check_comparision_type() -> DaftResult<()> {
-        let x = Expr::Literal(LiteralValue::Float64(10.));
-        let y = Expr::Literal(LiteralValue::Int64(12));
-        let schema = Schema::new();
+        let x = lit(10.);
+        let y = lit(12);
+        let schema = Schema::empty();
 
         let z = Expr::BinaryOp {
             left: x.into(),
@@ -156,9 +160,9 @@ mod tests {
 
     #[test]
     fn check_arithmetic_type() -> DaftResult<()> {
-        let x = Expr::Literal(LiteralValue::Float64(10.));
-        let y = Expr::Literal(LiteralValue::Int64(12));
-        let schema = Schema::new();
+        let x = lit(10.);
+        let y = lit(12);
+        let schema = Schema::empty();
 
         let z = Expr::BinaryOp {
             left: x.into(),
@@ -167,8 +171,37 @@ mod tests {
         };
         assert_eq!(z.get_type(&schema)?, DataType::Arrow(ArrowType::Float64));
 
-        let x = Expr::Literal(LiteralValue::Float64(10.));
-        let y = Expr::Literal(LiteralValue::Int64(12));
+        let x = lit(10.);
+        let y = lit(12);
+
+        let z = Expr::BinaryOp {
+            left: y.into(),
+            right: x.into(),
+            op: Operator::Plus,
+        };
+        assert_eq!(z.get_type(&schema)?, DataType::Arrow(ArrowType::Float64));
+
+        Ok(())
+    }
+
+    #[test]
+    fn check_arithmetic_type_with_columns() -> DaftResult<()> {
+        let x = col("x");
+        let y = col("y");
+        let schema = Schema::new(&vec![
+            ("x".to_string(), DataType::Arrow(ArrowType::Float64)),
+            ("y".to_string(), DataType::Arrow(ArrowType::Int64)),
+        ]);
+
+        let z = Expr::BinaryOp {
+            left: x.into(),
+            right: y.into(),
+            op: Operator::Plus,
+        };
+        assert_eq!(z.get_type(&schema)?, DataType::Arrow(ArrowType::Float64));
+
+        let x = col("x");
+        let y = col("y");
 
         let z = Expr::BinaryOp {
             left: y.into(),

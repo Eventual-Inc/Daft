@@ -1,4 +1,5 @@
 use crate::datatypes::{ArrowType, DataType};
+use crate::dsl::expr::Expr;
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
@@ -29,4 +30,39 @@ impl LiteralValue {
             Float64(_) => DataType::Arrow(ArrowType::Float64),
         }
     }
+}
+
+pub trait Literal {
+    /// [Literal](Expr::Literal) expression.
+    fn lit(self) -> Expr;
+}
+
+impl Literal for String {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::Utf8(self))
+    }
+}
+
+impl<'a> Literal for &'a str {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::Utf8(self.to_owned()))
+    }
+}
+
+macro_rules! make_literal {
+    ($TYPE:ty, $SCALAR:ident) => {
+        impl Literal for $TYPE {
+            fn lit(self) -> Expr {
+                Expr::Literal(LiteralValue::$SCALAR(self))
+            }
+        }
+    };
+}
+
+make_literal!(bool, Boolean);
+make_literal!(f64, Float64);
+make_literal!(i64, Int64);
+
+pub fn lit<L: Literal>(t: L) -> Expr {
+    t.lit()
 }

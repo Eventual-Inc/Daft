@@ -112,13 +112,25 @@ fn get_arrow_supertype(l: &ArrowType, r: &ArrowType) -> Option<DataType> {
 
             _ => None,
         };
-        match arrow_dtype {
-            Some(atype) => Some(DataType::Arrow(atype)),
-            None => None,
-        }
+        arrow_dtype.map(DataType::Arrow)
     }
     match inner(l, r) {
         Some(dt) => Some(dt),
         None => inner(r, l),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_bad_arrow_type() -> DaftResult<()> {
+        let result = get_supertype(
+            &DataType::Arrow(ArrowType::LargeUtf8),
+            &DataType::Arrow(ArrowType::LargeBinary),
+        );
+        assert_eq!(result, None);
+        Ok(())
     }
 }
