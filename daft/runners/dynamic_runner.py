@@ -107,79 +107,90 @@ def schedule_logical_node(node: LogicalPlan) -> DynamicSchedule:
     elif isinstance(node, logical_plan.Scan):
         return ScheduleFileRead(node)
 
-    # -- Binary Join node. --
-    elif isinstance(node, logical_plan.Join):
-        [left_child, right_child] = node._children()
-        return ScheduleJoin(
-            left_source=schedule_logical_node(left_child),
-            right_source=schedule_logical_node(right_child),
-            join=node,
-        )
-
     # -- Unary nodes. --
-    [child_node] = node._children()
-    child_schedule = schedule_logical_node(child_node)
 
-    if isinstance(node, logical_plan.LocalLimit):
-        # Ignore LocalLimit logical nodes; the GlobalLimit handles everything
-        # and will dynamically dispatch appropriate local limit instructions.
-        return child_schedule
+    elif isinstance(node, logical_plan.UnaryNode):
+        [child_node] = node._children()
+        child_schedule = schedule_logical_node(child_node)
 
-    elif isinstance(node, logical_plan.Filter):
-        return SchedulePipelineInstruction(
-            child_schedule=child_schedule, pipeable_instruction=make_filter_instruction(node._predicate)
-        )
+        if isinstance(node, logical_plan.LocalLimit):
+            # Ignore LocalLimit logical nodes; the GlobalLimit handles everything
+            # and will dynamically dispatch appropriate local limit instructions.
+            return child_schedule
 
-    elif isinstance(node, logical_plan.Projection):
-        return SchedulePipelineInstruction(
-            child_schedule=child_schedule, pipeable_instruction=make_project_instruction(node._projection)
-        )
-
-    elif isinstance(node, logical_plan.MapPartition):
-        return SchedulePipelineInstruction(
-            child_schedule=child_schedule, pipeable_instruction=make_map_partition_instruction(node._map_partition_op)
-        )
-
-    elif isinstance(node, logical_plan.LocalAggregate):
-        return SchedulePipelineInstruction(
-            child_schedule=child_schedule, pipeable_instruction=make_agg_instruction(node._agg, node._group_by)
-        )
-
-    elif isinstance(node, logical_plan.LocalDistinct):
-        return SchedulePipelineInstruction(
-            child_schedule=child_schedule, pipeable_instruction=make_agg_instruction([], node._group_by)
-        )
-
-    elif isinstance(node, logical_plan.FileWrite):
-        return ScheduleFileWrite(child_schedule, node)
-
-    elif isinstance(node, logical_plan.GlobalLimit):
-        return ScheduleGlobalLimit(child_schedule, node)
-
-    elif isinstance(node, logical_plan.Repartition):
-        # Translate PartitionScheme to the appropriate fanout_fn
-        if node._scheme == PartitionScheme.RANDOM:
-            fanout_fn = make_fanout_random_instruction(num_outputs=node.num_partitions())
-        elif node._scheme == PartitionScheme.HASH:
-            fanout_fn = make_fanout_hash_instruction(
-                num_outputs=node.num_partitions(),
-                partition_by=node._partition_by,
+        elif isinstance(node, logical_plan.Filter):
+            return SchedulePipelineInstruction(
+                child_schedule=child_schedule, pipeable_instruction=make_filter_instruction(node._predicate)
             )
+
+        elif isinstance(node, logical_plan.Projection):
+            return SchedulePipelineInstruction(
+                child_schedule=child_schedule, pipeable_instruction=make_project_instruction(node._projection)
+            )
+
+        elif isinstance(node, logical_plan.MapPartition):
+            return SchedulePipelineInstruction(
+                child_schedule=child_schedule,
+                pipeable_instruction=make_map_partition_instruction(node._map_partition_op),
+            )
+
+        elif isinstance(node, logical_plan.LocalAggregate):
+            return SchedulePipelineInstruction(
+                child_schedule=child_schedule, pipeable_instruction=make_agg_instruction(node._agg, node._group_by)
+            )
+
+        elif isinstance(node, logical_plan.LocalDistinct):
+            return SchedulePipelineInstruction(
+                child_schedule=child_schedule, pipeable_instruction=make_agg_instruction([], node._group_by)
+            )
+
+        elif isinstance(node, logical_plan.FileWrite):
+            return ScheduleFileWrite(child_schedule, node)
+
+        elif isinstance(node, logical_plan.GlobalLimit):
+            return ScheduleGlobalLimit(child_schedule, node)
+
+        elif isinstance(node, logical_plan.Repartition):
+            # Translate PartitionScheme to the appropriate fanout_fn
+            if node._scheme == PartitionScheme.RANDOM:
+                fanout_fn = make_fanout_random_instruction(num_outputs=node.num_partitions())
+            elif node._scheme == PartitionScheme.HASH:
+                fanout_fn = make_fanout_hash_instruction(
+                    num_outputs=node.num_partitions(),
+                    partition_by=node._partition_by,
+                )
+            else:
+                raise RuntimeError(f"Unimplemented partitioning scheme {node._scheme}")
+
+            return ScheduleFanoutReduce(
+                child_schedule=child_schedule,
+                num_outputs=node.num_partitions(),
+                fanout_fn=fanout_fn,
+                reduce_fn=make_merge_instruction(),
+            )
+
+        elif isinstance(node, logical_plan.Sort):
+            return ScheduleSort(child_schedule, node)
+
+        elif isinstance(node, logical_plan.Coalesce):
+            return ScheduleCoalesce(child_schedule, node)
+
         else:
-            raise RuntimeError(f"Unimplemented partitioning scheme {node._scheme}")
+            raise NotImplementedError(f"Unsupported plan type {node}")
 
-        return ScheduleFanoutReduce(
-            child_schedule=child_schedule,
-            num_outputs=node.num_partitions(),
-            fanout_fn=fanout_fn,
-            reduce_fn=make_merge_instruction(),
-        )
+    # -- Binary nodes. --
+    elif isinstance(node, logical_plan.BinaryNode):
+        [left_child, right_child] = node._children()
 
-    elif isinstance(node, logical_plan.Sort):
-        return ScheduleSort(child_schedule, node)
+        if isinstance(node, logical_plan.Join):
+            return ScheduleJoin(
+                left_source=schedule_logical_node(left_child),
+                right_source=schedule_logical_node(right_child),
+                join=node,
+            )
 
-    elif isinstance(node, logical_plan.Coalesce):
-        return ScheduleCoalesce(child_schedule, node)
+        else:
+            raise NotImplementedError(f"Unsupported plan type {node}")
 
     else:
-        raise RuntimeError(f"Unsupported plan type {node}")
+        raise NotImplementedError(f"Unsupported plan type {node}")
