@@ -10,7 +10,7 @@ icebridge
 ipdb
 maturin
 myst-nb>=0.16.0
-numpy
+numpy < 1.24
 pandas
 pre-commit
 pyarrow
