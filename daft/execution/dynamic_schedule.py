@@ -24,15 +24,11 @@ from daft.runners.pyrunner import LocalPartitionSet
 
 
 class DynamicSchedule(Iterator[Optional[Construction]]):
-    """DynamicSchedule dynamically generates a series of execution steps to compute some target.
+    """DynamicSchedule dynamically generates a sequence of execution steps to compute some target.
 
-    For usage, see schedule_logical_node.
-    Usage:
-        1.  To execute a logical plan, first call DynamicSchedule.schedule_logical_node on the plan.
-            This will create the correct DynamicSchedule for your logical plan.
-        2.  Call next() to get the next stack of instructions (Construction) to execute.
-        3.  Execute the instructions to get new partitions.
-        4.  Call register_completed_materialization to tell the schedule that the instructions have been executed.
+    - The execution steps (Constructions) are exposed via the iterator interface.
+    - If the Construction is marked for materialization, it should be materialized and reported as completed.
+    - If None is returned, it means that the next execution step is waiting for some previous Construction to materialize.
     """
 
     DEPENDENCIES = "dependencies"
@@ -45,9 +41,16 @@ class DynamicSchedule(Iterator[Optional[Construction]]):
 
     def __next__(self) -> Construction | None:
         if self._completed:
-            self._stop_iteration()
+            raise StopIteration
 
-        return self._next_impl()
+        try:
+            return self._next_impl()
+
+        except StopIteration:
+            self._completed = True
+            # Drop references to dependencies.
+            self._materializations = dict()
+            raise
 
     @abstractmethod
     def _next_impl(self) -> Construction | None:
@@ -68,11 +71,6 @@ class DynamicSchedule(Iterator[Optional[Construction]]):
         instructions.mark_for_materialization(self, label, len(self._materializations[label]))
         self._materializations[label] += [None] * num_results
 
-    def _stop_iteration(self):
-        self._completed = True
-        self._materializations = dict()
-        raise StopIteration
-
 
 class SchedulePartitionRead(DynamicSchedule):
     def __init__(self, partitions: list[vPartition]) -> None:
@@ -84,12 +82,12 @@ class SchedulePartitionRead(DynamicSchedule):
 
         dependencies = self._materializations[self.DEPENDENCIES]
         if self._num_dispatched == len(dependencies):
-            self._stop_iteration()
+            raise StopIteration
 
         partition = dependencies[self._num_dispatched]
         self._num_dispatched += 1
 
-        assert partition is not None  # for mypy only; statically enforced at __init__
+        assert partition is not None  # for mypy; already enforced at __init__
         new_construct = Construction([partition])
         return new_construct
 
@@ -109,8 +107,7 @@ class ScheduleFileRead(DynamicSchedule):
             return construct_new
 
         else:
-            self._stop_iteration()
-            return None  # for mypy
+            raise StopIteration
 
 
 class ScheduleFileWrite(DynamicSchedule):
@@ -190,7 +187,7 @@ class ScheduleJoin(DynamicSchedule):
             construct = next(next_source)
 
         except StopIteration:
-            # Source is dry; is there remaining work to do with what we have materializing so far?
+            # Source is dry; have we emitted all join results?
             if self._next_to_emit >= len(next_deps):
                 raise
 
@@ -237,7 +234,7 @@ class ScheduleGlobalLimit(DynamicSchedule):
                 return new_construct
 
             else:
-                self._stop_iteration()
+                raise StopIteration
 
         # We're not done; check to see if we can return a global limit partition.
         # Is the next local limit partition materialized?
@@ -293,7 +290,7 @@ class ScheduleCoalesce(DynamicSchedule):
     def _next_impl(self) -> Construction | None:
 
         if self._num_emitted == len(self._coalesce_boundaries):
-            self._stop_iteration()
+            raise StopIteration
 
         # See if we can emit a coalesced partition.
         dependencies = self._materializations[self.DEPENDENCIES]
@@ -447,7 +444,7 @@ class ScheduleFanoutReduce(DynamicSchedule):
         # The kth reduce's dependencies are the kth element of every batch of shufflemap outputs.
         # Here, k := reduces_emitted and batchlength := num_outputs
         if self._reduces_emitted == self._num_outputs:
-            self._stop_iteration()
+            raise StopIteration
 
         kth_reduce_dependencies = [
             partition

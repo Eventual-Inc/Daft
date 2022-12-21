@@ -97,6 +97,8 @@ class DynamicRunner(Runner):
 
 
 def schedule_logical_node(node: LogicalPlan) -> DynamicSchedule:
+    """Translates a LogicalPlan into an appropriate DynamicSchedule."""
+
     # -- Leaf nodes. --
     if isinstance(node, logical_plan.InMemoryScan):
         pset = get_context().runner().get_partition_set_from_cache(node._cache_entry.key).value
