@@ -3,7 +3,8 @@ from __future__ import annotations
 import math
 from abc import abstractmethod
 from collections import defaultdict
-from typing import Callable, Iterator
+from collections.abc import Iterator
+from typing import Callable, Optional
 
 from daft.context import get_context
 from daft.expressions import Expression
@@ -83,11 +84,11 @@ class DynamicRunner(Runner):
         partspec.report_completed(partitions)
 
 
-class DynamicSchedule:
+class DynamicSchedule(Iterator[Optional[ConstructionInstructions]]):
     """DynamicSchedule just-in-time computes the sequence of execution steps necessary to generate a target.
 
     The target is typically a given LogicalPlan.
-    The sequence of execution steps is exposed as an iterator (__next__).
+    The sequence of execution steps is exposed as an iterator (_next_impl).
     """
 
     DEPENDENCIES = "dependencies"
@@ -96,12 +97,23 @@ class DynamicSchedule:
         # Materialized partitions that this dynamic schedule needs to do its job.
         # `None` denotes a partition whose materialization is in-progress.
         self._materializations: dict[str, list[vPartition | None]] = defaultdict(list)
+        self._completed = False
+        self._iter_count = 0
 
     def __iter__(self) -> Iterator[ConstructionInstructions | None]:
+        self._iter_count += 1
+        if self._iter_count > 1:
+            raise RuntimeError("Multiple iterators are not supported yet.")
         return self
 
-    @abstractmethod
     def __next__(self) -> ConstructionInstructions | None:
+        if self._completed:
+            self._stop_iteration()
+
+        return self._next_impl()
+
+    @abstractmethod
+    def _next_impl(self) -> ConstructionInstructions | None:
         """
         Raises StopIteration if there are no further instructions to give for this schedule.
         Returns None if there is nothing we can do for now (i.e. must wait for other partitions to finish).
@@ -118,6 +130,11 @@ class DynamicSchedule:
     ) -> None:
         instructions.mark_for_materialization(self, label, len(self._materializations[label]))
         self._materializations[label] += [None] * num_results
+
+    def _stop_iteration(self):
+        self._completed = True
+        self._materializations = dict()
+        raise StopIteration
 
     @staticmethod
     def handle_logical_node(node: LogicalPlan) -> DynamicSchedule:
@@ -182,23 +199,26 @@ class InMemoryScanHandler(DynamicSchedule):
         partitions = pset.values()
         self._from_partitions = FromPartitions(partitions)
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         return next(self._from_partitions)
 
 
 class FromPartitions(DynamicSchedule):
     def __init__(self, partitions: list[vPartition]) -> None:
         super().__init__()
-        self._partitions = partitions
+        self._materializations[self.DEPENDENCIES] += partitions
         self._num_dispatched = 0
 
-    def __next__(self) -> ConstructionInstructions | None:
-        if self._num_dispatched == len(self._partitions):
-            raise StopIteration
+    def _next_impl(self) -> ConstructionInstructions | None:
 
-        partition = self._partitions[self._num_dispatched]
+        dependencies = self._materializations[self.DEPENDENCIES]
+        if self._num_dispatched == len(dependencies):
+            self._stop_iteration()
+
+        partition = dependencies[self._num_dispatched]
         self._num_dispatched += 1
 
+        assert partition is not None  # for mypy only; statically enforced at __init__
         new_construct = ConstructionInstructions([partition])
         return new_construct
 
@@ -209,7 +229,7 @@ class FileReadHandler(DynamicSchedule):
         self._scan_node = scan_node
         self._next_index = 0
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         if self._next_index < self._scan_node.num_partitions():
             construct_new = ConstructionInstructions([])
             construct_new.add_instruction(self._read_file(self._scan_node, self._next_index))
@@ -218,7 +238,8 @@ class FileReadHandler(DynamicSchedule):
             return construct_new
 
         else:
-            raise StopIteration
+            self._stop_iteration()
+            return None  # for mypy
 
     @staticmethod
     def _read_file(scan_node: logical_plan.Scan, index: int) -> Callable[[list[vPartition]], list[vPartition]]:
@@ -243,7 +264,7 @@ class FileWriteHandler(DynamicSchedule):
         self._source = self.handle_logical_node(child_node)
         self._writes_so_far = 0
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         construct = next(self._source)
         if construct is None or construct.marked_for_materialization():
             return construct
@@ -282,7 +303,7 @@ class FilterHandler(DynamicSchedule):
             pipeable_fn=filter_fn,
         )
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         return next(self._pipenode)
 
     @staticmethod
@@ -307,7 +328,7 @@ class ProjectionHandler(DynamicSchedule):
             pipeable_fn=project_fn,
         )
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         return next(self._pipenode)
 
     @staticmethod
@@ -332,7 +353,7 @@ class MapPartitionHandler(DynamicSchedule):
             pipeable_fn=map_fn,
         )
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         return next(self._pipenode)
 
     @staticmethod
@@ -357,7 +378,7 @@ class LocalAggregateHandler(DynamicSchedule):
             pipeable_fn=agg_fn,
         )
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         return next(self._pipenode)
 
 
@@ -374,7 +395,7 @@ class LocalDistinctHandler(DynamicSchedule):
             pipeable_fn=agg_fn,
         )
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         return next(self._pipenode)
 
 
@@ -384,7 +405,7 @@ class ExecutePipeableFunction(DynamicSchedule):
         self._source = source
         self._pipeable_fn = pipeable_fn
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         construct = next(self._source)
         if construct is None or construct.marked_for_materialization():
             return construct
@@ -407,7 +428,7 @@ class JoinHandler(DynamicSchedule):
         self._right_source = self.handle_logical_node(right_child)
         self._next_to_emit = 0
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         lefts = self._materializations[self.LEFTS]
         rights = self._materializations[self.RIGHTS]
 
@@ -477,7 +498,7 @@ class GlobalLimitHandler(DynamicSchedule):
             [child_node] = child_node._children()
         self._source = DynamicSchedule.handle_logical_node(child_node)
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
 
         dependencies = self._materializations[self.DEPENDENCIES]
 
@@ -505,7 +526,7 @@ class GlobalLimitHandler(DynamicSchedule):
                 return new_construct
 
             else:
-                raise StopIteration
+                self._stop_iteration()
 
         # We're not done; check to see if we can return a global limit partition.
         # Is the next local limit partition materialized?
@@ -567,10 +588,10 @@ class CoalesceHandler(DynamicSchedule):
 
         self._coalesce_boundaries = list(zip(starts, stops))
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
 
         if self._num_emitted == len(self._coalesce_boundaries):
-            raise StopIteration
+            self._stop_iteration()
 
         # See if we can emit a coalesced partition.
         dependencies = self._materializations[self.DEPENDENCIES]
@@ -614,7 +635,7 @@ class SortHandler(DynamicSchedule):
         # The final step of the sort.
         self._fanout_reduce: ExecuteFanoutReduce | None = None
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
 
         # First, materialize the child node.
         try:
@@ -776,7 +797,7 @@ class RepartitionHandler(DynamicSchedule):
             reduce_fn=self._merge(),
         )
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         return next(self._fanout_reduce)
 
     @staticmethod
@@ -821,7 +842,7 @@ class ExecuteFanoutReduce(DynamicSchedule):
 
         self._reduces_emitted = 0
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         # Dispatch shufflemaps.
         try:
             construct = next(self._source)
@@ -841,7 +862,7 @@ class ExecuteFanoutReduce(DynamicSchedule):
         # The kth reduce's dependencies are the kth element of every batch of shufflemap outputs.
         # Here, k := reduces_emitted and batchlength := num_outputs
         if self._reduces_emitted == self._num_outputs:
-            raise StopIteration
+            self._stop_iteration()
 
         kth_reduce_dependencies = [
             partition
@@ -866,7 +887,7 @@ class ExecuteMaterialize(DynamicSchedule):
         super().__init__()
         self.source = source
 
-    def __next__(self) -> ConstructionInstructions | None:
+    def _next_impl(self) -> ConstructionInstructions | None:
         construct = next(self.source)
         if construct is not None and not construct.marked_for_materialization():
             self._prepare_to_materialize(construct)
