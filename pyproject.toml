@@ -15,7 +15,7 @@ readme = "README.rst"
 license = {file="LICENSE"}
 requires-python = ">=3.7"
 dependencies = [
-    "numpy",
+    "numpy < 1.24",
     "pyarrow",
     "fsspec",
     "protobuf>=3.19.0",
