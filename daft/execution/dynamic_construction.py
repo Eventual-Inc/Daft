@@ -26,7 +26,7 @@ class Construction:
         self.instruction_stack: list[Callable[[list[vPartition]], list[vPartition]]] = list()
 
         # Where to put the materialized results.
-        self._destination_array: None | list[vPartition | None]
+        self._destination_array: None | list[vPartition | None] = None
         self._partno: None | int = None
 
     def add_instruction(self, instruction: Callable[[list[vPartition]], list[vPartition]]) -> None:
