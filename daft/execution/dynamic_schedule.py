@@ -437,11 +437,10 @@ class ScheduleFanoutReduce(DynamicSchedule):
             pass
 
         # All shufflemaps have been dispatched; see if we can dispatch the next ("kth") reduce.
-        # The kth reduce's dependencies are the kth element of every batch of shufflemap outputs.
-        # Here, k := reduces_emitted and batchlength := num_outputs
         if self._reduces_emitted == self._num_outputs:
             raise StopIteration
 
+        # The dependencies here are the 2d matrix unrolled into a 1d list.
         kth_reduce_dependencies = [
             partition
             for i, partition in enumerate(self._materializations.dependencies)
