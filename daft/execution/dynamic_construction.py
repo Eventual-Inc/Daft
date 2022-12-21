@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from daft.execution.dynamic_schedule import DynamicSchedule
+import daft
 from daft.expressions import Expression
 from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
@@ -27,7 +27,7 @@ class Construction:
         self.instruction_stack: list[Callable[[list[vPartition]], list[vPartition]]] = list()
 
         # Materialization location: which DynamicSchedule requested materialization of this construction.
-        self._dynamic_schedule: DynamicSchedule | None = None
+        self._schedule: daft.execution.dynamic_schedule.DynamicSchedule | None = None
         self._label: str | None = None
         self._partno: int | None = None
 
@@ -36,32 +36,34 @@ class Construction:
         self.assert_not_marked()
         self.instruction_stack.append(instruction)
 
-    def mark_for_materialization(self, dynamic_schedule: DynamicSchedule, label: str, partno: int) -> None:
+    def mark_for_materialization(
+        self, schedule: daft.execution.dynamic_schedule.DynamicSchedule, label: str, partno: int
+    ) -> None:
         """Mark this Construction for materialization.
 
         1. Prevents further instructions from being added to this Construction.
         2. Records the DynamicSchedule that needs this the materialized result of this Construction.
         """
         self.assert_not_marked()
-        self._dynamic_schedule = dynamic_schedule
+        self._schedule = schedule
         self._label = label
         self._partno = partno
 
     def report_completed(self, results: list[vPartition]) -> None:
         """Give the materialized result of this Construction to the DynamicSchedule who asked for it."""
 
-        assert self._dynamic_schedule is not None
+        assert self._schedule is not None
         assert self._label is not None
         assert self._partno is not None
-        self._dynamic_schedule.register_completed_materialization(results, self._label, self._partno)
+        self._schedule.register_completed_materialization(results, self._label, self._partno)
 
     def is_marked_for_materialization(self) -> bool:
-        return all(_ is not None for _ in (self._dynamic_schedule, self._label, self._partno))
+        return all(_ is not None for _ in (self._schedule, self._label, self._partno))
 
     def assert_not_marked(self) -> None:
         assert (
             not self.is_marked_for_materialization()
-        ), f"Partition already instructed to materialize for {self._dynamic_schedule}, label {self._label}, partition index {self._partno}"
+        ), f"Partition already instructed to materialize for {self._schedule}, label {self._label}, partition index {self._partno}"
 
 
 # -- Various instructions. --

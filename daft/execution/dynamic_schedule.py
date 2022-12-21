@@ -468,6 +468,8 @@ class ScheduleMaterialize(DynamicSchedule):
     def __init__(self, child_schedule: DynamicSchedule) -> None:
         super().__init__()
         self.child_schedule = child_schedule
+        self._materializing_results = self._materializations[self.DEPENDENCIES]
+        self._returned = False
 
     def _next_impl(self) -> Construction | None:
         construct = next(self.child_schedule)
@@ -476,23 +478,26 @@ class ScheduleMaterialize(DynamicSchedule):
         return construct
 
     def result_partition_set(self) -> PartitionSet[vPartition]:
+        """Return the materialized partitions as a ResultPartitionSet.
+
+        This can only be called once. After the partitions are handed off, this schedule will drop its references to the partitions.
+        """
+        assert not self._returned, "The partitions have already been returned."
+
         # Ensure that the plan has finished executing.
-        try:
-            unexpected_construct = next(self.child_schedule)
-            assert False, f"The plan has not finished executing yet, got {unexpected_construct}"
-        except StopIteration:
-            pass
+        assert self._completed, "The plan has not finished executing yet."
 
         # Ensure that all partitions have finished materializing.
-        dependencies = self._materializations[self.DEPENDENCIES]
-        finished_partitions = [p for p in dependencies if p is not None]
+        finished_partitions = [p for p in self._materializing_results if p is not None]
         assert len(finished_partitions) == len(
-            dependencies
-        ), f"Not all partitions have finished materializing yet in results: {dependencies}"
+            self._materializing_results
+        ), f"Not all partitions have finished materializing yet in results: {self._materializing_results}"
 
         # Return the result partition set.
         result = LocalPartitionSet({})
         for i, partition in enumerate(finished_partitions):
             result.set_partition(i, partition)
 
+        self._returned = True
+        self._materializing_results = list()
         return result
