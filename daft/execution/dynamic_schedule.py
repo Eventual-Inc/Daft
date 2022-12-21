@@ -62,6 +62,10 @@ class DynamicSchedule(Iterator[Optional[Construction]]):
         """
         raise NotImplementedError()
 
+    def __str__(self) -> str:
+        name = self.__class__.__name__
+        return f"{name}: self._completed={self._completed}, self._materializations={self._materializations}"
+
 
 class SchedulePartitionRead(DynamicSchedule):
     def __init__(self, partitions: list[vPartition]) -> None:
