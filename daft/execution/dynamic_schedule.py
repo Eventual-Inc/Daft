@@ -160,14 +160,13 @@ class ScheduleJoin(DynamicSchedule):
                 return construct_join
 
         # Can't emit a join just yet; materialize more dependencies.
-        _, next_deps, next_source = list(
-            sorted(
-                [
-                    (len(lefts), lefts, self._left_source),
-                    (len(rights), rights, self._right_source),
-                ]
-            )
-        )[0]
+        # Choose whether to materialize from left child or right child (whichever one is more behind).
+        if len(lefts) <= len(rights):
+            next_deps = lefts
+            next_source = self._left_source
+        else:
+            next_deps = rights
+            next_source = self._right_source
 
         construct = None
         try:
