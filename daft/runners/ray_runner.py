@@ -72,11 +72,14 @@ def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     _partitions: dict[PartID, ray.ObjectRef]
 
+    def items(self) -> list[tuple[PartID, ray.ObjectRef]]:
+        return sorted(self._partitions.items())
+
     def _get_merged_vpartition(self) -> vPartition:
-        partition_ids = sorted(list(self._partitions.keys()))
-        assert partition_ids[0] == 0
-        assert partition_ids[-1] + 1 == len(partition_ids)
-        all_partitions = ray.get([self._partitions[pid] for pid in partition_ids])
+        ids_and_partitions = self.items()
+        assert ids_and_partitions[0][0] == 0
+        assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
+        all_partitions = ray.get([part for id, part in ids_and_partitions])
         return vPartition.merge_partitions(all_partitions, verify_partition_id=False)
 
     def to_ray_dataset(self) -> RayDataset:
@@ -318,5 +321,5 @@ class RayRunner(Runner):
 
             last = exec_plan.execution_ops[-1].logical_ops[-1]
             final_result = partition_intermediate_results[last.id()]
-            pset_id = self._part_set_cache.put_partition_set(final_result)
-            return pset_id
+            pset_entry = self._part_set_cache.put_partition_set(final_result)
+            return pset_entry

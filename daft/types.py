@@ -14,6 +14,7 @@ class ExpressionType:
 
     @staticmethod
     def is_py(t: ExpressionType) -> bool:
+        assert isinstance(t, ExpressionType), f"method must be called on an ExpressionType but got {type(t)}"
         return isinstance(t, PythonExpressionType)
 
     @staticmethod

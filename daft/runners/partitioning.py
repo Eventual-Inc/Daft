@@ -709,6 +709,16 @@ class PartitionSet(Generic[PartitionT]):
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pandas(schema=schema)
 
+    def items(self) -> list[tuple[PartID, PartitionT]]:
+        """
+        Returns all (partition id, partition) in this PartitionSet,
+        ordered by partition ID.
+        """
+        raise NotImplementedError()
+
+    def values(self) -> list[PartitionT]:
+        return [value for _, value in self.items()]
+
     @abstractmethod
     def get_partition(self, idx: PartID) -> PartitionT:
         raise NotImplementedError()
