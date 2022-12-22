@@ -6,18 +6,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-from daft.execution.dynamic_construction import (
-    Construction,
-    make_fanout_range_instruction,
-    make_join_instruction,
-    make_local_limit_instruction,
-    make_map_to_samples_instruction,
-    make_merge_and_sort_instruction,
-    make_merge_instruction,
-    make_read_file_instruction,
-    make_reduce_to_quantiles_instruction,
-    make_write_instruction,
-)
+from daft.execution.dynamic_construction import Construction, InstructionFactory
 from daft.logical import logical_plan
 from daft.runners.partitioning import PartitionSet, vPartition
 from daft.runners.pyrunner import LocalPartitionSet
@@ -96,7 +85,7 @@ class ScheduleFileRead(DynamicSchedule):
     def _next_impl(self) -> Construction | None:
         if self._next_index < self._scan_node.num_partitions():
             construct_new = Construction([])
-            construct_new.add_instruction(make_read_file_instruction(self._scan_node, self._next_index))
+            construct_new.add_instruction(InstructionFactory.read_file(self._scan_node, self._next_index))
 
             self._next_index += 1
             return construct_new
@@ -117,7 +106,7 @@ class ScheduleFileWrite(DynamicSchedule):
         if construct is None or construct.is_marked_for_materialization():
             return construct
 
-        construct.add_instruction(make_write_instruction(node=self._write_node, index=self._writes_so_far))
+        construct.add_instruction(InstructionFactory.write(node=self._write_node, index=self._writes_so_far))
         self._writes_so_far += 1
 
         return construct
@@ -165,7 +154,7 @@ class ScheduleJoin(DynamicSchedule):
             next_right = rights[self._next_to_emit]
             if next_left is not None and next_right is not None:
                 construct_join = Construction([next_left, next_right])
-                construct_join.add_instruction(make_join_instruction(self._join_node))
+                construct_join.add_instruction(InstructionFactory.join(self._join_node))
 
                 self._next_to_emit += 1
                 return construct_join
@@ -226,7 +215,7 @@ class ScheduleGlobalLimit(DynamicSchedule):
                     return None
 
                 new_construct = Construction([dependencies[0]])
-                new_construct.add_instruction(make_local_limit_instruction(0))
+                new_construct.add_instruction(InstructionFactory.local_limit(0))
 
                 self._continue_from_partition += 1
                 return new_construct
@@ -245,7 +234,7 @@ class ScheduleGlobalLimit(DynamicSchedule):
 
                 new_construct = Construction([next_partition])
                 if next_limit < len(next_partition):
-                    new_construct.add_instruction(make_local_limit_instruction(next_limit))
+                    new_construct.add_instruction(InstructionFactory.local_limit(next_limit))
 
                 self._continue_from_partition += 1
                 return new_construct
@@ -262,7 +251,7 @@ class ScheduleGlobalLimit(DynamicSchedule):
         if construct is None or construct.is_marked_for_materialization():
             return construct
 
-        construct.add_instruction(make_local_limit_instruction(self._remaining_limit))
+        construct.add_instruction(InstructionFactory.local_limit(self._remaining_limit))
 
         construct.mark_for_materialization(dependencies)
         return construct
@@ -300,7 +289,7 @@ class ScheduleCoalesce(DynamicSchedule):
             ready_to_coalesce = [_ for _ in to_coalesce if _ is not None]
             if len(ready_to_coalesce) == len(to_coalesce):
                 construct_merge = Construction(ready_to_coalesce)
-                construct_merge.add_instruction(make_merge_instruction())
+                construct_merge.add_instruction(InstructionFactory.merge())
                 self._num_emitted += 1
                 return construct_merge
 
@@ -357,7 +346,7 @@ class ScheduleSort(DynamicSchedule):
             if source is None:
                 return None
             construct_sample = Construction([source])
-            construct_sample.add_instruction(make_map_to_samples_instruction(self._sort._sort_by))
+            construct_sample.add_instruction(InstructionFactory.map_to_samples(self._sort._sort_by))
             construct_sample.mark_for_materialization(sample_partitions)
             return construct_sample
 
@@ -369,7 +358,7 @@ class ScheduleSort(DynamicSchedule):
 
             construct_boundaries = Construction(finished_samples)
             construct_boundaries.add_instruction(
-                make_reduce_to_quantiles_instruction(
+                InstructionFactory.reduce_to_quantiles(
                     sort_by=self._sort._sort_by,
                     descending=self._sort._descending,
                     num_quantiles=self._sort.num_partitions(),
@@ -388,13 +377,13 @@ class ScheduleSort(DynamicSchedule):
 
         if self._fanout_reduce is None:
             from_partitions = SchedulePartitionRead(finished_dependencies)
-            fanout_fn = make_fanout_range_instruction(
+            fanout_fn = InstructionFactory.fanout_range(
                 sort_by=self._sort._sort_by,
                 descending=self._sort._descending,
                 boundaries=boundaries_partition,
                 num_outputs=self._sort.num_partitions(),
             )
-            reduce_fn = make_merge_and_sort_instruction(
+            reduce_fn = InstructionFactory.merge_and_sort(
                 sort_by=self._sort._sort_by,
                 descending=self._sort._descending,
             )

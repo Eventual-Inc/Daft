@@ -1,16 +1,7 @@
 from __future__ import annotations
 
 from daft.context import get_context
-from daft.execution.dynamic_construction import (
-    Construction,
-    make_agg_instruction,
-    make_fanout_hash_instruction,
-    make_fanout_random_instruction,
-    make_filter_instruction,
-    make_map_partition_instruction,
-    make_merge_instruction,
-    make_project_instruction,
-)
+from daft.execution.dynamic_construction import Construction, InstructionFactory
 from daft.execution.dynamic_schedule import (
     DynamicSchedule,
     ScheduleCoalesce,
@@ -120,28 +111,28 @@ def schedule_logical_node(node: LogicalPlan) -> DynamicSchedule:
 
         elif isinstance(node, logical_plan.Filter):
             return SchedulePipelineInstruction(
-                child_schedule=child_schedule, pipeable_instruction=make_filter_instruction(node._predicate)
+                child_schedule=child_schedule, pipeable_instruction=InstructionFactory.filter(node._predicate)
             )
 
         elif isinstance(node, logical_plan.Projection):
             return SchedulePipelineInstruction(
-                child_schedule=child_schedule, pipeable_instruction=make_project_instruction(node._projection)
+                child_schedule=child_schedule, pipeable_instruction=InstructionFactory.project(node._projection)
             )
 
         elif isinstance(node, logical_plan.MapPartition):
             return SchedulePipelineInstruction(
                 child_schedule=child_schedule,
-                pipeable_instruction=make_map_partition_instruction(node._map_partition_op),
+                pipeable_instruction=InstructionFactory.map_partition(node._map_partition_op),
             )
 
         elif isinstance(node, logical_plan.LocalAggregate):
             return SchedulePipelineInstruction(
-                child_schedule=child_schedule, pipeable_instruction=make_agg_instruction(node._agg, node._group_by)
+                child_schedule=child_schedule, pipeable_instruction=InstructionFactory.agg(node._agg, node._group_by)
             )
 
         elif isinstance(node, logical_plan.LocalDistinct):
             return SchedulePipelineInstruction(
-                child_schedule=child_schedule, pipeable_instruction=make_agg_instruction([], node._group_by)
+                child_schedule=child_schedule, pipeable_instruction=InstructionFactory.agg([], node._group_by)
             )
 
         elif isinstance(node, logical_plan.FileWrite):
@@ -153,9 +144,9 @@ def schedule_logical_node(node: LogicalPlan) -> DynamicSchedule:
         elif isinstance(node, logical_plan.Repartition):
             # Translate PartitionScheme to the appropriate fanout_fn
             if node._scheme == PartitionScheme.RANDOM:
-                fanout_fn = make_fanout_random_instruction(num_outputs=node.num_partitions())
+                fanout_fn = InstructionFactory.fanout_random(num_outputs=node.num_partitions())
             elif node._scheme == PartitionScheme.HASH:
-                fanout_fn = make_fanout_hash_instruction(
+                fanout_fn = InstructionFactory.fanout_hash(
                     num_outputs=node.num_partitions(),
                     partition_by=node._partition_by,
                 )
@@ -166,7 +157,7 @@ def schedule_logical_node(node: LogicalPlan) -> DynamicSchedule:
                 child_schedule=child_schedule,
                 num_outputs=node.num_partitions(),
                 fanout_fn=fanout_fn,
-                reduce_fn=make_merge_instruction(),
+                reduce_fn=InstructionFactory.merge(),
             )
 
         elif isinstance(node, logical_plan.Sort):

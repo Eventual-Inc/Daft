@@ -64,187 +64,184 @@ class Construction:
         ), f"Partition already instructed to materialize into {self._destination_array}, partition index {self._partno}"
 
 
-# -- Various instructions. --
+class InstructionFactory:
+    """Instructions for use with Construction."""
 
+    @staticmethod
+    def read_file(scan_node: logical_plan.Scan, index: int) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            assert len(inputs) == 0
+            partition = LocalLogicalPartitionOpRunner()._handle_scan(
+                inputs=dict(),
+                scan=scan_node,
+                partition_id=index,
+            )
+            return [partition]
 
-def make_read_file_instruction(
-    scan_node: logical_plan.Scan, index: int
-) -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        assert len(inputs) == 0
-        partition = LocalLogicalPartitionOpRunner()._handle_scan(
-            inputs=dict(),
-            scan=scan_node,
-            partition_id=index,
-        )
-        return [partition]
+        return instruction
 
-    return instruction
+    @staticmethod
+    def merge() -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            return [vPartition.merge_partitions(inputs, verify_partition_id=False)]
 
+        return instruction
 
-def make_merge_instruction() -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        return [vPartition.merge_partitions(inputs, verify_partition_id=False)]
+    @staticmethod
+    def agg(
+        to_agg: list[tuple[Expression, str]], group_by: ExpressionList | None
+    ) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [input.agg(to_agg, group_by)]
 
-    return instruction
+        return instruction
 
+    @staticmethod
+    def write(node: logical_plan.FileWrite, index: int) -> Callable[[list[vPartition]], list[vPartition]]:
+        child_id = node._children()[0].id()
 
-def make_agg_instruction(
-    to_agg: list[tuple[Expression, str]], group_by: ExpressionList | None
-) -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
-        return [input.agg(to_agg, group_by)]
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            partition = LocalLogicalPartitionOpRunner()._handle_file_write(
+                inputs={child_id: input},
+                file_write=node,
+                partition_id=index,
+            )
+            return [partition]
 
-    return instruction
+        return instruction
 
+    @staticmethod
+    def filter(predicate: ExpressionList) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [input.filter(predicate)]
 
-def make_write_instruction(node: logical_plan.FileWrite, index: int) -> Callable[[list[vPartition]], list[vPartition]]:
-    child_id = node._children()[0].id()
+        return instruction
 
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
-        partition = LocalLogicalPartitionOpRunner()._handle_file_write(
-            inputs={child_id: input},
-            file_write=node,
-            partition_id=index,
-        )
-        return [partition]
+    @staticmethod
+    def project(projection: ExpressionList) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [input.eval_expression_list(projection)]
 
-    return instruction
+        return instruction
 
+    @staticmethod
+    def map_partition(map_op: MapPartitionOp) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [map_op.run(input)]
 
-def make_filter_instruction(predicate: ExpressionList) -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
-        return [input.filter(predicate)]
+        return instruction
 
-    return instruction
+    @staticmethod
+    def join(join: logical_plan.Join) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [left, right] = inputs
+            result = left.join(
+                right,
+                left_on=join._left_on,
+                right_on=join._right_on,
+                output_schema=join.schema(),
+                how=join._how.value,
+            )
+            return [result]
 
+        return instruction
 
-def make_project_instruction(projection: ExpressionList) -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
-        return [input.eval_expression_list(projection)]
+    @staticmethod
+    def local_limit(limit: int) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            return [input.head(limit)]
 
-    return instruction
+        return instruction
 
+    @staticmethod
+    def map_to_samples(
+        sort_by: ExpressionList, num_samples: int = 20
+    ) -> Callable[[list[vPartition]], list[vPartition]]:
+        """From logical_op_runners."""
 
-def make_map_partition_instruction(map_op: MapPartitionOp) -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
-        return [map_op.run(input)]
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            result = (
+                input.sample(num_samples)
+                .eval_expression_list(sort_by)
+                .filter(ExpressionList([~e.to_column_expression().is_null() for e in sort_by]).resolve(sort_by))
+            )
+            return [result]
 
-    return instruction
+        return instruction
 
+    @staticmethod
+    def reduce_to_quantiles(
+        sort_by: ExpressionList, descending: list[bool], num_quantiles: int
+    ) -> Callable[[list[vPartition]], list[vPartition]]:
+        """From logical_op_runners."""
 
-def make_join_instruction(join: logical_plan.Join) -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        [left, right] = inputs
-        result = left.join(
-            right,
-            left_on=join._left_on,
-            right_on=join._right_on,
-            output_schema=join.schema(),
-            how=join._how.value,
-        )
-        return [result]
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            merged = vPartition.merge_partitions(inputs, verify_partition_id=False)
+            merged_sorted = merged.sort(sort_by, descending=descending)
+            result = merged_sorted.quantiles(num_quantiles)
+            return [result]
 
-    return instruction
+        return instruction
 
+    @staticmethod
+    def fanout_range(
+        sort_by: ExpressionList, descending: list[bool], boundaries: vPartition, num_outputs: int
+    ) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            partitions_with_ids = SortOp.map_fn(
+                input=input,
+                output_partitions=num_outputs,
+                exprs=sort_by,
+                boundaries=boundaries,
+                descending=descending,
+            )
+            return [partition for _, partition in sorted(partitions_with_ids.items())]
 
-def make_local_limit_instruction(limit: int) -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
-        return [input.head(limit)]
+        return instruction
 
-    return instruction
+    @staticmethod
+    def merge_and_sort(
+        sort_by: ExpressionList, descending: list[bool]
+    ) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            partition = SortOp.reduce_fn(
+                mapped_outputs=inputs,
+                exprs=sort_by,
+                descending=descending,
+            )
+            return [partition]
 
+        return instruction
 
-def make_map_to_samples_instruction(
-    sort_by: ExpressionList, num_samples: int = 20
-) -> Callable[[list[vPartition]], list[vPartition]]:
-    """From logical_op_runners."""
+    @staticmethod
+    def fanout_hash(num_outputs: int, partition_by: ExpressionList) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            partitions_with_ids = RepartitionHashOp.map_fn(
+                input=input,
+                output_partitions=num_outputs,
+                exprs=partition_by,
+            )
+            return [partition for i, partition in sorted(partitions_with_ids.items())]
 
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
-        result = (
-            input.sample(num_samples)
-            .eval_expression_list(sort_by)
-            .filter(ExpressionList([~e.to_column_expression().is_null() for e in sort_by]).resolve(sort_by))
-        )
-        return [result]
+        return instruction
 
-    return instruction
+    @staticmethod
+    def fanout_random(num_outputs: int) -> Callable[[list[vPartition]], list[vPartition]]:
+        def instruction(inputs: list[vPartition]) -> list[vPartition]:
+            [input] = inputs
+            partitions_with_ids = RepartitionRandomOp.map_fn(
+                input=input,
+                output_partitions=num_outputs,
+            )
+            return [partition for _, partition in sorted(partitions_with_ids.items())]
 
-
-def make_reduce_to_quantiles_instruction(
-    sort_by: ExpressionList, descending: list[bool], num_quantiles: int
-) -> Callable[[list[vPartition]], list[vPartition]]:
-    """From logical_op_runners."""
-
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        merged = vPartition.merge_partitions(inputs, verify_partition_id=False)
-        merged_sorted = merged.sort(sort_by, descending=descending)
-        result = merged_sorted.quantiles(num_quantiles)
-        return [result]
-
-    return instruction
-
-
-def make_fanout_range_instruction(
-    sort_by: ExpressionList, descending: list[bool], boundaries: vPartition, num_outputs: int
-) -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
-        partitions_with_ids = SortOp.map_fn(
-            input=input,
-            output_partitions=num_outputs,
-            exprs=sort_by,
-            boundaries=boundaries,
-            descending=descending,
-        )
-        return [partition for _, partition in sorted(partitions_with_ids.items())]
-
-    return instruction
-
-
-def make_merge_and_sort_instruction(
-    sort_by: ExpressionList, descending: list[bool]
-) -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        partition = SortOp.reduce_fn(
-            mapped_outputs=inputs,
-            exprs=sort_by,
-            descending=descending,
-        )
-        return [partition]
-
-    return instruction
-
-
-def make_fanout_hash_instruction(
-    num_outputs: int, partition_by: ExpressionList
-) -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
-        partitions_with_ids = RepartitionHashOp.map_fn(
-            input=input,
-            output_partitions=num_outputs,
-            exprs=partition_by,
-        )
-        return [partition for i, partition in sorted(partitions_with_ids.items())]
-
-    return instruction
-
-
-def make_fanout_random_instruction(num_outputs: int) -> Callable[[list[vPartition]], list[vPartition]]:
-    def instruction(inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
-        partitions_with_ids = RepartitionRandomOp.map_fn(
-            input=input,
-            output_partitions=num_outputs,
-        )
-        return [partition for _, partition in sorted(partitions_with_ids.items())]
-
-    return instruction
+        return instruction
