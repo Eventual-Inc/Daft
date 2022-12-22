@@ -4,7 +4,7 @@ import math
 from abc import abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable
 
 from daft.execution.dynamic_construction import Construction, InstructionFactory
 from daft.logical import logical_plan
@@ -12,7 +12,7 @@ from daft.runners.partitioning import PartitionSet, vPartition
 from daft.runners.pyrunner import LocalPartitionSet
 
 
-class DynamicSchedule(Iterator[Optional[Construction]]):
+class DynamicSchedule(Iterator):
     """Recursively dynamically generate a sequence of execution steps to compute some target.
 
     - The execution steps (Constructions) are exposed via the iterator interface.
