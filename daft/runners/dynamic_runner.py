@@ -64,9 +64,6 @@ class DynamicRunner(Runner):
         return pset_entry
 
     def _build_partitions(self, partspec: Construction) -> None:
-        partitions = partspec.inputs
-
-        for instruction in partspec.instruction_stack:
-            partitions = instruction(partitions)
-
-        partspec.report_completed(partitions)
+        construct_fn = partspec.get_runnable()
+        results = construct_fn(partspec.inputs)
+        partspec.report_completed(results)

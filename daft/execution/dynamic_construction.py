@@ -23,7 +23,7 @@ class Construction:
         self.inputs = inputs
 
         # Instruction stack to execute.
-        self.instruction_stack: list[Callable[[list[vPartition]], list[vPartition]]] = list()
+        self._instruction_stack: list[Callable[[list[vPartition]], list[vPartition]]] = list()
 
         # Where to put the materialized results.
         self._destination_array: None | list[vPartition | None] = None
@@ -32,7 +32,7 @@ class Construction:
     def add_instruction(self, instruction: Callable[[list[vPartition]], list[vPartition]]) -> None:
         """Add an instruction to the stack that will run for this partition."""
         self.assert_not_marked()
-        self.instruction_stack.append(instruction)
+        self._instruction_stack.append(instruction)
 
     def mark_for_materialization(self, destination_array: list[vPartition | None], num_results: int = 1) -> None:
         """Mark this Construction for materialization.
@@ -54,6 +54,14 @@ class Construction:
         for i, partition in enumerate(results):
             assert self._destination_array[self._partno + i] is None, self._destination_array[self._partno + i]
             self._destination_array[self._partno + i] = partition
+
+    def get_runnable(self) -> Callable[[list[vPartition]], list[vPartition]]:
+        def runnable(partitions: list[vPartition]) -> list[vPartition]:
+            for instruction in self._instruction_stack:
+                partitions = instruction(partitions)
+            return partitions
+
+        return runnable
 
     def is_marked_for_materialization(self) -> bool:
         return all(_ is not None for _ in (self._destination_array, self._partno))
