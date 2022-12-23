@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterable, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Iterable, TypeVar, Union
 
 import pandas
 import pyarrow as pa
@@ -40,6 +40,27 @@ if TYPE_CHECKING:
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
+
+
+def _get_in_memory_scan_filepaths(filepaths: list[str]) -> logical_plan.InMemoryScan:
+    schema = ExpressionList([ColumnExpression("filepaths", expr_type=ExpressionType.string())]).resolve()
+
+    # Create one partition per filepath
+    partitions = {
+        partition_id: vPartition.from_pydict(
+            data={"filepaths": pa.array([filepaths[partition_id]])}, schema=schema, partition_id=partition_id
+        )
+        for partition_id in range(len(filepaths))
+    }
+    result_pset = LocalPartitionSet(partitions)
+
+    cache_entry = get_context().runner().put_partition_set_into_cache(result_pset)
+
+    return logical_plan.InMemoryScan(
+        cache_entry=cache_entry,
+        schema=schema,
+        partition_spec=logical_plan.PartitionSpec(logical_plan.PartitionScheme.UNKNOWN, len(filepaths)),
+    )
 
 
 def _get_filepaths(path: str):
@@ -302,13 +323,13 @@ class DataFrame:
             ),
         ).get_col_expressions()
 
-        filepath_scan_df = DataFrame.from_pydict({"filepaths": filepaths})
+        in_memory_scan_child = _get_in_memory_scan_filepaths(filepaths)
 
         plan = logical_plan.TabularFilesScan(
             predicate=None,
             columns=None,
             schema=schema,
-            in_memory_scan_child=cast(logical_plan.InMemoryScan, filepath_scan_df.__plan),
+            in_memory_scan_child=in_memory_scan_child,
             source_info=JSONSourceInfo(),
         )
 
@@ -368,13 +389,13 @@ class DataFrame:
             ),
         ).get_col_expressions()
 
-        filepath_scan_df = DataFrame.from_pydict({"filepaths": filepaths})
+        in_memory_scan_child = _get_in_memory_scan_filepaths(filepaths)
 
         plan = logical_plan.TabularFilesScan(
             schema=schema,
             predicate=None,
             columns=None,
-            in_memory_scan_child=cast(logical_plan.InMemoryScan, filepath_scan_df.__plan),
+            in_memory_scan_child=in_memory_scan_child,
             source_info=CSVSourceInfo(
                 delimiter=delimiter,
                 has_headers=has_headers,
@@ -420,13 +441,13 @@ class DataFrame:
             ),
         ).get_col_expressions()
 
-        filepath_scan_df = DataFrame.from_pydict({"filepaths": filepaths})
+        in_memory_scan_child = _get_in_memory_scan_filepaths(filepaths)
 
         plan = logical_plan.TabularFilesScan(
             schema=schema,
             predicate=None,
             columns=None,
-            in_memory_scan_child=cast(logical_plan.InMemoryScan, filepath_scan_df.__plan),
+            in_memory_scan_child=in_memory_scan_child,
             source_info=ParquetSourceInfo(),
         )
         return cls(plan)
