@@ -150,7 +150,7 @@ class PruneColumns(Rule[LogicalPlan]):
         return parent.copy_with_new_children([self._create_pruning_child(child, parent_required_set)])
 
     def _projection_logical_plan(self, parent: Projection, child: LogicalPlan) -> LogicalPlan | None:
-        if isinstance(child, Projection) or isinstance(child, LocalAggregate):
+        if isinstance(child, Projection) or isinstance(child, LocalAggregate) or isinstance(child, TabularFilesScan):
             return None
         if len(child._children()) == 0:
             return None
