@@ -15,8 +15,8 @@ from daft.logical.logical_plan import (
     PartitionScheme,
     Projection,
     Repartition,
-    Scan,
     Sort,
+    TabularFilesScan,
     UnaryNode,
 )
 from daft.logical.schema import ExpressionList
@@ -211,20 +211,21 @@ class DropRepartition(Rule[LogicalPlan]):
 class PushDownClausesIntoScan(Rule[LogicalPlan]):
     def __init__(self) -> None:
         super().__init__()
-        # self.register_fn(Filter, Scan, self._push_down_predicates_into_scan)
-        self.register_fn(Projection, Scan, self._push_down_projections_into_scan)
+        # self.register_fn(Filter, TabularFilesScan, self._push_down_predicates_into_scan)
+        self.register_fn(Projection, TabularFilesScan, self._push_down_projections_into_scan)
 
-    def _push_down_projections_into_scan(self, parent: Projection, child: Scan) -> LogicalPlan | None:
+    def _push_down_projections_into_scan(self, parent: Projection, child: TabularFilesScan) -> LogicalPlan | None:
         required_columns = parent.schema().required_columns()
         scan_columns = child.schema()
         if required_columns.to_id_set() == scan_columns.to_id_set():
             return None
 
-        new_scan = Scan(
+        new_scan = TabularFilesScan(
             schema=child._schema,
             predicate=child._predicate,
             columns=required_columns.names,
             source_info=child._source_info,
+            in_memory_scan_child=child._in_memory_scan_child,
         )
         if any(not isinstance(e, ColumnExpression) for e in parent._projection):
             return parent.copy_with_new_children([new_scan])

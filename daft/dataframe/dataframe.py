@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterable, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Iterable, TypeVar, Union, cast
 
 import pandas
 import pyarrow as pa
@@ -302,12 +302,16 @@ class DataFrame:
             ),
         ).get_col_expressions()
 
-        plan = logical_plan.Scan(
-            schema=schema,
+        filepath_scan_df = DataFrame.from_pydict({"filepaths": filepaths})
+
+        plan = logical_plan.TabularFilesScan(
             predicate=None,
             columns=None,
-            source_info=JSONSourceInfo(filepaths=filepaths),
+            schema=schema,
+            in_memory_scan_child=cast(logical_plan.InMemoryScan, filepath_scan_df.__plan),
+            source_info=JSONSourceInfo(),
         )
+
         return cls(plan)
 
     @classmethod
@@ -364,12 +368,14 @@ class DataFrame:
             ),
         ).get_col_expressions()
 
-        plan = logical_plan.Scan(
+        filepath_scan_df = DataFrame.from_pydict({"filepaths": filepaths})
+
+        plan = logical_plan.TabularFilesScan(
             schema=schema,
             predicate=None,
             columns=None,
+            in_memory_scan_child=cast(logical_plan.InMemoryScan, filepath_scan_df.__plan),
             source_info=CSVSourceInfo(
-                filepaths=filepaths,
                 delimiter=delimiter,
                 has_headers=has_headers,
             ),
@@ -413,13 +419,15 @@ class DataFrame:
                 column_names=None,  # read all columns
             ),
         ).get_col_expressions()
-        plan = logical_plan.Scan(
+
+        filepath_scan_df = DataFrame.from_pydict({"filepaths": filepaths})
+
+        plan = logical_plan.TabularFilesScan(
             schema=schema,
             predicate=None,
             columns=None,
-            source_info=ParquetSourceInfo(
-                filepaths=filepaths,
-            ),
+            in_memory_scan_child=cast(logical_plan.InMemoryScan, filepath_scan_df.__plan),
+            source_info=ParquetSourceInfo(),
         )
         return cls(plan)
 
