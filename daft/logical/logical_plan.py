@@ -5,7 +5,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum, IntEnum
 from pprint import pformat
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 from daft.datasources import SourceInfo, StorageType
 from daft.errors import ExpressionTypeError
@@ -184,7 +184,7 @@ class BinaryNode(LogicalPlan):
     ...
 
 
-class Scan(LogicalPlan):
+class TabularFilesScan(LogicalPlan):
     def __init__(
         self,
         *,
@@ -192,9 +192,10 @@ class Scan(LogicalPlan):
         source_info: SourceInfo,
         predicate: ExpressionList | None = None,
         columns: list[str] | None = None,
+        in_memory_scan_child: InMemoryScan,
     ) -> None:
         schema = schema.resolve()
-        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=source_info.get_num_partitions())
+        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=in_memory_scan_child.num_partitions())
         super().__init__(schema, partition_spec=pspec, op_level=OpLevel.PARTITION)
 
         if predicate is not None:
@@ -211,6 +212,19 @@ class Scan(LogicalPlan):
         self._columns = self._schema
         self._source_info = source_info
 
+        # TabularFilsScan has a single child node, which is an InMemoryScan node with certain schema requirements
+        # providing the filepaths to read from.
+        assert (
+            in_memory_scan_child.schema().get_expression_by_name("filepaths") is not None
+        ), "TabularFileScan requires an InMemoryScan child with 'filepaths' column"
+        self._register_child(in_memory_scan_child)
+
+    @property
+    def _in_memory_scan_child(self) -> InMemoryScan:
+        child = self._children()[0]
+        assert isinstance(child, InMemoryScan)
+        return child
+
     def schema(self) -> ExpressionList:
         return self._output_schema
 
@@ -221,11 +235,11 @@ class Scan(LogicalPlan):
         return ResourceRequest.default()
 
     def required_columns(self) -> ExpressionList:
-        return self._predicate.required_columns()
+        return ExpressionList.union(self._predicate.required_columns(), self._in_memory_scan_child.schema())
 
     def _local_eq(self, other: Any) -> bool:
         return (
-            isinstance(other, Scan)
+            isinstance(other, TabularFilesScan)
             and self.schema() == other.schema()
             and self._predicate == other._predicate
             and self._columns == other._columns
@@ -233,16 +247,27 @@ class Scan(LogicalPlan):
         )
 
     def rebuild(self) -> LogicalPlan:
-        return Scan(
+        child: InMemoryScan = cast(InMemoryScan, self._in_memory_scan_child.rebuild())
+        return TabularFilesScan(
             schema=self.schema().unresolve(),
             source_info=self._source_info,
             predicate=self._predicate.unresolve() if self._predicate is not None else None,
             columns=self._column_names,
+            in_memory_scan_child=child,
         )
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
-        assert len(new_children) == 0
-        return self
+        assert len(new_children) == 1
+        assert isinstance(
+            new_children[0], InMemoryScan
+        ), f"Cannot copy a TabularFilesScan with new child: {new_children[0]}"
+        return TabularFilesScan(
+            schema=self.schema(),
+            source_info=self._source_info,
+            predicate=self._predicate,
+            columns=self._column_names,
+            in_memory_scan_child=new_children[0],
+        )
 
 
 class InMemoryScan(UnaryNode):
