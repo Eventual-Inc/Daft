@@ -30,16 +30,16 @@ class DynamicScheduleFactory:
             partitions = pset.values()
             return SchedulePartitionRead(partitions)
 
-        elif isinstance(node, logical_plan.Scan):
-            return ScheduleFileRead(node)
-
         # -- Unary nodes. --
 
         elif isinstance(node, logical_plan.UnaryNode):
             [child_node] = node._children()
             child_schedule = DynamicScheduleFactory.schedule_logical_node(child_node)
 
-            if isinstance(node, logical_plan.LocalLimit):
+            if isinstance(node, logical_plan.TabularFilesScan):
+                return ScheduleFileRead(child_schedule=child_schedule, scan_node=node)
+
+            elif isinstance(node, logical_plan.LocalLimit):
                 # Ignore LocalLimit logical nodes; the GlobalLimit handles everything
                 # and will dynamically dispatch appropriate local limit instructions.
                 return child_schedule

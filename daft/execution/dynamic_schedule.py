@@ -77,18 +77,22 @@ class SchedulePartitionRead(DynamicSchedule):
 
 
 class ScheduleFileRead(DynamicSchedule):
-    def __init__(self, scan_node: logical_plan.Scan) -> None:
+    def __init__(self, child_schedule: DynamicSchedule, scan_node: logical_plan.TabularFilesScan) -> None:
         super().__init__()
+        self._child_schedule = child_schedule
         self._scan_node = scan_node
         self._next_index = 0
 
     def _next_impl(self) -> Construction | None:
+        construct = next(self._child_schedule)
+        if construct is None or construct.is_marked_for_materialization():
+            return construct
+
         if self._next_index < self._scan_node.num_partitions():
-            construct_new = Construction([])
-            construct_new.add_instruction(InstructionFactory.read_file(self._scan_node, self._next_index))
+            construct.add_instruction(InstructionFactory.read_file(self._scan_node, self._next_index))
 
             self._next_index += 1
-            return construct_new
+            return construct
 
         else:
             raise StopIteration

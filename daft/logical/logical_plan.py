@@ -184,7 +184,7 @@ class BinaryNode(LogicalPlan):
     ...
 
 
-class TabularFilesScan(LogicalPlan):
+class TabularFilesScan(UnaryNode):
     def __init__(
         self,
         *,
