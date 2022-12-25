@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from fsspec import AbstractFileSystem, get_filesystem_class
-from fsspec.implementations.cached import CachingFileSystem
 
 
 def get_filesystem(protocol: str, **kwargs) -> AbstractFileSystem:
@@ -22,7 +21,7 @@ def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
     fs = get_filesystem(protocol, **kwargs)
 
     # If protocol is not a local file or http, use a cache which is local to the current process
-    if protocol not in {"file", "http", "https"}:
-        fs = CachingFileSystem(fs=fs, cache_storage="TMP")
+    # if protocol not in {"file", "http", "https"}:
+    # fs = CachingFileSystem(fs=fs, cache_storage="TMP")
 
     return fs
