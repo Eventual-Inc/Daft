@@ -147,17 +147,23 @@ class LogicalPartitionOpRunner:
             )
         elif scan._source_info.scan_type() == StorageType.PARQUET:
             assert isinstance(scan._source_info, ParquetSourceInfo)
-            return vPartition.merge_partitions(
-                [
-                    vPartition.from_parquet(
-                        path=fp,
-                        partition_id=partition_id,
-                        schema_options=schema_options,
-                        read_options=read_options,
-                    )
-                    for fp in filepaths
-                ]
-            )
+            import time
+
+            start = time.time()
+            try:
+                return vPartition.merge_partitions(
+                    [
+                        vPartition.from_parquet(
+                            path=fp,
+                            partition_id=partition_id,
+                            schema_options=schema_options,
+                            read_options=read_options,
+                        )
+                        for fp in filepaths
+                    ]
+                )
+            finally:
+                print(f"Took {time.time() - start}s to read filepaths: {filepaths}")
         else:
             raise NotImplementedError(f"PyRunner has not implemented scan: {scan._source_info.scan_type()}")
 

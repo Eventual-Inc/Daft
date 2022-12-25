@@ -22,6 +22,6 @@ def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
 
     # If protocol is not a local file or http, use a cache which is local to the current process
     # if protocol not in {"file", "http", "https"}:
-    # fs = CachingFileSystem(fs=fs, cache_storage="TMP")
+    #     fs = CachingFileSystem(fs=fs, cache_storage="TMP")
 
     return fs
