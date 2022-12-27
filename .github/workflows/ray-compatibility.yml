@@ -47,13 +47,16 @@ jobs:
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
 
-    - name: Pin Ray version
-      run: sed -i 's/.*ray.*/ray[data, default]==${{ matrix.ray-version }}/' requirements-dev.txt
+    - name: Upgrade Pip
+      run: pip install --upgrade pip
+
+    - name: Install to pin Ray versions
+      run: pip install ray[data,default]==${{ matrix.ray-version }}
 
     # Ray requires a pinned protobuf<4.0 for versions of Ray <1.13 (see: https://github.com/ray-project/ray/pull/25211)
-    - name: Pin Protobuf version
+    - name: Install to pin Protobuf version (for Ray <1.13)
       if: ${{ matrix.ray-version == '1.12.0' || matrix.ray-version == '1.11.0' || matrix.ray-version == '1.10.0' }}
-      run: echo 'protobuf<4.0.0' >> requirements-dev.txt
+      run: pip install protobuf==3.20.3
 
     - name: Install dependencies
       run: |
