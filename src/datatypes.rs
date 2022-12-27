@@ -9,3 +9,9 @@ pub enum DataType {
     PythonType(Arc<str>),
     Unknown,
 }
+
+impl From<&ArrowType> for DataType {
+    fn from(item: &ArrowType) -> Self {
+        DataType::Arrow(item.clone())
+    }
+}
