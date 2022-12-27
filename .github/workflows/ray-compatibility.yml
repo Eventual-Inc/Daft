@@ -47,9 +47,8 @@ jobs:
     - name: Install dependencies
       run: |
         pip install --upgrade pip
+        sed -i 's/.*ray.*/ray[data, default]==${{ matrix.ray-version }}/' requirements-dev.txt
         pip install -r requirements-dev.txt
-    - name: Install specific Ray version ${{ matrix.ray-version }}
-      run: pip install ray==${{ matrix.ray-version }}
     - name: Build Rust Library
       run: |
         source activate
