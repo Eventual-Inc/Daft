@@ -1,5 +1,7 @@
 use crate::datatypes::{ArrowType, DataType};
 use crate::dsl::expr::Expr;
+use crate::error::DaftResult;
+use crate::series::Series;
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
@@ -29,6 +31,22 @@ impl LiteralValue {
             Int64(_) => DataType::Arrow(ArrowType::Int64),
             Float64(_) => DataType::Arrow(ArrowType::Float64),
         }
+    }
+
+    pub fn to_series(&self) -> DaftResult<Series> {
+        use arrow2::array::*;
+        use LiteralValue::*;
+
+        let arrow_array = match self {
+            Null => new_null_array(ArrowType::Null, 1),
+            Boolean(val) => BooleanArray::from_slice([*val]).boxed(),
+            Utf8(val) => Utf8Array::<i64>::from([val.into()]).boxed(),
+            Binary(val) => BinaryArray::<i64>::from([val.into()]).boxed(),
+            Int64(val) => Int64Array::from_slice([*val]).boxed(),
+            Float64(val) => Float64Array::from_slice([*val]).boxed(),
+        };
+
+        Ok(Series::from(arrow_array))
     }
 }
 

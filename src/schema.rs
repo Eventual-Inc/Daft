@@ -41,4 +41,11 @@ impl Schema {
             Some(val) => Ok(val),
         }
     }
+
+    pub fn get_index(&self, name: &str) -> DaftResult<usize> {
+        match self.fields.get_index_of(name) {
+            None => Err(DaftError::NotFound(name.into())),
+            Some(val) => Ok(val),
+        }
+    }
 }

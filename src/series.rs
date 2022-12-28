@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, sync::Arc};
 
 use pyo3::PyObject;
 
@@ -24,7 +24,7 @@ use crate::{
 trait DataArray: Any {
     fn data_type(&self) -> DataType;
 
-    fn binary_op(&self, other: &dyn DataArray, op: Operator) -> DaftResult<Box<dyn DataArray>>;
+    fn binary_op(&self, other: &dyn DataArray, op: Operator) -> DaftResult<Arc<dyn DataArray>>;
 
     fn as_any(&self) -> &dyn std::any::Any;
 }
@@ -54,7 +54,7 @@ impl DataArray for ArrowDataArray {
         return DataType::Arrow(self.data.data_type().clone());
     }
 
-    fn binary_op(&self, other: &dyn DataArray, op: Operator) -> DaftResult<Box<dyn DataArray>> {
+    fn binary_op(&self, other: &dyn DataArray, op: Operator) -> DaftResult<Arc<dyn DataArray>> {
         let mut lhs = &self.data;
         let mut rhs = &other
             .as_any()
@@ -216,19 +216,19 @@ impl DataArray for ArrowDataArray {
             )));
         }
 
-        Ok(Box::from(ArrowDataArray { data: result_array }))
+        Ok(Arc::from(ArrowDataArray { data: result_array }))
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Series {
-    array: Box<dyn DataArray>,
+    array: Arc<dyn DataArray>,
 }
 
 impl From<Box<dyn arrow2::array::Array>> for Series {
     fn from(item: Box<dyn arrow2::array::Array>) -> Self {
         Series {
-            array: Box::from(ArrowDataArray::from(item)),
+            array: Arc::from(ArrowDataArray::from(item)),
         }
     }
 }
@@ -244,10 +244,10 @@ impl Series {
             ))),
         }
     }
-    fn binary_op(&self, other: &Series, op: Operator) -> DaftResult<Series> {
+    pub fn binary_op(&self, other: &Series, op: Operator) -> DaftResult<Series> {
         self.check_metatype(other)?;
         Ok(Series {
-            array: self.array.binary_op(other.array.as_ref(), op)?,
+            array: Arc::from(self.array.binary_op(other.array.as_ref(), op)?),
         })
     }
     pub fn add(&self, other: &Series) -> DaftResult<Series> {
