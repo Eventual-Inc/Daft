@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Generic, TypeVar
 
 from daft.expressions import Expression
 from daft.logical import logical_plan
@@ -10,15 +10,17 @@ from daft.runners.partitioning import vPartition
 from daft.runners.pyrunner import LocalLogicalPartitionOpRunner
 from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, SortOp
 
+PartitionT = TypeVar("PartitionT")
 
-class Construction:
+
+class Construction(Generic[PartitionT]):
     """A Construction is an instruction stack + input partitions to run the instruction stack over.
 
     Instructions can be one partition -> one partition, one->many, or many->one.
     (To support this, instructions are typed as list[partition] -> list[partition].)
     """
 
-    def __init__(self, inputs: list[vPartition]) -> None:
+    def __init__(self, inputs: list[PartitionT]) -> None:
         # Input partitions to run over.
         self.inputs = inputs
 
@@ -26,7 +28,7 @@ class Construction:
         self._instruction_stack: list[Callable[[list[vPartition]], list[vPartition]]] = list()
 
         # Where to put the materialized results.
-        self._destination_array: None | list[vPartition | None] = None
+        self._destination_array: None | list[PartitionT | None] = None
         self._partno: None | int = None
 
     def add_instruction(self, instruction: Callable[[list[vPartition]], list[vPartition]]) -> None:
@@ -34,7 +36,7 @@ class Construction:
         self.assert_not_marked()
         self._instruction_stack.append(instruction)
 
-    def mark_for_materialization(self, destination_array: list[vPartition | None], num_results: int = 1) -> None:
+    def mark_for_materialization(self, destination_array: list[PartitionT | None], num_results: int = 1) -> None:
         """Mark this Construction for materialization.
 
         1. Prevents further instructions from being added to this Construction.
@@ -45,7 +47,7 @@ class Construction:
         self._partno = len(destination_array)
         self._destination_array += [None] * num_results
 
-    def report_completed(self, results: list[vPartition]) -> None:
+    def report_completed(self, results: list[PartitionT]) -> None:
         """Give the materialized result of this Construction to the DynamicSchedule who asked for it."""
 
         assert self._destination_array is not None
