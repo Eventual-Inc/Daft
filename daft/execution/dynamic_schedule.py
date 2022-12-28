@@ -4,15 +4,17 @@ import math
 from abc import abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Generic, TypeVar
 
 from daft.execution.dynamic_construction import Construction, InstructionFactory
 from daft.logical import logical_plan
-from daft.runners.partitioning import PartitionSet, vPartition
-from daft.runners.pyrunner import LocalPartitionSet
+from daft.runners.partitioning import PartID, PartitionSet, vPartition
+
+PartitionT = TypeVar("PartitionT")
+_PartitionT = TypeVar("_PartitionT")
 
 
-class DynamicSchedule(Iterator):
+class DynamicSchedule(Iterator, Generic[PartitionT]):
     """Recursively dynamically generate a sequence of execution steps to compute some target.
 
     - The execution steps (Constructions) are exposed via the iterator interface.
@@ -21,16 +23,16 @@ class DynamicSchedule(Iterator):
     """
 
     @dataclass
-    class Materializations:
-        dependencies: list[vPartition | None] = field(default_factory=list)
+    class Materializations(Generic[_PartitionT]):
+        dependencies: list[_PartitionT | None] = field(default_factory=list)
 
     def __init__(self) -> None:
         # Materialized partitions that this dynamic schedule needs to do its job.
         # `None` denotes a partition whose materialization is in-progress.
-        self._materializations: DynamicSchedule.Materializations = self.Materializations()
+        self._materializations: DynamicSchedule.Materializations = self.Materializations[PartitionT]()
         self._completed = False
 
-    def __next__(self) -> Construction | None:
+    def __next__(self) -> Construction[PartitionT] | None:
         if self._completed:
             raise StopIteration
 
@@ -40,11 +42,11 @@ class DynamicSchedule(Iterator):
         except StopIteration:
             self._completed = True
             # Drop references to dependencies.
-            self._materializations = self.Materializations()
+            self._materializations = self.Materializations[PartitionT]()
             raise
 
     @abstractmethod
-    def _next_impl(self) -> Construction | None:
+    def _next_impl(self) -> Construction[PartitionT] | None:
         """
         Raises StopIteration if there are no further instructions to give for this schedule.
         Returns None if there is nothing we can do for now (i.e. must wait for other partitions to finish).
@@ -56,13 +58,13 @@ class DynamicSchedule(Iterator):
         return f"{name}: self._completed={self._completed}, self._materializations={self._materializations}"
 
 
-class SchedulePartitionRead(DynamicSchedule):
-    def __init__(self, partitions: list[vPartition]) -> None:
+class SchedulePartitionRead(DynamicSchedule[PartitionT]):
+    def __init__(self, partitions: list[PartitionT]) -> None:
         super().__init__()
         self._materializations.dependencies += partitions
         self._num_dispatched = 0
 
-    def _next_impl(self) -> Construction | None:
+    def _next_impl(self) -> Construction[PartitionT] | None:
 
         dependencies = self._materializations.dependencies
         if self._num_dispatched == len(dependencies):
@@ -72,19 +74,19 @@ class SchedulePartitionRead(DynamicSchedule):
         self._num_dispatched += 1
 
         assert partition is not None  # for mypy; already enforced at __init__
-        new_construct = Construction([partition])
+        new_construct = Construction[PartitionT]([partition])
         return new_construct
 
 
-class ScheduleFileRead(DynamicSchedule):
+class ScheduleFileRead(DynamicSchedule[PartitionT]):
     def __init__(self, scan_node: logical_plan.Scan) -> None:
         super().__init__()
         self._scan_node = scan_node
         self._next_index = 0
 
-    def _next_impl(self) -> Construction | None:
+    def _next_impl(self) -> Construction[PartitionT] | None:
         if self._next_index < self._scan_node.num_partitions():
-            construct_new = Construction([])
+            construct_new = Construction[PartitionT]([])
             construct_new.add_instruction(InstructionFactory.read_file(self._scan_node, self._next_index))
 
             self._next_index += 1
@@ -94,14 +96,14 @@ class ScheduleFileRead(DynamicSchedule):
             raise StopIteration
 
 
-class ScheduleFileWrite(DynamicSchedule):
-    def __init__(self, child_schedule: DynamicSchedule, write_node: logical_plan.FileWrite) -> None:
+class ScheduleFileWrite(DynamicSchedule[PartitionT]):
+    def __init__(self, child_schedule: DynamicSchedule[PartitionT], write_node: logical_plan.FileWrite) -> None:
         super().__init__()
         self._child_schedule = child_schedule
         self._write_node = write_node
         self._writes_so_far = 0
 
-    def _next_impl(self) -> Construction | None:
+    def _next_impl(self) -> Construction[PartitionT] | None:
         construct = next(self._child_schedule)
         if construct is None or construct.is_marked_for_materialization():
             return construct
@@ -112,15 +114,17 @@ class ScheduleFileWrite(DynamicSchedule):
         return construct
 
 
-class SchedulePipelineInstruction(DynamicSchedule):
+class SchedulePipelineInstruction(DynamicSchedule[PartitionT]):
     def __init__(
-        self, child_schedule: DynamicSchedule, pipeable_instruction: Callable[[list[vPartition]], list[vPartition]]
+        self,
+        child_schedule: DynamicSchedule[PartitionT],
+        pipeable_instruction: Callable[[list[vPartition]], list[vPartition]],
     ) -> None:
         super().__init__()
         self._child_schedule = child_schedule
         self._instruction = pipeable_instruction
 
-    def _next_impl(self) -> Construction | None:
+    def _next_impl(self) -> Construction[PartitionT] | None:
         construct = next(self._child_schedule)
         if construct is None or construct.is_marked_for_materialization():
             return construct
@@ -130,21 +134,26 @@ class SchedulePipelineInstruction(DynamicSchedule):
         return construct
 
 
-class ScheduleJoin(DynamicSchedule):
+class ScheduleJoin(DynamicSchedule[PartitionT]):
     @dataclass
-    class Materializations(DynamicSchedule.Materializations):
-        lefts: list[vPartition | None] = field(default_factory=list)
-        rights: list[vPartition | None] = field(default_factory=list)
+    class Materializations(DynamicSchedule.Materializations[PartitionT]):
+        lefts: list[PartitionT | None] = field(default_factory=list)
+        rights: list[PartitionT | None] = field(default_factory=list)
 
-    def __init__(self, left_source: DynamicSchedule, right_source: DynamicSchedule, join: logical_plan.Join) -> None:
+    def __init__(
+        self,
+        left_source: DynamicSchedule[PartitionT],
+        right_source: DynamicSchedule[PartitionT],
+        join: logical_plan.Join,
+    ) -> None:
         super().__init__()
-        self._materializations: ScheduleJoin.Materializations = self.Materializations()
+        self._materializations: ScheduleJoin.Materializations = self.Materializations[PartitionT]()
         self._left_source = left_source
         self._right_source = right_source
         self._join_node = join
         self._next_to_emit = 0
 
-    def _next_impl(self) -> Construction | None:
+    def _next_impl(self) -> Construction[PartitionT] | None:
         lefts = self._materializations.lefts
         rights = self._materializations.rights
 
@@ -153,7 +162,7 @@ class ScheduleJoin(DynamicSchedule):
             next_left = lefts[self._next_to_emit]
             next_right = rights[self._next_to_emit]
             if next_left is not None and next_right is not None:
-                construct_join = Construction([next_left, next_right])
+                construct_join = Construction[PartitionT]([next_left, next_right])
                 construct_join.add_instruction(InstructionFactory.join(self._join_node))
 
                 self._next_to_emit += 1
@@ -184,15 +193,15 @@ class ScheduleJoin(DynamicSchedule):
         return construct
 
 
-class ScheduleGlobalLimit(DynamicSchedule):
-    def __init__(self, child_schedule: DynamicSchedule, global_limit: logical_plan.GlobalLimit) -> None:
+class ScheduleGlobalLimit(DynamicSchedule[PartitionT]):
+    def __init__(self, child_schedule: DynamicSchedule[PartitionT], global_limit: logical_plan.GlobalLimit) -> None:
         super().__init__()
         self._child_schedule = child_schedule
         self._global_limit = global_limit
         self._remaining_limit = self._global_limit._num
         self._continue_from_partition = 0
 
-    def _next_impl(self) -> Construction | None:
+    def _next_impl(self) -> Construction[PartitionT] | None:
 
         dependencies = self._materializations.dependencies
 
@@ -213,7 +222,7 @@ class ScheduleGlobalLimit(DynamicSchedule):
                 if dependencies[0] is None:
                     return None
 
-                new_construct = Construction([dependencies[0]])
+                new_construct = Construction[PartitionT]([dependencies[0]])
                 new_construct.add_instruction(InstructionFactory.local_limit(0))
 
                 self._continue_from_partition += 1
@@ -231,7 +240,7 @@ class ScheduleGlobalLimit(DynamicSchedule):
                 next_limit = min(self._remaining_limit, len(next_partition))
                 self._remaining_limit -= next_limit
 
-                new_construct = Construction([next_partition])
+                new_construct = Construction[PartitionT]([next_partition])
                 if next_limit < len(next_partition):
                     new_construct.add_instruction(InstructionFactory.local_limit(next_limit))
 
@@ -256,8 +265,8 @@ class ScheduleGlobalLimit(DynamicSchedule):
         return construct
 
 
-class ScheduleCoalesce(DynamicSchedule):
-    def __init__(self, child_schedule: DynamicSchedule, coalesce: logical_plan.Coalesce) -> None:
+class ScheduleCoalesce(DynamicSchedule[PartitionT]):
+    def __init__(self, child_schedule: DynamicSchedule[PartitionT], coalesce: logical_plan.Coalesce) -> None:
         super().__init__()
         self._child_schedule = child_schedule
 
@@ -274,7 +283,7 @@ class ScheduleCoalesce(DynamicSchedule):
 
         self._coalesce_boundaries = list(zip(starts, stops))
 
-    def _next_impl(self) -> Construction | None:
+    def _next_impl(self) -> Construction[PartitionT] | None:
 
         if self._num_emitted == len(self._coalesce_boundaries):
             raise StopIteration
@@ -287,7 +296,7 @@ class ScheduleCoalesce(DynamicSchedule):
             # for mypy
             ready_to_coalesce = [_ for _ in to_coalesce if _ is not None]
             if len(ready_to_coalesce) == len(to_coalesce):
-                construct_merge = Construction(ready_to_coalesce)
+                construct_merge = Construction[PartitionT](ready_to_coalesce)
                 construct_merge.add_instruction(InstructionFactory.merge())
                 self._num_emitted += 1
                 return construct_merge
@@ -306,22 +315,22 @@ class ScheduleCoalesce(DynamicSchedule):
         return construct
 
 
-class ScheduleSort(DynamicSchedule):
+class ScheduleSort(DynamicSchedule[PartitionT]):
     @dataclass
-    class Materializations(DynamicSchedule.Materializations):
-        samples: list[vPartition | None] = field(default_factory=list)
-        boundaries: list[vPartition | None] = field(default_factory=list)
+    class Materializations(DynamicSchedule.Materializations[PartitionT]):
+        samples: list[PartitionT | None] = field(default_factory=list)
+        boundaries: list[PartitionT | None] = field(default_factory=list)
 
-    def __init__(self, child_schedule: DynamicSchedule, sort: logical_plan.Sort) -> None:
+    def __init__(self, child_schedule: DynamicSchedule[PartitionT], sort: logical_plan.Sort) -> None:
         super().__init__()
-        self._materializations: ScheduleSort.Materializations = self.Materializations()
+        self._materializations: ScheduleSort.Materializations = self.Materializations[PartitionT]()
         self._sort = sort
         self._child_schedule = child_schedule
 
         # The final step of the sort.
         self._fanout_reduce: ScheduleFanoutReduce | None = None
 
-    def _next_impl(self) -> Construction | None:
+    def _next_impl(self) -> Construction[PartitionT] | None:
 
         # First, materialize the child node.
         try:
@@ -344,7 +353,7 @@ class ScheduleSort(DynamicSchedule):
             source = source_partitions[len(sample_partitions)]
             if source is None:
                 return None
-            construct_sample = Construction([source])
+            construct_sample = Construction[PartitionT]([source])
             construct_sample.add_instruction(InstructionFactory.map_to_samples(self._sort._sort_by))
             construct_sample.mark_for_materialization(sample_partitions)
             return construct_sample
@@ -355,7 +364,7 @@ class ScheduleSort(DynamicSchedule):
             if len(finished_samples) != len(sample_partitions):
                 return None
 
-            construct_boundaries = Construction(finished_samples)
+            construct_boundaries = Construction[PartitionT](finished_samples)
             construct_boundaries.add_instruction(
                 InstructionFactory.reduce_to_quantiles(
                     sort_by=self._sort._sort_by,
@@ -375,7 +384,7 @@ class ScheduleSort(DynamicSchedule):
         assert len(finished_dependencies) == len(source_partitions)
 
         if self._fanout_reduce is None:
-            from_partitions = SchedulePartitionRead(finished_dependencies)
+            from_partitions = SchedulePartitionRead[PartitionT](finished_dependencies)
             fanout_fn = InstructionFactory.fanout_range(
                 sort_by=self._sort._sort_by,
                 descending=self._sort._descending,
@@ -386,7 +395,7 @@ class ScheduleSort(DynamicSchedule):
                 sort_by=self._sort._sort_by,
                 descending=self._sort._descending,
             )
-            self._fanout_reduce = ScheduleFanoutReduce(
+            self._fanout_reduce = ScheduleFanoutReduce[PartitionT](
                 child_schedule=from_partitions,
                 num_outputs=self._sort.num_partitions(),
                 fanout_fn=fanout_fn,
@@ -396,10 +405,10 @@ class ScheduleSort(DynamicSchedule):
         return next(self._fanout_reduce)
 
 
-class ScheduleFanoutReduce(DynamicSchedule):
+class ScheduleFanoutReduce(DynamicSchedule[PartitionT]):
     def __init__(
         self,
-        child_schedule: DynamicSchedule,
+        child_schedule: DynamicSchedule[PartitionT],
         num_outputs: int,
         fanout_fn: Callable[[list[vPartition]], list[vPartition]],
         reduce_fn: Callable[[list[vPartition]], list[vPartition]],
@@ -412,7 +421,7 @@ class ScheduleFanoutReduce(DynamicSchedule):
 
         self._reduces_emitted = 0
 
-    def _next_impl(self) -> Construction | None:
+    def _next_impl(self) -> Construction[PartitionT] | None:
         # Dispatch shufflemaps.
         try:
             construct = next(self._child_schedule)
@@ -443,28 +452,30 @@ class ScheduleFanoutReduce(DynamicSchedule):
             # Need to wait for some shufflemaps to complete.
             return None
 
-        construct_reduce = Construction(finished_reduce_dependencies)
+        construct_reduce = Construction[PartitionT](finished_reduce_dependencies)
         construct_reduce.add_instruction(self._reduce_fn)
         self._reduces_emitted += 1
         return construct_reduce
 
 
-class ScheduleMaterialize(DynamicSchedule):
+class ScheduleMaterialize(DynamicSchedule[PartitionT]):
     """Materializes its dependencies and does nothing else."""
 
-    def __init__(self, child_schedule: DynamicSchedule) -> None:
+    def __init__(self, child_schedule: DynamicSchedule[PartitionT]) -> None:
         super().__init__()
         self.child_schedule = child_schedule
-        self._materializing_results: list[vPartition | None] = []
+        self._materializing_results: list[PartitionT | None] = []
         self._returned = False
 
-    def _next_impl(self) -> Construction | None:
+    def _next_impl(self) -> Construction[PartitionT] | None:
         construct = next(self.child_schedule)
         if construct is not None and not construct.is_marked_for_materialization():
             construct.mark_for_materialization(self._materializing_results)
         return construct
 
-    def result_partition_set(self) -> PartitionSet[vPartition]:
+    def result_partition_set(
+        self, pset_class: Callable[[dict[PartID, PartitionT]], PartitionSet[PartitionT]]
+    ) -> PartitionSet[PartitionT]:
         """Return the materialized partitions as a ResultPartitionSet.
 
         This can only be called once. After the partitions are handed off, this schedule will drop its references to the partitions.
@@ -481,7 +492,7 @@ class ScheduleMaterialize(DynamicSchedule):
         ), f"Not all partitions have finished materializing yet in results: {self._materializing_results}"
 
         # Return the result partition set.
-        result = LocalPartitionSet({})
+        result = pset_class({})
         for i, partition in enumerate(finished_partitions):
             result.set_partition(i, partition)
 

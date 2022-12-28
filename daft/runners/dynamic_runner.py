@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from daft.execution.dynamic_construction import Construction
-from daft.execution.dynamic_schedule import ScheduleMaterialize
+from daft.execution.dynamic_schedule import DynamicSchedule, ScheduleMaterialize
 from daft.execution.dynamic_schedule_factory import DynamicScheduleFactory
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan
@@ -14,7 +14,8 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
-from daft.runners.partitioning import PartitionCacheEntry
+from daft.runners.partitioning import PartitionCacheEntry, vPartition
+from daft.runners.pyrunner import LocalPartitionSet
 from daft.runners.runner import Runner
 
 
@@ -52,18 +53,20 @@ class DynamicRunner(Runner):
     def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
         plan = self.optimize(plan)
 
-        schedule = DynamicScheduleFactory.schedule_logical_node(plan)
-        schedule = ScheduleMaterialize(schedule)
+        schedule_factory = DynamicScheduleFactory[vPartition]()
+
+        schedule: DynamicSchedule[vPartition] = schedule_factory.schedule_logical_node(plan)
+        schedule = ScheduleMaterialize[vPartition](schedule)
 
         for next_construction in schedule:
             assert next_construction is not None, "Got a None construction in singlethreaded mode"
             self._build_partitions(next_construction)
 
-        final_result = schedule.result_partition_set()
+        final_result = schedule.result_partition_set(LocalPartitionSet)
         pset_entry = self.put_partition_set_into_cache(final_result)
         return pset_entry
 
-    def _build_partitions(self, partspec: Construction) -> None:
+    def _build_partitions(self, partspec: Construction[vPartition]) -> None:
         construct_fn = partspec.get_runnable()
         results = construct_fn(partspec.inputs)
         partspec.report_completed(results)
