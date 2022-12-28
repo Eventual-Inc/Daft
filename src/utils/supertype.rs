@@ -20,17 +20,17 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     println!("get_supertype: {:?}, {:?}", l, r);
 
     match (l, r) {
-        (Arrow(l), Arrow(r)) => get_arrow_supertype(l, r),
+        (Arrow(l), Arrow(r)) => get_arrow_supertype(l, r).map(DataType::Arrow),
         _ => None,
     }
 }
 
-fn get_arrow_supertype(l: &ArrowType, r: &ArrowType) -> Option<DataType> {
-    fn inner(l: &ArrowType, r: &ArrowType) -> Option<DataType> {
+pub fn get_arrow_supertype(l: &ArrowType, r: &ArrowType) -> Option<ArrowType> {
+    fn inner(l: &ArrowType, r: &ArrowType) -> Option<ArrowType> {
         use ArrowType::*;
 
         if l == r {
-            return Some(DataType::Arrow(l.clone()));
+            return Some(l.clone());
         }
 
         let arrow_dtype = match (l, r) {
@@ -107,12 +107,12 @@ fn get_arrow_supertype(l: &ArrowType, r: &ArrowType) -> Option<DataType> {
             (Boolean, Float64) => Some(Float64),
 
             // every known type can be casted to a string except binary
-            (dt, LargeUtf8) if dt.ne(&LargeBinary) => Some(Utf8),
+            (dt, LargeUtf8) if dt.ne(&LargeBinary) => Some(LargeUtf8),
             (dt, Null) => Some(dt.clone()), // Drop Null Type
 
             _ => None,
         };
-        arrow_dtype.map(DataType::Arrow)
+        arrow_dtype
     }
     match inner(l, r) {
         Some(dt) => Some(dt),

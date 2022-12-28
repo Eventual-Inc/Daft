@@ -1,4 +1,6 @@
 pub mod hashing;
+pub mod utf8;
+
 pub mod search_sorted;
 
 use pyo3::prelude::*;
