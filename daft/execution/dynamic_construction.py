@@ -71,13 +71,25 @@ class Construction(Generic[PartitionT]):
             assert self._destination_array[self._partno + i] is None, self._destination_array[self._partno + i]
             self._destination_array[self._partno + i] = partition_with_info
 
-    def get_runnable(self) -> Callable[..., list[vPartition]]:
-        def runnable(*inputs: vPartition) -> list[vPartition]:
-            partitions = list(inputs)
+    def get_runnable(self) -> Callable[[list[vPartition]], list[vPartition]]:
+        def runnable(partitions: list[vPartition]) -> list[vPartition]:
             for instruction in self._instruction_stack:
                 partitions = instruction(partitions)
 
             return partitions
+
+        return runnable
+
+    def get_runnable_ray(self) -> Callable[..., vPartition | list[vPartition]]:
+        """Return a function with compatible quirks for with ray.remote."""
+
+        def runnable(*inputs: vPartition) -> vPartition | list[vPartition]:
+            partitions = list(inputs)
+            for instruction in self._instruction_stack:
+                partitions = instruction(partitions)
+
+            # special case len == 1 to work around Ray issue
+            return partitions if len(partitions) > 1 else partitions[0]
 
         return runnable
 

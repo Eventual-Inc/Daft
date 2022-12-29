@@ -68,7 +68,7 @@ class DynamicRunner(Runner):
 
     def _build_partitions(self, partspec: Construction[vPartition]) -> None:
         construct_fn = partspec.get_runnable()
-        results = construct_fn(*partspec.inputs)
+        results = construct_fn(partspec.inputs)
         metas = [_.metadata() for _ in results]
         partspec.report_completed([PartitionWithInfo(p, m) for p, m in zip(results, metas)])
 

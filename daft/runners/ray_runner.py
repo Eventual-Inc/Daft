@@ -8,7 +8,7 @@ import pyarrow as pa
 import ray
 from loguru import logger
 
-from daft.execution.dynamic_construction import Construction
+from daft.execution.dynamic_construction import Construction, PartitionWithInfo
 from daft.execution.dynamic_schedule import ScheduleMaterialize
 from daft.execution.dynamic_schedule_factory import DynamicScheduleFactory
 from daft.execution.execution_plan import ExecutionPlan
@@ -351,7 +351,6 @@ class DynamicRayRunner(RayRunner):
                 for i in range(cores_idle):
 
                     next_construction = next(schedule)
-                    print(next_construction)
 
                     if next_construction is None:
                         break
@@ -360,7 +359,6 @@ class DynamicRayRunner(RayRunner):
 
                 # All tasks dispatched. Await a result
                 completed, pending = await asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
-                print(completed)
                 futures = pending
 
         except StopIteration:
@@ -374,19 +372,19 @@ class DynamicRayRunner(RayRunner):
         return pset_entry
 
     async def _build_partitions(self, partspec: Construction[ray.ObjectRef]) -> None:
-        print("Partition started: ", partspec)
         construct_remote = ray.remote(partspec.get_runnable()).options(num_returns=partspec.num_results)
         results = construct_remote.remote(*partspec.inputs)
-        # Handle ray bug that strips list when num_returns=1
+        # Handle ray bug that ignores list interpretation when num_returns=1
         if partspec.num_results == 1:
             results = [results]
-        partspec.report_completed(results)
-        print("Partition completed ", results)
+
+        metas = await ray.remote(partspec.get_metas).remote(*results)
+        partspec.report_completed([PartitionWithInfo(p, m) for p, m in zip(results, metas)])
 
     def _get_partition_metadata(self, *partitions: ray.ObjectRef) -> list[PartitionMetadata]:
         """Hacky; only used for DynamicSchedule initialization. Remove when PartitionCache is implemented"""
 
-        @ray.remote()
+        @ray.remote
         def get_metadatas(*partitions: vPartition) -> list[PartitionMetadata]:
             return [partition.metadata() for partition in partitions]
 
