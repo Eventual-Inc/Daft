@@ -108,7 +108,16 @@ class MetricsBuilder:
             writer.writerow([self._metrics.get(header, "") for header in MetricsBuilder.HEADERS])
 
 
-def run_all_benchmarks(get_df: Callable[[str], DataFrame], skip_questions: set[int], csv_output_location: str | None):
+def get_df_with_parquet_folder(parquet_folder: str) -> Callable[[str], DataFrame]:
+    def _get_df(table_name: str) -> DataFrame:
+        return DataFrame.read_parquet(os.path.join(parquet_folder, table_name, "*.parquet"))
+
+    return _get_df
+
+
+def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output_location: str | None):
+    get_df = get_df_with_parquet_folder(parquet_folder)
+
     daft_context = get_context()
     metrics_builder = MetricsBuilder(daft_context.runner_config.name)
 
@@ -149,11 +158,8 @@ def get_daft_version() -> str:
     return daft.get_version()
 
 
-def warmup_environment(requirements: str | None, parquet_folder: str) -> dict[str, DataFrame]:
-    """Performs necessary setup of Daft on the current benchmarking environment
-
-    Returns a dictionary of {table_name: DataFrame} for the TPCH tables
-    """
+def warmup_environment(requirements: str | None, parquet_folder: str):
+    """Performs necessary setup of Daft on the current benchmarking environment"""
     ctx = daft.context.get_context()
 
     if ctx.runner_config.name == "ray":
@@ -174,7 +180,7 @@ def warmup_environment(requirements: str | None, parquet_folder: str) -> dict[st
         # (See: https://discuss.ray.io/t/how-to-run-a-function-exactly-once-on-each-node/2178)
         @ray.remote(num_cpus=1)
         class WarmUpFunction:
-            def ready(self, parquet_folder):
+            def ready(self):
                 return get_daft_version()
 
         num_nodes = len([n for n in ray.nodes() if n["Alive"] and n["Resources"].get("CPU", 0.0) > 0])
@@ -182,7 +188,7 @@ def warmup_environment(requirements: str | None, parquet_folder: str) -> dict[st
         pg = placement_group(bundles=bundles, strategy="STRICT_SPREAD")
         ray.get(pg.ready())
         executors = [WarmUpFunction.options(placement_group=pg).remote() for _ in range(num_nodes)]
-        assert ray.get([executor.ready.remote(parquet_folder) for executor in executors]) == [
+        assert ray.get([executor.ready.remote() for executor in executors]) == [
             get_daft_version() for _ in range(num_nodes)
         ]
         del executors
@@ -194,14 +200,12 @@ def warmup_environment(requirements: str | None, parquet_folder: str) -> dict[st
         assert placement_group_table(pg)["state"] == "REMOVED"
         logger.info("Ray cluster warmed up")
 
-    dataframes = {}
+    get_df = get_df_with_parquet_folder(parquet_folder)
     for table in ALL_TABLES:
-        df = DataFrame.read_parquet(os.path.join(parquet_folder, table, "*.parquet"))
+        df = get_df(table)
         logger.info(
             f"Warming up local execution environment by loading table {table} and counting rows: {df.count(df.columns[0]).to_pandas()}"
         )
-        dataframes[table] = df
-    return dataframes
 
 
 if __name__ == "__main__":
@@ -253,10 +257,10 @@ if __name__ == "__main__":
     else:
         parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
 
-    dataframes = warmup_environment(args.requirements, parquet_folder)
+    warmup_environment(args.requirements, parquet_folder)
 
     run_all_benchmarks(
-        lambda table_name: dataframes[table_name],
+        parquet_folder,
         skip_questions={int(s) for s in args.skip_questions.split(",")} if args.skip_questions is not None else set(),
         csv_output_location=args.output_csv,
     )

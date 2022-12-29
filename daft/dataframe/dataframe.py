@@ -46,10 +46,13 @@ ColumnInputType = Union[Expression, str]
 def _get_tabular_files_scan(
     path: str, get_schema: Callable[[str], ExpressionList], source_info: SourceInfo
 ) -> logical_plan.TabularFilesScan:
+    """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
+    # Glob the path and return as a DataFrame with a single column "filepaths""
     filepath_column_name = "filepaths"
     filepath_plan = get_context().runner().glob_filepaths(path, filepath_column_name=filepath_column_name)
     filepath_df = DataFrame(filepath_plan)
 
+    # Sample the first 10 filepaths and infer the schema
     schema_df = filepath_df.limit(10).select(
         col(filepath_column_name).apply(get_schema, return_type=ExpressionList).alias("schema")
     )
@@ -58,6 +61,8 @@ def _get_tabular_files_scan(
     assert schema_result is not None
     sampled_schemas = schema_result.to_pydict()["schema"]
     schema = sampled_schemas[0]  # TODO: infer schema from all sampled schemas
+
+    # Return a TabularFilesScan node that will scan from the globbed filepaths filepaths
     return logical_plan.TabularFilesScan(
         schema=schema,
         predicate=None,
