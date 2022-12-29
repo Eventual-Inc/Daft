@@ -24,6 +24,8 @@ PartitionT = TypeVar("PartitionT")
 
 class DynamicScheduleFactory(Generic[PartitionT]):
     def __init__(self):
+        # Normally this class would just be a holder for static methods;
+        # however, it seems mypy does not properly pass through type parameterization for static methods.
         pass
 
     def schedule_logical_node(self, node: LogicalPlan) -> DynamicSchedule[PartitionT]:

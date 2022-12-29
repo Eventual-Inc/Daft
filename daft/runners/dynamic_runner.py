@@ -68,5 +68,5 @@ class DynamicRunner(Runner):
 
     def _build_partitions(self, partspec: Construction[vPartition]) -> None:
         construct_fn = partspec.get_runnable()
-        results = construct_fn(partspec.inputs)
+        results, metas = construct_fn(*partspec.inputs)
         partspec.report_completed(results)
