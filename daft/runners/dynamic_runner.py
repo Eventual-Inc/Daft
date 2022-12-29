@@ -16,10 +16,7 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
-<<<<<<< HEAD
-=======
 from daft.logical.schema import ExpressionList
->>>>>>> 0db1596 (use runner to list filepaths)
 from daft.runners.partitioning import PartitionCacheEntry, vPartition
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.runners.runner import Runner
