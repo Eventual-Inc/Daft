@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Callable, Generic, List, TypeVar
+
+import ray
 
 from daft.expressions import Expression
 from daft.logical import logical_plan
@@ -12,6 +15,12 @@ from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, Sor
 
 PartitionT = TypeVar("PartitionT")
 Instruction = Callable[[List[vPartition]], List[vPartition]]
+
+
+@dataclass(frozen=True)
+class PartitionWithInfo(Generic[PartitionT]):
+    partition: PartitionT
+    metadata: PartitionMetadata
 
 
 class Construction(Generic[PartitionT]):
@@ -30,7 +39,7 @@ class Construction(Generic[PartitionT]):
 
         # Where to put the materialized results.
         self.num_results: None | int = None
-        self._destination_array: None | list[PartitionT | None] = None
+        self._destination_array: None | list[PartitionWithInfo[PartitionT] | None] = None
         self._partno: None | int = None
 
     def add_instruction(self, instruction: Instruction) -> None:
@@ -38,7 +47,9 @@ class Construction(Generic[PartitionT]):
         self.assert_not_marked()
         self._instruction_stack.append(instruction)
 
-    def mark_for_materialization(self, destination_array: list[PartitionT | None], num_results: int = 1) -> None:
+    def mark_for_materialization(
+        self, destination_array: list[PartitionWithInfo[PartitionT] | None], num_results: int = 1
+    ) -> None:
         """Mark this Construction for materialization.
 
         1. Prevents further instructions from being added to this Construction.
@@ -50,27 +61,29 @@ class Construction(Generic[PartitionT]):
         self._destination_array += [None] * num_results
         self.num_results = num_results
 
-    def report_completed(self, results: list[PartitionT]) -> None:
+    def report_completed(self, results: list[PartitionWithInfo[PartitionT]]) -> None:
         """Give the materialized result of this Construction to the DynamicSchedule who asked for it."""
 
         assert self._destination_array is not None
         assert self._partno is not None
 
-        for i, partition in enumerate(results):
+        for i, partition_with_info in enumerate(results):
             assert self._destination_array[self._partno + i] is None, self._destination_array[self._partno + i]
-            self._destination_array[self._partno + i] = partition
+            self._destination_array[self._partno + i] = partition_with_info
 
-    def get_runnable(self) -> Callable[..., tuple[list[vPartition], list[PartitionMetadata]]]:
-        def runnable(*inputs: vPartition) -> tuple[list[vPartition], list[PartitionMetadata]]:
+    def get_runnable(self) -> Callable[..., list[vPartition]]:
+        def runnable(*inputs: vPartition) -> list[vPartition]:
             partitions = list(inputs)
             for instruction in self._instruction_stack:
                 partitions = instruction(partitions)
 
-            partition_metas = [partition.metadata() for partition in partitions]
-
-            return partitions, partition_metas
+            return partitions
 
         return runnable
+
+    @staticmethod
+    def get_metas(*inputs: vPartition) -> list[PartitionMetadata]:
+        return [partition.metadata() for partition in inputs]
 
     def is_marked_for_materialization(self) -> bool:
         return all(_ is not None for _ in (self._destination_array, self._partno))
@@ -203,15 +216,24 @@ class InstructionFactory:
 
     @staticmethod
     def fanout_range(
-        sort_by: ExpressionList, descending: list[bool], boundaries: vPartition, num_outputs: int
+        sort_by: ExpressionList, descending: list[bool], boundaries: PartitionT, num_outputs: int
     ) -> Instruction:
         def instruction(inputs: list[vPartition]) -> list[vPartition]:
             [input] = inputs
+            # TODO find a generic way to do this
+            vpart: vPartition
+            if isinstance(boundaries, vPartition):
+                vpart = boundaries
+            elif isinstance(boundaries, ray.ObjectRef):
+                vpart = ray.get(boundaries)
+            else:
+                raise RuntimeError(f"Unsupported partition type {type(boundaries)}")
+
             partitions_with_ids = SortOp.map_fn(
                 input=input,
                 output_partitions=num_outputs,
                 exprs=sort_by,
-                boundaries=boundaries,
+                boundaries=vpart,
                 descending=descending,
             )
             return [partition for _, partition in sorted(partitions_with_ids.items())]

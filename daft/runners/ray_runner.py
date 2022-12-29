@@ -33,6 +33,7 @@ from daft.runners.blocks import ArrowDataBlock, zip_blocks_as_py
 from daft.runners.partitioning import (
     PartID,
     PartitionCacheEntry,
+    PartitionMetadata,
     PartitionSet,
     vPartition,
 )
@@ -381,3 +382,12 @@ class DynamicRayRunner(RayRunner):
             results = [results]
         partspec.report_completed(results)
         print("Partition completed ", results)
+
+    def _get_partition_metadata(self, *partitions: ray.ObjectRef) -> list[PartitionMetadata]:
+        """Hacky; only used for DynamicSchedule initialization. Remove when PartitionCache is implemented"""
+
+        @ray.remote()
+        def get_metadatas(*partitions: vPartition) -> list[PartitionMetadata]:
+            return [partition.metadata() for partition in partitions]
+
+        return ray.get(get_metadatas.remote(*partitions))
