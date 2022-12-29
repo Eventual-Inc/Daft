@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
@@ -7,6 +8,9 @@ import pyarrow as pa
 import ray
 from loguru import logger
 
+from daft.execution.dynamic_construction import Construction
+from daft.execution.dynamic_schedule import ScheduleMaterialize
+from daft.execution.dynamic_schedule_factory import DynamicScheduleFactory
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.logical_op_runners import (
     LogicalGlobalOpRunner,
@@ -323,3 +327,57 @@ class RayRunner(Runner):
             final_result = partition_intermediate_results[last.id()]
             pset_entry = self._part_set_cache.put_partition_set(final_result)
             return pset_entry
+
+
+class DynamicRayRunner(RayRunner):
+    def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
+        return asyncio.run(self._run_impl(plan))
+
+    async def _run_impl(self, plan: LogicalPlan) -> PartitionCacheEntry:
+        plan = self.optimize(plan)
+
+        schedule_factory = DynamicScheduleFactory[ray.ObjectRef]()
+
+        schedule = schedule_factory.schedule_logical_node(plan)
+        schedule = ScheduleMaterialize[ray.ObjectRef](schedule)
+
+        futures = set()
+
+        try:
+            while True:
+                # Dispatch tasks while cores are available.
+                cores_idle = int(ray.available_resources()["CPU"])
+                for i in range(cores_idle):
+
+                    next_construction = next(schedule)
+                    print(next_construction)
+
+                    if next_construction is None:
+                        break
+
+                    futures.add(asyncio.create_task(self._build_partitions(next_construction)))
+
+                # All tasks dispatched. Await a result
+                completed, pending = await asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
+                print(completed)
+                futures = pending
+
+        except StopIteration:
+            pass
+
+        # Flush futures.
+        await asyncio.wait(futures)
+
+        final_result = schedule.result_partition_set(RayPartitionSet)
+        pset_entry = self.put_partition_set_into_cache(final_result)
+        return pset_entry
+
+    async def _build_partitions(self, partspec: Construction[ray.ObjectRef]) -> None:
+        print("Partition started: ", partspec)
+        construct_remote = ray.remote(partspec.get_runnable()).options(num_returns=partspec.num_results)
+        results = construct_remote.remote(*partspec.inputs)
+        # Handle ray bug that strips list when num_returns=1
+        if partspec.num_results == 1:
+            results = [results]
+        partspec.report_completed(results)
+        print("Partition completed ", results)

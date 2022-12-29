@@ -35,6 +35,12 @@ class _RayRunnerConfig(_RunnerConfig):
     address: str | None
 
 
+@dataclasses.dataclass(frozen=True)
+class _DynamicRayRunnerConfig(_RunnerConfig):
+    name = "dynamicray"
+    address: str | None
+
+
 def _get_runner_config_from_env() -> _RunnerConfig:
     """Retrieves the appropriate RunnerConfig from environment variables
 
@@ -51,6 +57,8 @@ def _get_runner_config_from_env() -> _RunnerConfig:
             return _PyRunnerConfig()
         elif runner.upper() == "DYNAMIC":
             return _DynamicRunnerConfig()
+        elif runner.upper() == "DYNAMICRAY":
+            return _DynamicRayRunnerConfig(address=os.getenv("DAFT_RAY_ADDRESS"))
         raise ValueError(f"Unsupported DAFT_RUNNER variable: {os.environ['DAFT_RUNNER']}")
     return _PyRunnerConfig()
 
@@ -97,6 +105,13 @@ class DaftContext:
 
             logger.info("Using DynamicRunner")
             _RUNNER = DynamicRunner()
+
+        elif self.runner_config.name == "dynamicray":
+            from daft.runners.ray_runner import DynamicRayRunner
+
+            logger.info("Using DynamicRayRunner")
+            assert isinstance(self.runner_config, _DynamicRayRunnerConfig)
+            _RUNNER = DynamicRayRunner(address=self.runner_config.address)
         else:
             raise NotImplementedError(f"Runner config implemented: {self.runner_config.name}")
 
@@ -158,6 +173,18 @@ def set_runner_ray(address: str | None = None) -> DaftContext:
     _DaftContext = dataclasses.replace(
         _DaftContext,
         runner_config=_RayRunnerConfig(address=address),
+        disallow_set_runner=True,
+    )
+    return _DaftContext
+
+
+def set_runner_dynamic_ray(address: str | None = None) -> DaftContext:
+    global _DaftContext
+    if _DaftContext.disallow_set_runner:
+        raise RuntimeError("Cannot set runner more than once")
+    _DaftContext = dataclasses.replace(
+        _DaftContext,
+        runner_config=_DynamicRayRunnerConfig(address=address),
         disallow_set_runner=True,
     )
     return _DaftContext
