@@ -12,9 +12,11 @@ from daft.execution.logical_op_runners import (
     LogicalPartitionOpRunner,
     ReduceType,
 )
+from daft.expressions import ColumnExpression
+from daft.filesystem import glob_path
 from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
-from daft.logical.logical_plan import LogicalPlan
+from daft.logical import logical_plan
 from daft.logical.optimizer import (
     DropProjections,
     DropRepartition,
@@ -24,6 +26,7 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
+from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartID,
@@ -41,6 +44,7 @@ from daft.runners.shuffle_ops import (
     Shuffler,
     SortOp,
 )
+from daft.types import ExpressionType
 
 
 @dataclass
@@ -122,7 +126,7 @@ class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
     def run_node_list(
         self,
         inputs: dict[int, PartitionSet],
-        nodes: list[LogicalPlan],
+        nodes: list[logical_plan.LogicalPlan],
         num_partitions: int,
         resource_request: ResourceRequest,
     ) -> PartitionSet:
@@ -180,10 +184,35 @@ class PyRunner(Runner):
             ]
         )
 
-    def optimize(self, plan: LogicalPlan) -> LogicalPlan:
+    def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
         return self._optimizer.optimize(plan)
 
-    def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
+    def glob_filepaths(
+        self,
+        source_path: str,
+        filepath_column_name: str = "filepaths",
+    ) -> logical_plan.InMemoryScan:
+        filepaths = glob_path(source_path)
+        schema = ExpressionList([ColumnExpression(filepath_column_name, ExpressionType.string())]).resolve()
+        pset = LocalPartitionSet(
+            {
+                i: vPartition.from_pydict(data={filepath_column_name: [filepaths[i]]}, schema=schema, partition_id=i)
+                for i in range(len(filepaths))  # Hardcoded to 1 path per partition
+            },
+        )
+        cache_entry = self.put_partition_set_into_cache(pset)
+        partition_set = cache_entry.value
+        assert partition_set is not None
+
+        return logical_plan.InMemoryScan(
+            cache_entry=cache_entry,
+            schema=schema,
+            partition_spec=logical_plan.PartitionSpec(
+                logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
+            ),
+        )
+
+    def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         optimized_plan = self.optimize(plan)
 
         exec_plan = ExecutionPlan.plan_from_logical(optimized_plan)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 
-from daft.logical.logical_plan import LogicalPlan
+from daft.logical.logical_plan import InMemoryScan, LogicalPlan
 from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionSet,
@@ -19,6 +19,14 @@ class Runner:
 
     def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
         return self._part_set_cache.put_partition_set(pset=pset)
+
+    @abstractmethod
+    def glob_filepaths(
+        self,
+        source_path: str,
+        filepath_column_name: str = "filepaths",
+    ) -> InMemoryScan:
+        ...
 
     @abstractmethod
     def run(self, plan: LogicalPlan) -> PartitionCacheEntry:

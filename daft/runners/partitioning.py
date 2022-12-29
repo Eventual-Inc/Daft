@@ -253,7 +253,16 @@ class vPartition:
         for col_expr in column_exprs:
             col_id = col_expr.get_id()
             col_name = col_expr.name()
-            block = DataBlock.make_block(data[col_name])
+            col_type = col_expr.resolved_type()
+            col_data = data[col_name]
+
+            if ExpressionType.is_py(col_type):
+                col_data = list(col_data)
+            else:
+                if not isinstance(col_data, pa.Array) and not isinstance(col_data, pa.ChunkedArray):
+                    col_data = pa.array(col_data, type=col_type.to_arrow_type())
+
+            block = DataBlock.make_block(col_data)
             tiles[col_id] = PyListTile(column_id=col_id, column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
