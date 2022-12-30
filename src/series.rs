@@ -19,31 +19,31 @@ use crate::{
 //     }
 // }
 
-trait DataArray: Any {
+trait BaseArray: Any {
     fn data_type(&self) -> DataType;
 
-    fn binary_op(&self, other: &dyn DataArray, op: Operator) -> DaftResult<Arc<dyn DataArray>>;
+    fn binary_op(&self, other: &dyn BaseArray, op: Operator) -> DaftResult<Arc<dyn BaseArray>>;
 
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
-impl std::fmt::Debug for dyn DataArray {
+impl std::fmt::Debug for dyn BaseArray {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?}", self.data_type())
     }
 }
 
-struct ArrowDataArray {
+struct DataArray {
     data: Box<dyn arrow2::array::Array>,
 }
 
-impl From<Box<dyn arrow2::array::Array>> for ArrowDataArray {
+impl From<Box<dyn arrow2::array::Array>> for DataArray {
     fn from(item: Box<dyn arrow2::array::Array>) -> Self {
-        ArrowDataArray { data: item }
+        DataArray { data: item }
     }
 }
 
-impl DataArray for ArrowDataArray {
+impl BaseArray for DataArray {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -52,13 +52,9 @@ impl DataArray for ArrowDataArray {
         return self.data.data_type().into();
     }
 
-    fn binary_op(&self, other: &dyn DataArray, op: Operator) -> DaftResult<Arc<dyn DataArray>> {
+    fn binary_op(&self, other: &dyn BaseArray, op: Operator) -> DaftResult<Arc<dyn BaseArray>> {
         let mut lhs = &self.data;
-        let mut rhs = &other
-            .as_any()
-            .downcast_ref::<ArrowDataArray>()
-            .unwrap()
-            .data;
+        let mut rhs = &other.as_any().downcast_ref::<DataArray>().unwrap().data;
         use arrow2::compute::arithmetics::*;
 
         use arrow2::compute::boolean::*;
@@ -218,19 +214,19 @@ impl DataArray for ArrowDataArray {
             )));
         }
 
-        Ok(Arc::from(ArrowDataArray { data: result_array }))
+        Ok(Arc::from(DataArray { data: result_array }))
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Series {
-    array: Arc<dyn DataArray>,
+    array: Arc<dyn BaseArray>,
 }
 
 impl From<Box<dyn arrow2::array::Array>> for Series {
     fn from(item: Box<dyn arrow2::array::Array>) -> Self {
         Series {
-            array: Arc::from(ArrowDataArray::from(item)),
+            array: Arc::from(DataArray::from(item)),
         }
     }
 }
