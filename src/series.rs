@@ -1,7 +1,8 @@
-use std::{any::Any, sync::Arc};
+use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use crate::{
-    datatypes::DataType,
+    datatypes,
+    datatypes::{DaftDataType, DataType, Int64Type},
     dsl::Operator,
     error::{DaftError, DaftResult},
     kernels::utf8::add_utf8_arrays,
@@ -20,6 +21,8 @@ use crate::{
 // }
 
 trait BaseArray: Any {
+    fn data(&self) -> &Box<dyn arrow2::array::Array>;
+
     fn data_type(&self) -> DataType;
 
     fn binary_op(&self, other: &dyn BaseArray, op: Operator) -> DaftResult<Arc<dyn BaseArray>>;
@@ -33,17 +36,25 @@ impl std::fmt::Debug for dyn BaseArray {
     }
 }
 
-struct DataArray {
+struct DataArray<T: DaftDataType> {
     data: Box<dyn arrow2::array::Array>,
+    phantom: PhantomData<T>,
 }
 
-impl From<Box<dyn arrow2::array::Array>> for DataArray {
+impl<T: DaftDataType> From<Box<dyn arrow2::array::Array>> for DataArray<T> {
     fn from(item: Box<dyn arrow2::array::Array>) -> Self {
-        DataArray { data: item }
+        DataArray {
+            data: item,
+            phantom: PhantomData,
+        }
     }
 }
 
-impl BaseArray for DataArray {
+impl<T: DaftDataType + 'static> BaseArray for DataArray<T> {
+    fn data(&self) -> &Box<dyn arrow2::array::Array> {
+        &self.data
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -53,8 +64,8 @@ impl BaseArray for DataArray {
     }
 
     fn binary_op(&self, other: &dyn BaseArray, op: Operator) -> DaftResult<Arc<dyn BaseArray>> {
-        let mut lhs = &self.data;
-        let mut rhs = &other.as_any().downcast_ref::<DataArray>().unwrap().data;
+        let mut lhs = self.data();
+        let mut rhs = other.data();
         use arrow2::compute::arithmetics::*;
 
         use arrow2::compute::boolean::*;
@@ -214,7 +225,10 @@ impl BaseArray for DataArray {
             )));
         }
 
-        Ok(Arc::from(DataArray { data: result_array }))
+        Ok(Arc::from(DataArray::<Int64Type> {
+            data: result_array,
+            phantom: PhantomData,
+        }))
     }
 }
 
@@ -225,9 +239,19 @@ pub struct Series {
 
 impl From<Box<dyn arrow2::array::Array>> for Series {
     fn from(item: Box<dyn arrow2::array::Array>) -> Self {
-        Series {
-            array: Arc::from(DataArray::from(item)),
+        match item.data_type().into() {
+            DataType::Int64 => Series {
+                array: Arc::from(DataArray::<datatypes::Int64Type>::from(item)),
+            },
+            DataType::Utf8 => Series {
+                array: Arc::from(DataArray::<datatypes::Utf8Type>::from(item)),
+            },
+            _ => panic!("help!"),
         }
+
+        // Series {
+        //     array: Arc::from(DataArray<T>::from(item)),
+        // }
     }
 }
 
