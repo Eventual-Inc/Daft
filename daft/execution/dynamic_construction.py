@@ -83,9 +83,9 @@ class InstructionFactory:
     ) -> Callable[[list[vPartition]], list[vPartition]]:
         def instruction(inputs: list[vPartition]) -> list[vPartition]:
             assert len(inputs) == 1
-            [in_memory_filepaths_partition] = inputs
+            [filepaths_partition] = inputs
             partition = LocalLogicalPartitionOpRunner()._handle_tabular_files_scan(
-                inputs={scan_node._in_memory_scan_child.id(): in_memory_filepaths_partition},
+                inputs={scan_node._filepaths_child.id(): filepaths_partition},
                 scan=scan_node,
                 partition_id=index,
             )

@@ -48,13 +48,19 @@ def _get_tabular_files_scan(
 ) -> logical_plan.TabularFilesScan:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
     # Glob the path and return as a DataFrame with a single column "filepaths""
-    filepath_column_name = "filepaths"
-    filepath_plan = get_context().runner().glob_filepaths(path, filepath_column_name=filepath_column_name)
+    partition_set_factory = get_context().runner().partition_set_factory()
+    partition_set, filepaths_schema = partition_set_factory.glob_filepaths(path)
+    cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
+    filepath_plan = logical_plan.InMemoryScan(
+        cache_entry=cache_entry,
+        schema=filepaths_schema,
+        partition_spec=logical_plan.PartitionSpec(logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()),
+    )
     filepath_df = DataFrame(filepath_plan)
 
     # Sample the first 10 filepaths and infer the schema
     schema_df = filepath_df.limit(10).select(
-        col(filepath_column_name).apply(get_schema, return_type=ExpressionList).alias("schema")
+        col(partition_set_factory.FILEPATH_COLUMN_NAME).apply(get_schema, return_type=ExpressionList).alias("schema")
     )
     schema_df.collect()
     schema_result = schema_df._result
@@ -67,8 +73,9 @@ def _get_tabular_files_scan(
         schema=schema,
         predicate=None,
         columns=None,
-        in_memory_scan_child=filepath_plan,
         source_info=source_info,
+        filepaths_child=filepath_plan,
+        filepaths_column_name=partition_set_factory.FILEPATH_COLUMN_NAME,
     )
 
 

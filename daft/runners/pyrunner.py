@@ -32,6 +32,7 @@ from daft.runners.partitioning import (
     PartID,
     PartitionCacheEntry,
     PartitionSet,
+    PartitionSetFactory,
     vPartition,
 )
 from daft.runners.profiler import profiler
@@ -84,6 +85,24 @@ class LocalPartitionSet(PartitionSet[vPartition]):
 
     def wait(self) -> None:
         pass
+
+
+class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
+    def glob_filepaths(
+        self,
+        source_path: str,
+    ) -> tuple[LocalPartitionSet, ExpressionList]:
+        filepaths = glob_path(source_path)
+        schema = ExpressionList([ColumnExpression(self.FILEPATH_COLUMN_NAME, ExpressionType.string())]).resolve()
+        pset = LocalPartitionSet(
+            {
+                i: vPartition.from_pydict(
+                    data={self.FILEPATH_COLUMN_NAME: [filepaths[i]]}, schema=schema, partition_id=i
+                )
+                for i in range(len(filepaths))  # Hardcoded to 1 path per partition
+            },
+        )
+        return pset, schema
 
 
 class PyRunnerSimpleShuffler(Shuffler):
@@ -187,30 +206,8 @@ class PyRunner(Runner):
     def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
         return self._optimizer.optimize(plan)
 
-    def glob_filepaths(
-        self,
-        source_path: str,
-        filepath_column_name: str = "filepaths",
-    ) -> logical_plan.InMemoryScan:
-        filepaths = glob_path(source_path)
-        schema = ExpressionList([ColumnExpression(filepath_column_name, ExpressionType.string())]).resolve()
-        pset = LocalPartitionSet(
-            {
-                i: vPartition.from_pydict(data={filepath_column_name: [filepaths[i]]}, schema=schema, partition_id=i)
-                for i in range(len(filepaths))  # Hardcoded to 1 path per partition
-            },
-        )
-        cache_entry = self.put_partition_set_into_cache(pset)
-        partition_set = cache_entry.value
-        assert partition_set is not None
-
-        return logical_plan.InMemoryScan(
-            cache_entry=cache_entry,
-            schema=schema,
-            partition_spec=logical_plan.PartitionSpec(
-                logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
-            ),
-        )
+    def partition_set_factory(self) -> PartitionSetFactory:
+        return LocalPartitionSetFactory()
 
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         optimized_plan = self.optimize(plan)

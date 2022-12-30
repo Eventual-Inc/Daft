@@ -803,3 +803,29 @@ class PartitionSetCache:
     def clear(self) -> None:
         del self._uuid_to_partition_set
         self._uuid_to_partition_set = weakref.WeakValueDictionary()
+
+
+class PartitionSetFactory(Generic[PartitionT]):
+    """Factory class for creating PartitionSets."""
+
+    FILEPATH_COLUMN_NAME = "filepath"
+    FILESIZE_COLUMN_NAME = "size_bytes"
+    PROTOCOL_COLUMN_NAME = "protocol"
+
+    @abstractmethod
+    def glob_filepaths(
+        self,
+        source_path: str,
+    ) -> tuple[PartitionSet[PartitionT], ExpressionList]:
+        """Globs the specified filepath to construct a PartitionSet of files, including the file paths and sizes.
+
+        Args:
+            source_path (str): _description_
+            filepath_column_name (str, optional): _description_. Defaults to "filepaths".
+
+        Returns:
+            PartitionSet[PartitionT]: PartitionSet containing the files and their sizes. The schema of the PartitionSet is
+                FILEPATH_COLUMN_NAME: str, FILESIZE_COLUMN_NAME: int, PROTOCOL_COLUMN_NAME: str
+            ExpressionList: Schema of the PartitionSet that was constructed
+        """
+        raise NotImplementedError()

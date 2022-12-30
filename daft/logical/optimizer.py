@@ -225,7 +225,8 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             predicate=child._predicate,
             columns=required_columns.names,
             source_info=child._source_info,
-            in_memory_scan_child=child._in_memory_scan_child,
+            filepaths_child=child._filepaths_child,
+            filepaths_column_name=child._filepaths_column_name,
         )
         if any(not isinstance(e, ColumnExpression) for e in parent._projection):
             return parent.copy_with_new_children([new_scan])

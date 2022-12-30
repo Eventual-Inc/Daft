@@ -33,6 +33,7 @@ from daft.runners.partitioning import (
     PartID,
     PartitionCacheEntry,
     PartitionSet,
+    PartitionSetFactory,
     vPartition,
 )
 from daft.runners.profiler import profiler
@@ -143,6 +144,16 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 
     def wait(self) -> None:
         ray.wait([o for o in self._partitions.values()])
+
+
+class RayPartitionSetFactory(PartitionSetFactory[ray.ObjectRef]):
+    def glob_filepaths(
+        self,
+        source_path: str,
+    ) -> tuple[RayPartitionSet, ExpressionList]:
+        schema = ExpressionList([ColumnExpression(self.FILEPATH_COLUMN_NAME, ExpressionType.string())]).resolve()
+        partition_refs = ray.get(_glob_path_into_vpartitions.remote(source_path, schema))
+        return RayPartitionSet({part_id: part for part_id, part in partition_refs}), schema
 
 
 class RayRunnerSimpleShuffler(Shuffler):
@@ -313,26 +324,8 @@ class RayRunner(Runner):
     def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
         return self._optimizer.optimize(plan)
 
-    def glob_filepaths(
-        self,
-        source_path: str,
-        filepath_column_name: str = "filepaths",
-    ) -> logical_plan.InMemoryScan:
-        schema = ExpressionList([ColumnExpression(filepath_column_name, ExpressionType.string())]).resolve()
-
-        partition_refs = ray.get(_glob_path_into_vpartitions.remote(source_path, schema))
-        pset = RayPartitionSet({part_id: part for part_id, part in partition_refs})
-        cache_entry = self.put_partition_set_into_cache(pset)
-        partition_set = cache_entry.value
-        assert partition_set is not None
-
-        return logical_plan.InMemoryScan(
-            cache_entry=cache_entry,
-            schema=schema,
-            partition_spec=logical_plan.PartitionSpec(
-                logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
-            ),
-        )
+    def partition_set_factory(self) -> PartitionSetFactory:
+        return RayPartitionSetFactory()
 
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         plan = self.optimize(plan)
