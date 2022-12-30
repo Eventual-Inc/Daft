@@ -213,8 +213,7 @@ class TabularFilesScan(UnaryNode):
         self._columns = self._schema
         self._source_info = source_info
 
-        # TabularFilsScan has a single child node, which is an InMemoryScan node with certain schema requirements
-        # providing the filepaths to read from.
+        # TabularFilsScan has a single child node that provides the filepaths to read from.
         assert (
             filepaths_child.schema().get_expression_by_name(filepaths_column_name) is not None
         ), f"TabularFileScan requires a child with '{filepaths_column_name}' column"

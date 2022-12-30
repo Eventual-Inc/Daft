@@ -809,23 +809,19 @@ class PartitionSetFactory(Generic[PartitionT]):
     """Factory class for creating PartitionSets."""
 
     FILEPATH_COLUMN_NAME = "filepath"
-    FILESIZE_COLUMN_NAME = "size_bytes"
-    PROTOCOL_COLUMN_NAME = "protocol"
 
     @abstractmethod
     def glob_filepaths(
         self,
         source_path: str,
     ) -> tuple[PartitionSet[PartitionT], ExpressionList]:
-        """Globs the specified filepath to construct a PartitionSet of files, including the file paths and sizes.
+        """Globs the specified filepath to construct a PartitionSet of file metadata
 
         Args:
-            source_path (str): _description_
-            filepath_column_name (str, optional): _description_. Defaults to "filepaths".
+            source_path (str): path to glob
 
         Returns:
-            PartitionSet[PartitionT]: PartitionSet containing the files and their sizes. The schema of the PartitionSet is
-                FILEPATH_COLUMN_NAME: str, FILESIZE_COLUMN_NAME: int, PROTOCOL_COLUMN_NAME: str
+            PartitionSet[PartitionT]: PartitionSet containing the files' metadata
             ExpressionList: Schema of the PartitionSet that was constructed
         """
         raise NotImplementedError()

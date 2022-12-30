@@ -47,7 +47,7 @@ def _get_tabular_files_scan(
     path: str, get_schema: Callable[[str], ExpressionList], source_info: SourceInfo
 ) -> logical_plan.TabularFilesScan:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
-    # Glob the path and return as a DataFrame with a single column "filepaths""
+    # Glob the path and return as a DataFrame with a column containing the filepaths
     partition_set_factory = get_context().runner().partition_set_factory()
     partition_set, filepaths_schema = partition_set_factory.glob_filepaths(path)
     cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
