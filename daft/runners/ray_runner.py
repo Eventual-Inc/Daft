@@ -342,13 +342,15 @@ class DynamicRayRunner(RayRunner):
         schedule = schedule_factory.schedule_logical_node(plan)
         schedule = ScheduleMaterialize[ray.ObjectRef](schedule)
 
-        futures = set()
+        # Note: For autoscaling clusters, you will probably want to query this dynamically.
+        # Keep in mind this call takes about 0.3ms.
+        cores = int(ray.cluster_resources()["CPU"])
+        futures: set[asyncio.Future] = set()
 
         try:
             while True:
                 # Dispatch tasks while cores are available.
-                cores_idle = int(ray.available_resources()["CPU"])
-                for i in range(cores_idle):
+                for i in range(cores - len(futures)):
 
                     next_construction = next(schedule)
 
@@ -372,7 +374,7 @@ class DynamicRayRunner(RayRunner):
         return pset_entry
 
     async def _build_partitions(self, partspec: Construction[ray.ObjectRef]) -> None:
-        construct_remote = ray.remote(partspec.get_runnable()).options(num_returns=partspec.num_results)
+        construct_remote = ray.remote(partspec.get_runnable_ray()).options(num_returns=partspec.num_results)
         results = construct_remote.remote(*partspec.inputs)
         # Handle ray bug that ignores list interpretation when num_returns=1
         if partspec.num_results == 1:
