@@ -13,7 +13,6 @@ import warnings
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-import fsspec
 import ray
 from loguru import logger
 from ray.util.placement_group import (
@@ -250,10 +249,6 @@ if __name__ == "__main__":
             os.path.join(args.parquet_file_cache, str(args.scale_factor).replace(".", "_"), str(num_parts), "parquet")
             + "/"
         )
-        fs = fsspec.filesystem("s3" if parquet_folder.startswith("s3://") else "file")
-        if not fs.isdir(parquet_folder):
-            local_parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
-            fs.put(local_parquet_folder, parquet_folder, recursive=True)
     else:
         parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
 
