@@ -1,4 +1,4 @@
-use crate::datatypes::{ArrowType, DataType};
+use crate::datatypes::dtype::DataType;
 use crate::dsl::expr::Expr;
 use crate::error::DaftResult;
 use crate::series::Series;
@@ -24,12 +24,12 @@ impl LiteralValue {
     pub fn get_type(&self) -> DataType {
         use LiteralValue::*;
         match self {
-            Null => DataType::Arrow(ArrowType::Null),
-            Boolean(_) => DataType::Arrow(ArrowType::Boolean),
-            Utf8(_) => DataType::Arrow(ArrowType::LargeUtf8),
-            Binary(_) => DataType::Arrow(ArrowType::LargeBinary),
-            Int64(_) => DataType::Arrow(ArrowType::Int64),
-            Float64(_) => DataType::Arrow(ArrowType::Float64),
+            Null => DataType::Null,
+            Boolean(_) => DataType::Boolean,
+            Utf8(_) => DataType::Utf8,
+            Binary(_) => DataType::Binary,
+            Int64(_) => DataType::Int64,
+            Float64(_) => DataType::Float64,
         }
     }
 
@@ -38,7 +38,7 @@ impl LiteralValue {
         use LiteralValue::*;
 
         let arrow_array = match self {
-            Null => new_null_array(ArrowType::Null, 1),
+            Null => new_null_array(DataType::Null.to_arrow()?, 1),
             Boolean(val) => BooleanArray::from_slice([*val]).boxed(),
             Utf8(val) => Utf8Array::<i64>::from([val.into()]).boxed(),
             Binary(val) => BinaryArray::<i64>::from([val.into()]).boxed(),

@@ -1,9 +1,7 @@
 use std::{any::Any, sync::Arc};
 
-use pyo3::PyObject;
-
 use crate::{
-    datatypes::DataType,
+    datatypes::dtype::DataType,
     dsl::expr::Operator,
     error::{DaftError, DaftResult},
     kernels::utf8::add_utf8_arrays,
@@ -51,7 +49,7 @@ impl DataArray for ArrowDataArray {
     }
 
     fn data_type(&self) -> DataType {
-        return DataType::Arrow(self.data.data_type().clone());
+        return self.data.data_type().into();
     }
 
     fn binary_op(&self, other: &dyn DataArray, op: Operator) -> DaftResult<Arc<dyn DataArray>> {
@@ -76,7 +74,11 @@ impl DataArray for ArrowDataArray {
 
         use crate::dsl::expr::Operator::*;
 
-        let stype = supertype::get_arrow_supertype(lhs.data_type(), rhs.data_type());
+        let stype = match supertype::get_supertype(&lhs.data_type().into(), &rhs.data_type().into())
+        {
+            Some(val) => Some(val.to_arrow()?),
+            None => None,
+        };
 
         let can_run = |ltype, rtype| match op {
             Eq => ltype == rtype && can_eq(ltype),
@@ -235,17 +237,7 @@ impl From<Box<dyn arrow2::array::Array>> for Series {
 
 impl Series {
     #[inline]
-    fn check_metatype(&self, other: &Series) -> DaftResult<()> {
-        match (self.array.data_type(), other.array.data_type()) {
-            (DataType::Arrow(_), DataType::Arrow(_)) => Ok(()),
-            (left, right) => Err(DaftError::TypeError(format!(
-                "Metatype mismatch: {:?} vs {:?}",
-                left, right
-            ))),
-        }
-    }
     pub fn binary_op(&self, other: &Series, op: Operator) -> DaftResult<Series> {
-        self.check_metatype(other)?;
         Ok(Series {
             array: Arc::from(self.array.binary_op(other.array.as_ref(), op)?),
         })

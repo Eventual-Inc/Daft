@@ -2,7 +2,6 @@ mod datatypes;
 mod dsl;
 mod error;
 mod ffi;
-mod field;
 mod kernels;
 mod schema;
 mod series;

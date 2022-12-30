@@ -2,9 +2,9 @@ use indexmap::IndexMap;
 use std::sync::Arc;
 
 use crate::{
-    datatypes::DataType,
+    datatypes::dtype::DataType,
+    datatypes::field::Field,
     error::{DaftError, DaftResult},
-    field::Field,
 };
 
 type SchemaRef = Arc<Schema>;

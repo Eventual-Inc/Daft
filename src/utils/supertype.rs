@@ -1,5 +1,4 @@
-use crate::datatypes::ArrowType;
-use crate::datatypes::DataType;
+use crate::datatypes::dtype::DataType;
 use crate::error::DaftError;
 use crate::error::DaftResult;
 
@@ -15,25 +14,25 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
     }
 }
 
+// pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
+//     use DataType::*;
+//     println!("get_supertype: {:?}, {:?}", l, r);
+
+//     match (l, r) {
+//         (Arrow(l), Arrow(r)) => get_arrow_supertype(l, r).map(DataType::Arrow),
+//         _ => None,
+//     }
+// }
+
 pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
-    use DataType::*;
-    println!("get_supertype: {:?}, {:?}", l, r);
-
-    match (l, r) {
-        (Arrow(l), Arrow(r)) => get_arrow_supertype(l, r).map(DataType::Arrow),
-        _ => None,
-    }
-}
-
-pub fn get_arrow_supertype(l: &ArrowType, r: &ArrowType) -> Option<ArrowType> {
-    fn inner(l: &ArrowType, r: &ArrowType) -> Option<ArrowType> {
-        use ArrowType::*;
+    fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
+        use DataType::*;
 
         if l == r {
             return Some(l.clone());
         }
 
-        let arrow_dtype = match (l, r) {
+        match (l, r) {
             (Int8, Boolean) => Some(Int8),
             (Int8, Int16) => Some(Int16),
             (Int8, Int32) => Some(Int32),
@@ -102,17 +101,16 @@ pub fn get_arrow_supertype(l: &ArrowType, r: &ArrowType) -> Option<ArrowType> {
             (Float64, UInt64) => Some(Float64),
 
             (Float64, Float32) => Some(Float64),
-            //TODO(sammy): add time and struct related dtypes
+            //TODO(sammy): add time, struct related dtypes
             (Boolean, Float32) => Some(Float32),
             (Boolean, Float64) => Some(Float64),
 
             // every known type can be casted to a string except binary
-            (dt, LargeUtf8) if dt.ne(&LargeBinary) => Some(LargeUtf8),
+            (dt, Utf8) if dt.ne(&Binary) => Some(Utf8),
             (dt, Null) => Some(dt.clone()), // Drop Null Type
 
             _ => None,
-        };
-        arrow_dtype
+        }
     }
     match inner(l, r) {
         Some(dt) => Some(dt),
@@ -126,10 +124,7 @@ mod tests {
 
     #[test]
     fn check_bad_arrow_type() -> DaftResult<()> {
-        let result = get_supertype(
-            &DataType::Arrow(ArrowType::LargeUtf8),
-            &DataType::Arrow(ArrowType::LargeBinary),
-        );
+        let result = get_supertype(&DataType::Utf8, &DataType::Binary);
         assert_eq!(result, None);
         Ok(())
     }

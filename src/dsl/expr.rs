@@ -1,11 +1,6 @@
 use crate::{
-    datatypes::{ArrowType, DataType},
-    dsl::lit,
-    error::DaftError,
-    error::DaftResult,
-    field::Field,
-    schema::Schema,
-    utils::supertype::try_get_supertype,
+    datatypes::dtype::DataType, datatypes::field::Field, dsl::lit, error::DaftError,
+    error::DaftResult, schema::Schema, utils::supertype::try_get_supertype,
 };
 use std::{
     fmt::{Debug, Display, Formatter},
@@ -51,10 +46,9 @@ impl Expr {
                     | Operator::And
                     | Operator::LtEq
                     | Operator::GtEq
-                    | Operator::Or => Field::new(
-                        left.to_field(schema)?.name.as_str(),
-                        DataType::Arrow(ArrowType::Boolean),
-                    ),
+                    | Operator::Or => {
+                        Field::new(left.to_field(schema)?.name.as_str(), DataType::Boolean)
+                    }
                     _ => Field::new(
                         left.to_field(schema)?.name.as_str(),
                         try_get_supertype(&left.get_type(schema)?, &right.get_type(schema)?)?,
@@ -154,7 +148,7 @@ mod tests {
             right: y.into(),
             op: Operator::Lt,
         };
-        assert_eq!(z.get_type(&schema)?, DataType::Arrow(ArrowType::Boolean));
+        assert_eq!(z.get_type(&schema)?, DataType::Boolean);
         Ok(())
     }
 
@@ -169,7 +163,7 @@ mod tests {
             right: y.into(),
             op: Operator::Plus,
         };
-        assert_eq!(z.get_type(&schema)?, DataType::Arrow(ArrowType::Float64));
+        assert_eq!(z.get_type(&schema)?, DataType::Float64);
 
         let x = lit(10.);
         let y = lit(12);
@@ -179,7 +173,7 @@ mod tests {
             right: x.into(),
             op: Operator::Plus,
         };
-        assert_eq!(z.get_type(&schema)?, DataType::Arrow(ArrowType::Float64));
+        assert_eq!(z.get_type(&schema)?, DataType::Float64);
 
         Ok(())
     }
@@ -189,8 +183,8 @@ mod tests {
         let x = col("x");
         let y = col("y");
         let schema = Schema::new(&vec![
-            ("x".to_string(), DataType::Arrow(ArrowType::Float64)),
-            ("y".to_string(), DataType::Arrow(ArrowType::Int64)),
+            ("x".to_string(), DataType::Float64),
+            ("y".to_string(), DataType::Int64),
         ]);
 
         let z = Expr::BinaryOp {
@@ -198,7 +192,7 @@ mod tests {
             right: y.into(),
             op: Operator::Plus,
         };
-        assert_eq!(z.get_type(&schema)?, DataType::Arrow(ArrowType::Float64));
+        assert_eq!(z.get_type(&schema)?, DataType::Float64);
 
         let x = col("x");
         let y = col("y");
@@ -208,7 +202,7 @@ mod tests {
             right: x.into(),
             op: Operator::Plus,
         };
-        assert_eq!(z.get_type(&schema)?, DataType::Arrow(ArrowType::Float64));
+        assert_eq!(z.get_type(&schema)?, DataType::Float64);
 
         Ok(())
     }
