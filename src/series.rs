@@ -2,7 +2,7 @@ use std::{any::Any, sync::Arc};
 
 use crate::{
     datatypes::DataType,
-    dsl::expr::Operator,
+    dsl::Operator,
     error::{DaftError, DaftResult},
     kernels::utf8::add_utf8_arrays,
     utils::supertype,
@@ -72,7 +72,7 @@ impl DataArray for ArrowDataArray {
             )));
         }
 
-        use crate::dsl::expr::Operator::*;
+        use crate::dsl::Operator::*;
 
         let stype = match supertype::get_supertype(&lhs.data_type().into(), &rhs.data_type().into())
         {

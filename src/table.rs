@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::dsl::expr::Expr;
+use crate::dsl::Expr;
 use crate::error::DaftResult;
 use crate::schema::Schema;
 use crate::series::Series;
