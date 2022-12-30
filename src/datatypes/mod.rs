@@ -1,3 +1,7 @@
-pub mod dtype;
-pub mod field;
-pub mod time_unit;
+mod dtype;
+mod field;
+mod time_unit;
+
+pub use dtype::DataType;
+pub use field::Field;
+pub use time_unit::TimeUnit;

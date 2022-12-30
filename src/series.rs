@@ -1,7 +1,7 @@
 use std::{any::Any, sync::Arc};
 
 use crate::{
-    datatypes::dtype::DataType,
+    datatypes::DataType,
     dsl::expr::Operator,
     error::{DaftError, DaftResult},
     kernels::utf8::add_utf8_arrays,

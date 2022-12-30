@@ -1,6 +1,6 @@
 use crate::{
-    datatypes::dtype::DataType, datatypes::field::Field, dsl::lit, error::DaftError,
-    error::DaftResult, schema::Schema, utils::supertype::try_get_supertype,
+    datatypes::DataType, datatypes::Field, dsl::lit, error::DaftError, error::DaftResult,
+    schema::Schema, utils::supertype::try_get_supertype,
 };
 use std::{
     fmt::{Debug, Display, Formatter},

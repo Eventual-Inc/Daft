@@ -1,4 +1,4 @@
-use crate::datatypes::dtype::DataType;
+use crate::datatypes::DataType;
 use crate::error::DaftError;
 use crate::error::DaftResult;
 

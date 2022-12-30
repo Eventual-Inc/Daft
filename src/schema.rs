@@ -2,8 +2,8 @@ use indexmap::IndexMap;
 use std::sync::Arc;
 
 use crate::{
-    datatypes::dtype::DataType,
-    datatypes::field::Field,
+    datatypes::DataType,
+    datatypes::Field,
     error::{DaftError, DaftResult},
 };
 

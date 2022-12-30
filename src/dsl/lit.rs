@@ -1,4 +1,4 @@
-use crate::datatypes::dtype::DataType;
+use crate::datatypes::DataType;
 use crate::dsl::expr::Expr;
 use crate::error::DaftResult;
 use crate::series::Series;
