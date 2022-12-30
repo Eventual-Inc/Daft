@@ -78,11 +78,14 @@ class InstructionFactory:
     """Instructions for use with Construction."""
 
     @staticmethod
-    def read_file(scan_node: logical_plan.Scan, index: int) -> Callable[[list[vPartition]], list[vPartition]]:
+    def read_file(
+        scan_node: logical_plan.TabularFilesScan, index: int
+    ) -> Callable[[list[vPartition]], list[vPartition]]:
         def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            assert len(inputs) == 0
-            partition = LocalLogicalPartitionOpRunner()._handle_scan(
-                inputs=dict(),
+            assert len(inputs) == 1
+            [filepaths_partition] = inputs
+            partition = LocalLogicalPartitionOpRunner()._handle_tabular_files_scan(
+                inputs={scan_node._filepaths_child.id(): filepaths_partition},
                 scan=scan_node,
                 partition_id=index,
             )

@@ -184,7 +184,7 @@ class BinaryNode(LogicalPlan):
     ...
 
 
-class Scan(LogicalPlan):
+class TabularFilesScan(UnaryNode):
     def __init__(
         self,
         *,
@@ -192,9 +192,11 @@ class Scan(LogicalPlan):
         source_info: SourceInfo,
         predicate: ExpressionList | None = None,
         columns: list[str] | None = None,
+        filepaths_child: LogicalPlan,
+        filepaths_column_name: str,
     ) -> None:
         schema = schema.resolve()
-        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=source_info.get_num_partitions())
+        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=filepaths_child.num_partitions())
         super().__init__(schema, partition_spec=pspec, op_level=OpLevel.PARTITION)
 
         if predicate is not None:
@@ -211,6 +213,18 @@ class Scan(LogicalPlan):
         self._columns = self._schema
         self._source_info = source_info
 
+        # TabularFilsScan has a single child node that provides the filepaths to read from.
+        assert (
+            filepaths_child.schema().get_expression_by_name(filepaths_column_name) is not None
+        ), f"TabularFileScan requires a child with '{filepaths_column_name}' column"
+        self._register_child(filepaths_child)
+        self._filepaths_column_name = filepaths_column_name
+
+    @property
+    def _filepaths_child(self) -> LogicalPlan:
+        child = self._children()[0]
+        return child
+
     def schema(self) -> ExpressionList:
         return self._output_schema
 
@@ -221,28 +235,40 @@ class Scan(LogicalPlan):
         return ResourceRequest.default()
 
     def required_columns(self) -> ExpressionList:
-        return self._predicate.required_columns()
+        filepaths_col = self._filepaths_child.schema().get_expression_by_name(self._filepaths_column_name)
+        return ExpressionList.union(self._predicate.required_columns(), ExpressionList([filepaths_col]))
 
     def _local_eq(self, other: Any) -> bool:
         return (
-            isinstance(other, Scan)
+            isinstance(other, TabularFilesScan)
             and self.schema() == other.schema()
             and self._predicate == other._predicate
             and self._columns == other._columns
             and self._source_info == other._source_info
+            and self._filepaths_column_name == other._filepaths_column_name
         )
 
     def rebuild(self) -> LogicalPlan:
-        return Scan(
+        child = self._filepaths_child.rebuild()
+        return TabularFilesScan(
             schema=self.schema().unresolve(),
             source_info=self._source_info,
             predicate=self._predicate.unresolve() if self._predicate is not None else None,
             columns=self._column_names,
+            filepaths_child=child,
+            filepaths_column_name=self._filepaths_column_name,
         )
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
-        assert len(new_children) == 0
-        return self
+        assert len(new_children) == 1
+        return TabularFilesScan(
+            schema=self.schema(),
+            source_info=self._source_info,
+            predicate=self._predicate,
+            columns=self._column_names,
+            filepaths_child=new_children[0],
+            filepaths_column_name=self._filepaths_column_name,
+        )
 
 
 class InMemoryScan(UnaryNode):

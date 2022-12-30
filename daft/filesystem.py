@@ -29,3 +29,17 @@ def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
         fs = SimpleCacheFileSystem(fs=fs, cache_storage=str(cache_location / "simple-cache-file-system"))
 
     return fs
+
+
+def glob_path(path: str) -> list[str]:
+    fs = get_filesystem_from_path(path)
+    protocol = get_protocol_from_path(path)
+    if fs.isdir(path):
+        return [f"{protocol}://{path}" if protocol != "file" else path for path in fs.ls(path)]
+    elif fs.isfile(path):
+        return [path]
+    try:
+        expanded = fs.expand_path(path, recursive=True)
+    except FileNotFoundError:
+        expanded = []
+    return [f"{protocol}://{path}" if protocol != "file" else path for path in expanded]

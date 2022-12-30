@@ -12,9 +12,11 @@ from daft.execution.logical_op_runners import (
     LogicalPartitionOpRunner,
     ReduceType,
 )
+from daft.expressions import ColumnExpression
+from daft.filesystem import glob_path
 from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
-from daft.logical.logical_plan import LogicalPlan
+from daft.logical import logical_plan
 from daft.logical.optimizer import (
     DropProjections,
     DropRepartition,
@@ -24,11 +26,13 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
+from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartID,
     PartitionCacheEntry,
     PartitionSet,
+    PartitionSetFactory,
     vPartition,
 )
 from daft.runners.profiler import profiler
@@ -41,6 +45,7 @@ from daft.runners.shuffle_ops import (
     Shuffler,
     SortOp,
 )
+from daft.types import ExpressionType
 
 
 @dataclass
@@ -80,6 +85,24 @@ class LocalPartitionSet(PartitionSet[vPartition]):
 
     def wait(self) -> None:
         pass
+
+
+class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
+    def glob_filepaths(
+        self,
+        source_path: str,
+    ) -> tuple[LocalPartitionSet, ExpressionList]:
+        filepaths = glob_path(source_path)
+        schema = ExpressionList([ColumnExpression(self.FILEPATH_COLUMN_NAME, ExpressionType.string())]).resolve()
+        pset = LocalPartitionSet(
+            {
+                i: vPartition.from_pydict(
+                    data={self.FILEPATH_COLUMN_NAME: [filepaths[i]]}, schema=schema, partition_id=i
+                )
+                for i in range(len(filepaths))  # Hardcoded to 1 path per partition
+            },
+        )
+        return pset, schema
 
 
 class PyRunnerSimpleShuffler(Shuffler):
@@ -122,7 +145,7 @@ class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
     def run_node_list(
         self,
         inputs: dict[int, PartitionSet],
-        nodes: list[LogicalPlan],
+        nodes: list[logical_plan.LogicalPlan],
         num_partitions: int,
         resource_request: ResourceRequest,
     ) -> PartitionSet:
@@ -180,10 +203,13 @@ class PyRunner(Runner):
             ]
         )
 
-    def optimize(self, plan: LogicalPlan) -> LogicalPlan:
+    def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
         return self._optimizer.optimize(plan)
 
-    def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
+    def partition_set_factory(self) -> PartitionSetFactory:
+        return LocalPartitionSetFactory()
+
+    def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         optimized_plan = self.optimize(plan)
 
         exec_plan = ExecutionPlan.plan_from_logical(optimized_plan)

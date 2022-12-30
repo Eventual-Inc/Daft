@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterable, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
 
 import pandas
 import pyarrow as pa
@@ -14,12 +14,13 @@ from daft.datasources import (
     CSVSourceInfo,
     JSONSourceInfo,
     ParquetSourceInfo,
+    SourceInfo,
     StorageType,
 )
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionType
 from daft.expressions import ColumnExpression, Expression, col
-from daft.filesystem import get_filesystem_from_path, get_protocol_from_path
+from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
 from daft.runners.partitioning import (
@@ -42,18 +43,40 @@ UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 ColumnInputType = Union[Expression, str]
 
 
-def _get_filepaths(path: str):
-    fs = get_filesystem_from_path(path)
-    protocol = get_protocol_from_path(path)
-    if fs.isdir(path):
-        return [f"{protocol}://{path}" if protocol != "file" else path for path in fs.ls(path)]
-    elif fs.isfile(path):
-        return [path]
-    try:
-        expanded = fs.expand_path(path, recursive=True)
-    except FileNotFoundError:
-        return []
-    return [f"{protocol}://{path}" if protocol != "file" else path for path in expanded]
+def _get_tabular_files_scan(
+    path: str, get_schema: Callable[[str], ExpressionList], source_info: SourceInfo
+) -> logical_plan.TabularFilesScan:
+    """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
+    # Glob the path and return as a DataFrame with a column containing the filepaths
+    partition_set_factory = get_context().runner().partition_set_factory()
+    partition_set, filepaths_schema = partition_set_factory.glob_filepaths(path)
+    cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
+    filepath_plan = logical_plan.InMemoryScan(
+        cache_entry=cache_entry,
+        schema=filepaths_schema,
+        partition_spec=logical_plan.PartitionSpec(logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()),
+    )
+    filepath_df = DataFrame(filepath_plan)
+
+    # Sample the first 10 filepaths and infer the schema
+    schema_df = filepath_df.limit(10).select(
+        col(partition_set_factory.FILEPATH_COLUMN_NAME).apply(get_schema, return_type=ExpressionList).alias("schema")
+    )
+    schema_df.collect()
+    schema_result = schema_df._result
+    assert schema_result is not None
+    sampled_schemas = schema_result.to_pydict()["schema"]
+    schema = sampled_schemas[0]  # TODO: infer schema from all sampled schemas
+
+    # Return a TabularFilesScan node that will scan from the globbed filepaths filepaths
+    return logical_plan.TabularFilesScan(
+        schema=schema,
+        predicate=None,
+        columns=None,
+        source_info=source_info,
+        filepaths_child=filepath_plan,
+        filepaths_column_name=partition_set_factory.FILEPATH_COLUMN_NAME,
+    )
 
 
 class DataFrame:
@@ -284,29 +307,25 @@ class DataFrame:
         returns:
             DataFrame: parsed DataFrame
         """
-        filepaths = _get_filepaths(path)
 
-        if len(filepaths) == 0:
-            raise ValueError(f"No JSON files found at {path}")
+        def get_schema(filepath: str) -> ExpressionList:
+            return vPartition.from_json(
+                filepath,
+                partition_id=0,
+                schema_options=vPartitionSchemaInferenceOptions(
+                    schema=None,
+                    inference_column_names=None,  # has no effect on inferring schema from JSON
+                ),
+                read_options=vPartitionReadOptions(
+                    num_rows=100,  # sample 100 rows for inferring schema
+                    column_names=None,  # read all columns
+                ),
+            ).get_col_expressions()
 
-        schema = vPartition.from_json(
-            filepaths[0],
-            partition_id=0,
-            schema_options=vPartitionSchemaInferenceOptions(
-                schema=None,
-                inference_column_names=None,  # has no effect on inferring schema from JSON
-            ),
-            read_options=vPartitionReadOptions(
-                num_rows=100,  # sample 100 rows for inferring schema
-                column_names=None,  # read all columns
-            ),
-        ).get_col_expressions()
-
-        plan = logical_plan.Scan(
-            schema=schema,
-            predicate=None,
-            columns=None,
-            source_info=JSONSourceInfo(filepaths=filepaths),
+        plan = _get_tabular_files_scan(
+            path,
+            get_schema,
+            JSONSourceInfo(),
         )
         return cls(plan)
 
@@ -340,36 +359,31 @@ class DataFrame:
         returns:
             DataFrame: parsed DataFrame
         """
-        filepaths = _get_filepaths(path)
 
-        if len(filepaths) == 0:
-            raise ValueError(f"No CSV files found at {path}")
+        def get_schema(filepath: str) -> ExpressionList:
+            return vPartition.from_csv(
+                path=filepath,
+                partition_id=0,
+                csv_options=vPartitionParseCSVOptions(
+                    delimiter=delimiter,
+                    has_headers=has_headers,
+                    skip_rows_before_header=0,
+                    skip_rows_after_header=0,
+                ),
+                schema_options=vPartitionSchemaInferenceOptions(
+                    schema=None,
+                    inference_column_names=column_names,  # pass in user-provided column names
+                ),
+                read_options=vPartitionReadOptions(
+                    num_rows=100,  # sample 100 rows for schema inference
+                    column_names=None,  # read all columns
+                ),
+            ).get_col_expressions()
 
-        schema = vPartition.from_csv(
-            path=filepaths[0],
-            partition_id=0,
-            csv_options=vPartitionParseCSVOptions(
-                delimiter=delimiter,
-                has_headers=has_headers,
-                skip_rows_before_header=0,
-                skip_rows_after_header=0,
-            ),
-            schema_options=vPartitionSchemaInferenceOptions(
-                schema=None,
-                inference_column_names=column_names,  # pass in user-provided column names
-            ),
-            read_options=vPartitionReadOptions(
-                num_rows=100,  # sample 100 rows for schema inference
-                column_names=None,  # read all columns
-            ),
-        ).get_col_expressions()
-
-        plan = logical_plan.Scan(
-            schema=schema,
-            predicate=None,
-            columns=None,
-            source_info=CSVSourceInfo(
-                filepaths=filepaths,
+        plan = _get_tabular_files_scan(
+            path,
+            get_schema,
+            CSVSourceInfo(
                 delimiter=delimiter,
                 has_headers=has_headers,
             ),
@@ -397,29 +411,25 @@ class DataFrame:
         returns:
             DataFrame: parsed DataFrame
         """
-        filepaths = _get_filepaths(path)
 
-        if len(filepaths) == 0:
-            raise ValueError(f"No Parquet files found at {path}")
-        schema = vPartition.from_parquet(
-            filepaths[0],
-            partition_id=0,
-            schema_options=vPartitionSchemaInferenceOptions(
-                schema=None,
-                inference_column_names=None,  # has no effect on schema inferencing Parquet
-            ),
-            read_options=vPartitionReadOptions(
-                num_rows=0,  # sample 0 rows since Parquet has metadata
-                column_names=None,  # read all columns
-            ),
-        ).get_col_expressions()
-        plan = logical_plan.Scan(
-            schema=schema,
-            predicate=None,
-            columns=None,
-            source_info=ParquetSourceInfo(
-                filepaths=filepaths,
-            ),
+        def get_schema(filepath: str) -> ExpressionList:
+            return vPartition.from_parquet(
+                filepath,
+                partition_id=0,
+                schema_options=vPartitionSchemaInferenceOptions(
+                    schema=None,
+                    inference_column_names=None,  # has no effect on schema inferencing Parquet
+                ),
+                read_options=vPartitionReadOptions(
+                    num_rows=0,  # sample 0 rows since Parquet has metadata
+                    column_names=None,  # read all columns
+                ),
+            ).get_col_expressions()
+
+        plan = _get_tabular_files_scan(
+            path,
+            get_schema,
+            ParquetSourceInfo(),
         )
         return cls(plan)
 

@@ -4,7 +4,7 @@ from daft.execution.dynamic_construction import Construction
 from daft.execution.dynamic_schedule import DynamicSchedule, ScheduleMaterialize
 from daft.execution.dynamic_schedule_factory import DynamicScheduleFactory
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
-from daft.logical.logical_plan import LogicalPlan
+from daft.logical import logical_plan
 from daft.logical.optimizer import (
     DropProjections,
     DropRepartition,
@@ -14,8 +14,12 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
-from daft.runners.partitioning import PartitionCacheEntry, vPartition
-from daft.runners.pyrunner import LocalPartitionSet
+from daft.runners.partitioning import (
+    PartitionCacheEntry,
+    PartitionSetFactory,
+    vPartition,
+)
+from daft.runners.pyrunner import LocalPartitionSet, LocalPartitionSetFactory
 from daft.runners.runner import Runner
 
 
@@ -46,11 +50,14 @@ class DynamicRunner(Runner):
             ]
         )
 
-    def optimize(self, plan: LogicalPlan) -> LogicalPlan:
+    def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
         # From PyRunner
         return self._optimizer.optimize(plan)
 
-    def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
+    def partition_set_factory(self) -> PartitionSetFactory:
+        return LocalPartitionSetFactory()
+
+    def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         plan = self.optimize(plan)
 
         schedule_factory = DynamicScheduleFactory[vPartition]()
