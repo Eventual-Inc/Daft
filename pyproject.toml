@@ -27,6 +27,7 @@ dependencies = [
     "typing-extensions >= 4.0.0; python_version < '3.8'",
     "pickle5 >= 0.0.12; python_version < '3.8'",
     "polars[timezone]",
+    "segment-analytics-python",
 ]
 
 [project.optional-dependencies]

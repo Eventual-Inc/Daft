@@ -96,7 +96,7 @@ dependencies = [
 
 [[package]]
 name = "daft"
-version = "0.0.20"
+version = "0.0.0"
 dependencies = [
  "arrow2",
  "pyo3",
