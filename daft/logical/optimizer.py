@@ -15,8 +15,8 @@ from daft.logical.logical_plan import (
     PartitionScheme,
     Projection,
     Repartition,
-    Scan,
     Sort,
+    TabularFilesScan,
     UnaryNode,
 )
 from daft.logical.schema import ExpressionList
@@ -150,7 +150,7 @@ class PruneColumns(Rule[LogicalPlan]):
         return parent.copy_with_new_children([self._create_pruning_child(child, parent_required_set)])
 
     def _projection_logical_plan(self, parent: Projection, child: LogicalPlan) -> LogicalPlan | None:
-        if isinstance(child, Projection) or isinstance(child, LocalAggregate):
+        if isinstance(child, Projection) or isinstance(child, LocalAggregate) or isinstance(child, TabularFilesScan):
             return None
         if len(child._children()) == 0:
             return None
@@ -211,20 +211,22 @@ class DropRepartition(Rule[LogicalPlan]):
 class PushDownClausesIntoScan(Rule[LogicalPlan]):
     def __init__(self) -> None:
         super().__init__()
-        # self.register_fn(Filter, Scan, self._push_down_predicates_into_scan)
-        self.register_fn(Projection, Scan, self._push_down_projections_into_scan)
+        # self.register_fn(Filter, TabularFilesScan, self._push_down_predicates_into_scan)
+        self.register_fn(Projection, TabularFilesScan, self._push_down_projections_into_scan)
 
-    def _push_down_projections_into_scan(self, parent: Projection, child: Scan) -> LogicalPlan | None:
+    def _push_down_projections_into_scan(self, parent: Projection, child: TabularFilesScan) -> LogicalPlan | None:
         required_columns = parent.schema().required_columns()
         scan_columns = child.schema()
         if required_columns.to_id_set() == scan_columns.to_id_set():
             return None
 
-        new_scan = Scan(
+        new_scan = TabularFilesScan(
             schema=child._schema,
             predicate=child._predicate,
             columns=required_columns.names,
             source_info=child._source_info,
+            filepaths_child=child._filepaths_child,
+            filepaths_column_name=child._filepaths_column_name,
         )
         if any(not isinstance(e, ColumnExpression) for e in parent._projection):
             return parent.copy_with_new_children([new_scan])

@@ -13,7 +13,6 @@ else:
 class StorageType(Enum):
     CSV = "CSV"
     PARQUET = "PARQUET"
-    IN_MEMORY = "IN_MEMORY"
     JSON = "JSON"
 
 
@@ -23,43 +22,24 @@ class SourceInfo(Protocol):
     def scan_type(self) -> StorageType:
         ...
 
-    def get_num_partitions(self) -> int:
-        ...
-
 
 @dataclass(frozen=True)
 class CSVSourceInfo(SourceInfo):
 
-    filepaths: list[str]
     delimiter: str
     has_headers: bool
 
     def scan_type(self):
         return StorageType.CSV
 
-    def get_num_partitions(self) -> int:
-        return len(self.filepaths)
-
 
 @dataclass(frozen=True)
 class JSONSourceInfo(SourceInfo):
-
-    filepaths: list[str]
-
     def scan_type(self):
         return StorageType.JSON
-
-    def get_num_partitions(self) -> int:
-        return len(self.filepaths)
 
 
 @dataclass(frozen=True)
 class ParquetSourceInfo(SourceInfo):
-
-    filepaths: list[str]
-
     def scan_type(self):
         return StorageType.PARQUET
-
-    def get_num_partitions(self) -> int:
-        return len(self.filepaths)

@@ -261,7 +261,16 @@ class vPartition:
         for col_expr in column_exprs:
             col_id = col_expr.get_id()
             col_name = col_expr.name()
-            block = DataBlock.make_block(data[col_name])
+            col_type = col_expr.resolved_type()
+            col_data = data[col_name]
+
+            if ExpressionType.is_py(col_type):
+                col_data = list(col_data)
+            else:
+                if not isinstance(col_data, pa.Array) and not isinstance(col_data, pa.ChunkedArray):
+                    col_data = pa.array(col_data, type=col_type.to_arrow_type())
+
+            block = DataBlock.make_block(col_data)
             tiles[col_id] = PyListTile(column_id=col_id, column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
@@ -802,3 +811,25 @@ class PartitionSetCache:
     def clear(self) -> None:
         del self._uuid_to_partition_set
         self._uuid_to_partition_set = weakref.WeakValueDictionary()
+
+
+class PartitionSetFactory(Generic[PartitionT]):
+    """Factory class for creating PartitionSets."""
+
+    FILEPATH_COLUMN_NAME = "filepath"
+
+    @abstractmethod
+    def glob_filepaths(
+        self,
+        source_path: str,
+    ) -> tuple[PartitionSet[PartitionT], ExpressionList]:
+        """Globs the specified filepath to construct a PartitionSet of file metadata
+
+        Args:
+            source_path (str): path to glob
+
+        Returns:
+            PartitionSet[PartitionT]: PartitionSet containing the files' metadata
+            ExpressionList: Schema of the PartitionSet that was constructed
+        """
+        raise NotImplementedError()

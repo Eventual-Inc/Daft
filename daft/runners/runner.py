@@ -7,6 +7,7 @@ from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionSet,
     PartitionSetCache,
+    PartitionSetFactory,
 )
 
 
@@ -19,6 +20,10 @@ class Runner:
 
     def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
         return self._part_set_cache.put_partition_set(pset=pset)
+
+    @abstractmethod
+    def partition_set_factory(self) -> PartitionSetFactory:
+        ...
 
     @abstractmethod
     def run(self, plan: LogicalPlan) -> PartitionCacheEntry:

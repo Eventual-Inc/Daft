@@ -21,8 +21,10 @@ from daft.execution.logical_op_runners import (
     LogicalPartitionOpRunner,
     ReduceType,
 )
+from daft.expressions import ColumnExpression
+from daft.filesystem import glob_path
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
-from daft.logical.logical_plan import LogicalPlan
+from daft.logical import logical_plan
 from daft.logical.optimizer import (
     DropProjections,
     DropRepartition,
@@ -32,6 +34,7 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
+from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.blocks import ArrowDataBlock, zip_blocks_as_py
 from daft.runners.partitioning import (
@@ -39,6 +42,7 @@ from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionMetadata,
     PartitionSet,
+    PartitionSetFactory,
     vPartition,
 )
 from daft.runners.profiler import profiler
@@ -52,6 +56,7 @@ from daft.runners.shuffle_ops import (
     Shuffler,
     SortOp,
 )
+from daft.types import ExpressionType
 
 if TYPE_CHECKING:
     from ray.data.block import Block as RayDatasetBlock
@@ -62,6 +67,22 @@ try:
     from ray.data import from_arrow_refs
 except ImportError:
     _RAY_FROM_ARROW_REFS_AVAILABLE = False
+
+
+@ray.remote
+def _glob_path_into_vpartitions(path: str, schema: ExpressionList) -> list[tuple[PartID, vPartition]]:
+    assert len(schema) == 1
+    filepath_expr = list(schema)[0]
+    filepaths = glob_path(path)
+
+    # Hardcoded to 1 filepath per partition
+    partition_refs = []
+    for i, filepath in enumerate(filepaths):
+        partition = vPartition.from_pydict({filepath_expr.name(): [filepath]}, schema=schema, partition_id=i)
+        partition_ref = ray.put(partition)
+        partition_refs.append((i, partition_ref))
+
+    return partition_refs
 
 
 @ray.remote
@@ -134,6 +155,16 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         ray.wait([o for o in self._partitions.values()])
 
 
+class RayPartitionSetFactory(PartitionSetFactory[ray.ObjectRef]):
+    def glob_filepaths(
+        self,
+        source_path: str,
+    ) -> tuple[RayPartitionSet, ExpressionList]:
+        schema = ExpressionList([ColumnExpression(self.FILEPATH_COLUMN_NAME, ExpressionType.string())]).resolve()
+        partition_refs = ray.get(_glob_path_into_vpartitions.remote(source_path, schema))
+        return RayPartitionSet({part_id: part for part_id, part in partition_refs}), schema
+
+
 class RayRunnerSimpleShuffler(Shuffler):
     def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
         map_args = self._map_args if self._map_args is not None else {}
@@ -203,7 +234,7 @@ def _ray_partition_single_part_runner(
     *input_parts: vPartition,
     op_runner: RayLogicalPartitionOpRunner,
     input_node_ids: list[int],
-    nodes: list[LogicalPlan],
+    nodes: list[logical_plan.LogicalPlan],
     partition_id: int,
 ) -> vPartition:
     input_partitions = {id: val for id, val in zip(input_node_ids, input_parts)}
@@ -227,7 +258,7 @@ class RayLogicalPartitionOpRunner(LogicalPartitionOpRunner):
     def run_node_list(
         self,
         inputs: dict[int, PartitionSet],
-        nodes: list[LogicalPlan],
+        nodes: list[logical_plan.LogicalPlan],
         num_partitions: int,
         resource_request: ResourceRequest,
     ) -> PartitionSet:
@@ -299,10 +330,13 @@ class RayRunner(Runner):
 
         return self._part_set_cache.put_partition_set(pset=pset)
 
-    def optimize(self, plan: LogicalPlan) -> LogicalPlan:
+    def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
         return self._optimizer.optimize(plan)
 
-    def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
+    def partition_set_factory(self) -> PartitionSetFactory:
+        return RayPartitionSetFactory()
+
+    def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         plan = self.optimize(plan)
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         result_partition_set: PartitionSet
@@ -349,10 +383,10 @@ def get_metas(*inputs: vPartition) -> list[PartitionMetadata]:
 
 
 class DynamicRayRunner(RayRunner):
-    def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
+    def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         return asyncio.run(self._run_impl(plan))
 
-    async def _run_impl(self, plan: LogicalPlan) -> PartitionCacheEntry:
+    async def _run_impl(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         plan = self.optimize(plan)
 
         schedule_factory = DynamicScheduleFactory[ray.ObjectRef]()

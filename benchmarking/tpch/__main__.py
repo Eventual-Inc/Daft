@@ -10,11 +10,9 @@ import socket
 import subprocess
 import time
 import warnings
-from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-import fsspec
 import ray
 from loguru import logger
 from ray.util.placement_group import (
@@ -181,26 +179,7 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
         # (See: https://discuss.ray.io/t/how-to-run-a-function-exactly-once-on-each-node/2178)
         @ray.remote(num_cpus=1)
         class WarmUpFunction:
-            def ready(self, parquet_folder):
-                from daft.filesystem import get_filesystem_from_path
-
-                # Download all files in the provided parquet_folder by reading a single byte from each of them
-                def head(parquet_folder, filepath):
-                    fs = get_filesystem_from_path(parquet_folder)
-                    fs.head(filepath, size=1)
-
-                fs = get_filesystem_from_path(parquet_folder)
-                all_files = fs.find(parquet_folder)
-                futures = []
-                with ThreadPoolExecutor() as executor:
-                    for f in all_files:
-                        futures.append(executor.submit(head, parquet_folder, f))
-                wait(futures)
-                cache_location = get_context().cache_location
-                print(
-                    f"Daft cache at {cache_location} warmed up with size: {sum(f.stat().st_size for f in cache_location.glob('**/*') if f.is_file())}"
-                )
-
+            def ready(self):
                 return get_daft_version()
 
         num_nodes = len([n for n in ray.nodes() if n["Alive"] and n["Resources"].get("CPU", 0.0) > 0])
@@ -208,7 +187,7 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
         pg = placement_group(bundles=bundles, strategy="STRICT_SPREAD")
         ray.get(pg.ready())
         executors = [WarmUpFunction.options(placement_group=pg).remote() for _ in range(num_nodes)]
-        assert ray.get([executor.ready.remote(parquet_folder) for executor in executors]) == [
+        assert ray.get([executor.ready.remote() for executor in executors]) == [
             get_daft_version() for _ in range(num_nodes)
         ]
         del executors
@@ -220,13 +199,12 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
         assert placement_group_table(pg)["state"] == "REMOVED"
         logger.info("Ray cluster warmed up")
 
-    elif ctx.runner_config.name == "py":
-        get_df = get_df_with_parquet_folder(parquet_folder)
-        for table in ALL_TABLES:
-            df = get_df(table)
-            logger.info(
-                f"Warming up local execution environment by loading table {table} and counting rows: {df.count(df.columns[0]).to_pandas()}"
-            )
+    get_df = get_df_with_parquet_folder(parquet_folder)
+    for table in ALL_TABLES:
+        df = get_df(table)
+        logger.info(
+            f"Warming up local execution environment by loading table {table} and counting rows: {df.count(df.columns[0]).to_pandas()}"
+        )
 
 
 if __name__ == "__main__":
@@ -271,10 +249,6 @@ if __name__ == "__main__":
             os.path.join(args.parquet_file_cache, str(args.scale_factor).replace(".", "_"), str(num_parts), "parquet")
             + "/"
         )
-        fs = fsspec.filesystem("s3" if parquet_folder.startswith("s3://") else "file")
-        if not fs.isdir(parquet_folder):
-            local_parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
-            fs.put(local_parquet_folder, parquet_folder, recursive=True)
     else:
         parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
 

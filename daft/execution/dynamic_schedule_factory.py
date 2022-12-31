@@ -40,16 +40,16 @@ class DynamicScheduleFactory(Generic[PartitionT]):
             metadatas = get_context().runner()._get_partition_metadata(*partitions)  # type: ignore
             return SchedulePartitionRead[PartitionT]([PartitionWithInfo(p, m) for p, m in zip(partitions, metadatas)])
 
-        elif isinstance(node, logical_plan.Scan):
-            return ScheduleFileRead[PartitionT](node)
-
         # -- Unary nodes. --
 
         elif isinstance(node, logical_plan.UnaryNode):
             [child_node] = node._children()
             child_schedule = DynamicScheduleFactory[PartitionT]().schedule_logical_node(child_node)
 
-            if isinstance(node, logical_plan.LocalLimit):
+            if isinstance(node, logical_plan.TabularFilesScan):
+                return ScheduleFileRead[PartitionT](child_schedule=child_schedule, scan_node=node)
+
+            elif isinstance(node, logical_plan.LocalLimit):
                 # Ignore LocalLimit logical nodes; the GlobalLimit handles everything
                 # and will dynamically dispatch appropriate local limit instructions.
                 return child_schedule
