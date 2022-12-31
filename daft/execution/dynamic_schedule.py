@@ -503,5 +503,5 @@ class ScheduleMaterialize(DynamicSchedule[PartitionT]):
             result.set_partition(i, partition_info.partition)
 
         self._returned = True
-        self._materializing_results = list()
+        self._materializing_results.clear()
         return result

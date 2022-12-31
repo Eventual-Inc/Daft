@@ -8,7 +8,11 @@ import pyarrow as pa
 import ray
 from loguru import logger
 
-from daft.execution.dynamic_construction import Construction, PartitionWithInfo
+from daft.execution.dynamic_construction import (
+    Construction,
+    Instruction,
+    PartitionWithInfo,
+)
 from daft.execution.dynamic_schedule import ScheduleMaterialize
 from daft.execution.dynamic_schedule_factory import DynamicScheduleFactory
 from daft.execution.execution_plan import ExecutionPlan
@@ -330,6 +334,15 @@ class RayRunner(Runner):
             return pset_entry
 
 
+@ray.remote
+def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+    partitions = list(inputs)
+    for instruction in instruction_stack:
+        partitions = instruction(partitions)
+
+    return partitions if len(partitions) > 1 else partitions[0]
+
+
 class DynamicRayRunner(RayRunner):
     def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
         return asyncio.run(self._run_impl(plan))
@@ -370,12 +383,12 @@ class DynamicRayRunner(RayRunner):
         await asyncio.wait(futures)
 
         final_result = schedule.result_partition_set(RayPartitionSet)
-        pset_entry = self.put_partition_set_into_cache(final_result)
+        pset_entry = self._part_set_cache.put_partition_set(final_result)
         return pset_entry
 
     async def _build_partitions(self, partspec: Construction[ray.ObjectRef]) -> None:
-        construct_remote = ray.remote(partspec.get_runnable_ray()).options(num_returns=partspec.num_results)
-        results = construct_remote.remote(*partspec.inputs)
+        construct_remote = build_partitions.options(num_returns=partspec.num_results)
+        results = construct_remote.remote(partspec._instruction_stack, *partspec.inputs)
         # Handle ray bug that ignores list interpretation when num_returns=1
         if partspec.num_results == 1:
             results = [results]
