@@ -343,6 +343,11 @@ def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) 
     return partitions if len(partitions) > 1 else partitions[0]
 
 
+@ray.remote
+def get_metas(*inputs: vPartition) -> list[PartitionMetadata]:
+    return [partition.metadata() for partition in inputs]
+
+
 class DynamicRayRunner(RayRunner):
     def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
         return asyncio.run(self._run_impl(plan))
@@ -357,7 +362,8 @@ class DynamicRayRunner(RayRunner):
 
         # Note: For autoscaling clusters, you will probably want to query this dynamically.
         # Keep in mind this call takes about 0.3ms.
-        cores = int(ray.cluster_resources()["CPU"])
+        # cores = int(ray.cluster_resources()["CPU"])
+        cores = 9001
         futures: set[asyncio.Future] = set()
 
         try:
@@ -393,14 +399,10 @@ class DynamicRayRunner(RayRunner):
         if partspec.num_results == 1:
             results = [results]
 
-        metas = await ray.remote(partspec.get_metas).remote(*results)
+        metas = await get_metas.remote(*results)
         partspec.report_completed([PartitionWithInfo(p, m) for p, m in zip(results, metas)])
 
     def _get_partition_metadata(self, *partitions: ray.ObjectRef) -> list[PartitionMetadata]:
         """Hacky; only used for DynamicSchedule initialization. Remove when PartitionCache is implemented"""
 
-        @ray.remote
-        def get_metadatas(*partitions: vPartition) -> list[PartitionMetadata]:
-            return [partition.metadata() for partition in partitions]
-
-        return ray.get(get_metadatas.remote(*partitions))
+        return ray.get(get_metas.remote(*partitions))
