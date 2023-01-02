@@ -66,7 +66,10 @@ def _get_tabular_files_scan(
     schema_result = schema_df._result
     assert schema_result is not None
     sampled_schemas = schema_result.to_pydict()["schema"]
-    schema = sampled_schemas[0]  # TODO: infer schema from all sampled schemas
+
+    # TODO: infer schema from all sampled schemas instead of just taking the first one
+    schema = sampled_schemas[0]
+    schema = schema.resolve()
 
     # Return a TabularFilesScan node that will scan from the globbed filepaths filepaths
     return logical_plan.TabularFilesScan(
@@ -320,7 +323,7 @@ class DataFrame:
                     num_rows=100,  # sample 100 rows for inferring schema
                     column_names=None,  # read all columns
                 ),
-            ).get_col_expressions()
+            ).get_unresolved_col_expressions()
 
         plan = _get_tabular_files_scan(
             path,
@@ -378,7 +381,7 @@ class DataFrame:
                     num_rows=100,  # sample 100 rows for schema inference
                     column_names=None,  # read all columns
                 ),
-            ).get_col_expressions()
+            ).get_unresolved_col_expressions()
 
         plan = _get_tabular_files_scan(
             path,
@@ -424,7 +427,7 @@ class DataFrame:
                     num_rows=0,  # sample 0 rows since Parquet has metadata
                     column_names=None,  # read all columns
                 ),
-            ).get_col_expressions()
+            ).get_unresolved_col_expressions()
 
         plan = _get_tabular_files_scan(
             path,
