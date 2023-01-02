@@ -6,7 +6,7 @@ import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import IO, Any, Callable, Generic, Sequence, TypeVar
+from typing import IO, Any, Callable, Generic, List, Sequence, TypeVar, cast
 from uuid import uuid4
 
 import numpy as np
@@ -86,21 +86,20 @@ def _limit_num_rows(buf: IO, num_rows: int) -> IO:
     return sampled_bytes
 
 
-def _infer_schema_from_arrow(table: pa.Table, schema_options: vPartitionSchemaInferenceOptions) -> ExpressionList:
-    if schema_options.schema is not None:
-        return schema_options.schema
-    fields = [(field.name, field.type) for field in table.schema]
-    return ExpressionList(
-        [ColumnExpression(name, expr_type=ExpressionType.from_arrow_type(type_)) for name, type_ in fields]
-    ).resolve()
+def _get_column_ids(table: pa.Table, schema_options: vPartitionSchemaInferenceOptions) -> list[ColID]:
+    # No schema provided, we allocate column IDs arbitrarily
+    # NOTE: This is very dangerous if performed remotely in Ray and if IDs are used locally, since they may conflict
+    if schema_options.schema is None:
+        return cast(List[ColID], list(range(len(table.column_names))))
 
+    col_ids = []
+    for colname in table.column_names:
+        expr = schema_options.schema.get_expression_by_name(colname)
+        if expr is None:
+            raise ValueError(f"Column {colname} not found in provided schema: {schema_options.schema}")
+        col_ids.append(expr.get_id())
 
-def _get_column_ids_for_table(table: pa.Table, schema: ExpressionList) -> list[ColID]:
-    name_to_exprs = {colname: schema.get_expression_by_name(colname) for colname in table.column_names}
-    name_to_col_ids = {colname: expr.get_id() for colname, expr in name_to_exprs.items() if expr is not None}
-    if name_to_col_ids.keys() - name_to_exprs.keys():
-        raise ValueError(f"Schema not provided for columns: {name_to_col_ids.keys() - name_to_exprs.keys()}")
-    return [name_to_col_ids[name] for name in table.column_names]
+    return col_ids
 
 
 @dataclass(frozen=True)
@@ -178,10 +177,10 @@ class vPartition:
             return 0
         return len(next(iter(self.columns.values())))
 
-    def get_col_expressions(self) -> ExpressionList:
+    def get_unresolved_col_expressions(self) -> ExpressionList:
         """Generates column expressions that represent the vPartition's schema"""
         colexprs = []
-        for col_id, tile in self.columns.items():
+        for _, tile in self.columns.items():
             col_name = tile.column_name
             col_type: ExpressionType
             if isinstance(tile.block, ArrowDataBlock):
@@ -195,7 +194,6 @@ class vPartition:
                 else:
                     col_type = ExpressionType.python_object()
             colexpr = ColumnExpression(name=col_name, expr_type=col_type)
-            colexpr._id = col_id
             colexprs.append(colexpr)
         return ExpressionList(colexprs)
 
@@ -315,9 +313,7 @@ class vPartition:
                 convert_options=csv.ConvertOptions(include_columns=read_options.column_names),
             )
 
-        schema = _infer_schema_from_arrow(table, schema_options)
-        column_ids = _get_column_ids_for_table(table, schema)
-
+        column_ids = _get_column_ids(table, schema_options)
         return vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
 
     @classmethod
@@ -345,9 +341,7 @@ class vPartition:
         if read_options.column_names is not None:
             table = table.select(read_options.column_names)
 
-        schema = _infer_schema_from_arrow(table, schema_options)
-        column_ids = _get_column_ids_for_table(table, schema)
-
+        column_ids = _get_column_ids(table, schema_options)
         return vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
 
     @classmethod
@@ -384,9 +378,7 @@ class vPartition:
                 if read_options.num_rows is not None:
                     table = table.slice(length=read_options.num_rows)
 
-        schema = _infer_schema_from_arrow(table, schema_options)
-        column_ids = _get_column_ids_for_table(table, schema)
-
+        column_ids = _get_column_ids(table, schema_options)
         return vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
 
     def to_pydict(self) -> dict[str, Sequence]:
