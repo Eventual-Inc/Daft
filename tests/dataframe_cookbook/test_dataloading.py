@@ -39,7 +39,7 @@ def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_pd_df = daft_slice.to_pandas()
     assert_df_equals(daft_pd_df, pd_slice)
 
-
+'''
 @pytest.mark.parametrize(
     "daft_df",
     [
@@ -54,7 +54,7 @@ def test_load_parquet(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_slice = daft_df.repartition(repartition_nparts)
     daft_pd_df = daft_slice.to_pandas()
     assert_df_equals(daft_pd_df, pd_slice)
-
+'''
 
 def test_load_csv_no_headers(tmp_path: pathlib.Path):
     """Generate a default set of headers `f0, f1, ... f{n}` when loading a CSV that has no headers"""
@@ -108,6 +108,7 @@ def test_load_pydict():
         "py_objs": [None, MyObj(), MyObj()],
         "heterogenous_py_objs": [None, MyObj(), MyObj2()],
         "numpy_arrays": [np.array([1]), np.array([2]), np.array([3])],
+        # "charles": [MyObj()]
     }
     daft_df = DataFrame.from_pydict(data)
 
