@@ -1,3 +1,4 @@
+mod array;
 mod datatypes;
 mod dsl;
 mod error;
