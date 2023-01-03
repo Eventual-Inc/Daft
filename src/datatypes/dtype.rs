@@ -73,9 +73,14 @@ pub enum DataType {
     // Stop ArrowTypes
     DaftType(Box<DataType>),
     PythonType(Arc<String>),
+    Unknown,
 }
 
 impl DataType {
+    pub fn new_null() -> Box<DataType> {
+        Box::new(DataType::Null)
+    }
+
     pub fn to_arrow(&self) -> DaftResult<ArrowType> {
         match self {
             DataType::Null => Ok(ArrowType::Null),

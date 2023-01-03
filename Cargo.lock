@@ -100,6 +100,7 @@ version = "0.0.20"
 dependencies = [
  "arrow2",
  "indexmap",
+ "num-traits",
  "pyo3",
  "xxhash-rust",
 ]

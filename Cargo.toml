@@ -5,6 +5,9 @@ features = [ "compute",]
 [dependencies.indexmap]
 version = "1.9.2"
 
+[dependencies.num-traits]
+version = "0.2"
+
 [dependencies.pyo3]
 version = "0.17.3"
 features = [ "extension-module", "abi3-py37",]

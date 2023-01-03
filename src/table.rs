@@ -16,16 +16,16 @@ impl Table {
         Ok(self.columns.get(i).unwrap().clone())
     }
 
-    fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
-        let result_field = expr.to_field(self.schema.as_ref())?;
-        use Expr::*;
-        match expr {
-            Alias(child, name) => self.eval_expression(child.as_ref()),
-            Column(name) => self.get_column(name),
-            BinaryOp { op, left, right } => self
-                .eval_expression(&left)?
-                .binary_op(&self.eval_expression(&right)?, *op),
-            Literal(lit_value) => lit_value.to_series(),
-        }
-    }
+    // fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
+    //     let result_field = expr.to_field(self.schema.as_ref())?;
+    //     use Expr::*;
+    //     match expr {
+    //         Alias(child, name) => self.eval_expression(child.as_ref()),
+    //         Column(name) => self.get_column(name),
+    //         BinaryOp { op, left, right } => self
+    //             .eval_expression(&left)?
+    //             .binary_op(&self.eval_expression(&right)?, *op),
+    //         Literal(lit_value) => lit_value.to_series(),
+    //     }
+    // }
 }
