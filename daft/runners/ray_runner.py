@@ -402,7 +402,7 @@ class DynamicRayRunner(RayRunner):
         try:
             while True:
                 # Dispatch tasks while cores are available.
-                for i in range(cores - len(futures)):
+                for i in range(cores + 1 - len(futures)):
 
                     next_construction = next(schedule)
 
