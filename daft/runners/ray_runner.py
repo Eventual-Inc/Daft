@@ -400,25 +400,43 @@ class DynamicRayRunner(RayRunner):
         # Keep in mind this call takes about 0.3ms.
         cores = int(ray.cluster_resources()["CPU"])
 
+        ref_to_construction: dict[ray.ObjectRef, tuple[Construction[ray.ObjectRef], list[ray.ObjectRef]]] = dict()
+
         try:
-            inflight: list[ray.ObjectRef] = []
             while True:
                 # Dispatch tasks while cores are available.
 
-                for i in range(cores - len(inflight)):
+                for i in range(cores - len(ref_to_construction)):
 
                     next_construction = next(schedule)
 
                     if next_construction is None:
                         break
 
-                    inflight += self._build_partitions(next_construction)
+                    results = self._build_partitions(next_construction)
+                    for ref in results:
+                        ref_to_construction[ref] = (next_construction, results)
 
                 # All tasks dispatched. Await a result
-                ready, inflight = ray.wait(inflight, fetch_local=False)
+                readys, _ = ray.wait(list(ref_to_construction.keys()), fetch_local=False)
+                for ref in readys:
+                    construction, results = ref_to_construction[ref]
+                    if not construction.reported:
+                        construction.report_completed([PartitionWithInfo(p, get_meta) for p in results])
+                    del ref_to_construction[ref]
 
         except StopIteration:
             pass
+
+        readys, pending = ray.wait(
+            list(ref_to_construction.keys()), num_returns=len(ref_to_construction), fetch_local=False
+        )
+        assert len(pending) == 0
+        for ref in readys:
+            construction, results = ref_to_construction[ref]
+            if not construction.reported:
+                construction.report_completed([PartitionWithInfo(p, get_meta) for p in results])
+            del ref_to_construction[ref]
 
         final_result = schedule.result_partition_set(RayPartitionSet)
         pset_entry = self._part_set_cache.put_partition_set(final_result)
@@ -431,7 +449,6 @@ class DynamicRayRunner(RayRunner):
         if partspec.num_results == 1:
             results = [results]
 
-        partspec.report_completed([PartitionWithInfo(p, get_meta) for p in results])
         return results
 
     def _get_partition_metadata(self, *partitions: ray.ObjectRef) -> list[PartitionMetadata]:
