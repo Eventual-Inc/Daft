@@ -83,6 +83,11 @@ jobs:
     needs:
     - build-and-test
     steps:
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        architecture: x64
+    - run: pip install -U twine
     - uses: actions/checkout@v3
     - uses: actions/download-artifact@v2
       with:
