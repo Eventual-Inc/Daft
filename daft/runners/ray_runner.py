@@ -438,6 +438,7 @@ class DynamicRayRunner(RayRunner):
         if partspec.num_results == 1:
             results = [results]
 
+        ray.wait(results)
         partspec.report_completed([PartitionWithInfo(p, get_meta) for p in results])
 
     def _get_partition_metadata(self, *partitions: ray.ObjectRef) -> list[PartitionMetadata]:
