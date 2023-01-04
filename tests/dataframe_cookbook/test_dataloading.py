@@ -44,7 +44,7 @@ def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts):
 @parametrize_service_requests_csv_repartition
 def test_load_parquet(parquet_path, service_requests_csv_pd_df, repartition_nparts):
     """Loading data from a CSV or Parquet works"""
-    daft_df = (DataFrame.read_parquet(parquet_path).select(*[col(c) for c in COLUMNS]),)
+    daft_df = DataFrame.read_parquet(parquet_path).select(*[col(c) for c in COLUMNS])
     pd_slice = service_requests_csv_pd_df
     daft_slice = daft_df.repartition(repartition_nparts)
     daft_pd_df = daft_slice.to_pandas()
