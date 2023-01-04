@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Generic, TypeVar
 
 from daft.context import get_context
-from daft.execution.dynamic_construction import InstructionFactory
+from daft.execution.dynamic_construction import InstructionFactory, PartitionWithInfo
 from daft.execution.dynamic_schedule import (
     DynamicSchedule,
     ScheduleCoalesce,
@@ -24,6 +24,8 @@ PartitionT = TypeVar("PartitionT")
 
 class DynamicScheduleFactory(Generic[PartitionT]):
     def __init__(self):
+        # Normally this class would just be a holder for static methods;
+        # however, it seems mypy does not properly pass through type parameterization for static methods.
         pass
 
     def schedule_logical_node(self, node: LogicalPlan) -> DynamicSchedule[PartitionT]:
@@ -34,7 +36,9 @@ class DynamicScheduleFactory(Generic[PartitionT]):
             pset = get_context().runner().get_partition_set_from_cache(node._cache_entry.key).value
             assert pset is not None
             partitions = pset.values()
-            return SchedulePartitionRead[PartitionT](partitions)
+            # Hacky. Only doing this until PartitionCache is implemented with metadata
+            metadatas = get_context().runner()._get_partition_metadata(*partitions)  # type: ignore
+            return SchedulePartitionRead[PartitionT]([PartitionWithInfo(p, m) for p, m in zip(partitions, metadatas)])
 
         # -- Unary nodes. --
 

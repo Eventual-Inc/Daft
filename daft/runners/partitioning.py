@@ -156,6 +156,11 @@ class PyListTile:
 
 
 @dataclass(frozen=True)
+class PartitionMetadata:
+    num_rows: int
+
+
+@dataclass(frozen=True)
 class vPartition:
     columns: dict[ColID, PyListTile]
     partition_id: PartID
@@ -176,6 +181,9 @@ class vPartition:
         if len(self.columns) == 0:
             return 0
         return len(next(iter(self.columns.values())))
+
+    def metadata(self) -> PartitionMetadata:
+        return PartitionMetadata(num_rows=len(self))
 
     def get_unresolved_col_expressions(self) -> ExpressionList:
         """Generates column expressions that represent the vPartition's schema"""

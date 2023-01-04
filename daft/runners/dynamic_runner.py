@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from daft.execution.dynamic_construction import Construction
+from daft.execution.dynamic_construction import Construction, PartitionWithInfo
 from daft.execution.dynamic_schedule import DynamicSchedule, ScheduleMaterialize
 from daft.execution.dynamic_schedule_factory import DynamicScheduleFactory
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
@@ -16,6 +16,7 @@ from daft.logical.optimizer import (
 )
 from daft.runners.partitioning import (
     PartitionCacheEntry,
+    PartitionMetadata,
     PartitionSetFactory,
     vPartition,
 )
@@ -76,4 +77,9 @@ class DynamicRunner(Runner):
     def _build_partitions(self, partspec: Construction[vPartition]) -> None:
         construct_fn = partspec.get_runnable()
         results = construct_fn(partspec.inputs)
-        partspec.report_completed(results)
+        metas = [_.metadata() for _ in results]
+        partspec.report_completed([PartitionWithInfo(p, m) for p, m in zip(results, metas)])
+
+    def _get_partition_metadata(self, *partitions: vPartition) -> list[PartitionMetadata]:
+        """Hacky; only used for DynamicSchedule initialization. Remove when PartitionCache is implemented"""
+        return [_.metadata() for _ in partitions]
