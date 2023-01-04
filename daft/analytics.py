@@ -21,7 +21,7 @@ class AnalyticsClient:
         self._session_key = str(uuid.uuid4())
         self._segment_client = analytics.Client(_WRITE_KEY)
 
-    def track_import(self, daft_version: str) -> None:
+    def track_import(self, daft_version: str, daft_build_type: str) -> None:
         self._segment_client.track(
             self._session_key,
             "Imported Daft",
@@ -30,6 +30,8 @@ class AnalyticsClient:
                 "daft_version": daft_version,
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
+                "build_type": daft_build_type,
+                "DAFT_ANALYTICS_ENABLED": os.getenv("DAFT_ANALYTICS_ENABLED"),
             },
         )
 
@@ -48,20 +50,13 @@ class AnalyticsClient:
         )
 
 
-def init_analytics(release_build: bool) -> AnalyticsClient | None:
+def init_analytics() -> AnalyticsClient:
     """Initialize the analytics module
-
-    Args:
-        daft_version (str): version of Daft, defaulting to "0.0.0" which indicates a dev/local build
 
     Returns:
         AnalyticsClient: initialized singleton AnalyticsClient
     """
     global _ANALYTICS_CLIENT
-
-    user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
-    if not release_build or user_opted_out:
-        return None
 
     if _ANALYTICS_CLIENT is not None:
         return _ANALYTICS_CLIENT

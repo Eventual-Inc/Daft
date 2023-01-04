@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from daft.logging import setup_logger
@@ -41,9 +42,11 @@ if TYPE_CHECKING:
 
 from daft.analytics import init_analytics
 
-analytics_client = init_analytics(release_build=get_build_type() == "release")
-if analytics_client is not None:
-    analytics_client.track_import(__version__)
+release_build = get_build_type() == "release"
+user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
+if release_build and not user_opted_out:
+    analytics_client = init_analytics()
+    analytics_client.track_import(get_version(), get_build_type())
 
 ###
 # Daft top-level imports
