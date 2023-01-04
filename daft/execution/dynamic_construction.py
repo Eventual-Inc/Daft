@@ -20,7 +20,7 @@ Instruction = Callable[[List[vPartition]], List[vPartition]]
 @dataclass(frozen=True)
 class PartitionWithInfo(Generic[PartitionT]):
     partition: PartitionT
-    metadata: PartitionMetadata
+    metadata: Callable[[PartitionT], PartitionMetadata]
 
 
 class Construction(Generic[PartitionT]):

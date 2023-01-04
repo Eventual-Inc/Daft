@@ -382,6 +382,11 @@ def get_metas(*inputs: vPartition) -> list[PartitionMetadata]:
     return [partition.metadata() for partition in inputs]
 
 
+def get_meta(partition: ray.ObjectRef) -> PartitionMetadata:
+    [res] = ray.get(get_metas.remote(partition))
+    return res
+
+
 class DynamicRayRunner(RayRunner):
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         return asyncio.run(self._run_impl(plan))
@@ -433,8 +438,7 @@ class DynamicRayRunner(RayRunner):
         if partspec.num_results == 1:
             results = [results]
 
-        metas = await get_metas.remote(*results)
-        partspec.report_completed([PartitionWithInfo(p, m) for p, m in zip(results, metas)])
+        partspec.report_completed([PartitionWithInfo(p, get_meta) for p in results])
 
     def _get_partition_metadata(self, *partitions: ray.ObjectRef) -> list[PartitionMetadata]:
         """Hacky; only used for DynamicSchedule initialization. Remove when PartitionCache is implemented"""

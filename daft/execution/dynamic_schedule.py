@@ -247,11 +247,12 @@ class ScheduleGlobalLimit(DynamicSchedule[PartitionT]):
         if self._continue_from_partition < len(dependencies):
             next_partition_info = dependencies[self._continue_from_partition]
             if next_partition_info is not None:
-                next_limit = min(self._remaining_limit, next_partition_info.metadata.num_rows)
+                num_rows = next_partition_info.metadata(next_partition_info.partition).num_rows
+                next_limit = min(self._remaining_limit, num_rows)
                 self._remaining_limit -= next_limit
 
                 new_construct = Construction[PartitionT]([next_partition_info.partition])
-                if next_limit < next_partition_info.metadata.num_rows:
+                if next_limit < num_rows:
                     new_construct.add_instruction(InstructionFactory.local_limit(next_limit))
 
                 self._continue_from_partition += 1
