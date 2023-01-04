@@ -40,16 +40,11 @@ def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, pd_slice)
 
 
-@pytest.mark.parametrize(
-    "daft_df",
-    [
-        DataFrame.read_parquet(SERVICE_REQUESTS_PARQUET).select(*[col(c) for c in COLUMNS]),
-        DataFrame.read_parquet(SERVICE_REQUESTS_PARQUET_FOLDER).select(*[col(c) for c in COLUMNS]),
-    ],
-)
+@pytest.mark.parametrize("parquet_path", [SERVICE_REQUESTS_PARQUET, SERVICE_REQUESTS_PARQUET_FOLDER])
 @parametrize_service_requests_csv_repartition
-def test_load_parquet(daft_df, service_requests_csv_pd_df, repartition_nparts):
+def test_load_parquet(parquet_path, service_requests_csv_pd_df, repartition_nparts):
     """Loading data from a CSV or Parquet works"""
+    daft_df = (DataFrame.read_parquet(parquet_path).select(*[col(c) for c in COLUMNS]),)
     pd_slice = service_requests_csv_pd_df
     daft_slice = daft_df.repartition(repartition_nparts)
     daft_pd_df = daft_slice.to_pandas()
