@@ -13,7 +13,7 @@ New Features
 Dynamic Scheduling
 ^^^^^^^^^^^^^^^^^^
 
-Great work by @charlesxlin to introduce a new Dynamic scheduler for running Daft dataframe queries. This version of the scheduler allows Daft to perform much more intelligent pull-based scheduling, dramatically speeding up operations such as `.limit(5).show()` which will now only require materializing the first partition, even in the presence of other global operations such as a `.where`.
+Great work by @xcharleslin to introduce a new Dynamic scheduler for running Daft dataframe queries. This version of the scheduler allows Daft to perform much more intelligent pull-based scheduling, dramatically speeding up operations such as `.limit(5).show()` which will now only require materializing the first partition, even in the presence of other global operations such as a `.where`.
 
 * Add tests for \#368 `#375 <https://github.com/Eventual-Inc/Daft/pull/375>`_
 * Implement dynamic scheduling. `#387 <https://github.com/Eventual-Inc/Daft/pull/387>`_
