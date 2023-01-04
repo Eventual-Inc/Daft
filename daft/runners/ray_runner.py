@@ -419,7 +419,8 @@ class DynamicRayRunner(RayRunner):
             pass
 
         # Flush futures.
-        await asyncio.wait(futures)
+        if len(futures) > 0:
+            await asyncio.wait(futures)
 
         final_result = schedule.result_partition_set(RayPartitionSet)
         pset_entry = self._part_set_cache.put_partition_set(final_result)
