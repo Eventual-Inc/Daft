@@ -34,17 +34,21 @@ class AnalyticsClient:
         )
 
     def track_df_method_call(self, method_name: str, duration_seconds: float, error: str | None = None) -> None:
+        optionals = {}
+        if error is not None:
+            optionals["error"] = error
         self._segment_client.track(
             self._session_key,
             "DataFrame Method Call",
             {
                 "method_name": method_name,
                 "duration_seconds": duration_seconds,
+                **optionals,
             },
         )
 
 
-def init_analytics(daft_version: str = "0.0.0") -> AnalyticsClient | None:
+def init_analytics(release_build: bool) -> AnalyticsClient | None:
     """Initialize the analytics module
 
     Args:
@@ -56,8 +60,7 @@ def init_analytics(daft_version: str = "0.0.0") -> AnalyticsClient | None:
     global _ANALYTICS_CLIENT
 
     user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
-    dev_build = daft_version == "0.0.0"
-    if dev_build or user_opted_out:
+    if not release_build or user_opted_out:
         return None
 
     if _ANALYTICS_CLIENT is not None:

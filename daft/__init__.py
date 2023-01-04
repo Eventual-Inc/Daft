@@ -12,14 +12,19 @@ from daft.logging import setup_logger
 setup_logger()
 
 ###
-# Get version number from Rust .so
+# Get build constants from Rust .so
 ###
 
+from daft.daft import build_type as _build_type
 from daft.daft import version as _version
 
 
 def get_version() -> str:
     return _version()
+
+
+def get_build_type() -> str:
+    return _build_type()
 
 
 __version__ = get_version()
@@ -36,7 +41,7 @@ if TYPE_CHECKING:
 
 from daft.analytics import init_analytics
 
-analytics_client = init_analytics(__version__)
+analytics_client = init_analytics(release_build=get_build_type() == "release")
 if analytics_client is not None:
     analytics_client.track_import(__version__)
 
