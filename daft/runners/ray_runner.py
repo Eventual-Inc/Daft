@@ -396,8 +396,7 @@ class DynamicRayRunner(RayRunner):
 
         # Note: For autoscaling clusters, you will probably want to query this dynamically.
         # Keep in mind this call takes about 0.3ms.
-        # cores = int(ray.cluster_resources()["CPU"])
-        cores = 9001
+        cores = int(ray.cluster_resources()["CPU"])
         futures: set[asyncio.Future] = set()
 
         try:
