@@ -132,7 +132,6 @@ impl Operator {
 
 #[cfg(test)]
 mod tests {
-    use crate::dsl::lit::LiteralValue;
 
     use super::*;
 
@@ -181,7 +180,7 @@ mod tests {
     fn check_arithmetic_type_with_columns() -> DaftResult<()> {
         let x = col("x");
         let y = col("y");
-        let schema = Schema::new(&vec![
+        let schema = Schema::new(&[
             ("x".to_string(), DataType::Float64),
             ("y".to_string(), DataType::Int64),
         ]);

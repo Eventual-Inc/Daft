@@ -11,6 +11,7 @@ pub enum TimeUnit {
 }
 
 impl TimeUnit {
+    #![allow(clippy::wrong_self_convention)]
     pub fn to_arrow(&self) -> DaftResult<ArrowTimeUnit> {
         match self {
             TimeUnit::Nanoseconds => Ok(ArrowTimeUnit::Nanosecond),
