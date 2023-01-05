@@ -25,6 +25,7 @@ import daft
 from benchmarking.tpch import answers, data_generation
 from daft import DataFrame
 from daft.context import get_context
+from daft.runners.profiler import profiler
 
 ALL_TABLES = [
     "part",
@@ -91,9 +92,11 @@ class MetricsBuilder:
     @contextlib.contextmanager
     def collect_metrics(self, qnum: int):
         logger.info(f"Running benchmarks for TPC-H q{qnum}")
-        start = time.time()
-        yield
-        walltime_s = time.time() - start
+        start = datetime.now()
+        profile_filename = f"tpch_q{qnum}_{datetime.replace(start, microsecond=0).isoformat()}.json"
+        with profiler(profile_filename):
+            yield
+        walltime_s = (datetime.now() - start).total_seconds()
         logger.info(f"Finished benchmarks for q{qnum}: {walltime_s}s")
         self._metrics[f"tpch_q{qnum}"] = walltime_s
 

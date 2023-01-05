@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import os
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
@@ -10,14 +9,32 @@ from loguru import logger
 if TYPE_CHECKING:
     from viztracer import VizTracer
 
+ACTIVE = False
 
+
+@contextmanager
 def profiler(filename: str) -> VizTracer:
     if int(os.environ.get("DAFT_PROFILING", 0)) == 1:
-        from viztracer import VizTracer
+        from viztracer import VizTracer, get_tracer
 
-        return VizTracer(output_file=filename, tracer_entries=10_000_000)
-    else:
-        return contextlib.nullcontext()
+        global ACTIVE
+        if not ACTIVE:
+            tracer = get_tracer()
+            if tracer is None or tracer.output_file != filename:
+                tracer = VizTracer(output_file=filename, tracer_entries=10_000_000)
+            ACTIVE = True
+            with tracer:
+                yield tracer
+            ACTIVE = False
+            return
+        else:
+            tracer = get_tracer()
+            logger.warning(
+                f"profiler({filename}) not created. Another profiler({tracer.output_file}) is already active."
+            )
+
+    yield None
+    return
 
 
 import time
