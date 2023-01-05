@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
@@ -382,11 +381,14 @@ def get_metas(*inputs: vPartition) -> list[PartitionMetadata]:
     return [partition.metadata() for partition in inputs]
 
 
+def get_meta(partition: ray.ObjectRef) -> PartitionMetadata:
+    [res] = ray.get(get_metas.remote(partition))
+    return res
+
+
 class DynamicRayRunner(RayRunner):
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
-        return asyncio.run(self._run_impl(plan))
 
-    async def _run_impl(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         plan = self.optimize(plan)
 
         schedule_factory = DynamicScheduleFactory[ray.ObjectRef]()
@@ -397,44 +399,57 @@ class DynamicRayRunner(RayRunner):
         # Note: For autoscaling clusters, you will probably want to query this dynamically.
         # Keep in mind this call takes about 0.3ms.
         cores = int(ray.cluster_resources()["CPU"])
-        futures: set[asyncio.Future] = set()
+
+        ref_to_construction: dict[ray.ObjectRef, tuple[Construction[ray.ObjectRef], list[ray.ObjectRef]]] = dict()
 
         try:
             while True:
                 # Dispatch tasks while cores are available.
-                for i in range(cores - len(futures)):
+
+                for i in range(cores - len(ref_to_construction)):
 
                     next_construction = next(schedule)
 
                     if next_construction is None:
                         break
 
-                    futures.add(asyncio.create_task(self._build_partitions(next_construction)))
+                    results = self._build_partitions(next_construction)
+                    for ref in results:
+                        ref_to_construction[ref] = (next_construction, results)
 
                 # All tasks dispatched. Await a result
-                completed, pending = await asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
-                futures = pending
+                readys, _ = ray.wait(list(ref_to_construction.keys()), fetch_local=False)
+                for ref in readys:
+                    construction, results = ref_to_construction[ref]
+                    if not construction.reported:
+                        construction.report_completed([PartitionWithInfo(p, get_meta) for p in results])
+                    del ref_to_construction[ref]
 
         except StopIteration:
             pass
 
-        # Flush futures.
-        if len(futures) > 0:
-            await asyncio.wait(futures)
+        readys, pending = ray.wait(
+            list(ref_to_construction.keys()), num_returns=len(ref_to_construction), fetch_local=False
+        )
+        assert len(pending) == 0
+        for ref in readys:
+            construction, results = ref_to_construction[ref]
+            if not construction.reported:
+                construction.report_completed([PartitionWithInfo(p, get_meta) for p in results])
+            del ref_to_construction[ref]
 
         final_result = schedule.result_partition_set(RayPartitionSet)
         pset_entry = self._part_set_cache.put_partition_set(final_result)
         return pset_entry
 
-    async def _build_partitions(self, partspec: Construction[ray.ObjectRef]) -> None:
+    def _build_partitions(self, partspec: Construction[ray.ObjectRef]) -> list[ray.ObjectRef]:
         construct_remote = build_partitions.options(num_returns=partspec.num_results)
         results = construct_remote.remote(partspec._instruction_stack, *partspec.inputs)
         # Handle ray bug that ignores list interpretation when num_returns=1
         if partspec.num_results == 1:
             results = [results]
 
-        metas = await get_metas.remote(*results)
-        partspec.report_completed([PartitionWithInfo(p, m) for p, m in zip(results, metas)])
+        return results
 
     def _get_partition_metadata(self, *partitions: ray.ObjectRef) -> list[PartitionMetadata]:
         """Hacky; only used for DynamicSchedule initialization. Remove when PartitionCache is implemented"""
