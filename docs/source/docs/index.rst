@@ -35,13 +35,10 @@ Evaluating Daft for a new project or system? Read more about why you should choo
    :hidden:
    :maxdepth: 1
 
-   :caption: Learn Daft
    learn/index
-
-   :caption: References
    api_docs/index
    release_notes/index
-   telemetry
+   Telemetry <telemetry>
 
 .. Indices and tables
 .. ==================
