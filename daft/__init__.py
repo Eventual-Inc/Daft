@@ -42,11 +42,11 @@ if TYPE_CHECKING:
 
 from daft.analytics import init_analytics
 
-release_build = get_build_type() == "release"
+dev_build = get_build_type() == "dev"
 user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
-if release_build and not user_opted_out:
-    analytics_client = init_analytics()
-    analytics_client.track_import(get_version(), get_build_type())
+if not dev_build and not user_opted_out:
+    analytics_client = init_analytics(get_version(), get_build_type())
+    analytics_client.track_import()
 
 ###
 # Daft top-level imports

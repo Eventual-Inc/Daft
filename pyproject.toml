@@ -27,7 +27,6 @@ dependencies = [
     "typing-extensions >= 4.0.0; python_version < '3.8'",
     "pickle5 >= 0.0.12; python_version < '3.8'",
     "polars[timezone]",
-    "segment-analytics-python",
 ]
 
 [project.optional-dependencies]
@@ -35,7 +34,7 @@ aws = ["s3fs"]
 serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
 iceberg = ["icebridge"]
 experimental = ["daft[serving, iceberg]"]
-ray = ["ray[data, default]>=1.10.0"] # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
+ray = ["ray[data, default]>=1.10.0"]  # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
 all = ["daft[aws, ray]"]
 
 [project.urls]
