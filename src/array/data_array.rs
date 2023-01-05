@@ -3,7 +3,7 @@ use std::{any::Any, marker::PhantomData};
 use crate::datatypes::{DaftDataType, DataType};
 
 pub trait BaseArray: Any {
-    fn data(&self) -> &Box<dyn arrow2::array::Array>;
+    fn data(&self) -> &dyn arrow2::array::Array;
 
     fn data_type(&self) -> DataType;
 
@@ -31,8 +31,8 @@ impl<T: DaftDataType> From<Box<dyn arrow2::array::Array>> for DataArray<T> {
 }
 
 impl<T: DaftDataType + 'static> BaseArray for DataArray<T> {
-    fn data(&self) -> &Box<dyn arrow2::array::Array> {
-        &self.data
+    fn data(&self) -> &dyn arrow2::array::Array {
+        self.data.as_ref()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
