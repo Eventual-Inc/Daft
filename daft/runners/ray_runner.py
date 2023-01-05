@@ -399,12 +399,12 @@ class DynamicRayRunner(RayRunner):
         # Note: For autoscaling clusters, you will probably want to query this dynamically.
         # Keep in mind this call takes about 0.3ms.
         cores = int(ray.cluster_resources()["CPU"])
-
+        inflight: list[ray.ObjectRef] = []
+        constructions = []
         try:
-            inflight: list[ray.ObjectRef] = []
+
             while True:
                 # Dispatch tasks while cores are available.
-
                 for i in range(cores - len(inflight)):
 
                     next_construction = next(schedule)
@@ -412,13 +412,21 @@ class DynamicRayRunner(RayRunner):
                     if next_construction is None:
                         break
 
-                    inflight += self._build_partitions(next_construction)
+                    constructions.append(next_construction)
+
+                for construction in constructions:
+                    inflight += self._build_partitions(construction)
+                constructions.clear()
 
                 # All tasks dispatched. Await a result
                 ready, inflight = ray.wait(inflight, fetch_local=False)
 
         except StopIteration:
             pass
+
+        for construction in constructions:
+            inflight += self._build_partitions(construction)
+        constructions.clear()
 
         final_result = schedule.result_partition_set(RayPartitionSet)
         pset_entry = self._part_set_cache.put_partition_set(final_result)
