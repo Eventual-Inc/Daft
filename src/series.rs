@@ -4,8 +4,6 @@ use crate::{
     array::data_array::{BaseArray, DataArray},
     datatypes,
     datatypes::DataType,
-    dsl::Operator,
-    error::DaftResult,
 };
 
 #[derive(Debug, Clone)]
@@ -24,42 +22,10 @@ impl From<Box<dyn arrow2::array::Array>> for Series {
             },
             _ => panic!("help!"),
         }
-
-        // Series {
-        //     array: Arc::from(DataArray<T>::from(item)),
-        // }
     }
 }
 
-impl Series {
-    // #[inline]
-    // pub fn binary_op(&self, other: &Series, op: Operator) -> DaftResult<Series> {
-    //     Ok(Series {
-    //         array: Arc::from(self.array.binary_op(other.array.as_ref(), op)?),
-    //     })
-    // }
-    // pub fn add(&self, other: &Series) -> DaftResult<Series> {
-    //     self.binary_op(other, Operator::Plus)
-    // }
-}
+impl Series {}
 
 #[cfg(test)]
-mod tests {
-
-    use arrow2::array::Array;
-
-    use super::*;
-
-    // #[test]
-    // fn add_series() -> DaftResult<()> {
-    //     let s =
-    //         Series::from(arrow2::array::PrimitiveArray::<i64>::from_slice([1, 2, 3, 4]).boxed());
-
-    //     let s2 =
-    //         Series::from(arrow2::array::Utf8Array::<i64>::from_slice(["1", "2", "3", "4"]).boxed());
-
-    //     println!("{:?}", s.add(&s2)?);
-
-    //     Ok(())
-    // }
-}
+mod tests {}

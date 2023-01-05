@@ -9,6 +9,7 @@ impl<T> DataArray<T>
 where
     T: DaftNumericType,
 {
+    // applies a native function to a numeric DataArray maintaining validity of the source array.
     pub fn apply<F>(&self, func: F) -> Self
     where
         F: Fn(T::Native) -> T::Native + Copy,

@@ -3,6 +3,24 @@ use crate::error::DaftError;
 use crate::error::DaftResult;
 
 /// Largely influenced by polars supertype logic which is based on numpy / python type propagation
+// Copyright (c) 2020 Ritchie Vink
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
 
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
     match get_supertype(l, r) {
@@ -13,17 +31,6 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
         ))),
     }
 }
-
-// pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
-//     use DataType::*;
-//     println!("get_supertype: {:?}, {:?}", l, r);
-
-//     match (l, r) {
-//         (Arrow(l), Arrow(r)) => get_arrow_supertype(l, r).map(DataType::Arrow),
-//         _ => None,
-//     }
-// }
-
 pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
         use DataType::*;

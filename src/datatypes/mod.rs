@@ -13,7 +13,9 @@ pub use field::Field;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
 pub use time_unit::TimeUnit;
 
+/// Trait to wrap DataType Enum
 pub trait DaftDataType {
+    // returns Daft DataType Enum
     fn get_dtype() -> DataType
     where
         Self: Sized;
@@ -75,6 +77,7 @@ pub trait NumericNative:
     type DAFTTYPE: DaftNumericType;
 }
 
+/// Trait to express types that are native and can be vectorized
 pub trait DaftNumericType: Send + Sync + DaftDataType + 'static {
     type Native: NumericNative;
 }
