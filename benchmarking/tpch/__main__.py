@@ -164,7 +164,7 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
     """Performs necessary setup of Daft on the current benchmarking environment"""
     ctx = daft.context.get_context()
 
-    if ctx.runner_config.name == "ray":
+    if ctx.runner_config.name in ("ray", "dynamicray"):
         runtime_env = {"py_modules": [daft]}
         if requirements:
             runtime_env.update({"pip": requirements})
