@@ -17,10 +17,6 @@ where
         let arr: &PrimitiveArray<T::Native> = self.data().as_ref().as_any().downcast_ref().unwrap();
         let result_arr =
             PrimitiveArray::from_trusted_len_values_iter(arr.values_iter().map(|v| func(*v)));
-        DataArray::from(
-            result_arr
-                .with_validity(arr.validity().clone().cloned())
-                .boxed(),
-        )
+        DataArray::from(result_arr.with_validity(arr.validity().cloned()).boxed())
     }
 }

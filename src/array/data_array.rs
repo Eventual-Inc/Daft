@@ -1,12 +1,6 @@
-use std::{any::Any, marker::PhantomData, sync::Arc};
+use std::{any::Any, marker::PhantomData};
 
-use crate::{
-    datatypes::{DaftDataType, DataType, Int64Type},
-    dsl::Operator,
-    error::{DaftError, DaftResult},
-    kernels::utf8::add_utf8_arrays,
-    utils::supertype,
-};
+use crate::datatypes::{DaftDataType, DataType};
 
 pub trait BaseArray: Any {
     fn data(&self) -> &Box<dyn arrow2::array::Array>;

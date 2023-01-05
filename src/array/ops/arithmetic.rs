@@ -38,7 +38,7 @@ where
     Kernel: Fn(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    let mut ca = match (lhs.len(), rhs.len()) {
+    let ca = match (lhs.len(), rhs.len()) {
         (a, b) if a == b => DataArray::from(kernel(lhs.downcast(), rhs.downcast()).boxed()),
         // broadcast right path
         (_, 1) => {

@@ -1,12 +1,13 @@
 use crate::{
-    datatypes::DataType, datatypes::Field, dsl::lit, error::DaftError, error::DaftResult,
-    schema::Schema, utils::supertype::try_get_supertype,
+    datatypes::DataType, datatypes::Field, dsl::lit, error::DaftResult, schema::Schema,
+    utils::supertype::try_get_supertype,
 };
 use std::{
     fmt::{Debug, Display, Formatter},
     sync::Arc,
 };
 
+pub use lit::lit;
 type ExprRef = Arc<Expr>;
 
 #[derive(Debug)]
@@ -25,8 +26,6 @@ pub enum Expr {
 pub fn col(name: &str) -> Expr {
     Expr::Column(name.into())
 }
-
-use lit::lit;
 
 impl Expr {
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {

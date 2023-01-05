@@ -1,4 +1,4 @@
-use std::{any::Any, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     array::data_array::{BaseArray, DataArray},

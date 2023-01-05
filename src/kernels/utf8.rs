@@ -13,10 +13,7 @@ fn concat_strings(l: &str, r: &str) -> String {
 fn add_utf8_scalar(arr: &Utf8Array<i64>, other: &str) -> DaftResult<Utf8Array<i64>> {
     let result: Utf8Array<i64> = arr
         .into_iter()
-        .map(|v| match v {
-            Some(v) => Some(concat_strings(v, other)),
-            None => None,
-        })
+        .map(|v| v.map(|v| concat_strings(v, other)))
         .collect();
     Ok(result)
 }
@@ -24,10 +21,7 @@ fn add_utf8_scalar(arr: &Utf8Array<i64>, other: &str) -> DaftResult<Utf8Array<i6
 fn add_scalar_utf8(prefix: &str, arr: &Utf8Array<i64>) -> DaftResult<Utf8Array<i64>> {
     let result: Utf8Array<i64> = arr
         .into_iter()
-        .map(|v| match v {
-            Some(v) => Some(concat_strings(prefix, v)),
-            None => None,
-        })
+        .map(|v| v.map(|v| concat_strings(prefix, v)))
         .collect();
     Ok(result)
 }
@@ -78,7 +72,7 @@ pub fn add_utf8_arrays(lhs: &Utf8Array<i64>, rhs: &Utf8Array<i64>) -> DaftResult
             _ => None,
         })
         .collect();
-    return Ok(result);
+    Ok(result)
 }
 
 #[cfg(test)]

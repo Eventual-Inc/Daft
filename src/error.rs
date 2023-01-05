@@ -1,7 +1,3 @@
-use std::result;
-
-use arrow2::error;
-
 #[derive(Debug)]
 pub enum DaftError {
     NotFound(String),
