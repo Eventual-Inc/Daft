@@ -44,7 +44,6 @@ class Construction(Generic[PartitionT]):
 
         # Where to put the materialized results.
         self.num_results: None | int = None
-        self.reported: bool = False
         self._destination_array: None | list[PartitionWithInfo[PartitionT] | None] = None
         self._partno: None | int = None
 
@@ -70,15 +69,12 @@ class Construction(Generic[PartitionT]):
     def report_completed(self, results: list[PartitionWithInfo[PartitionT]]) -> None:
         """Give the materialized result of this Construction to the DynamicSchedule who asked for it."""
 
-        assert not self.reported
         assert self._destination_array is not None
         assert self._partno is not None
 
         for i, partition_with_info in enumerate(results):
             assert self._destination_array[self._partno + i] is None, self._destination_array[self._partno + i]
             self._destination_array[self._partno + i] = partition_with_info
-
-        self.reported = True
 
     def is_marked_for_materialization(self) -> bool:
         return all(_ is not None for _ in (self._destination_array, self._partno))
