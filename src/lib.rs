@@ -1,5 +1,15 @@
+#![allow(dead_code)]
+
+mod array;
+mod datatypes;
+mod dsl;
+mod error;
 mod ffi;
 mod kernels;
+mod schema;
+mod series;
+mod table;
+mod utils;
 
 use pyo3::prelude::*;
 
