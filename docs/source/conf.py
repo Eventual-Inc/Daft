@@ -39,7 +39,7 @@ nb_execution_mode = "off"
 
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
-html_css_files = ["header.css", "landing-page.css"]
+html_css_files = ["header.css", "landing-page.css", "custom-function-signatures.css"]
 html_theme_options = {
     # This is the footer of the primary sidebar as HTML
     "extra_navbar": "",
