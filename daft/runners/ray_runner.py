@@ -443,7 +443,12 @@ class DynamicRayRunner(RayRunner):
         return pset_entry
 
     def _build_partitions(self, partspec: Construction[ray.ObjectRef]) -> list[ray.ObjectRef]:
-        construct_remote = build_partitions.options(num_returns=partspec.num_results)
+        ray_options: dict[str, Any] = {
+            "num_returns": partspec.num_results,
+        }
+        if len(partspec.inputs) > 1:
+            ray_options["scheduling_strategy"] = "SPREAD"
+        construct_remote = build_partitions.options(**ray_options)
         results = construct_remote.remote(partspec.instruction_stack, *partspec.inputs)
         # Handle ray bug that ignores list interpretation when num_returns=1
         if partspec.num_results == 1:
