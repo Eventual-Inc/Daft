@@ -1,175 +1,143 @@
 Expressions
 ===========
 
-.. autoclass:: daft.expressions.Expression
+.. currentmodule:: daft
+
+.. autosummary::
+    :nosignatures:
+    :toctree: expression_methods
+
+    daft.expressions.Expression
 
 Expression Constructors
 #######################
 
-.. autofunction:: daft.expressions.col
-.. autofunction:: daft.expressions.lit
+.. autosummary::
+    :nosignatures:
+    :toctree: expression_methods
+
+    daft.DataFrame.__getitem__
+    daft.expressions.col
+    daft.expressions.lit
 
 Operators
 #########
 
-Operators allow for creating new expressions from existing ones. Not all operators can be run on all types. For a list of expression types and their operations, see: https://docs.getdaft.io/daft/user-guides/daft-types-and-operations
-
-Unary
-*****
-
-.. py:module:: daft.expressions
-
-.. py:method:: Expression.__neg__()
-
-    Takes the negated value of a numeric expression.
-
-    >>> -col("x")
-
-.. py:method:: Expression.__pos__()
-
-    Takes the positive value of a numeric expression.
-
-    >>> +col("x")
-
-.. py:method:: Expression.__abs__()
-
-    Takes the absolute value of a numeric expression.
-
-    >>> abs(col("x"))
-
-.. py:method:: Expression.__invert__()
-
-    Inverts a LOGICAL expression.
-
-    >>> ~col("x")
-
-Binary
-******
-
-.. py:method:: Expression.__add__(other: Expression)
-
-    Adds two numeric expressions.
-
-    >>> col("x") + col("y")
-
-.. py:method:: Expression.__sub__(other: Expression)
-
-    Subtracts two numeric expressions.
-
-    >>> col("x") - col("y")
-
-.. py:method:: Expression.__mul__(other: Expression)
-
-    Subtracts two numeric expressions.
-
-    >>> col("x") * col("y")
-
-.. py:method:: Expression.__floordiv__(other: Expression)
-
-    Takes the floor division of two numeric expressions.
-
-    >>> col("x") // col("y")
-
-.. py:method:: Expression.__truediv__(other: Expression)
-
-    Takes the true division of two numeric expressions.
-
-    >>> col("x") / col("y")
-
-.. py:method:: Expression.__pow__(other: Expression)
-
-    Takes the power of two numeric expressions.
-
-    >>> col("x") ** col("y")
-
-.. py:method:: Expression.__mod__(other: Expression)
-
-    Takes the mod of two numeric expressions.
-
-    >>> col("x") % col("y")
-
-.. py:method:: Expression.__and__(other: Expression)
-
-    Takes the conjunction of two LOGICAL expressions.
-
-    >>> col("x") & col("y")
-
-.. py:method:: Expression.__or__(other: Expression)
-
-    Takes the disjunction of two LOGICAL expressions.
-
-    >>> col("x") | col("y")
-
-.. py:method:: Expression.__lt__(other: Expression)
-
-    Compares two Expressions to check if the first is less than the second.
-
-    >>> col("x") < col("y")
-
-.. py:method:: Expression.__le__(other: Expression)
-
-    Compares two Expressions to check if the first is less or equal to the second.
-
-    >>> col("x") <= col("y")
-
-.. py:method:: Expression.__eq__(other: Expression)
-
-    Compares two Expressions to check if they are equal.
-
-    >>> col("x") == col("y")
-
-.. py:method:: Expression.__ne__(other: Expression)
-
-    Compares two Expressions to check if they are not equal.
-
-    >>> col("x") != col("y")
-
-.. py:method:: Expression.__gt__(other: Expression)
-
-    Compares two Expressions to check if the first is greater than the second.
-
-    >>> col("x") > col("y")
-
-.. py:method:: Expression.__ge__(other: Expression)
-
-    Compares two Expressions to check if the first is greater than or equal to the second.
-
-    >>> col("x") >= col("y")
-
-.. automethod:: daft.expressions.Expression.is_null
-.. automethod:: daft.expressions.Expression.is_nan
-
-Ternary
+Numeric
 *******
 
-.. automethod:: daft.expressions.Expression.if_else
+Operations on numbers (floats and integers)
 
-Changing Column Names/Types
-###########################
-.. automethod:: daft.expressions.Expression.alias
-.. automethod:: daft.expressions.Expression.cast
+.. autosummary::
+    :toctree: expression_methods
 
-Running Python Functions
-########################
-.. automethod:: daft.expressions.Expression.as_py
-.. automethod:: daft.expressions.Expression.apply
+    daft.expressions.Expression.__neg__
+    daft.expressions.Expression.__pos__
+    daft.expressions.Expression.__abs__
+    daft.expressions.Expression.__add__
+    daft.expressions.Expression.__sub__
+    daft.expressions.Expression.__mul__
+    daft.expressions.Expression.__floordiv__
+    daft.expressions.Expression.__truediv__
+    daft.expressions.Expression.__pow__
+    daft.expressions.Expression.__mod__
+    daft.expressions.Expression.is_nan
 
-Accessors
-#########
+Logical
+*******
+
+Operations on logical expressions (True/False booleans)
+
+.. autosummary::
+    :toctree: expression_methods
+
+    daft.expressions.Expression.__invert__
+    daft.expressions.Expression.__and__
+    daft.expressions.Expression.__or__
+    daft.expressions.Expression.if_else
+
+Comparisons
+***********
+
+Comparing expressions and values, returning a logical expression
+
+.. autosummary::
+    :toctree: expression_methods
+
+    daft.expressions.Expression.__lt__
+    daft.expressions.Expression.__le__
+    daft.expressions.Expression.__eq__
+    daft.expressions.Expression.__ne__
+    daft.expressions.Expression.__gt__
+    daft.expressions.Expression.__ge__
+    daft.expressions.Expression.is_null
 
 .. _expression-accessor-properties:
 
-Expression Accessor Properties
-******************************
-.. autoproperty:: daft.expressions.Expression.str
-.. autoproperty:: daft.expressions.Expression.url
-.. autoproperty:: daft.expressions.Expression.dt
+Strings
+*******
 
-Accessor APIs
-*************
-.. autoclass:: daft.expressions.StringMethodAccessor
-    :members:
-.. autoclass:: daft.expressions.UrlMethodAccessor
-    :members:
-.. autoclass:: daft.expressions.DatetimeMethodAccessor
-    :members:
+Operations on strings, accessible through the ``Expression.str`` method accessor.
+
+Example: ``e1.str.concat(e2)``
+
+.. autosummary::
+    :toctree: expression_methods
+
+    daft.expressions.StringMethodAccessor.concat
+    daft.expressions.StringMethodAccessor.contains
+    daft.expressions.StringMethodAccessor.endswith
+    daft.expressions.StringMethodAccessor.startswith
+    daft.expressions.StringMethodAccessor.length
+
+
+Dates
+*****
+
+Operations on datetimes, accessible through the ``Expression.dt`` method accessor:
+
+Example: ``e.dt.day()``
+
+.. autosummary::
+    :nosignatures:
+    :toctree: expression_methods
+
+    daft.expressions.DatetimeMethodAccessor.day
+    daft.expressions.DatetimeMethodAccessor.month
+    daft.expressions.DatetimeMethodAccessor.year
+    daft.expressions.DatetimeMethodAccessor.day_of_week
+
+
+URLs
+****
+
+Operations on URLs, accessible through the ``Expression.url`` method accessor:
+
+Example: ``e.url.download()``
+
+.. autosummary::
+    :nosignatures:
+    :toctree: expression_methods
+
+    daft.expressions.UrlMethodAccessor.download
+
+
+Changing Column Names/Types
+###########################
+
+.. autosummary::
+    :nosignatures:
+    :toctree: expression_methods
+
+    daft.expressions.Expression.alias
+    daft.expressions.Expression.cast
+
+Running Python Functions
+########################
+
+.. autosummary::
+    :nosignatures:
+    :toctree: expression_methods
+
+    daft.expressions.Expression.as_py
+    daft.expressions.Expression.apply

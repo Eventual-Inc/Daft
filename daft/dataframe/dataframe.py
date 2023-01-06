@@ -175,16 +175,16 @@ class DataFrame:
 
     @DataframePublicAPI
     def show(self, n: int | None = None) -> DataFrameDisplay:
-        """Executes and displays the executed dataframe as a table
+        """Executes enough of the DataFrame in order to display the first ``n`` rows
+
+        .. NOTE::
+            This call is **blocking** and will execute the DataFrame when called
 
         Args:
             n: number of rows to show. Defaults to None which indicates showing the entire Dataframe.
 
         Returns:
             DataFrameDisplay: object that has a rich tabular display
-
-            .. NOTE::
-                This call is **blocking** and will execute the DataFrame when called
         """
         df = self
         if n is not None:
@@ -239,7 +239,7 @@ class DataFrame:
     @classmethod
     @DataframePublicAPI
     def from_pydict(cls, data: dict[str, list | pa.Array]) -> DataFrame:
-        """Creates a DataFrame from a Python Dictionary.
+        """Creates a DataFrame from a Python dictionary
 
         Example:
             >>> df = DataFrame.from_pydict({"foo": [1, 2]})
@@ -453,7 +453,7 @@ class DataFrame:
     @classmethod
     @DataframePublicAPI
     def from_files(cls, path: str) -> DataFrame:
-        """Creates a DataFrame from files in storage, where each file is one row of the DataFrame
+        """Creates a DataFrame of file paths and other metadata from a glob path
 
         Example:
             >>> df = DataFrame.from_files("/path/to/files/*.jpeg")
@@ -477,8 +477,14 @@ class DataFrame:
     def write_parquet(
         self, root_dir: str, compression: str = "snappy", partition_cols: list[ColumnInputType] | None = None
     ) -> DataFrame:
-        """Writes the DataFrame to parquet files using a `root_dir` and randomly generated UUIDs as the filepath and returns the filepaths.
+        """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written
+
+        Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
+
         Currently generates a parquet file per partition unless `partition_cols` are used, then the number of files can equal the number of partitions times the number of values of partition col.
+
+        .. NOTE::
+            This call is **blocking** and will execute the DataFrame when called
 
         Args:
             root_dir (str): root file path to write parquet files to.
@@ -515,8 +521,14 @@ class DataFrame:
 
     @DataframePublicAPI
     def write_csv(self, root_dir: str, partition_cols: list[ColumnInputType] | None = None) -> DataFrame:
-        """Writes the DataFrame to CSV files using a `root_dir` and randomly generated UUIDs as the filepath and returns the filepaths.
+        """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written
+
+        Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
+
         Currently generates a csv file per partition unless `partition_cols` are used, then the number of files can equal the number of partitions times the number of values of partition col.
+
+        .. NOTE::
+            This call is **blocking** and will execute the DataFrame when called
 
         Args:
             root_dir (str): root file path to write parquet files to.
@@ -525,9 +537,6 @@ class DataFrame:
 
         Returns:
             DataFrame: The filenames that were written out as strings.
-
-            .. NOTE::
-                This call is **blocking** and will execute the DataFrame when called
         """
         cols: ExpressionList | None = None
         if partition_cols is not None:
@@ -559,6 +568,7 @@ class DataFrame:
         return ExpressionList(expressions)
 
     def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> ColumnExpression | DataFrame:
+        """Gets a column from the DataFrame as an Expression (``df["mycol"]``)"""
         result: ColumnExpression | None
 
         if isinstance(item, int):
@@ -601,7 +611,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def select(self, *columns: ColumnInputType) -> DataFrame:
-        """Creates a new DataFrame that `selects` that columns that are passed in from the current DataFrame.
+        """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``
 
         Example:
 
@@ -629,7 +639,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def distinct(self) -> DataFrame:
-        """Computes unique rows, dropping duplicates.
+        """Computes unique rows, dropping duplicates
 
         Example:
             >>> unique_df = df.distinct()
@@ -651,7 +661,8 @@ class DataFrame:
 
     @DataframePublicAPI
     def exclude(self, *names: str) -> DataFrame:
-        """Drops columns from the current DataFrame by name.
+        """Drops columns from the current DataFrame by name
+
         This is equivalent of performing a select with all the columns but the ones excluded.
 
         Example:
@@ -669,8 +680,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def where(self, predicate: Expression) -> DataFrame:
-        """Filters rows via a predicate expression.
-        similar to SQL style `where`.
+        """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
         Example:
             >>> filtered_df = df.where((col('x') < 10) & (col('y') == 10))
@@ -686,7 +696,8 @@ class DataFrame:
 
     @DataframePublicAPI
     def with_column(self, column_name: str, expr: Expression) -> DataFrame:
-        """Adds a column to the current DataFrame with an Expression.
+        """Adds a column to the current DataFrame with an Expression
+
         This is equivalent to performing a `select` with all the current columns and the new one.
 
         Example:
@@ -707,7 +718,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def sort(self, by: ColumnInputType | list[ColumnInputType], desc: bool | list[bool] = False) -> DataFrame:
-        """Sorts DataFrame globally according to column.
+        """Sorts DataFrame globally
 
         Example:
             >>> sorted_df = df.sort(col('x') + col('y'))
@@ -733,8 +744,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def limit(self, num: int) -> DataFrame:
-        """Limits the rows returned by the DataFrame via a `head` operation.
-        This is similar to how `limit` works in SQL.
+        """Limits the rows in the DataFrame to the first ``N`` rows, similar to a SQL ``LIMIT``
 
         Example:
             >>> df_limited = df.limit(10) # returns 10 rows
@@ -751,7 +761,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
-        """Repartitions DataFrame to `num` partitions.
+        """Repartitions DataFrame to ``num`` partitions
 
         If columns are passed in, then DataFrame will be repartitioned by those, otherwise
         random repartitioning will occur.
@@ -787,8 +797,7 @@ class DataFrame:
         right_on: list[ColumnInputType] | ColumnInputType | None = None,
         how: str = "inner",
     ) -> DataFrame:
-        """Joins left (self) DataFrame on the right on a set of keys.
-        Key names can be the same or different for left and right DataFrame.
+        """Joins the current DataFrame with an ``other`` DataFrame, similar to SQL ``JOIN``
 
         .. NOTE::
             Although self joins are supported, we currently duplicate the logical plan for the right side
@@ -828,7 +837,7 @@ class DataFrame:
     @DataframePublicAPI
     def explode(self, *columns: ColumnInputType) -> DataFrame:
         """Explodes a List column, where every element in each row's List becomes its own row, and all
-        other columns in the DataFrame are duplicated across rows.
+        other columns in the DataFrame are duplicated across rows
 
         If multiple columns are specified, each row must contain the same number of
         items in each specified column.
@@ -996,7 +1005,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def sum(self, *cols: ColumnInputType) -> DataFrame:
-        """Performs a global sum on the DataFrame on a sequence of columns.
+        """Performs a global sum on the DataFrame
 
         Args:
             *cols (Union[str, Expression]): columns to sum
@@ -1008,7 +1017,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def mean(self, *cols: ColumnInputType) -> DataFrame:
-        """Performs a global mean on the DataFrame on a sequence of columns.
+        """Performs a global mean on the DataFrame
 
         Args:
             *cols (Union[str, Expression]): columns to mean
@@ -1020,7 +1029,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> DataFrame:
-        """Performs a global min on the DataFrame on a sequence of columns.
+        """Performs a global min on the DataFrame
 
         Args:
             *cols (Union[str, Expression]): columns to min
@@ -1032,7 +1041,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def max(self, *cols: ColumnInputType) -> DataFrame:
-        """Performs a global max on the DataFrame on a sequence of columns.
+        """Performs a global max on the DataFrame
 
         Args:
             *cols (Union[str, Expression]): columns to max
@@ -1044,7 +1053,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def count(self, *cols: ColumnInputType) -> DataFrame:
-        """Performs a global count on the DataFrame on a sequence of columns.
+        """Performs a global count on the DataFrame
 
         Args:
             *cols (Union[str, Expression]): columns to count
@@ -1078,7 +1087,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def groupby(self, *group_by: ColumnInputType) -> GroupedDataFrame:
-        """Performs a GroupBy on the DataFrame for Aggregation.
+        """Performs a GroupBy on the DataFrame for aggregation
 
         Args:
             *group_by (Union[str, Expression]): columns to group by
@@ -1099,7 +1108,10 @@ class DataFrame:
 
     @DataframePublicAPI
     def collect(self, num_preview_rows: int | None = 10) -> DataFrame:
-        """Computes LogicalPlan to materialize DataFrame. This is a blocking operation.
+        """Executes the entire DataFrame and materializes the results
+
+        .. NOTE::
+            This call is **blocking** and will execute the DataFrame when called
 
         Args:
             num_preview_rows: Number of rows to preview. Defaults to 10
@@ -1197,6 +1209,7 @@ class GroupedDataFrame:
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
     def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> ColumnExpression | DataFrame:
+        """Gets a column from the DataFrame as an Expression"""
         return self.df.__getitem__(item)
 
     def sum(self, *cols: ColumnInputType) -> DataFrame:
