@@ -3,19 +3,9 @@ from __future__ import annotations
 from typing import Generic, TypeVar
 
 from daft.context import get_context
-from daft.execution.dynamic_construction import InstructionFactory, PartitionWithInfo
-from daft.execution.dynamic_schedule import (
-    DynamicSchedule,
-    ScheduleCoalesce,
-    ScheduleFanoutReduce,
-    ScheduleFileRead,
-    ScheduleFileWrite,
-    ScheduleGlobalLimit,
-    ScheduleJoin,
-    SchedulePartitionRead,
-    SchedulePipelineInstruction,
-    ScheduleSort,
-)
+from daft.execution import dynamic_construction, dynamic_schedule
+from daft.execution.dynamic_construction import PartitionWithInfo
+from daft.execution.dynamic_schedule import DynamicSchedule
 from daft.logical import logical_plan
 from daft.logical.logical_plan import LogicalPlan, PartitionScheme
 
@@ -38,7 +28,9 @@ class DynamicScheduleFactory(Generic[PartitionT]):
             partitions = pset.values()
             # Hacky. Only doing this until PartitionCache is implemented with metadata
             metadatas = get_context().runner()._get_partition_metadata(*partitions)  # type: ignore
-            return SchedulePartitionRead[PartitionT]([PartitionWithInfo(p, m) for p, m in zip(partitions, metadatas)])
+            return dynamic_schedule.SchedulePartitionRead[PartitionT](
+                [PartitionWithInfo(p, m) for p, m in zip(partitions, metadatas)]
+            )
 
         # -- Unary nodes. --
 
@@ -47,7 +39,7 @@ class DynamicScheduleFactory(Generic[PartitionT]):
             child_schedule = DynamicScheduleFactory[PartitionT]().schedule_logical_node(child_node)
 
             if isinstance(node, logical_plan.TabularFilesScan):
-                return ScheduleFileRead[PartitionT](child_schedule=child_schedule, scan_node=node)
+                return dynamic_schedule.ScheduleFileRead[PartitionT](child_schedule=child_schedule, scan_node=node)
 
             elif isinstance(node, logical_plan.LocalLimit):
                 # Ignore LocalLimit logical nodes; the GlobalLimit handles everything
@@ -55,62 +47,64 @@ class DynamicScheduleFactory(Generic[PartitionT]):
                 return child_schedule
 
             elif isinstance(node, logical_plan.Filter):
-                return SchedulePipelineInstruction[PartitionT](
-                    child_schedule=child_schedule, pipeable_instruction=InstructionFactory.filter(node._predicate)
+                return dynamic_schedule.SchedulePipelineInstruction[PartitionT](
+                    child_schedule=child_schedule, pipeable_instruction=dynamic_construction.Filter(node._predicate)
                 )
 
             elif isinstance(node, logical_plan.Projection):
-                return SchedulePipelineInstruction[PartitionT](
-                    child_schedule=child_schedule, pipeable_instruction=InstructionFactory.project(node._projection)
+                return dynamic_schedule.SchedulePipelineInstruction[PartitionT](
+                    child_schedule=child_schedule, pipeable_instruction=dynamic_construction.Project(node._projection)
                 )
 
             elif isinstance(node, logical_plan.MapPartition):
-                return SchedulePipelineInstruction[PartitionT](
+                return dynamic_schedule.SchedulePipelineInstruction[PartitionT](
                     child_schedule=child_schedule,
-                    pipeable_instruction=InstructionFactory.map_partition(node._map_partition_op),
+                    pipeable_instruction=dynamic_construction.MapPartition(node._map_partition_op),
                 )
 
             elif isinstance(node, logical_plan.LocalAggregate):
-                return SchedulePipelineInstruction[PartitionT](
+                return dynamic_schedule.SchedulePipelineInstruction[PartitionT](
                     child_schedule=child_schedule,
-                    pipeable_instruction=InstructionFactory.agg(node._agg, node._group_by),
+                    pipeable_instruction=dynamic_construction.Aggregate(to_agg=node._agg, group_by=node._group_by),
                 )
 
             elif isinstance(node, logical_plan.LocalDistinct):
-                return SchedulePipelineInstruction[PartitionT](
-                    child_schedule=child_schedule, pipeable_instruction=InstructionFactory.agg([], node._group_by)
+                return dynamic_schedule.SchedulePipelineInstruction[PartitionT](
+                    child_schedule=child_schedule,
+                    pipeable_instruction=dynamic_construction.Aggregate(to_agg=[], group_by=node._group_by),
                 )
 
             elif isinstance(node, logical_plan.FileWrite):
-                return ScheduleFileWrite[PartitionT](child_schedule, node)
+                return dynamic_schedule.ScheduleFileWrite[PartitionT](child_schedule, node)
 
             elif isinstance(node, logical_plan.GlobalLimit):
-                return ScheduleGlobalLimit[PartitionT](child_schedule, node)
+                return dynamic_schedule.ScheduleGlobalLimit[PartitionT](child_schedule, node)
 
             elif isinstance(node, logical_plan.Repartition):
-                # Translate PartitionScheme to the appropriate fanout_fn
+                # Translate PartitionScheme to the appropriate fanout instruction
+                fanout_ins: dynamic_construction.FanoutInstruction
                 if node._scheme == PartitionScheme.RANDOM:
-                    fanout_fn = InstructionFactory.fanout_random(num_outputs=node.num_partitions())
+                    fanout_ins = dynamic_construction.FanoutRandom(num_outputs=node.num_partitions())
                 elif node._scheme == PartitionScheme.HASH:
-                    fanout_fn = InstructionFactory.fanout_hash(
+                    fanout_ins = dynamic_construction.FanoutHash(
                         num_outputs=node.num_partitions(),
                         partition_by=node._partition_by,
                     )
                 else:
                     raise RuntimeError(f"Unimplemented partitioning scheme {node._scheme}")
 
-                return ScheduleFanoutReduce[PartitionT](
+                return dynamic_schedule.ScheduleFanoutReduce[PartitionT](
                     child_schedule=child_schedule,
                     num_outputs=node.num_partitions(),
-                    fanout_fn=fanout_fn,
-                    reduce_fn=InstructionFactory.merge(),
+                    fanout_ins=fanout_ins,
+                    reduce_ins=dynamic_construction.ReduceMerge(),
                 )
 
             elif isinstance(node, logical_plan.Sort):
-                return ScheduleSort[PartitionT](child_schedule, node)
+                return dynamic_schedule.ScheduleSort[PartitionT](child_schedule, node)
 
             elif isinstance(node, logical_plan.Coalesce):
-                return ScheduleCoalesce[PartitionT](child_schedule, node)
+                return dynamic_schedule.ScheduleCoalesce[PartitionT](child_schedule, node)
 
             else:
                 raise NotImplementedError(f"Unsupported plan type {node}")
@@ -120,7 +114,7 @@ class DynamicScheduleFactory(Generic[PartitionT]):
             [left_child, right_child] = node._children()
 
             if isinstance(node, logical_plan.Join):
-                return ScheduleJoin(
+                return dynamic_schedule.ScheduleJoin(
                     left_source=self.schedule_logical_node(left_child),
                     right_source=self.schedule_logical_node(right_child),
                     join=node,

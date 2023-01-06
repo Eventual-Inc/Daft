@@ -6,13 +6,16 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Callable, Generic, TypeVar
 
+from daft.execution import dynamic_construction
 from daft.execution.dynamic_construction import (
     Construction,
-    InstructionFactory,
+    FanoutInstruction,
+    Instruction,
     PartitionWithInfo,
+    ReduceInstruction,
 )
 from daft.logical import logical_plan
-from daft.runners.partitioning import PartID, PartitionSet, vPartition
+from daft.runners.partitioning import PartID, PartitionSet
 
 PartitionT = TypeVar("PartitionT")
 _PartitionT = TypeVar("_PartitionT")
@@ -95,7 +98,9 @@ class ScheduleFileRead(DynamicSchedule[PartitionT]):
             return construct
 
         if self._next_index < self._scan_node.num_partitions():
-            construct.add_instruction(InstructionFactory.read_file(self._scan_node, self._next_index))
+            construct.add_instruction(
+                dynamic_construction.ReadFile(partition_id=self._next_index, logplan=self._scan_node)
+            )
 
             self._next_index += 1
             return construct
@@ -116,7 +121,9 @@ class ScheduleFileWrite(DynamicSchedule[PartitionT]):
         if construct is None or construct.is_marked_for_materialization():
             return construct
 
-        construct.add_instruction(InstructionFactory.write(node=self._write_node, index=self._writes_so_far))
+        construct.add_instruction(
+            dynamic_construction.WriteFile(partition_id=self._writes_so_far, logplan=self._write_node)
+        )
         self._writes_so_far += 1
 
         return construct
@@ -126,7 +133,7 @@ class SchedulePipelineInstruction(DynamicSchedule[PartitionT]):
     def __init__(
         self,
         child_schedule: DynamicSchedule[PartitionT],
-        pipeable_instruction: Callable[[list[vPartition]], list[vPartition]],
+        pipeable_instruction: Instruction,
     ) -> None:
         super().__init__()
         self._child_schedule = child_schedule
@@ -171,7 +178,7 @@ class ScheduleJoin(DynamicSchedule[PartitionT]):
             next_right = rights[self._next_to_emit]
             if next_left is not None and next_right is not None:
                 construct_join = Construction[PartitionT]([next_left.partition, next_right.partition])
-                construct_join.add_instruction(InstructionFactory.join(self._join_node))
+                construct_join.add_instruction(dynamic_construction.Join(self._join_node))
 
                 self._next_to_emit += 1
                 return construct_join
@@ -233,7 +240,7 @@ class ScheduleGlobalLimit(DynamicSchedule[PartitionT]):
                     return None
 
                 new_construct = Construction[PartitionT]([dependencies[0].partition])
-                new_construct.add_instruction(InstructionFactory.local_limit(0))
+                new_construct.add_instruction(dynamic_construction.LocalLimit(0))
 
                 self._continue_from_partition += 1
                 return new_construct
@@ -253,7 +260,7 @@ class ScheduleGlobalLimit(DynamicSchedule[PartitionT]):
 
                 new_construct = Construction[PartitionT]([next_partition_info.partition])
                 if next_limit < num_rows:
-                    new_construct.add_instruction(InstructionFactory.local_limit(next_limit))
+                    new_construct.add_instruction(dynamic_construction.LocalLimit(next_limit))
 
                 self._continue_from_partition += 1
                 return new_construct
@@ -270,7 +277,7 @@ class ScheduleGlobalLimit(DynamicSchedule[PartitionT]):
         if construct is None or construct.is_marked_for_materialization():
             return construct
 
-        construct.add_instruction(InstructionFactory.local_limit(self._remaining_limit))
+        construct.add_instruction(dynamic_construction.LocalLimit(self._remaining_limit))
 
         construct.mark_for_materialization(dependencies)
         return construct
@@ -308,7 +315,7 @@ class ScheduleCoalesce(DynamicSchedule[PartitionT]):
             ready_to_coalesce = [_ for _ in to_coalesce if _ is not None]
             if len(ready_to_coalesce) == len(to_coalesce):
                 construct_merge = Construction[PartitionT]([_.partition for _ in ready_to_coalesce])
-                construct_merge.add_instruction(InstructionFactory.merge())
+                construct_merge.add_instruction(dynamic_construction.ReduceMerge())
                 self._num_emitted += 1
                 return construct_merge
 
@@ -365,7 +372,7 @@ class ScheduleSort(DynamicSchedule[PartitionT]):
             if source is None:
                 return None
             construct_sample = Construction[PartitionT]([source.partition])
-            construct_sample.add_instruction(InstructionFactory.map_to_samples(self._sort._sort_by))
+            construct_sample.add_instruction(dynamic_construction.Sample(sort_by=self._sort._sort_by))
             construct_sample.mark_for_materialization(sample_partitions)
             return construct_sample
 
@@ -377,10 +384,10 @@ class ScheduleSort(DynamicSchedule[PartitionT]):
 
             construct_boundaries = Construction[PartitionT]([_.partition for _ in finished_samples])
             construct_boundaries.add_instruction(
-                InstructionFactory.reduce_to_quantiles(
+                dynamic_construction.ReduceToQuantiles(
+                    num_quantiles=self._sort.num_partitions(),
                     sort_by=self._sort._sort_by,
                     descending=self._sort._descending,
-                    num_quantiles=self._sort.num_partitions(),
                 )
             )
             construct_boundaries.mark_for_materialization(self._materializations.boundaries)
@@ -396,21 +403,21 @@ class ScheduleSort(DynamicSchedule[PartitionT]):
 
         if self._fanout_reduce is None:
             from_partitions = SchedulePartitionRead[PartitionT](finished_dependencies)
-            fanout_fn = InstructionFactory.fanout_range(
+            fanout_ins = dynamic_construction.FanoutRange[PartitionT](
+                num_outputs=self._sort.num_partitions(),
                 sort_by=self._sort._sort_by,
                 descending=self._sort._descending,
                 boundaries=boundaries_partition.partition,
-                num_outputs=self._sort.num_partitions(),
             )
-            reduce_fn = InstructionFactory.merge_and_sort(
+            reduce_ins = dynamic_construction.ReduceMergeAndSort(
                 sort_by=self._sort._sort_by,
                 descending=self._sort._descending,
             )
             self._fanout_reduce = ScheduleFanoutReduce[PartitionT](
                 child_schedule=from_partitions,
                 num_outputs=self._sort.num_partitions(),
-                fanout_fn=fanout_fn,
-                reduce_fn=reduce_fn,
+                fanout_ins=fanout_ins,
+                reduce_ins=reduce_ins,
             )
 
         return next(self._fanout_reduce)
@@ -421,14 +428,14 @@ class ScheduleFanoutReduce(DynamicSchedule[PartitionT]):
         self,
         child_schedule: DynamicSchedule[PartitionT],
         num_outputs: int,
-        fanout_fn: Callable[[list[vPartition]], list[vPartition]],
-        reduce_fn: Callable[[list[vPartition]], list[vPartition]],
+        fanout_ins: FanoutInstruction,
+        reduce_ins: ReduceInstruction,
     ) -> None:
         super().__init__()
         self._child_schedule = child_schedule
         self._num_outputs = num_outputs
-        self._fanout_fn = fanout_fn
-        self._reduce_fn = reduce_fn
+        self._fanout_ins = fanout_ins
+        self._reduce_ins = reduce_ins
 
         self._reduces_emitted = 0
 
@@ -439,7 +446,7 @@ class ScheduleFanoutReduce(DynamicSchedule[PartitionT]):
             if construct is None or construct.is_marked_for_materialization():
                 return construct
 
-            construct.add_instruction(self._fanout_fn)
+            construct.add_instruction(self._fanout_ins)
 
             construct.mark_for_materialization(self._materializations.dependencies, num_results=self._num_outputs)
             return construct
@@ -464,7 +471,7 @@ class ScheduleFanoutReduce(DynamicSchedule[PartitionT]):
             return None
 
         construct_reduce = Construction[PartitionT]([_.partition for _ in finished_reduce_dependencies])
-        construct_reduce.add_instruction(self._reduce_fn)
+        construct_reduce.add_instruction(self._reduce_ins)
         self._reduces_emitted += 1
         return construct_reduce
 

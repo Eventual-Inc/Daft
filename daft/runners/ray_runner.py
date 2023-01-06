@@ -371,7 +371,7 @@ class RayRunner(Runner):
 def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     partitions = list(inputs)
     for instruction in instruction_stack:
-        partitions = instruction(partitions)
+        partitions = instruction.run(partitions)
 
     return partitions if len(partitions) > 1 else partitions[0]
 
@@ -444,7 +444,7 @@ class DynamicRayRunner(RayRunner):
 
     def _build_partitions(self, partspec: Construction[ray.ObjectRef]) -> list[ray.ObjectRef]:
         construct_remote = build_partitions.options(num_returns=partspec.num_results)
-        results = construct_remote.remote(partspec._instruction_stack, *partspec.inputs)
+        results = construct_remote.remote(partspec.instruction_stack, *partspec.inputs)
         # Handle ray bug that ignores list interpretation when num_returns=1
         if partspec.num_results == 1:
             results = [results]

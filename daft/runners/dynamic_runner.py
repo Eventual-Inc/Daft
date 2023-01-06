@@ -75,9 +75,10 @@ class DynamicRunner(Runner):
         return pset_entry
 
     def _build_partitions(self, partspec: Construction[vPartition]) -> None:
-        construct_fn = partspec.get_runnable()
-        results = construct_fn(partspec.inputs)
-        partspec.report_completed([PartitionWithInfo(p, lambda x: x.metadata()) for p in results])
+        partitions = partspec.inputs
+        for instruction in partspec.instruction_stack:
+            partitions = instruction.run(partitions)
+        partspec.report_completed([PartitionWithInfo(p, lambda x: x.metadata()) for p in partitions])
 
     def _get_partition_metadata(self, *partitions: vPartition) -> list[PartitionMetadata]:
         """Hacky; only used for DynamicSchedule initialization. Remove when PartitionCache is implemented"""

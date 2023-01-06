@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
-from typing import Callable, Generic, List, TypeVar
+from typing import Callable, Generic, TypeVar
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Protocol
+else:
+    from typing import Protocol
 
 import ray
 
@@ -14,7 +20,6 @@ from daft.runners.pyrunner import LocalLogicalPartitionOpRunner
 from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, SortOp
 
 PartitionT = TypeVar("PartitionT")
-Instruction = Callable[[List[vPartition]], List[vPartition]]
 
 
 @dataclass(frozen=True)
@@ -35,7 +40,7 @@ class Construction(Generic[PartitionT]):
         self.inputs = inputs
 
         # Instruction stack to execute.
-        self._instruction_stack: list[Instruction] = list()
+        self.instruction_stack: list[Instruction] = list()
 
         # Where to put the materialized results.
         self.num_results: None | int = None
@@ -46,7 +51,7 @@ class Construction(Generic[PartitionT]):
     def add_instruction(self, instruction: Instruction) -> None:
         """Add an instruction to the stack that will run for this partition."""
         self.assert_not_marked()
-        self._instruction_stack.append(instruction)
+        self.instruction_stack.append(instruction)
 
     def mark_for_materialization(
         self, destination_array: list[PartitionWithInfo[PartitionT] | None], num_results: int = 1
@@ -75,32 +80,6 @@ class Construction(Generic[PartitionT]):
 
         self.reported = True
 
-    def get_runnable(self) -> Callable[[list[vPartition]], list[vPartition]]:
-        def runnable(partitions: list[vPartition]) -> list[vPartition]:
-            for instruction in self._instruction_stack:
-                partitions = instruction(partitions)
-
-            return partitions
-
-        return runnable
-
-    def get_runnable_ray(self) -> Callable[..., vPartition | list[vPartition]]:
-        """Return a function with compatible quirks for with ray.remote."""
-
-        def runnable(*inputs: vPartition) -> vPartition | list[vPartition]:
-            partitions = list(inputs)
-            for instruction in self._instruction_stack:
-                partitions = instruction(partitions)
-
-            # special case len == 1 to work around Ray issue
-            return partitions if len(partitions) > 1 else partitions[0]
-
-        return runnable
-
-    @staticmethod
-    def get_metas(*inputs: vPartition) -> list[PartitionMetadata]:
-        return [partition.metadata() for partition in inputs]
-
     def is_marked_for_materialization(self) -> bool:
         return all(_ is not None for _ in (self._destination_array, self._partno))
 
@@ -110,186 +89,211 @@ class Construction(Generic[PartitionT]):
         ), f"Partition already instructed to materialize into {self._destination_array}, partition index {self._partno}"
 
 
-class InstructionFactory:
-    """Instructions for use with Construction."""
+class Instruction(Protocol):
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        ...
 
-    @staticmethod
-    def read_file(scan_node: logical_plan.TabularFilesScan, index: int) -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            assert len(inputs) == 1
-            [filepaths_partition] = inputs
-            partition = LocalLogicalPartitionOpRunner()._handle_tabular_files_scan(
-                inputs={scan_node._filepaths_child.id(): filepaths_partition},
-                scan=scan_node,
-                partition_id=index,
-            )
-            return [partition]
 
-        return instruction
+@dataclass(frozen=True)
+class ReadFile(Instruction):
+    partition_id: int
+    logplan: logical_plan.TabularFilesScan
 
-    @staticmethod
-    def merge() -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            return [vPartition.merge_partitions(inputs, verify_partition_id=False)]
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        assert len(inputs) == 1
+        [filepaths_partition] = inputs
+        partition = LocalLogicalPartitionOpRunner()._handle_tabular_files_scan(
+            inputs={self.logplan._filepaths_child.id(): filepaths_partition},
+            scan=self.logplan,
+            partition_id=self.partition_id,
+        )
+        return [partition]
 
-        return instruction
 
-    @staticmethod
-    def agg(to_agg: list[tuple[Expression, str]], group_by: ExpressionList | None) -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            return [input.agg(to_agg, group_by)]
+@dataclass(frozen=True)
+class WriteFile(Instruction):
+    partition_id: int
+    logplan: logical_plan.FileWrite
 
-        return instruction
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+        partition = LocalLogicalPartitionOpRunner()._handle_file_write(
+            inputs={self.logplan._children()[0].id(): input},
+            file_write=self.logplan,
+            partition_id=self.partition_id,
+        )
+        return [partition]
 
-    @staticmethod
-    def write(node: logical_plan.FileWrite, index: int) -> Instruction:
-        child_id = node._children()[0].id()
 
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            partition = LocalLogicalPartitionOpRunner()._handle_file_write(
-                inputs={child_id: input},
-                file_write=node,
-                partition_id=index,
-            )
-            return [partition]
+@dataclass(frozen=True)
+class Filter(Instruction):
+    predicate: ExpressionList
 
-        return instruction
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+        return [input.filter(self.predicate)]
 
-    @staticmethod
-    def filter(predicate: ExpressionList) -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            return [input.filter(predicate)]
 
-        return instruction
+@dataclass(frozen=True)
+class Project(Instruction):
+    projection: ExpressionList
 
-    @staticmethod
-    def project(projection: ExpressionList) -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            return [input.eval_expression_list(projection)]
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+        return [input.eval_expression_list(self.projection)]
 
-        return instruction
 
-    @staticmethod
-    def map_partition(map_op: MapPartitionOp) -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            return [map_op.run(input)]
+@dataclass(frozen=True)
+class LocalLimit(Instruction):
+    limit: int
 
-        return instruction
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+        return [input.head(self.limit)]
 
-    @staticmethod
-    def join(join: logical_plan.Join) -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [left, right] = inputs
-            result = left.join(
-                right,
-                left_on=join._left_on,
-                right_on=join._right_on,
-                output_schema=join.schema(),
-                how=join._how.value,
-            )
-            return [result]
 
-        return instruction
+@dataclass(frozen=True)
+class MapPartition(Instruction):
+    map_op: MapPartitionOp
 
-    @staticmethod
-    def local_limit(limit: int) -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            return [input.head(limit)]
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+        return [self.map_op.run(input)]
 
-        return instruction
 
-    @staticmethod
-    def map_to_samples(sort_by: ExpressionList, num_samples: int = 20) -> Instruction:
-        """From logical_op_runners."""
+@dataclass(frozen=True)
+class Sample(Instruction):
+    sort_by: ExpressionList
+    num_samples: int = 20
 
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            result = (
-                input.sample(num_samples)
-                .eval_expression_list(sort_by)
-                .filter(ExpressionList([~e.to_column_expression().is_null() for e in sort_by]).resolve(sort_by))
-            )
-            return [result]
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+        result = (
+            input.sample(self.num_samples)
+            .eval_expression_list(self.sort_by)
+            .filter(ExpressionList([~e.to_column_expression().is_null() for e in self.sort_by]).resolve(self.sort_by))
+        )
+        return [result]
 
-        return instruction
 
-    @staticmethod
-    def reduce_to_quantiles(sort_by: ExpressionList, descending: list[bool], num_quantiles: int) -> Instruction:
-        """From logical_op_runners."""
+@dataclass(frozen=True)
+class Aggregate(Instruction):
+    to_agg: list[tuple[Expression, str]]
+    group_by: ExpressionList | None
 
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            merged = vPartition.merge_partitions(inputs, verify_partition_id=False)
-            merged_sorted = merged.sort(sort_by, descending=descending)
-            result = merged_sorted.quantiles(num_quantiles)
-            return [result]
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+        return [input.agg(self.to_agg, self.group_by)]
 
-        return instruction
 
-    @staticmethod
-    def fanout_range(
-        sort_by: ExpressionList, descending: list[bool], boundaries: PartitionT, num_outputs: int
-    ) -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            # TODO find a generic way to do this
-            vpart: vPartition
-            if isinstance(boundaries, vPartition):
-                vpart = boundaries
-            elif isinstance(boundaries, ray.ObjectRef):
-                vpart = ray.get(boundaries)
-            else:
-                raise RuntimeError(f"Unsupported partition type {type(boundaries)}")
+@dataclass(frozen=True)
+class Join(Instruction):
+    logplan: logical_plan.Join
 
-            partitions_with_ids = SortOp.map_fn(
-                input=input,
-                output_partitions=num_outputs,
-                exprs=sort_by,
-                boundaries=vpart,
-                descending=descending,
-            )
-            return [partition for _, partition in sorted(partitions_with_ids.items())]
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        [left, right] = inputs
+        result = left.join(
+            right,
+            left_on=self.logplan._left_on,
+            right_on=self.logplan._right_on,
+            output_schema=self.logplan.schema(),
+            how=self.logplan._how.value,
+        )
+        return [result]
 
-        return instruction
 
-    @staticmethod
-    def merge_and_sort(sort_by: ExpressionList, descending: list[bool]) -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            partition = SortOp.reduce_fn(
-                mapped_outputs=inputs,
-                exprs=sort_by,
-                descending=descending,
-            )
-            return [partition]
+class ReduceInstruction(Instruction):
+    ...
 
-        return instruction
 
-    @staticmethod
-    def fanout_hash(num_outputs: int, partition_by: ExpressionList) -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            partitions_with_ids = RepartitionHashOp.map_fn(
-                input=input,
-                output_partitions=num_outputs,
-                exprs=partition_by,
-            )
-            return [partition for i, partition in sorted(partitions_with_ids.items())]
+@dataclass(frozen=True)
+class ReduceMerge(ReduceInstruction):
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return [vPartition.merge_partitions(inputs, verify_partition_id=False)]
 
-        return instruction
 
-    @staticmethod
-    def fanout_random(num_outputs: int) -> Instruction:
-        def instruction(inputs: list[vPartition]) -> list[vPartition]:
-            [input] = inputs
-            partitions_with_ids = RepartitionRandomOp.map_fn(
-                input=input,
-                output_partitions=num_outputs,
-            )
-            return [partition for _, partition in sorted(partitions_with_ids.items())]
+@dataclass(frozen=True)
+class ReduceMergeAndSort(ReduceInstruction):
+    sort_by: ExpressionList
+    descending: list[bool]
 
-        return instruction
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        partition = SortOp.reduce_fn(
+            mapped_outputs=inputs,
+            exprs=self.sort_by,
+            descending=self.descending,
+        )
+        return [partition]
+
+
+@dataclass(frozen=True)
+class ReduceToQuantiles(ReduceInstruction):
+    num_quantiles: int
+    sort_by: ExpressionList
+    descending: list[bool]
+
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        merged = vPartition.merge_partitions(inputs, verify_partition_id=False)
+        merged_sorted = merged.sort(self.sort_by, descending=self.descending)
+        result = merged_sorted.quantiles(self.num_quantiles)
+        return [result]
+
+
+class FanoutInstruction(Instruction):
+    ...
+
+
+@dataclass(frozen=True)
+class FanoutRandom(FanoutInstruction):
+    num_outputs: int
+
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+        partitions_with_ids = RepartitionRandomOp.map_fn(
+            input=input,
+            output_partitions=self.num_outputs,
+        )
+        return [partition for _, partition in sorted(partitions_with_ids.items())]
+
+
+@dataclass(frozen=True)
+class FanoutHash(FanoutInstruction):
+    num_outputs: int
+    partition_by: ExpressionList
+
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+        partitions_with_ids = RepartitionHashOp.map_fn(
+            input=input,
+            output_partitions=self.num_outputs,
+            exprs=self.partition_by,
+        )
+        return [partition for i, partition in sorted(partitions_with_ids.items())]
+
+
+@dataclass(frozen=True)
+class FanoutRange(FanoutInstruction, Generic[PartitionT]):
+    num_outputs: int
+    sort_by: ExpressionList
+    descending: list[bool]
+    boundaries: PartitionT
+
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+        # TODO find a generic way to do this
+        vpart: vPartition
+        if isinstance(self.boundaries, vPartition):
+            vpart = self.boundaries
+        elif isinstance(self.boundaries, ray.ObjectRef):
+            vpart = ray.get(self.boundaries)
+        else:
+            raise RuntimeError(f"Unsupported partition type {type(self.boundaries)}")
+
+        partitions_with_ids = SortOp.map_fn(
+            input=input,
+            output_partitions=self.num_outputs,
+            exprs=self.sort_by,
+            boundaries=vpart,
+            descending=self.descending,
+        )
+        return [partition for _, partition in sorted(partitions_with_ids.items())]
