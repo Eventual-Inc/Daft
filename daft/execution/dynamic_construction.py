@@ -81,32 +81,6 @@ class Construction(Generic[PartitionT]):
 
         self.reported = True
 
-    def get_runnable(self) -> Callable[[list[vPartition]], list[vPartition]]:
-        def runnable(partitions: list[vPartition]) -> list[vPartition]:
-            for instruction in self._instruction_stack:
-                partitions = instruction(partitions)
-
-            return partitions
-
-        return runnable
-
-    def get_runnable_ray(self) -> Callable[..., vPartition | list[vPartition]]:
-        """Return a function with compatible quirks for with ray.remote."""
-
-        def runnable(*inputs: vPartition) -> vPartition | list[vPartition]:
-            partitions = list(inputs)
-            for instruction in self._instruction_stack:
-                partitions = instruction(partitions)
-
-            # special case len == 1 to work around Ray issue
-            return partitions if len(partitions) > 1 else partitions[0]
-
-        return runnable
-
-    @staticmethod
-    def get_metas(*inputs: vPartition) -> list[PartitionMetadata]:
-        return [partition.metadata() for partition in inputs]
-
     def is_marked_for_materialization(self) -> bool:
         return all(_ is not None for _ in (self._destination_array, self._partno))
 
