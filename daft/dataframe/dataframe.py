@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
 import pandas
 import pyarrow as pa
 
+from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.dataframe.preview import DataFramePreview
 from daft.dataframe.schema import DataFrameSchema
@@ -122,6 +123,7 @@ class DataFrame:
         """
         return self.__plan
 
+    @DataframePublicAPI
     def explain(self, show_optimized: bool = False) -> None:
         """Prints the LogicalPlan that will be executed to produce this DataFrame.
         Defaults to showing the unoptimized plan. Use `show_optimized` to show the optimized one.
@@ -144,6 +146,7 @@ class DataFrame:
     def num_partitions(self) -> int:
         return self.__plan.num_partitions()
 
+    @DataframePublicAPI
     def schema(self) -> DataFrameSchema:
         """Returns the DataFrameSchema of the DataFrame, which provides information about each column
 
@@ -170,6 +173,7 @@ class DataFrame:
         """
         return [expr.to_column_expression() for expr in self.__plan.schema()]
 
+    @DataframePublicAPI
     def show(self, n: int | None = None) -> DataFrameDisplay:
         """Executes and displays the executed dataframe as a table
 
@@ -200,10 +204,12 @@ class DataFrame:
 
         return DataFrameDisplay(preview, df.schema())
 
+    @DataframePublicAPI
     def __repr__(self) -> str:
         display = DataFrameDisplay(self._preview, self.schema())
         return display.__repr__()
 
+    @DataframePublicAPI
     def _repr_html_(self) -> str:
         display = DataFrameDisplay(self._preview, self.schema())
         return display._repr_html_()
@@ -213,6 +219,7 @@ class DataFrame:
     ###
 
     @classmethod
+    @DataframePublicAPI
     def from_pylist(cls, data: list[dict[str, Any]]) -> DataFrame:
         """Creates a DataFrame from a list of dictionaries
 
@@ -230,6 +237,7 @@ class DataFrame:
         return cls.from_pydict(data={header: [row[header] for row in data] for header in data[0]})
 
     @classmethod
+    @DataframePublicAPI
     def from_pydict(cls, data: dict[str, list | pa.Array]) -> DataFrame:
         """Creates a DataFrame from a Python Dictionary.
 
@@ -287,11 +295,13 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
+    @DataframePublicAPI
     def from_json(cls, *args, **kwargs) -> DataFrame:
         warnings.warn(f"DataFrame.from_json will be deprecated in 0.1.0 in favor of DataFrame.read_json")
         return cls.read_json(*args, **kwargs)
 
     @classmethod
+    @DataframePublicAPI
     def read_json(
         cls,
         path: str,
@@ -333,11 +343,13 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
+    @DataframePublicAPI
     def from_csv(cls, *args, **kwargs) -> DataFrame:
         warnings.warn(f"DataFrame.from_csv will be deprecated in 0.1.0 in favor of DataFrame.read_csv")
         return cls.read_csv(*args, **kwargs)
 
     @classmethod
+    @DataframePublicAPI
     def read_csv(
         cls,
         path: str,
@@ -394,11 +406,13 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
+    @DataframePublicAPI
     def from_parquet(cls, *args, **kwargs) -> DataFrame:
         warnings.warn(f"DataFrame.from_parquet will be deprecated in 0.1.0 in favor of DataFrame.read_parquet")
         return cls.read_parquet(*args, **kwargs)
 
     @classmethod
+    @DataframePublicAPI
     def read_parquet(cls, path: str) -> DataFrame:
         """Creates a DataFrame from Parquet file(s)
 
@@ -437,6 +451,7 @@ class DataFrame:
         return cls(plan)
 
     @classmethod
+    @DataframePublicAPI
     def from_files(cls, path: str) -> DataFrame:
         """Creates a DataFrame from files in storage, where each file is one row of the DataFrame
 
@@ -458,6 +473,7 @@ class DataFrame:
     # Write methods
     ###
 
+    @DataframePublicAPI
     def write_parquet(
         self, root_dir: str, compression: str = "snappy", partition_cols: list[ColumnInputType] | None = None
     ) -> DataFrame:
@@ -497,6 +513,7 @@ class DataFrame:
         assert write_df._result is not None
         return DataFrame(write_df._plan)
 
+    @DataframePublicAPI
     def write_csv(self, root_dir: str, partition_cols: list[ColumnInputType] | None = None) -> DataFrame:
         """Writes the DataFrame to CSV files using a `root_dir` and randomly generated UUIDs as the filepath and returns the filepaths.
         Currently generates a csv file per partition unless `partition_cols` are used, then the number of files can equal the number of partitions times the number of values of partition col.
@@ -582,6 +599,7 @@ class DataFrame:
         else:
             raise ValueError(f"unknown indexing type: {type(item)}")
 
+    @DataframePublicAPI
     def select(self, *columns: ColumnInputType) -> DataFrame:
         """Creates a new DataFrame that `selects` that columns that are passed in from the current DataFrame.
 
@@ -609,6 +627,7 @@ class DataFrame:
         projection = logical_plan.Projection(self._plan, self.__column_input_to_expression(columns))
         return DataFrame(projection)
 
+    @DataframePublicAPI
     def distinct(self) -> DataFrame:
         """Computes unique rows, dropping duplicates.
 
@@ -630,6 +649,7 @@ class DataFrame:
             plan = logical_plan.LocalDistinct(plan, all_exprs)
         return DataFrame(plan)
 
+    @DataframePublicAPI
     def exclude(self, *names: str) -> DataFrame:
         """Drops columns from the current DataFrame by name.
         This is equivalent of performing a select with all the columns but the ones excluded.
@@ -647,6 +667,7 @@ class DataFrame:
         el = ExpressionList([e for e in self._plan.schema() if e.name() not in names_to_skip])
         return DataFrame(logical_plan.Projection(self._plan, el))
 
+    @DataframePublicAPI
     def where(self, predicate: Expression) -> DataFrame:
         """Filters rows via a predicate expression.
         similar to SQL style `where`.
@@ -663,6 +684,7 @@ class DataFrame:
         plan = logical_plan.Filter(self._plan, ExpressionList([predicate]))
         return DataFrame(plan)
 
+    @DataframePublicAPI
     def with_column(self, column_name: str, expr: Expression) -> DataFrame:
         """Adds a column to the current DataFrame with an Expression.
         This is equivalent to performing a `select` with all the current columns and the new one.
@@ -683,6 +705,7 @@ class DataFrame:
         )
         return DataFrame(projection)
 
+    @DataframePublicAPI
     def sort(self, by: ColumnInputType | list[ColumnInputType], desc: bool | list[bool] = False) -> DataFrame:
         """Sorts DataFrame globally according to column.
 
@@ -708,6 +731,7 @@ class DataFrame:
         sort = logical_plan.Sort(self._plan, self.__column_input_to_expression(by), descending=desc)
         return DataFrame(sort)
 
+    @DataframePublicAPI
     def limit(self, num: int) -> DataFrame:
         """Limits the rows returned by the DataFrame via a `head` operation.
         This is similar to how `limit` works in SQL.
@@ -725,6 +749,7 @@ class DataFrame:
         global_limit = logical_plan.GlobalLimit(local_limit, num=num)
         return DataFrame(global_limit)
 
+    @DataframePublicAPI
     def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
         """Repartitions DataFrame to `num` partitions.
 
@@ -753,6 +778,7 @@ class DataFrame:
         repartition_op = logical_plan.Repartition(self._plan, num_partitions=num, partition_by=exprs, scheme=scheme)
         return DataFrame(repartition_op)
 
+    @DataframePublicAPI
     def join(
         self,
         other: DataFrame,
@@ -799,6 +825,7 @@ class DataFrame:
         )
         return DataFrame(join_op)
 
+    @DataframePublicAPI
     def explode(self, *columns: ColumnInputType) -> DataFrame:
         """Explodes a List column, where every element in each row's List becomes its own row, and all
         other columns in the DataFrame are duplicated across rows.
@@ -967,6 +994,7 @@ class DataFrame:
 
         return DataFrame(final_op)
 
+    @DataframePublicAPI
     def sum(self, *cols: ColumnInputType) -> DataFrame:
         """Performs a global sum on the DataFrame on a sequence of columns.
 
@@ -978,6 +1006,7 @@ class DataFrame:
         assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "sum") for c in cols])
 
+    @DataframePublicAPI
     def mean(self, *cols: ColumnInputType) -> DataFrame:
         """Performs a global mean on the DataFrame on a sequence of columns.
 
@@ -989,6 +1018,7 @@ class DataFrame:
         assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "mean") for c in cols])
 
+    @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> DataFrame:
         """Performs a global min on the DataFrame on a sequence of columns.
 
@@ -1000,6 +1030,7 @@ class DataFrame:
         assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "min") for c in cols])
 
+    @DataframePublicAPI
     def max(self, *cols: ColumnInputType) -> DataFrame:
         """Performs a global max on the DataFrame on a sequence of columns.
 
@@ -1011,6 +1042,7 @@ class DataFrame:
         assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "max") for c in cols])
 
+    @DataframePublicAPI
     def count(self, *cols: ColumnInputType) -> DataFrame:
         """Performs a global count on the DataFrame on a sequence of columns.
 
@@ -1022,6 +1054,7 @@ class DataFrame:
         assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "count") for c in cols])
 
+    @DataframePublicAPI
     def agg(self, to_agg: list[tuple[ColumnInputType, str]]) -> DataFrame:
         """Perform aggregations on this DataFrame. Allows for mixed aggregations for multiple columns
         Will return a single row that aggregated the entire DataFrame.
@@ -1043,6 +1076,7 @@ class DataFrame:
         """
         return self._agg(to_agg, group_by=None)
 
+    @DataframePublicAPI
     def groupby(self, *group_by: ColumnInputType) -> GroupedDataFrame:
         """Performs a GroupBy on the DataFrame for Aggregation.
 
@@ -1063,6 +1097,7 @@ class DataFrame:
             assert result is not None
             result.wait()
 
+    @DataframePublicAPI
     def collect(self, num_preview_rows: int | None = 10) -> DataFrame:
         """Computes LogicalPlan to materialize DataFrame. This is a blocking operation.
 
@@ -1097,6 +1132,7 @@ class DataFrame:
 
         return self
 
+    @DataframePublicAPI
     def to_pandas(self) -> pandas.DataFrame:
         """Converts the current DataFrame to a pandas DataFrame.
         If results have not computed yet, collect will be called.
@@ -1114,6 +1150,7 @@ class DataFrame:
         pd_df = result.to_pandas(schema=self._plan.schema())
         return pd_df
 
+    @DataframePublicAPI
     def to_pydict(self) -> pandas.DataFrame:
         """Converts the current DataFrame to a python dict.
         If results have not computed yet, collect will be called.
@@ -1129,6 +1166,7 @@ class DataFrame:
         assert result is not None
         return result.to_pydict()
 
+    @DataframePublicAPI
     def to_ray_dataset(self) -> RayDataset:
         """Converts the current DataFrame to a Ray Dataset which is useful for running distributed ML model training in Ray
 
