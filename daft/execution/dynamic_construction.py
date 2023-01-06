@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from typing import Callable, Generic, List, TypeVar
+from typing import Callable, Generic, TypeVar
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
@@ -20,7 +20,6 @@ from daft.runners.pyrunner import LocalLogicalPartitionOpRunner
 from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, SortOp
 
 PartitionT = TypeVar("PartitionT")
-Instruction = Callable[[List[vPartition]], List[vPartition]]
 
 
 @dataclass(frozen=True)
@@ -41,7 +40,7 @@ class Construction(Generic[PartitionT]):
         self.inputs = inputs
 
         # Instruction stack to execute.
-        self._instruction_stack: list[Instruction] = list()
+        self.instruction_stack: list[Instruction] = list()
 
         # Where to put the materialized results.
         self.num_results: None | int = None
@@ -52,7 +51,7 @@ class Construction(Generic[PartitionT]):
     def add_instruction(self, instruction: Instruction) -> None:
         """Add an instruction to the stack that will run for this partition."""
         self.assert_not_marked()
-        self._instruction_stack.append(instruction)
+        self.instruction_stack.append(instruction)
 
     def mark_for_materialization(
         self, destination_array: list[PartitionWithInfo[PartitionT] | None], num_results: int = 1
@@ -90,10 +89,10 @@ class Construction(Generic[PartitionT]):
         ), f"Partition already instructed to materialize into {self._destination_array}, partition index {self._partno}"
 
 
-
 class Instruction(Protocol):
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         ...
+
 
 @dataclass(frozen=True)
 class ReadFile(Instruction):
@@ -110,6 +109,7 @@ class ReadFile(Instruction):
         )
         return [partition]
 
+
 @dataclass(frozen=True)
 class WriteFile(Instruction):
     partition_id: int
@@ -123,6 +123,7 @@ class WriteFile(Instruction):
             partition_id=self.partition_id,
         )
         return [partition]
+
 
 @dataclass(frozen=True)
 class Filter(Instruction):
@@ -141,6 +142,7 @@ class Project(Instruction):
         [input] = inputs
         return [input.eval_expression_list(self.projection)]
 
+
 @dataclass(frozen=True)
 class LocalLimit(Instruction):
     limit: int
@@ -149,13 +151,15 @@ class LocalLimit(Instruction):
         [input] = inputs
         return [input.head(self.limit)]
 
+
 @dataclass(frozen=True)
 class MapPartition(Instruction):
     map_op: MapPartitionOp
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
-        return [self._map_op.run(input)]
+        return [self.map_op.run(input)]
+
 
 @dataclass(frozen=True)
 class Sample(Instruction):
@@ -171,6 +175,7 @@ class Sample(Instruction):
         )
         return [result]
 
+
 @dataclass(frozen=True)
 class Aggregate(Instruction):
     to_agg: list[tuple[Expression, str]]
@@ -179,6 +184,7 @@ class Aggregate(Instruction):
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         return [input.agg(self.to_agg, self.group_by)]
+
 
 @dataclass(frozen=True)
 class Join(Instruction):
@@ -195,14 +201,16 @@ class Join(Instruction):
         )
         return [result]
 
+
 class ReduceInstruction(Instruction):
     ...
 
+
 @dataclass(frozen=True)
 class ReduceMerge(ReduceInstruction):
-
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         return [vPartition.merge_partitions(inputs, verify_partition_id=False)]
+
 
 @dataclass(frozen=True)
 class ReduceMergeAndSort(ReduceInstruction):
@@ -217,6 +225,7 @@ class ReduceMergeAndSort(ReduceInstruction):
         )
         return [partition]
 
+
 @dataclass(frozen=True)
 class ReduceToQuantiles(ReduceInstruction):
     num_quantiles: int
@@ -225,13 +234,14 @@ class ReduceToQuantiles(ReduceInstruction):
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         merged = vPartition.merge_partitions(inputs, verify_partition_id=False)
-        merged_sorted = merged.sort(self.sort_by, self.descending=descending)
+        merged_sorted = merged.sort(self.sort_by, descending=self.descending)
         result = merged_sorted.quantiles(self.num_quantiles)
         return [result]
 
 
 class FanoutInstruction(Instruction):
     ...
+
 
 @dataclass(frozen=True)
 class FanoutRandom(FanoutInstruction):
@@ -260,8 +270,9 @@ class FanoutHash(FanoutInstruction):
         )
         return [partition for i, partition in sorted(partitions_with_ids.items())]
 
+
 @dataclass(frozen=True)
-class FanoutRange(FanoutInstruction):
+class FanoutRange(FanoutInstruction, Generic[PartitionT]):
     num_outputs: int
     sort_by: ExpressionList
     descending: list[bool]
@@ -272,11 +283,11 @@ class FanoutRange(FanoutInstruction):
         # TODO find a generic way to do this
         vpart: vPartition
         if isinstance(self.boundaries, vPartition):
-            vpart = boundaries
+            vpart = self.boundaries
         elif isinstance(self.boundaries, ray.ObjectRef):
-            vpart = ray.get(boundaries)
+            vpart = ray.get(self.boundaries)
         else:
-            raise RuntimeError(f"Unsupported partition type {type(boundaries)}")
+            raise RuntimeError(f"Unsupported partition type {type(self.boundaries)}")
 
         partitions_with_ids = SortOp.map_fn(
             input=input,
