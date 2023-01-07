@@ -115,6 +115,7 @@ Aggregations
     daft.DataFrame.count
     daft.DataFrame.min
     daft.DataFrame.max
+    daft.DataFrame.agg
 
 Execution
 #########

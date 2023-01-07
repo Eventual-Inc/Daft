@@ -696,9 +696,8 @@ class DataFrame:
 
     @DataframePublicAPI
     def with_column(self, column_name: str, expr: Expression) -> DataFrame:
-        """Adds a column to the current DataFrame with an Expression
-
-        This is equivalent to performing a `select` with all the current columns and the new one.
+        """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
+        with all current columns and the new one
 
         Example:
             >>> new_df = df.with_column('x+1', col('x') + 1)
@@ -797,7 +796,7 @@ class DataFrame:
         right_on: list[ColumnInputType] | ColumnInputType | None = None,
         how: str = "inner",
     ) -> DataFrame:
-        """Joins the current DataFrame with an ``other`` DataFrame, similar to SQL ``JOIN``
+        """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``
 
         .. NOTE::
             Although self joins are supported, we currently duplicate the logical plan for the right side
@@ -1069,13 +1068,13 @@ class DataFrame:
         Will return a single row that aggregated the entire DataFrame.
 
         Example:
-        >>> df = df.agg([
-        >>>     ('x', 'sum'),
-        >>>     ('x', 'mean'),
-        >>>     ('y', 'min'),
-        >>>     ('y', 'max'),
-        >>>     (col('x') + col('y'), 'max'),
-        >>> ])
+            >>> df = df.agg([
+            >>>     ('x', 'sum'),
+            >>>     ('x', 'mean'),
+            >>>     ('y', 'min'),
+            >>>     ('y', 'max'),
+            >>>     (col('x') + col('y'), 'max'),
+            >>> ])
 
         Args:
             to_agg (List[Tuple[ColumnInputType, str]]): list of (column, agg_type)
@@ -1262,12 +1261,12 @@ class GroupedDataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
 
         Example:
-        >>> df = df.groupby('x').agg([
-        >>>     ('x', 'sum'),
-        >>>     ('x', 'mean'),
-        >>>     ('y', 'min'),
-        >>>     ('y', 'max'),
-        >>> ])
+            >>> df = df.groupby('x').agg([
+            >>>     ('x', 'sum'),
+            >>>     ('x', 'mean'),
+            >>>     ('y', 'min'),
+            >>>     ('y', 'max'),
+            >>> ])
 
         Args:
             to_agg (List[Tuple[ColumnInputType, str]]): list of (column, agg_type)
