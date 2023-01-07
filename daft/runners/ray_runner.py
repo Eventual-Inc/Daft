@@ -412,6 +412,12 @@ class DynamicRayRunner(RayRunner):
 
                     next_construction = next(schedule)
 
+                    while next_construction is not None and len(next_construction.instruction_stack) == 0:
+                        next_construction.report_completed(
+                            [PartitionWithInfo(p, get_meta) for p in next_construction.inputs]
+                        )
+                        next_construction = next(schedule)
+
                     if next_construction is None:
                         break
 
