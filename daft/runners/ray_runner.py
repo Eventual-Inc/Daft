@@ -396,37 +396,56 @@ class DynamicRayRunner(RayRunner):
         schedule = schedule_factory.schedule_logical_node(plan)
         schedule = ScheduleMaterialize[ray.ObjectRef](schedule)
 
-        # Note: For autoscaling clusters, you will probably want to query this dynamically.
+        # Note: For autoscaling clusters, we will probably want to query this dynamically.
         # Keep in mind this call takes about 0.3ms.
         cores = int(ray.cluster_resources()["CPU"])
-        inflight: list[ray.ObjectRef] = []
-        constructions = []
+        constructions_to_dispatch = []
+        inflight_constructions: dict[str, Construction[ray.ObjectRef]] = dict()
+        inflight_ref_to_construction: dict[ray.ObjectRef, str] = dict()
+
         try:
 
             while True:
                 # Dispatch tasks while cores are available.
-                for i in range(cores - len(inflight)):
+                cores_available = cores - len(inflight_constructions)
+                for i in range(cores_available):
 
                     next_construction = next(schedule)
 
                     if next_construction is None:
                         break
 
-                    constructions.append(next_construction)
+                    constructions_to_dispatch.append(next_construction)
 
-                for construction in constructions:
-                    inflight += self._build_partitions(construction)
-                constructions.clear()
+                for construction in constructions_to_dispatch:
+                    results = self._build_partitions(construction)
+                    inflight_constructions[construction.id] = construction
+                    for result in results:
+                        inflight_ref_to_construction[result] = construction.id
+
+                constructions_to_dispatch.clear()
 
                 # All tasks dispatched. Await a result
-                ready, inflight = ray.wait(inflight, fetch_local=False)
+                [ready], _ = ray.wait(list(inflight_ref_to_construction.keys()), fetch_local=False)
+
+                # Flush the entire task associated with the result
+                cons_id = inflight_ref_to_construction[ready]
+                results = inflight_constructions[cons_id]._dispatched
+                ray.wait(results, num_returns=len(results))
+                for ref in results:
+                    del inflight_ref_to_construction[ref]
+                del inflight_constructions[cons_id]
 
         except StopIteration:
             pass
 
-        for construction in constructions:
-            inflight += self._build_partitions(construction)
-        constructions.clear()
+        for construction in constructions_to_dispatch:
+            results = self._build_partitions(construction)
+            inflight_constructions[construction.id] = construction
+            for result in results:
+                inflight_ref_to_construction[result] = construction.id
+
+        constructions_to_dispatch.clear()
 
         final_result = schedule.result_partition_set(RayPartitionSet)
         pset_entry = self._part_set_cache.put_partition_set(final_result)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import sys
 from dataclasses import dataclass
 from typing import Callable, Generic, TypeVar
@@ -35,7 +36,11 @@ class Construction(Generic[PartitionT]):
     (To support this, instructions are typed as list[partition] -> list[partition].)
     """
 
+    ID_GEN = (f"Construction_{i}" for i in itertools.count())
+
     def __init__(self, inputs: list[PartitionT]) -> None:
+        self.id = next(self.ID_GEN)
+
         # Input partitions to run over.
         self.inputs = inputs
 
@@ -44,6 +49,7 @@ class Construction(Generic[PartitionT]):
 
         # Where to put the materialized results.
         self.num_results: None | int = None
+        self._dispatched: list[PartitionT] = []
         self._destination_array: None | list[PartitionWithInfo[PartitionT] | None] = None
         self._partno: None | int = None
 
@@ -71,6 +77,8 @@ class Construction(Generic[PartitionT]):
 
         assert self._destination_array is not None
         assert self._partno is not None
+
+        self._dispatched = [_.partition for _ in results]
 
         for i, partition_with_info in enumerate(results):
             assert self._destination_array[self._partno + i] is None, self._destination_array[self._partno + i]
