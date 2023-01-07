@@ -93,7 +93,7 @@ class MetricsBuilder:
     def collect_metrics(self, qnum: int):
         logger.info(f"Running benchmarks for TPC-H q{qnum}")
         start = datetime.now()
-        profile_filename = f"tpch_q{qnum}_{datetime.replace(start, microsecond=0).isoformat()}.json"
+        profile_filename = f"tpch_q{qnum}_{self._runner}_{datetime.replace(start, microsecond=0).isoformat()}.json"
         with profiler(profile_filename):
             yield
         walltime_s = (datetime.now() - start).total_seconds()
