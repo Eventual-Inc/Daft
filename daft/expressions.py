@@ -43,7 +43,7 @@ from daft.types import ExpressionType, PrimitiveExpressionType
 
 
 def col(name: str) -> ColumnExpression:
-    """Selects a column with a given name
+    """Creates an Expression referring to the column with the provided name
 
     Example:
         >>> col("x")
@@ -58,7 +58,7 @@ def col(name: str) -> ColumnExpression:
 
 
 def lit(val: Any) -> LiteralExpression:
-    """Selects a column with every item being the provided value
+    """Creates an Expression representing a column with every value set to the provided value
 
     Example:
         >>> col("x") + lit(1)
@@ -265,9 +265,18 @@ class Expression(TreeNode["Expression"]):
     # UnaryOps
 
     # Arithmetic
-    __neg__ = partialmethod(_unary_op, OperatorEnum.NEGATE)
-    __pos__ = partialmethod(_unary_op, OperatorEnum.POSITIVE)
-    __abs__ = partialmethod(_unary_op, OperatorEnum.ABS)
+
+    def __neg__(self) -> Expression:
+        """Negates a numeric expression (``-expr``)"""
+        return self._unary_op(OperatorEnum.NEGATE)
+
+    def __pos__(self) -> Expression:
+        """Positive of a numeric expression (``+expr``)"""
+        return self._unary_op(OperatorEnum.POSITIVE)
+
+    def __abs__(self) -> Expression:
+        """Absolute of a numeric expression (``abs(expr)``)"""
+        return self._unary_op(OperatorEnum.ABS)
 
     # Symbolic - not used during evaluation but useful for type resolution on the Expression
     _sum = partialmethod(_unary_op, OperatorEnum.SUM)
@@ -280,18 +289,40 @@ class Expression(TreeNode["Expression"]):
     _explode = partialmethod(_unary_op, OperatorEnum.EXPLODE)
 
     # Logical
-    __invert__ = partialmethod(_unary_op, OperatorEnum.INVERT)
+    def __invert__(self) -> Expression:
+        """Inverts a logical expression (``~e``)"""
+        return self._unary_op(OperatorEnum.INVERT)
 
     # BinaryOps
 
     # Arithmetic
-    __add__ = partialmethod(_binary_op, OperatorEnum.ADD)
-    __sub__ = partialmethod(_binary_op, OperatorEnum.SUB)
-    __mul__ = partialmethod(_binary_op, OperatorEnum.MUL)
-    __floordiv__ = partialmethod(_binary_op, OperatorEnum.FLOORDIV)
-    __truediv__ = partialmethod(_binary_op, OperatorEnum.TRUEDIV)
-    __pow__ = partialmethod(_binary_op, OperatorEnum.POW)
-    __mod__ = partialmethod(_binary_op, OperatorEnum.MOD)
+    def __add__(self, other: Expression) -> Expression:
+        """Adds two numeric expressions (``e1 + e2``)"""
+        return self._binary_op(OperatorEnum.ADD, other)
+
+    def __sub__(self, other: Expression) -> Expression:
+        """Subtracts two numeric expressions (``e1 - e2``)"""
+        return self._binary_op(OperatorEnum.SUB, other)
+
+    def __mul__(self, other: Expression) -> Expression:
+        """Multiplies two numeric expressions (``e1 * e2``)"""
+        return self._binary_op(OperatorEnum.MUL, other)
+
+    def __floordiv__(self, other: Expression) -> Expression:
+        """Floor divides two numeric expressions (``e1 // e2``)"""
+        return self._binary_op(OperatorEnum.FLOORDIV, other)
+
+    def __truediv__(self, other: Expression) -> Expression:
+        """True divides two numeric expressions (``e1 / e2``)"""
+        return self._binary_op(OperatorEnum.TRUEDIV, other)
+
+    def __pow__(self, other: Expression) -> Expression:
+        """Takes the power of two numeric expressions (``e1 ** e2``)"""
+        return self._binary_op(OperatorEnum.POW, other)
+
+    def __mod__(self, other: Expression) -> Expression:
+        """Takes the mod of two numeric expressions (``e1 % e2``)"""
+        return self._binary_op(OperatorEnum.MOD, other)
 
     # Reverse Arithmetic
     __radd__ = partialmethod(_reverse_binary_op, OperatorEnum.ADD)
@@ -302,15 +333,37 @@ class Expression(TreeNode["Expression"]):
     __rpow__ = partialmethod(_reverse_binary_op, OperatorEnum.POW)
 
     # Logical
-    __and__ = partialmethod(_binary_op, OperatorEnum.AND)
-    __or__ = partialmethod(_binary_op, OperatorEnum.OR)
+    def __and__(self, other: Expression) -> Expression:
+        """Takes the logical AND of two expressions (``e1 & e2``)"""
+        return self._binary_op(OperatorEnum.AND, other)
 
-    __lt__ = partialmethod(_binary_op, OperatorEnum.LT)
-    __le__ = partialmethod(_binary_op, OperatorEnum.LE)
-    __eq__ = partialmethod(_binary_op, OperatorEnum.EQ)  # type: ignore
-    __ne__ = partialmethod(_binary_op, OperatorEnum.NEQ)  # type: ignore
-    __gt__ = partialmethod(_binary_op, OperatorEnum.GT)
-    __ge__ = partialmethod(_binary_op, OperatorEnum.GE)
+    def __or__(self, other: Expression) -> Expression:
+        """Takes the logical OR of two expressions (``e1 | e2``)"""
+        return self._binary_op(OperatorEnum.OR, other)
+
+    def __lt__(self, other: Expression) -> Expression:
+        """Compares if an expression is less than another (``e1 < e2``)"""
+        return self._binary_op(OperatorEnum.LT, other)
+
+    def __le__(self, other: Expression) -> Expression:
+        """Compares if an expression is less than or equal to another (``e1 <= e2``)"""
+        return self._binary_op(OperatorEnum.LE, other)
+
+    def __eq__(self, other: Expression) -> Expression:  # type: ignore
+        """Compares if an expression is equal to another (``e1 == e2``)"""
+        return self._binary_op(OperatorEnum.EQ, other)
+
+    def __ne__(self, other: Expression) -> Expression:  # type: ignore
+        """Compares if an expression is not equal to another (``e1 != e2``)"""
+        return self._binary_op(OperatorEnum.NEQ, other)
+
+    def __gt__(self, other: Expression) -> Expression:
+        """Compares if an expression is greater than another (``e1 > e2``)"""
+        return self._binary_op(OperatorEnum.GT, other)
+
+    def __ge__(self, other: Expression) -> Expression:
+        """Compares if an expression is greater than or equal to another (``e1 >= e2``)"""
+        return self._binary_op(OperatorEnum.GE, other)
 
     # Reverse Logical
     __rand__ = partialmethod(_reverse_binary_op, OperatorEnum.AND)
@@ -427,7 +480,7 @@ class Expression(TreeNode["Expression"]):
         return True
 
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
-        """Choose values from `if_true` and `if_false` based on the current expression as the condition.
+        """Conditionally choose values between two expressions using the current LOGICAL expression as a condition
 
         Example:
             >>> # x = [2, 2, 2]
@@ -450,7 +503,7 @@ class Expression(TreeNode["Expression"]):
         )
 
     def is_null(self) -> Expression:
-        """Checks if values in the Expression are Null (i.e. they are missing)
+        """Checks if values in the Expression are Null (a special value indicating missing data)
 
         Example:
             >>> # [1., None, NaN] -> [False, True, False]
@@ -465,7 +518,7 @@ class Expression(TreeNode["Expression"]):
         )
 
     def is_nan(self) -> Expression:
-        """Checks if values in the Expression are NaN (i.e. they are invalid)
+        """Checks if values are NaN (a special float value indicating not-a-number)
 
         Example:
             >>> # [1., None, NaN] -> [False, False, True]

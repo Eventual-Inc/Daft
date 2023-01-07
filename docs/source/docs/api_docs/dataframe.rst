@@ -1,92 +1,180 @@
 DataFrame
 =========
 
-.. autoclass:: daft.DataFrame
+.. currentmodule:: daft
+
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    DataFrame
+
+.. NOTE::
+    Most DataFrame methods are **lazy**, meaning that they do not execute computation immediately when invoked. Instead, these operations are enqueued in
+    the DataFrame's internal query plan, and are only executed when `Execution`_ DataFrame methods are called.
 
 Construction
 ############
 
+From Files
+**********
+
 .. _df-file-construction-api:
 
-.. automethod:: daft.DataFrame.read_csv
-.. automethod:: daft.DataFrame.read_json
-.. automethod:: daft.DataFrame.read_parquet
-.. automethod:: daft.DataFrame.from_files
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
 
-.. _df-memory-construction-api:
+    daft.DataFrame.read_csv
+    daft.DataFrame.read_json
+    daft.DataFrame.read_parquet
+    daft.DataFrame.from_files
 
-.. automethod:: daft.DataFrame.from_pylist
-.. automethod:: daft.DataFrame.from_pydict
+From In-Memory Data
+*******************
+
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.from_pylist
+    daft.DataFrame.from_pydict
+
 
 .. _dataframe-api-operations:
 
-Operations
-##########
+Data Manipulation
+#################
 
 Manipulating Columns
 ********************
+
 .. _df-select:
-.. automethod:: daft.DataFrame.select
 .. _df-with-column:
-.. automethod:: daft.DataFrame.with_column
-.. automethod:: daft.DataFrame.exclude
-.. automethod:: daft.DataFrame.explode
+
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.select
+    daft.DataFrame.with_column
+    daft.DataFrame.exclude
+    daft.DataFrame.explode
 
 Filtering Rows
 **************
-.. automethod:: daft.DataFrame.distinct
+
 .. _df-where:
-.. automethod:: daft.DataFrame.where
 .. _df-limit:
-.. automethod:: daft.DataFrame.limit
+
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.distinct
+    daft.DataFrame.where
+    daft.DataFrame.limit
 
 Reordering
 **********
+
 .. _df-sort:
-.. automethod:: daft.DataFrame.sort
-.. automethod:: daft.DataFrame.repartition
+
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.sort
+    daft.DataFrame.repartition
 
 Combining
 *********
+
 .. _df-join:
-.. automethod:: daft.DataFrame.join
+
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.join
 
 Aggregations
 ************
+
 .. _df-groupby:
-.. automethod:: daft.DataFrame.groupby
 .. _df-sum:
-.. automethod:: daft.DataFrame.sum
 .. _df-mean:
-.. automethod:: daft.DataFrame.mean
+
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.groupby
+    daft.DataFrame.sum
+    daft.DataFrame.mean
+    daft.DataFrame.count
+    daft.DataFrame.min
+    daft.DataFrame.max
+    daft.DataFrame.agg
 
 Execution
 #########
+
+.. NOTE::
+    These methods will execute the operations in your DataFrame and **are blocking**.
+
+Materialization
+***************
+
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.collect
 
 Visualization
 *************
 
 .. _df-show:
-.. automethod:: daft.DataFrame.show
-.. _df-to-pandas:
-.. automethod:: daft.DataFrame.to_pandas
+
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.show
+
 
 .. _df-write-data:
 
 Writing Data
 ************
 
-.. automethod:: daft.DataFrame.write_parquet
-.. automethod:: daft.DataFrame.write_csv
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.write_parquet
+    daft.DataFrame.write_csv
 
 Integrations
 ************
 
-.. automethod:: daft.DataFrame.to_ray_dataset
+.. _df-to-pandas:
+
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.to_pandas
+    daft.DataFrame.to_ray_dataset
 
 Schema and Lineage
 ##################
 
-.. automethod:: daft.DataFrame.explain
-.. automethod:: daft.DataFrame.schema
-.. autoproperty:: daft.DataFrame.column_names
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.explain
+    daft.DataFrame.schema
+    daft.DataFrame.column_names

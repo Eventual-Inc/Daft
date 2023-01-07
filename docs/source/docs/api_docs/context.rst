@@ -1,5 +1,16 @@
-Daft Context
-============
+Configuration
+=============
 
-.. autofunction:: daft.context.set_runner_ray
-.. autofunction:: daft.context.set_runner_py
+Setting the Runner
+******************
+
+Control the execution backend that Daft will run on by calling these functions once at the start of your application.
+
+.. autosummary::
+    :nosignatures:
+    :toctree: configuration_functions
+
+    daft.context.set_runner_py
+    daft.context.set_runner_ray
+    daft.context.set_runner_dynamic
+    daft.context.set_runner_dynamic_ray

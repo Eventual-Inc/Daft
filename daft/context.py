@@ -119,7 +119,7 @@ def get_context() -> DaftContext:
 
 
 def set_runner_ray(address: str | None = None) -> DaftContext:
-    """Sets the runner for executing Daft dataframes to the RayRunner
+    """Set the runner for executing Daft dataframes to a Ray cluster
 
     Alternatively, users can set this behavior via environment variables:
 
@@ -144,6 +144,7 @@ def set_runner_ray(address: str | None = None) -> DaftContext:
 
 
 def set_runner_dynamic_ray(address: str | None = None) -> DaftContext:
+    """[Experimental] Sets the runner for executing Daft dataframes to the DynamicRayRunner."""
     global _DaftContext
     if _DaftContext.disallow_set_runner:
         raise RuntimeError("Cannot set runner more than once")
@@ -156,7 +157,7 @@ def set_runner_dynamic_ray(address: str | None = None) -> DaftContext:
 
 
 def set_runner_py() -> DaftContext:
-    """Sets the runner for executing Daft dataframes to the PyRunner. This is the default behavior.
+    """Set the runner for executing Daft dataframes to your local Python interpreter - this is the default behavior.
 
     Alternatively, users can set this behavior via an environment variable: DAFT_RUNNER=py
 
@@ -175,6 +176,7 @@ def set_runner_py() -> DaftContext:
 
 
 def set_runner_dynamic() -> DaftContext:
+    """[Experimental] Sets the runner for executing Daft dataframes to the DynamicRunner."""
     global _DaftContext
     if _DaftContext.disallow_set_runner:
         raise RuntimeError("Cannot set runner more than once")
