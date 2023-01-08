@@ -53,6 +53,16 @@ class Construction(Generic[PartitionT]):
         self._destination_array: None | list[PartitionWithInfo[PartitionT] | None] = None
         self._partno: None | int = None
 
+    def __str__(self):
+        return (
+            f"{self.id}\n"
+            f"  Inputs: {self.inputs}\n"
+            f"  Instructions: {[i.__class__.__name__ for i in self.instruction_stack]}\n"
+        )
+
+    def __repr__(self):
+        return self.__str__()
+
     def add_instruction(self, instruction: Instruction) -> None:
         """Add an instruction to the stack that will run for this partition."""
         self.assert_not_marked()
