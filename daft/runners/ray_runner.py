@@ -437,7 +437,7 @@ class DynamicRayRunner(RayRunner):
                 # Flush the entire task associated with the result
                 cons_id = inflight_ref_to_construction[ready]
                 results = inflight_constructions[cons_id]._dispatched
-                ray.wait(results, num_returns=len(results))
+                ray.wait(results, num_returns=len(results), fetch_local=False)
                 for ref in results:
                     del inflight_ref_to_construction[ref]
                 del inflight_constructions[cons_id]
