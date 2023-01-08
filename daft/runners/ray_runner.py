@@ -453,6 +453,17 @@ class DynamicRayRunner(RayRunner):
 
         constructions_to_dispatch.clear()
 
+        while inflight_ref_to_construction:
+            [ready], _ = ray.wait(list(inflight_ref_to_construction.keys()), fetch_local=False)
+
+            # Flush the entire task associated with the result
+            cons_id = inflight_ref_to_construction[ready]
+            results = inflight_constructions[cons_id]._dispatched
+            ray.wait(results, num_returns=len(results), fetch_local=False)
+            for ref in results:
+                del inflight_ref_to_construction[ref]
+            del inflight_constructions[cons_id]
+
         final_result = schedule.result_partition_set(RayPartitionSet)
         pset_entry = self._part_set_cache.put_partition_set(final_result)
         return pset_entry
