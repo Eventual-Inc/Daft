@@ -93,12 +93,20 @@ class MetricsBuilder:
     def collect_metrics(self, qnum: int):
         logger.info(f"Running benchmarks for TPC-H q{qnum}")
         start = datetime.now()
-        profile_filename = f"tpch_q{qnum}_{self._runner}_{datetime.replace(start, microsecond=0).isoformat()}.json"
+        profile_filename = (
+            f"tpch_q{qnum}_{self._runner}_{datetime.replace(start, microsecond=0).isoformat()}_viztracer.json"
+        )
         with profiler(profile_filename):
             yield
         walltime_s = (datetime.now() - start).total_seconds()
         logger.info(f"Finished benchmarks for q{qnum}: {walltime_s}s")
         self._metrics[f"tpch_q{qnum}"] = walltime_s
+
+        if os.getenv("RAY_PROFILING") == 1 and self.runner in ("ray", "dynamicray"):
+            profile_filename = (
+                f"tpch_q{qnum}_{self._runner}_{datetime.replace(start, microsecond=0).isoformat()}_raytimeline.json"
+            )
+            ray.timeline(profile_filename)
 
     def dump_csv(self, csv_output_location: str):
         if len(self._metrics) == 0:
