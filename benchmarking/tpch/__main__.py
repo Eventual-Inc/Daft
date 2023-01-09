@@ -102,7 +102,7 @@ class MetricsBuilder:
         logger.info(f"Finished benchmarks for q{qnum}: {walltime_s}s")
         self._metrics[f"tpch_q{qnum}"] = walltime_s
 
-        if os.getenv("RAY_PROFILING") == 1 and self._runner in ("ray", "dynamicray"):
+        if str(os.getenv("RAY_PROFILING")) == str(1) and self._runner in ("ray", "dynamicray"):
             profile_filename = (
                 f"tpch_q{qnum}_{self._runner}_{datetime.replace(start, microsecond=0).isoformat()}_raytimeline.json"
             )
