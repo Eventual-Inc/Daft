@@ -94,31 +94,35 @@ class ExecutionRequest(BaseConstruction[PartitionT]):
 
     result: When ready, the partitions resulting from executing the Construction.
     """
-    result: None | ConstructionResult[PartitionT] = None
+    result: None | ExecutionResult[PartitionT] = None
 
 
-class ConstructionResult(Protocol[PartitionT]):
+class ExecutionResult(Protocol[PartitionT]):
     """A wrapper class for accessing the result partitions of a Construction."""
 
-    def num_partitions(self) -> int:
+    def partitions(self) -> list[PartitionT]:
+        """Get the partitions in this result."""
         raise NotImplementedError
 
-    def get_partition(self, index: None | int = None) -> PartitionT:
-        """Get the ith partition of the results.
-        If index is not specified, should assert that only a single partition exists and return it.
-        """
+    def metadatas(self) -> list[PartitionMetadata]:
+        """Get the metadatas of the parttions in this result."""
         raise NotImplementedError
 
-    def get_metadata(self, index: None | int = None) -> PartitionMetadata:
-        """Get the metadata of the ith partition of the results.
-        If index is not specified, should assert that only a single partition exists and return its metadata.
-        """
+    def cancel(self) -> None:
+        """If possible, cancel execution of this Construction."""
         raise NotImplementedError
 
 
 
 
 class Instruction(Protocol):
+    """An instruction is a function to run over a list of partitions.
+
+    Most instructions take one partition and return another partition.
+    However, some instructions take one partition and return many partitions (fanouts),
+    and others take many partitions and return one partition (reduces).
+    To accomodate these, instructions are typed as list[vPartition] -> list[vPartition].
+    """
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         ...
 
