@@ -189,9 +189,11 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
             time.sleep(1)
             return get_daft_version()
 
-        int(ray.cluster_resources()["CPU"])
-        executors = [warm_up_function.remote() for _ in range(num_nodes)]
-        assert ray.get([executor.remote() for executor in executors]) == [get_daft_version() for _ in range(num_nodes)]
+        num_workers_to_warm = int(ray.cluster_resources()["CPU"])
+        executors = [warm_up_function.remote() for _ in range(num_workers_to_warm)]
+        assert ray.get([executor.remote() for executor in executors]) == [
+            get_daft_version() for _ in range(num_workers_to_warm)
+        ]
         del executors
 
         logger.info("Ray cluster warmed up")
