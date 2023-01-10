@@ -75,6 +75,10 @@ def linkcode_resolve(domain, info):
     else:
         obj = getattr(mod, info["fullname"])
 
+    # Handle case where object is a decorated function
+    while hasattr(obj, "__wrapped__"):
+        obj = obj.__wrapped__
+
     try:
         file = inspect.getsourcefile(obj)
         lines = inspect.getsourcelines(obj)
