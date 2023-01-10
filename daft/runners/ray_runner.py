@@ -301,7 +301,6 @@ class RayRunner(Runner):
             logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context")
         else:
             ray.init(address=address)
-            # ray.init(address=address, local_mode=True)
         self._part_op_runner = RayLogicalPartitionOpRunner()
         self._global_op_runner = RayLogicalGlobalOpRunner()
         self._optimizer = RuleRunner(
