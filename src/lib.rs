@@ -21,7 +21,7 @@ fn version() -> &'static str {
 
 const BUILD_TYPE_DEV: &str = "dev";
 const DAFT_BUILD_TYPE: &str = {
-    let env_build_type: Option<&str> = option_env!("DAFT_PKG_BUILD_TYPE");
+    let env_build_type: Option<&str> = option_env!("RUST_DAFT_PKG_BUILD_TYPE");
     match env_build_type {
         Some(val) => val,
         None => BUILD_TYPE_DEV,
