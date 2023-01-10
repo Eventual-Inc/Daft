@@ -49,6 +49,9 @@ html_theme_options = {
     "logo_only": True,
 }
 
+# -- Options for redirecting URLs
+redirects = {"docs/learn/install": "docs/install"}
+
 # Resolving code links to github
 # Adapted from: https://github.com/aaugustin/websockets/blob/778a1ca6936ac67e7a3fe1bbe585db2eafeaa515/docs/conf.py#L100-L134
 
