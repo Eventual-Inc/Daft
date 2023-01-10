@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 import pyarrow as pa
@@ -340,7 +341,7 @@ class RayRunner(Runner):
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         result_partition_set: PartitionSet
         partition_intermediate_results: dict[int, PartitionSet] = {}
-        with profiler("profile.json"):
+        with profiler("profile_RayRunner.run_{datetime.now().isoformat()}.json"):
             for exec_op in exec_plan.execution_ops:
 
                 data_deps = exec_op.data_deps
@@ -396,59 +397,102 @@ class DynamicRayRunner(RayRunner):
         schedule = schedule_factory.schedule_logical_node(plan)
         schedule = ScheduleMaterialize[ray.ObjectRef](schedule)
 
-        # Note: For autoscaling clusters, you will probably want to query this dynamically.
+        # Note: For autoscaling clusters, we will probably want to query this dynamically.
         # Keep in mind this call takes about 0.3ms.
         cores = int(ray.cluster_resources()["CPU"])
+        constructions_to_dispatch = []
+        inflight_constructions: dict[str, Construction[ray.ObjectRef]] = dict()
+        inflight_ref_to_construction: dict[ray.ObjectRef, str] = dict()
 
-        ref_to_construction: dict[ray.ObjectRef, tuple[Construction[ray.ObjectRef], list[ray.ObjectRef]]] = dict()
+        start = datetime.now()
+        with profiler("profile_DynamicRayRunner.run_{datetime.now().isoformat()}.json"):
 
-        try:
-            while True:
-                # Dispatch tasks while cores are available.
+            try:
 
-                for i in range(cores - len(ref_to_construction)):
+                while True:
+                    # Dispatch tasks while cores are available.
+                    cores_available = cores - len(inflight_constructions)
+                    for i in range(cores_available):
 
-                    next_construction = next(schedule)
+                        next_construction = next(schedule)
 
-                    if next_construction is None:
-                        break
+                        while next_construction is not None and len(next_construction.instruction_stack) == 0:
+                            next_construction.report_completed(
+                                [PartitionWithInfo(p, get_meta) for p in next_construction.inputs]
+                            )
+                            next_construction = next(schedule)
 
-                    results = self._build_partitions(next_construction)
+                        if next_construction is None:
+                            break
+
+                        constructions_to_dispatch.append(next_construction)
+
+                    dispatch = datetime.now()
+                    logger.debug(
+                        f"{(dispatch - start).total_seconds()}s: DynamicRayRunner dispatched batch of {len(constructions_to_dispatch)} tasks."
+                    )
+                    for construction in constructions_to_dispatch:
+                        results = self._build_partitions(construction)
+                        logger.debug(f"{construction} -> {results}")
+                        inflight_constructions[construction.id] = construction
+                        for result in results:
+                            inflight_ref_to_construction[result] = construction.id
+
+                    constructions_to_dispatch.clear()
+
+                    # All tasks dispatched. Await a result
+                    # while inflight_ref_to_construction:
+                    dispatch = datetime.now()
+                    [ready], _ = ray.wait(list(inflight_ref_to_construction.keys()), fetch_local=False)
+                    cons_id = inflight_ref_to_construction[ready]
+                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {cons_id}")
+
+                    # Flush the entire task associated with the result
+                    results = inflight_constructions[cons_id]._dispatched
                     for ref in results:
-                        ref_to_construction[ref] = (next_construction, results)
+                        del inflight_ref_to_construction[ref]
+                    del inflight_constructions[cons_id]
 
-                # All tasks dispatched. Await a result
-                readys, _ = ray.wait(list(ref_to_construction.keys()), fetch_local=False)
-                for ref in readys:
-                    construction, results = ref_to_construction[ref]
-                    if not construction.reported:
-                        construction.report_completed([PartitionWithInfo(p, get_meta) for p in results])
-                    del ref_to_construction[ref]
+            except StopIteration:
+                pass
 
-        except StopIteration:
-            pass
+            for construction in constructions_to_dispatch:
+                results = self._build_partitions(construction)
+                inflight_constructions[construction.id] = construction
+                for result in results:
+                    inflight_ref_to_construction[result] = construction.id
 
-        readys, pending = ray.wait(
-            list(ref_to_construction.keys()), num_returns=len(ref_to_construction), fetch_local=False
-        )
-        assert len(pending) == 0
-        for ref in readys:
-            construction, results = ref_to_construction[ref]
-            if not construction.reported:
-                construction.report_completed([PartitionWithInfo(p, get_meta) for p in results])
-            del ref_to_construction[ref]
+            constructions_to_dispatch.clear()
+
+            while inflight_ref_to_construction:
+                dispatch = datetime.now()
+                [ready], _ = ray.wait(list(inflight_ref_to_construction.keys()), fetch_local=False)
+                cons_id = inflight_ref_to_construction[ready]
+                logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result of {cons_id}")
+
+                # Flush the entire task associated with the result
+                results = inflight_constructions[cons_id]._dispatched
+                for ref in results:
+                    del inflight_ref_to_construction[ref]
+                del inflight_constructions[cons_id]
 
         final_result = schedule.result_partition_set(RayPartitionSet)
         pset_entry = self._part_set_cache.put_partition_set(final_result)
         return pset_entry
 
     def _build_partitions(self, partspec: Construction[ray.ObjectRef]) -> list[ray.ObjectRef]:
-        construct_remote = build_partitions.options(num_returns=partspec.num_results)
+        ray_options: dict[str, Any] = {
+            "num_returns": partspec.num_results,
+        }
+        if len(partspec.inputs) > 1:
+            ray_options["scheduling_strategy"] = "SPREAD"
+        construct_remote = build_partitions.options(**ray_options)
         results = construct_remote.remote(partspec.instruction_stack, *partspec.inputs)
         # Handle ray bug that ignores list interpretation when num_returns=1
         if partspec.num_results == 1:
             results = [results]
 
+        partspec.report_completed([PartitionWithInfo(p, get_meta) for p in results])
         return results
 
     def _get_partition_metadata(self, *partitions: ray.ObjectRef) -> list[PartitionMetadata]:

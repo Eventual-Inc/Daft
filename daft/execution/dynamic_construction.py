@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import sys
 from dataclasses import dataclass
 from typing import Callable, Generic, TypeVar
@@ -35,7 +36,11 @@ class Construction(Generic[PartitionT]):
     (To support this, instructions are typed as list[partition] -> list[partition].)
     """
 
+    ID_GEN = (f"Construction_{i}" for i in itertools.count())
+
     def __init__(self, inputs: list[PartitionT]) -> None:
+        self.id = next(self.ID_GEN)
+
         # Input partitions to run over.
         self.inputs = inputs
 
@@ -44,9 +49,19 @@ class Construction(Generic[PartitionT]):
 
         # Where to put the materialized results.
         self.num_results: None | int = None
-        self.reported: bool = False
+        self._dispatched: list[PartitionT] = []
         self._destination_array: None | list[PartitionWithInfo[PartitionT] | None] = None
         self._partno: None | int = None
+
+    def __str__(self):
+        return (
+            f"{self.id}\n"
+            f"  Inputs: {self.inputs}\n"
+            f"  Instructions: {[i.__class__.__name__ for i in self.instruction_stack]}\n"
+        )
+
+    def __repr__(self):
+        return self.__str__()
 
     def add_instruction(self, instruction: Instruction) -> None:
         """Add an instruction to the stack that will run for this partition."""
@@ -70,15 +85,14 @@ class Construction(Generic[PartitionT]):
     def report_completed(self, results: list[PartitionWithInfo[PartitionT]]) -> None:
         """Give the materialized result of this Construction to the DynamicSchedule who asked for it."""
 
-        assert not self.reported
         assert self._destination_array is not None
         assert self._partno is not None
+
+        self._dispatched = [_.partition for _ in results]
 
         for i, partition_with_info in enumerate(results):
             assert self._destination_array[self._partno + i] is None, self._destination_array[self._partno + i]
             self._destination_array[self._partno + i] = partition_with_info
-
-        self.reported = True
 
     def is_marked_for_materialization(self) -> bool:
         return all(_ is not None for _ in (self._destination_array, self._partno))
