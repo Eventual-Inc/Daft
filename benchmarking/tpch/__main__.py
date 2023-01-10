@@ -8,18 +8,12 @@ import os
 import platform
 import socket
 import subprocess
-import time
 import warnings
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 import ray
 from loguru import logger
-from ray.util.placement_group import (
-    placement_group,
-    placement_group_table,
-    remove_placement_group,
-)
 
 import daft
 from benchmarking.tpch import answers, data_generation
@@ -186,28 +180,20 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
 
         logger.info("Warming up Ray cluster with a function...")
         # NOTE: installation of runtime_env is supposed to be eager but it seems to be happening async.
-        # Here we farm out some work on Ray to warm up all the workers by downloading data
-        # (See: https://discuss.ray.io/t/how-to-run-a-function-exactly-once-on-each-node/2178)
-        @ray.remote(num_cpus=1)
-        class WarmUpFunction:
-            def ready(self):
-                return get_daft_version()
+        # Here we farm out some work on Ray to warm up all the workers by downloading data.
+        # Warm up n := num_cpus workers.
+        @ray.remote(num_cpus=1, scheduling_strategy="SPREAD")
+        def warm_up_function():
+            import time
 
-        num_nodes = len([n for n in ray.nodes() if n["Alive"] and n["Resources"].get("CPU", 0.0) > 0])
-        bundles = [{"CPU": 1} for _ in range(num_nodes)]
-        pg = placement_group(bundles=bundles, strategy="STRICT_SPREAD")
-        ray.get(pg.ready())
-        executors = [WarmUpFunction.options(placement_group=pg).remote() for _ in range(num_nodes)]
-        assert ray.get([executor.ready.remote() for executor in executors]) == [
-            get_daft_version() for _ in range(num_nodes)
-        ]
+            time.sleep(1)
+            return get_daft_version()
+
+        int(ray.cluster_resources()["CPU"])
+        executors = [warm_up_function.remote() for _ in range(num_nodes)]
+        assert ray.get([executor.remote() for executor in executors]) == [get_daft_version() for _ in range(num_nodes)]
         del executors
 
-        # remove_placement_group is async, so we wait here and assert that it was cleaned up
-        # (See: https://docs.ray.io/en/latest/ray-core/placement-group.html?highlight=placement_group#quick-start)
-        remove_placement_group(pg)
-        time.sleep(1)
-        assert placement_group_table(pg)["state"] == "REMOVED"
         logger.info("Ray cluster warmed up")
 
     get_df = get_df_with_parquet_folder(parquet_folder)
