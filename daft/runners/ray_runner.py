@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 import pyarrow as pa
@@ -300,6 +301,7 @@ class RayRunner(Runner):
             logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context")
         else:
             ray.init(address=address)
+            # ray.init(address=address, local_mode=True)
         self._part_op_runner = RayLogicalPartitionOpRunner()
         self._global_op_runner = RayLogicalGlobalOpRunner()
         self._optimizer = RuleRunner(
@@ -340,7 +342,7 @@ class RayRunner(Runner):
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         result_partition_set: PartitionSet
         partition_intermediate_results: dict[int, PartitionSet] = {}
-        with profiler("profile.json"):
+        with profiler("profile_RayRunner.run_{datetime.now().isoformat()}.json"):
             for exec_op in exec_plan.execution_ops:
 
                 data_deps = exec_op.data_deps
@@ -403,66 +405,77 @@ class DynamicRayRunner(RayRunner):
         inflight_constructions: dict[str, Construction[ray.ObjectRef]] = dict()
         inflight_ref_to_construction: dict[ray.ObjectRef, str] = dict()
 
-        try:
+        start = datetime.now()
+        with profiler("profile_DynamicRayRunner.run_{datetime.now().isoformat()}.json"):
 
-            while True:
-                # Dispatch tasks while cores are available.
-                cores_available = cores - len(inflight_constructions)
-                for i in range(cores_available):
+            try:
 
-                    next_construction = next(schedule)
+                while True:
+                    # Dispatch tasks while cores are available.
+                    cores_available = cores - len(inflight_constructions)
+                    for i in range(cores_available):
 
-                    while next_construction is not None and len(next_construction.instruction_stack) == 0:
-                        next_construction.report_completed(
-                            [PartitionWithInfo(p, get_meta) for p in next_construction.inputs]
-                        )
                         next_construction = next(schedule)
 
-                    if next_construction is None:
-                        break
+                        while next_construction is not None and len(next_construction.instruction_stack) == 0:
+                            next_construction.report_completed(
+                                [PartitionWithInfo(p, get_meta) for p in next_construction.inputs]
+                            )
+                            next_construction = next(schedule)
 
-                    constructions_to_dispatch.append(next_construction)
+                        if next_construction is None:
+                            break
 
-                for construction in constructions_to_dispatch:
-                    results = self._build_partitions(construction)
-                    inflight_constructions[construction.id] = construction
-                    for result in results:
-                        inflight_ref_to_construction[result] = construction.id
+                        constructions_to_dispatch.append(next_construction)
 
-                constructions_to_dispatch.clear()
+                    dispatch = datetime.now()
+                    logger.debug(
+                        f"{(dispatch - start).total_seconds()}s: DynamicRayRunner dispatched batch of {len(constructions_to_dispatch)} tasks."
+                    )
+                    for construction in constructions_to_dispatch:
+                        results = self._build_partitions(construction)
+                        logger.debug(f"{construction} -> {results}")
+                        inflight_constructions[construction.id] = construction
+                        for result in results:
+                            inflight_ref_to_construction[result] = construction.id
 
-                # All tasks dispatched. Await a result
+                    constructions_to_dispatch.clear()
+
+                    # All tasks dispatched. Await a result
+                    # while inflight_ref_to_construction:
+                    dispatch = datetime.now()
+                    [ready], _ = ray.wait(list(inflight_ref_to_construction.keys()), fetch_local=False)
+                    cons_id = inflight_ref_to_construction[ready]
+                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {cons_id}")
+
+                    # Flush the entire task associated with the result
+                    results = inflight_constructions[cons_id]._dispatched
+                    for ref in results:
+                        del inflight_ref_to_construction[ref]
+                    del inflight_constructions[cons_id]
+
+            except StopIteration:
+                pass
+
+            for construction in constructions_to_dispatch:
+                results = self._build_partitions(construction)
+                inflight_constructions[construction.id] = construction
+                for result in results:
+                    inflight_ref_to_construction[result] = construction.id
+
+            constructions_to_dispatch.clear()
+
+            while inflight_ref_to_construction:
+                dispatch = datetime.now()
                 [ready], _ = ray.wait(list(inflight_ref_to_construction.keys()), fetch_local=False)
+                cons_id = inflight_ref_to_construction[ready]
+                logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result of {cons_id}")
 
                 # Flush the entire task associated with the result
-                cons_id = inflight_ref_to_construction[ready]
                 results = inflight_constructions[cons_id]._dispatched
-                ray.wait(results, num_returns=len(results), fetch_local=False)
                 for ref in results:
                     del inflight_ref_to_construction[ref]
                 del inflight_constructions[cons_id]
-
-        except StopIteration:
-            pass
-
-        for construction in constructions_to_dispatch:
-            results = self._build_partitions(construction)
-            inflight_constructions[construction.id] = construction
-            for result in results:
-                inflight_ref_to_construction[result] = construction.id
-
-        constructions_to_dispatch.clear()
-
-        while inflight_ref_to_construction:
-            [ready], _ = ray.wait(list(inflight_ref_to_construction.keys()), fetch_local=False)
-
-            # Flush the entire task associated with the result
-            cons_id = inflight_ref_to_construction[ready]
-            results = inflight_constructions[cons_id]._dispatched
-            ray.wait(results, num_returns=len(results), fetch_local=False)
-            for ref in results:
-                del inflight_ref_to_construction[ref]
-            del inflight_constructions[cons_id]
 
         final_result = schedule.result_partition_set(RayPartitionSet)
         pset_entry = self._part_set_cache.put_partition_set(final_result)
