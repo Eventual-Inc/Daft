@@ -23,84 +23,99 @@ from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, Sor
 PartitionT = TypeVar("PartitionT")
 
 
-@dataclass(frozen=True)
-class PartitionWithInfo(Generic[PartitionT]):
-    partition: PartitionT
-    metadata: Callable[[PartitionT], PartitionMetadata]
 
 
-class Construction(Generic[PartitionT]):
-    """A Construction is an instruction stack + input partitions to run the instruction stack over.
+@dataclass
+class BaseConstruction(Generic[PartitionT]):
+    """A Construction represents a set of partitions that are waiting to be created.
 
-    Instructions can be one partition -> one partition, one->many, or many->one.
-    (To support this, instructions are typed as list[partition] -> list[partition].)
+    The result partitions will be created by running some function stack over some input partitions.
+    Each function takes an entire set of inputs and produces a new set of partitions to pass into the next function.
+
+    _id: A unique identifier for this Construction.
+    inputs: The partitions that will be input together into the function stack.
+    instruction_stack: The functions to run over the inputs, in order. See Instruction for more details.
     """
 
-    ID_GEN = (f"Construction_{i}" for i in itertools.count())
+    _id: int
+    inputs: list[PartitionT]
+    instructions: list[Instruction]
 
-    def __init__(self, inputs: list[PartitionT]) -> None:
-        self.id = next(self.ID_GEN)
+    def id(self) -> str:
+        return f"{self.__class__.__name__}_{self._id}"
 
-        # Input partitions to run over.
-        self.inputs = inputs
-
-        # Instruction stack to execute.
-        self.instruction_stack: list[Instruction] = list()
-
-        # Where to put the materialized results.
-        self.num_results: None | int = None
-        self._dispatched: list[PartitionT] = []
-        self._destination_array: None | list[PartitionWithInfo[PartitionT] | None] = None
-        self._partno: None | int = None
-
-    def __str__(self):
+    def __str__(self) -> str:
         return (
-            f"{self.id}\n"
+            f"{self.id()}\n"
             f"  Inputs: {self.inputs}\n"
-            f"  Instructions: {[i.__class__.__name__ for i in self.instruction_stack]}\n"
+            f"  Instructions: {[i.__class__.__name__ for i in self.instructions]}"
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.__str__()
 
+
+@dataclass
+class OpenConstruction(BaseConstruction[PartitionT]):
+    """This is a Construction that can still have functions added to its function stack.
+
+    New Constructions should be created from this class.
+    """
+
+    ID_GEN = itertools.count()
+
+    def __init__(self, inputs: list[PartitionT]) -> None:
+        super().__init__(
+            _id=next(self.ID_GEN),
+            inputs=inputs,
+            instructions=list(),
+        )
+
     def add_instruction(self, instruction: Instruction) -> None:
-        """Add an instruction to the stack that will run for this partition."""
-        self.assert_not_marked()
-        self.instruction_stack.append(instruction)
+        """Add an instruction to this Construction's stack."""
+        self.instructions.append(instruction)
 
-    def mark_for_materialization(
-        self, destination_array: list[PartitionWithInfo[PartitionT] | None], num_results: int = 1
-    ) -> None:
-        """Mark this Construction for materialization.
+    def as_execution_request(self) -> ExecutionRequest[PartitionT]:
+        """Create an ExecutionRequest from this Construction.
 
-        1. Prevents further instructions from being added to this Construction.
-        2. Saves a reference to where the materialized results should be placed.
+        Returns a "frozen" version of this Construction that cannot have instructions added.
+        See ExecutionRequest for more details.
         """
-        self.assert_not_marked()
-        self._destination_array = destination_array
-        self._partno = len(destination_array)
-        self._destination_array += [None] * num_results
-        self.num_results = num_results
 
-    def report_completed(self, results: list[PartitionWithInfo[PartitionT]]) -> None:
-        """Give the materialized result of this Construction to the DynamicSchedule who asked for it."""
+        return ExecutionRequest[PartitionT](
+            _id=self._id,
+            inputs=self.inputs,
+            instructions=self.instructions,
+        )
 
-        assert self._destination_array is not None
-        assert self._partno is not None
+@dataclass
+class ExecutionRequest(BaseConstruction[PartitionT]):
+    """A Construction that is ready to execute. More instructions cannot be added.
 
-        self._dispatched = [_.partition for _ in results]
+    result: When ready, the partitions resulting from executing the Construction.
+    """
+    result: None | ConstructionResult[PartitionT] = None
 
-        for i, partition_with_info in enumerate(results):
-            assert self._destination_array[self._partno + i] is None, self._destination_array[self._partno + i]
-            self._destination_array[self._partno + i] = partition_with_info
 
-    def is_marked_for_materialization(self) -> bool:
-        return all(_ is not None for _ in (self._destination_array, self._partno))
+class ConstructionResult(Protocol[PartitionT]):
+    """A wrapper class for accessing the result partitions of a Construction."""
 
-    def assert_not_marked(self) -> None:
-        assert (
-            not self.is_marked_for_materialization()
-        ), f"Partition already instructed to materialize into {self._destination_array}, partition index {self._partno}"
+    def num_partitions(self) -> int:
+        raise NotImplementedError
+
+    def get_partition(self, index: None | int = None) -> PartitionT:
+        """Get the ith partition of the results.
+        If index is not specified, should assert that only a single partition exists and return it.
+        """
+        raise NotImplementedError
+
+    def get_metadata(self, index: None | int = None) -> PartitionMetadata:
+        """Get the metadata of the ith partition of the results.
+        If index is not specified, should assert that only a single partition exists and return its metadata.
+        """
+        raise NotImplementedError
+
+
 
 
 class Instruction(Protocol):
