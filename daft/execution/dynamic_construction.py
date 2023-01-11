@@ -21,7 +21,7 @@ from daft.runners.pyrunner import LocalLogicalPartitionOpRunner
 from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, SortOp
 
 PartitionT = TypeVar("PartitionT")
-
+ExecutionResultT = TypeVar("ExecutionResultT")
 
 
 
@@ -71,15 +71,16 @@ class OpenConstruction(BaseConstruction[PartitionT]):
             instructions=list(),
         )
 
-    def add_instruction(self, instruction: Instruction) -> None:
+    def add_instruction(self, instruction: Instruction) -> OpenConstruction[PartitionT]:
         """Add an instruction to this Construction's stack."""
         self.instructions.append(instruction)
+        return self
 
     def as_execution_request(self) -> ExecutionRequest[PartitionT]:
         """Create an ExecutionRequest from this Construction.
 
         Returns a "frozen" version of this Construction that cannot have instructions added.
-        See ExecutionRequest for more details.
+        The output of this Construction should be a single partition.
         """
 
         return ExecutionRequest[PartitionT](
@@ -88,30 +89,46 @@ class OpenConstruction(BaseConstruction[PartitionT]):
             instructions=self.instructions,
         )
 
+    def as_execution_request_multi(self) -> ExecutionRequestMulti[PartitionT]:
+        """Create an ExecutionRequestMulti from this Construction.
+
+        Same as as_execution_request,
+        except it denotes that the output of this Construction is a list of any number of partitions.
+        """
+
 @dataclass
 class ExecutionRequest(BaseConstruction[PartitionT]):
     """A Construction that is ready to execute. More instructions cannot be added.
 
-    result: When ready, the partitions resulting from executing the Construction.
+    result: When ready, the partition created from executing the Construction.
     """
     result: None | ExecutionResult[PartitionT] = None
 
 
-class ExecutionResult(Protocol[PartitionT]):
-    """A wrapper class for accessing the result partitions of a Construction."""
+@dataclass
+class ExecutionRequestMulti(BaseConstruction[PartitionT]):
+    """A Construction that is ready to execute. More instructions cannot be added.
+    This Construction will return a list of any number of partitions.
 
-    def partitions(self) -> list[PartitionT]:
-        """Get the partitions in this result."""
+    results: When ready, the partitions created from executing the Construction.
+    """
+    results: None | list[ExecutionResult[PartitionT]] = None
+
+
+class ExecutionResult(Protocol[PartitionT]):
+    """A wrapper class for accessing the result partition of a Construction."""
+
+    def partition(self) -> PartitionT:
+        """Get the partition of this result."""
         raise NotImplementedError
 
-    def metadatas(self) -> list[PartitionMetadata]:
-        """Get the metadatas of the parttions in this result."""
+    def metadata(self) -> PartitionMetadata:
+        """Get the metadata of the partition in this result."""
         raise NotImplementedError
 
     def cancel(self) -> None:
         """If possible, cancel execution of this Construction."""
         raise NotImplementedError
-
 
 
 
