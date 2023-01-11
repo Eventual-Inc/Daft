@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import math
 from abc import abstractmethod
+from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Callable, Generic, TypeVar
 
 from daft.execution import dynamic_construction
 from daft.execution.dynamic_construction import (
-    Construction,
+    BaseConstruction,
+    OpenConstruction,
+    ExecutionRequest,
+    ExecutionResult,
     FanoutInstruction,
     Instruction,
     PartitionWithInfo,
@@ -31,7 +35,7 @@ class DynamicSchedule(Iterator, Generic[PartitionT]):
 
     @dataclass
     class Materializations(Generic[_PartitionT]):
-        dependencies: list[PartitionWithInfo[_PartitionT] | None] = field(default_factory=list)
+        dependencies: list[ExecutionRequest[_PartitionT] | None] = field(default_factory=list)
 
     def __init__(self) -> None:
         # Materialized partitions that this dynamic schedule needs to do its job.
@@ -39,7 +43,7 @@ class DynamicSchedule(Iterator, Generic[PartitionT]):
         self._materializations: DynamicSchedule.Materializations = self.Materializations[PartitionT]()
         self._completed = False
 
-    def __next__(self) -> Construction[PartitionT] | None:
+    def __next__(self) -> BaseConstruction[PartitionT] | None:
         if self._completed:
             raise StopIteration
 
@@ -53,7 +57,7 @@ class DynamicSchedule(Iterator, Generic[PartitionT]):
             raise
 
     @abstractmethod
-    def _next_impl(self) -> Construction[PartitionT] | None:
+    def _next_impl(self) -> BaseConstruction[PartitionT] | None:
         """
         Raises StopIteration if there are no further instructions to give for this schedule.
         Returns None if there is nothing we can do for now (i.e. must wait for other partitions to finish).
@@ -65,147 +69,118 @@ class DynamicSchedule(Iterator, Generic[PartitionT]):
         return f"{name}: self._completed={self._completed}, self._materializations={self._materializations}"
 
 
-class SchedulePartitionRead(DynamicSchedule[PartitionT]):
-    def __init__(self, partition_infos: list[PartitionWithInfo[PartitionT]]) -> None:
-        super().__init__()
-        self._materializations.dependencies += partition_infos
-        self._num_dispatched = 0
+def enumerate_open_constructions(
+    schedule: Iterator[None | BaseConstruction[PartitionT]]
+) -> Iterator[tuple[int, None | BaseConstruction[PartitionT]]]:
+    """Like enumerate() on an iterator, but only counts up if the result is an OpenConstruction.
 
-    def _next_impl(self) -> Construction[PartitionT] | None:
+    Useful for counting the number of OpenConstructions returned by the iterator.
+    """
+    index = 0
+    yield from (
+        (((index := index + 1) - 1), item)  # aka (index++, item)
+        if isinstance(item, OpenConstruction)
+        else (index, item)
+        for item in schedule
+    )
 
-        dependencies = self._materializations.dependencies
-        if self._num_dispatched == len(dependencies):
-            raise StopIteration
+"""
+A "Construction" describes some partition(s) to be built.
+A "Schedule" is an iterator of constructions. It gives you the sequence, or schedule, of things to build.
+"""
 
-        partition_info = dependencies[self._num_dispatched]
-        self._num_dispatched += 1
+def schedule_partition_read(partitions: Iterator[PartitionT]) -> Iterator[None | BaseConstruction[PartitionT]]:
+    yield from (OpenConstruction[PartitionT]([partition]) for partition in partitions)
 
-        assert partition_info is not None  # for mypy; already enforced at __init__
-        new_construct = Construction[PartitionT]([partition_info.partition])
-        return new_construct
+def schedule_file_read(
+    source: Iterator[None | BaseConstruction[PartitionT]],
+    scan_node: logical_plan.TabularFilesScan,
+) -> Iterator[None | BaseConstruction[PartitionT]]:
 
+    for index, construct in enumerate_open_constructions(source):
+        if not isinstance(construct, OpenConstruction):
+            yield construct
 
-class ScheduleFileRead(DynamicSchedule[PartitionT]):
-    def __init__(self, child_schedule: DynamicSchedule, scan_node: logical_plan.TabularFilesScan) -> None:
-        super().__init__()
-        self._child_schedule = child_schedule
-        self._scan_node = scan_node
-        self._next_index = 0
-
-    def _next_impl(self) -> Construction[PartitionT] | None:
-        construct = next(self._child_schedule)
-        if construct is None or construct.is_marked_for_materialization():
-            return construct
-
-        if self._next_index < self._scan_node.num_partitions():
+        elif index < scan_node.num_partitions():
             construct.add_instruction(
-                dynamic_construction.ReadFile(partition_id=self._next_index, logplan=self._scan_node)
+                dynamic_construction.ReadFile(partition_id=index, logplan=scan_node)
             )
-
-            self._next_index += 1
-            return construct
+            yield construct
 
         else:
-            raise StopIteration
+            return
 
 
-class ScheduleFileWrite(DynamicSchedule[PartitionT]):
-    def __init__(self, child_schedule: DynamicSchedule[PartitionT], write_node: logical_plan.FileWrite) -> None:
-        super().__init__()
-        self._child_schedule = child_schedule
-        self._write_node = write_node
-        self._writes_so_far = 0
+def schedule_file_write(
+    source: Iterator[None | BaseConstruction[PartitionT]],
+    write_node: logical_plan.FileWrite,
+) -> Iterator[None | BaseConstruction[PartitionT]]:
 
-    def _next_impl(self) -> Construction[PartitionT] | None:
-        construct = next(self._child_schedule)
-        if construct is None or construct.is_marked_for_materialization():
-            return construct
-
-        construct.add_instruction(
-            dynamic_construction.WriteFile(partition_id=self._writes_so_far, logplan=self._write_node)
-        )
-        self._writes_so_far += 1
-
-        return construct
+    yield from (
+        construct.add_instruction(partition_id=index, logplan=write_node)
+        if isinstance(construct, OpenConstruction)
+        else construct
+        for index, construct in enumerate_open_constructions(source)
+    )
 
 
-class SchedulePipelineInstruction(DynamicSchedule[PartitionT]):
-    def __init__(
-        self,
-        child_schedule: DynamicSchedule[PartitionT],
-        pipeable_instruction: Instruction,
-    ) -> None:
-        super().__init__()
-        self._child_schedule = child_schedule
-        self._instruction = pipeable_instruction
+def schedule_pipeline_instruction(
+    source: Iterator[None | BaseConstruction[PartitionT]],
+    pipeable_instruction: Instruction,
+) -> Iterator[None | BaseConstruction[PartitionT]]:
 
-    def _next_impl(self) -> Construction[PartitionT] | None:
-        construct = next(self._child_schedule)
-        if construct is None or construct.is_marked_for_materialization():
-            return construct
-
-        construct.add_instruction(self._instruction)
-
-        return construct
+    yield from (
+        construct.add_instruction(pipeable_instruction)
+        if isinstance(construct, OpenConstruction)
+        else construct
+        for construct in source
+    )
 
 
-class ScheduleJoin(DynamicSchedule[PartitionT]):
-    @dataclass
-    class Materializations(DynamicSchedule.Materializations[PartitionT]):
-        lefts: list[PartitionWithInfo[PartitionT] | None] = field(default_factory=list)
-        rights: list[PartitionWithInfo[PartitionT] | None] = field(default_factory=list)
 
-    def __init__(
-        self,
-        left_source: DynamicSchedule[PartitionT],
-        right_source: DynamicSchedule[PartitionT],
-        join: logical_plan.Join,
-    ) -> None:
-        super().__init__()
-        self._materializations: ScheduleJoin.Materializations = self.Materializations[PartitionT]()
-        self._left_source = left_source
-        self._right_source = right_source
-        self._join_node = join
-        self._next_to_emit = 0
+def schedule_join(
+    left_source: Iterator[None | BaseConstruction[PartitionT]],
+    right_source: Iterator[None | BaseConstruction[PartitionT]],
+    join: logical_plan.Join,
+) -> Iterator[None | BaseConstruction[PartitionT]]:
 
-    def _next_impl(self) -> Construction[PartitionT] | None:
-        lefts = self._materializations.lefts
-        rights = self._materializations.rights
+    # We will execute the constructions from the left and right sources to get partitions,
+    # and then create new constructions which will each join a left and right partition.
+    left_requests: deque[ExecutionRequest] = deque()
+    right_requests: deque[ExecutionRequest] = deque()
 
-        # Try emitting a join.
-        if self._next_to_emit < len(lefts) and self._next_to_emit < len(rights):
-            next_left = lefts[self._next_to_emit]
-            next_right = rights[self._next_to_emit]
-            if next_left is not None and next_right is not None:
-                construct_join = Construction[PartitionT]([next_left.partition, next_right.partition])
-                construct_join.add_instruction(dynamic_construction.Join(self._join_node))
+    while True:
+        # Emit join constructions if we have left and right partitions ready.
+        while (
+            left_ready := len(left_requests) > 0 and left_requests[0].result is not None
+        ) and (
+            right_ready := len(right_requests) > 0 and right_requests[0].result is not None
+        ):
+            next_left = left_requests.popleft()
+            next_right = right_requests.popleft()
+            construct_join = OpenConstruction[PartitionT]([next_left.partition, next_right.partition])
+            construct_join.add_instruction(dynamic_construction.Join(join))
+            yield construct_join
 
-                self._next_to_emit += 1
-                return construct_join
-
-        # Can't emit a join just yet; materialize more dependencies.
-        # Choose whether to materialize from left child or right child (whichever one is more behind).
-        if len(lefts) <= len(rights):
-            next_deps = lefts
-            next_source = self._left_source
+        # Exhausted all ready inputs; execute a single source construction to get more join inputs.
+        # Choose whether to execute from left child or right child (whichever one is more behind),
+        if len(left_requests) <= len(right_requests):
+            next_source, next_requests = left_source, left_requests
         else:
-            next_deps = rights
-            next_source = self._right_source
+            next_source, next_requests = right_source, right_requests
 
-        construct = None
-        try:
-            construct = next(next_source)
+            for construct in next_source:
+                if not isinstance(construct, OpenConstruction):
+                    yield construct
+                else:
+                    execution_request = construct.as_execution_request()
+                    next_requests.append(execution_request)
+                    yield execution_request
+                    break
 
-        except StopIteration:
-            # Source is dry; have we emitted all join results?
-            if self._next_to_emit >= len(next_deps):
-                raise
-
-        if construct is None or construct.is_marked_for_materialization():
-            return construct
-
-        construct.mark_for_materialization(next_deps)
-        return construct
+        # If there are still no pending join inputs, then we have exhausted our sources as well and are done.
+        if len(left_requests) + len(right_requests) == 0:
+            return
 
 
 class ScheduleGlobalLimit(DynamicSchedule[PartitionT]):
