@@ -169,93 +169,113 @@ def schedule_join(
         else:
             next_source, next_requests = right_source, right_requests
 
-            for construct in next_source:
-                if not isinstance(construct, OpenConstruction):
-                    yield construct
-                else:
-                    execution_request = construct.as_execution_request()
-                    next_requests.append(execution_request)
-                    yield execution_request
-                    break
-
-        # If there are still no pending join inputs, then we have exhausted our sources as well and are done.
-        if len(left_requests) + len(right_requests) == 0:
-            return
-
-
-class ScheduleGlobalLimit(DynamicSchedule[PartitionT]):
-    def __init__(self, child_schedule: DynamicSchedule[PartitionT], global_limit: logical_plan.GlobalLimit) -> None:
-        super().__init__()
-        self._child_schedule = child_schedule
-        self._global_limit = global_limit
-        self._remaining_limit = self._global_limit._num
-        self._continue_from_partition = 0
-
-    def _next_impl(self) -> Construction[PartitionT] | None:
-
-        dependencies = self._materializations.dependencies
-
-        # Evaluate progress so far.
-        # Are we done with the limit?
-        if self._remaining_limit == 0:
-
-            # We are done with the limit,
-            # but the current implementation of LogicalPlan still requires
-            # a mandated number of partitions to be returned.
-            # Return empty partitions until we have returned enough.
-            if not dependencies:
-                # We need at least one materialized partition to get the correct schema to return.
-                # Pass through and materialize a dependency.
-                pass
-
-            elif self._continue_from_partition < self._global_limit.num_partitions():
-                if dependencies[0] is None:
-                    # We need at least one materialized partition to get the correct schema to return.
-                    # Wait for the dependency to materialize.
-                    return None
-
-                new_construct = Construction[PartitionT]([dependencies[0].partition])
-                new_construct.add_instruction(dynamic_construction.LocalLimit(0))
-
-                self._continue_from_partition += 1
-                return new_construct
-
-            else:
-                raise StopIteration
-
-        # We're not done; check to see if we can return a global limit partition.
-        # Is the next local limit partition materialized?
-        # If so, update global limit progress, and return the local limit.
-        if self._continue_from_partition < len(dependencies):
-            next_partition_info = dependencies[self._continue_from_partition]
-            if next_partition_info is not None:
-                num_rows = next_partition_info.metadata(next_partition_info.partition).num_rows
-                next_limit = min(self._remaining_limit, num_rows)
-                self._remaining_limit -= next_limit
-
-                new_construct = Construction[PartitionT]([next_partition_info.partition])
-                if next_limit < num_rows:
-                    new_construct.add_instruction(dynamic_construction.LocalLimit(next_limit))
-
-                self._continue_from_partition += 1
-                return new_construct
-
-        # We cannot return a global limit partition,
-        # so return instructions to materialize the next local limit partition.
-        construct = None
         try:
-            construct = next(self._child_schedule)
+            construct = next(next_source)
+            if isinstance(construct, OpenConstruction):
+                construct = construct.as_execution_request()
+                next_requests.append(construct)
+            yield construct
+
         except StopIteration:
-            if self._continue_from_partition >= len(dependencies):
-                raise
+            # Sources are dry.
+            # If there are no pending executions either, then we have exhausted our sources as well and are done.
+            if len(left_requests) + len(right_requests) == 0:
+                return
 
-        if construct is None or construct.is_marked_for_materialization():
-            return construct
+            # Otherwise, we're still waiting for an execution result.
+            yield None
 
-        construct.add_instruction(dynamic_construction.LocalLimit(self._remaining_limit))
 
-        construct.mark_for_materialization(dependencies)
-        return construct
+def schedule_local_limit(
+    source: Iterator[None | BaseConstruction[PartitionT]],
+    limit: int,
+    num_partitions: None | int = None,
+) -> Generator[None | BaseConstruction[PartitionT], int, None]:
+    """Apply a limit instruction to each partition in the source.
+
+    limit:
+        The value of the limit to apply to the first partition.
+        For subsequent partitions, send the value of the limit to apply back into this generator.
+
+    num_partitions:
+    """
+    for construction in source:
+        if not isinstance(construct, OpenConstruction):
+            yield construct
+        else:
+            limit = yield construction.add_instruction(dynamic_construction.LocalLimit(limit))
+
+
+def schedule_global_limit(
+    source: Iterator[None | BaseConstruction[PartitionT]],
+    global_limit: logical_plan.GlobalLimit,
+) -> Iterator[None | BaseConstruction[PartitionT]]:
+    """Return the first n rows from the source partitions."""
+
+    remaining_rows = global_limit._num
+    remaining_partitions = global_limit.num_partitions()
+
+    requests: deque[ExecutionRequest] = deque()
+
+
+    # To dynamically schedule the global limit, we need to apply an appropriate limit to each incoming pending partition.
+    # We don't know their exact sizes since they are pending execution, so we will have to iteratively execute them,
+    # count their rows, and then apply and update the remaining limit.
+
+    # The incoming pending partitions to execute.
+    # As an optimization, push down a limit to reduce what gets materialized,
+    # since we will never take more than the first k anyway.
+    source = schedule_local_limit(source=source, limit=remaining_rows)
+    started = False
+
+    while True:
+        # Check if any inputs finished executing.
+        # Apply and deduct the rolling global limit.
+        while len(requests) > 0 and requests[0].result is not None:
+            result = requests.popleft().result
+            limit = remaining_rows and min(remaining_rows, result.metadata().num_rows)
+
+            new_construction = OpenConstruction[PartitionT]([result.partition()])
+            new_construction.add_instruction(dynamic_construction.LocalLimit(limit))
+            yield new_construction
+            remaining_partitions -= 1
+            remaining_rows -= limit
+
+            if remaining_rows == 0:
+                # We only need to return empty partitions now.
+                # Instead of computing new ones and applying limit(0),
+                # we can just reuse an existing computed partition.
+
+                # Cancel all remaining results; we won't need them.
+                for _ in range(len(requests)):
+                    result_to_cancel = requests.popright().result
+                    if result_to_cancel is not None:
+                        result_to_cancel.cancel()
+
+                yield from (
+                    OpenConstruction[PartitionT]([result.partition()]).add_instruction(dynamic_construction.LocalLimit(0))
+                    for _ in range(remaining_partitions)
+                )
+                return
+
+        # (If we are doing limit(0) and already have a partition executing to use for it, just wait.)
+        if remaining_rows == 0 and len(requests) > 0:
+            yield None
+            continue
+
+        # Execute a single incoming partition.
+        try:
+            next_construction = source.send(remaining_rows if started else None)
+            started = True
+            if isinstance(next_construction, OpenConstruction):
+                next_construction = next_construction.as_execution_request()
+                requests.append(next_construction)
+            yield next_construction
+
+        except StopIteration:
+            if len(requests) == 0:
+                return
+            yield None
 
 
 class ScheduleCoalesce(DynamicSchedule[PartitionT]):
