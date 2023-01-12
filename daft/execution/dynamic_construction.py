@@ -21,9 +21,7 @@ from daft.runners.pyrunner import LocalLogicalPartitionOpRunner
 from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, SortOp
 
 PartitionT = TypeVar("PartitionT")
-ExecutionResultT = TypeVar("ExecutionResultT")
-
-
+ID_GEN = itertools.count()
 
 @dataclass
 class BaseConstruction(Generic[PartitionT]):
@@ -37,16 +35,12 @@ class BaseConstruction(Generic[PartitionT]):
     instruction_stack: The functions to run over the inputs, in order. See Instruction for more details.
     """
 
-    _id: int
     inputs: list[PartitionT]
     instructions: list[Instruction]
 
-    def id(self) -> str:
-        return f"{self.__class__.__name__}_{self._id}"
-
     def __str__(self) -> str:
         return (
-            f"{self.id()}\n"
+            f"{self.__class__.__name__}\n"
             f"  Inputs: {self.inputs}\n"
             f"  Instructions: {[i.__class__.__name__ for i in self.instructions]}"
         )
@@ -54,19 +48,15 @@ class BaseConstruction(Generic[PartitionT]):
     def __repr__(self) -> str:
         return self.__str__()
 
-
-@dataclass
 class OpenConstruction(BaseConstruction[PartitionT]):
     """This is a Construction that can still have functions added to its function stack.
 
     New Constructions should be created from this class.
     """
 
-    ID_GEN = itertools.count()
 
     def __init__(self, inputs: list[PartitionT]) -> None:
         super().__init__(
-            _id=next(self.ID_GEN),
             inputs=inputs,
             instructions=list(),
         )
@@ -96,20 +86,48 @@ class OpenConstruction(BaseConstruction[PartitionT]):
         except it denotes that the output of this Construction is a list of any number of partitions.
         """
 
+    def copy(self) -> OpenConstruction[PartitionT]:
+        return OpenConstruction[PartitionT](
+            inputs=self.inputs.copy(),
+            instructions=self.instructions.copy(),
+        )
+
 @dataclass
-class ExecutionRequest(BaseConstruction[PartitionT]):
+class ExecutionRequestBase(BaseConstruction[PartitionT]):
+    """Common helpers for ExecutionRequest and ExecutionRequestMulti.
+
+    _id: A unique identifier for this Construction.
+    """
+
+    _id: int = field(default_factory=lambda: next(ID_GEN))
+
+    def id(self) -> str:
+        return f"{self.__class__.__name__}_{self._id}"
+
+    def __str__(self) -> str:
+        return (
+            f"{self.id()}\n"
+            f"  Inputs: {self.inputs}\n"
+            f"  Instructions: {[i.__class__.__name__ for i in self.instructions]}"
+        )
+
+
+@dataclass
+class ExecutionRequest(ExecutionRequestBase[PartitionT]):
     """A Construction that is ready to execute. More instructions cannot be added.
 
+    _id: A unique identifier for this Construction.
     result: When ready, the partition created from executing the Construction.
     """
     result: None | ExecutionResult[PartitionT] = None
 
 
 @dataclass
-class ExecutionRequestMulti(BaseConstruction[PartitionT]):
+class ExecutionRequestMulti(ExecutionRequestBase[PartitionT]):
     """A Construction that is ready to execute. More instructions cannot be added.
     This Construction will return a list of any number of partitions.
 
+    _id: A unique identifier for this Construction.
     results: When ready, the partitions created from executing the Construction.
     """
     results: None | list[ExecutionResult[PartitionT]] = None
