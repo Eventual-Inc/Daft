@@ -341,24 +341,15 @@ class FanoutHash(FanoutInstruction):
 class FanoutRange(FanoutInstruction, Generic[PartitionT]):
     sort_by: ExpressionList
     descending: list[bool]
-    boundaries: PartitionT
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
-        # TODO find a generic way to do this
-        vpart: vPartition
-        if isinstance(self.boundaries, vPartition):
-            vpart = self.boundaries
-        elif isinstance(self.boundaries, ray.ObjectRef):
-            vpart = ray.get(self.boundaries)
-        else:
-            raise RuntimeError(f"Unsupported partition type {type(self.boundaries)}")
+        [boundaries, input] = inputs
 
         partitions_with_ids = SortOp.map_fn(
             input=input,
             output_partitions=self.num_outputs,
             exprs=self.sort_by,
-            boundaries=vpart,
+            boundaries=boundaries,
             descending=self.descending,
         )
         return [partition for _, partition in sorted(partitions_with_ids.items())]
