@@ -66,23 +66,23 @@ class OpenConstruction(BaseConstruction[PartitionT]):
         self.instructions.append(instruction)
         return self
 
-    def as_execution_request(self) -> ExecutionRequest[PartitionT]:
-        """Create an ExecutionRequest from this Construction.
+    def as_materization_request(self) -> MaterializationRequest[PartitionT]:
+        """Create an MaterializationRequest from this Construction.
 
         Returns a "frozen" version of this Construction that cannot have instructions added.
         The output of this Construction should be a single partition.
         """
 
-        return ExecutionRequest[PartitionT](
+        return MaterializationRequest[PartitionT](
             _id=self._id,
             inputs=self.inputs,
             instructions=self.instructions,
         )
 
-    def as_execution_request_multi(self) -> ExecutionRequestMulti[PartitionT]:
-        """Create an ExecutionRequestMulti from this Construction.
+    def as_materization_request_multi(self) -> MaterializationRequestMulti[PartitionT]:
+        """Create an MaterializationRequestMulti from this Construction.
 
-        Same as as_execution_request,
+        Same as as_materization_request,
         except it denotes that the output of this Construction is a list of any number of partitions.
         """
 
@@ -93,8 +93,8 @@ class OpenConstruction(BaseConstruction[PartitionT]):
         )
 
 @dataclass
-class ExecutionRequestBase(BaseConstruction[PartitionT]):
-    """Common helpers for ExecutionRequest and ExecutionRequestMulti.
+class MaterializationRequestBase(BaseConstruction[PartitionT]):
+    """Common helpers for MaterializationRequest and MaterializationRequestMulti.
 
     _id: A unique identifier for this Construction.
     """
@@ -113,27 +113,27 @@ class ExecutionRequestBase(BaseConstruction[PartitionT]):
 
 
 @dataclass
-class ExecutionRequest(ExecutionRequestBase[PartitionT]):
+class MaterializationRequest(MaterializationRequestBase[PartitionT]):
     """A Construction that is ready to execute. More instructions cannot be added.
 
     _id: A unique identifier for this Construction.
     result: When ready, the partition created from executing the Construction.
     """
-    result: None | ExecutionResult[PartitionT] = None
+    result: None | MaterializationResult[PartitionT] = None
 
 
 @dataclass
-class ExecutionRequestMulti(ExecutionRequestBase[PartitionT]):
+class MaterializationRequestMulti(MaterializationRequestBase[PartitionT]):
     """A Construction that is ready to execute. More instructions cannot be added.
     This Construction will return a list of any number of partitions.
 
     _id: A unique identifier for this Construction.
     results: When ready, the partitions created from executing the Construction.
     """
-    results: None | list[ExecutionResult[PartitionT]] = None
+    results: None | list[MaterializationResult[PartitionT]] = None
 
 
-class ExecutionResult(Protocol[PartitionT]):
+class MaterializationResult(Protocol[PartitionT]):
     """A wrapper class for accessing the result partition of a Construction."""
 
     def partition(self) -> PartitionT:
@@ -307,14 +307,13 @@ class ReduceToQuantiles(ReduceInstruction):
         return [result]
 
 
+@dataclass(frozen=True)
 class FanoutInstruction(Instruction):
-    ...
+    num_outputs: int
 
 
 @dataclass(frozen=True)
 class FanoutRandom(FanoutInstruction):
-    num_outputs: int
-
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         partitions_with_ids = RepartitionRandomOp.map_fn(
@@ -326,7 +325,6 @@ class FanoutRandom(FanoutInstruction):
 
 @dataclass(frozen=True)
 class FanoutHash(FanoutInstruction):
-    num_outputs: int
     partition_by: ExpressionList
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
@@ -341,7 +339,6 @@ class FanoutHash(FanoutInstruction):
 
 @dataclass(frozen=True)
 class FanoutRange(FanoutInstruction, Generic[PartitionT]):
-    num_outputs: int
     sort_by: ExpressionList
     descending: list[bool]
     boundaries: PartitionT
