@@ -278,54 +278,83 @@ def schedule_global_limit(
             yield None
 
 
-class ScheduleCoalesce(DynamicSchedule[PartitionT]):
-    def __init__(self, child_schedule: DynamicSchedule[PartitionT], coalesce: logical_plan.Coalesce) -> None:
-        super().__init__()
-        self._child_schedule = child_schedule
+def schedule_coalesce(
+    source_schedule: Iterator[None | BaseConstruction[PartitionT]],
+    coalesce: logical_plan.Coalesce,
+) -> Iterator[None | BaseConstruction[PartitionT]]:
 
-        coalesce_from = coalesce._children()[0].num_partitions()
-        coalesce_to = coalesce.num_partitions()
-        self._num_emitted = 0
+    coalesce_from = coalesce._children()[0].num_partitions()
+    coalesce_to = coalesce.num_partitions()
+    assert (
+        coalesce_to <= coalesce_from
+    ), f"Cannot coalesce upwards from {coalesce_from} to {coalesce_to} partitions."
 
-        assert (
-            coalesce_to <= coalesce_from
-        ), f"Cannot coalesce upwards from {coalesce_from} to {coalesce_to} partitions."
+    starts = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(coalesce_to)]
+    stops = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(1, coalesce_to + 1)]
+    # For each output partition, the number of input partitions to coalesce.
+    num_partitions_per_result = deque([stop - start for start, stop in zip(starts, stops)])
 
-        starts = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(coalesce_to)]
-        stops = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(1, coalesce_to + 1)]
-
-        self._coalesce_boundaries = list(zip(starts, stops))
-
-    def _next_impl(self) -> Construction[PartitionT] | None:
-
-        if self._num_emitted == len(self._coalesce_boundaries):
-            raise StopIteration
+    materializations = deque()
+    while True:
 
         # See if we can emit a coalesced partition.
-        dependencies = self._materializations.dependencies
-        next_start, next_stop = self._coalesce_boundaries[self._num_emitted]
-        if next_stop <= len(dependencies):
-            to_coalesce = dependencies[next_start:next_stop]
-            # for mypy
-            ready_to_coalesce = [_ for _ in to_coalesce if _ is not None]
-            if len(ready_to_coalesce) == len(to_coalesce):
-                construct_merge = Construction[PartitionT]([_.partition for _ in ready_to_coalesce])
+        num_partitions_to_merge = num_paritions_per_result[0]
+        if len(materializations) >= num_partitions_to_merge:
+            ready_to_coalesce = [
+                result for i in range(num_partitions_to_merge)
+                if (result := materializations[i].result) is not None
+            ]
+            if len(ready_to_coalesce) == num_partitions_to_merge:
+                # Coalesce the partition and emit it.
+                construct_merge = OpenConstruction[PartitionT]([_.partition() for _ in ready_to_coalesce])
                 construct_merge.add_instruction(dynamic_construction.ReduceMerge())
-                self._num_emitted += 1
-                return construct_merge
+                [materializations.popleft() for _ in range(num_partitions_to_merge)]
+                num_partitions_per_result.popleft()
+                yield construct_merge
 
-        # We cannot emit a coalesced partition;
-        # try materializing more dependencies.
+        # Cannot emit a coalesced partition.
+        # Materialize a single dependency.
         try:
-            construct = next(self._child_schedule)
+            construction = next(source_schedule)
+            if isinstance(construction, OpenConstruction):
+                construction = construction.as_materialization_request()
+                materializations.append(construction)
+            yield construction
+
         except StopIteration:
-            construct = None
+            if len(materializations) > 0:
+                yield None
+            else:
+                return
 
-        if construct is None or construct.is_marked_for_materialization():
-            return construct
 
-        construct.mark_for_materialization(dependencies)
-        return construct
+def schedule_reduce(
+    fanout_schedule: Iterator[None | BaseConstruction[PartitionT]],
+    reduce_instruction: ReduceInstruction,
+) -> Iterator[None | BaseConstruction[PartitionT]]:
+
+    materializations = list()
+
+    # Dispatch all fanouts.
+    for construction in fanout_schedule:
+        if isinstance(construction, OpenConstruction):
+            construction = construction.as_materialization_request_multi()
+            materializations.append(construction)
+        yield construction
+
+    # All fanouts dispatched. Wait for all of them to materialize
+    # (since we need all of them to emit even a single reduce).
+    while any(_.results is None for _ in materializations):
+        yield None
+
+    # Yield all the reduces in order.
+    yield from (
+        OpenConstruction[PartitionT]([
+            result.partition()
+            for result in (_.results[reduce_index] for _ in materializations)
+        ]).add_instruction(reduce_instruction)
+        for reduce_index in range(len(materializations[0].results))
+    )
 
 
 class ScheduleSort(DynamicSchedule[PartitionT]):
@@ -416,59 +445,6 @@ class ScheduleSort(DynamicSchedule[PartitionT]):
             )
 
         return next(self._fanout_reduce)
-
-
-class ScheduleFanoutReduce(DynamicSchedule[PartitionT]):
-    def __init__(
-        self,
-        child_schedule: DynamicSchedule[PartitionT],
-        num_outputs: int,
-        fanout_ins: FanoutInstruction,
-        reduce_ins: ReduceInstruction,
-    ) -> None:
-        super().__init__()
-        self._child_schedule = child_schedule
-        self._num_outputs = num_outputs
-        self._fanout_ins = fanout_ins
-        self._reduce_ins = reduce_ins
-
-        self._reduces_emitted = 0
-
-    def _next_impl(self) -> Construction[PartitionT] | None:
-        # Dispatch shufflemaps.
-        try:
-            construct = next(self._child_schedule)
-            if construct is None or construct.is_marked_for_materialization():
-                return construct
-
-            construct.add_instruction(self._fanout_ins)
-
-            construct.mark_for_materialization(self._materializations.dependencies, num_results=self._num_outputs)
-            return construct
-
-        except StopIteration:
-            # No more shufflemaps to dispatch, continue to reduce.
-            pass
-
-        # All shufflemaps have been dispatched; see if we can dispatch the next ("kth") reduce.
-        if self._reduces_emitted == self._num_outputs:
-            raise StopIteration
-
-        # The dependencies here are the 2d matrix unrolled into a 1d list.
-        kth_reduce_dependencies = [
-            partition
-            for i, partition in enumerate(self._materializations.dependencies)
-            if i % self._num_outputs == self._reduces_emitted
-        ]
-        finished_reduce_dependencies = [_ for _ in kth_reduce_dependencies if _ is not None]
-        if len(finished_reduce_dependencies) != len(kth_reduce_dependencies):
-            # Need to wait for some shufflemaps to complete.
-            return None
-
-        construct_reduce = Construction[PartitionT]([_.partition for _ in finished_reduce_dependencies])
-        construct_reduce.add_instruction(self._reduce_ins)
-        self._reduces_emitted += 1
-        return construct_reduce
 
 
 class ScheduleMaterialize(DynamicSchedule[PartitionT]):
