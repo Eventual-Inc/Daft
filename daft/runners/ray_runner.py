@@ -405,6 +405,7 @@ class DynamicRayRunner(RayRunner):
         inflight_ref_to_construction: dict[ray.ObjectRef, str] = dict()
 
         start = datetime.now()
+        result_pset = RayPartitionSet({})
         with profiler("profile_DynamicRayRunner.run_{datetime.now().isoformat()}.json"):
 
             try:
@@ -453,8 +454,9 @@ class DynamicRayRunner(RayRunner):
                         del inflight_ref_to_construction[ref]
                     del inflight_constructions[cons_id]
 
-            except StopIteration:
-                pass
+            except StopIteration as e:
+                for i, partition in enumerate(result_partitions := e.value):
+                    result_pset.set_partition(i, partition)
 
             for construction in constructions_to_dispatch:
                 results = self._build_partitions(construction)
@@ -476,8 +478,7 @@ class DynamicRayRunner(RayRunner):
                     del inflight_ref_to_construction[ref]
                 del inflight_constructions[cons_id]
 
-        final_result = schedule.result_partition_set(RayPartitionSet)
-        pset_entry = self._part_set_cache.put_partition_set(final_result)
+        pset_entry = self._part_set_cache.put_partition_set(result_pset)
         return pset_entry
 
     def _build_partitions(self, partspec: Construction[ray.ObjectRef]) -> list[ray.ObjectRef]:

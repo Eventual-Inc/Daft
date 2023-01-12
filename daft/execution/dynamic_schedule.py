@@ -85,8 +85,11 @@ def enumerate_open_constructions(
     )
 
 """
-A "Construction" describes some partition(s) to be built.
-A "Schedule" is an iterator of constructions. It gives you the sequence, or schedule, of things to build.
+    1. A "Construction" describes a task to build some partition(s).
+
+    2. A "Schedule" is an iterator of constructions. It gives a sequence, or schedule, of things to build.
+
+    3. Schedules are composable. The top level schedule is responsible for emitting
 """
 
 def schedule_partition_read(partitions: Iterator[PartitionT]) -> Iterator[None | BaseConstruction[PartitionT]]:
@@ -357,134 +360,92 @@ def schedule_reduce(
     )
 
 
-class ScheduleSort(DynamicSchedule[PartitionT]):
-    @dataclass
-    class Materializations(DynamicSchedule.Materializations[PartitionT]):
-        samples: list[PartitionWithInfo[PartitionT] | None] = field(default_factory=list)
-        boundaries: list[PartitionWithInfo[PartitionT] | None] = field(default_factory=list)
+def sort(
+    child_plan: Iterator[None | BaseConstruction[PartitionT]],
+    sort_logplan: logical_plan.Sort,
+) -> Iterator[None | BaseConstruction[PartitionT]]:
 
-    def __init__(self, child_schedule: DynamicSchedule[PartitionT], sort: logical_plan.Sort) -> None:
-        super().__init__()
-        self._materializations: ScheduleSort.Materializations = self.Materializations[PartitionT]()
-        self._sort = sort
-        self._child_schedule = child_schedule
+    source_partitions = list()
 
-        # The final step of the sort.
-        self._fanout_reduce: ScheduleFanoutReduce | None = None
+    # First, materialize the child plan.
+    for execution_stack in child_plan:
+        if isinstance(execution_stack, OpenConstruction):
+            execution_stack = execution_stack.as_materialization_request()
+            source_partitions.append(execution_stack)
+        yield execution_stack
 
-    def _next_impl(self) -> Construction[PartitionT] | None:
+    sample_partitions = list()
 
-        # First, materialize the child node.
-        try:
-            construct = next(self._child_schedule)
-            if construct is None or construct.is_marked_for_materialization():
-                return construct
+    # Sample all partitions (to be used for calculating sort boundaries).
+    for source in source_partitions:
+        while source.result is None:
+            yield None
+        sample = OpenConstruction[PartitionT](
+            [source.result.partition()]
+        ).add_instruction(
+            dynamic_construction.Sample(sort_by=sort_logplan._sort_by)
+        ).as_materialization_request()
+        sample_partitions.append(sample)
+        yield sample
 
-            construct.mark_for_materialization(self._materializations.dependencies)
+    # Wait for samples to materialize.
+    while any(_.result is None for _ in sample_partitions):
+        yield None
 
-            return construct
+    # Reduce the samples to get sort boundaries.
+    boundaries = OpenConstruction[PartitionT](
+        [sample.result.partition() for sample in sample_partitions]
+    ).add_instruction(
+        dynamic_construction.ReduceToQuantiles(
+            num_quantiles=sort_logplan.num_partitions(),
+            sort_by=sort_logplan._sort_by,
+            descending=sort_logplan._descending,
+        )
+    ).as_materialization_request()
+    yield boundaries
 
-        except StopIteration:
-            # Child node fully materialized.
-            pass
+    # Wait for boundaries to materialize.
+    while boundaries.result is None:
+        yield None
 
-        # Sample partitions to get sort boundaries.
-        source_partitions = self._materializations.dependencies
-        sample_partitions = self._materializations.samples
-        if len(sample_partitions) < len(source_partitions):
-            source = source_partitions[len(sample_partitions)]
-            if source is None:
-                return None
-            construct_sample = Construction[PartitionT]([source.partition])
-            construct_sample.add_instruction(dynamic_construction.Sample(sort_by=self._sort._sort_by))
-            construct_sample.mark_for_materialization(sample_partitions)
-            return construct_sample
-
-        # Sample partitions are done, reduce to get quantiles.
-        if not len(self._materializations.boundaries):
-            finished_samples = [_ for _ in sample_partitions if _ is not None]
-            if len(finished_samples) != len(sample_partitions):
-                return None
-
-            construct_boundaries = Construction[PartitionT]([_.partition for _ in finished_samples])
-            construct_boundaries.add_instruction(
-                dynamic_construction.ReduceToQuantiles(
-                    num_quantiles=self._sort.num_partitions(),
-                    sort_by=self._sort._sort_by,
-                    descending=self._sort._descending,
+    # Execute the range fanout -> sorting reduce.
+    yield from schedule_reduce(
+        fanout_schedule=(
+            OpenConstruction[PartitionT](
+                [boundaries.result.partition(), source.result.partition()]
+            ).add_instruction(
+                dynamic_construction.FanoutRange[PartitionT](
+                    num_outputs=sort_logplan.num_partitions(),
+                    sort_by=sort_logplan._sort_by,
+                    descending=sort_logplan._descending,
                 )
             )
-            construct_boundaries.mark_for_materialization(self._materializations.boundaries)
-            return construct_boundaries
-
-        [boundaries_partition] = self._materializations.boundaries
-        if boundaries_partition is None:
-            return None
-
-        # Boundaries are ready; execute fanout-reduce.
-        finished_dependencies = [_ for _ in source_partitions if _ is not None]  # for mypy; these are all done
-        assert len(finished_dependencies) == len(source_partitions)
-
-        if self._fanout_reduce is None:
-            from_partitions = SchedulePartitionRead[PartitionT](finished_dependencies)
-            fanout_ins = dynamic_construction.FanoutRange[PartitionT](
-                num_outputs=self._sort.num_partitions(),
-                sort_by=self._sort._sort_by,
-                descending=self._sort._descending,
-                boundaries=boundaries_partition.partition,
-            )
-            reduce_ins = dynamic_construction.ReduceMergeAndSort(
-                sort_by=self._sort._sort_by,
-                descending=self._sort._descending,
-            )
-            self._fanout_reduce = ScheduleFanoutReduce[PartitionT](
-                child_schedule=from_partitions,
-                num_outputs=self._sort.num_partitions(),
-                fanout_ins=fanout_ins,
-                reduce_ins=reduce_ins,
-            )
-
-        return next(self._fanout_reduce)
+            for source in source_partitions
+        ),
+        reduce_instruction=dynamic_construction.ReduceMergeAndSort(
+            sort_by=sort_logplan._sort_by,
+            descending=sort_logplan._descending,
+        ),
+    )
 
 
-class ScheduleMaterialize(DynamicSchedule[PartitionT]):
-    """Materializes its dependencies and does nothing else."""
+def schedule_materialize(
+    child_plan: Iterator[None | BaseConstruction[PartitionT]],
+) -> Generator[None | BaseConstruction[PartitionT], None, list[PartitionT]]:
+    """
+    Yields: a plan to materialize the child plan.
+    Returns: the completed plan's result partitions.
+    """
 
-    def __init__(self, child_schedule: DynamicSchedule[PartitionT]) -> None:
-        super().__init__()
-        self.child_schedule = child_schedule
-        self._materializing_results: list[PartitionWithInfo[PartitionT] | None] = []
-        self._returned = False
+    results = list()
 
-    def _next_impl(self) -> Construction[PartitionT] | None:
-        construct = next(self.child_schedule)
-        if construct is not None and not construct.is_marked_for_materialization():
-            construct.mark_for_materialization(self._materializing_results)
-        return construct
+    for execution_stack in child_plan:
+        if isinstance(execution_stack, OpenConstruction):
+            execution_stack = execution_stack.as_materialization_request()
+            results.append(execution_stack)
+        yield execution_stack
 
-    def result_partition_set(
-        self, pset_class: Callable[[dict[PartID, PartitionT]], PartitionSet[PartitionT]]
-    ) -> PartitionSet[PartitionT]:
-        """Return the materialized partitions as a ResultPartitionSet.
+    while any(_.result is None for _ in results):
+        yield None
 
-        This can only be called once. After the partitions are handed off, this schedule will drop its references to the partitions.
-        """
-        assert not self._returned, "The partitions have already been returned."
-
-        # Ensure that the plan has finished executing.
-        assert self._completed, "The plan has not finished executing yet."
-
-        # Ensure that all partitions have finished materializing.
-        finished_partitions = [p for p in self._materializing_results if p is not None]
-        assert len(finished_partitions) == len(
-            self._materializing_results
-        ), f"Not all partitions have finished materializing yet in results: {self._materializing_results}"
-
-        # Return the result partition set.
-        result = pset_class({})
-        for i, partition_info in enumerate(finished_partitions):
-            result.set_partition(i, partition_info.partition)
-
-        self._returned = True
-        self._materializing_results.clear()
-        return result
+    return results
