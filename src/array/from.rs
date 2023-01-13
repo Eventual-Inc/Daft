@@ -1,7 +1,6 @@
-use core::slice;
 use std::sync::Arc;
 
-use crate::datatypes::{DaftDataType, DaftNumericType, DataType, Field, Utf8Array, Utf8Type};
+use crate::datatypes::{DaftDataType, DaftNumericType, DataType, Field, Utf8Type};
 
 use crate::array::DataArray;
 
