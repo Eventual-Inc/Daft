@@ -11,12 +11,20 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new(schema: Schema, columns: &[Series]) -> Self {
-        Table {
+    pub fn new(schema: Schema, columns: &[Series]) -> DaftResult<Self> {
+        Ok(Table {
             schema: schema.into(),
             columns: columns.into(),
-        }
+        })
     }
+
+    //pub fn head(&self, num: usize) -> DaftResult<Table>;
+    //pub fn sample(&self, num: usize) -> DaftResult<Table>;
+    //pub fn filter(&self, predicate: &[&Expr]) -> DaftResult<Table>;
+    //pub fn sort(&self, sort_keys: &[&Expr], descending: &[bool]) -> DaftResult<Table>;
+    //pub fn argsort(&self, sort_keys: &[&Expr], descending: &[bool]) -> DaftResult<Series>;
+    //pub fn take(&self, idx: &Series) -> DaftResult<Table>;
+    //pub fn concat(tables: &[&Table]) -> DaftResult<Table>;
 
     fn get_column(&self, name: &str) -> DaftResult<Series> {
         let i = self.schema.get_index(name)?;
@@ -66,7 +74,7 @@ mod test {
             ]
             .as_slice(),
         );
-        let table = Table::new(schema, [a, b].as_slice());
+        let table = Table::new(schema, [a, b].as_slice())?;
         let result = table.eval_expression(&(col("a") + col("b")))?;
         println!("{:?}", result.len());
         assert_eq!(*result.data_type(), DataType::Float64);
