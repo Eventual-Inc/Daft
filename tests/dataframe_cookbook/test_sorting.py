@@ -19,7 +19,7 @@ def test_sorted_by_expr(daft_df, service_requests_csv_pd_df, repartition_nparts)
     daft_sorted_pd_df = daft_sorted_df.to_pandas()
     assert_df_equals(
         daft_sorted_pd_df,
-        service_requests_csv_pd_df.sort_values(by=service_requests_csv_pd_df["Unique Key"]),
+        service_requests_csv_pd_df.sort_values(by=["Unique Key"]),
         assert_ordering=True,
     )
 
