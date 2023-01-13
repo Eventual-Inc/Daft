@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::datatypes::{DaftDataType, DaftNumericType, DataType, Field, Utf8Type};
+use crate::datatypes::{DaftDataType, DaftNumericType, DataType, Field, Utf8Array, Utf8Type};
 
 use crate::array::DataArray;
 
@@ -8,6 +8,16 @@ impl<T: DaftNumericType> From<Box<arrow2::array::PrimitiveArray<T::Native>>> for
     fn from(item: Box<arrow2::array::PrimitiveArray<T::Native>>) -> Self {
         DataArray::new(
             Field::new("arrow_array", T::get_dtype()).into(),
+            item.arced(),
+        )
+        .unwrap()
+    }
+}
+
+impl From<Box<arrow2::array::Utf8Array<i64>>> for Utf8Array {
+    fn from(item: Box<arrow2::array::Utf8Array<i64>>) -> Self {
+        DataArray::new(
+            Field::new("arrow_array", DataType::Utf8).into(),
             item.arced(),
         )
         .unwrap()

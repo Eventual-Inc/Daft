@@ -2,7 +2,11 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 
-use crate::{array::data_array::DataArray, datatypes::DaftNumericType};
+use crate::{
+    array::data_array::DataArray,
+    datatypes::{DaftNumericType, Utf8Array},
+    kernels::utf8::add_utf8_arrays,
+};
 /// Helper function to perform arithmetic operations on a DataArray
 /// Takes both Kernel (array x array operation) and operation (scalar x scalar) functions
 /// The Kernel is used for when both arrays are non-unit length and the operation is used when broadcasting
@@ -68,6 +72,14 @@ where
     type Output = DataArray<T>;
     fn add(self, rhs: Self) -> Self::Output {
         arithmetic_helper(self, rhs, basic::add, |l, r| l + r)
+    }
+}
+
+impl Add for &Utf8Array {
+    type Output = Utf8Array;
+    fn add(self, rhs: Self) -> Self::Output {
+        let result = Box::new(add_utf8_arrays(self.downcast(), rhs.downcast()).unwrap());
+        Utf8Array::from(result)
     }
 }
 
