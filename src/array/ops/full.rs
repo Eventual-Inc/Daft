@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use arrow2::array::{new_null_array, PrimitiveArray};
+use arrow2::array::new_null_array;
 
 use crate::{
     array::data_array::DataArray,
-    datatypes::{DaftDataType, DaftNumericType, Field, NullArray, NullType},
+    datatypes::{DaftDataType, Field},
 };
 
 impl<T> DataArray<T>
