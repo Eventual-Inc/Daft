@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from daft.execution.dynamic_construction import Construction, PartitionWithInfo
-from daft.execution.dynamic_schedule import DynamicSchedule, ScheduleMaterialize
-from daft.execution.dynamic_schedule_factory import DynamicScheduleFactory
+from dataclasses import dataclass
+from typing import Iterator
+
+from daft.execution import physical_plan_factory
+from daft.execution.execution_step import (
+    MaterializationRequest,
+    MaterializationRequestBase,
+    MaterializationRequestMulti,
+    MaterializationResult,
+)
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
 from daft.logical.optimizer import (
@@ -20,6 +27,7 @@ from daft.runners.partitioning import (
     PartitionSetFactory,
     vPartition,
 )
+from daft.runners.profiler import profiler
 from daft.runners.pyrunner import LocalPartitionSet, LocalPartitionSetFactory
 from daft.runners.runner import Runner
 
@@ -61,25 +69,49 @@ class DynamicRunner(Runner):
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         plan = self.optimize(plan)
 
-        schedule_factory = DynamicScheduleFactory[vPartition]()
+        phys_plan: Iterator[
+            None | MaterializationRequestBase[vPartition]
+        ] = physical_plan_factory.get_materializing_physical_plan(plan)
 
-        schedule: DynamicSchedule[vPartition] = schedule_factory.schedule_logical_node(plan)
-        schedule = ScheduleMaterialize[vPartition](schedule)
+        result_pset = LocalPartitionSet({})
 
-        for next_construction in schedule:
-            assert next_construction is not None, "Got a None construction in singlethreaded mode"
-            self._build_partitions(next_construction)
+        with profiler("profile_DynamicRunner.run_{datetime.now().isoformat()}.json"):
+            try:
+                while next_step := next(phys_plan):
+                    assert next_step is not None, "Got a None ExecutionStep in singlethreaded mode"
+                    self._build_partitions(next_step)
+            except StopIteration as e:
+                for i, partition in enumerate(result_partitions := e.value):
+                    result_pset.set_partition(i, partition)
 
-        final_result = schedule.result_partition_set(LocalPartitionSet)
-        pset_entry = self.put_partition_set_into_cache(final_result)
+        pset_entry = self.put_partition_set_into_cache(result_pset)
         return pset_entry
 
-    def _build_partitions(self, partspec: Construction[vPartition]) -> None:
+    def _build_partitions(self, partspec: MaterializationRequestBase[vPartition]) -> None:
         partitions = partspec.inputs
-        for instruction in partspec.instruction_stack:
+        for instruction in partspec.instructions:
             partitions = instruction.run(partitions)
-        partspec.report_completed([PartitionWithInfo(p, lambda x: x.metadata()) for p in partitions])
+        if isinstance(partspec, MaterializationRequestMulti):
+            partspec.results = [PyMaterializationResult(partition) for partition in partitions]
+        elif isinstance(partspec, MaterializationRequest):
+            [partition] = partitions
+            partspec.result = PyMaterializationResult(partition)
+        else:
+            raise TypeError(f"Cannot typematch input {partspec}")
 
-    def _get_partition_metadata(self, *partitions: vPartition) -> list[PartitionMetadata]:
-        """Hacky; only used for DynamicSchedule initialization. Remove when PartitionCache is implemented"""
-        return [_.metadata() for _ in partitions]
+
+@dataclass(frozen=True)
+class PyMaterializationResult(MaterializationResult[vPartition]):
+    _partition: vPartition
+
+    def partition(self) -> vPartition:
+        return self._partition
+
+    def metadata(self) -> PartitionMetadata:
+        return self._partition.metadata()
+
+    def cancel(self) -> None:
+        return None
+
+    def _noop(self, _: vPartition) -> None:
+        return None

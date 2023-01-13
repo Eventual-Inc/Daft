@@ -14,23 +14,20 @@ because it is waiting for the result of a previous ExecutionStep to can decide w
 from __future__ import annotations
 
 import math
-from abc import abstractmethod
 from collections import deque
-from collections.abc import Iterator
-from dataclasses import dataclass, field
-from typing import Callable, Generic, TypeVar
+from collections.abc import Generator, Iterator
+from typing import TypeVar
 
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     ExecutionStep,
-    OpenExecutionQueue,
-    MaterializationRequest,
-    FanoutInstruction,
     Instruction,
+    MaterializationRequest,
+    MaterializationRequestBase,
+    OpenExecutionQueue,
     ReduceInstruction,
 )
 from daft.logical import logical_plan
-from daft.runners.partitioning import PartID, PartitionSet
 
 PartitionT = TypeVar("PartitionT")
 _PartitionT = TypeVar("_PartitionT")
@@ -38,7 +35,8 @@ _PartitionT = TypeVar("_PartitionT")
 
 def partition_read(partitions: Iterator[PartitionT]) -> Iterator[None | ExecutionStep[PartitionT]]:
     """Instantiate a (no-op) physical plan from existing partitions."""
-    yield from (OpenExecutionQueue[PartitionT]([partition]) for partition in partitions)
+    yield from (OpenExecutionQueue[PartitionT](inputs=[partition], instructions=[]) for partition in partitions)
+
 
 def file_read(
     child_plan: Iterator[None | ExecutionStep[PartitionT]],
@@ -55,18 +53,20 @@ def file_read(
         for index, step in enumerate_open_executions(child_plan)
     )
 
+
 def file_write(
     child_plan: Iterator[None | ExecutionStep[PartitionT]],
     write_info: logical_plan.FileWrite,
 ) -> Iterator[None | ExecutionStep[PartitionT]]:
-    """Write the results of `child_plan` into files described by `write_info`.""""
+    """Write the results of `child_plan` into files described by `write_info`."""
 
     yield from (
-        step.add_instruction(partition_id=index, logplan=write_info)
+        step.add_instruction(execution_step.WriteFile(partition_id=index, logplan=write_info))
         if isinstance(step, OpenExecutionQueue)
         else step
         for index, step in enumerate_open_executions(child_plan)
     )
+
 
 def pipeline_instruction(
     child_plan: Iterator[None | ExecutionStep[PartitionT]],
@@ -75,11 +75,10 @@ def pipeline_instruction(
     """Apply an instruction to the results of `child_plan`."""
 
     yield from (
-        step.add_instruction(pipeable_instruction)
-        if isinstance(step, OpenExecutionQueue)
-        else step
+        step.add_instruction(pipeable_instruction) if isinstance(step, OpenExecutionQueue) else step
         for step in child_plan
     )
+
 
 def join(
     left_plan: Iterator[None | ExecutionStep[PartitionT]],
@@ -95,15 +94,23 @@ def join(
 
     while True:
         # Emit new join steps if we have left and right partitions ready.
-        while (
-            left_ready := len(left_requests) > 0 and left_requests[0].result is not None
-        ) and (
-            right_ready := len(right_requests) > 0 and right_requests[0].result is not None
+        while all(
+            (
+                len(left_requests) > 0,
+                len(right_requests) > 0,
+                left_requests[0].result is not None,
+                right_requests[0].result is not None,
+            )
         ):
             next_left = left_requests.popleft()
             next_right = right_requests.popleft()
-            join_step = OpenExecutionQueue[PartitionT]([next_left.partition, next_right.partition])
-            join_step.add_instruction(execution_step.Join(join))
+            assert next_left.result is not None  # for mypy only; guaranteed by while condition
+            assert next_right.result is not None  # for mypy only; guaranteed by while condition
+
+            join_step = OpenExecutionQueue[PartitionT](
+                inputs=[next_left.result.partition(), next_right.result.partition()],
+                instructions=[execution_step.Join(join)],
+            )
             yield join_step
 
         # Exhausted all ready inputs; execute a single child step to get more join inputs.
@@ -116,7 +123,7 @@ def join(
         try:
             step = next(next_plan)
             if isinstance(step, OpenExecutionQueue):
-                step = step.as_execution_request()
+                step = step.as_materialization_request()
                 next_requests.append(step)
             yield step
 
@@ -160,7 +167,7 @@ def global_limit(
     remaining_rows = global_limit._num
     remaining_partitions = global_limit.num_partitions()
 
-    materializations = deque()
+    materializations: deque[MaterializationRequest[PartitionT]] = deque()
 
     # To dynamically schedule the global limit, we need to apply an appropriate limit to each child partition.
     # We don't know their exact sizes since they are pending execution, so we will have to iteratively execute them,
@@ -176,10 +183,14 @@ def global_limit(
         # Apply and deduct the rolling global limit.
         while len(materializations) > 0 and materializations[0].result is not None:
             result = materializations.popleft().result
+            assert result is not None  # for mypy only
+
             limit = remaining_rows and min(remaining_rows, result.metadata().num_rows)
 
-            global_limit_step = OpenExecutionQueue[PartitionT]([result.partition()])
-            global_limit_step.add_instruction(execution_step.LocalLimit(limit))
+            global_limit_step = OpenExecutionQueue[PartitionT](
+                inputs=[result.partition()],
+                instructions=[execution_step.LocalLimit(limit)],
+            )
             yield global_limit_step
             remaining_partitions -= 1
             remaining_rows -= limit
@@ -191,12 +202,15 @@ def global_limit(
 
                 # Cancel all remaining results; we won't need them.
                 for _ in range(len(materializations)):
-                    result_to_cancel = materializations.popright().result
+                    result_to_cancel = materializations.pop().result
                     if result_to_cancel is not None:
                         result_to_cancel.cancel()
 
                 yield from (
-                    OpenExecutionQueue[PartitionT]([result.partition()]).add_instruction(execution_step.LocalLimit(0))
+                    OpenExecutionQueue[PartitionT](
+                        inputs=[result.partition()],
+                        instructions=[execution_step.LocalLimit(0)],
+                    )
                     for _ in range(remaining_partitions)
                 )
                 return
@@ -208,10 +222,10 @@ def global_limit(
 
         # Execute a single child partition.
         try:
-            child_step = child_plan.send(remaining_rows if started else None)
+            child_step = child_plan.send(remaining_rows) if started else next(child_plan)
             started = True
             if isinstance(child_step, OpenExecutionQueue):
-                child_step = child_step.as_execution_request()
+                child_step = child_step.as_materialization_request()
                 materializations.append(child_step)
             yield child_step
 
@@ -233,16 +247,14 @@ def coalesce(
 
     coalesce_from = coalesce._children()[0].num_partitions()
     coalesce_to = coalesce.num_partitions()
-    assert (
-        coalesce_to <= coalesce_from
-    ), f"Cannot coalesce upwards from {coalesce_from} to {coalesce_to} partitions."
+    assert coalesce_to <= coalesce_from, f"Cannot coalesce upwards from {coalesce_from} to {coalesce_to} partitions."
 
     starts = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(coalesce_to)]
     stops = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(1, coalesce_to + 1)]
     # For each output partition, the number of input partitions to merge in.
     merges_per_result = deque([stop - start for start, stop in zip(starts, stops)])
 
-    materializations = deque()
+    materializations: deque[MaterializationRequest[PartitionT]] = deque()
 
     while True:
 
@@ -250,13 +262,14 @@ def coalesce(
         num_partitions_to_merge = merges_per_result[0]
         if len(materializations) >= num_partitions_to_merge:
             ready_to_coalesce = [
-                result for i in range(num_partitions_to_merge)
-                if (result := materializations[i].result) is not None
+                result for i in range(num_partitions_to_merge) if (result := materializations[i].result) is not None
             ]
             if len(ready_to_coalesce) == num_partitions_to_merge:
                 # Coalesce the partition and emit it.
-                merge_step = OpenExecutionQueue[PartitionT]([_.partition() for _ in ready_to_coalesce])
-                merge_step.add_instruction(execution_step.ReduceMerge())
+                merge_step = OpenExecutionQueue[PartitionT](
+                    inputs=[_.partition() for _ in ready_to_coalesce],
+                    instructions=[execution_step.ReduceMerge()],
+                )
                 [materializations.popleft() for _ in range(num_partitions_to_merge)]
                 merges_per_result.popleft()
                 yield merge_step
@@ -275,6 +288,7 @@ def coalesce(
                 yield None
             else:
                 return
+
 
 def reduce(
     fanout_plan: Iterator[None | ExecutionStep[PartitionT]],
@@ -302,13 +316,14 @@ def reduce(
     # (since we need all of them to emit even a single reduce).
     while any(_.results is None for _ in materializations):
         yield None
+    assert materializations[0].results is not None  # for mypy only
 
     # Yield all the reduces in order.
     yield from (
-        OpenExecutionQueue[PartitionT]([
-            result.partition()
-            for result in (_.results[reduce_index] for _ in materializations)
-        ]).add_instruction(reduce_instruction)
+        OpenExecutionQueue[PartitionT](
+            inputs=[result.partition() for result in (_.results[reduce_index] for _ in materializations)],
+            instructions=[reduce_instruction],
+        )
         for reduce_index in range(len(materializations[0].results))
     )
 
@@ -319,42 +334,45 @@ def sort(
 ) -> Iterator[None | ExecutionStep[PartitionT]]:
     """Sort the result of `child_plan` according to `sort_info`."""
 
-
     # First, materialize the child plan.
-    source_partitions = list()
+    source_materializations: list[MaterializationRequest[PartitionT]] = list()
     for step in child_plan:
         if isinstance(step, OpenExecutionQueue):
             step = step.as_materialization_request()
-            source_partitions.append(step)
+            source_materializations.append(step)
         yield step
 
-
     # Sample all partitions (to be used for calculating sort boundaries).
-    sample_partitions = list()
-    for source in source_partitions:
+    sample_materializations: list[MaterializationRequest[PartitionT]] = list()
+    for source in source_materializations:
         while source.result is None:
             yield None
         sample = OpenExecutionQueue[PartitionT](
-            [source.result.partition()]
-        ).add_instruction(
-            execution_step.Sample(sort_by=sort_info._sort_by)
+            inputs=[source.result.partition()],
+            instructions=[execution_step.Sample(sort_by=sort_info._sort_by)],
         ).as_materialization_request()
-        sample_partitions.append(sample)
+        sample_materializations.append(sample)
         yield sample
 
     # Wait for samples to materialize.
-    while any(_.result is None for _ in sample_partitions):
+    while any(_.result is None for _ in sample_materializations):
         yield None
 
     # Reduce the samples to get sort boundaries.
+    samples = [
+        sample.result.partition()
+        for sample in sample_materializations
+        if sample.result is not None  # for mypy only; guaranteed to be not None by while loop
+    ]
     boundaries = OpenExecutionQueue[PartitionT](
-        [sample.result.partition() for sample in sample_partitions]
-    ).add_instruction(
-        execution_step.ReduceToQuantiles(
-            num_quantiles=sort_info.num_partitions(),
-            sort_by=sort_info._sort_by,
-            descending=sort_info._descending,
-        )
+        inputs=samples,
+        instructions=[
+            execution_step.ReduceToQuantiles(
+                num_quantiles=sort_info.num_partitions(),
+                sort_by=sort_info._sort_by,
+                descending=sort_info._descending,
+            ),
+        ],
     ).as_materialization_request()
     yield boundaries
 
@@ -362,18 +380,22 @@ def sort(
     while boundaries.result is None:
         yield None
 
+    boundaries_partition = boundaries.result.partition()
+
     # Create a range fanout plan.
+    source_partitions = [source.result.partition() for source in source_materializations if source.result is not None]
     range_fanout_plan = (
         OpenExecutionQueue[PartitionT](
-            [boundaries.result.partition(), source.result.partition()]
-        ).add_instruction(
-            execution_step.FanoutRange[PartitionT](
-                num_outputs=sort_info.num_partitions(),
-                sort_by=sort_info._sort_by,
-                descending=sort_info._descending,
-            )
+            inputs=[boundaries_partition, source_partition],
+            instructions=[
+                execution_step.FanoutRange[PartitionT](
+                    num_outputs=sort_info.num_partitions(),
+                    sort_by=sort_info._sort_by,
+                    descending=sort_info._descending,
+                ),
+            ],
         )
-        for source in source_partitions
+        for source_partition in source_partitions
     )
 
     # Execute a sorting reduce on it.
@@ -386,31 +408,34 @@ def sort(
         ),
     )
 
+
 def materialize(
     child_plan: Iterator[None | ExecutionStep[PartitionT]],
-) -> Generator[None | ExecutionStep[PartitionT], None, list[PartitionT]]:
+) -> Generator[None | MaterializationRequestBase[PartitionT], None, list[PartitionT]]:
     """Materialize the child plan.
 
     Returns (via generator return): the completed plan's result partitions.
     """
 
-    results = list()
+    materializations = list()
 
     for step in child_plan:
         if isinstance(step, OpenExecutionQueue):
             step = step.as_materialization_request()
-            results.append(step)
+            materializations.append(step)
+        assert isinstance(step, (MaterializationRequestBase, type(None)))
+
         yield step
 
-    while any(_.result is None for _ in results):
+    while any(_.result is None for _ in materializations):
         yield None
 
-    return results
+    return [_.result.partition() for _ in materializations]
 
 
 def enumerate_open_executions(
-    schedule: Iterator[None | ExecutionStep[PartitionT]]
-) -> Iterator[tuple[None | int, None | ExecutionStep[PartitionT]]]:
+    schedule: Iterator[None | ExecutionStep[PartitionT]],
+) -> Iterator[tuple[int, None | ExecutionStep[PartitionT]]]:
     """Helper. Like enumerate() on an iterator, but only counts up if the result is an OpenExecutionQueue.
 
     Intended for counting the number of OpenExecutionQueues returned by the iterator.
@@ -419,6 +444,6 @@ def enumerate_open_executions(
     yield from (
         (((index := index + 1) - 1), item)  # aka (index++, item)
         if isinstance(item, OpenExecutionQueue)
-        else (None, item)
+        else (index, item)
         for item in schedule
     )

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import Iterator, TypeVar
 
 from daft.context import get_context
 from daft.execution import execution_step, physical_plan
-from daft.execution.execution_step import ExecutionStep
+from daft.execution.execution_step import ExecutionStep, MaterializationRequestBase
 from daft.logical import logical_plan
 from daft.logical.logical_plan import LogicalPlan, PartitionScheme
 
 PartitionT = TypeVar("PartitionT")
 
+
+def get_materializing_physical_plan(node: LogicalPlan) -> Iterator[None | MaterializationRequestBase[PartitionT]]:
+    """Translates a LogicalPlan into an appropriate physical plan that materializes its final results."""
+
+    return physical_plan.materialize(get_physical_plan(node))
 
 
 def get_physical_plan(node: LogicalPlan) -> Iterator[None | ExecutionStep[PartitionT]]:
@@ -23,12 +28,12 @@ def get_physical_plan(node: LogicalPlan) -> Iterator[None | ExecutionStep[Partit
         pset = get_context().runner().get_partition_set_from_cache(node._cache_entry.key).value
         assert pset is not None
         partitions = pset.values()
-        return physical_plan.partition_read(partitions)
+        return physical_plan.partition_read(_ for _ in partitions)
 
     # -- Unary nodes. --
     elif isinstance(node, logical_plan.UnaryNode):
         [child_node] = node._children()
-        child_plan = get_physical_plan(child_node)
+        child_plan: Iterator[None | ExecutionStep[PartitionT]] = get_physical_plan(child_node)
 
         if isinstance(node, logical_plan.TabularFilesScan):
             return physical_plan.file_read(child_plan=child_plan, scan_info=node)
@@ -86,14 +91,14 @@ def get_physical_plan(node: LogicalPlan) -> Iterator[None | ExecutionStep[Partit
                 raise RuntimeError(f"Unimplemented partitioning scheme {node._scheme}")
 
             # Do the fanout.
-            child_plan = physical_plan.pipeline_instruction(
+            fanout_plan = physical_plan.pipeline_instruction(
                 child_plan=child_plan,
                 pipeable_instruction=fanout_instruction,
             )
 
             # Do the reduce.
             return physical_plan.reduce(
-                child_plan=child_plan,
+                fanout_plan=fanout_plan,
                 num_partitions=node.num_partitions(),
                 reduce_instruction=execution_step.ReduceMerge(),
             )
@@ -113,8 +118,8 @@ def get_physical_plan(node: LogicalPlan) -> Iterator[None | ExecutionStep[Partit
 
         if isinstance(node, logical_plan.Join):
             return physical_plan.join(
-                left_source=get_physical_plan(left_child),
-                right_source=get_physical_plan(right_child),
+                left_plan=get_physical_plan(left_child),
+                right_plan=get_physical_plan(right_child),
                 join=node,
             )
 

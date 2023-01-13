@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import itertools
 import sys
-from dataclasses import dataclass
-from typing import Callable, Generic, TypeVar
+from abc import ABC
+from dataclasses import dataclass, field
+from typing import Generic, TypeVar
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
 else:
     from typing import Protocol
 
-import ray
 
 from daft.expressions import Expression
 from daft.logical import logical_plan
@@ -23,8 +23,9 @@ from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, Sor
 PartitionT = TypeVar("PartitionT")
 ID_GEN = itertools.count()
 
+
 @dataclass
-class ExecutionStep(Generic[PartitionT]):
+class ExecutionStep(Generic[PartitionT], ABC):
     """An ExecutionStep describes a task that will run to create a partition.
 
     The partition will be created by running a function pipeline (`instructions`) over some input partition(s) (`inputs`).
@@ -48,14 +49,9 @@ class ExecutionStep(Generic[PartitionT]):
     def __repr__(self) -> str:
         return self.__str__()
 
+
 class OpenExecutionQueue(ExecutionStep[PartitionT]):
     """This is an ExecutionStep that can still have functions added to its function pipeline."""
-
-    def __init__(self, inputs: list[PartitionT]) -> None:
-        super().__init__(
-            inputs=inputs,
-            instructions=list(),
-        )
 
     def __copy__(self) -> OpenExecutionQueue[PartitionT]:
         return OpenExecutionQueue[PartitionT](
@@ -63,12 +59,12 @@ class OpenExecutionQueue(ExecutionStep[PartitionT]):
             instructions=self.instructions.copy(),
         )
 
-    def append_instruction(self, instruction: Instruction) -> OpenExecutionQueue[PartitionT]:
+    def add_instruction(self, instruction: Instruction) -> OpenExecutionQueue[PartitionT]:
         """Append an instruction to this ExecutionStep's pipeline."""
         self.instructions.append(instruction)
         return self
 
-    def as_materization_request(self) -> MaterializationRequest[PartitionT]:
+    def as_materialization_request(self) -> MaterializationRequest[PartitionT]:
         """Create an MaterializationRequest from this ExecutionStep.
 
         Returns a "frozen" version of this ExecutionStep that cannot have instructions added.
@@ -76,9 +72,10 @@ class OpenExecutionQueue(ExecutionStep[PartitionT]):
         return MaterializationRequest[PartitionT](
             inputs=self.inputs,
             instructions=self.instructions,
+            num_results=1,
         )
 
-    def as_materization_request_multi(self, num_results: int) -> MaterializationRequestMulti[PartitionT]:
+    def as_materialization_request_multi(self, num_results: int) -> MaterializationRequestMulti[PartitionT]:
         """Create an MaterializationRequestMulti from this ExecutionStep.
 
         Same as as_materization_request, except the output of this ExecutionStep is a list of partitions.
@@ -96,9 +93,11 @@ class MaterializationRequestBase(ExecutionStep[PartitionT]):
     """Common helpers for MaterializationRequest and MaterializationRequestMulti.
     See those classes for more details.
 
+    num_results: The number of partitions that will be returned.
     _id: A unique identifier for this ExecutionStep.
     """
 
+    num_results: int
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
     def id(self) -> str:
@@ -118,6 +117,7 @@ class MaterializationRequest(MaterializationRequestBase[PartitionT]):
 
     result: When available, the partition created from run the ExecutionStep.
     """
+
     result: None | MaterializationResult[PartitionT] = None
 
 
@@ -126,10 +126,9 @@ class MaterializationRequestMulti(MaterializationRequestBase[PartitionT]):
     """An ExecutionStep that is ready to run. More instructions cannot be added.
     This ExecutionStep will return a list of any number of partitions.
 
-    num_results: The number of partitions that will be returned.
     results: When available, the partitions created from run the ExecutionStep.
     """
-    num_results: int
+
     results: None | list[MaterializationResult[PartitionT]] = None
 
 
@@ -141,16 +140,21 @@ class MaterializationResult(Protocol[PartitionT]):
 
     def partition(self) -> PartitionT:
         """Get the partition of this result."""
-        raise NotImplementedError
+        ...
 
     def metadata(self) -> PartitionMetadata:
         """Get the metadata of the partition in this result."""
-        raise NotImplementedError
+        ...
 
     def cancel(self) -> None:
         """If possible, cancel execution of this ExecutionStep."""
-        raise NotImplementedError
+        ...
 
+    def _noop(self, _: PartitionT) -> None:
+        """Implement this as a no-op.
+        https://peps.python.org/pep-0544/#overriding-inferred-variance-of-protocol-classes
+        """
+        ...
 
 
 class Instruction(Protocol):
@@ -161,6 +165,7 @@ class Instruction(Protocol):
     and others take many partitions and return one partition (reduces).
     To accomodate these, instructions are typed as list[vPartition] -> list[vPartition].
     """
+
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         # (Dispatching a descriptively named helper here will aid profiling.)
         ...

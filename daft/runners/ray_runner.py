@@ -2,20 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, ClassVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Iterator
 
 import pyarrow as pa
 import ray
 from loguru import logger
 
-from daft.execution.dynamic_construction import (
-    Construction,
-    Instruction,
-    PartitionWithInfo,
-)
-from daft.execution.dynamic_schedule import ScheduleMaterialize
-from daft.execution.dynamic_schedule_factory import DynamicScheduleFactory
+from daft.execution import physical_plan_factory
 from daft.execution.execution_plan import ExecutionPlan
+from daft.execution.execution_step import (
+    Instruction,
+    MaterializationRequest,
+    MaterializationRequestBase,
+    MaterializationRequestMulti,
+    MaterializationResult,
+)
 from daft.execution.logical_op_runners import (
     LogicalGlobalOpRunner,
     LogicalPartitionOpRunner,
@@ -378,13 +379,8 @@ def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) 
 
 
 @ray.remote
-def get_metas(*inputs: vPartition) -> list[PartitionMetadata]:
-    return [partition.metadata() for partition in inputs]
-
-
-def get_meta(partition: ray.ObjectRef) -> PartitionMetadata:
-    [res] = ray.get(get_metas.remote(partition))
-    return res
+def get_meta(partition: vPartition) -> PartitionMetadata:
+    return partition.metadata()
 
 
 class DynamicRayRunner(RayRunner):
@@ -392,16 +388,15 @@ class DynamicRayRunner(RayRunner):
 
         plan = self.optimize(plan)
 
-        schedule_factory = DynamicScheduleFactory[ray.ObjectRef]()
-
-        schedule = schedule_factory.schedule_logical_node(plan)
-        schedule = ScheduleMaterialize[ray.ObjectRef](schedule)
+        phys_plan: Iterator[
+            None | MaterializationRequestBase[vPartition]
+        ] = physical_plan_factory.get_materializing_physical_plan(plan)
 
         # Note: For autoscaling clusters, we will probably want to query this dynamically.
         # Keep in mind this call takes about 0.3ms.
         cores = int(ray.cluster_resources()["CPU"])
         constructions_to_dispatch = []
-        inflight_constructions: dict[str, Construction[ray.ObjectRef]] = dict()
+        inflight_constructions: dict[str, MaterializationRequestBase[ray.ObjectRef]] = dict()
         inflight_ref_to_construction: dict[ray.ObjectRef, str] = dict()
 
         start = datetime.now()
@@ -415,18 +410,18 @@ class DynamicRayRunner(RayRunner):
                     cores_available = cores - len(inflight_constructions)
                     for i in range(cores_available):
 
-                        next_construction = next(schedule)
+                        next_step = next(phys_plan)
 
-                        while next_construction is not None and len(next_construction.instruction_stack) == 0:
-                            next_construction.report_completed(
-                                [PartitionWithInfo(p, get_meta) for p in next_construction.inputs]
-                            )
-                            next_construction = next(schedule)
+                        while next_step is not None and len(next_step.instructions) == 0:
+                            assert isinstance(next_step, MaterializationRequest)
+                            [partition] = next_step.inputs
+                            next_step.result = RayMaterializationResult(partition)
+                            next_step = next(phys_plan)
 
-                        if next_construction is None:
+                        if next_step is None:
                             break
 
-                        constructions_to_dispatch.append(next_construction)
+                        constructions_to_dispatch.append(next_step)
 
                     dispatch = datetime.now()
                     logger.debug(
@@ -435,9 +430,9 @@ class DynamicRayRunner(RayRunner):
                     for construction in constructions_to_dispatch:
                         results = self._build_partitions(construction)
                         logger.debug(f"{construction} -> {results}")
-                        inflight_constructions[construction.id] = construction
+                        inflight_constructions[construction.id()] = construction
                         for result in results:
-                            inflight_ref_to_construction[result] = construction.id
+                            inflight_ref_to_construction[result] = construction.id()
 
                     constructions_to_dispatch.clear()
 
@@ -449,9 +444,16 @@ class DynamicRayRunner(RayRunner):
                     logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {cons_id}")
 
                     # Flush the entire task associated with the result
-                    results = inflight_constructions[cons_id]._dispatched
-                    for ref in results:
-                        del inflight_ref_to_construction[ref]
+
+                    cons = inflight_constructions[cons_id]
+                    if isinstance(cons, MaterializationRequest):
+                        del inflight_ref_to_construction[ready]
+                    elif isinstance(cons, MaterializationRequestMulti):
+
+                        assert cons.results is not None
+                        for result in cons.results:
+                            del inflight_ref_to_construction[result.partition()]
+
                     del inflight_constructions[cons_id]
 
             except StopIteration as e:
@@ -460,9 +462,9 @@ class DynamicRayRunner(RayRunner):
 
             for construction in constructions_to_dispatch:
                 results = self._build_partitions(construction)
-                inflight_constructions[construction.id] = construction
+                inflight_constructions[construction.id()] = construction
                 for result in results:
-                    inflight_ref_to_construction[result] = construction.id
+                    inflight_ref_to_construction[result] = construction.id()
 
             constructions_to_dispatch.clear()
 
@@ -473,30 +475,56 @@ class DynamicRayRunner(RayRunner):
                 logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result of {cons_id}")
 
                 # Flush the entire task associated with the result
-                results = inflight_constructions[cons_id]._dispatched
-                for ref in results:
-                    del inflight_ref_to_construction[ref]
+                cons = inflight_constructions[cons_id]
+                if isinstance(cons, MaterializationRequest):
+                    del inflight_ref_to_construction[ready]
+                elif isinstance(cons, MaterializationRequestMulti):
+
+                    assert cons.results is not None
+                    for result in cons.results:
+                        del inflight_ref_to_construction[result.partition()]
+
                 del inflight_constructions[cons_id]
 
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
         return pset_entry
 
-    def _build_partitions(self, partspec: Construction[ray.ObjectRef]) -> list[ray.ObjectRef]:
+    def _build_partitions(self, partspec: MaterializationRequestBase[ray.ObjectRef]) -> list[ray.ObjectRef]:
         ray_options: dict[str, Any] = {
             "num_returns": partspec.num_results,
         }
         if len(partspec.inputs) > 1:
             ray_options["scheduling_strategy"] = "SPREAD"
+
         construct_remote = build_partitions.options(**ray_options)
-        results = construct_remote.remote(partspec.instruction_stack, *partspec.inputs)
+        partitions = construct_remote.remote(partspec.instructions, *partspec.inputs)
         # Handle ray bug that ignores list interpretation when num_returns=1
         if partspec.num_results == 1:
-            results = [results]
+            partitions = [partitions]
 
-        partspec.report_completed([PartitionWithInfo(p, get_meta) for p in results])
-        return results
+        if isinstance(partspec, MaterializationRequestMulti):
+            partspec.results = [RayMaterializationResult(partition) for partition in partitions]
+        elif isinstance(partspec, MaterializationRequest):
+            [partition] = partitions
+            partspec.result = RayMaterializationResult(partition)
+        else:
+            raise TypeError(f"Could not type match input {partspec}")
 
-    def _get_partition_metadata(self, *partitions: ray.ObjectRef) -> list[PartitionMetadata]:
-        """Hacky; only used for DynamicSchedule initialization. Remove when PartitionCache is implemented"""
+        return partitions
 
-        return ray.get(get_metas.remote(*partitions))
+
+@dataclass(frozen=True)
+class RayMaterializationResult(MaterializationResult[ray.ObjectRef]):
+    _partition: ray.ObjectRef
+
+    def partition(self) -> ray.ObjectRef:
+        return self._partition
+
+    def metadata(self) -> PartitionMetadata:
+        return ray.get(get_meta.remote(self._partition))
+
+    def cancel(self) -> None:
+        return ray.cancel(self._partition)
+
+    def _noop(self, _: ray.ObjectRef) -> None:
+        return None
