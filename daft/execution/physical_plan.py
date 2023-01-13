@@ -94,13 +94,11 @@ def join(
 
     while True:
         # Emit new join steps if we have left and right partitions ready.
-        while all(
-            (
-                len(left_requests) > 0,
-                len(right_requests) > 0,
-                left_requests[0].result is not None,
-                right_requests[0].result is not None,
-            )
+        while (
+            len(left_requests) > 0
+            and len(right_requests) > 0
+            and left_requests[0].result is not None
+            and right_requests[0].result is not None
         ):
             next_left = left_requests.popleft()
             next_right = right_requests.popleft()
