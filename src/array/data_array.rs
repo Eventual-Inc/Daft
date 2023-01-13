@@ -22,16 +22,6 @@ pub trait BaseArray: Any {
     fn into_series(self) -> Series;
 }
 
-// impl From<Box<dyn arrow2::array::Array> for dyn BaseArray {
-//     fn from(item: Box<dyn arrow2::array::Array>) -> Self {
-//         DataArray {
-//             field: Field::new("arrow_array", T::get_dtype()).into(),
-//             data: item,
-//             phantom: PhantomData,
-//         }
-//     }
-// }
-
 impl std::fmt::Debug for dyn BaseArray {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?}", self.data_type())
