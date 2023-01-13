@@ -27,7 +27,6 @@ PyYAML
 
 ray[data, default]
 s3fs
-sentry-sdk>=1.9.5
 
 # needed for Docs
 
