@@ -1,5 +1,6 @@
 use crate::datatypes::DataType;
 use crate::dsl::expr::Expr;
+use crate::series::Series;
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
@@ -31,20 +32,20 @@ impl LiteralValue {
         }
     }
 
-    // pub fn to_series(&self) -> Series {
-    //     use crate::datatypes::*;
-    //     use LiteralValue::*;
-
-    //     let arrow_array = match self {
-    //         // Null => new_null_array(DataType::Null.to_arrow().unwrap(), 1),
-    //         Boolean(val) => BooleanArray::from([*val]).boxed(),
-    //         Utf8(val) => Utf8Array::<i64>::from([val.into()]).boxed(),
-    //         Binary(val) => BinaryArray::<i64>::from([val.into()]).boxed(),
-    //         Int64(val) => Int64Array::from([*val]).boxed(),
-    //         Float64(val) => Float64Array::from([*val]).boxed(),
-    //     };
-
-    // }
+    pub fn to_series(&self) -> Series {
+        use crate::array::BaseArray;
+        use crate::datatypes::*;
+        use LiteralValue::*;
+        let result = match self {
+            Null => NullArray::full_null(1).into_series(),
+            Boolean(val) => BooleanArray::from([*val].as_slice()).into_series(),
+            Utf8(val) => Utf8Array::from([val.as_str()].as_slice()).into_series(),
+            Binary(_val) => panic!("Binary not supported yey"),
+            Int64(val) => Int64Array::from([*val].as_slice()).into_series(),
+            Float64(val) => Float64Array::from([*val].as_slice()).into_series(),
+        };
+        result
+    }
 }
 
 pub trait Literal {

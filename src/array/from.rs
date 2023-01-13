@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::datatypes::{DaftDataType, DaftNumericType, DataType, Field, Utf8Array, Utf8Type};
+use crate::datatypes::{
+    BooleanArray, DaftDataType, DaftNumericType, DataType, Field, Utf8Array, Utf8Type,
+};
 
 use crate::array::DataArray;
 
@@ -32,6 +34,17 @@ where
         let arrow_array = arrow2::array::PrimitiveArray::<T::Native>::from_slice(slice);
         DataArray::new(
             Field::new("arrow_array", T::get_dtype()).into(),
+            arrow_array.arced(),
+        )
+        .unwrap()
+    }
+}
+
+impl From<&[bool]> for BooleanArray {
+    fn from(slice: &[bool]) -> Self {
+        let arrow_array = arrow2::array::BooleanArray::from_slice(slice);
+        DataArray::new(
+            Field::new("arrow_array", DataType::Boolean).into(),
             arrow_array.arced(),
         )
         .unwrap()
