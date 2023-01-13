@@ -24,15 +24,15 @@ PartitionT = TypeVar("PartitionT")
 ID_GEN = itertools.count()
 
 @dataclass
-class BaseConstruction(Generic[PartitionT]):
-    """A Construction represents a set of partitions that are waiting to be created.
+class ExecutionStep(Generic[PartitionT]):
+    """An ExecutionStep describes a task that will run to create a partition.
 
-    The result partitions will be created by running some function stack over some input partitions.
+    The partition will be created by running a function pipeline (`instructions`) over some input partition(s) (`inputs`).
     Each function takes an entire set of inputs and produces a new set of partitions to pass into the next function.
 
-    _id: A unique identifier for this Construction.
-    inputs: The partitions that will be input together into the function stack.
-    instruction_stack: The functions to run over the inputs, in order. See Instruction for more details.
+    This class should not be instantiated directly. See subclasses for usage:
+        - OpenExecutionQueue: to create a new ExecutionStep, and append functions to its pipeline.
+        - MaterializeRequest: to "freeze" an ExecutionStep and mark it for execution.
     """
 
     inputs: list[PartitionT]
@@ -48,12 +48,8 @@ class BaseConstruction(Generic[PartitionT]):
     def __repr__(self) -> str:
         return self.__str__()
 
-class OpenConstruction(BaseConstruction[PartitionT]):
-    """This is a Construction that can still have functions added to its function stack.
-
-    New Constructions should be created from this class.
-    """
-
+class OpenExecutionQueue(ExecutionStep[PartitionT]):
+    """This is an ExecutionStep that can still have functions added to its function pipeline."""
 
     def __init__(self, inputs: list[PartitionT]) -> None:
         super().__init__(
@@ -61,42 +57,45 @@ class OpenConstruction(BaseConstruction[PartitionT]):
             instructions=list(),
         )
 
-    def add_instruction(self, instruction: Instruction) -> OpenConstruction[PartitionT]:
-        """Add an instruction to this Construction's stack."""
+    def __copy__(self) -> OpenExecutionQueue[PartitionT]:
+        return OpenExecutionQueue[PartitionT](
+            inputs=self.inputs.copy(),
+            instructions=self.instructions.copy(),
+        )
+
+    def append_instruction(self, instruction: Instruction) -> OpenExecutionQueue[PartitionT]:
+        """Append an instruction to this ExecutionStep's pipeline."""
         self.instructions.append(instruction)
         return self
 
     def as_materization_request(self) -> MaterializationRequest[PartitionT]:
-        """Create an MaterializationRequest from this Construction.
+        """Create an MaterializationRequest from this ExecutionStep.
 
-        Returns a "frozen" version of this Construction that cannot have instructions added.
-        The output of this Construction should be a single partition.
+        Returns a "frozen" version of this ExecutionStep that cannot have instructions added.
         """
-
         return MaterializationRequest[PartitionT](
-            _id=self._id,
             inputs=self.inputs,
             instructions=self.instructions,
         )
 
     def as_materization_request_multi(self) -> MaterializationRequestMulti[PartitionT]:
-        """Create an MaterializationRequestMulti from this Construction.
+        """Create an MaterializationRequestMulti from this ExecutionStep.
 
-        Same as as_materization_request,
-        except it denotes that the output of this Construction is a list of any number of partitions.
+        Same as as_materization_request, except the output of this ExecutionStep is a list of partitions.
+        This is intended for execution steps that do a fanout.
         """
-
-    def copy(self) -> OpenConstruction[PartitionT]:
-        return OpenConstruction[PartitionT](
-            inputs=self.inputs.copy(),
-            instructions=self.instructions.copy(),
+        return MaterializationRequestMulti[PartitionT](
+            inputs=self.inputs,
+            instructions=self.instructions,
         )
 
-@dataclass
-class MaterializationRequestBase(BaseConstruction[PartitionT]):
-    """Common helpers for MaterializationRequest and MaterializationRequestMulti.
 
-    _id: A unique identifier for this Construction.
+@dataclass
+class MaterializationRequestBase(ExecutionStep[PartitionT]):
+    """Common helpers for MaterializationRequest and MaterializationRequestMulti.
+    See those classes for more details.
+
+    _id: A unique identifier for this ExecutionStep.
     """
 
     _id: int = field(default_factory=lambda: next(ID_GEN))
@@ -114,27 +113,28 @@ class MaterializationRequestBase(BaseConstruction[PartitionT]):
 
 @dataclass
 class MaterializationRequest(MaterializationRequestBase[PartitionT]):
-    """A Construction that is ready to execute. More instructions cannot be added.
+    """An ExecutionStep that is ready to run. More instructions cannot be added.
 
-    _id: A unique identifier for this Construction.
-    result: When ready, the partition created from executing the Construction.
+    result: When available, the partition created from run the ExecutionStep.
     """
     result: None | MaterializationResult[PartitionT] = None
 
 
 @dataclass
 class MaterializationRequestMulti(MaterializationRequestBase[PartitionT]):
-    """A Construction that is ready to execute. More instructions cannot be added.
-    This Construction will return a list of any number of partitions.
+    """An ExecutionStep that is ready to run. More instructions cannot be added.
+    This ExecutionStep will return a list of any number of partitions.
 
-    _id: A unique identifier for this Construction.
-    results: When ready, the partitions created from executing the Construction.
+    results: When available, the partitions created from run the ExecutionStep.
     """
     results: None | list[MaterializationResult[PartitionT]] = None
 
 
 class MaterializationResult(Protocol[PartitionT]):
-    """A wrapper class for accessing the result partition of a Construction."""
+    """A protocol for accessing the result partition of a ExecutionStep.
+
+    Different Runners can fill in their own implementation here.
+    """
 
     def partition(self) -> PartitionT:
         """Get the partition of this result."""
@@ -145,7 +145,7 @@ class MaterializationResult(Protocol[PartitionT]):
         raise NotImplementedError
 
     def cancel(self) -> None:
-        """If possible, cancel execution of this Construction."""
+        """If possible, cancel execution of this ExecutionStep."""
         raise NotImplementedError
 
 
@@ -159,6 +159,7 @@ class Instruction(Protocol):
     To accomodate these, instructions are typed as list[vPartition] -> list[vPartition].
     """
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        # (Dispatching a descriptively named helper here will aid profiling.)
         ...
 
 
@@ -168,6 +169,9 @@ class ReadFile(Instruction):
     logplan: logical_plan.TabularFilesScan
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._read_file(inputs)
+
+    def _read_file(self, inputs: list[vPartition]) -> list[vPartition]:
         assert len(inputs) == 1
         [filepaths_partition] = inputs
         partition = LocalLogicalPartitionOpRunner()._handle_tabular_files_scan(
@@ -184,6 +188,9 @@ class WriteFile(Instruction):
     logplan: logical_plan.FileWrite
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._write_file(inputs)
+
+    def _write_file(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         partition = LocalLogicalPartitionOpRunner()._handle_file_write(
             inputs={self.logplan._children()[0].id(): input},
@@ -198,6 +205,9 @@ class Filter(Instruction):
     predicate: ExpressionList
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._filter(inputs)
+
+    def _filter(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         return [input.filter(self.predicate)]
 
@@ -207,6 +217,9 @@ class Project(Instruction):
     projection: ExpressionList
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._project(inputs)
+
+    def _project(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         return [input.eval_expression_list(self.projection)]
 
@@ -216,6 +229,9 @@ class LocalLimit(Instruction):
     limit: int
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._limit(inputs)
+
+    def _limit(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         return [input.head(self.limit)]
 
@@ -225,6 +241,9 @@ class MapPartition(Instruction):
     map_op: MapPartitionOp
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._map_partition(inputs)
+
+    def _map_partition(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         return [self.map_op.run(input)]
 
@@ -235,6 +254,9 @@ class Sample(Instruction):
     num_samples: int = 20
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._sample(inputs)
+
+    def _sample(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         result = (
             input.sample(self.num_samples)
@@ -250,6 +272,9 @@ class Aggregate(Instruction):
     group_by: ExpressionList | None
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._aggregate(inputs)
+
+    def _aggregate(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         return [input.agg(self.to_agg, self.group_by)]
 
@@ -259,6 +284,9 @@ class Join(Instruction):
     logplan: logical_plan.Join
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._join(inputs)
+
+    def _join(self, inputs: list[vPartition]) -> list[vPartition]:
         [left, right] = inputs
         result = left.join(
             right,
@@ -277,6 +305,9 @@ class ReduceInstruction(Instruction):
 @dataclass(frozen=True)
 class ReduceMerge(ReduceInstruction):
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._reduce_merge(inputs)
+
+    def _reduce_merge(self, inputs: list[vPartition]) -> list[vPartition]:
         return [vPartition.merge_partitions(inputs, verify_partition_id=False)]
 
 
@@ -286,6 +317,9 @@ class ReduceMergeAndSort(ReduceInstruction):
     descending: list[bool]
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._reduce_merge_and_sort(inputs)
+
+    def _reduce_merge_and_sort(self, inputs: list[vPartition]) -> list[vPartition]:
         partition = SortOp.reduce_fn(
             mapped_outputs=inputs,
             exprs=self.sort_by,
@@ -301,6 +335,9 @@ class ReduceToQuantiles(ReduceInstruction):
     descending: list[bool]
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._reduce_to_quantiles(inputs)
+
+    def _reduce_to_quantiles(self, inputs: list[vPartition]) -> list[vPartition]:
         merged = vPartition.merge_partitions(inputs, verify_partition_id=False)
         merged_sorted = merged.sort(self.sort_by, descending=self.descending)
         result = merged_sorted.quantiles(self.num_quantiles)
@@ -315,6 +352,9 @@ class FanoutInstruction(Instruction):
 @dataclass(frozen=True)
 class FanoutRandom(FanoutInstruction):
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._fanout_random(inputs)
+
+    def _fanout_random(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         partitions_with_ids = RepartitionRandomOp.map_fn(
             input=input,
@@ -328,6 +368,9 @@ class FanoutHash(FanoutInstruction):
     partition_by: ExpressionList
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._fanout_hash(inputs)
+
+    def _fanout_hash(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         partitions_with_ids = RepartitionHashOp.map_fn(
             input=input,
@@ -343,6 +386,9 @@ class FanoutRange(FanoutInstruction, Generic[PartitionT]):
     descending: list[bool]
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._fanout_range(inputs)
+
+    def _fanout_range(self, inputs: list[vPartition]) -> list[vPartition]:
         [boundaries, input] = inputs
 
         partitions_with_ids = SortOp.map_fn(
