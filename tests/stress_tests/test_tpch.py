@@ -8,7 +8,6 @@ import sqlite3
 import pandas as pd
 import pytest
 from fsspec.implementations.local import LocalFileSystem
-from sentry_sdk import start_transaction
 
 from benchmarking.tpch import answers, data_generation
 from daft.context import get_context

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from itertools import chain
 
 import pandas as pd
@@ -9,30 +8,9 @@ import pyarrow as pa
 import pyarrow.compute as pac
 import pytest
 
-from daft.context import get_context
 from daft.runners.blocks import ArrowDataBlock, PyListDataBlock
 from daft.runners.partitioning import PartitionSet
 from daft.types import ExpressionType
-
-
-@pytest.fixture(scope="session", autouse=True)
-def sentry_telemetry():
-    if os.getenv("CI"):
-        import sentry_sdk
-
-        sentry_sdk.init(
-            dsn="https://7e05ae17fdad482a82cd2e79e94d9f51@o1383722.ingest.sentry.io/6701254",
-            # Set traces_sample_rate to 1.0 to capture 100%
-            # of transactions for performance monitoring.
-            # We recommend adjusting this value in production.
-            traces_sample_rate=1.0,
-            # traces_sampler=True,
-        )
-        sentry_sdk.set_tag("CI", os.environ["CI"])
-        sentry_sdk.set_tag("DAFT_RUNNER", get_context().runner_config.name)
-    else:
-        ...
-    yield
 
 
 def pytest_addoption(parser):
