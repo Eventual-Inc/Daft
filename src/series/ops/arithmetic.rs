@@ -1,12 +1,31 @@
-use std::ops::Add;
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow2::array::MutableArray;
 
-use crate::{array::data_array::BaseArray, series::Series, utils::supertype::get_supertype};
+use crate::{
+    array::data_array::BaseArray,
+    error::DaftResult,
+    series::Series,
+    utils::supertype::{get_supertype, try_get_supertype},
+};
 
 // pub fn dispatch_binary_op(lhs: &dyn BaseArray, rhs: &dyn BaseArray, func) -> Series {
 
 // }
+
+fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)> {
+    let mut lhs = l.clone();
+    let mut rhs = r.clone();
+    let supertype = try_get_supertype(lhs.data_type(), rhs.data_type())?;
+    if !lhs.data_type().eq(&supertype) {
+        lhs = lhs.cast(&supertype)?;
+    }
+
+    if !rhs.data_type().eq(&supertype) {
+        rhs = rhs.cast(&supertype)?;
+    }
+    Ok((lhs, rhs))
+}
 
 #[macro_export]
 macro_rules! with_match_arrow_daft_types {(
@@ -32,43 +51,100 @@ macro_rules! with_match_arrow_daft_types {(
     }
 })}
 
-impl Add for &Series {
-    type Output = Series;
-    fn add(self, rhs: Self) -> Self::Output {
-        let lhs = self;
-        let supertype = get_supertype(lhs.data_type(), rhs.data_type()).unwrap();
-        let lhs = self.cast(&supertype).unwrap();
-        let rhs = rhs.cast(&supertype).unwrap();
-        println!(
-            "supertype: {:?} {:?} {:?}",
-            supertype,
-            lhs.data_type(),
-            rhs.data_type()
-        );
-        with_match_arrow_daft_types!(supertype, |$T| {
-            let lhs = lhs.downcast::<$T>().unwrap();
-            let rhs = rhs.downcast::<$T>().unwrap();
-            lhs.add(rhs).into_series()
-        })
-    }
+macro_rules! impl_series_math_op {
+    ($op:ident, $func_name:ident) => {
+        impl $op for &Series {
+            type Output = Series;
+            fn $func_name(self, rhs: Self) -> Self::Output {
+                let (lhs, rhs) = match_types_on_series(self, rhs).unwrap();
+                with_match_arrow_daft_types!(lhs.data_type(), |$T| {
+                    let lhs = lhs.downcast::<$T>().unwrap();
+                    let rhs = rhs.downcast::<$T>().unwrap();
+                    lhs.$func_name(rhs).into_series()
+                })
+            }
+        }
+
+        impl $op for Series {
+            type Output = Series;
+            fn $func_name(self, rhs: Self) -> Self::Output {
+                (&self).$func_name(&rhs)
+            }
+        }
+    };
 }
+
+impl_series_math_op!(Add, add);
+impl_series_math_op!(Sub, sub);
+impl_series_math_op!(Div, div);
+impl_series_math_op!(Mul, mul);
+impl_series_math_op!(Rem, rem);
 
 mod tests {
     use crate::{
         array::DataArray,
-        datatypes::{DateArray, Float64Array, Int64Array},
+        datatypes::{DataType, DateArray, Float64Array, Int64Array},
         error::DaftResult,
     };
 
     use super::*;
 
     #[test]
+    fn add_int_and_int() -> DaftResult<()> {
+        let a = Int64Array::from(vec![1, 2, 3].as_slice());
+        let b = Int64Array::from(vec![1, 2, 3].as_slice());
+        let c = a.into_series() + b.into_series();
+        assert_eq!(*c.data_type(), DataType::Int64);
+        Ok(())
+    }
+
+    #[test]
     fn add_int_and_float() -> DaftResult<()> {
         let a = Int64Array::from(vec![1, 2, 3].as_slice());
-        println!("{:?}", a.data_type());
         let b = Float64Array::from(vec![1., 2., 3.].as_slice());
-        let c = &a.into_series() + &b.into_series();
+        let c = a.into_series() + b.into_series();
+        assert_eq!(*c.data_type(), DataType::Float64);
+        Ok(())
+    }
+    #[test]
+    fn sub_int_and_float() -> DaftResult<()> {
+        let a = Int64Array::from(vec![1, 2, 3].as_slice());
+        let b = Float64Array::from(vec![1., 2., 3.].as_slice());
+        let c = a.into_series() - b.into_series();
+        assert_eq!(*c.data_type(), DataType::Float64);
+        Ok(())
+    }
 
+    #[test]
+    fn mul_int_and_float() -> DaftResult<()> {
+        let a = Int64Array::from(vec![1, 2, 3].as_slice());
+        let b = Float64Array::from(vec![1., 2., 3.].as_slice());
+        let c = a.into_series() * b.into_series();
+        assert_eq!(*c.data_type(), DataType::Float64);
+        Ok(())
+    }
+    #[test]
+    fn div_int_and_float() -> DaftResult<()> {
+        let a = Int64Array::from(vec![1, 2, 3].as_slice());
+        let b = Float64Array::from(vec![1., 2., 3.].as_slice());
+        let c = a.into_series() / b.into_series();
+        assert_eq!(*c.data_type(), DataType::Float64);
+        Ok(())
+    }
+    #[test]
+    fn rem_int_and_float() -> DaftResult<()> {
+        let a = Int64Array::from(vec![1, 2, 3].as_slice());
+        let b = Float64Array::from(vec![1., 2., 3.].as_slice());
+        let c = a.into_series() % b.into_series();
+        assert_eq!(*c.data_type(), DataType::Float64);
+        Ok(())
+    }
+    #[test]
+    fn add_int_and_int_full_null() -> DaftResult<()> {
+        let a = Int64Array::from(vec![1, 2, 3].as_slice());
+        let b = Int64Array::full_null(3);
+        let c = a.into_series() + b.into_series();
+        assert_eq!(*c.data_type(), DataType::Int64);
         Ok(())
     }
 }

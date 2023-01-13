@@ -58,6 +58,5 @@ where
         Ok(
             with_match_arrow_daft_types!(dtype, |$T| DataArray::<$T>::from(result_array).into_series()),
         )
-        // Ok(DataArray::<T>::from(result_array).into_series())
     }
 }
