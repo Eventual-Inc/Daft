@@ -45,10 +45,9 @@ where
     T: DaftDataType + 'static,
 {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        // if self.data_type().eq(dtype) {
-        //     let c = self.clone();
-        //     return Ok(DataArray::<T>::from(self.data().to_boxed()).into_series());
-        // }
+        if self.data_type().eq(dtype) {
+            return Ok(DataArray::<T>::from(self.data().to_boxed()).into_series());
+        }
 
         let _arrow_type = dtype.to_arrow();
 

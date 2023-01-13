@@ -31,9 +31,9 @@ macro_rules! apply_method_all_arrow_series {
 
 impl Series {
     pub fn cast(&self, datatype: &DataType) -> DaftResult<Series> {
-        // if self.data_type() == datatype {
-        //     return Ok(self.clone());
-        // }
+        if self.data_type() == datatype {
+            return Ok(self.clone());
+        }
         apply_method_all_arrow_series!(self, cast, datatype)
     }
 }
