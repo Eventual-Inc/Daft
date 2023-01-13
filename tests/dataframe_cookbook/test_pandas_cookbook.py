@@ -113,7 +113,7 @@ def test_multi_criteria_or_assignment(repartition_nparts):
     daft_df = daft_df.with_column("AAA", ((col("BBB") > 25) | (col("CCC") >= 75)).if_else(0.1, col("AAA").cast(float)))
     pd_df.loc[(pd_df["BBB"] > 25) | (pd_df["CCC"] >= 75), "AAA"] = 0.1
     daft_pd_df = daft_df.to_pandas()
-    assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
+    assert_df_equals(daft_pd_df, pd_df, sort_key="BBB")
 
 
 @pytest.mark.parametrize(
