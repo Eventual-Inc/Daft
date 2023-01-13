@@ -164,6 +164,7 @@ Key Features
    :hidden:
 
    docs/index
+   learn/index
    release_notes/index
    dataframe_comparison
 

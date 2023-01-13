@@ -35,7 +35,6 @@ Evaluating Daft for a new project or system? Read more about why you should choo
    :hidden:
    :maxdepth: 1
 
-   learn/index
    api_docs/index
    Telemetry <telemetry>
 
