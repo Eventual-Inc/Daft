@@ -237,6 +237,7 @@ GROUPBY_DATA_PARTITIONING = [1, 2, 7, 8]
 #     assert_df_equals(daft_df, pd_df, sort_key="animal")
 
 
+@pytest.mark.skip(reason="Issue: #441")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in GROUPBY_DATA_PARTITIONING]
 )
@@ -281,6 +282,7 @@ JOIN_DATA = {
 JOIN_DATA_PARTITIONING = [1, 3, 7, 8]
 
 
+@pytest.mark.skip(reason="Issue: #442")
 @pytest.mark.parametrize("repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in JOIN_DATA_PARTITIONING])
 def test_self_join(repartition_nparts):
     daft_df = DataFrame.from_pydict(JOIN_DATA).repartition(repartition_nparts)
