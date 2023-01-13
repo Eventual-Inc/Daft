@@ -13,6 +13,8 @@ pub trait BaseArray: Any {
 
     fn name(&self) -> &str;
 
+    fn len(&self) -> usize;
+
     fn as_any(&self) -> &dyn std::any::Any;
 
     fn boxed(self) -> Box<dyn BaseArray>;
@@ -70,6 +72,10 @@ impl<T: DaftDataType + 'static> BaseArray for DataArray<T> {
 
     fn name(&self) -> &str {
         self.field.name.as_str()
+    }
+
+    fn len(&self) -> usize {
+        self.data.len()
     }
 
     fn boxed(self) -> Box<dyn BaseArray> {

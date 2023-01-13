@@ -8,9 +8,9 @@ pub struct Field {
 }
 
 impl Field {
-    pub fn new(name: &str, dtype: DataType) -> Self {
+    pub fn new<T: Into<String>>(name: T, dtype: DataType) -> Self {
         Field {
-            name: name.to_string(),
+            name: name.into(),
             dtype,
         }
     }

@@ -24,6 +24,10 @@ impl Series {
     pub fn name(&self) -> &str {
         self.data_array.name()
     }
+
+    pub fn len(&self) -> usize {
+        self.data_array.len()
+    }
 }
 
 #[cfg(test)]

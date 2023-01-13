@@ -18,7 +18,6 @@ where
         }
         let arr = new_null_array(T::get_dtype().to_arrow().unwrap(), length);
 
-        // DataArray::from(downcasted.clone().boxed())
         DataArray::new(
             Arc::new(Field::new("null_array", T::get_dtype())),
             Arc::from(arr),
@@ -26,16 +25,3 @@ where
         .unwrap()
     }
 }
-
-// impl NullArray {
-//     /// Creates a DataArray<T> of size `length` that is filled with all nulls.
-//     pub fn full_null(length: usize) -> Self {
-//         let arr = new_null_array(arrow2::datatypes::DataType::Null, length);
-//         let downcasted = arr
-//             .as_any()
-//             .downcast_ref::<PrimitiveArray<T::Native>>()
-//             .unwrap();
-
-//         DataArray::from(downcasted.clone().boxed())
-//     }
-// }

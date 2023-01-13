@@ -7,7 +7,6 @@ use std::{
     sync::Arc,
 };
 
-pub use lit::lit;
 type ExprRef = Arc<Expr>;
 
 #[derive(Debug)]
@@ -32,7 +31,7 @@ impl Expr {
         use Expr::*;
 
         match self {
-            Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema)?)),
+            Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Column(name) => Ok(schema.get_field(name).cloned()?),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
 

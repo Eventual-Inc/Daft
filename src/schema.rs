@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use indexmap::IndexMap;
+
 use crate::{
     datatypes::DataType,
     datatypes::Field,
@@ -14,16 +16,10 @@ pub struct Schema {
 
 impl Schema {
     pub fn new(fields: &[(String, DataType)]) -> Self {
-        let mut map = indexmap::IndexMap::new();
+        let mut map: IndexMap<String, Field> = indexmap::IndexMap::new();
 
         for (name, dt) in fields.iter() {
-            map.insert(
-                name.clone(),
-                Field {
-                    name: name.clone(),
-                    dtype: dt.clone(),
-                },
-            );
+            map.insert(name.clone().into(), Field::new(name.clone(), dt.clone()));
         }
 
         Schema { fields: map }
