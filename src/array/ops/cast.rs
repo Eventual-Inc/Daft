@@ -1,12 +1,10 @@
 use arrow2::compute::cast::{can_cast_types, cast, CastOptions};
 
 use crate::{
-    apply_method_all_arrow_series,
     array::data_array::{BaseArray, DataArray},
     datatypes::{DaftDataType, DataType},
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_numeric_daft_types,
 };
 
 #[macro_export]
