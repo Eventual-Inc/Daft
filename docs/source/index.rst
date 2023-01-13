@@ -164,6 +164,7 @@ Key Features
    :hidden:
 
    docs/index
+   release_notes/index
    dataframe_comparison
 
 .. .. Indices and tables
