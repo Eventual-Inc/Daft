@@ -10,7 +10,6 @@ import pytest
 from fsspec.implementations.local import LocalFileSystem
 
 from benchmarking.tpch import answers, data_generation
-from daft.context import get_context
 from daft.dataframe import DataFrame
 from tests.assets.assets import TPCH_DBGEN_DIR, TPCH_QUERIES
 from tests.conftest import assert_df_equals
@@ -84,77 +83,59 @@ def check_answer(gen_tpch):
 
 def test_tpch_q1(tmp_path, check_answer, get_df):
     daft_df = answers.q1(get_df)
-    with start_transaction(op="task", name=f"tpch_q1:runner={get_context().runner_config.name.upper()}"):
-        daft_pd_df = daft_df.to_pandas()
+    daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 1, tmp_path)
 
 
 def test_tpch_q2(tmp_path, check_answer, get_df):
     daft_df = answers.q2(get_df)
-    with start_transaction(op="task", name=f"tpch_q2:runner={get_context().runner_config.name.upper()}"):
-        daft_pd_df = daft_df.to_pandas()
+    daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 2, tmp_path)
 
 
 def test_tpch_q3(tmp_path, check_answer, get_df):
     daft_df = answers.q3(get_df)
-    with start_transaction(op="task", name=f"tpch_q3:runner={get_context().runner_config.name.upper()}"):
-        daft_pd_df = daft_df.to_pandas()
+    daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 3, tmp_path)
 
 
 def test_tpch_q4(tmp_path, check_answer, get_df):
     daft_df = answers.q4(get_df)
-
-    with start_transaction(op="task", name=f"tpch_q4:runner={get_context().runner_config.name.upper()}"):
-        daft_pd_df = daft_df.to_pandas()
-
+    daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 4, tmp_path)
 
 
 def test_tpch_q5(tmp_path, check_answer, get_df):
     daft_df = answers.q5(get_df)
-
-    with start_transaction(op="task", name=f"tpch_q5:runner={get_context().runner_config.name.upper()}"):
-        daft_pd_df = daft_df.to_pandas()
+    daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 5, tmp_path)
 
 
 def test_tpch_q6(tmp_path, check_answer, get_df):
     daft_df = answers.q6(get_df)
-
-    with start_transaction(op="task", name=f"tpch_q6:runner={get_context().runner_config.name.upper()}"):
-        daft_pd_df = daft_df.to_pandas()
+    daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 6, tmp_path)
 
 
 def test_tpch_q7(tmp_path, check_answer, get_df):
     daft_df = answers.q7(get_df)
-
-    with start_transaction(op="task", name=f"tpch_q7:runner={get_context().runner_config.name.upper()}"):
-        daft_pd_df = daft_df.to_pandas()
+    daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 7, tmp_path)
 
 
 def test_tpch_q8(tmp_path, check_answer, get_df):
     daft_df = answers.q8(get_df)
-
-    with start_transaction(op="task", name=f"tpch_q8:runner={get_context().runner_config.name.upper()}"):
-        daft_pd_df = daft_df.to_pandas()
+    daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 8, tmp_path)
 
 
 def test_tpch_q9(tmp_path, check_answer, get_df):
     daft_df = answers.q9(get_df)
-
-    with start_transaction(op="task", name=f"tpch_q9:runner={get_context().runner_config.name.upper()}"):
-        daft_pd_df = daft_df.to_pandas()
+    daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 9, tmp_path)
 
 
 def test_tpch_q10(tmp_path, check_answer, get_df):
     daft_df = answers.q10(get_df)
-
-    with start_transaction(op="task", name=f"tpch_q10:runner={get_context().runner_config.name.upper()}"):
-        daft_pd_df = daft_df.to_pandas()
+    daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 10, tmp_path)
