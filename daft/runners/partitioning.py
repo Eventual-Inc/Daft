@@ -207,6 +207,11 @@ class vPartition:
 
     def eval_expression(self, expr: Expression) -> PyListTile:
         expr_col_id = expr.get_id()
+
+        # Avoid recomputing expressions that have been computed before
+        if expr_col_id in self.columns:
+            return self.columns[expr_col_id]
+
         expr_name = expr.name()
 
         assert expr_col_id is not None

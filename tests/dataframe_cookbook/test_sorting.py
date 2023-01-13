@@ -11,6 +11,20 @@ from tests.dataframe_cookbook.conftest import (
 
 
 @parametrize_service_requests_csv_repartition
+def test_sorted_by_expr(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    """Sort by a column that undergoes an expression"""
+    daft_df = daft_df.repartition(repartition_nparts)
+    daft_sorted_df = daft_df.sort(col("Unique Key") + 1)
+
+    daft_sorted_pd_df = daft_sorted_df.to_pandas()
+    assert_df_equals(
+        daft_sorted_pd_df,
+        service_requests_csv_pd_df.sort_values(by=["Unique Key"]),
+        assert_ordering=True,
+    )
+
+
+@parametrize_service_requests_csv_repartition
 @parametrize_sort_desc("sort_desc")
 @pytest.mark.parametrize(
     "sort_keys",
