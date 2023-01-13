@@ -33,21 +33,21 @@ impl LiteralValue {
         }
     }
 
-    pub fn to_series(&self) -> DaftResult<Series> {
-        use arrow2::array::*;
-        use LiteralValue::*;
+    // pub fn to_series(&self) -> DaftResult<Series> {
+    //     use arrow2::array::*;
+    //     use LiteralValue::*;
 
-        let arrow_array = match self {
-            Null => new_null_array(DataType::Null.to_arrow()?, 1),
-            Boolean(val) => BooleanArray::from_slice([*val]).boxed(),
-            Utf8(val) => Utf8Array::<i64>::from([val.into()]).boxed(),
-            Binary(val) => BinaryArray::<i64>::from([val.into()]).boxed(),
-            Int64(val) => Int64Array::from_slice([*val]).boxed(),
-            Float64(val) => Float64Array::from_slice([*val]).boxed(),
-        };
+    //     let arrow_array = match self {
+    //         Null => new_null_array(DataType::Null.to_arrow()?, 1),
+    //         Boolean(val) => BooleanArray::from_slice([*val]).boxed(),
+    //         Utf8(val) => Utf8Array::<i64>::from([val.into()]).boxed(),
+    //         Binary(val) => BinaryArray::<i64>::from([val.into()]).boxed(),
+    //         Int64(val) => Int64Array::from_slice([*val]).boxed(),
+    //         Float64(val) => Float64Array::from_slice([*val]).boxed(),
+    //     };
 
-        Ok(Series::from(arrow_array))
-    }
+    //     Ok(Series::from(arrow_array))
+    // }
 }
 
 pub trait Literal {

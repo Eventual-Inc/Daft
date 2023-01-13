@@ -39,7 +39,7 @@ where
     F: Fn(T::Native, T::Native) -> T::Native,
 {
     let ca = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => DataArray::from(kernel(lhs.downcast(), rhs.downcast()).boxed()),
+        (a, b) if a == b => DataArray::from(Box::new(kernel(lhs.downcast(), rhs.downcast()))),
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);

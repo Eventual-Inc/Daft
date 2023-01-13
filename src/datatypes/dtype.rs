@@ -119,6 +119,11 @@ impl DataType {
             ))),
         }
     }
+
+    #[inline]
+    pub fn is_arrow(&self) -> bool {
+        self.to_arrow().is_ok()
+    }
 }
 
 impl From<&ArrowType> for DataType {
