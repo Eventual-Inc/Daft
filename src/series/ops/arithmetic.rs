@@ -76,8 +76,13 @@ impl_series_math_op!(Div, div);
 impl_series_math_op!(Mul, mul);
 impl_series_math_op!(Rem, rem);
 
+#[cfg(test)]
 mod tests {
-
+    use crate::{
+        array::BaseArray,
+        datatypes::{DataType, Float64Array, Int64Array},
+        error::DaftResult,
+    };
     #[test]
     fn add_int_and_int() -> DaftResult<()> {
         let a = Int64Array::from(vec![1, 2, 3].as_slice());
