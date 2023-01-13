@@ -4,6 +4,7 @@ mod time_unit;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
+pub use crate::array::DataArray;
 use arrow2::{
     compute::{arithmetics::basic::NativeArithmetics, comparison::Simd8},
     types::{simd::Simd, NativeType},
@@ -35,6 +36,7 @@ macro_rules! impl_daft_datatype {
 }
 
 impl_daft_datatype!(NullType, Null);
+impl_daft_datatype!(BooleanType, Boolean);
 impl_daft_datatype!(Int8Type, Int8);
 impl_daft_datatype!(Int16Type, Int16);
 impl_daft_datatype!(Int32Type, Int32);
@@ -106,6 +108,7 @@ impl NumericNative for u32 {
 impl NumericNative for u64 {
     type DAFTTYPE = UInt64Type;
 }
+
 impl NumericNative for f32 {
     type DAFTTYPE = Float32Type;
 }
@@ -143,3 +146,25 @@ impl DaftNumericType for Float32Type {
 impl DaftNumericType for Float64Type {
     type Native = f64;
 }
+
+pub type NullArray = DataArray<NullType>;
+pub type BooleanArray = DataArray<BooleanType>;
+pub type Int8Array = DataArray<Int8Type>;
+pub type Int16Array = DataArray<Int16Type>;
+pub type Int32Array = DataArray<Int32Type>;
+pub type Int64Array = DataArray<Int64Type>;
+pub type UInt8Array = DataArray<UInt8Type>;
+pub type UInt16Array = DataArray<UInt16Type>;
+pub type UInt32Array = DataArray<UInt32Type>;
+pub type UInt64Array = DataArray<UInt64Type>;
+pub type Float16Array = DataArray<Float16Type>;
+pub type Float32Array = DataArray<Float32Type>;
+pub type Float64Array = DataArray<Float64Type>;
+pub type TimestampArray = DataArray<TimestampType>;
+pub type DateArray = DataArray<DateType>;
+pub type TimeArray = DataArray<TimeType>;
+pub type BinaryArray = DataArray<BinaryType>;
+pub type Utf8Array = DataArray<Utf8Type>;
+pub type FixedSizeListArray = DataArray<FixedSizeListType>;
+pub type ListArray = DataArray<ListType>;
+pub type StructArray = DataArray<StructType>;

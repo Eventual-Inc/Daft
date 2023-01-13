@@ -1,13 +1,25 @@
-use std::{any::Any, marker::PhantomData};
+use std::{any::Any, marker::PhantomData, sync::Arc};
 
-use crate::datatypes::{DaftDataType, DataType};
+use crate::{
+    datatypes::{DaftDataType, DataType, Field},
+    error::{DaftError, DaftResult},
+    series::Series,
+};
 
 pub trait BaseArray: Any {
     fn data(&self) -> &dyn arrow2::array::Array;
 
-    fn data_type(&self) -> DataType;
+    fn data_type(&self) -> &DataType;
+
+    fn name(&self) -> &str;
 
     fn as_any(&self) -> &dyn std::any::Any;
+
+    fn boxed(self) -> Box<dyn BaseArray>;
+
+    fn arced(self) -> Arc<dyn BaseArray>;
+
+    fn into_series(self) -> Series;
 }
 
 impl std::fmt::Debug for dyn BaseArray {
@@ -16,17 +28,30 @@ impl std::fmt::Debug for dyn BaseArray {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct DataArray<T: DaftDataType> {
-    data: Box<dyn arrow2::array::Array>,
+    field: Arc<Field>,
+    data: Arc<dyn arrow2::array::Array>,
     phantom: PhantomData<T>,
 }
 
-impl<T: DaftDataType> From<Box<dyn arrow2::array::Array>> for DataArray<T> {
-    fn from(item: Box<dyn arrow2::array::Array>) -> Self {
-        DataArray {
-            data: item,
-            phantom: PhantomData,
+impl<T> DataArray<T>
+where
+    T: DaftDataType,
+{
+    pub fn new(field: Arc<Field>, data: Arc<dyn arrow2::array::Array>) -> DaftResult<DataArray<T>> {
+        if !field.dtype.to_arrow()?.eq(data.data_type()) {
+            return Err(DaftError::SchemaMismatch(format!(
+                "expected {:?}, got {:?}",
+                field.dtype.to_arrow(),
+                data.data_type()
+            )));
         }
+        Ok(DataArray {
+            field,
+            data,
+            phantom: PhantomData,
+        })
     }
 }
 
@@ -39,8 +64,24 @@ impl<T: DaftDataType + 'static> BaseArray for DataArray<T> {
         self
     }
 
-    fn data_type(&self) -> DataType {
-        return self.data.data_type().into();
+    fn data_type(&self) -> &DataType {
+        &self.field.dtype
+    }
+
+    fn name(&self) -> &str {
+        self.field.name.as_str()
+    }
+
+    fn boxed(self) -> Box<dyn BaseArray> {
+        Box::new(self)
+    }
+
+    fn arced(self) -> Arc<dyn BaseArray> {
+        Arc::new(self)
+    }
+
+    fn into_series(self) -> Series {
+        Series::new(self.arced())
     }
 
     // fn binary_op(&self, other: &dyn BaseArray, op: Operator) -> DaftResult<Arc<dyn BaseArray>> {
