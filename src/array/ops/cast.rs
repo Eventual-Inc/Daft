@@ -5,7 +5,7 @@ use crate::{
     datatypes::{DaftDataType, DataType},
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_arrow_daft_types,
+    with_match_numeric_daft_types,
 };
 
 impl<T> DataArray<T>
@@ -54,7 +54,7 @@ where
         );
 
         Ok(
-            with_match_arrow_daft_types!(dtype, |$T| DataArray::<$T>::from(result_array).into_series()),
+            with_match_numeric_daft_types!(dtype, |$T| DataArray::<$T>::from(result_array).into_series()),
         )
     }
 }

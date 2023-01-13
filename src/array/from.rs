@@ -1,6 +1,7 @@
+use core::slice;
 use std::sync::Arc;
 
-use crate::datatypes::{DaftDataType, DaftNumericType, Field};
+use crate::datatypes::{DaftDataType, DaftNumericType, DataType, Field, Utf8Array, Utf8Type};
 
 use crate::array::DataArray;
 
@@ -27,6 +28,29 @@ where
         .unwrap()
     }
 }
+
+impl<T: AsRef<str>> From<&[T]> for DataArray<Utf8Type> {
+    fn from(slice: &[T]) -> Self {
+        let arrow_array = arrow2::array::Utf8Array::<i64>::from_slice(slice);
+        DataArray::new(
+            Field::new("arrow_array", DataType::Utf8).into(),
+            arrow_array.arced(),
+        )
+        .unwrap()
+    }
+}
+
+// impl Utf8Array
+// {
+//     fn from<T: AsRef<str>>(slice: &[T]) -> Self {
+//         let arrow_array = arrow2::array::Utf8Array::<i64>::from_slice(slice);
+//         DataArray::new(
+//             Field::new("arrow_array", DataType::Utf8).into(),
+//             arrow_array.arced(),
+//         )
+//         .unwrap()
+//     }
+// }
 
 impl<T: DaftDataType> From<Box<dyn arrow2::array::Array>> for DataArray<T> {
     fn from(item: Box<dyn arrow2::array::Array>) -> Self {

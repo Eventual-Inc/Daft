@@ -24,7 +24,7 @@ fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)>
 }
 
 #[macro_export]
-macro_rules! with_match_arrow_daft_types {(
+macro_rules! with_match_numeric_daft_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
@@ -53,7 +53,7 @@ macro_rules! impl_series_math_op {
             type Output = Series;
             fn $func_name(self, rhs: Self) -> Self::Output {
                 let (lhs, rhs) = match_types_on_series(self, rhs).unwrap();
-                with_match_arrow_daft_types!(lhs.data_type(), |$T| {
+                with_match_numeric_daft_types!(lhs.data_type(), |$T| {
                     let lhs = lhs.downcast::<$T>().unwrap();
                     let rhs = rhs.downcast::<$T>().unwrap();
                     lhs.$func_name(rhs).into_series()
@@ -80,7 +80,7 @@ impl_series_math_op!(Rem, rem);
 mod tests {
     use crate::{
         array::BaseArray,
-        datatypes::{DataType, Float64Array, Int64Array},
+        datatypes::{DataType, Float64Array, Int64Array, Utf8Array},
         error::DaftResult,
     };
     #[test]
@@ -141,4 +141,13 @@ mod tests {
         assert_eq!(*c.data_type(), DataType::Int64);
         Ok(())
     }
+    // #[test]
+    // fn add_int_and_utf8() -> DaftResult<()> {
+    //     let a = Int64Array::from(vec![1, 2, 3].as_slice());
+    //     let str_array = vec!["a", "b", "c"];
+    //     let b = Utf8Array::from(str_array.as_slice());
+    //     let c = a.into_series() + b.into_series();
+    //     assert_eq!(*c.data_type(), DataType::Utf8);
+    //     Ok(())
+    // }
 }
