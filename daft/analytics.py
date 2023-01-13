@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+import atexit
 import base64
+import dataclasses
 import datetime
 import functools
 import json
 import logging
 import os
-import pathlib
 import platform
-import tempfile
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -18,24 +17,33 @@ from typing import Any, Callable
 
 from daft import context
 
-logger = logging.getLogger(__name__)
-
 _ANALYTICS_CLIENT = None
 _WRITE_KEY = "ebFETjqH70OOvtDvrlBC902iljBZGvPU"
-_PUBLISHER_THREAD_DEFAULT_SLEEP_INTERVAL_SECONDS = 5.0
-_LIMIT_READLINES_BYTES = 250 * 1024
 _SEGMENT_BATCH_ENDPOINT = "https://api.segment.io/v1/batch"
 
 
-def _build_segment_batch_payload(data: list[dict[str, Any]], daft_version: str, daft_build_type: str) -> dict[str, Any]:
+logger = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass(frozen=True)
+class AnalyticsEvent:
+    session_id: str
+    event_name: str
+    event_time: datetime.datetime
+    data: dict[str, Any]
+
+
+def _build_segment_batch_payload(
+    events: list[AnalyticsEvent], daft_version: str, daft_build_type: str
+) -> dict[str, Any]:
     return {
         "batch": [
             {
                 "type": "track",
-                "anonymousId": d["session_id"],
-                "event": d["event_name"],
-                "properties": d["data"],
-                "timestamp": d["event_time"],
+                "anonymousId": event.session_id,
+                "event": event.event_name,
+                "properties": event.data,
+                "timestamp": event.event_time.isoformat(),
                 "context": {
                     "app": {
                         "name": "getdaft",
@@ -44,7 +52,7 @@ def _build_segment_batch_payload(data: list[dict[str, Any]], daft_version: str, 
                     },
                 },
             }
-            for d in data
+            for event in events
         ],
     }
 
@@ -66,71 +74,48 @@ def _post_segment_track_endpoint(payload: dict[str, Any]) -> None:
         raise RuntimeError(f"HTTP request to segment returned status code: {resp.status}")
 
 
-def _publisher_thread_target(
-    watch_file: pathlib.Path,
-    daft_version: str,
-    daft_build_type: str,
-    sleep_interval_seconds: float,
-    publish: Callable[[dict[str, Any]], None],
-):
-    """Thread target for the publisher thread, which reads new JSON lines from the specified file and sends analytics to Segment"""
-    logger.debug(f"Watching file for analytics: {watch_file}")
-    with open(watch_file, "rb") as f:
-        while True:
-            try:
-                lines = f.readlines(_LIMIT_READLINES_BYTES)
-                if lines:
-                    data = [json.loads(l) for l in lines]
-                    publish(_build_segment_batch_payload(data, daft_version, daft_build_type))
-                time.sleep(sleep_interval_seconds)
-            except Exception as e:
-                # No-op on failure to avoid crashing the publisher thread - TODO: add retries for more robust log
-                logger.debug(f"Error in analytics publisher thread: {e}")
-
-
 class AnalyticsClient:
-    """Client for sending analytics events, which is a singleton for each Python process"""
+    """Non-threadsafe client for sending analytics events, which is a singleton for each Python process"""
 
     def __init__(
         self,
         daft_version: str,
         daft_build_type: str,
-        publisher_thread_sleep_interval_seconds: float = _PUBLISHER_THREAD_DEFAULT_SLEEP_INTERVAL_SECONDS,
         publish_payload_function: Callable[[dict[str, Any]], None] = _post_segment_track_endpoint,
+        buffer_capacity: int = 100,
     ) -> None:
+        self._daft_version = daft_version
+        self._daft_build_type = daft_build_type
         self._session_key = str(uuid.uuid4())
-        self._append_logfile = open(self._get_session_analytics_file(), "a")
-        self._publisher_thread = threading.Thread(
-            target=_publisher_thread_target,
-            # daemon=True makes this thread non-blocking to program exit
-            daemon=True,
-            args=(
-                self._get_session_analytics_file(),
-                daft_version,
-                daft_build_type,
-                publisher_thread_sleep_interval_seconds,
-                publish_payload_function,
-            ),
-        )
-        self._publisher_thread.start()
 
-    def _get_session_analytics_file(self) -> pathlib.Path:
-        session_path = pathlib.Path(tempfile.gettempdir()) / "daft" / self._session_key
-        session_path.mkdir(parents=True, exist_ok=True)
-        log_path = session_path / "analytics.log"
-        if not log_path.exists():
-            log_path.touch()
-        return log_path
+        # Function to publish a payload to Segment
+        self._publish = publish_payload_function
+
+        # Buffer for events to be sent to Segment
+        self._buffer_capacity = buffer_capacity
+        self._buffer: list[AnalyticsEvent] = []
 
     def _append_to_log(self, event_name: str, data: dict[str, Any]) -> None:
-        current_time = datetime.datetime.utcnow().isoformat()
-        self._append_logfile.write(
-            json.dumps(
-                {"session_id": self._session_key, "event_name": event_name, "event_time": current_time, "data": data}
+        self._buffer.append(
+            AnalyticsEvent(
+                session_id=self._session_key,
+                event_name=event_name,
+                event_time=datetime.datetime.utcnow(),
+                data=data,
             )
         )
-        self._append_logfile.write("\n")
-        self._append_logfile.flush()
+        if len(self._buffer) >= self._buffer_capacity:
+            self._flush()
+
+    def _flush(self) -> None:
+        try:
+            payload = _build_segment_batch_payload(self._buffer, self._daft_version, self._daft_build_type)
+            self._publish(payload)
+        except Exception as e:
+            # No-op on failure to avoid crashing the program - TODO: add retries for more robust logging
+            logger.debug(f"Error in analytics publisher thread: {e}")
+        finally:
+            self._buffer = []
 
     def track_import(self) -> None:
         self._append_to_log(
@@ -169,6 +154,7 @@ def init_analytics(daft_version: str, daft_build_type: str) -> AnalyticsClient:
         return _ANALYTICS_CLIENT
 
     _ANALYTICS_CLIENT = AnalyticsClient(daft_version, daft_build_type)
+    atexit.register(_ANALYTICS_CLIENT._flush)
     return _ANALYTICS_CLIENT
 
 

@@ -22,8 +22,8 @@ def mock_analytics() -> tuple[AnalyticsClient, MagicMock]:
     client = AnalyticsClient(
         daft.get_version(),
         daft.get_build_type(),
-        publisher_thread_sleep_interval_seconds=PUBLISHER_THREAD_SLEEP_INTERVAL_SECONDS,
         publish_payload_function=mock_publish,
+        buffer_capacity=1,
     )
 
     # Patch the publish method
