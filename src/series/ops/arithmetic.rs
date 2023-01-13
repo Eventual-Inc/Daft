@@ -1,12 +1,8 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use arrow2::array::MutableArray;
-
 use crate::{
-    array::data_array::BaseArray,
-    error::DaftResult,
-    series::Series,
-    utils::supertype::{get_supertype, try_get_supertype},
+    array::data_array::BaseArray, error::DaftResult, series::Series,
+    utils::supertype::try_get_supertype,
 };
 
 // pub fn dispatch_binary_op(lhs: &dyn BaseArray, rhs: &dyn BaseArray, func) -> Series {
@@ -81,13 +77,6 @@ impl_series_math_op!(Mul, mul);
 impl_series_math_op!(Rem, rem);
 
 mod tests {
-    use crate::{
-        array::DataArray,
-        datatypes::{DataType, DateArray, Float64Array, Int64Array},
-        error::DaftResult,
-    };
-
-    use super::*;
 
     #[test]
     fn add_int_and_int() -> DaftResult<()> {

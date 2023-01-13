@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
 use arrow2::compute::cast::{can_cast_types, cast, CastOptions};
 
 use crate::{
     array::data_array::{BaseArray, DataArray},
-    datatypes::{DaftDataType, DaftNumericType, DataType},
+    datatypes::{DaftDataType, DataType},
     error::{DaftError, DaftResult},
     series::Series,
     with_match_arrow_daft_types,
@@ -20,7 +18,7 @@ where
         //     return Ok(DataArray::<T>::from(self.data().to_boxed()).into_series());
         // }
 
-        let arrow_type = dtype.to_arrow();
+        let _arrow_type = dtype.to_arrow();
 
         if !dtype.is_arrow() || !self.data_type().is_arrow() {
             return Err(DaftError::TypeError(format!(

@@ -1,11 +1,7 @@
 mod ops;
 use std::sync::Arc;
 
-use crate::{
-    array::data_array::{BaseArray, DataArray},
-    datatypes,
-    datatypes::DataType,
-};
+use crate::{array::data_array::BaseArray, datatypes::DataType};
 
 #[derive(Debug, Clone)]
 pub struct Series {

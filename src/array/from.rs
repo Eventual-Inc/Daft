@@ -1,11 +1,8 @@
-use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::datatypes::{DaftDataType, DaftNumericType, DataType, Field, NullType};
+use crate::datatypes::{DaftDataType, DaftNumericType, Field};
 
 use crate::array::DataArray;
-
-use crate::array::data_array::BaseArray;
 
 impl<T: DaftNumericType> From<Box<arrow2::array::PrimitiveArray<T::Native>>> for DataArray<T> {
     fn from(item: Box<arrow2::array::PrimitiveArray<T::Native>>) -> Self {

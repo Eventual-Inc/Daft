@@ -1,7 +1,5 @@
 use crate::datatypes::DataType;
 use crate::dsl::expr::Expr;
-use crate::error::DaftResult;
-use crate::series::Series;
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.

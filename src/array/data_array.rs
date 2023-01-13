@@ -1,7 +1,7 @@
 use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use crate::{
-    datatypes::{DaftDataType, DaftNumericType, DataType, Field},
+    datatypes::{DaftDataType, DataType, Field},
     error::{DaftError, DaftResult},
     series::Series,
 };
