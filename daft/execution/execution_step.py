@@ -78,7 +78,7 @@ class OpenExecutionQueue(ExecutionStep[PartitionT]):
             instructions=self.instructions,
         )
 
-    def as_materization_request_multi(self) -> MaterializationRequestMulti[PartitionT]:
+    def as_materization_request_multi(self, num_results: int) -> MaterializationRequestMulti[PartitionT]:
         """Create an MaterializationRequestMulti from this ExecutionStep.
 
         Same as as_materization_request, except the output of this ExecutionStep is a list of partitions.
@@ -87,6 +87,7 @@ class OpenExecutionQueue(ExecutionStep[PartitionT]):
         return MaterializationRequestMulti[PartitionT](
             inputs=self.inputs,
             instructions=self.instructions,
+            num_results=num_results,
         )
 
 
@@ -125,8 +126,10 @@ class MaterializationRequestMulti(MaterializationRequestBase[PartitionT]):
     """An ExecutionStep that is ready to run. More instructions cannot be added.
     This ExecutionStep will return a list of any number of partitions.
 
+    num_results: The number of partitions that will be returned.
     results: When available, the partitions created from run the ExecutionStep.
     """
+    num_results: int
     results: None | list[MaterializationResult[PartitionT]] = None
 
 

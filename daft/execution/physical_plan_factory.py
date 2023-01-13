@@ -94,6 +94,7 @@ def get_physical_plan(node: LogicalPlan) -> Iterator[None | ExecutionStep[Partit
             # Do the reduce.
             return physical_plan.reduce(
                 child_plan=child_plan,
+                num_partitions=node.num_partitions(),
                 reduce_instruction=execution_step.ReduceMerge(),
             )
 

@@ -278,6 +278,7 @@ def coalesce(
 
 def reduce(
     fanout_plan: Iterator[None | ExecutionStep[PartitionT]],
+    num_partitions: int,
     reduce_instruction: ReduceInstruction,
 ) -> Iterator[None | ExecutionStep[PartitionT]]:
     """Reduce the result of fanout_plan.
@@ -293,7 +294,7 @@ def reduce(
     # Dispatch all fanouts.
     for step in fanout_plan:
         if isinstance(step, OpenExecutionQueue):
-            step = step.as_materialization_request_multi()
+            step = step.as_materialization_request_multi(num_partitions)
             materializations.append(step)
         yield step
 
@@ -378,6 +379,7 @@ def sort(
     # Execute a sorting reduce on it.
     yield from reduce(
         fanout_plan=range_fanout_plan,
+        num_partitions=sort_info.num_partitions(),
         reduce_instruction=execution_step.ReduceMergeAndSort(
             sort_by=sort_info._sort_by,
             descending=sort_info._descending,
