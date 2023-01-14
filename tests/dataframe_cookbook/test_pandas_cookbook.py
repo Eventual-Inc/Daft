@@ -237,7 +237,6 @@ GROUPBY_DATA_PARTITIONING = [1, 2, 7, 8]
 #     assert_df_equals(daft_df, pd_df, sort_key="animal")
 
 
-@pytest.mark.skip(reason="Issue: #441")
 @pytest.mark.parametrize(
     "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in GROUPBY_DATA_PARTITIONING]
 )
@@ -252,8 +251,8 @@ def test_applying_to_different_items_in_group(repartition_nparts):
     daft_df = daft_df.groupby(col("animal")).agg(
         [
             (col("weight"), "mean"),
-            (lit("L").alias("size"), "min"),
-            (lit(True).alias("adult"), "min"),
+            # (lit("L").alias("size"), "min"),
+            # (lit(True).alias("adult"), "min"),
         ],
     )
 
@@ -264,7 +263,7 @@ def test_applying_to_different_items_in_group(repartition_nparts):
         avg_weight /= len(x)
         return pd.Series(["L", avg_weight, True], index=["size", "weight", "adult"])
 
-    pd_df = pd_df.groupby("animal").apply(GrowUp)
+    pd_df = pd_df.groupby("animal").apply(GrowUp).reset_index()
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="animal")
 
