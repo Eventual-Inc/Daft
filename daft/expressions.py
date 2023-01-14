@@ -125,7 +125,11 @@ class ExpressionExecutor:
             elif isinstance(results, list):
                 results = pa.chunked_array([pa.array(results)])
 
-            if not isinstance(results, pa.ChunkedArray):
+            # Scalar returned, wrap into a Scalar
+            elif not isinstance(results, pa.ChunkedArray):
+                results = pa.scalar(results, type=expr._func_ret_type.to_arrow_type())
+
+            if not isinstance(results, pa.ChunkedArray) and not isinstance(results, pa.Scalar):
                 raise NotImplementedError(f"Cannot make block for data of type: {type(results)}")
 
             # Explcitly cast results of the UDF here for these primitive types:
@@ -437,6 +441,8 @@ class Expression(TreeNode["Expression"]):
         )
 
         def apply_func(f, data):
+            if data.is_scalar():
+                return f(data.to_numpy())
             return list(map(f, data.iter_py()))
 
         return UdfExpression(

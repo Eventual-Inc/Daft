@@ -231,7 +231,8 @@ class DataBlock(Generic[ArrType]):
         ]
 
     def head(self, num: int) -> DataBlock[ArrType]:
-        assert not self.is_scalar(), "Cannot get head of scalar DataBlock"
+        if self.is_scalar():
+            return DataBlock.make_block([self.data for _ in range(num)])
         return DataBlock.make_block(self.data[:num])
 
     def filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
