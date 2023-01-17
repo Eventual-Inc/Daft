@@ -209,7 +209,7 @@ class vPartition:
         expr_col_id = expr.get_id()
 
         # Avoid recomputing expressions that have been computed before
-        if expr_col_id in self.columns:
+        if expr_col_id in self.columns and self.columns[expr_col_id].column_name == expr.name():
             return self.columns[expr_col_id]
 
         expr_name = expr.name()
