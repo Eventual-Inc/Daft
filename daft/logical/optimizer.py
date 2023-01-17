@@ -158,7 +158,6 @@ class PruneColumns(Rule[LogicalPlan]):
         child_output_set = child.schema().to_id_set()
         if child_output_set.issubset(required_set):
             return None
-
         logger.debug(f"Pruning Columns: {child_output_set - required_set} in projection logical plan")
         new_grandchildren = [self._create_pruning_child(gc, required_set) for gc in child._children()]
         return parent.copy_with_new_children([child.copy_with_new_children(new_grandchildren)])
@@ -167,7 +166,12 @@ class PruneColumns(Rule[LogicalPlan]):
         child_ids = child.schema().to_id_set()
         if child_ids.issubset(parent_id_set):
             return child
-        return Projection(child, projection=ExpressionList([e for e in child.schema() if e.get_id() in parent_id_set]))
+        return Projection(
+            child,
+            projection=ExpressionList(
+                [e.to_column_expression() for e in child.schema() if e.get_id() in parent_id_set]
+            ),
+        )
 
 
 class CombineFilters(Rule[LogicalPlan]):
