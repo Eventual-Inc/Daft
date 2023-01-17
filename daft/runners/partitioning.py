@@ -170,9 +170,9 @@ class vPartition:
         for col_id, tile in self.columns.items():
             if tile.partition_id != self.partition_id:
                 raise ValueError(f"mismatch of partition id: {tile.partition_id} vs {self.partition_id}")
-            if size is None:
+            if len(tile) != 0 and size is None:
                 size = len(tile)
-            if len(tile) != size:
+            if len(tile) != 0 and len(tile) != size:
                 raise ValueError(f"mismatch of tile lengths: {len(tile)} vs {size}")
             if col_id != tile.column_id:
                 raise ValueError(f"mismatch of column id: {col_id} vs {tile.column_id}")
@@ -216,13 +216,6 @@ class vPartition:
 
         assert expr_col_id is not None
         assert expr_name is not None
-        if not expr.has_call():
-            return PyListTile(
-                column_id=expr_col_id,
-                column_name=expr_name,
-                partition_id=self.partition_id,
-                block=self.columns[expr_col_id].block,
-            )
 
         required_cols = expr.required_columns()
         required_blocks = {}
@@ -403,14 +396,22 @@ class vPartition:
             output_schema = [(expr.name(), expr.get_id()) for expr in schema]
         else:
             output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
-        return pd.DataFrame(
-            {
-                name: pd.Series(self.columns[id].block.data)
-                if isinstance(self.columns[id].block, PyListDataBlock)
-                else self.columns[id].block.data.to_pandas()
-                for name, id in output_schema
-            }
-        )
+
+        data = {}
+        for name, id in output_schema:
+            block = self.columns[id].block
+            # PyListDataBlocks contain Python objects
+            if isinstance(block, PyListDataBlock) and block.is_scalar():
+                data[name] = pd.Series([block.data for _ in range(len(self))])
+            elif isinstance(block, PyListDataBlock):
+                data[name] = pd.Series(block.data)
+            # ArrowDataBlocks contain Arrow scalars or arrays
+            elif block.is_scalar():
+                data[name] = pd.Series([block.data.as_py() for _ in range(len(self))])
+            else:
+                data[name] = block.data.to_pandas()
+
+        return pd.DataFrame(data)
 
     def for_each_column_block(self, func: Callable[[DataBlock], DataBlock]) -> vPartition:
         return dataclasses.replace(self, columns={col_id: col.apply(func) for col_id, col in self.columns.items()})

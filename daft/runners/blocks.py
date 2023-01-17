@@ -231,7 +231,8 @@ class DataBlock(Generic[ArrType]):
         ]
 
     def head(self, num: int) -> DataBlock[ArrType]:
-        assert not self.is_scalar(), "Cannot get head of scalar DataBlock"
+        if self.is_scalar():
+            return DataBlock.make_block(self.data)
         return DataBlock.make_block(self.data[:num])
 
     def filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
@@ -516,7 +517,9 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         super().__init__(data)
 
     def __reduce__(self) -> tuple:
-        if len(self.data) == 0:
+        if self.is_scalar():
+            return ArrowDataBlock, (self.data,)
+        elif len(self.data) == 0:
             return ArrowDataBlock, (self._make_empty().data,)
         else:
             return ArrowDataBlock, (self.data,)
@@ -627,6 +630,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
                 raise ValueError(f"can not merge different block types {unique_block_types}")
         else:
             raise ValueError(f"can not merge different block types {unique_block_types}")
+
+        # Merging scalar blocks - take the first block
+        if len(blocks) > 0 and blocks[0].is_scalar():
+            return blocks[0]
 
         all_chunks = []
         for block in blocks_to_merge:
