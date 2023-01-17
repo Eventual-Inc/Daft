@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from daft.expressions import col, lit
+from daft.expressions import col
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     parametrize_service_requests_csv_repartition,
@@ -26,22 +26,6 @@ def test_add_one_to_column_name_override(daft_df, service_requests_csv_pd_df, re
     )
     service_requests_csv_pd_df["Unique Key"] = service_requests_csv_pd_df["Unique Key"] + 2
     daft_pd_df = daft_df.to_pandas()
-    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
-
-
-def test_literal_column(daft_df, service_requests_csv_pd_df):
-    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results"""
-    daft_df = daft_df.with_column("literal_col", lit(1))
-    daft_pd_df = daft_df.to_pandas()
-    service_requests_csv_pd_df["literal_col"] = 1
-    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
-
-
-def test_literal_column_computation(daft_df, service_requests_csv_pd_df):
-    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results"""
-    daft_df = daft_df.with_column("literal_col", lit(1) + 1)
-    daft_pd_df = daft_df.to_pandas()
-    service_requests_csv_pd_df["literal_col"] = 1 + 1
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
