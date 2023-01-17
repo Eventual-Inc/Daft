@@ -232,7 +232,7 @@ class DataBlock(Generic[ArrType]):
 
     def head(self, num: int) -> DataBlock[ArrType]:
         if self.is_scalar():
-            return DataBlock.make_block([self.data for _ in range(num)])
+            return DataBlock.make_block(self.data)
         return DataBlock.make_block(self.data[:num])
 
     def filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
@@ -628,6 +628,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
                 raise ValueError(f"can not merge different block types {unique_block_types}")
         else:
             raise ValueError(f"can not merge different block types {unique_block_types}")
+
+        # Merging scalar blocks - take the first block
+        if len(blocks) > 0 and blocks[0].is_scalar():
+            return blocks[0]
 
         all_chunks = []
         for block in blocks_to_merge:
