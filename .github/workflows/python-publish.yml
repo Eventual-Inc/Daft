@@ -104,13 +104,11 @@ jobs:
 
     - uses: conda-incubator/setup-miniconda@v2
       with:
-        auto-update-conda: true
         # Really doesn't matter what version we upload with
         # just the version we test with
         python-version: '3.8'
         channels: conda-forge
         channel-priority: true
-        mamba-version: '*'
 
     - name: Install anaconda client
       shell: bash -el {0}
