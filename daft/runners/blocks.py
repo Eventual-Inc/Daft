@@ -517,7 +517,9 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         super().__init__(data)
 
     def __reduce__(self) -> tuple:
-        if len(self.data) == 0:
+        if self.is_scalar():
+            return ArrowDataBlock, (self.data,)
+        elif len(self.data) == 0:
             return ArrowDataBlock, (self._make_empty().data,)
         else:
             return ArrowDataBlock, (self.data,)
