@@ -1,0 +1,27 @@
+name: Run notebooks in docs to ensure they work
+
+on:
+  schedule:
+  - cron: 0 3 * * *
+  workflow_dispatch:
+
+jobs:
+  notebook-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.8']
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -U jupyter papermill
+    - name: Run notebooks
+      run: find docs -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb --no-progress-bar
