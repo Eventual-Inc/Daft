@@ -24,4 +24,4 @@ jobs:
         pip install --upgrade pip
         pip install -U jupyter papermill
     - name: Run notebooks
-      run: find docs -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb --no-progress-bar
+      run: find docs -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb --no-progress-bar --cwd /tmp/
