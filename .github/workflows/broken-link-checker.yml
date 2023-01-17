@@ -5,7 +5,7 @@ name: Check Broken Links on getdaft.io
 
 on:
   schedule:
-  - cron: 0 3 * * *
+  - cron: 0 20 * * *
   workflow_dispatch:
 
 jobs:
