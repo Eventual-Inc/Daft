@@ -248,13 +248,9 @@ def test_applying_to_different_items_in_group(repartition_nparts):
     )
     daft_df = daft_df.with_column("weight", (col("size") == "M").if_else(col("weight") * 1.25, col("weight")))
     daft_df = daft_df.with_column("weight", (col("size") == "L").if_else(col("weight"), col("weight")))
-    daft_df = daft_df.groupby(col("animal")).agg(
-        [
-            (col("weight"), "mean"),
-            # (lit("L").alias("size"), "min"),
-            # (lit(True).alias("adult"), "min"),
-        ],
-    )
+    daft_df = daft_df.groupby(col("animal")).agg([(col("weight"), "mean")])
+    daft_df = daft_df.with_column("size", lit("L"))
+    daft_df = daft_df.with_column("adult", lit(True))
 
     def GrowUp(x):
         avg_weight = sum(x[x["size"] == "S"].weight * 1.5)
