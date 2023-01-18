@@ -23,7 +23,7 @@ def calculate_version() -> str:
 
     if len(split_full_tag_version) > 1:
         _, distance, commit = split_full_tag_version
-        version = f"{MAJOR}.{MINOR}.{PATCH + 1}+dev{int(distance):04d}.{commit[1:]}"
+        version = f"{MAJOR}.{MINOR}.{PATCH}+dev{int(distance):04d}.{commit[1:]}"
     else:
         version = f"{MAJOR}.{MINOR}.{PATCH}"
     return version
