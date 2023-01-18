@@ -133,7 +133,7 @@ impl Operator {
 mod tests {
 
     use super::*;
-
+    use crate::dsl::lit;
     #[test]
     fn check_comparision_type() -> DaftResult<()> {
         let x = lit(10.);

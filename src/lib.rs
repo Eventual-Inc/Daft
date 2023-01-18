@@ -6,6 +6,7 @@ mod dsl;
 mod error;
 mod ffi;
 mod kernels;
+mod python;
 mod schema;
 mod series;
 mod table;
@@ -36,6 +37,7 @@ fn build_type() -> &'static str {
 #[pymodule]
 fn daft(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     kernels::register_kernels(_py, m)?;
+    python::register_modules(_py, m)?;
     m.add_wrapped(wrap_pyfunction!(version))?;
     m.add_wrapped(wrap_pyfunction!(build_type))?;
     Ok(())
