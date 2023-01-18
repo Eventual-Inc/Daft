@@ -163,6 +163,7 @@ def global_limit(
     """Return the first n rows from the `child_plan`."""
 
     remaining_rows = global_limit._num
+    assert remaining_rows >= 0, f"Invalid value for limit: {remaining_rows}"
     remaining_partitions = global_limit.num_partitions()
 
     materializations: deque[MaterializationRequest[PartitionT]] = deque()
