@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import tempfile
+import uuid
 
 import pyarrow as pa
 import pyarrow.parquet as papq
@@ -17,6 +18,13 @@ COL_NAMES = [
     "petal_width",
     "variety",
 ]
+
+
+@pytest.mark.parametrize("read_method", ["read_csv", "read_json", "read_parquet"])
+def test_load_missing(read_method):
+    """Loading data from a missing filepath"""
+    with pytest.raises(FileNotFoundError):
+        getattr(DataFrame, read_method)(str(uuid.uuid4()))
 
 
 def test_create_dataframe(valid_data: list[dict[str, float]]) -> None:
