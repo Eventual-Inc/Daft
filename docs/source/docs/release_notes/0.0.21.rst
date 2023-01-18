@@ -1,0 +1,75 @@
+Daft 0.0.21 Release Notes
+=========================
+
+The Daft 0.0.21 release features many bugfixes and the introduction of the DynamicRayRunner from @xcharleslin.
+
+
+New Features
+------------
+
+Dynamic Ray Runner
+^^^^^^^^^^^^^^^^^^
+
+Continuation of work by @xcharleslin to implement a dynamic runner for the Ray backend! This scheduler is under active development and will be the default scheduler for Ray in future Daft releases.
+
+See: `#412 <https://github.com/Eventual-Inc/Daft/pull/412>`_
+
+Enhancements
+------------
+
+* Rust Series Basic math `#437 <https://github.com/Eventual-Inc/Daft/pull/437>`_
+* Simplify Analytics Client to single-threaded implementation `#436 <https://github.com/Eventual-Inc/Daft/pull/436>`_
+* Dynamic scheduler mega cleanup: Refactors, renames, docstrings, comments `#434 <https://github.com/Eventual-Inc/Daft/pull/434>`_
+* Fix DynamicRayRunner performance issues. Warmup more works in benchmarking script. `#430 <https://github.com/Eventual-Inc/Daft/pull/430>`_
+* Move Instructions to dataclasses. `#428 <https://github.com/Eventual-Inc/Daft/pull/428>`_
+* Add analytics module for telemetry `#413 <https://github.com/Eventual-Inc/Daft/pull/413>`_
+* DynamicRayRunner optimizations: metadata fetch on demand; ray.wait for task management `#418 <https://github.com/Eventual-Inc/Daft/pull/418>`_
+* Add profiling to benchmarks/tpch. Improve profiler to prevent VizTracer nesting. `#423 <https://github.com/Eventual-Inc/Daft/pull/423>`_
+* Base Rust Skeleton `#421 <https://github.com/Eventual-Inc/Daft/pull/421>`_
+
+Bug Fixes
+---------
+
+* Fix alias evaluation `#448 <https://github.com/Eventual-Inc/Daft/pull/448>`_
+* Fix self-referencing if-else test `#446 <https://github.com/Eventual-Inc/Daft/pull/446>`_
+* Add support and tests for columns created only from literals `#445 <https://github.com/Eventual-Inc/Daft/pull/445>`_
+* Sorts on non-column expression `#299 <https://github.com/Eventual-Inc/Daft/pull/299>`_
+
+
+Build Changes
+-------------
+
+
+* Daft nightly publishing prepend 0s to dev version to fix pip lexical ordering `#453 <https://github.com/Eventual-Inc/Daft/pull/453>`_
+* run notebooks check in separate working dir `#452 <https://github.com/Eventual-Inc/Daft/pull/452>`_
+* Check doc notebooks daily at noon `#451 <https://github.com/Eventual-Inc/Daft/pull/451>`_
+* add http to fsspec package `#450 <https://github.com/Eventual-Inc/Daft/pull/450>`_
+* Remove Mamba from publishing CI `#449 <https://github.com/Eventual-Inc/Daft/pull/449>`_
+* Cookbook test cleanups `#438 <https://github.com/Eventual-Inc/Daft/pull/438>`_
+* Change envvar DAFT\_PKG\_BUILD\_TYPE to RUST\_DAFT\_PKG\_BUILD\_TYPE `#432 <https://github.com/Eventual-Inc/Daft/pull/432>`_
+* Add DAFT\_PKG\_BUILD\_TYPE to python-publish CI job `#424 <https://github.com/Eventual-Inc/Daft/pull/424>`_
+
+
+Documentation
+-------------
+
+* Typos in telemetry docs `#429 <https://github.com/Eventual-Inc/Daft/pull/429>`_
+* Refreshes our 10 minute tutorial `#431 <https://github.com/Eventual-Inc/Daft/pull/431>`_
+* API Documentation refactors `#427 <https://github.com/Eventual-Inc/Daft/pull/427>`_
+
+Closed Issues
+-------------
+
+* Remove Sentry `#435 <https://github.com/Eventual-Inc/Daft/issues/435>`_
+* add profiling flag to benchmark `#422 <https://github.com/Eventual-Inc/Daft/issues/422>`_
+* DynamicRayRunner optimization: spread strategy for reduce `#420 <https://github.com/Eventual-Inc/Daft/issues/420>`_
+* Make DynamicRayRunner strictly faster than RayRunner `#419 <https://github.com/Eventual-Inc/Daft/issues/419>`_
+* Benchmark DynamicSchedule. `#406 <https://github.com/Eventual-Inc/Daft/issues/406>`_
+* RayRunner for DynamicSchedule `#405 <https://github.com/Eventual-Inc/Daft/issues/405>`_
+* PartitionCache for DynamicSchedule `#404 <https://github.com/Eventual-Inc/Daft/issues/404>`_
+* Refactor DynamicSchedule to be generators. `#403 <https://github.com/Eventual-Inc/Daft/issues/403>`_
+* Alias doesn't work on main branch `#447 <https://github.com/Eventual-Inc/Daft/issues/447>`_
+* Fix creation of literal columns `#444 <https://github.com/Eventual-Inc/Daft/issues/444>`_
+* Fix aggregations on a self-referencing `if_else` `#441 <https://github.com/Eventual-Inc/Daft/issues/441>`_
+* .sort\(\) breaks on non-column Expression `#439 <https://github.com/Eventual-Inc/Daft/issues/439>`_
+* Repr broken for boolean columns `#425 <https://github.com/Eventual-Inc/Daft/issues/425>`_
