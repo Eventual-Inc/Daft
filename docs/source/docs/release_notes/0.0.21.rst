@@ -14,6 +14,13 @@ Continuation of work by @xcharleslin to implement a dynamic runner for the Ray b
 
 See: `#412 <https://github.com/Eventual-Inc/Daft/pull/412>`_
 
+Telemetry
+^^^^^^^^^
+
+Telemetry was added to help Daft development. To disable, use the environment variable ``DAFT_ANALYTICS_ENABLED=0``.
+
+See: `#413 <https://github.com/Eventual-Inc/Daft/pull/413>`_ and `Telemetry docs <../telemetry>`_ for more details
+
 Enhancements
 ------------
 
