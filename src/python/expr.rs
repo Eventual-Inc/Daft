@@ -1,5 +1,7 @@
-use crate::dsl;
-use pyo3::prelude::*;
+use std::sync::Arc;
+
+use crate::dsl::{self, Expr};
+use pyo3::{prelude::*, pyclass::CompareOp};
 
 #[pyfunction]
 pub fn col(name: &str) -> PyResult<PyExpr> {
@@ -18,8 +20,20 @@ pub struct PyExpr {
 
 #[pymethods]
 impl PyExpr {
-    fn __add__(&self, other: &Self) -> Self {
-        (&self.expr + &other.expr).into()
+    pub fn __add__(&self, other: &Self) -> PyResult<Self> {
+        Ok(dsl::binary_op(dsl::Operator::Plus, &self.expr, &other.expr).into())
+    }
+
+    pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
+        use dsl::{binary_op, Operator};
+        match op {
+            CompareOp::Lt => Ok(binary_op(Operator::Lt, &self.expr, &other.expr).into()),
+            CompareOp::Le => Ok(binary_op(Operator::LtEq, &self.expr, &other.expr).into()),
+            CompareOp::Eq => Ok(binary_op(Operator::Eq, &self.expr, &other.expr).into()),
+            CompareOp::Ne => Ok(binary_op(Operator::NotEq, &self.expr, &other.expr).into()),
+            CompareOp::Gt => Ok(binary_op(Operator::Gt, &self.expr, &other.expr).into()),
+            CompareOp::Ge => Ok(binary_op(Operator::GtEq, &self.expr, &other.expr).into()),
+        }
     }
 }
 

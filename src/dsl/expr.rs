@@ -26,6 +26,14 @@ pub fn col(name: &str) -> Expr {
     Expr::Column(name.into())
 }
 
+pub fn binary_op(op: Operator, left: &Expr, right: &Expr) -> Expr {
+    Expr::BinaryOp {
+        op,
+        left: left.clone().into(),
+        right: right.clone().into(),
+    }
+}
+
 impl Expr {
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use Expr::*;
