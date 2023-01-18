@@ -5,8 +5,15 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Iterator
 
 import pyarrow as pa
-import ray
 from loguru import logger
+
+try:
+    import ray
+except ImportError:
+    logger.error(
+        f"Error when importing Ray. Please ensure that getdaft was installed with the Ray extras tag: getdaft[ray] (https://getdaft.io/docs/learn/install.html)"
+    )
+    raise
 
 from daft.execution import physical_plan_factory
 from daft.execution.execution_plan import ExecutionPlan
