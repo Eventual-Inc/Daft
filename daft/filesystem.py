@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fsspec import AbstractFileSystem, get_filesystem_class
+from loguru import logger
 
 
 def get_filesystem(protocol: str, **kwargs) -> AbstractFileSystem:
@@ -18,7 +19,13 @@ def get_protocol_from_path(path: str, **kwargs) -> str:
 
 def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
     protocol = get_protocol_from_path(path)
-    fs = get_filesystem(protocol, **kwargs)
+    try:
+        fs = get_filesystem(protocol, **kwargs)
+    except ImportError:
+        logger.error(
+            f"Error when importing dependencies for accessing data with: {protocol}. Please ensure that getdaft was installed with the appropriate extra dependencies (https://getdaft.io/docs/learn/install.html)"
+        )
+        raise
     return fs
 
 
