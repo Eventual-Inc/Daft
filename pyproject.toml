@@ -72,3 +72,10 @@ ignore_missing_imports = true
 module = 'daft.*'
 warn_return_any = false
 enable-error-code = ["attr-defined"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--benchmark-skip"
+testpaths = [
+    "tests",
+]
