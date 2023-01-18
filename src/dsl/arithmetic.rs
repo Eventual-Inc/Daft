@@ -4,6 +4,17 @@ use crate::dsl::{Expr, Operator};
 
 macro_rules! impl_expr_op {
     ($math_op:ident, $func_name:ident, $op_name: ident) => {
+        impl $math_op for &Expr {
+            type Output = Expr;
+            fn $func_name(self, rhs: Self) -> Self::Output {
+                Expr::BinaryOp {
+                    op: Operator::$op_name,
+                    left: self.clone().into(),
+                    right: rhs.clone().into(),
+                }
+            }
+        }
+
         impl $math_op for Expr {
             type Output = Expr;
             fn $func_name(self, rhs: Self) -> Self::Output {

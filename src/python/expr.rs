@@ -16,12 +16,12 @@ pub struct PyExpr {
     expr: dsl::Expr,
 }
 
-// #[pymethods]
-// impl PyExpr {
-//     fn __add__(&self, other: &Self) -> Self {
-//         (self.expr + other.expr).into()
-//     }
-// }
+#[pymethods]
+impl PyExpr {
+    fn __add__(&self, other: &Self) -> Self {
+        (&self.expr + &other.expr).into()
+    }
+}
 
 impl From<dsl::Expr> for PyExpr {
     fn from(value: dsl::Expr) -> Self {

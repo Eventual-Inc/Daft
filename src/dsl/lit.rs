@@ -4,7 +4,7 @@ use crate::series::Series;
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LiteralValue {
     Null,
     /// A binary true or false.

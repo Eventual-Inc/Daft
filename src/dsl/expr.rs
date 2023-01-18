@@ -9,7 +9,7 @@ use std::{
 
 type ExprRef = Arc<Expr>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Alias(ExprRef, Arc<str>),
     BinaryOp {
