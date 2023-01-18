@@ -76,6 +76,9 @@ def _glob_path_into_vpartitions(path: str, schema: ExpressionList) -> list[tuple
     filepath_expr = list(schema)[0]
     filepaths = glob_path(path)
 
+    if len(filepaths) == 0:
+        raise FileNotFoundError(f"No files found at {path}")
+
     # Hardcoded to 1 filepath per partition
     partition_refs = []
     for i, filepath in enumerate(filepaths):

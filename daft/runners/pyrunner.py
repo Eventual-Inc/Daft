@@ -93,6 +93,10 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
         source_path: str,
     ) -> tuple[LocalPartitionSet, ExpressionList]:
         filepaths = glob_path(source_path)
+
+        if len(filepaths) == 0:
+            raise FileNotFoundError(f"No files found at {source_path}")
+
         schema = ExpressionList([ColumnExpression(self.FILEPATH_COLUMN_NAME, ExpressionType.string())]).resolve()
         pset = LocalPartitionSet(
             {
