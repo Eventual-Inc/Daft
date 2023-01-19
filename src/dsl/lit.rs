@@ -13,8 +13,14 @@ pub enum LiteralValue {
     Utf8(String),
     /// A raw binary array
     Binary(Vec<u8>),
-    /// A 64-bit integer number.
+    /// A 32-bit signed integer number.
+    Int32(i32),
+    /// A 32-bit unsigned integer number.
+    UInt32(u32),
+    /// A 64-bit signed integer number.
     Int64(i64),
+    /// A 64-bit unsigned integer number.
+    UInt64(u64),
     /// A 64-bit floating point number.
     Float64(f64),
 }
@@ -27,7 +33,10 @@ impl LiteralValue {
             Boolean(_) => DataType::Boolean,
             Utf8(_) => DataType::Utf8,
             Binary(_) => DataType::Binary,
+            Int32(_) => DataType::Int32,
+            UInt32(_) => DataType::UInt32,
             Int64(_) => DataType::Int64,
+            UInt64(_) => DataType::UInt64,
             Float64(_) => DataType::Float64,
         }
     }
@@ -41,7 +50,10 @@ impl LiteralValue {
             Boolean(val) => BooleanArray::from([*val].as_slice()).into_series(),
             Utf8(val) => Utf8Array::from([val.as_str()].as_slice()).into_series(),
             Binary(_val) => panic!("Binary not supported yey"),
+            Int32(val) => Int32Array::from([*val].as_slice()).into_series(),
+            UInt32(val) => UInt32Array::from([*val].as_slice()).into_series(),
             Int64(val) => Int64Array::from([*val].as_slice()).into_series(),
+            UInt64(val) => UInt64Array::from([*val].as_slice()).into_series(),
             Float64(val) => Float64Array::from([*val].as_slice()).into_series(),
         };
         result
@@ -76,9 +88,16 @@ macro_rules! make_literal {
 }
 
 make_literal!(bool, Boolean);
-make_literal!(f64, Float64);
+make_literal!(i32, Int32);
+make_literal!(u32, UInt32);
 make_literal!(i64, Int64);
+make_literal!(u64, UInt64);
+make_literal!(f64, Float64);
 
 pub fn lit<L: Literal>(t: L) -> Expr {
     t.lit()
+}
+
+pub fn null_lit() -> Expr {
+    Expr::Literal(LiteralValue::Null)
 }
