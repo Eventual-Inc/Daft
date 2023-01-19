@@ -59,6 +59,10 @@ pub struct PyExpr {
 
 #[pymethods]
 impl PyExpr {
+    pub fn alias(&self, name: String) -> PyResult<Self> {
+        Ok(self.expr.alias(name).into())
+    }
+
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
         Ok(dsl::binary_op(dsl::Operator::Plus, &self.expr, &other.expr).into())
     }
@@ -101,6 +105,10 @@ impl PyExpr {
             CompareOp::Gt => Ok(binary_op(Operator::Gt, &self.expr, &other.expr).into()),
             CompareOp::Ge => Ok(binary_op(Operator::GtEq, &self.expr, &other.expr).into()),
         }
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.expr))
     }
 }
 

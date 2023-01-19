@@ -3,7 +3,7 @@ use crate::{
     utils::supertype::try_get_supertype,
 };
 use std::{
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display, Formatter, Result},
     sync::Arc,
 };
 
@@ -35,6 +35,10 @@ pub fn binary_op(op: Operator, left: &Expr, right: &Expr) -> Expr {
 }
 
 impl Expr {
+    pub fn alias(&self, name: String) -> Self {
+        return Expr::Alias(self.clone().into(), name.into());
+    }
+
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use Expr::*;
 
@@ -67,6 +71,30 @@ impl Expr {
 
     pub fn get_type(&self, schema: &Schema) -> DaftResult<DataType> {
         Ok(self.to_field(schema)?.dtype)
+    }
+}
+
+impl Display for Expr {
+    // `f` is a buffer, and this method must write the formatted string into it
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        use Expr::*;
+        match self {
+            Alias(expr, name) => write!(f, "{} AS {}", expr, name),
+            BinaryOp { op, left, right } => {
+                let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
+                    Alias(e, _) => write!(f, "{}", e),
+                    BinaryOp { .. } => write!(f, "[{}]", input),
+                    _ => write!(f, "{}", input),
+                };
+
+                write_out_expr(f, left)?;
+                write!(f, " {} ", op)?;
+                write_out_expr(f, right)?;
+                Ok(())
+            }
+            Column(name) => write!(f, "col({})", name),
+            Literal(val) => write!(f, "lit({})", val),
+        }
     }
 }
 

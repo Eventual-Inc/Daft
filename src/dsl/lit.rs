@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter, Result};
+
 use crate::datatypes::DataType;
 use crate::dsl::expr::Expr;
 use crate::series::Series;
@@ -23,6 +25,24 @@ pub enum LiteralValue {
     UInt64(u64),
     /// A 64-bit floating point number.
     Float64(f64),
+}
+
+impl Display for LiteralValue {
+    // `f` is a buffer, and this method must write the formatted string into it
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        use LiteralValue::*;
+        match self {
+            Null => write!(f, "Null"),
+            Boolean(val) => write!(f, "{}", val),
+            Utf8(val) => write!(f, "{}", val),
+            Binary(val) => write!(f, "Binary[{}]", val.len()),
+            Int32(val) => write!(f, "{}", val),
+            UInt32(val) => write!(f, "{}", val),
+            Int64(val) => write!(f, "{}", val),
+            UInt64(val) => write!(f, "{}", val),
+            Float64(val) => write!(f, "{}", val),
+        }
+    }
 }
 
 impl LiteralValue {
