@@ -34,11 +34,11 @@ impl Table {
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         use crate::dsl::Expr::*;
         match expr {
-            Alias(child, name) => self.eval_expression(child.as_ref()),
+            Alias(child, _name) => self.eval_expression(child.as_ref()),
             Column(name) => self.get_column(name),
             BinaryOp { op, left, right } => {
-                let lhs = self.eval_expression(&left)?;
-                let rhs = self.eval_expression(&right)?;
+                let lhs = self.eval_expression(left)?;
+                let rhs = self.eval_expression(right)?;
                 use crate::dsl::Operator::*;
                 match op {
                     Plus => Ok(lhs + rhs),

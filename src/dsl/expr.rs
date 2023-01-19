@@ -36,7 +36,7 @@ pub fn binary_op(op: Operator, left: &Expr, right: &Expr) -> Expr {
 
 impl Expr {
     pub fn alias<S: Into<Arc<str>>>(&self, name: S) -> Self {
-        return Expr::Alias(self.clone().into(), name.into());
+        Expr::Alias(self.clone().into(), name.into())
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {

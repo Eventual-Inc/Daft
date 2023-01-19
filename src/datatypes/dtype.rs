@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow2::datatypes::DataType as ArrowType;
 
 use crate::{

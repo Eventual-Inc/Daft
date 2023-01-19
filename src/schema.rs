@@ -19,7 +19,7 @@ impl Schema {
         let mut map: IndexMap<String, Field> = indexmap::IndexMap::new();
 
         for (name, dt) in fields.iter() {
-            map.insert(name.clone().into(), Field::new(name.clone(), dt.clone()));
+            map.insert(name.clone(), Field::new(name.clone(), dt.clone()));
         }
 
         Schema { fields: map }

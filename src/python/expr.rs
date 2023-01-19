@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use crate::dsl::{self, Expr};
+use crate::dsl::{self};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,

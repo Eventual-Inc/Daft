@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow2::datatypes::Field as ArrowField;
 
 use crate::{datatypes::dtype::DataType, error::DaftResult};
