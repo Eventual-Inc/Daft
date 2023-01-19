@@ -23,6 +23,8 @@ Expression Constructors
 Operators
 #########
 
+.. _api-numeric-expression-operations:
+
 Numeric
 *******
 

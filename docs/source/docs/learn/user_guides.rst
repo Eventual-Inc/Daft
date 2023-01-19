@@ -10,12 +10,12 @@ Information about specific methods can be found in the `API reference <../api_do
 .. toctree::
     :maxdepth: 1
 
-    10-min
     user_guides/intro-dataframes
     user_guides/read-write
     user_guides/data-processing-with-expressions
     .. filtering, sorting, joins
     user_guides/dataframe-operations
+    user_guides/missing-data
     user_guides/aggregations
     user_guides/python-types
     user_guides/user-defined-functions

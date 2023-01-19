@@ -5,55 +5,6 @@ Dataframes are the core unit of abstraction in Daft. They represent a table of d
 
 .. _dataframe-loading-data:
 
-Loading Data
-------------
-
-Data can be loaded with the ``DataFrame.from_*`` functions that work flexibly to load data both locally downloaded on your machine, or on cloud storage such as AWS S3.
-
-From Files
-^^^^^^^^^^
-
-DataFrames can be loaded from file(s) on disk, or in remote storage. Daft supports file paths to a single file, a directory of files, and wildcards. It also supports paths to remote object storage such as AWS S3.
-
-.. code:: python
-
-    single_filepath = "/path/to/file.csv"
-    directory_filepath = "/path/to/csv/folder/"
-    wildcards_filepath = "/path/to/folder/*.csv"
-    aws_s3_path = "s3://mybucket/path/to/files/*.csv"
-
-The DataFrame class supports :ref:`constructors to load from file formats <df-file-construction-api>` such as Parquet, CSV, JSON and more.
-
-
-From Memory
-^^^^^^^^^^^
-
-DataFrames also :ref:`constructors to load from in-memory datastructures <df-memory-construction-api>` such as Python dictionaries and lists.
-
-
-From Filepaths
-^^^^^^^^^^^^^^
-
-Reading filepaths of files on disk, or in remote storage. This is useful when loading a folder of images/PDFs/Protobufs etc into a DataFrame, and will return a DataFrame of filepaths and each file's metadata.
-
-.. code:: python
-
-    df = DataFrame.from_filepaths("s3://mybucket/path/to/files/*.jpeg")
-    df.show()
-
-    # +----------+------+-----+
-    # | name     | size | ... |
-    # +----------+------+-----+
-    #   ...
-
-A common pattern is to then use the ``.url.download()`` function to download the contents of each file and manipulate them in Python!
-
-
-.. From Databases
-.. ^^^^^^^^^^^^^^
-
-.. **[COMING SOON]** Reading from databases such as PostgreSQL, Snowflake, BigQuery and Apache Iceberg.
-
 
 Queries and Data Processing
 ---------------------------
