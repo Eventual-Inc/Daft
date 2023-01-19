@@ -37,7 +37,7 @@ impl std::fmt::Debug for dyn BaseArray {
 pub struct DataArray<T: DaftDataType> {
     field: Arc<Field>,
     data: Arc<dyn arrow2::array::Array>,
-    phantom: PhantomData<T>,
+    marker_: PhantomData<T>,
 }
 
 impl<T> DataArray<T>
@@ -55,7 +55,7 @@ where
         Ok(DataArray {
             field,
             data,
-            phantom: PhantomData,
+            marker_: PhantomData,
         })
     }
 }
