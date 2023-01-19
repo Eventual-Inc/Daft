@@ -20,6 +20,9 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  DAFT_ANALYTICS_ENABLED: '0'
+
 jobs:
   # Single deploy job since we're just deploying
   deploy:
