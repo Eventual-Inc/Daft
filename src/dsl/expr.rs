@@ -22,7 +22,7 @@ pub enum Expr {
     Literal(lit::LiteralValue),
 }
 
-pub fn col(name: &str) -> Expr {
+pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
     Expr::Column(name.into())
 }
 
@@ -35,7 +35,7 @@ pub fn binary_op(op: Operator, left: &Expr, right: &Expr) -> Expr {
 }
 
 impl Expr {
-    pub fn alias(&self, name: String) -> Self {
+    pub fn alias<S: Into<Arc<str>>>(&self, name: S) -> Self {
         return Expr::Alias(self.clone().into(), name.into());
     }
 

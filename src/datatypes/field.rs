@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow2::datatypes::Field as ArrowField;
 
 use crate::{datatypes::dtype::DataType, error::DaftResult};
@@ -8,7 +10,7 @@ pub struct Field {
 }
 
 impl Field {
-    pub fn new<T: Into<String>>(name: T, dtype: DataType) -> Self {
+    pub fn new<S: Into<String>>(name: S, dtype: DataType) -> Self {
         Field {
             name: name.into(),
             dtype,

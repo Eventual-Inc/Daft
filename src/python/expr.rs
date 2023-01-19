@@ -59,7 +59,7 @@ pub struct PyExpr {
 
 #[pymethods]
 impl PyExpr {
-    pub fn alias(&self, name: String) -> PyResult<Self> {
+    pub fn alias(&self, name: &str) -> PyResult<Self> {
         Ok(self.expr.alias(name).into())
     }
 

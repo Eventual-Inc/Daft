@@ -72,13 +72,13 @@ pub enum DataType {
     Struct(Vec<Field>),
     // Stop ArrowTypes
     DaftType(Box<DataType>),
-    PythonType(Arc<String>),
+    PythonType(String),
     Unknown,
 }
 
 impl DataType {
-    pub fn new_null() -> Box<DataType> {
-        Box::new(DataType::Null)
+    pub fn new_null() -> DataType {
+        DataType::Null
     }
 
     pub fn to_arrow(&self) -> DaftResult<ArrowType> {
