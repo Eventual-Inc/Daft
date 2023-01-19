@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+from typing import Sequence
+
+from loguru import logger
+
+from daft import filesystem
+from daft.udf import polars_udf
+
+
+@polars_udf(return_type=bytes)
+def download_udf(urls: Sequence[str | None]) -> Sequence[bytes | None]:
+    """Downloads the contents of the supplied URLs."""
+    results: list[bytes | None] = []
+    filesystems: dict[str, filesystem.AbstractFileSystem] = {}
+
+    for path in urls:
+        if path is None:
+            results.append(None)
+            continue
+
+        protocol = filesystem.get_protocol_from_path(path)
+        if protocol not in filesystems:
+            filesystems[protocol] = filesystem.get_filesystem(protocol)
+        fs = filesystems[protocol]
+
+        try:
+            result = fs.cat_file(path)
+        except Exception as e:
+            logger.error(f"Encountered error during download from URL {path}: {str(e)}")
+            result = None
+        results.append(result)
+
+    return results

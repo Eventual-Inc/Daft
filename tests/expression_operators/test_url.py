@@ -46,3 +46,17 @@ def test_download_with_broken_urls(files):
     pd_df = pd.DataFrame.from_dict(data)
     pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() if pathlib.Path(fn).exists() else None for fn in files])
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
+
+
+def test_download_with_duplicate_urls(files):
+    data = {
+        "id": list(range(len(files) * 2)),
+        "filenames": [str(f) for f in files] * 2,
+    }
+    df = DataFrame.from_pydict(data)
+    df = df.with_column("bytes", col("filenames").url.download())
+    pd_df = pd.DataFrame.from_dict(data)
+    pd_df["bytes"] = pd.Series(
+        [pathlib.Path(fn).read_bytes() if pathlib.Path(fn).exists() else None for fn in files * 2]
+    )
+    assert_df_equals(df.to_pandas(), pd_df, sort_key="id")

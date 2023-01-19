@@ -29,7 +29,6 @@ except ImportError:
 import pyarrow as pa
 
 from daft.errors import ExpressionTypeError
-from daft.execution import url_operators
 from daft.execution.operators import ExpressionOperator, OperatorEnum
 from daft.internal.treenode import TreeNode
 from daft.resource_request import ResourceRequest
@@ -902,12 +901,9 @@ class BaseMethodAccessor:
 class UrlMethodAccessor(BaseMethodAccessor):
     def download(self) -> UdfExpression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column"""
-        return UdfExpression(
-            url_operators.download,
-            ExpressionType.from_py_type(bytes),
-            (self._expr,),
-            {},
-        )
+        from daft.udf_library import url_udfs
+
+        return url_udfs.download_udf(self._expr)
 
 
 class StringMethodAccessor(BaseMethodAccessor):
