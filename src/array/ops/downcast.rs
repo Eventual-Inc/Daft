@@ -1,7 +1,7 @@
 use arrow2::array;
 
 use crate::{
-    array::data_array::{BaseArray, DataArray},
+    array::{BaseArray, DataArray},
     datatypes::{DaftNumericType, Utf8Array},
 };
 

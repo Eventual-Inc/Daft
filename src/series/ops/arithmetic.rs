@@ -1,8 +1,7 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use crate::{
-    array::data_array::BaseArray, error::DaftResult, series::Series,
-    utils::supertype::try_get_supertype,
+    array::BaseArray, error::DaftResult, series::Series, utils::supertype::try_get_supertype,
 };
 
 // pub fn dispatch_binary_op(lhs: &dyn BaseArray, rhs: &dyn BaseArray, func) -> Series {

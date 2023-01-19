@@ -1,4 +1,4 @@
-use crate::{array::data_array::DataArray, datatypes::DaftNumericType};
+use crate::{array::DataArray, datatypes::DaftNumericType};
 
 impl<T> DataArray<T>
 where

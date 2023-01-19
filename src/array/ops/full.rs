@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow2::array::new_null_array;
 
 use crate::{
-    array::data_array::DataArray,
+    array::DataArray,
     datatypes::{DaftDataType, Field},
 };
 

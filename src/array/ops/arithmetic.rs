@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use crate::{
-    array::data_array::DataArray,
+    array::DataArray,
     datatypes::{DaftNumericType, Utf8Array},
     kernels::utf8::add_utf8_arrays,
 };

@@ -1,7 +1,7 @@
 use arrow2::compute::cast::{can_cast_types, cast, CastOptions};
 
 use crate::{
-    array::data_array::{BaseArray, DataArray},
+    array::{BaseArray, DataArray},
     datatypes::{DaftDataType, DataType},
     error::{DaftError, DaftResult},
     series::Series,
