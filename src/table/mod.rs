@@ -76,8 +76,9 @@ mod test {
         );
         let table = Table::new(schema, [a, b].as_slice())?;
         let result = table.eval_expression(&(col("a") + col("b")))?;
-        println!("{:?}", result.len());
         assert_eq!(*result.data_type(), DataType::Float64);
+        assert_eq!(result.len(), 3);
+
         Ok(())
     }
 }

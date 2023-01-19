@@ -77,12 +77,6 @@ where
                 partial: false,
             },
         )?;
-        println!(
-            "dtype {:?} vs T: {:?} vs {:?}",
-            result_array.data_type(),
-            target_arrow_type,
-            dtype
-        );
 
         Ok(
             with_match_arrow_daft_types!(dtype, |$T| DataArray::<$T>::from(result_array).into_series()),
