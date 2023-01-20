@@ -3,7 +3,6 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 
 use crate::{
-    datatypes::DataType,
     datatypes::Field,
     error::{DaftError, DaftResult},
 };

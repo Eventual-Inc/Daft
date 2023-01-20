@@ -12,10 +12,10 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new(schema: Schema, columns: Vec<Series>) -> DaftResult<Self> {
+    pub fn new<S: Into<Arc<Schema>>>(schema: S, columns: Vec<Series>) -> DaftResult<Self> {
         Ok(Table {
             schema: schema.into(),
-            columns: columns.into(),
+            columns,
         })
     }
 
@@ -64,7 +64,7 @@ impl Table {
             .map(|s| s.field().clone())
             .collect::<Vec<Field>>();
         let schema = Schema::new(fields);
-        return Table::new(schema, result_series);
+        Table::new(schema, result_series)
     }
 }
 
