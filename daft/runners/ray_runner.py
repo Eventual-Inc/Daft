@@ -405,9 +405,13 @@ class DynamicRayRunner(RayRunner):
             None | MaterializationRequestBase[vPartition]
         ] = physical_plan_factory.get_materializing_physical_plan(plan)
 
-        # Note: For autoscaling clusters, we will probably want to query this dynamically.
+        # Number of concurrent inflight tasks allowed.
+        # 2 * cores: one set running on the cores; another set already prescheduled.
+        #
+        # Note: For autoscaling clusters, we will probably want to query cores dynamically.
         # Keep in mind this call takes about 0.3ms.
-        cores = int(ray.cluster_resources()["CPU"])
+        parallelism = 2 * int(ray.cluster_resources()["CPU"])
+
         constructions_to_dispatch = []
         inflight_constructions: dict[str, MaterializationRequestBase[ray.ObjectRef]] = dict()
         inflight_ref_to_construction: dict[ray.ObjectRef, str] = dict()
@@ -420,9 +424,9 @@ class DynamicRayRunner(RayRunner):
             try:
 
                 while True:
-                    # Dispatch tasks while cores are available.
-                    cores_available = cores - len(inflight_constructions)
-                    for i in range(cores_available):
+                    # Dispatch tasks while parallelism is available.
+                    parallelism_available = parallelism - len(inflight_constructions)
+                    for i in range(parallelism_available):
 
                         next_step = next(phys_plan)
 
