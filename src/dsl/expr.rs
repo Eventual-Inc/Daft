@@ -216,9 +216,9 @@ mod tests {
     fn check_arithmetic_type_with_columns() -> DaftResult<()> {
         let x = col("x");
         let y = col("y");
-        let schema = Schema::new(&[
-            ("x".to_string(), DataType::Float64),
-            ("y".to_string(), DataType::Int64),
+        let schema = Schema::new(vec![
+            Field::new("x", DataType::Float64),
+            Field::new("y", DataType::Int64),
         ]);
 
         let z = Expr::BinaryOp {

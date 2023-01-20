@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::datatypes::Field;
 use crate::dsl::Expr;
 use crate::error::DaftResult;
 use crate::schema::Schema;
@@ -11,7 +12,7 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new(schema: Schema, columns: &[Series]) -> DaftResult<Self> {
+    pub fn new(schema: Schema, columns: Vec<Series>) -> DaftResult<Self> {
         Ok(Table {
             schema: schema.into(),
             columns: columns.into(),
@@ -26,15 +27,15 @@ impl Table {
     //pub fn take(&self, idx: &Series) -> DaftResult<Table>;
     //pub fn concat(tables: &[&Table]) -> DaftResult<Table>;
 
-    fn get_column(&self, name: &str) -> DaftResult<Series> {
-        let i = self.schema.get_index(name)?;
+    fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<Series> {
+        let i = self.schema.get_index(name.as_ref())?;
         Ok(self.columns.get(i).unwrap().clone())
     }
 
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         use crate::dsl::Expr::*;
         match expr {
-            Alias(child, _name) => self.eval_expression(child.as_ref()),
+            Alias(child, _name) => self.eval_expression(child),
             Column(name) => self.get_column(name),
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
@@ -52,6 +53,19 @@ impl Table {
             Literal(lit_value) => Ok(lit_value.to_series()),
         }
     }
+
+    pub fn eval_expression_list(&self, exprs: &[Expr]) -> DaftResult<Self> {
+        let result_series = exprs
+            .iter()
+            .map(|e| self.eval_expression(e))
+            .collect::<DaftResult<Vec<Series>>>()?;
+        let fields = result_series
+            .iter()
+            .map(|s| s.field().clone())
+            .collect::<Vec<Field>>();
+        let schema = Schema::new(fields);
+        return Table::new(schema, result_series);
+    }
 }
 
 #[cfg(test)]
@@ -67,15 +81,13 @@ mod test {
     fn add_int_and_float_expression() -> DaftResult<()> {
         let a = Int64Array::from(vec![1, 2, 3].as_slice()).into_series();
         let b = Float64Array::from(vec![1., 2., 3.].as_slice()).into_series();
-        let schema = Schema::new(
-            vec![
-                ("a".into(), a.data_type().clone()),
-                ("b".into(), b.data_type().clone()),
-            ]
-            .as_slice(),
-        );
-        let table = Table::new(schema, [a, b].as_slice())?;
-        let result = table.eval_expression(&(col("a") + col("b")))?;
+        let schema = Schema::new(vec![
+            a.field().clone().rename("a"),
+            b.field().clone().rename("b"),
+        ]);
+        let table = Table::new(schema, vec![a, b])?;
+        let e1 = col("a") + col("b");
+        let result = table.eval_expression(&e1)?;
         assert_eq!(*result.data_type(), DataType::Float64);
         assert_eq!(result.len(), 3);
 

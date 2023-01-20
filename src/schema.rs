@@ -15,11 +15,11 @@ pub struct Schema {
 }
 
 impl Schema {
-    pub fn new(fields: &[(String, DataType)]) -> Self {
+    pub fn new(fields: Vec<Field>) -> Self {
         let mut map: IndexMap<String, Field> = indexmap::IndexMap::new();
 
-        for (name, dt) in fields.iter() {
-            map.insert(name.clone(), Field::new(name.clone(), dt.clone()));
+        for f in fields.into_iter() {
+            map.insert(f.name.clone(), f);
         }
 
         Schema { fields: map }
@@ -44,3 +44,8 @@ impl Schema {
         }
     }
 }
+
+// impl From<&[Field]> for Schema {
+//     fn from(slice: &[bool]) -> Self {
+//     }
+// }

@@ -21,6 +21,9 @@ impl Field {
             true,
         ))
     }
+    pub fn rename<S: Into<String>>(&self, name: S) -> Self {
+        Field::new(name, self.dtype.clone())
+    }
 }
 
 impl From<&ArrowField> for Field {
