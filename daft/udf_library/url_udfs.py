@@ -8,8 +8,7 @@ from daft import filesystem
 from daft.udf import polars_udf
 
 
-@polars_udf(return_type=bytes)
-def download_udf(urls: Sequence[str | None]) -> Sequence[bytes | None]:
+def _download_udf(urls: Sequence[str | None]) -> Sequence[bytes | None]:
     """Downloads the contents of the supplied URLs."""
     results: list[bytes | None] = []
     filesystems: dict[str, filesystem.AbstractFileSystem] = {}
@@ -32,3 +31,8 @@ def download_udf(urls: Sequence[str | None]) -> Sequence[bytes | None]:
         results.append(result)
 
     return results
+
+
+# HACK: Workaround for Ray pickling issues if we use the @polars_udf decorator instead.
+# There may be some issues around runtime imports and Ray pickling of decorated functions
+download_udf = polars_udf(_download_udf, return_type=bytes)
