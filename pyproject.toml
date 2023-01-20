@@ -1,41 +1,41 @@
 [build-system]
-requires = ["maturin>=0.14,<0.15"]
 build-backend = "maturin"
+requires = ["maturin>=0.14,<0.15"]
 
 [project]
-name = "getdaft"
+authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
+dependencies = [
+  "numpy < 1.24",
+  "pyarrow",
+  "fsspec[http]",
+  "protobuf>=3.19.0",
+  "pydot",
+  "loguru",
+  "tabulate",
+  "pandas",
+  "psutil",
+  "typing-extensions >= 4.0.0; python_version < '3.8'",
+  "pickle5 >= 0.0.12; python_version < '3.8'",
+  "polars[timezone]"
+]
 description = "A Distributed DataFrame library for large scale complex data processing."
 dynamic = ["version"]
-authors = [{name="Eventual Inc", email="daft@eventualcomputing.com"}]
+license = {file = "LICENSE"}
 maintainers = [
-    {name="Sammy Sidhu", email="sammy@eventualcomputing.com"},
-    {name="Jay Chia", email="jay@eventualcomputing.com"},
+  {name = "Sammy Sidhu", email = "sammy@eventualcomputing.com"},
+  {name = "Jay Chia", email = "jay@eventualcomputing.com"}
 ]
+name = "getdaft"
 readme = "README.rst"
-license = {file="LICENSE"}
 requires-python = ">=3.7"
-dependencies = [
-    "numpy < 1.24",
-    "pyarrow",
-    "fsspec[http]",
-    "protobuf>=3.19.0",
-    "pydot",
-    "loguru",
-    "tabulate",
-    "pandas",
-    "psutil",
-    "typing-extensions >= 4.0.0; python_version < '3.8'",
-    "pickle5 >= 0.0.12; python_version < '3.8'",
-    "polars[timezone]",
-]
 
 [project.optional-dependencies]
-aws = ["s3fs"]
-serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
-iceberg = ["icebridge"]
-experimental = ["daft[serving, iceberg]"]
-ray = ["ray[data, default]>=1.10.0"]  # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
 all = ["daft[aws, ray]"]
+aws = ["s3fs"]
+experimental = ["daft[serving, iceberg]"]
+iceberg = ["icebridge"]
+ray = ["ray[data, default]>=1.10.0"]  # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
+serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
 
 [project.urls]
 homepage = "https://getdaft.io"
@@ -51,31 +51,31 @@ target-version = ['py38']
 profile = "black"
 
 [tool.mypy]
-python_version = "3.8"
 files = ["daft/**/*.py", "daft/**/*.pyx", "tests/**/*.py"]
+python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = [
-    "pyarrow.*",
-    "fsspec.*",
-    "icebridge.*",
-    "cloudpickle.*",
-    "docker.*",
-    "uvicorn.*",
-    "numba.*"
-]
 ignore_missing_imports = true
+module = [
+  "pyarrow.*",
+  "fsspec.*",
+  "icebridge.*",
+  "cloudpickle.*",
+  "docker.*",
+  "uvicorn.*",
+  "numba.*"
+]
 
 [[tool.mypy.overrides]]
+enable-error-code = ["attr-defined"]
 module = 'daft.*'
 warn_return_any = false
-enable-error-code = ["attr-defined"]
 
 [tool.pytest.ini_options]
-minversion = "6.0"
 addopts = "--benchmark-skip"
+minversion = "6.0"
 testpaths = [
-    "tests",
+  "tests"
 ]
