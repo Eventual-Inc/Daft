@@ -29,7 +29,7 @@ repos:
   - id: debug-statements
 
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
-  rev: v2.5.0
+  rev: v2.6.0
   hooks:
   - id: pretty-format-toml
     args: [--autofix]
