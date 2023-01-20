@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::datatypes::Field;
 use crate::dsl::Expr;
-use crate::error::DaftResult;
+use crate::error::{DaftError, DaftResult};
 use crate::schema::Schema;
 use crate::series::Series;
 
@@ -12,7 +12,16 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new<S: Into<Arc<Schema>>>(schema: S, columns: Vec<Series>) -> DaftResult<Self> {
+    pub fn new(schema: Schema, columns: Vec<Series>) -> DaftResult<Self> {
+        if schema.fields.len() != columns.len() {
+            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns. {} vs {}", schema.fields.len(), columns.len())));
+        }
+
+        for (field, series) in schema.fields.values().zip(columns.iter()) {
+            if field != series.field() {
+                return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Series Field and the Schema Field did not match. schema field: {:?} vs series field: {:?}", field, series.field())));
+            }
+        }
         Ok(Table {
             schema: schema.into(),
             columns,

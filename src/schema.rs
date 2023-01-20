@@ -10,7 +10,7 @@ use crate::{
 type SchemaRef = Arc<Schema>;
 
 pub struct Schema {
-    fields: indexmap::IndexMap<String, Field>,
+    pub fields: indexmap::IndexMap<String, Field>,
 }
 
 impl Schema {
