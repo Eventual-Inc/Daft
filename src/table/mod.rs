@@ -19,7 +19,7 @@ impl Table {
 
         for (field, series) in schema.fields.values().zip(columns.iter()) {
             if field != series.field() {
-                return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Series Field and the Schema Field did not match. schema field: {:?} vs series field: {:?}", field, series.field())));
+                return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {:?} vs series field: {:?}", field, series.field())));
             }
         }
         Ok(Table {
