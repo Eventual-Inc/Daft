@@ -3,7 +3,7 @@ use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
-    types::{PyBool, PyFloat, PyInt, PyString},
+    types::{PyBool, PyBytes, PyFloat, PyInt, PyString, PyTuple},
 };
 
 #[pyfunction]
@@ -52,11 +52,23 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
 
 #[pyclass]
 pub struct PyExpr {
-    expr: dsl::Expr,
+    pub expr: dsl::Expr,
 }
 
 #[pymethods]
 impl PyExpr {
+    #[new]
+    #[args(args = "*")]
+    fn new(args: &PyTuple) -> PyResult<Self> {
+        match args.len() {
+            0 => Ok(dsl::null_lit().into()),
+            _ => Err(PyValueError::new_err(format!(
+                "expected no arguments to make new PyExpr, got : {}",
+                args.len()
+            ))),
+        }
+    }
+
     pub fn alias(&self, name: &str) -> PyResult<Self> {
         Ok(self.expr.alias(name).into())
     }
@@ -107,6 +119,20 @@ impl PyExpr {
 
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.expr))
+    }
+
+    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                self.expr = bincode::deserialize(s.as_bytes()).unwrap();
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        Ok(PyBytes::new(py, &bincode::serialize(&self.expr).unwrap()).to_object(py))
     }
 }
 

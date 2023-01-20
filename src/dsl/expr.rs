@@ -2,6 +2,7 @@ use crate::{
     datatypes::DataType, datatypes::Field, dsl::lit, error::DaftResult, schema::Schema,
     utils::supertype::try_get_supertype,
 };
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Debug, Display, Formatter, Result},
     sync::Arc,
@@ -9,7 +10,7 @@ use std::{
 
 type ExprRef = Arc<Expr>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Expr {
     Alias(ExprRef, Arc<str>),
     BinaryOp {
@@ -99,7 +100,7 @@ impl Display for Expr {
 }
 
 /// Based on Polars first class operators: https://github.com/pola-rs/polars/blob/master/polars/polars-lazy/polars-plan/src/dsl/expr.rs
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Operator {
     Eq,
     NotEq,
