@@ -352,7 +352,10 @@ class RayRunner(Runner):
         exec_plan = ExecutionPlan.plan_from_logical(plan)
         result_partition_set: PartitionSet
         partition_intermediate_results: dict[int, PartitionSet] = {}
-        with profiler("profile_RayRunner.run_{datetime.now().isoformat()}.json"):
+        profile_filename = (
+            f"profile_RayRunner.run()_{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
+        )
+        with profiler(profile_filename):
             for exec_op in exec_plan.execution_ops:
 
                 data_deps = exec_op.data_deps
@@ -411,7 +414,8 @@ class DynamicRayRunner(RayRunner):
 
         start = datetime.now()
         result_pset = RayPartitionSet({})
-        with profiler("profile_DynamicRayRunner.run_{datetime.now().isoformat()}.json"):
+        profile_filename = f"profile_DynamicRayRunner.run()_{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
+        with profiler(profile_filename):
 
             try:
 
