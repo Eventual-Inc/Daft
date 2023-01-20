@@ -109,7 +109,6 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
         source_path: str,
     ) -> tuple[LocalPartitionSet, ExpressionList]:
         files_info = glob_path_with_stats(source_path)
-        print(files_info)
 
         if len(files_info) == 0:
             raise FileNotFoundError(f"No files found at {source_path}")

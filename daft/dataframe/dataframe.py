@@ -466,7 +466,7 @@ class DataFrame:
                 parsed from the provided filesystem
         """
         warnings.warn(
-            f"DataFrame.from_files will be deprecated in 0.1.0 in favor of DataFrame.from_glob_filepath, which presents a more predictable set of columns for each backend and runs the file globbing on the runner instead of the driver"
+            f"DataFrame.from_files will be deprecated in 0.1.0 in favor of DataFrame.from_glob_path, which presents a more predictable set of columns for each backend and runs the file globbing on the runner instead of the driver"
         )
         fs = get_filesystem_from_path(path)
         file_details = fs.glob(path, detail=True)
@@ -474,12 +474,20 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_glob_filepath(cls, path: str) -> DataFrame:
+    def from_glob_path(cls, path: str) -> DataFrame:
         """Creates a DataFrame of file paths and other metadata from a glob path
 
+        This method supports wilcards:
+
+        1. "*" matches any number of any characters including none
+        2. "?" matches any single character
+        3. "[...]" matches any single character in the brackets
+        4. "**" recursively matches any number of layers of directories
+
         Example:
-            >>> df = DataFrame.from_files("/path/to/files/*.jpeg")
-            >>> df = DataFrame.from_files("/path/to/files/**/*.jpeg")
+            >>> df = DataFrame.from_glob_path("/path/to/files/*.jpeg")
+            >>> df = DataFrame.from_glob_path("/path/to/files/**/*.jpeg")
+            >>> df = DataFrame.from_glob_path("/path/to/files/**/image-?.jpeg")
 
         Args:
             path (str): path to files on disk (allows wildcards)

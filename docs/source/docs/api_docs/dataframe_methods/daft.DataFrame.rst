@@ -23,6 +23,7 @@
       ~DataFrame.explode
       ~DataFrame.from_csv
       ~DataFrame.from_files
+      ~DataFrame.from_glob_path
       ~DataFrame.from_json
       ~DataFrame.from_parquet
       ~DataFrame.from_pydict
