@@ -467,7 +467,7 @@ class DynamicRayRunner(RayRunner):
                     del inflight_constructions[cons_id]
 
             except StopIteration as e:
-                for i, partition in enumerate(result_partitions := e.value):
+                for i, partition in enumerate(e.value):
                     result_pset.set_partition(i, partition)
 
             for construction in constructions_to_dispatch:
