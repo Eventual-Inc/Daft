@@ -465,9 +465,40 @@ class DataFrame:
             DataFrame: DataFrame containing the path to each file as a row, along with other metadata
                 parsed from the provided filesystem
         """
+        warnings.warn(
+            f"DataFrame.from_files will be deprecated in 0.1.0 in favor of DataFrame.from_glob_filepath, which presents a more predictable set of columns for each backend and runs the file globbing on the runner instead of the driver"
+        )
         fs = get_filesystem_from_path(path)
         file_details = fs.glob(path, detail=True)
         return cls.from_pylist(list(file_details.values()))
+
+    @classmethod
+    @DataframePublicAPI
+    def from_glob_filepath(cls, path: str) -> DataFrame:
+        """Creates a DataFrame of file paths and other metadata from a glob path
+
+        Example:
+            >>> df = DataFrame.from_files("/path/to/files/*.jpeg")
+            >>> df = DataFrame.from_files("/path/to/files/**/*.jpeg")
+
+        Args:
+            path (str): path to files on disk (allows wildcards)
+
+        Returns:
+            DataFrame: DataFrame containing the path to each file as a row, along with other metadata
+                parsed from the provided filesystem
+        """
+        partition_set_factory = get_context().runner().partition_set_factory()
+        partition_set, filepaths_schema = partition_set_factory.glob_file_details(path)
+        cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
+        filepath_plan = logical_plan.InMemoryScan(
+            cache_entry=cache_entry,
+            schema=filepaths_schema,
+            partition_spec=logical_plan.PartitionSpec(
+                logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
+            ),
+        )
+        return cls(filepath_plan)
 
     ###
     # Write methods

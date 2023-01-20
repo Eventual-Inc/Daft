@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import dataclasses
+
 from fsspec import AbstractFileSystem, get_filesystem_class
 from loguru import logger
+
+
+@dataclasses.dataclass(frozen=True)
+class FileInfo:
+    path: str
+    size: int
 
 
 def get_filesystem(protocol: str, **kwargs) -> AbstractFileSystem:
@@ -29,15 +37,51 @@ def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
     return fs
 
 
+def _fix_returned_path(protocol: str, returned_path: str) -> str:
+    """This function adds the protocol that fsspec strips from returned results"""
+    return returned_path if protocol == "file" else f"{protocol}://{returned_path}"
+
+
+def _path_is_glob(path: str) -> bool:
+    # fsspec glob supports *, ? and [..] patterns
+    # See: : https://filesystem-spec.readthedocs.io/en/latest/api.html
+    return any([char in path for char in ["*", "?", "["]])
+
+
 def glob_path(path: str) -> list[str]:
     fs = get_filesystem_from_path(path)
     protocol = get_protocol_from_path(path)
-    if fs.isdir(path):
-        return [f"{protocol}://{path}" if protocol != "file" else path for path in fs.ls(path)]
-    elif fs.isfile(path):
+
+    if _path_is_glob(path):
+        globbed_data = fs.glob(path, detail=False)
+        return [_fix_returned_path(protocol, path) for path in globbed_data]
+
+    if fs.isfile(path):
         return [path]
-    try:
-        expanded = fs.expand_path(path, recursive=True)
-    except FileNotFoundError:
-        expanded = []
-    return [f"{protocol}://{path}" if protocol != "file" else path for path in expanded]
+    elif fs.isdir(path):
+        files_info = fs.ls(path, detail=False)
+        return [_fix_returned_path(protocol, path) for path in files_info]
+    raise FileNotFoundError(f"File or directory not found: {path}")
+
+
+def glob_path_with_stats(path: str) -> list[FileInfo]:
+    fs = get_filesystem_from_path(path)
+    protocol = get_protocol_from_path(path)
+
+    if _path_is_glob(path):
+        globbed_data = fs.glob(path, detail=True)
+        return [
+            FileInfo(path=_fix_returned_path(protocol, path), size=details["size"])
+            for path, details in globbed_data.items()
+        ]
+
+    if fs.isfile(path):
+        file_info = fs.info(path)
+        return [FileInfo(path=_fix_returned_path(protocol, file_info["name"]), size=file_info["size"])]
+    elif fs.isdir(path):
+        files_info = fs.ls(path, detail=True)
+        return [
+            FileInfo(path=_fix_returned_path(protocol, file_info["name"]), size=file_info["size"])
+            for file_info in files_info
+        ]
+    raise FileNotFoundError(f"File or directory not found: {path}")

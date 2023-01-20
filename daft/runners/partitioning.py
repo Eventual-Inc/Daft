@@ -815,9 +815,41 @@ class PartitionSetFactory(Generic[PartitionT]):
     """Factory class for creating PartitionSets."""
 
     FILEPATH_COLUMN_NAME = "filepath"
+    FILE_SIZE_COLUMN_NAME = "size"
+
+    def _get_filepaths_schema(self) -> ExpressionList:
+        return ExpressionList(
+            [
+                ColumnExpression(self.FILEPATH_COLUMN_NAME, ExpressionType.string()),
+            ]
+        ).resolve()
+
+    def _get_file_details_schema(self) -> ExpressionList:
+        return ExpressionList(
+            [
+                ColumnExpression(self.FILEPATH_COLUMN_NAME, ExpressionType.string()),
+                ColumnExpression(self.FILE_SIZE_COLUMN_NAME, ExpressionType.integer()),
+            ]
+        ).resolve()
 
     @abstractmethod
     def glob_filepaths(
+        self,
+        source_path: str,
+    ) -> tuple[PartitionSet[PartitionT], ExpressionList]:
+        """Globs the specified filepath to construct a PartitionSet of file paths
+
+        Args:
+            source_path (str): path to glob
+
+        Returns:
+            PartitionSet[PartitionT]: PartitionSet containing the files' paths
+            ExpressionList: Schema of the PartitionSet that was constructed
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def glob_file_details(
         self,
         source_path: str,
     ) -> tuple[PartitionSet[PartitionT], ExpressionList]:

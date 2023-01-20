@@ -29,8 +29,7 @@ from daft.execution.logical_op_runners import (
     LogicalPartitionOpRunner,
     ReduceType,
 )
-from daft.expressions import ColumnExpression
-from daft.filesystem import glob_path
+from daft.filesystem import glob_path, glob_path_with_stats
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
 from daft.logical.optimizer import (
@@ -64,7 +63,6 @@ from daft.runners.shuffle_ops import (
     Shuffler,
     SortOp,
 )
-from daft.types import ExpressionType
 
 if TYPE_CHECKING:
     from ray.data.block import Block as RayDatasetBlock
@@ -80,9 +78,10 @@ except ImportError:
 @ray.remote
 def _glob_path_into_vpartitions(path: str, schema: ExpressionList) -> list[tuple[PartID, vPartition]]:
     assert len(schema) == 1
-    filepath_expr = list(schema)[0]
-    filepaths = glob_path(path)
+    filepath_expr = schema.get_expression_by_name("filepath")
+    assert filepath_expr is not None
 
+    filepaths = glob_path(path)
     if len(filepaths) == 0:
         raise FileNotFoundError(f"No files found at {path}")
 
@@ -92,6 +91,33 @@ def _glob_path_into_vpartitions(path: str, schema: ExpressionList) -> list[tuple
         partition = vPartition.from_pydict({filepath_expr.name(): [filepath]}, schema=schema, partition_id=i)
         partition_ref = ray.put(partition)
         partition_refs.append((i, partition_ref))
+
+    return partition_refs
+
+
+@ray.remote
+def _glob_path_into_details_vpartitions(path: str, schema: ExpressionList) -> list[tuple[PartID, vPartition]]:
+    assert len(schema) == 2
+    filepath_expr = schema.get_expression_by_name("filepath")
+    filesize_expr = schema.get_expression_by_name("size")
+    assert filepath_expr is not None
+    assert filesize_expr is not None
+
+    file_infos = glob_path_with_stats(path)
+    if len(file_infos) == 0:
+        raise FileNotFoundError(f"No files found at {path}")
+
+    # Hardcoded to 1 partition
+    partition = vPartition.from_pydict(
+        {
+            filepath_expr.name(): [file_info.path for file_info in file_infos],
+            filesize_expr.name(): [file_info.size for file_info in file_infos],
+        },
+        schema=schema,
+        partition_id=0,
+    )
+    partition_ref = ray.put(partition)
+    partition_refs = [(0, partition_ref)]
 
     return partition_refs
 
@@ -171,8 +197,16 @@ class RayPartitionSetFactory(PartitionSetFactory[ray.ObjectRef]):
         self,
         source_path: str,
     ) -> tuple[RayPartitionSet, ExpressionList]:
-        schema = ExpressionList([ColumnExpression(self.FILEPATH_COLUMN_NAME, ExpressionType.string())]).resolve()
+        schema = self._get_filepaths_schema()
         partition_refs = ray.get(_glob_path_into_vpartitions.remote(source_path, schema))
+        return RayPartitionSet({part_id: part for part_id, part in partition_refs}), schema
+
+    def glob_file_details(
+        self,
+        source_path: str,
+    ) -> tuple[RayPartitionSet, ExpressionList]:
+        schema = self._get_file_details_schema()
+        partition_refs = ray.get(_glob_path_into_details_vpartitions.remote(source_path, schema))
         return RayPartitionSet({part_id: part for part_id, part in partition_refs}), schema
 
 
