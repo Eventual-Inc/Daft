@@ -80,6 +80,21 @@ More Resources
 * `User Guide <https://getdaft.io/docs/learn/user_guides.html>`_ - take a deep-dive into each topic within Daft
 * `API Reference <https://getdaft.io/docs/api_docs/index.html>`_ - API reference for public classes/functions of Daft
 
+Telemetry
+---------
+
+To help improve Daft, we collect non-identifiable data.
+
+To disable this behavior, set the following environment variable: ``DAFT_ANALYTICS_ENABLED=0``
+
+The data that we collect is:
+
+1. **Non-identifiable:** events are keyed by a session ID which is generated on import of Daft
+2. **Metadata-only:** we do not collect any of our users’ proprietary code or data
+3. **For development only:** we do not buy or sell any user data
+
+Please see our `documentation <https://getdaft.io/docs/telemetry.html>`_ for more details.
+
 License
 -------
 

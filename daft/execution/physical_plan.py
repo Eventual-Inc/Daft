@@ -261,7 +261,9 @@ def coalesce(
         num_partitions_to_merge = merges_per_result[0]
         if len(materializations) >= num_partitions_to_merge:
             ready_to_coalesce = [
-                result for i in range(num_partitions_to_merge) if (result := materializations[i].result) is not None
+                materializations[i].result
+                for i in range(num_partitions_to_merge)
+                if materializations[i].result is not None
             ]
             if len(ready_to_coalesce) == num_partitions_to_merge:
                 # Coalesce the partition and emit it.
@@ -440,9 +442,9 @@ def enumerate_open_executions(
     Intended for counting the number of OpenExecutionQueues returned by the iterator.
     """
     index = 0
-    yield from (
-        (((index := index + 1) - 1), item)  # aka (index++, item)
-        if isinstance(item, OpenExecutionQueue)
-        else (index, item)
-        for item in schedule
-    )
+    for item in schedule:
+        if isinstance(item, OpenExecutionQueue):
+            yield index, item
+            index += 1
+        else:
+            yield index, item

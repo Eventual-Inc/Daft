@@ -1,6 +1,6 @@
 [dependencies.arrow2]
+features = ["compute"]
 version = "0.14.2"
-features = [ "compute",]
 
 [dependencies.indexmap]
 version = "1.9.2"
@@ -9,21 +9,21 @@ version = "1.9.2"
 version = "0.2"
 
 [dependencies.pyo3]
+features = ["extension-module", "abi3-py37"]
 version = "0.17.3"
-features = [ "extension-module", "abi3-py37",]
 
 [dependencies.xxhash-rust]
+features = ["xxh3", "const_xxh3"]
 version = "0.8.5"
-features = [ "xxh3", "const_xxh3",]
 
 [lib]
+crate-type = ["cdylib"]
 name = "daft"
-crate-type = [ "cdylib",]
 
 [net]
 git-fetch-with-cli = true
 
 [package]
+edition = "2021"
 name = "daft"
 version = "0.0.21"
-edition = "2021"

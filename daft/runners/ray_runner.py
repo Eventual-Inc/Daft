@@ -448,7 +448,8 @@ class DynamicRayRunner(RayRunner):
 
                 except StopIteration as e:
                     if not plan_exhausted:
-                        for i, partition in enumerate(result_partitions := e.value):
+                        result_partitions = e.value
+                        for i, partition in enumerate(result_partitions):
                             result_pset.set_partition(i, partition)
                     plan_exhausted = True
 

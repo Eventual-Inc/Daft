@@ -77,11 +77,12 @@ class DynamicRunner(Runner):
 
         with profiler("profile_DynamicRunner.run_{datetime.now().isoformat()}.json"):
             try:
-                while next_step := next(phys_plan):
+                while True:
+                    next_step = next(phys_plan)
                     assert next_step is not None, "Got a None ExecutionStep in singlethreaded mode"
                     self._build_partitions(next_step)
             except StopIteration as e:
-                for i, partition in enumerate(result_partitions := e.value):
+                for i, partition in enumerate(e.value):
                     result_pset.set_partition(i, partition)
 
         pset_entry = self.put_partition_set_into_cache(result_pset)
