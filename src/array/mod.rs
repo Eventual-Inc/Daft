@@ -9,7 +9,7 @@ use crate::{
     series::Series,
 };
 
-pub trait BaseArray: Any {
+pub trait BaseArray: Any + Send + Sync {
     fn data(&self) -> &dyn arrow2::array::Array;
 
     fn data_type(&self) -> &DataType;

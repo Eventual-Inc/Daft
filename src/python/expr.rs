@@ -1,4 +1,4 @@
-use crate::dsl::{self};
+use crate::dsl;
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
