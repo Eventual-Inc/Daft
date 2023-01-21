@@ -511,7 +511,7 @@ class DynamicRayRunner(RayRunner):
         ray_options: dict[str, Any] = {
             "num_returns": partspec.num_results,
         }
-        if len(partspec.inputs) > 1:
+        if len(partspec.inputs) > 2:
             ray_options["scheduling_strategy"] = "SPREAD"
 
         construct_remote = build_partitions.options(**ray_options)
