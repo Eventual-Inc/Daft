@@ -433,6 +433,7 @@ class DynamicRayRunner(RayRunner):
 
                         next_step = next(phys_plan)
 
+                        # If this task is a no-op, just run it locally immediately.
                         while next_step is not None and len(next_step.instructions) == 0:
                             assert isinstance(next_step, MaterializationRequest)
                             [partition] = next_step.inputs
@@ -465,21 +466,22 @@ class DynamicRayRunner(RayRunner):
                 tasks_to_dispatch.clear()
 
                 # All tasks dispatched. Await a single result.
-                dispatch = datetime.now()
-                [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
-                task_id = inflight_ref_to_task[ready]
-                logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
+                if len(inflight_tasks) > 0:
+                    dispatch = datetime.now()
+                    [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
+                    task_id = inflight_ref_to_task[ready]
+                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
 
-                # Mark the entire task associated with the result as done.
-                task = inflight_tasks[task_id]
-                if isinstance(task, MaterializationRequest):
-                    del inflight_ref_to_task[ready]
-                elif isinstance(task, MaterializationRequestMulti):
-                    assert task.results is not None
-                    for result in task.results:
-                        del inflight_ref_to_task[result.partition()]
+                    # Mark the entire task associated with the result as done.
+                    task = inflight_tasks[task_id]
+                    if isinstance(task, MaterializationRequest):
+                        del inflight_ref_to_task[ready]
+                    elif isinstance(task, MaterializationRequestMulti):
+                        assert task.results is not None
+                        for result in task.results:
+                            del inflight_ref_to_task[result.partition()]
 
-                del inflight_tasks[task_id]
+                    del inflight_tasks[task_id]
 
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
         return pset_entry
