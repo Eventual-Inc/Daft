@@ -78,17 +78,17 @@ except ImportError:
 @ray.remote
 def _glob_path_into_vpartitions(path: str, schema: ExpressionList) -> list[tuple[PartID, vPartition]]:
     assert len(schema) == 1
-    filepath_expr = schema.get_expression_by_name("filepath")
-    assert filepath_expr is not None
+    listing_path_expr = schema.get_expression_by_name("path")
+    assert listing_path_expr is not None
 
-    filepaths = glob_path(path)
-    if len(filepaths) == 0:
+    listing_paths = glob_path(path)
+    if len(listing_paths) == 0:
         raise FileNotFoundError(f"No files found at {path}")
 
     # Hardcoded to 1 filepath per partition
     partition_refs = []
-    for i, filepath in enumerate(filepaths):
-        partition = vPartition.from_pydict({filepath_expr.name(): [filepath]}, schema=schema, partition_id=i)
+    for i, path in enumerate(listing_paths):
+        partition = vPartition.from_pydict({listing_path_expr.name(): [path]}, schema=schema, partition_id=i)
         partition_ref = ray.put(partition)
         partition_refs.append((i, partition_ref))
 
@@ -98,23 +98,23 @@ def _glob_path_into_vpartitions(path: str, schema: ExpressionList) -> list[tuple
 @ray.remote
 def _glob_path_into_details_vpartitions(path: str, schema: ExpressionList) -> list[tuple[PartID, vPartition]]:
     assert len(schema) == 3
-    filepath_expr, filesize_expr, filetype_expr = (
+    listing_path_expr, listing_size_expr, listing_type_expr = (
         schema.get_expression_by_name(name) for name in ["path", "size", "type"]
     )
-    assert filepath_expr is not None
-    assert filesize_expr is not None
-    assert filetype_expr is not None
+    assert listing_path_expr is not None
+    assert listing_size_expr is not None
+    assert listing_type_expr is not None
 
-    file_infos = glob_path_with_stats(path)
-    if len(file_infos) == 0:
+    listing_infos = glob_path_with_stats(path)
+    if len(listing_infos) == 0:
         raise FileNotFoundError(f"No files found at {path}")
 
     # Hardcoded to 1 partition
     partition = vPartition.from_pydict(
         {
-            filepath_expr.name(): [file_info.path for file_info in file_infos],
-            filesize_expr.name(): [file_info.size for file_info in file_infos],
-            filetype_expr.name(): [file_info.type for file_info in file_infos],
+            listing_path_expr.name(): [file_info.path for file_info in listing_infos],
+            listing_size_expr.name(): [file_info.size for file_info in listing_infos],
+            listing_type_expr.name(): [file_info.type for file_info in listing_infos],
         },
         schema=schema,
         partition_id=0,
