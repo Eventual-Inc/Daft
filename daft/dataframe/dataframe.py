@@ -50,7 +50,7 @@ def _get_tabular_files_scan(
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
     # Glob the path and return as a DataFrame with a column containing the filepaths
     partition_set_factory = get_context().runner().partition_set_factory()
-    partition_set, filepaths_schema = partition_set_factory.glob_filepaths(path)
+    partition_set, filepaths_schema = partition_set_factory.glob_paths(path)
     cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
     filepath_plan = logical_plan.InMemoryScan(
         cache_entry=cache_entry,
@@ -61,7 +61,9 @@ def _get_tabular_files_scan(
 
     # Sample the first 10 filepaths and infer the schema
     schema_df = filepath_df.limit(10).select(
-        col(partition_set_factory.FILEPATH_COLUMN_NAME).apply(get_schema, return_type=ExpressionList).alias("schema")
+        col(partition_set_factory.FS_LISTING_PATH_COLUMN_NAME)
+        .apply(get_schema, return_type=ExpressionList)
+        .alias("schema")
     )
     schema_df.collect()
     schema_result = schema_df._result
@@ -79,7 +81,7 @@ def _get_tabular_files_scan(
         columns=None,
         source_info=source_info,
         filepaths_child=filepath_plan,
-        filepaths_column_name=partition_set_factory.FILEPATH_COLUMN_NAME,
+        filepaths_column_name=partition_set_factory.FS_LISTING_PATH_COLUMN_NAME,
     )
 
 
@@ -477,12 +479,18 @@ class DataFrame:
     def from_glob_path(cls, path: str) -> DataFrame:
         """Creates a DataFrame of file paths and other metadata from a glob path
 
-        This method supports wilcards:
+        This method supports wildcards:
 
         1. "*" matches any number of any characters including none
         2. "?" matches any single character
         3. "[...]" matches any single character in the brackets
         4. "**" recursively matches any number of layers of directories
+
+        The returned DataFrame will have the following columns:
+
+        1. path: the path to the file/directory
+        2. size: size of the object in bytes
+        3. type: either "file" or "directory"
 
         Example:
             >>> df = DataFrame.from_glob_path("/path/to/files/*.jpeg")
@@ -497,7 +505,7 @@ class DataFrame:
                 parsed from the provided filesystem
         """
         partition_set_factory = get_context().runner().partition_set_factory()
-        partition_set, filepaths_schema = partition_set_factory.glob_file_details(path)
+        partition_set, filepaths_schema = partition_set_factory.glob_paths_details(path)
         cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
         filepath_plan = logical_plan.InMemoryScan(
             cache_entry=cache_entry,

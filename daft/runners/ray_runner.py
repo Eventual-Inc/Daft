@@ -97,11 +97,13 @@ def _glob_path_into_vpartitions(path: str, schema: ExpressionList) -> list[tuple
 
 @ray.remote
 def _glob_path_into_details_vpartitions(path: str, schema: ExpressionList) -> list[tuple[PartID, vPartition]]:
-    assert len(schema) == 2
-    filepath_expr = schema.get_expression_by_name("filepath")
-    filesize_expr = schema.get_expression_by_name("size")
+    assert len(schema) == 3
+    filepath_expr, filesize_expr, filetype_expr = (
+        schema.get_expression_by_name(name) for name in ["path", "size", "type"]
+    )
     assert filepath_expr is not None
     assert filesize_expr is not None
+    assert filetype_expr is not None
 
     file_infos = glob_path_with_stats(path)
     if len(file_infos) == 0:
@@ -112,6 +114,7 @@ def _glob_path_into_details_vpartitions(path: str, schema: ExpressionList) -> li
         {
             filepath_expr.name(): [file_info.path for file_info in file_infos],
             filesize_expr.name(): [file_info.size for file_info in file_infos],
+            filetype_expr.name(): [file_info.type for file_info in file_infos],
         },
         schema=schema,
         partition_id=0,
@@ -193,19 +196,19 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 
 
 class RayPartitionSetFactory(PartitionSetFactory[ray.ObjectRef]):
-    def glob_filepaths(
+    def glob_paths(
         self,
         source_path: str,
     ) -> tuple[RayPartitionSet, ExpressionList]:
-        schema = self._get_filepaths_schema()
+        schema = self._get_listing_paths_schema()
         partition_refs = ray.get(_glob_path_into_vpartitions.remote(source_path, schema))
         return RayPartitionSet({part_id: part for part_id, part in partition_refs}), schema
 
-    def glob_file_details(
+    def glob_paths_details(
         self,
         source_path: str,
     ) -> tuple[RayPartitionSet, ExpressionList]:
-        schema = self._get_file_details_schema()
+        schema = self._get_listing_paths_details_schema()
         partition_refs = ray.get(_glob_path_into_details_vpartitions.remote(source_path, schema))
         return RayPartitionSet({part_id: part for part_id, part in partition_refs}), schema
 

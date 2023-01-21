@@ -86,7 +86,7 @@ class LocalPartitionSet(PartitionSet[vPartition]):
 
 
 class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
-    def glob_filepaths(
+    def glob_paths(
         self,
         source_path: str,
     ) -> tuple[LocalPartitionSet, ExpressionList]:
@@ -95,16 +95,18 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
         if len(filepaths) == 0:
             raise FileNotFoundError(f"No files found at {source_path}")
 
-        schema = self._get_filepaths_schema()
+        schema = self._get_listing_paths_schema()
         pset = LocalPartitionSet(
             {
-                i: vPartition.from_pydict(data={self.FILEPATH_COLUMN_NAME: [path]}, schema=schema, partition_id=i)
+                i: vPartition.from_pydict(
+                    data={self.FS_LISTING_PATH_COLUMN_NAME: [path]}, schema=schema, partition_id=i
+                )
                 for i, path in enumerate(filepaths)  # Hardcoded to 1 path per partition
             },
         )
         return pset, schema
 
-    def glob_file_details(
+    def glob_paths_details(
         self,
         source_path: str,
     ) -> tuple[LocalPartitionSet, ExpressionList]:
@@ -113,14 +115,15 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
         if len(files_info) == 0:
             raise FileNotFoundError(f"No files found at {source_path}")
 
-        schema = self._get_file_details_schema()
+        schema = self._get_listing_paths_details_schema()
         pset = LocalPartitionSet(
             {
                 # Hardcoded to 1 partition
                 0: vPartition.from_pydict(
                     data={
-                        self.FILEPATH_COLUMN_NAME: [f.path for f in files_info],
-                        self.FILE_SIZE_COLUMN_NAME: [f.size for f in files_info],
+                        self.FS_LISTING_PATH_COLUMN_NAME: [f.path for f in files_info],
+                        self.FS_LISTING_SIZE_COLUMN_NAME: [f.size for f in files_info],
+                        self.FS_LISTING_TYPE_COLUMN_NAME: [f.type for f in files_info],
                     },
                     schema=schema,
                     partition_id=0,

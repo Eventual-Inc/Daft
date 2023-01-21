@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import dataclasses
+from typing import Literal
 
 from fsspec import AbstractFileSystem, get_filesystem_class
 from loguru import logger
 
 
 @dataclasses.dataclass(frozen=True)
-class FileInfo:
+class ListingInfo:
     path: str
     size: int
+    type: Literal["file"] | Literal["directory"]
 
 
 def get_filesystem(protocol: str, **kwargs) -> AbstractFileSystem:
@@ -64,24 +66,30 @@ def glob_path(path: str) -> list[str]:
     raise FileNotFoundError(f"File or directory not found: {path}")
 
 
-def glob_path_with_stats(path: str) -> list[FileInfo]:
+def glob_path_with_stats(path: str) -> list[ListingInfo]:
     fs = get_filesystem_from_path(path)
     protocol = get_protocol_from_path(path)
 
     if _path_is_glob(path):
         globbed_data = fs.glob(path, detail=True)
         return [
-            FileInfo(path=_fix_returned_path(protocol, path), size=details["size"])
+            ListingInfo(path=_fix_returned_path(protocol, path), size=details["size"], type=details["type"])
             for path, details in globbed_data.items()
         ]
 
     if fs.isfile(path):
         file_info = fs.info(path)
-        return [FileInfo(path=_fix_returned_path(protocol, file_info["name"]), size=file_info["size"])]
+        return [
+            ListingInfo(
+                path=_fix_returned_path(protocol, file_info["name"]), size=file_info["size"], type=file_info["type"]
+            )
+        ]
     elif fs.isdir(path):
         files_info = fs.ls(path, detail=True)
         return [
-            FileInfo(path=_fix_returned_path(protocol, file_info["name"]), size=file_info["size"])
+            ListingInfo(
+                path=_fix_returned_path(protocol, file_info["name"]), size=file_info["size"], type=file_info["type"]
+            )
             for file_info in files_info
         ]
     raise FileNotFoundError(f"File or directory not found: {path}")
