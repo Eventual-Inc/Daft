@@ -23,6 +23,7 @@ from daft.execution.execution_step import (
     MaterializationRequestBase,
     MaterializationRequestMulti,
     MaterializationResult,
+    ReduceInstruction,
 )
 from daft.execution.logical_op_runners import (
     LogicalGlobalOpRunner,
@@ -486,27 +487,28 @@ class DynamicRayRunner(RayRunner):
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
         return pset_entry
 
-    def _build_partitions(self, partspec: MaterializationRequestBase[ray.ObjectRef]) -> list[ray.ObjectRef]:
+    def _build_partitions(self, task: MaterializationRequestBase[ray.ObjectRef]) -> list[ray.ObjectRef]:
         """Run a MaterializationRequest and return the resulting list of partitions."""
         ray_options: dict[str, Any] = {
-            "num_returns": partspec.num_results,
+            "num_returns": task.num_results,
         }
-        if len(partspec.inputs) > 2:
+
+        if isinstance(task.instructions[0], ReduceInstruction):
             ray_options["scheduling_strategy"] = "SPREAD"
 
         construct_remote = build_partitions.options(**ray_options)
-        partitions = construct_remote.remote(partspec.instructions, *partspec.inputs)
+        partitions = construct_remote.remote(task.instructions, *task.inputs)
         # Handle ray bug that ignores list interpretation when num_returns=1
-        if partspec.num_results == 1:
+        if task.num_results == 1:
             partitions = [partitions]
 
-        if isinstance(partspec, MaterializationRequestMulti):
-            partspec.results = [RayMaterializationResult(partition) for partition in partitions]
-        elif isinstance(partspec, MaterializationRequest):
+        if isinstance(task, MaterializationRequestMulti):
+            task.results = [RayMaterializationResult(partition) for partition in partitions]
+        elif isinstance(task, MaterializationRequest):
             [partition] = partitions
-            partspec.result = RayMaterializationResult(partition)
+            task.result = RayMaterializationResult(partition)
         else:
-            raise TypeError(f"Could not type match input {partspec}")
+            raise TypeError(f"Could not type match input {task}")
 
         return partitions
 
