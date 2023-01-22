@@ -110,6 +110,11 @@ def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
     return [dict(zip(colnames, row_tuple)) for row_tuple in zip_blocks_as_py(*blocks)]
 
 
+@ray.remote
+def remote_len_partition(p: vPartition) -> int:
+    return len(p)
+
+
 @dataclass
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     _partitions: dict[PartID, ray.ObjectRef]
@@ -153,11 +158,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     def len_of_partitions(self) -> list[int]:
         partition_ids = sorted(list(self._partitions.keys()))
 
-        @ray.remote
-        def remote_len(p: vPartition) -> int:
-            return len(p)
-
-        result: list[int] = ray.get([remote_len.remote(self._partitions[pid]) for pid in partition_ids])
+        result: list[int] = ray.get([remote_len_partition.remote(self._partitions[pid]) for pid in partition_ids])
         return result
 
     def num_partitions(self) -> int:
