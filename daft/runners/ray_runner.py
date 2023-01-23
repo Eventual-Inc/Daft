@@ -381,6 +381,7 @@ class RayRunner(Runner):
             last = exec_plan.execution_ops[-1].logical_ops[-1]
             final_result = partition_intermediate_results[last.id()]
             pset_entry = self._part_set_cache.put_partition_set(final_result)
+            len(final_result)
             return pset_entry
 
 
@@ -431,7 +432,8 @@ class DynamicRayRunner(RayRunner):
                 # Get the next batch of tasks to dispatch.
                 parallelism_available = parallelism - len(inflight_tasks)
                 try:
-                    for i in range(parallelism_available):
+                    # for i in range(parallelism_available):
+                    while True:
 
                         next_step = next(phys_plan)
 
@@ -487,6 +489,7 @@ class DynamicRayRunner(RayRunner):
                     del inflight_tasks[task_id]
 
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
+        len(result_pset)
         return pset_entry
 
     def _build_partitions(self, task: MaterializationRequestBase[ray.ObjectRef]) -> list[ray.ObjectRef]:
