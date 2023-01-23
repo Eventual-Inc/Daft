@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Literal
+import sys
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Literal
+else:
+    from typing import Literal
 
 from fsspec import AbstractFileSystem, get_filesystem_class
 from loguru import logger
