@@ -28,7 +28,7 @@ From Files
     daft.DataFrame.read_csv
     daft.DataFrame.read_json
     daft.DataFrame.read_parquet
-    daft.DataFrame.from_files
+    daft.DataFrame.from_glob_path
 
 From In-Memory Data
 *******************

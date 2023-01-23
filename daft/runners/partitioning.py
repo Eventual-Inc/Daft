@@ -814,20 +814,56 @@ class PartitionSetCache:
 class PartitionSetFactory(Generic[PartitionT]):
     """Factory class for creating PartitionSets."""
 
-    FILEPATH_COLUMN_NAME = "filepath"
+    FS_LISTING_PATH_COLUMN_NAME = "path"
+    FS_LISTING_SIZE_COLUMN_NAME = "size"
+    FS_LISTING_TYPE_COLUMN_NAME = "type"
+
+    def _get_listing_paths_schema(self) -> ExpressionList:
+        """Construct the schema for a DataFrame of path listing"""
+        return ExpressionList(
+            [
+                ColumnExpression(self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
+            ]
+        ).resolve()
+
+    def _get_listing_paths_details_schema(self) -> ExpressionList:
+        """Construct the schema for a DataFrame of detailed path listing"""
+        return ExpressionList(
+            [
+                ColumnExpression(self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
+                ColumnExpression(self.FS_LISTING_SIZE_COLUMN_NAME, ExpressionType.integer()),
+                ColumnExpression(self.FS_LISTING_TYPE_COLUMN_NAME, ExpressionType.string()),
+            ]
+        ).resolve()
 
     @abstractmethod
-    def glob_filepaths(
+    def glob_paths(
         self,
         source_path: str,
     ) -> tuple[PartitionSet[PartitionT], ExpressionList]:
-        """Globs the specified filepath to construct a PartitionSet of file metadata
+        """Globs the specified filepath to construct a PartitionSet of file or dir paths
 
         Args:
             source_path (str): path to glob
 
         Returns:
-            PartitionSet[PartitionT]: PartitionSet containing the files' metadata
+            PartitionSet[PartitionT]: PartitionSet containing the listings' paths
+            ExpressionList: Schema of the PartitionSet that was constructed
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def glob_paths_details(
+        self,
+        source_path: str,
+    ) -> tuple[PartitionSet[PartitionT], ExpressionList]:
+        """Globs the specified filepath to construct a PartitionSet of file and dir metadata
+
+        Args:
+            source_path (str): path to glob
+
+        Returns:
+            PartitionSet[PartitionT]: PartitionSet containing the listings' metadata
             ExpressionList: Schema of the PartitionSet that was constructed
         """
         raise NotImplementedError()
