@@ -108,6 +108,9 @@ class PyMaterializationResult(MaterializationResult[vPartition]):
     def partition(self) -> vPartition:
         return self._partition
 
+    def vpartition(self) -> vPartition:
+        return self._partition
+
     def metadata(self) -> PartitionMetadata:
         return self._partition.metadata()
 

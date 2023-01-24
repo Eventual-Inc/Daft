@@ -18,6 +18,7 @@ except ImportError:
 from daft.execution import physical_plan_factory
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.execution_step import (
+    FanoutInstruction,
     Instruction,
     MaterializationRequest,
     MaterializationRequestBase,
@@ -385,13 +386,35 @@ class RayRunner(Runner):
             return pset_entry
 
 
-@ray.remote
 def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     partitions = list(inputs)
     for instruction in instruction_stack:
         partitions = instruction.run(partitions)
 
     return partitions if len(partitions) > 1 else partitions[0]
+
+
+# Give the same function different names to aid in profiling data distribution.
+
+
+@ray.remote
+def build_one_to_one(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+    return build_partitions(instruction_stack, *inputs)
+
+
+@ray.remote
+def build_one_to_many(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+    return build_partitions(instruction_stack, *inputs)
+
+
+@ray.remote(scheduling_strategy="SPREAD")
+def build_many_to_one(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+    return build_partitions(instruction_stack, *inputs)
+
+
+@ray.remote(scheduling_strategy="SPREAD")
+def build_many_to_many(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+    return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote
@@ -427,10 +450,28 @@ class DynamicRayRunner(RayRunner):
             f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
         )
         with profiler(profile_filename):
-            while not plan_exhausted or len(inflight_tasks) > 0:
+            while not plan_exhausted:
+
+                # Await a single result.
+                if len(inflight_tasks) > 0:
+                    dispatch = datetime.now()
+                    [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
+                    task_id = inflight_ref_to_task[ready]
+                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
+
+                    # Mark the entire task associated with the result as done.
+                    task = inflight_tasks[task_id]
+                    if isinstance(task, MaterializationRequest):
+                        del inflight_ref_to_task[ready]
+                    elif isinstance(task, MaterializationRequestMulti):
+                        assert task.results is not None
+                        for result in task.results:
+                            del inflight_ref_to_task[result.partition()]
+
+                    del inflight_tasks[task_id]
 
                 # Get the next batch of tasks to dispatch.
-                parallelism_available = parallelism - len(inflight_tasks)
+                parallelism - len(inflight_tasks)
                 try:
                     # for i in range(parallelism_available):
                     while True:
@@ -470,24 +511,6 @@ class DynamicRayRunner(RayRunner):
 
                 tasks_to_dispatch.clear()
 
-                # All tasks dispatched. Await a single result.
-                if len(inflight_tasks) > 0:
-                    dispatch = datetime.now()
-                    [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
-                    task_id = inflight_ref_to_task[ready]
-                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
-
-                    # Mark the entire task associated with the result as done.
-                    task = inflight_tasks[task_id]
-                    if isinstance(task, MaterializationRequest):
-                        del inflight_ref_to_task[ready]
-                    elif isinstance(task, MaterializationRequestMulti):
-                        assert task.results is not None
-                        for result in task.results:
-                            del inflight_ref_to_task[result.partition()]
-
-                    del inflight_tasks[task_id]
-
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
         len(result_pset)
         return pset_entry
@@ -499,10 +522,16 @@ class DynamicRayRunner(RayRunner):
         }
 
         if isinstance(task.instructions[0], ReduceInstruction):
-            ray_options["scheduling_strategy"] = "SPREAD"
+            build_remote = (
+                build_many_to_many if isinstance(task.instructions[-1], FanoutInstruction) else build_many_to_one
+            )
+        else:
+            build_remote = (
+                build_one_to_many if isinstance(task.instructions[-1], FanoutInstruction) else build_one_to_one
+            )
 
-        construct_remote = build_partitions.options(**ray_options)
-        partitions = construct_remote.remote(task.instructions, *task.inputs)
+        build_remote = build_remote.options(**ray_options)
+        partitions = build_remote.remote(task.instructions, *task.inputs)
         # Handle ray bug that ignores list interpretation when num_returns=1
         if task.num_results == 1:
             partitions = [partitions]
@@ -524,6 +553,9 @@ class RayMaterializationResult(MaterializationResult[ray.ObjectRef]):
 
     def partition(self) -> ray.ObjectRef:
         return self._partition
+
+    def vpartition(self) -> vPartition:
+        return ray.get(self._partition)
 
     def metadata(self) -> PartitionMetadata:
         return ray.get(get_meta.remote(self._partition))
