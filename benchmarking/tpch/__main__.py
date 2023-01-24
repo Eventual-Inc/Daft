@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import csv
+import gc
 import math
 import os
 import platform
@@ -125,8 +126,9 @@ def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output
     daft_context = get_context()
     metrics_builder = MetricsBuilder(daft_context.runner_config.name)
 
+    gc.disable()
     for i in range(1, 11):
-
+        gc.collect()
         if i in skip_questions:
             logger.warning(f"Skipping TPC-H q{i}")
             continue
@@ -137,6 +139,7 @@ def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output
         with metrics_builder.collect_metrics(i):
             daft_df.collect()
 
+    gc.enable()
     if csv_output_location:
         logger.info(f"Writing CSV to: {csv_output_location}")
         metrics_builder.dump_csv(csv_output_location)
