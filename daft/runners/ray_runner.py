@@ -451,11 +451,11 @@ class DynamicRayRunner(RayRunner):
         with profiler(profile_filename):
             while not plan_exhausted:
 
-                # Get the next batch of tasks to dispatch.
-                parallelism - len(inflight_tasks)
                 try:
-                    # for i in range(parallelism_available):
-                    while True:
+                    while (
+                        len(inflight_tasks) < 4 * parallelism
+                        or len(inflight_ref_to_task) < 4 * parallelism * parallelism
+                    ):
 
                         next_step = next(phys_plan)
 
