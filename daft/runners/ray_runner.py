@@ -503,9 +503,13 @@ class DynamicRayRunner(RayRunner):
 
                     del inflight_tasks[task_id]
 
-        pset_entry = self._part_set_cache.put_partition_set(result_pset)
-        len(result_pset)
-        return pset_entry
+            del inflight_tasks
+            del inflight_ref_to_task
+
+            pset_entry = self._part_set_cache.put_partition_set(result_pset)
+            len(result_pset)
+
+            return pset_entry
 
     def _build_partitions(self, task: MaterializationRequestBase[ray.ObjectRef]) -> list[ray.ObjectRef]:
         """Run a MaterializationRequest and return the resulting list of partitions."""
