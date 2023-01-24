@@ -54,6 +54,7 @@ where
                 data.data_type()
             )));
         }
+
         Ok(DataArray {
             field,
             data,

@@ -46,7 +46,7 @@ where
 {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         if self.data_type().eq(dtype) {
-            return Ok(DataArray::<T>::from(self.data().to_boxed()).into_series());
+            return Ok(DataArray::<T>::try_from(self.data().to_boxed())?.into_series());
         }
 
         let _arrow_type = dtype.to_arrow();
@@ -79,7 +79,7 @@ where
         )?;
 
         Ok(
-            with_match_arrow_daft_types!(dtype, |$T| DataArray::<$T>::from(result_array).into_series()),
+            with_match_arrow_daft_types!(dtype, |$T| DataArray::<$T>::try_from(result_array)?.into_series()),
         )
     }
 }

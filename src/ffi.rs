@@ -1,8 +1,13 @@
 use arrow2::{array::Array, datatypes::Field, ffi};
 
+use pyo3::exceptions::PyValueError;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::{PyAny, PyObject, PyResult, Python};
+
+use crate::error::{DaftError, DaftResult};
+use crate::series::Series;
+use crate::table::Table;
 
 pub type ArrayRef = Box<dyn Array>;
 
@@ -27,6 +32,23 @@ pub fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
         Ok(array)
     }
 }
+
+// pub fn record_batches_to_table(batches: &[&PyAny]) -> PyResult<Table> {
+
+//     if batches.len() > 1 {
+//         return Err(PyValueError::new_err("we can only handle a single record batch right now"));
+//     }
+//     let schema = batches.get(0).ok_or_else(|| PyValueError::new_err("received an empty list of arrow record batches. Can not infer a schema.".into()))?.getattr("schema")?;
+//     let names = schema.getattr("names")?.extract::<Vec<String>>()?;
+//     let rb = *batches.get(0).unwrap();
+//     let columns = (0..names.len())
+//         .map(|i| {
+//             let array = rb.call_method1("column", (i,))?;
+//             let arr = array_to_rust(array)?;
+//             // Series::new()
+
+//         });
+// }
 
 pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(&Field::new(

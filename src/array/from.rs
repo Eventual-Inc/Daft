@@ -5,6 +5,7 @@ use crate::datatypes::{
 };
 
 use crate::array::DataArray;
+use crate::error::{DaftError, DaftResult};
 
 impl<T: DaftNumericType> From<Box<arrow2::array::PrimitiveArray<T::Native>>> for DataArray<T> {
     fn from(item: Box<arrow2::array::PrimitiveArray<T::Native>>) -> Self {
@@ -62,20 +63,21 @@ impl<T: AsRef<str>> From<&[T]> for DataArray<Utf8Type> {
     }
 }
 
-impl<T: DaftDataType> From<Box<dyn arrow2::array::Array>> for DataArray<T> {
-    fn from(item: Box<dyn arrow2::array::Array>) -> Self {
+impl<T: DaftDataType> TryFrom<Box<dyn arrow2::array::Array>> for DataArray<T> {
+    type Error = DaftError;
+
+    fn try_from(item: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
         let self_arrow_type = T::get_dtype().to_arrow().unwrap();
         if !item.data_type().eq(&self_arrow_type) {
-            panic!(
+            return Err(DaftError::TypeError(format!(
                 "mismatch in expected data type {:?} vs {:?}",
                 item.data_type(),
                 self_arrow_type
-            )
+            )));
         }
         DataArray::new(
             Field::new("arrow_array", T::get_dtype()).into(),
             Arc::from(item),
         )
-        .unwrap()
     }
 }

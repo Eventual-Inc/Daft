@@ -51,6 +51,7 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
 }
 
 #[pyclass]
+#[derive(Clone)]
 pub struct PyExpr {
     pub expr: dsl::Expr,
 }

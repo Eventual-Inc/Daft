@@ -5,6 +5,7 @@ pub enum DaftError {
     TypeError(String),
     ComputeError(String),
     ArrowError(String),
+    ValueError(String),
 }
 
 impl From<arrow2::error::Error> for DaftError {
