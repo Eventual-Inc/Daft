@@ -2,7 +2,7 @@ mod ops;
 use std::sync::Arc;
 
 use crate::{
-    array::{BaseArray, DataArray},
+    array::BaseArray,
     datatypes::{DataType, Field},
 };
 

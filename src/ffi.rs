@@ -1,13 +1,8 @@
 use arrow2::{array::Array, datatypes::Field, ffi};
 
-use pyo3::exceptions::PyValueError;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::{PyAny, PyObject, PyResult, Python};
-
-use crate::error::{DaftError, DaftResult};
-use crate::series::Series;
-use crate::table::Table;
 
 pub type ArrayRef = Box<dyn Array>;
 
