@@ -142,10 +142,6 @@ class MaterializationResult(Protocol[PartitionT]):
         """Get the partition of this result."""
         ...
 
-    def vpartition(self) -> vPartition:
-        """Get the concrete vPartition of this result."""
-        ...
-
     def metadata(self) -> PartitionMetadata:
         """Get the metadata of the partition in this result."""
         ...
@@ -396,19 +392,18 @@ class FanoutHash(FanoutInstruction):
 class FanoutRange(FanoutInstruction, Generic[PartitionT]):
     sort_by: ExpressionList
     descending: list[bool]
-    boundaries: vPartition
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         return self._fanout_range(inputs)
 
     def _fanout_range(self, inputs: list[vPartition]) -> list[vPartition]:
-        [input] = inputs
+        [boundaries, input] = inputs
 
         partitions_with_ids = SortOp.map_fn(
             input=input,
             output_partitions=self.num_outputs,
             exprs=self.sort_by,
-            boundaries=self.boundaries,
+            boundaries=boundaries,
             descending=self.descending,
         )
         return [partition for _, partition in sorted(partitions_with_ids.items())]

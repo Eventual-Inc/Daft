@@ -554,9 +554,6 @@ class RayMaterializationResult(MaterializationResult[ray.ObjectRef]):
     def partition(self) -> ray.ObjectRef:
         return self._partition
 
-    def vpartition(self) -> vPartition:
-        return ray.get(self._partition)
-
     def metadata(self) -> PartitionMetadata:
         return ray.get(get_meta.remote(self._partition))
 

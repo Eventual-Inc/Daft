@@ -380,18 +380,17 @@ def sort(
     while boundaries.result is None:
         yield None
 
-    boundaries_partition = boundaries.result.vpartition()
+    boundaries_partition = boundaries.result.partition()
 
     # Create a range fanout plan.
     range_fanout_plan = (
         OpenExecutionQueue[PartitionT](
-            inputs=[source_partition],
+            inputs=[boundaries_partition, source_partition],
             instructions=[
                 execution_step.FanoutRange[PartitionT](
                     num_outputs=sort_info.num_partitions(),
                     sort_by=sort_info._sort_by,
                     descending=sort_info._descending,
-                    boundaries=boundaries_partition,
                 ),
             ],
         )
