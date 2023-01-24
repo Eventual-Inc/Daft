@@ -88,8 +88,8 @@ mod test {
     use crate::{datatypes::Float64Array, error::DaftResult};
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
-        let a = Int64Array::from(vec![1, 2, 3].as_slice()).into_series();
-        let b = Float64Array::from(vec![1., 2., 3.].as_slice()).into_series();
+        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice())).into_series();
+        let b = Float64Array::from(("b", vec![1., 2., 3.].as_slice())).into_series();
         let schema = Schema::new(vec![
             a.field().clone().rename("a"),
             b.field().clone().rename("b"),

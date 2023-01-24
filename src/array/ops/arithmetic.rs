@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use crate::{
-    array::DataArray,
+    array::{BaseArray, DataArray},
     datatypes::{DaftNumericType, Utf8Array},
     kernels::utf8::add_utf8_arrays,
 };
@@ -43,7 +43,9 @@ where
     F: Fn(T::Native, T::Native) -> T::Native,
 {
     let ca = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => DataArray::from(Box::new(kernel(lhs.downcast(), rhs.downcast()))),
+        (a, b) if a == b => {
+            DataArray::from((lhs.name(), Box::new(kernel(lhs.downcast(), rhs.downcast()))))
+        }
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);
@@ -61,7 +63,6 @@ where
         }
         _ => panic!("Cannot apply operation on arrays of different lengths"),
     };
-    // ca.rename(lhs.name());
     ca
 }
 
@@ -79,7 +80,7 @@ impl Add for &Utf8Array {
     type Output = Utf8Array;
     fn add(self, rhs: Self) -> Self::Output {
         let result = Box::new(add_utf8_arrays(self.downcast(), rhs.downcast()).unwrap());
-        Utf8Array::from(result)
+        Utf8Array::from((self.name(), result))
     }
 }
 

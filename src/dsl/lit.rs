@@ -68,14 +68,14 @@ impl LiteralValue {
         use LiteralValue::*;
         let result = match self {
             Null => NullArray::full_null(1).into_series(),
-            Boolean(val) => BooleanArray::from([*val].as_slice()).into_series(),
-            Utf8(val) => Utf8Array::from([val.as_str()].as_slice()).into_series(),
+            Boolean(val) => BooleanArray::from(("lit", [*val].as_slice())).into_series(),
+            Utf8(val) => Utf8Array::from(("lit", [val.as_str()].as_slice())).into_series(),
             Binary(_val) => panic!("Binary not supported yey"),
-            Int32(val) => Int32Array::from([*val].as_slice()).into_series(),
-            UInt32(val) => UInt32Array::from([*val].as_slice()).into_series(),
-            Int64(val) => Int64Array::from([*val].as_slice()).into_series(),
-            UInt64(val) => UInt64Array::from([*val].as_slice()).into_series(),
-            Float64(val) => Float64Array::from([*val].as_slice()).into_series(),
+            Int32(val) => Int32Array::from(("lit", [*val].as_slice())).into_series(),
+            UInt32(val) => UInt32Array::from(("lit", [*val].as_slice())).into_series(),
+            Int64(val) => Int64Array::from(("lit", [*val].as_slice())).into_series(),
+            UInt64(val) => UInt64Array::from(("lit", [*val].as_slice())).into_series(),
+            Float64(val) => Float64Array::from(("lit", [*val].as_slice())).into_series(),
         };
         result
     }
