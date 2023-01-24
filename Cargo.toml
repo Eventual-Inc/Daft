@@ -1,3 +1,6 @@
+[dependencies]
+prettytable-rs = "^0.10"
+
 [dependencies.arrow2]
 features = ["compute"]
 version = "0.14.2"

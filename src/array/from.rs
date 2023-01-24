@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::datatypes::{
-    BooleanArray, DaftDataType, DaftNumericType, DataType, Field, Utf8Array, Utf8Type,
+    BooleanArray, DaftDataType, DaftNumericType, DataType, Field, NullArray, Utf8Array, Utf8Type,
 };
 
 use crate::array::DataArray;
@@ -67,6 +67,9 @@ impl<T: DaftDataType> TryFrom<(&str, Box<dyn arrow2::array::Array>)> for DataArr
                 self_arrow_type
             )));
         }
-        DataArray::new(Field::new(name, T::get_dtype()).into(), Arc::from(array))
+        DataArray::new(
+            Field::new(name, array.data_type().into()).into(),
+            Arc::from(array),
+        )
     }
 }

@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter, Result};
 use std::sync::Arc;
 
 use crate::datatypes::Field;
@@ -16,16 +17,40 @@ impl Table {
         if schema.fields.len() != columns.len() {
             return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns. {} vs {}", schema.fields.len(), columns.len())));
         }
-
+        let mut num_rows = 1;
         for (field, series) in schema.fields.values().zip(columns.iter()) {
             if field != series.field() {
                 return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {:?} vs series field: {:?}", field, series.field())));
             }
+            if (series.len() != 1) || (series.len() != num_rows) {
+                if num_rows == 1 {
+                    num_rows = series.len();
+                } else {
+                    return Err(DaftError::ValueError(format!("While building a Table, we found that the Series lengths did not match. Series named: {} had length: {} vs rest of the DataFrame had length: {}", field.name, series.len(), num_rows)));
+                }
+            }
         }
+
+        let columns: DaftResult<Vec<Series>> = columns
+            .into_iter()
+            .map(|s| {
+                if s.len() == num_rows {
+                    Ok(s)
+                } else {
+                    s.broadcast(num_rows)
+                }
+            })
+            .collect();
+
         Ok(Table {
             schema: schema.into(),
-            columns,
+            columns: columns?,
         })
+    }
+    pub fn from_columns(columns: Vec<Series>) -> DaftResult<Self> {
+        let fields = columns.iter().map(|s| s.field().clone()).collect();
+        let schema = Schema::new(fields);
+        Table::new(schema, columns)
     }
 
     //pub fn head(&self, num: usize) -> DaftResult<Table>;
@@ -74,6 +99,13 @@ impl Table {
             .collect::<Vec<Field>>();
         let schema = Schema::new(fields);
         Table::new(schema, result_series)
+    }
+}
+
+impl Display for Table {
+    // `f` is a buffer, and this method must write the formatted string into it
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "{}", self.schema)
     }
 }
 

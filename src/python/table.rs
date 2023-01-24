@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 
 use crate::dsl;
+use crate::ffi;
 use crate::table;
 
 use crate::python::expr::PyExpr;
@@ -21,8 +23,15 @@ impl PyTable {
             .into())
     }
 
-    // #[staticmethod]
-    // pub fn from_arrow_record_batches()
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.table))
+    }
+
+    #[staticmethod]
+    pub fn from_arrow_record_batches(record_batches: Vec<&PyAny>) -> PyResult<Self> {
+        let table = ffi::record_batches_to_table(record_batches.as_slice())?;
+        Ok(PyTable { table })
+    }
 }
 
 impl From<table::Table> for PyTable {

@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    fmt::{Display, Formatter, Result, Write},
+    sync::Arc,
+};
 
 use indexmap::IndexMap;
 
@@ -6,6 +9,8 @@ use crate::{
     datatypes::Field,
     error::{DaftError, DaftResult},
 };
+
+use prettytable;
 
 type SchemaRef = Arc<Schema>;
 
@@ -44,7 +49,17 @@ impl Schema {
     }
 }
 
-// impl From<&[Field]> for Schema {
-//     fn from(slice: &[bool]) -> Self {
-//     }
-// }
+impl Display for Schema {
+    // `f` is a buffer, and this method must write the formatted string into it
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        let mut table = prettytable::Table::new();
+
+        let header = self
+            .fields
+            .iter()
+            .map(|(name, field)| format!("{}\n{:?}", name, field.dtype))
+            .collect();
+        table.add_row(header);
+        write!(f, "{}", table.to_string())
+    }
+}
