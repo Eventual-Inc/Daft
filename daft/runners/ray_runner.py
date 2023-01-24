@@ -511,6 +511,7 @@ class DynamicRayRunner(RayRunner):
 
                 tasks_to_dispatch.clear()
 
+            del phys_plan
             del inflight_tasks
             del inflight_ref_to_task
 
