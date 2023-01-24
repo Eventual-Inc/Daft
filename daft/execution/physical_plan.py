@@ -30,7 +30,7 @@ from daft.execution.execution_step import (
 from daft.logical import logical_plan
 
 PartitionT = TypeVar("PartitionT")
-_PartitionT = TypeVar("_PartitionT")
+T = TypeVar("T")
 
 
 def partition_read(partitions: Iterator[PartitionT]) -> Iterator[None | ExecutionStep[PartitionT]]:
@@ -317,16 +317,16 @@ def reduce(
     # (since we need all of them to emit even a single reduce).
     while any(_.results is None for _ in materializations):
         yield None
-    assert materializations[0].results is not None  # for mypy only
+
+    inputs_to_reduce = [deque(_.results) for _ in materializations if _.results is not None]
+    del materializations
 
     # Yield all the reduces in order.
-    yield from (
-        OpenExecutionQueue[PartitionT](
-            inputs=[result.partition() for result in (_.results[reduce_index] for _ in materializations)],
+    while len(inputs_to_reduce[0]) > 0:
+        yield OpenExecutionQueue[PartitionT](
+            inputs=[result.partition() for result in (_.popleft() for _ in inputs_to_reduce)],
             instructions=[reduce_instruction],
         )
-        for reduce_index in range(len(materializations[0].results))
-    )
 
 
 def sort(
@@ -336,7 +336,7 @@ def sort(
     """Sort the result of `child_plan` according to `sort_info`."""
 
     # First, materialize the child plan.
-    source_materializations: list[MaterializationRequest[PartitionT]] = list()
+    source_materializations: deque[MaterializationRequest[PartitionT]] = deque()
     for step in child_plan:
         if isinstance(step, OpenExecutionQueue):
             step = step.as_materialization_request()
@@ -344,7 +344,7 @@ def sort(
         yield step
 
     # Sample all partitions (to be used for calculating sort boundaries).
-    sample_materializations: list[MaterializationRequest[PartitionT]] = list()
+    sample_materializations: deque[MaterializationRequest[PartitionT]] = deque()
     for source in source_materializations:
         while source.result is None:
             yield None
@@ -360,13 +360,12 @@ def sort(
         yield None
 
     # Reduce the samples to get sort boundaries.
-    samples = [
-        sample.result.partition()
-        for sample in sample_materializations
-        if sample.result is not None  # for mypy only; guaranteed to be not None by while loop
-    ]
     boundaries = OpenExecutionQueue[PartitionT](
-        inputs=samples,
+        inputs=[
+            sample.result.partition()
+            for sample in consume_deque(sample_materializations)
+            if sample.result is not None  # for mypy only; guaranteed to be not None by while loop
+        ],
         instructions=[
             execution_step.ReduceToQuantiles(
                 num_quantiles=sort_info.num_partitions(),
@@ -384,7 +383,6 @@ def sort(
     boundaries_partition = boundaries.result.vpartition()
 
     # Create a range fanout plan.
-    source_partitions = [source.result.partition() for source in source_materializations if source.result is not None]
     range_fanout_plan = (
         OpenExecutionQueue[PartitionT](
             inputs=[source_partition],
@@ -397,7 +395,9 @@ def sort(
                 ),
             ],
         )
-        for source_partition in source_partitions
+        for source_partition in (
+            source.result.partition() for source in consume_deque(source_materializations) if source.result is not None
+        )
     )
 
     # Execute a sorting reduce on it.
@@ -449,3 +449,8 @@ def enumerate_open_executions(
             index += 1
         else:
             yield index, item
+
+
+def consume_deque(dq: deque[T]) -> Iterator[T]:
+    while len(dq) > 0:
+        yield dq.popleft()
