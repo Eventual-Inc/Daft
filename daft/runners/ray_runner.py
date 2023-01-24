@@ -438,6 +438,7 @@ class DynamicRayRunner(RayRunner):
         # Keep in mind this call takes about 0.3ms.
         parallelism = 2 * int(ray.cluster_resources()["CPU"])
 
+        tasks_to_dispatch = []
         inflight_tasks: dict[str, MaterializationRequestBase[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
 
@@ -450,6 +451,24 @@ class DynamicRayRunner(RayRunner):
         )
         with profiler(profile_filename):
             while not plan_exhausted:
+
+                # Await a single result.
+                if len(inflight_tasks) > 0:
+                    dispatch = datetime.now()
+                    [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
+                    task_id = inflight_ref_to_task[ready]
+                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
+
+                    # Mark the entire task associated with the result as done.
+                    task = inflight_tasks[task_id]
+                    if isinstance(task, MaterializationRequest):
+                        del inflight_ref_to_task[ready]
+                    elif isinstance(task, MaterializationRequestMulti):
+                        assert task.results is not None
+                        for result in task.results:
+                            del inflight_ref_to_task[result.partition()]
+
+                    del inflight_tasks[task_id]
 
                 # Get the next batch of tasks to dispatch.
                 parallelism - len(inflight_tasks)
@@ -469,14 +488,7 @@ class DynamicRayRunner(RayRunner):
                         if next_step is None:
                             break
 
-                        logger.debug(
-                            f"{(datetime.now() - start).total_seconds()}s: " f"DynamicRayRunner dispatching task:"
-                        )
-                        results = self._build_partitions(next_step)
-                        logger.debug(f"{next_step} -> {results}")
-                        inflight_tasks[next_step.id()] = next_step
-                        for result in results:
-                            inflight_ref_to_task[result] = next_step.id()
+                        tasks_to_dispatch.append(next_step)
 
                 except StopIteration as e:
                     if not plan_exhausted:
@@ -485,23 +497,19 @@ class DynamicRayRunner(RayRunner):
                             result_pset.set_partition(i, partition)
                     plan_exhausted = True
 
-                # Await a single result.
-                if not plan_exhausted:
-                    dispatch = datetime.now()
-                    [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
-                    task_id = inflight_ref_to_task[ready]
-                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
+                # Dispatch the batch of tasks.
+                logger.debug(
+                    f"{(datetime.now() - start).total_seconds()}s: "
+                    f"DynamicRayRunner dispatching batch of {len(tasks_to_dispatch)} tasks."
+                )
+                for task in tasks_to_dispatch:
+                    results = self._build_partitions(task)
+                    logger.debug(f"{task} -> {results}")
+                    inflight_tasks[task.id()] = task
+                    for result in results:
+                        inflight_ref_to_task[result] = task.id()
 
-                    # Mark the entire task associated with the result as done.
-                    task = inflight_tasks[task_id]
-                    if isinstance(task, MaterializationRequest):
-                        del inflight_ref_to_task[ready]
-                    elif isinstance(task, MaterializationRequestMulti):
-                        assert task.results is not None
-                        for result in task.results:
-                            del inflight_ref_to_task[result.partition()]
-
-                    del inflight_tasks[task_id]
+                tasks_to_dispatch.clear()
 
             del inflight_tasks
             del inflight_ref_to_task
