@@ -31,6 +31,13 @@ impl PyTable {
         let table = ffi::record_batches_to_table(record_batches.as_slice())?;
         Ok(PyTable { table })
     }
+
+    pub fn to_arrow_record_batch(&self) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let pyarrow = py.import("pyarrow")?;
+            ffi::table_to_record_batch(&self.table, py, pyarrow)
+        })
+    }
 }
 
 impl From<table::Table> for PyTable {

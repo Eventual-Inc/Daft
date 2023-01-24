@@ -89,3 +89,22 @@ pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<
 
     Ok(array.to_object(py))
 }
+
+pub fn table_to_record_batch(table: &Table, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
+    let mut arrays = Vec::with_capacity(table.num_columns());
+    let mut names: Vec<String> = Vec::with_capacity(table.num_columns());
+
+    for i in 0..table.num_columns() {
+        let s = table.get_column_by_index(i).unwrap();
+        let arrow_array = s.array().data();
+        let py_array = to_py_array(arrow_array.to_boxed(), py, pyarrow)?;
+        arrays.push(py_array);
+        names.push(s.name().to_string());
+    }
+
+    let record = pyarrow
+        .getattr("RecordBatch")?
+        .call_method1("from_arrays", (arrays, names.to_vec()))?;
+
+    Ok(record.to_object(py))
+}

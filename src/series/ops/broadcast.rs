@@ -1,7 +1,9 @@
-use crate::{error::DaftResult, series::Series};
+use crate::{error::DaftResult, series::Series, with_match_numeric_and_utf_daft_types};
+
+use crate::array::BaseArray;
 
 impl Series {
-    pub fn broadcast(&self, _num: usize) -> DaftResult<Series> {
+    pub fn broadcast(&self, num: usize) -> DaftResult<Series> {
         if self.len() != 1 {
             return Err(crate::error::DaftError::ValueError(format!(
                 "Attempting to broadcast non-unit length Series named: {}",
@@ -9,6 +11,9 @@ impl Series {
             )));
         }
 
-        Ok(self.clone())
+        with_match_numeric_and_utf_daft_types!(self.data_type(), |$T| {
+            let array = self.downcast::<$T>()?;
+            Ok(array.broadcast(num)?.into_series())
+        })
     }
 }

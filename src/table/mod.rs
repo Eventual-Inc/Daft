@@ -22,7 +22,7 @@ impl Table {
             if field != series.field() {
                 return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {:?} vs series field: {:?}", field, series.field())));
             }
-            if (series.len() != 1) || (series.len() != num_rows) {
+            if (series.len() != 1) && (series.len() != num_rows) {
                 if num_rows == 1 {
                     num_rows = series.len();
                 } else {
@@ -35,6 +35,7 @@ impl Table {
             .into_iter()
             .map(|s| {
                 if s.len() == num_rows {
+                    println!("same");
                     Ok(s)
                 } else {
                     s.broadcast(num_rows)
@@ -47,10 +48,15 @@ impl Table {
             columns: columns?,
         })
     }
+
     pub fn from_columns(columns: Vec<Series>) -> DaftResult<Self> {
         let fields = columns.iter().map(|s| s.field().clone()).collect();
         let schema = Schema::new(fields);
         Table::new(schema, columns)
+    }
+
+    pub fn num_columns(&self) -> usize {
+        self.columns.len()
     }
 
     //pub fn head(&self, num: usize) -> DaftResult<Table>;
@@ -61,9 +67,13 @@ impl Table {
     //pub fn take(&self, idx: &Series) -> DaftResult<Table>;
     //pub fn concat(tables: &[&Table]) -> DaftResult<Table>;
 
-    fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<Series> {
+    pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<Series> {
         let i = self.schema.get_index(name.as_ref())?;
         Ok(self.columns.get(i).unwrap().clone())
+    }
+
+    pub fn get_column_by_index(&self, idx: usize) -> DaftResult<Series> {
+        Ok(self.columns.get(idx).unwrap().clone())
     }
 
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
