@@ -34,7 +34,7 @@ pub fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
 }
 
 pub fn record_batches_to_table(batches: &[&PyAny]) -> PyResult<Table> {
-    if batches.len() == 0 {
+    if batches.is_empty() {
         return Err(PyValueError::new_err(
             "received an empty list of arrow record batches. Can not infer a schema.",
         ));

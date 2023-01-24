@@ -1,5 +1,3 @@
-use arrow2::array;
-
 use crate::{
     array::{BaseArray, DataArray},
     datatypes::{DaftNumericType, Utf8Array},
@@ -18,13 +16,12 @@ where
             )));
         }
         let val = self.downcast().iter().next().unwrap();
-        if val.is_none() {
-            return Ok(DataArray::full_null(self.name(), num));
-        } else {
-            let val = *val.unwrap();
+        if let Some(v) = val {
             let repeated_values: Vec<<T as DaftNumericType>::Native> =
-                std::iter::repeat(val).take(num).collect();
+                std::iter::repeat(*v).take(num).collect();
             return Ok(DataArray::from((self.name(), repeated_values.as_slice())));
+        } else {
+            return Ok(DataArray::full_null(self.name(), num));
         }
     }
 }
@@ -38,12 +35,11 @@ impl Utf8Array {
             )));
         }
         let val = self.downcast().iter().next().unwrap();
-        if val.is_none() {
-            return Ok(DataArray::full_null(self.name(), num));
-        } else {
-            let val = val.unwrap();
-            let repeated_values: Vec<&str> = std::iter::repeat(val).take(num).collect();
+        if let Some(s) = val {
+            let repeated_values: Vec<&str> = std::iter::repeat(s).take(num).collect();
             return Ok(DataArray::from((self.name(), repeated_values.as_slice())));
+        } else {
+            return Ok(DataArray::full_null(self.name(), num));
         }
     }
 }

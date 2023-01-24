@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::datatypes::{
-    BooleanArray, DaftDataType, DaftNumericType, DataType, Field, NullArray, Utf8Array, Utf8Type,
+    BooleanArray, DaftDataType, DaftNumericType, DataType, Field, Utf8Array, Utf8Type,
 };
 
 use crate::array::DataArray;

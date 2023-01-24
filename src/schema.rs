@@ -1,5 +1,5 @@
 use std::{
-    fmt::{Display, Formatter, Result, Write},
+    fmt::{Display, Formatter, Result},
     sync::Arc,
 };
 
@@ -9,8 +9,6 @@ use crate::{
     datatypes::Field,
     error::{DaftError, DaftResult},
 };
-
-use prettytable;
 
 type SchemaRef = Arc<Schema>;
 
@@ -60,6 +58,6 @@ impl Display for Schema {
             .map(|(name, field)| format!("{}\n{:?}", name, field.dtype))
             .collect();
         table.add_row(header);
-        write!(f, "{}", table.to_string())
+        write!(f, "{}", table)
     }
 }
