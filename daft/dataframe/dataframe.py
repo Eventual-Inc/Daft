@@ -1101,7 +1101,9 @@ class DataFrame:
         context = get_context()
         if self._result is None:
             self._result_cache = context.runner().run(self._plan)
-            assert self._result is not None
+            result = self._result
+            assert result is not None
+            result.wait()
 
     @DataframePublicAPI
     def collect(self, num_preview_rows: int | None = 10) -> DataFrame:
