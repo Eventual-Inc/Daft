@@ -102,10 +102,11 @@ We suggest materializing DataFrames using ``.collect()`` when they contain expen
 
 .. code:: python
 
-    df = df.with_column("A", df["A"].apply(expensive_function)).sort("A")  # expensive function call followed by a sort
+    df = df.with_column("A", df["A"].apply(expensive_function))  # expensive function
+    df = df.sort("A")  # expensive sort
     df.collect()  # materialize the DataFrame
 
-    # All subsequent work on df avoids recomputing it
+    # All subsequent work on df avoids recomputing previous steps
     df.sum().show()
     df.mean().show()
     df.with_column("try_this", df["A"] + 1).show(5)
@@ -121,7 +122,7 @@ Schemas and Types
 
 Notice also that when we printed our DataFrame, Daft displayed its **schema**. Each column of your DataFrame has a **name** and a **type**, and that all data in that column will adhere to that type!
 
-Additionally, Daft can display your DataFrame's schema without materializing it. Under the hood, it performs intelligent sampling of your data to determine the appropriate schema, and if you make any modifications to your DataFrame it can infer the resulting types based on the operation that you provided.
+Daft can display your DataFrame's schema without materializing it. Under the hood, it performs intelligent sampling of your data to determine the appropriate schema, and if you make any modifications to your DataFrame it can infer the resulting types based on the operation.
 
 The following is a list of Daft types and a short explanation of the types.
 
@@ -200,11 +201,11 @@ The world of Daft contains much more than just numbers, and you can do much more
 
 We are also constantly looking to improve Daft and add more Expression functionality. Please contribute to the project with your ideas and code if you have an Expression in mind!
 
-For a deeper dive into Expressions, skip to: :doc:`data-processing-with-expressions`.
+The next section on :doc:`data-processing-with-expressions` will provide a much deeper look at the Expressions that Daft provides.
 
 What now?
 ---------
 
 This introduction covered the bare basics of interacting with Daft. The rest of the user guide will build on these basics and show you the features which really make Daft shine!
 
-We suggest reading in detail the :doc:`data-processing-with-expressions` section for a good grasp on Expressions, but other sections of the guide can be read in order of necessity.
+We suggest reading in detail the next section on :doc:`data-processing-with-expressions`, but other sections of the guide can be read in order of necessity.

@@ -68,4 +68,16 @@ To learn more, consult the API documentation on :ref:`DataFrame construction fro
 Writing Data
 ------------
 
-:ref:`df.write_*(...) <df-write-data>`: execute dataframe and write results in a file format such as Parquet or CSV.
+The :ref:`df.write_*(...) <df-write-data>` methods are used to write DataFrames to files or other destinations.
+
+.. code:: python
+
+    # Write to various file formats in a local folder
+    df.write_csv("path/to/folder/")
+    df.write_parquet("path/to/folder/")
+    df.write_json("path/to/folder/")
+
+    # Write DataFrame to a remote filesystem such as AWS S3
+    df.write_csv("s3://mybucket/path/")
+
+Note that because Daft is a distributed DataFrame library, by default it will produce multiple files (one per partition) at your specified destination.

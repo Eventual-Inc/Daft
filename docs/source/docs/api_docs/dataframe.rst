@@ -98,6 +98,8 @@ Combining
 
     daft.DataFrame.join
 
+.. _df-aggregations:
+
 Aggregations
 ************
 
