@@ -50,14 +50,14 @@ where
         (_, 1) => {
             let opt_rhs = rhs.get(0);
             match opt_rhs {
-                None => DataArray::full_null(lhs.len()),
+                None => DataArray::full_null(lhs.name(), lhs.len()),
                 Some(rhs) => lhs.apply(|lhs| operation(lhs, rhs)),
             }
         }
         (1, _) => {
             let opt_lhs = lhs.get(0);
             match opt_lhs {
-                None => DataArray::full_null(rhs.len()),
+                None => DataArray::full_null(rhs.name(), rhs.len()),
                 Some(lhs) => rhs.apply(|rhs| operation(lhs, rhs)),
             }
         }

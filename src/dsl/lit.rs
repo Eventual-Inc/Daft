@@ -67,7 +67,7 @@ impl LiteralValue {
         use crate::datatypes::*;
         use LiteralValue::*;
         let result = match self {
-            Null => NullArray::full_null(1).into_series(),
+            Null => NullArray::full_null("lit", 1).into_series(),
             Boolean(val) => BooleanArray::from(("lit", [*val].as_slice())).into_series(),
             Utf8(val) => Utf8Array::from(("lit", [val.as_str()].as_slice())).into_series(),
             Binary(_val) => panic!("Binary not supported yey"),
