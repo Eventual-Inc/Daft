@@ -1,5 +1,5 @@
-Data Manipulations with Expressions
-===================================
+Expressions
+===========
 
 Expressions are how you can express computations that should be run over columns of data.
 

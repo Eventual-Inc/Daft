@@ -1,11 +1,26 @@
 User Guide
 ==========
 
-This User Guide covers all of Daft.
+Welcome to the Daft Dataframe.
 
-Users looking for a quick 10-minute rundown of common Daft methods/patterns should read the `10 minutes to Daft <10-min>`_ guide.
+This guide covers Daft in depth, containing both introductions to important concepts as well as examples of Daft usage in practice. It is meant to be read in the order presented, but users should also consult sections of the guide that are most relevant to their current needs.
 
-Information about specific methods can be found in the `API reference <../api_docs>`_.
+Daft in 100 words
+-----------------
+
+Daft is a Python dataframe library. A dataframe is just a table consisting of rows and columns.
+
+* **It is fast** - Daft kernels are written and accelerated using Rust on Apache Arrow arrays.
+
+* **It is flexible** - you can work with any Python object in a Daft Dataframe.
+
+* **It is interactive** - Daft provides a first-class notebook experience.
+
+* **It is scalable** - Daft uses out-of-core algorithms to work with datasets that cannot fit in memory.
+
+* **It is distributed** - Daft scales to a cluster of machines using Ray to crunch terabytes of data.
+
+* **It is intelligent** - Daft performs query optimizations to speed up your work.
 
 .. toctree::
     :maxdepth: 1
@@ -13,16 +28,10 @@ Information about specific methods can be found in the `API reference <../api_do
     user_guides/intro-dataframes
     user_guides/read-write
     user_guides/data-processing-with-expressions
-    .. filtering, sorting, joins
     user_guides/dataframe-operations
-    user_guides/missing-data
     user_guides/aggregations
-    user_guides/python-types
+    .. user_guides/missing-data
+    .. user_guides/python-columns
     user_guides/user-defined-functions
     user_guides/scaling-up
-
-    .. user_guides/dataframes
-    .. user_guides/expressions
-    .. user_guides/udf
-    .. user_guides/types_and_ops
-    .. user_guides/remote_cluster_execution
+    .. user_guides/retrieving-data

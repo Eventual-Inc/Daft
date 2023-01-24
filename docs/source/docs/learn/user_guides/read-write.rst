@@ -1,5 +1,5 @@
-Loading and Storing DataFrames
-==============================
+Reading/Writing
+===============
 
 Daft can read data from a variety of sources, and write data to many destinations.
 
@@ -35,11 +35,11 @@ To learn more about each of these constructors, as well as the options that they
 From Filepaths
 ^^^^^^^^^^^^^^
 
-However, if instead you are reading a set of files that are not container file formats, you can use the ``DataFrame.from_files`` method which will read a DataFrame of globbed filepaths.
+However, if instead you are reading a set of files that are not container file formats, you can use the ``DataFrame.from_glob_path`` method which will read a DataFrame of globbed filepaths.
 
 .. code:: python
 
-    df = DataFrame.from_files("s3://mybucket/path/to/images/*.jpeg")
+    df = DataFrame.from_glob_path("s3://mybucket/path/to/images/*.jpeg")
 
     # +----------+------+-----+
     # | name     | size | ... |
@@ -64,3 +64,8 @@ For testing, or small datasets that fit in memory, you may also create DataFrame
     df = DataFrame.from_pylist([{"A": 1, "B": "foo"}, {"A": 2, "B": "bar"}, {"A": 3, "B": "baz"}])
 
 To learn more, consult the API documentation on :ref:`DataFrame construction from in-memory datastructures <df-memory-construction-api>`.
+
+Writing Data
+------------
+
+:ref:`df.write_*(...) <df-write-data>`: execute dataframe and write results in a file format such as Parquet or CSV.
