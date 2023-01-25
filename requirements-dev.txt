@@ -33,6 +33,7 @@ s3fs
 
 Sphinx <= 5
 sphinx-book-theme>=0.3.3
+sphinx-reredirects>=0.1.1
 uvicorn
 viztracer
 xxhash>=3.0.0

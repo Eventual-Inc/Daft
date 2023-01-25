@@ -7,6 +7,16 @@ Daft is a **fast and scalable Python dataframe** for Complex Data and Machine Le
 
    *Daft is currently in its Alpha release phase - please expect bugs and rapid improvements to the project. We welcome user feedback/feature requests in our* `Discussions forums <https://github.com/Eventual-Inc/Daft/discussions>`_.
 
+Installing Daft
+---------------
+
+To install Daft, run this from your terminal:
+
+``pip install getdaft``
+
+Learn about other more advanced installation options in our `Installation Guide <install>`_.
+
+
 Learning Daft
 -------------
 
@@ -35,6 +45,7 @@ Evaluating Daft for a new project or system? Read more about why you should choo
    :hidden:
    :maxdepth: 1
 
+   install
    learn/index
    api_docs/index
    release_notes/index

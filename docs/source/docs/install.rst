@@ -17,11 +17,19 @@ To install Daft with all extras, run:
 
 ``pip install getdaft[all]``
 
-Installing Daft from source
----------------------------
+Advanced Installation
+---------------------
 
-If you wish to use Daft at the bleeding edge of development, you may also install Daft from source on the ``main`` branch with:
+Installing Nightlies
+^^^^^^^^^^^^^^^^^^^^
+
+If you wish to use Daft at the bleeding edge of development, you may also install the nightly build of Daft which is built every night against the ``main`` branch:
+
+``pip install getdaft --pre --extra-index-url https://pypi.anaconda.org/daft-nightly/simple``
+
+Installing Daft from source
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ``pip install https://github.com/Eventual-Inc/Daft/archive/refs/heads/main.zip``
 
-Installing this way will grant you access to all the new features of Daft as they are merged in, but these changes will not have been tested as rigorously as those from an official release.
+Please note that Daft requires the Rust toolchain in order to build from source.

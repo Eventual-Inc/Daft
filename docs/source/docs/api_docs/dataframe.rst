@@ -16,6 +16,8 @@ DataFrame
 Construction
 ############
 
+.. _df-construction:
+
 From Files
 **********
 
@@ -32,6 +34,8 @@ From Files
 
 From In-Memory Data
 *******************
+
+.. _df-memory-construction-api:
 
 .. autosummary::
     :nosignatures:
@@ -98,6 +102,8 @@ Combining
 
     daft.DataFrame.join
 
+.. _df-aggregations:
+
 Aggregations
 ************
 
@@ -148,6 +154,8 @@ Visualization
 
 Writing Data
 ************
+
+.. _df-writing-data:
 
 .. autosummary::
     :nosignatures:

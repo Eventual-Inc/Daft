@@ -1,0 +1,83 @@
+Reading/Writing
+===============
+
+Daft can read data from a variety of sources, and write data to many destinations.
+
+Reading Data
+------------
+
+From Files
+^^^^^^^^^^
+
+DataFrames can be loaded from file(s) on some filesystem, commonly your local filesystem or a remote cloud object store such as AWS S3.
+
+Additionally, Daft can read data from a variety of container file formats, including CSV, line-delimited JSON and Parquet.
+
+Daft supports file paths to a single file, a directory of files, and wildcards. It also supports paths to remote object storage such as AWS S3.
+
+.. code:: python
+
+    # You can read a single CSV file from your local filesystem
+    df = DataFrame.read_csv("path/to/file.csv")
+
+    # You can also read folders of CSV files, or include wildcards to select for patterns of file paths
+    df = DataFrame.read_csv("path/to/*.csv")
+
+    # Other formats such as parquet and line-delimited JSON are also supported
+    df = DataFrame.read_parquet("path/to/*.parquet")
+    df = DataFrame.read_json("path/to/*.json")
+
+    # Remote filesystems such as AWS S3 are also supported, and can be specified with their protocols
+    df = DataFrame.read_csv("s3://mybucket/path/to/*.csv")
+
+To learn more about each of these constructors, as well as the options that they support, consult the API documentation on :ref:`DataFrame construction from files <df-file-construction-api>`.
+
+From Filepaths
+^^^^^^^^^^^^^^
+
+However, if instead you are reading a set of files that are not container file formats, you can use the ``DataFrame.from_glob_path`` method which will read a DataFrame of globbed filepaths.
+
+.. code:: python
+
+    df = DataFrame.from_glob_path("s3://mybucket/path/to/images/*.jpeg")
+
+    # +----------+------+-----+
+    # | name     | size | ... |
+    # +----------+------+-----+
+    #   ...
+
+
+This is especially useful for reading things such as a folder of images or documents into Daft. A common pattern is to then download data from these files into your DataFrame as bytes, using the ``Expression.url.download()`` method.
+
+
+From Memory
+^^^^^^^^^^^
+
+For testing, or small datasets that fit in memory, you may also create DataFrames using Python lists and dictionaries.
+
+.. code:: python
+
+    # Create DataFrame using a dictionary of {column_name: list_of_values}
+    df = DataFrame.from_pydict({"A": [1, 2, 3], "B": ["foo", "bar", "baz"]})
+
+    # Create DataFrame using a list of rows, where each row is a dictionary of {column_name: value}
+    df = DataFrame.from_pylist([{"A": 1, "B": "foo"}, {"A": 2, "B": "bar"}, {"A": 3, "B": "baz"}])
+
+To learn more, consult the API documentation on :ref:`DataFrame construction from in-memory datastructures <df-memory-construction-api>`.
+
+Writing Data
+------------
+
+The :ref:`df.write_*(...) <df-write-data>` methods are used to write DataFrames to files or other destinations.
+
+.. code:: python
+
+    # Write to various file formats in a local folder
+    df.write_csv("path/to/folder/")
+    df.write_parquet("path/to/folder/")
+    df.write_json("path/to/folder/")
+
+    # Write DataFrame to a remote filesystem such as AWS S3
+    df.write_csv("s3://mybucket/path/")
+
+Note that because Daft is a distributed DataFrame library, by default it will produce multiple files (one per partition) at your specified destination.

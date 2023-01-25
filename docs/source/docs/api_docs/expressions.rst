@@ -23,6 +23,8 @@ Expression Constructors
 Operators
 #########
 
+.. _api-numeric-expression-operations:
+
 Numeric
 *******
 
@@ -56,6 +58,8 @@ Operations on logical expressions (True/False booleans)
     daft.expressions.Expression.__or__
     daft.expressions.Expression.if_else
 
+.. _api-comparison-expression:
+
 Comparisons
 ***********
 
@@ -73,6 +77,8 @@ Comparing expressions and values, returning a logical expression
     daft.expressions.Expression.is_null
 
 .. _expression-accessor-properties:
+
+.. _api-string-expression-operations:
 
 Strings
 *******

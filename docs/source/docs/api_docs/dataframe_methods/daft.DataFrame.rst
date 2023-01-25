@@ -5,14 +5,14 @@
 
 .. autoclass:: DataFrame
 
-
+   
    .. automethod:: __init__
 
-
+   
    .. rubric:: Methods
 
    .. autosummary::
-
+   
       ~DataFrame.__init__
       ~DataFrame.agg
       ~DataFrame.collect
@@ -52,14 +52,16 @@
       ~DataFrame.with_column
       ~DataFrame.write_csv
       ~DataFrame.write_parquet
+   
+   
 
-
-
-
-
+   
+   
    .. rubric:: Attributes
 
    .. autosummary::
-
+   
       ~DataFrame.column_names
       ~DataFrame.columns
+   
+   
