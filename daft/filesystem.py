@@ -8,6 +8,8 @@ if sys.version_info < (3, 8):
 else:
     from typing import Literal
 
+from typing import Any
+
 from fsspec import AbstractFileSystem, get_filesystem_class
 from loguru import logger
 
@@ -19,8 +21,43 @@ class ListingInfo:
     type: Literal["file"] | Literal["directory"]
 
 
+def _get_s3fs_kwargs() -> dict[str, Any]:
+    """Get keyword arguments to forward to s3fs during construction"""
+
+    try:
+        import botocore.session
+    except ImportError:
+        logger.error(
+            "Error when importing botocore. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://getdaft.io/docs/learn/install.html)"
+        )
+        raise
+
+    kwargs = {}
+
+    # If accessing S3 without credentials, use anonymous access: https://github.com/Eventual-Inc/Daft/issues/503
+    credentials_available = botocore.session.get_session().get_credentials() is not None
+    if not credentials_available:
+        logger.warning(
+            "AWS credentials not found - using anonymous access to S3 which will fail if the bucket you are accessing is not a public bucket. See boto3 documentation for more details on configuring your AWS credentials: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html"
+        )
+        kwargs["anon"] = True
+
+    return kwargs
+
+
 def get_filesystem(protocol: str, **kwargs) -> AbstractFileSystem:
-    klass = get_filesystem_class(protocol)
+
+    if protocol == "s3" or protocol == "s3a":
+        kwargs = {**kwargs, **_get_s3fs_kwargs()}
+
+    try:
+        klass = get_filesystem_class(protocol)
+    except ImportError:
+        logger.error(
+            f"Error when importing dependencies for accessing data with: {protocol}. Please ensure that getdaft was installed with the appropriate extra dependencies (https://getdaft.io/docs/learn/install.html)"
+        )
+        raise
+
     fs = klass(**kwargs)
     return fs
 
@@ -34,32 +71,13 @@ def get_protocol_from_path(path: str, **kwargs) -> str:
 
 def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
     protocol = get_protocol_from_path(path)
-
-    # If accessing S3 without credentials, use anonymous access: https://github.com/Eventual-Inc/Daft/issues/503
-    if protocol == "s3" or protocol == "s3a":
-        try:
-            import botocore.session
-        except ImportError:
-            logger.error(
-                "Error when importing botocore. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://getdaft.io/docs/learn/install.html)"
-            )
-            raise
-
-        credentials_available = botocore.session.get_session().get_credentials() is not None
-        if not credentials_available:
-            logger.warning(
-                "AWS credentials not found - using anonymous access to S3 which will fail if the bucket you are accessing is not a public bucket. See boto3 documentation for more details on configuring your AWS credentials: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html"
-            )
-            kwargs["anon"] = True
-
-    try:
-        fs = get_filesystem(protocol, **kwargs)
-    except ImportError:
-        logger.error(
-            f"Error when importing dependencies for accessing data with: {protocol}. Please ensure that getdaft was installed with the appropriate extra dependencies (https://getdaft.io/docs/learn/install.html)"
-        )
-        raise
+    fs = get_filesystem(protocol, **kwargs)
     return fs
+
+
+###
+# File globbing
+###
 
 
 def _fix_returned_path(protocol: str, returned_path: str) -> str:
@@ -74,6 +92,7 @@ def _path_is_glob(path: str) -> bool:
 
 
 def glob_path(path: str) -> list[str]:
+    """Glob a path, returning a list of paths. Returned paths will have their protocol prefixes."""
     fs = get_filesystem_from_path(path)
     protocol = get_protocol_from_path(path)
 
@@ -90,6 +109,7 @@ def glob_path(path: str) -> list[str]:
 
 
 def glob_path_with_stats(path: str) -> list[ListingInfo]:
+    """Glob a path, returning a list ListingInfo."""
     fs = get_filesystem_from_path(path)
     protocol = get_protocol_from_path(path)
 
