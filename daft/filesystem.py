@@ -38,7 +38,7 @@ def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
     # If accessing S3 without credentials, use anonymous access: https://github.com/Eventual-Inc/Daft/issues/503
     if protocol == "s3" or protocol == "s3a":
         try:
-            import botocore
+            import botocore.session
         except ImportError:
             logger.error(
                 "Error when importing botocore. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://getdaft.io/docs/learn/install.html)"
