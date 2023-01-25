@@ -4,10 +4,6 @@ use crate::{
     array::BaseArray, error::DaftResult, series::Series, utils::supertype::try_get_supertype,
 };
 
-// pub fn dispatch_binary_op(lhs: &dyn BaseArray, rhs: &dyn BaseArray, func) -> Series {
-
-// }
-
 fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)> {
     let mut lhs = l.clone();
     let mut rhs = r.clone();

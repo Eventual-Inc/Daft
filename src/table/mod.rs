@@ -35,7 +35,6 @@ impl Table {
             .into_iter()
             .map(|s| {
                 if s.len() == num_rows {
-                    println!("same");
                     Ok(s)
                 } else {
                     s.broadcast(num_rows)

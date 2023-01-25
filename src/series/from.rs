@@ -1,5 +1,6 @@
 use crate::{
-    datatypes::{DataType, Field},
+    array::DataArray,
+    datatypes::{DaftNumericType, DataType, Field},
     error::{DaftError, DaftResult},
     with_match_arrow_daft_types,
 };
