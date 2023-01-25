@@ -436,7 +436,6 @@ def remote_run_plan(plan: logical_plan.LogicalPlan, psets: dict[str, ray.ObjectR
     # Keep in mind this call takes about 0.3ms.
     parallelism = 2 * int(ray.cluster_resources()["CPU"])
 
-    tasks_to_dispatch = []
     inflight_tasks: dict[str, MaterializationRequestBase[ray.ObjectRef]] = dict()
     inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
 
@@ -485,25 +484,16 @@ def remote_run_plan(plan: logical_plan.LogicalPlan, psets: dict[str, ray.ObjectR
                     if next_step is None:
                         break
 
-                    tasks_to_dispatch.append(next_step)
+                    logger.debug(f"{(datetime.now() - start).total_seconds()}s: " f"DynamicRayRunner dispatching task:")
+                    results = _build_partitions(next_step)
+                    logger.debug(f"{next_step} -> {results}")
+                    inflight_tasks[next_step.id()] = next_step
+                    for result in results:
+                        inflight_ref_to_task[result] = next_step.id()
 
             except StopIteration as e:
                 result_partitions = e.value
                 return result_partitions
-
-            # Dispatch the batch of tasks.
-            logger.debug(
-                f"{(datetime.now() - start).total_seconds()}s: "
-                f"DynamicRayRunner dispatching batch of {len(tasks_to_dispatch)} tasks."
-            )
-            for task in tasks_to_dispatch:
-                results = _build_partitions(task)
-                logger.debug(f"{task} -> {results}")
-                inflight_tasks[task.id()] = task
-                for result in results:
-                    inflight_ref_to_task[result] = task.id()
-
-            tasks_to_dispatch.clear()
 
     return result_partitions  # for mypy only
 
