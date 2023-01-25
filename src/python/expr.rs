@@ -14,7 +14,7 @@ pub fn col(name: &str) -> PyResult<PyExpr> {
 #[pyfunction]
 pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
     if let Ok(true) = item.is_instance_of::<PyBool>() {
-        let val = item.extract::<bool>().unwrap();
+        let val = item.extract::<bool>()?;
         Ok(dsl::lit(val).into())
     } else if let Ok(int) = item.downcast::<PyInt>() {
         match int.extract::<i64>() {
@@ -26,12 +26,12 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
                 }
             }
             _ => {
-                let val = int.extract::<u64>().unwrap();
+                let val = int.extract::<u64>()?;
                 Ok(dsl::lit(val).into())
             }
         }
     } else if let Ok(float) = item.downcast::<PyFloat>() {
-        let val = float.extract::<f64>().unwrap();
+        let val = float.extract::<f64>()?;
         Ok(dsl::lit(val).into())
     } else if let Ok(pystr) = item.downcast::<PyString>() {
         Ok(dsl::lit(

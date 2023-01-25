@@ -17,8 +17,7 @@ impl PyTable {
         let converted_exprs: Vec<dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
         Ok(self
             .table
-            .eval_expression_list(converted_exprs.as_slice())
-            .unwrap()
+            .eval_expression_list(converted_exprs.as_slice())?
             .into())
     }
 
