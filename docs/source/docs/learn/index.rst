@@ -25,4 +25,3 @@ Our :doc:`tutorials` section provides notebooks that showcase Daft being used ac
     10-min
     user_guides
     tutorials
-    quickstart

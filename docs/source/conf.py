@@ -57,6 +57,7 @@ redirects = {
     "docs/learn/user_guides/dataframes": "intro-dataframes.html",
     "docs/learn/user_guides/types_and_ops": "intro-dataframes.html",
     "docs/learn/user_guides/remote_cluster_execution": "scaling-up.html",
+    "docs/learn/quickstart": "docs/learn/10-min.html",
 }
 
 # Resolving code links to github
