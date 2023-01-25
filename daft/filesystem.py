@@ -38,14 +38,14 @@ def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
     # If accessing S3 without credentials, use anonymous access: https://github.com/Eventual-Inc/Daft/issues/503
     if protocol == "s3" or protocol == "s3a":
         try:
-            import boto3
+            import botocore
         except ImportError:
             logger.error(
-                "Error when importing boto3. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://getdaft.io/docs/learn/install.html)"
+                "Error when importing botocore. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://getdaft.io/docs/learn/install.html)"
             )
             raise
 
-        credentials_available = boto3.session.Session().get_credentials() is not None
+        credentials_available = botocore.session.get_session().get_credentials() is not None
         if not credentials_available:
             logger.warning(
                 "AWS credentials not found - using anonymous access to S3 which will fail if the bucket you are accessing is not a public bucket. See boto3 documentation for more details on configuring your AWS credentials: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html"
