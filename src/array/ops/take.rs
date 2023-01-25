@@ -1,6 +1,9 @@
+use std::borrow::Cow;
+
 use crate::{
     array::DataArray,
     datatypes::{DaftNumericType, Utf8Array},
+    error::DaftResult,
 };
 
 impl<T> DataArray<T>
@@ -23,6 +26,14 @@ where
             None
         }
     }
+
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => Ok(v.to_string()),
+        }
+    }
 }
 
 impl Utf8Array {
@@ -40,6 +51,14 @@ impl Utf8Array {
             Some(unsafe { arrow_array.value_unchecked(idx) })
         } else {
             None
+        }
+    }
+
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => Ok(format!("\"{}\"", v)),
         }
     }
 }

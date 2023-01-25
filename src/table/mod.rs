@@ -57,7 +57,13 @@ impl Table {
     pub fn num_columns(&self) -> usize {
         self.columns.len()
     }
-
+    pub fn len(&self) -> usize {
+        if self.num_columns() == 0 {
+            return 0;
+        } else {
+            self.get_column_by_index(0).unwrap().len()
+        }
+    }
     //pub fn head(&self, num: usize) -> DaftResult<Table>;
     //pub fn sample(&self, num: usize) -> DaftResult<Table>;
     //pub fn filter(&self, predicate: &[&Expr]) -> DaftResult<Table>;
@@ -114,7 +120,54 @@ impl Table {
 impl Display for Table {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{}", self.schema)
+        let mut table = prettytable::Table::new();
+        let header = self
+            .schema
+            .fields
+            .iter()
+            .map(|(name, field)| {
+                prettytable::Cell::new(format!("{}\n{:?}", name, field.dtype).as_str())
+                    .with_style(prettytable::Attr::Bold)
+            })
+            .collect();
+        table.add_row(header);
+
+        let head_rows;
+        let tail_rows;
+
+        if self.len() > 10 {
+            head_rows = 5;
+            tail_rows = 5;
+        } else {
+            head_rows = self.len();
+            tail_rows = 0;
+        }
+
+        for i in 0..head_rows {
+            let row = self
+                .columns
+                .iter()
+                .map(|s| s.str_value(i))
+                .collect::<DaftResult<Vec<String>>>()
+                .unwrap();
+            table.add_row(row.into());
+        }
+        if tail_rows != 0 {
+            let row: prettytable::Row = (0..self.num_columns()).map(|_| "...").collect();
+            table.add_row(row.into());
+        }
+
+        for i in 0..tail_rows {
+            let row = self
+                .columns
+                .iter()
+                .map(|s| s.str_value(self.len() - i - 1))
+                .collect::<DaftResult<Vec<String>>>()
+                .unwrap();
+            table.add_row(row.into());
+        }
+
+        write!(f, "{}", table.to_string())
     }
 }
 

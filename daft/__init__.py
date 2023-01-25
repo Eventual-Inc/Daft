@@ -31,7 +31,7 @@ def get_build_type() -> str:
 __version__ = get_version()
 
 if TYPE_CHECKING:
-
+    # Placeholder for type checking for Rust module
     class daft:
         pass
 
