@@ -1,6 +1,12 @@
+[dependencies]
+prettytable-rs = "^0.10"
+
 [dependencies.arrow2]
 features = ["compute"]
 version = "0.14.2"
+
+[dependencies.bincode]
+version = "1.3.3"
 
 [dependencies.indexmap]
 version = "1.9.2"
@@ -11,6 +17,10 @@ version = "0.2"
 [dependencies.pyo3]
 features = ["extension-module", "abi3-py37"]
 version = "0.17.3"
+
+[dependencies.serde]
+features = ["derive", "rc"]
+version = "1.0.152"
 
 [dependencies.xxhash-rust]
 features = ["xxh3", "const_xxh3"]

@@ -8,9 +8,9 @@ pub struct Field {
 }
 
 impl Field {
-    pub fn new(name: &str, dtype: DataType) -> Self {
+    pub fn new<S: Into<String>>(name: S, dtype: DataType) -> Self {
         Field {
-            name: name.to_string(),
+            name: name.into(),
             dtype,
         }
     }
@@ -20,6 +20,9 @@ impl Field {
             self.dtype.to_arrow()?,
             true,
         ))
+    }
+    pub fn rename<S: Into<String>>(&self, name: S) -> Self {
+        Field::new(name, self.dtype.clone())
     }
 }
 

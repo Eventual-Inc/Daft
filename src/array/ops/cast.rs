@@ -1,7 +1,7 @@
 use arrow2::compute::cast::{can_cast_types, cast, CastOptions};
 
 use crate::{
-    array::data_array::{BaseArray, DataArray},
+    array::{BaseArray, DataArray},
     datatypes::{DaftDataType, DataType},
     error::{DaftError, DaftResult},
     series::Series,
@@ -46,7 +46,9 @@ where
 {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         if self.data_type().eq(dtype) {
-            return Ok(DataArray::<T>::from(self.data().to_boxed()).into_series());
+            return Ok(
+                DataArray::<T>::try_from((self.name(), self.data().to_boxed()))?.into_series(),
+            );
         }
 
         let _arrow_type = dtype.to_arrow();
@@ -77,15 +79,9 @@ where
                 partial: false,
             },
         )?;
-        println!(
-            "dtype {:?} vs T: {:?} vs {:?}",
-            result_array.data_type(),
-            target_arrow_type,
-            dtype
-        );
 
         Ok(
-            with_match_arrow_daft_types!(dtype, |$T| DataArray::<$T>::from(result_array).into_series()),
+            with_match_arrow_daft_types!(dtype, |$T| DataArray::<$T>::try_from((self.name(), result_array))?.into_series()),
         )
     }
 }

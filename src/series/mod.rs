@@ -1,7 +1,12 @@
+mod from;
 mod ops;
+
 use std::sync::Arc;
 
-use crate::{array::data_array::BaseArray, datatypes::DataType};
+use crate::{
+    array::BaseArray,
+    datatypes::{DataType, Field},
+};
 
 #[derive(Debug, Clone)]
 pub struct Series {
@@ -23,6 +28,14 @@ impl Series {
 
     pub fn name(&self) -> &str {
         self.data_array.name()
+    }
+
+    pub fn len(&self) -> usize {
+        self.data_array.len()
+    }
+
+    pub fn field(&self) -> &Field {
+        self.data_array.field()
     }
 }
 
