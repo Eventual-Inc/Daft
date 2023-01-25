@@ -33,3 +33,25 @@ impl_expr_op!(Sub, sub, Minus);
 impl_expr_op!(Mul, mul, Multiply);
 impl_expr_op!(Div, div, Divide);
 impl_expr_op!(Rem, rem, Modulus);
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        dsl::{col, Expr},
+        error::{DaftError, DaftResult},
+    };
+
+    #[test]
+    fn check_add_expr_type() -> DaftResult<()> {
+        let a = col("a");
+        let b = col("b");
+        let c = a + b;
+        match c {
+            Expr::BinaryOp { .. } => Ok(()),
+            other => Err(DaftError::ValueError(format!(
+                "expected expression to be a binary op expression, got {:?}",
+                other
+            ))),
+        }
+    }
+}

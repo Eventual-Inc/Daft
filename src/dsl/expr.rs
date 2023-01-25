@@ -186,6 +186,18 @@ mod tests {
         Ok(())
     }
 
+    fn check_alias_type() -> DaftResult<()> {
+        let a = col("a");
+        let b = a.alias("b");
+        match b {
+            Expr::Alias(..) => Ok(()),
+            other => Err(crate::error::DaftError::ValueError(format!(
+                "expected expression to be a alias, got {:?}",
+                other
+            ))),
+        }
+    }
+
     #[test]
     fn check_arithmetic_type() -> DaftResult<()> {
         let x = lit(10.);
