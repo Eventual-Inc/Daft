@@ -61,6 +61,9 @@ jobs:
         source activate
         maturin develop
 
+    - name: Test rust tests
+      run: cargo test
+
     - name: Clone TPCH SQlite repository
       uses: actions/checkout@v2
       with:
