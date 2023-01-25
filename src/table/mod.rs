@@ -59,7 +59,7 @@ impl Table {
     }
     pub fn len(&self) -> usize {
         if self.num_columns() == 0 {
-            return 0;
+            0
         } else {
             self.get_column_by_index(0).unwrap().len()
         }
@@ -154,7 +154,7 @@ impl Display for Table {
         }
         if tail_rows != 0 {
             let row: prettytable::Row = (0..self.num_columns()).map(|_| "...").collect();
-            table.add_row(row.into());
+            table.add_row(row);
         }
 
         for i in 0..tail_rows {
@@ -167,7 +167,7 @@ impl Display for Table {
             table.add_row(row.into());
         }
 
-        write!(f, "{}", table.to_string())
+        write!(f, "{}", table)
     }
 }
 

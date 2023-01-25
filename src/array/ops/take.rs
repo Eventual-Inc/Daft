@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::{
     array::DataArray,
     datatypes::{DaftNumericType, Utf8Array},
