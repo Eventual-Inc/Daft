@@ -422,134 +422,140 @@ def get_meta(partition: vPartition) -> PartitionMetadata:
     return partition.metadata()
 
 
+@ray.remote
+def remote_run_plan(plan: logical_plan.LogicalPlan, psets: dict[str, ray.ObjectRef]) -> list[ray.ObjectRef]:
+
+    phys_plan: Iterator[
+        None | MaterializationRequestBase[vPartition]
+    ] = physical_plan_factory.get_materializing_physical_plan(plan, psets)
+
+    # Number of concurrent inflight tasks allowed.
+    # 2 * cores: one set running on the cores; another set already prescheduled.
+    #
+    # Note: For autoscaling clusters, we will probably want to query cores dynamically.
+    # Keep in mind this call takes about 0.3ms.
+    parallelism = 2 * int(ray.cluster_resources()["CPU"])
+
+    tasks_to_dispatch = []
+    inflight_tasks: dict[str, MaterializationRequestBase[ray.ObjectRef]] = dict()
+    inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
+
+    start = datetime.now()
+    plan_exhausted = False
+    profile_filename = (
+        f"profile_DynamicRayRunner.run()_"
+        f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
+    )
+    with profiler(profile_filename):
+        while not plan_exhausted:
+
+            # Await a single result.
+            if len(inflight_tasks) > 0:
+                dispatch = datetime.now()
+                [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
+                task_id = inflight_ref_to_task[ready]
+                logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
+
+                # Mark the entire task associated with the result as done.
+                task = inflight_tasks[task_id]
+                if isinstance(task, MaterializationRequest):
+                    del inflight_ref_to_task[ready]
+                elif isinstance(task, MaterializationRequestMulti):
+                    assert task.results is not None
+                    for result in task.results:
+                        del inflight_ref_to_task[result.partition()]
+
+                del inflight_tasks[task_id]
+
+            # Get the next batch of tasks to dispatch.
+            parallelism - len(inflight_tasks)
+            try:
+                # for i in range(parallelism_available):
+                while True:
+
+                    next_step = next(phys_plan)
+
+                    # If this task is a no-op, just run it locally immediately.
+                    while next_step is not None and len(next_step.instructions) == 0:
+                        assert isinstance(next_step, MaterializationRequest)
+                        [partition] = next_step.inputs
+                        next_step.result = RayMaterializationResult(partition)
+                        next_step = next(phys_plan)
+
+                    if next_step is None:
+                        break
+
+                    tasks_to_dispatch.append(next_step)
+
+            except StopIteration as e:
+                result_partitions = e.value
+                return result_partitions
+
+            # Dispatch the batch of tasks.
+            logger.debug(
+                f"{(datetime.now() - start).total_seconds()}s: "
+                f"DynamicRayRunner dispatching batch of {len(tasks_to_dispatch)} tasks."
+            )
+            for task in tasks_to_dispatch:
+                results = _build_partitions(task)
+                logger.debug(f"{task} -> {results}")
+                inflight_tasks[task.id()] = task
+                for result in results:
+                    inflight_ref_to_task[result] = task.id()
+
+            tasks_to_dispatch.clear()
+
+    return result_partitions  # for mypy only
+
+
+def _build_partitions(task: MaterializationRequestBase[ray.ObjectRef]) -> list[ray.ObjectRef]:
+    """Run a MaterializationRequest and return the resulting list of partitions."""
+    ray_options: dict[str, Any] = {
+        "num_returns": task.num_results,
+    }
+
+    if isinstance(task.instructions[0], ReduceInstruction):
+        build_remote = build_many_to_many if isinstance(task.instructions[-1], FanoutInstruction) else build_many_to_one
+    else:
+        build_remote = build_one_to_many if isinstance(task.instructions[-1], FanoutInstruction) else build_one_to_one
+
+    build_remote = build_remote.options(**ray_options)
+    partitions = build_remote.remote(task.instructions, *task.inputs)
+    # Handle ray bug that ignores list interpretation when num_returns=1
+    if task.num_results == 1:
+        partitions = [partitions]
+
+    if isinstance(task, MaterializationRequestMulti):
+        task.results = [RayMaterializationResult(partition) for partition in partitions]
+    elif isinstance(task, MaterializationRequest):
+        [partition] = partitions
+        task.result = RayMaterializationResult(partition)
+    else:
+        raise TypeError(f"Could not type match input {task}")
+
+    return partitions
+
+
 class DynamicRayRunner(RayRunner):
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
+        result_pset = RayPartitionSet({})
 
         plan = self.optimize(plan)
 
-        phys_plan: Iterator[
-            None | MaterializationRequestBase[vPartition]
-        ] = physical_plan_factory.get_materializing_physical_plan(plan)
-
-        # Number of concurrent inflight tasks allowed.
-        # 2 * cores: one set running on the cores; another set already prescheduled.
-        #
-        # Note: For autoscaling clusters, we will probably want to query cores dynamically.
-        # Keep in mind this call takes about 0.3ms.
-        parallelism = 2 * int(ray.cluster_resources()["CPU"])
-
-        tasks_to_dispatch = []
-        inflight_tasks: dict[str, MaterializationRequestBase[ray.ObjectRef]] = dict()
-        inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
-
-        start = datetime.now()
-        result_pset = RayPartitionSet({})
-        plan_exhausted = False
-        profile_filename = (
-            f"profile_DynamicRayRunner.run()_"
-            f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
-        )
-        with profiler(profile_filename):
-            while not plan_exhausted:
-
-                # Await a single result.
-                if len(inflight_tasks) > 0:
-                    dispatch = datetime.now()
-                    [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
-                    task_id = inflight_ref_to_task[ready]
-                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
-
-                    # Mark the entire task associated with the result as done.
-                    task = inflight_tasks[task_id]
-                    if isinstance(task, MaterializationRequest):
-                        del inflight_ref_to_task[ready]
-                    elif isinstance(task, MaterializationRequestMulti):
-                        assert task.results is not None
-                        for result in task.results:
-                            del inflight_ref_to_task[result.partition()]
-
-                    del inflight_tasks[task_id]
-
-                # Get the next batch of tasks to dispatch.
-                parallelism - len(inflight_tasks)
-                try:
-                    # for i in range(parallelism_available):
-                    while True:
-
-                        next_step = next(phys_plan)
-
-                        # If this task is a no-op, just run it locally immediately.
-                        while next_step is not None and len(next_step.instructions) == 0:
-                            assert isinstance(next_step, MaterializationRequest)
-                            [partition] = next_step.inputs
-                            next_step.result = RayMaterializationResult(partition)
-                            next_step = next(phys_plan)
-
-                        if next_step is None:
-                            break
-
-                        tasks_to_dispatch.append(next_step)
-
-                except StopIteration as e:
-                    if not plan_exhausted:
-                        result_partitions = e.value
-                        for i, partition in enumerate(result_partitions):
-                            result_pset.set_partition(i, partition)
-                    plan_exhausted = True
-
-                # Dispatch the batch of tasks.
-                logger.debug(
-                    f"{(datetime.now() - start).total_seconds()}s: "
-                    f"DynamicRayRunner dispatching batch of {len(tasks_to_dispatch)} tasks."
-                )
-                for task in tasks_to_dispatch:
-                    results = self._build_partitions(task)
-                    logger.debug(f"{task} -> {results}")
-                    inflight_tasks[task.id()] = task
-                    for result in results:
-                        inflight_ref_to_task[result] = task.id()
-
-                tasks_to_dispatch.clear()
-
-            del phys_plan
-            del inflight_tasks
-            del inflight_ref_to_task
-
-            pset_entry = self._part_set_cache.put_partition_set(result_pset)
-            len(result_pset)
-
-            return pset_entry
-
-    def _build_partitions(self, task: MaterializationRequestBase[ray.ObjectRef]) -> list[ray.ObjectRef]:
-        """Run a MaterializationRequest and return the resulting list of partitions."""
-        ray_options: dict[str, Any] = {
-            "num_returns": task.num_results,
+        psets = {
+            key: entry.value.values()
+            for key, entry in self._part_set_cache._uuid_to_partition_set.items()
+            if entry.value is not None
         }
+        partitions = ray.get(remote_run_plan.remote(plan, psets))
 
-        if isinstance(task.instructions[0], ReduceInstruction):
-            build_remote = (
-                build_many_to_many if isinstance(task.instructions[-1], FanoutInstruction) else build_many_to_one
-            )
-        else:
-            build_remote = (
-                build_one_to_many if isinstance(task.instructions[-1], FanoutInstruction) else build_one_to_one
-            )
+        for i, partition in enumerate(partitions):
+            result_pset.set_partition(i, partition)
 
-        build_remote = build_remote.options(**ray_options)
-        partitions = build_remote.remote(task.instructions, *task.inputs)
-        # Handle ray bug that ignores list interpretation when num_returns=1
-        if task.num_results == 1:
-            partitions = [partitions]
+        pset_entry = self._part_set_cache.put_partition_set(result_pset)
+        len(result_pset)
 
-        if isinstance(task, MaterializationRequestMulti):
-            task.results = [RayMaterializationResult(partition) for partition in partitions]
-        elif isinstance(task, MaterializationRequest):
-            [partition] = partitions
-            task.result = RayMaterializationResult(partition)
-        else:
-            raise TypeError(f"Could not type match input {task}")
-
-        return partitions
+        return pset_entry
 
 
 @dataclass(frozen=True)
