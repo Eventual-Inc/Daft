@@ -429,12 +429,9 @@ def remote_run_plan(plan: logical_plan.LogicalPlan, psets: dict[str, ray.ObjectR
         None | MaterializationRequestBase[vPartition]
     ] = physical_plan_factory.get_materializing_physical_plan(plan, psets)
 
-    # Number of concurrent inflight tasks allowed.
-    # 2 * cores: one set running on the cores; another set already prescheduled.
-    #
     # Note: For autoscaling clusters, we will probably want to query cores dynamically.
     # Keep in mind this call takes about 0.3ms.
-    parallelism = 2 * int(ray.cluster_resources()["CPU"])
+    cores = int(ray.cluster_resources()["CPU"])
 
     inflight_tasks: dict[str, MaterializationRequestBase[ray.ObjectRef]] = dict()
     inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
@@ -448,29 +445,11 @@ def remote_run_plan(plan: logical_plan.LogicalPlan, psets: dict[str, ray.ObjectR
     with profiler(profile_filename):
         while not plan_exhausted:
 
-            # Await a single result.
-            if len(inflight_tasks) > 0:
-                dispatch = datetime.now()
-                [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
-                task_id = inflight_ref_to_task[ready]
-                logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
-
-                # Mark the entire task associated with the result as done.
-                task = inflight_tasks[task_id]
-                if isinstance(task, MaterializationRequest):
-                    del inflight_ref_to_task[ready]
-                elif isinstance(task, MaterializationRequestMulti):
-                    assert task.results is not None
-                    for result in task.results:
-                        del inflight_ref_to_task[result.partition()]
-
-                del inflight_tasks[task_id]
-
             # Get the next batch of tasks to dispatch.
-            parallelism - len(inflight_tasks)
             try:
                 # for i in range(parallelism_available):
-                while True:
+                # while True:
+                while len(inflight_tasks) < 4 * cores or len(inflight_ref_to_task) < 4 * cores * cores:
 
                     next_step = next(phys_plan)
 
@@ -494,6 +473,24 @@ def remote_run_plan(plan: logical_plan.LogicalPlan, psets: dict[str, ray.ObjectR
             except StopIteration as e:
                 result_partitions = e.value
                 return result_partitions
+
+            # Await a batch of tasks.
+            for i in range(min(cores, len(inflight_tasks))):
+                dispatch = datetime.now()
+                [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
+                task_id = inflight_ref_to_task[ready]
+                logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
+
+                # Mark the entire task associated with the result as done.
+                task = inflight_tasks[task_id]
+                if isinstance(task, MaterializationRequest):
+                    del inflight_ref_to_task[ready]
+                elif isinstance(task, MaterializationRequestMulti):
+                    assert task.results is not None
+                    for result in task.results:
+                        del inflight_ref_to_task[result.partition()]
+
+                del inflight_tasks[task_id]
 
     return result_partitions  # for mypy only
 
