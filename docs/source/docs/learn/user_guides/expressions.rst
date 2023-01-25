@@ -198,7 +198,7 @@ For example, here we can compare if each element in column "A" is equal to eleme
     +-----------+-----------+-----------+
     (Showing first 3 of 3 rows)
 
-Other useful comparisons can be found in the :ref:`Expressions API reference <_api-comparison-expression>`.
+Other useful comparisons can be found in the :ref:`Expressions API reference <api-comparison-expression>`.
 
 If Else Pattern
 ^^^^^^^^^^^^^^^

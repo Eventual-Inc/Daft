@@ -22,6 +22,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.autosummary",
     "sphinx.ext.linkcode",
+    "IPython.sphinxext.ipython_console_highlighting",
     "myst_nb",
 ]
 
@@ -54,10 +55,8 @@ html_theme_options = {
 redirects = {
     "docs/learn/install": "../install.html",
     "docs/learn/user_guides/dataframes": "intro-dataframes.html",
-    "docs/learn/user_guides/expressions": "data-processing-with-expressions.html",
     "docs/learn/user_guides/types_and_ops": "intro-dataframes.html",
     "docs/learn/user_guides/remote_cluster_execution": "scaling-up.html",
-    "docs/learn/user_guides/udf": "user-defined-functions.html",
 }
 
 # Resolving code links to github

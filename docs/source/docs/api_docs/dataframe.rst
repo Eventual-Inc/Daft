@@ -16,6 +16,8 @@ DataFrame
 Construction
 ############
 
+.. _df-construction:
+
 From Files
 **********
 
@@ -32,6 +34,8 @@ From Files
 
 From In-Memory Data
 *******************
+
+.. _df-memory-construction-api:
 
 .. autosummary::
     :nosignatures:
@@ -150,6 +154,8 @@ Visualization
 
 Writing Data
 ************
+
+.. _df-writing-data:
 
 .. autosummary::
     :nosignatures:

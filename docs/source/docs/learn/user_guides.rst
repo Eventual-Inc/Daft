@@ -5,7 +5,7 @@ Welcome to the Daft Dataframe.
 
 This guide covers Daft in depth, containing both introductions to important concepts as well as examples of Daft usage in practice. It can be read in the order presented, but users should also consult sections of the guide that are most relevant to their current needs.
 
-For a solid understanding of core Daft concepts, we recommend reading :doc:`user_guides/intro-dataframes` and :doc:`user_guides/data-processing-with-expressions` which cover using Daft DataFrame and Expressions.
+For a solid understanding of core Daft concepts, we recommend reading :doc:`user_guides/intro-dataframes` and :doc:`user_guides/expressions` which cover using Daft DataFrame and Expressions.
 
 Daft in 100 words
 -----------------
@@ -28,12 +28,12 @@ Daft is a Python dataframe library. A dataframe is just a table consisting of ro
     :maxdepth: 1
 
     user_guides/intro-dataframes
-    user_guides/data-processing-with-expressions
+    user_guides/expressions
     user_guides/read-write
     user_guides/dataframe-operations
     user_guides/aggregations
     .. user_guides/missing-data
     .. user_guides/python-columns
-    user_guides/user-defined-functions
+    user_guides/udf
     user_guides/scaling-up
     .. user_guides/retrieving-data
