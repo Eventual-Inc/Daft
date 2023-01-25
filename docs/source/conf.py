@@ -17,6 +17,7 @@ html_favicon = "_static/daft-favicon.png"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    "sphinx_reredirects",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.autosummary",
@@ -50,7 +51,14 @@ html_theme_options = {
 }
 
 # -- Options for redirecting URLs
-redirects = {"docs/learn/install": "docs/install"}
+redirects = {
+    "docs/learn/install": "../install.html",
+    "docs/learn/user_guides/dataframes": "intro-dataframes.html",
+    "docs/learn/user_guides/expressions": "data-processing-with-expressions.html",
+    "docs/learn/user_guides/types_and_ops": "intro-dataframes.html",
+    "docs/learn/user_guides/remote_cluster_execution": "scaling-up.html",
+    "docs/learn/user_guides/udf": "user-defined-functions.html",
+}
 
 # Resolving code links to github
 # Adapted from: https://github.com/aaugustin/websockets/blob/778a1ca6936ac67e7a3fe1bbe585db2eafeaa515/docs/conf.py#L100-L134
