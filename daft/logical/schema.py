@@ -141,6 +141,15 @@ class ExpressionList(Iterable[ExpressionType]):
                 name_to_expr[name] = c
         return ExpressionList([e for e in name_to_expr.values()])
 
+
+    def input_mapping(self) -> dict[str, str]:
+        result = {}
+        for e in self.exprs:
+            input_map = e._input_mapping()
+            if input_map is not None:
+                result[e.name()] = input_map
+        return result
+
     def __iter__(self) -> Iterator[ExpressionType]:
         return iter(self.exprs)
 
