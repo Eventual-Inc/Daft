@@ -49,8 +49,7 @@ mod tests {
         match c {
             Expr::BinaryOp { .. } => Ok(()),
             other => Err(DaftError::ValueError(format!(
-                "expected expression to be a binary op expression, got {:?}",
-                other
+                "expected expression to be a binary op expression, got {other:?}"
             ))),
         }
     }

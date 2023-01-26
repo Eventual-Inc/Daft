@@ -26,8 +26,7 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
     match get_supertype(l, r) {
         Some(dt) => Ok(dt),
         None => Err(DaftError::TypeError(format!(
-            "could not determine supertype of {:?} and {:?}",
-            l, r
+            "could not determine supertype of {l:?} and {r:?}"
         ))),
     }
 }

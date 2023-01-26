@@ -131,8 +131,7 @@ pub fn hash(array: &dyn Array, seed: Option<&PrimitiveArray<u64>>) -> Result<Pri
         LargeUtf8 => hash_utf8::<i64>(array.as_any().downcast_ref().unwrap(), seed),
         t => {
             return Err(Error::NotYetImplemented(format!(
-                "Hash not implemented for type {:?}",
-                t
+                "Hash not implemented for type {t:?}"
             )))
         }
     })

@@ -34,14 +34,14 @@ impl Display for LiteralValue {
         use LiteralValue::*;
         match self {
             Null => write!(f, "Null"),
-            Boolean(val) => write!(f, "{}", val),
-            Utf8(val) => write!(f, "{}", val),
+            Boolean(val) => write!(f, "{val}"),
+            Utf8(val) => write!(f, "{val}"),
             Binary(val) => write!(f, "Binary[{}]", val.len()),
-            Int32(val) => write!(f, "{}", val),
-            UInt32(val) => write!(f, "{}", val),
-            Int64(val) => write!(f, "{}", val),
-            UInt64(val) => write!(f, "{}", val),
-            Float64(val) => write!(f, "{}", val),
+            Int32(val) => write!(f, "{val}"),
+            UInt32(val) => write!(f, "{val}"),
+            Int64(val) => write!(f, "{val}"),
+            UInt64(val) => write!(f, "{val}"),
+            Float64(val) => write!(f, "{val}"),
         }
     }
 }

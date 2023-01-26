@@ -25,7 +25,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Null => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not null", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not null"))),
         }
     }
 
@@ -33,7 +33,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Boolean => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not boolean", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not boolean"))),
         }
     }
 
@@ -41,7 +41,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Int8 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not int8", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not int8"))),
         }
     }
 
@@ -49,7 +49,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Int16 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not int16", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not int16"))),
         }
     }
 
@@ -57,7 +57,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Int32 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not int32", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not int32"))),
         }
     }
 
@@ -65,7 +65,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Int64 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not int64", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not int64"))),
         }
     }
 
@@ -73,7 +73,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             UInt8 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not uint8", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not uint8"))),
         }
     }
 
@@ -81,7 +81,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             UInt16 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not uint16", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not uint16"))),
         }
     }
 
@@ -89,7 +89,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             UInt32 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not uint32", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not uint32"))),
         }
     }
 
@@ -97,7 +97,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             UInt64 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not uint64", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not uint64"))),
         }
     }
 
@@ -105,7 +105,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Float16 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not float16", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not float16"))),
         }
     }
 
@@ -113,7 +113,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Float32 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not float32", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not float32"))),
         }
     }
 
@@ -121,7 +121,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Float64 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not float64", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not float64"))),
         }
     }
 
@@ -129,7 +129,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Timestamp(..) => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not timestamp", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not timestamp"))),
         }
     }
 
@@ -137,7 +137,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Date => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not date", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not date"))),
         }
     }
 
@@ -145,7 +145,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Time(..) => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not time", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not time"))),
         }
     }
 
@@ -153,7 +153,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Binary => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not binary", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not binary"))),
         }
     }
 
@@ -161,7 +161,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Utf8 => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not utf8", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not utf8"))),
         }
     }
 
@@ -170,8 +170,7 @@ impl Series {
         match self.data_type() {
             FixedSizeList(..) => Ok(self.array().as_any().downcast_ref().unwrap()),
             t => Err(DaftError::SchemaMismatch(format!(
-                "{:?} not fixed sized list",
-                t
+                "{t:?} not fixed sized list"
             ))),
         }
     }
@@ -180,7 +179,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             List(..) => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not list", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not list"))),
         }
     }
 
@@ -188,7 +187,7 @@ impl Series {
         use crate::datatypes::DataType::*;
         match self.data_type() {
             Struct(..) => Ok(self.array().as_any().downcast_ref().unwrap()),
-            t => Err(DaftError::SchemaMismatch(format!("{:?} not struct", t))),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not struct"))),
         }
     }
 }

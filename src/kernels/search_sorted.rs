@@ -307,8 +307,7 @@ pub fn search_sorted(
         ),
         t => {
             return Err(Error::NotYetImplemented(format!(
-                "search_sorted not implemented for type {:?}",
-                t
+                "search_sorted not implemented for type {t:?}"
             )))
         }
     })
