@@ -149,18 +149,16 @@ def test_vpartition_filter() -> None:
     expr = col("x") < 4
     expr = resolve_expr(expr)
 
-    # Need to make sure there are no conflicts with column ID of `expr`
-    col_ids = [expr.required_columns()[0].get_id()] + list(range(expr.get_id() + 1, expr.get_id() + 4))
-
     tiles = {}
-    for i in col_ids:
+    col_id = expr.required_columns()[0].get_id()
+    for i in range(col_id, col_id + 4):
         block = DataBlock.make_block(np.arange(0, 10, 1))
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
 
     part = vPartition(columns=tiles, partition_id=0)
     part = part.filter(ExpressionList([expr]))
     arrow_table = pa.Table.from_pandas(part.to_pandas())
-    assert arrow_table.column_names == [f"col_{i}" for i in col_ids]
+    assert arrow_table.column_names == [f"col_{i}" for i in range(col_id, col_id + 4)]
 
     for i in range(4):
         assert np.all(arrow_table[i].to_numpy() < 4)

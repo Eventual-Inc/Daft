@@ -359,7 +359,10 @@ class LogicalGlobalOpRunner:
 
         def quantile_reduce_func(to_reduce: list[vPartition]) -> vPartition:
             merged = vPartition.merge_partitions(to_reduce, verify_partition_id=False)
-            merged_sorted = merged.sort(exprs, descending=descending)
+
+            # Skip evaluation of expressions by converting to ColumnExpression, since evaluation was done in sample_map_func
+            merged_sorted = merged.sort(exprs.to_column_expressions(), descending=descending)
+
             return merged_sorted.quantiles(num_partitions)
 
         prev_part = inputs[child_id]
