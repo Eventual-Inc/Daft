@@ -398,22 +398,22 @@ def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) 
 
 
 @ray.remote
-def build_one_to_one(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def pipeline_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote
-def build_one_to_many(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def fanout_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def build_many_to_one(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def reduce_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def build_many_to_many(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def reduce_fanout_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
@@ -502,9 +502,9 @@ def _build_partitions(task: MaterializationRequestBase[ray.ObjectRef]) -> list[r
     }
 
     if isinstance(task.instructions[0], ReduceInstruction):
-        build_remote = build_many_to_many if isinstance(task.instructions[-1], FanoutInstruction) else build_many_to_one
+        build_remote = reduce_fanout_build if isinstance(task.instructions[-1], FanoutInstruction) else reduce_build
     else:
-        build_remote = build_one_to_many if isinstance(task.instructions[-1], FanoutInstruction) else build_one_to_one
+        build_remote = fanout_build if isinstance(task.instructions[-1], FanoutInstruction) else pipeline_build
 
     build_remote = build_remote.options(**ray_options)
     partitions = build_remote.remote(task.instructions, *task.inputs)
