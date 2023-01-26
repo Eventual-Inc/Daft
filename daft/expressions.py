@@ -224,15 +224,17 @@ class Expression(TreeNode["Expression"]):
             to_rtn.extend(child.required_columns())
         return to_rtn
 
-    # def _replace_column_with_expression(self, col_expr: ColumnExpression, new_expr: Expression) -> Expression:
-    #     assert col_expr.name() == new_expr.name()
-    #     if isinstance(self, ColumnExpression) and self.is_eq(col_expr):
-    #         return new_expr
-    #     for i in range(len(self._children())):
-    #         self._registered_children[i] = self._registered_children[i]._replace_column_with_expression(
-    #             col_expr, new_expr
-    #         )
-    #     return self
+    def _replace_column_with_expression(self, col_expr: ColumnExpression, new_expr: Expression) -> Expression:
+        if isinstance(self, ColumnExpression):
+            if self.name() == col_expr.name():
+                return new_expr
+            else:
+                return self
+        for i in range(len(self._children())):
+            self._registered_children[i] = self._registered_children[i]._replace_column_with_expression(
+                col_expr, new_expr
+            )
+        return self
 
     def _unresolve(self) -> Expression:
         expr = deepcopy(self)

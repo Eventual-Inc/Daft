@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import copy
+
 from loguru import logger
 
-from daft.expressions import ColID, ColumnExpression
+from daft.expressions import ColID, ColumnExpression, col
 from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
     Coalesce,
@@ -34,14 +36,17 @@ class PushDownPredicates(Rule[LogicalPlan]):
 
     def _filter_through_projection(self, parent: Filter, child: Projection) -> LogicalPlan | None:
         filter_predicate = parent._predicate
-
         grandchild = child._children()[0]
-        ids_produced_by_grandchild = grandchild.schema().to_name_set()
+        child_input_mapping = child.schema().input_mapping()
+
         can_push_down = []
         can_not_push_down = []
         for pred in filter_predicate:
-            id_set = {e.name() for e in pred.required_columns()}
-            if id_set.issubset(ids_produced_by_grandchild):
+            required_names = {e.name() for e in pred.required_columns()}
+            if all(name in child_input_mapping for name in required_names):
+                pred = copy.deepcopy(pred)
+                for name in required_names:
+                    pred = pred._replace_column_with_expression(col(name), col(child_input_mapping[name]))
                 can_push_down.append(pred)
             else:
                 can_not_push_down.append(pred)
@@ -66,20 +71,34 @@ class PushDownPredicates(Rule[LogicalPlan]):
     def _filter_through_join(self, parent: Filter, child: Join) -> LogicalPlan | None:
         left = child._children()[0]
         right = child._children()[1]
-        left_ids = left.schema().to_name_set()
-        right_ids = right.schema().to_name_set()
+        left.schema().to_name_set()
+        right.schema().to_name_set()
+
+        child_input_mapping = child.schema().input_mapping()
+        left_input_mapping = child._left_columns.input_mapping()
+        right_input_mapping = child._right_columns.input_mapping()
+
         filter_predicate = parent._predicate
         can_not_push_down = []
         left_push_down = []
         right_push_down = []
         for pred in filter_predicate:
-            id_set = {e.name() for e in pred.required_columns()}
-            if id_set.issubset(left_ids):
+            required_names = {e.name() for e in pred.required_columns()}
+            if not all(name in child_input_mapping for name in required_names):
+                continue
+            if all(name in left_input_mapping for name in required_names):
+                pred = copy.deepcopy(pred)
+                for name in required_names:
+                    pred = pred._replace_column_with_expression(col(name), col(left_input_mapping[name]))
                 left_push_down.append(pred)
-            elif id_set.issubset(right_ids):
+            elif all(name in right_input_mapping for name in required_names):
+                pred = copy.deepcopy(pred)
+                for name in required_names:
+                    pred = pred._replace_column_with_expression(col(name), col(right_input_mapping[name]))
                 right_push_down.append(pred)
             else:
                 can_not_push_down.append(pred)
+
         if len(left_push_down) == 0 and len(right_push_down) == 0:
             logger.debug(f"Could not push down Filter predicates into Join")
             return None
@@ -244,11 +263,11 @@ class FoldProjections(Rule[LogicalPlan]):
 
     def _drop_double_projection(self, parent: Projection, child: Projection) -> LogicalPlan | None:
         required_columns = parent._projection.required_columns()
+        child_schema = child.schema()
         grandchild = child._children()[0]
-        grandchild_output = grandchild.schema()
-        grandchild_ids = grandchild_output.to_name_set()
+        child_mapping = child.schema().input_mapping()
 
-        can_skip_child = required_columns.to_name_set().issubset(grandchild_ids)
+        can_skip_child = required_columns.to_name_set().issubset(child_mapping.keys())
 
         if can_skip_child:
             logger.debug(f"Folding: {parent} into {child}")
@@ -258,12 +277,14 @@ class FoldProjections(Rule[LogicalPlan]):
                 if isinstance(e, ColumnExpression):
                     name = e.name()
                     assert name is not None
-                    e = child._projection.get_expression_by_name(name)
+                    e = child_schema.get_expression_by_name(name)
                 else:
+                    e = copy.deepcopy(e)
                     for rc in e.required_columns():
                         name = rc.name()
                         assert name is not None
-                        e = e._replace_column_with_expression(rc, child._projection.get_expression_by_name(name))
+                        print(name)
+                        e = e._replace_column_with_expression(rc, child_schema.get_expression_by_name(name))
                 new_exprs.append(e)
             return Projection(grandchild, ExpressionList(new_exprs))
         else:

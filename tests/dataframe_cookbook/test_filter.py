@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from daft.expressions import col
 from daft import DataFrame
+from daft.expressions import col
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     parametrize_service_requests_csv_repartition,
@@ -149,16 +149,16 @@ def test_chain_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartit
 
 
 def test_filter_on_projection():
-    """Filter the dataframe with a chain of filters and select a subset of columns"""
-    df = DataFrame.from_pydict({'x': [1,1,1,1,1]})
-    df = df.select(col('x') * 2)
-    df = df.where(col('x') == 1)
+    """Filter the dataframe with on top of a projection"""
+    df = DataFrame.from_pydict({"x": [1, 1, 1, 1, 1]})
+    df = df.select(col("x") * 2)
+    df = df.where(col("x") == 1)
     result = df.to_pandas()
     assert len(result) == 0
 
-    df = DataFrame.from_pydict({'x': [1,1,1,1,1]})
-    df = df.select(col('x') * 2)
-    df = df.where(col('x') == 2)
+    df = DataFrame.from_pydict({"x": [1, 1, 1, 1, 1]})
+    df = df.select(col("x") * 2)
+    df = df.where(col("x") == 2)
     result = df.to_pandas()
     assert len(result) == 5
     assert (result == 2).all().all()

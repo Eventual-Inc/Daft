@@ -906,6 +906,8 @@ class Join(BinaryNode):
             right_id_set = self._right_on.to_name_set()
             filtered_right = [e for e in right.schema() if e.name() not in right_id_set]
             schema = left.schema().union(ExpressionList(filtered_right), rename_dup="right.")
+            self._left_columns = left.schema()
+            self._right_columns = ExpressionList(schema.exprs[len(self._left_columns.exprs) :])
 
         left_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._left_on)
         right_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._right_on)

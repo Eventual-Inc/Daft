@@ -364,7 +364,7 @@ class vPartition:
         if schema is not None:
             output_schema = [expr.name() for expr in schema]
         else:
-            output_schema = [tile.column_name for tile in self.columns.items()]
+            output_schema = [tile for tile in self.columns.keys()]
 
         data = {}
         for name in output_schema:
