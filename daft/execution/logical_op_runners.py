@@ -11,7 +11,6 @@ from daft.datasources import (
     ParquetSourceInfo,
     StorageType,
 )
-from daft.expressions import ColID
 from daft.logical.logical_plan import (
     Coalesce,
     FileWrite,
@@ -226,11 +225,11 @@ class LogicalPartitionOpRunner:
         output_schema = file_write.schema()
         assert len(output_schema) == 1
         file_name_expr = output_schema.exprs[0]
-        file_name_col_id = file_name_expr.get_id()
-        columns: dict[ColID, PyListTile] = {}
-        columns[file_name_col_id] = PyListTile(
-            file_name_col_id,
-            file_name_expr.name(),
+        columns: dict[str, PyListTile] = {}
+        col_name = file_name_expr.name()
+        assert col_name is not None
+        columns[col_name] = PyListTile(
+            col_name,
             partition_id=partition_id,
             block=DataBlock.make_block(file_names),
         )

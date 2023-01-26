@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 from typing import Iterable, Iterator, TypeVar, cast
 
-from daft.expressions import ColID, ColumnExpression, Expression
+from daft.expressions import ColumnExpression, Expression
 from daft.resource_request import ResourceRequest
 
 ExpressionType = TypeVar("ExpressionType", bound=Expression)
@@ -22,14 +22,13 @@ class ExpressionList(Iterable[ExpressionType]):
                 raise ValueError(f"duplicate name found {e_name}")
             self.names.append(e_name)
             name_set.add(e_name)
-        # self.is_resolved = all(e.required_columns(unresolved_only=True) == [] for e in exprs)
 
     def __len__(self) -> int:
         return len(self.exprs)
 
     def contains(self, column: ColumnExpression) -> bool:
         for e in self.exprs:
-            if e.is_same(column):
+            if e.is_eq(column):
                 return True
         return False
 
@@ -41,7 +40,7 @@ class ExpressionList(Iterable[ExpressionType]):
 
     def get_expression_by_id(self, id: int) -> ExpressionType | None:
         for e in self.exprs:
-            if e.get_id() == id:
+            if e.name() == id:
                 return e
         return None
 
@@ -49,10 +48,9 @@ class ExpressionList(Iterable[ExpressionType]):
         if input_schema is None:
             for e in self.exprs:
                 assert isinstance(e, ColumnExpression), "we can only resolve ColumnExpression without an input_schema"
-                e._assign_id(strict=False)
         else:
             for e in self.exprs:
-                for col_expr in e.required_columns(unresolved_only=True):
+                for col_expr in e.required_columns():
                     col_expr_name = col_expr.name()
                     assert col_expr_name is not None
                     match_output_expr = input_schema.get_expression_by_name(col_expr_name)
@@ -60,15 +58,11 @@ class ExpressionList(Iterable[ExpressionType]):
                         col_expr.resolve_to_expression(match_output_expr)
                     else:
                         raise ValueError(f"Could not find expr by name {col_expr_name}")
-                # Validate that types are able to be resolved, or throw a TypeError if not
                 e.resolved_type()
-        for e in self.exprs:
-            e._assign_id(strict=False)
-        # self.is_resolved = True
         return self
 
     def unresolve(self) -> ExpressionList:
-        return ExpressionList([e._unresolve() for e in self.exprs])
+        return copy.deepcopy(self)
 
     def keep(self, to_keep: list[str]) -> ExpressionList:
         # is_resolved = True
@@ -105,13 +99,9 @@ class ExpressionList(Iterable[ExpressionType]):
 
         for e in other:
             name = e.name()
-            if name is None:
-                deduped.append(e)
-                continue
+            assert name is not None
 
             if name in seen:
-                if seen[name].is_eq(e):
-                    continue
                 if rename_dup is not None:
                     name = f"{rename_dup}{name}"
                     e = cast(ExpressionType, e.alias(name))
@@ -134,7 +124,9 @@ class ExpressionList(Iterable[ExpressionType]):
         if not isinstance(other, ExpressionList):
             return False
 
-        return len(self.exprs) == len(other.exprs) and all(s.is_eq(o) for s, o in zip(self.exprs, other.exprs))
+        return len(self.exprs) == len(other.exprs) and all(
+            (s.name() == o.name()) and (s.resolved_type()) == o.resolved_type() for s, o in zip(self.exprs, other.exprs)
+        )
 
     def required_columns(self) -> ExpressionList:
         name_to_expr: dict[str, ColumnExpression] = {}
@@ -145,15 +137,23 @@ class ExpressionList(Iterable[ExpressionType]):
                 name_to_expr[name] = c
         return ExpressionList([e for e in name_to_expr.values()])
 
+    def input_mapping(self) -> dict[str, str]:
+        result = {}
+        for e in self.exprs:
+            input_map = e._input_mapping()
+            if input_map is not None:
+                result[e.name()] = input_map
+        return result
+
     def __iter__(self) -> Iterator[ExpressionType]:
         return iter(self.exprs)
 
-    def to_id_set(self) -> set[ColID]:
+    def to_name_set(self) -> set[str]:
         id_set = set()
         for c in self:
-            id = c.get_id()
-            assert id is not None
-            id_set.add(id)
+            name = c.name()
+            assert name is not None
+            id_set.add(name)
         return id_set
 
     def resource_request(self) -> ResourceRequest:

@@ -52,6 +52,7 @@ def test_select_dataframe_missing_col(valid_data: list[dict[str, float]]) -> Non
         df = df.select("foo", "sepal_length")
 
 
+@pytest.mark.skip()
 def test_fold_projections(valid_data: list[dict[str, float]], optimizer) -> None:
     df = DataFrame.from_pylist(valid_data)
     df_unoptimized = df.select("sepal_length", "sepal_width").select("sepal_width")

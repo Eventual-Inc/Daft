@@ -6,7 +6,7 @@ import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import IO, Any, Callable, Generic, List, Sequence, TypeVar, cast
+from typing import IO, Any, Callable, Generic, Sequence, TypeVar
 from uuid import uuid4
 
 import numpy as np
@@ -17,7 +17,7 @@ from pyarrow import dataset as pada
 from pyarrow import json, parquet
 
 from daft.execution.operators import OperatorEnum
-from daft.expressions import ColID, ColumnExpression, Expression, ExpressionExecutor
+from daft.expressions import ColumnExpression, Expression, ExpressionExecutor
 from daft.filesystem import get_filesystem_from_path
 from daft.logical.schema import ExpressionList
 from daft.runners.blocks import ArrowArrType, ArrowDataBlock, DataBlock, PyListDataBlock
@@ -86,25 +86,8 @@ def _limit_num_rows(buf: IO, num_rows: int) -> IO:
     return sampled_bytes
 
 
-def _get_column_ids(table: pa.Table, schema_options: vPartitionSchemaInferenceOptions) -> list[ColID]:
-    # No schema provided, we allocate column IDs arbitrarily
-    # NOTE: This is very dangerous if performed remotely in Ray and if IDs are used locally, since they may conflict
-    if schema_options.schema is None:
-        return cast(List[ColID], list(range(len(table.column_names))))
-
-    col_ids = []
-    for colname in table.column_names:
-        expr = schema_options.schema.get_expression_by_name(colname)
-        if expr is None:
-            raise ValueError(f"Column {colname} not found in provided schema: {schema_options.schema}")
-        col_ids.append(expr.get_id())
-
-    return col_ids
-
-
 @dataclass(frozen=True)
 class PyListTile:
-    column_id: ColID
     column_name: str
     partition_id: PartID
     block: DataBlock
@@ -139,12 +122,10 @@ class PyListTile:
         if len(to_merge) == 1:
             return to_merge[0]
 
-        column_id = to_merge[0].column_id
         partition_id = to_merge[0].partition_id
         column_name = to_merge[0].column_name
         # first perform sanity check
         for part in to_merge[1:]:
-            assert part.column_id == column_id
             assert not verify_partition_id or part.partition_id == partition_id
             assert part.column_name == column_name
 
@@ -162,20 +143,20 @@ class PartitionMetadata:
 
 @dataclass(frozen=True)
 class vPartition:
-    columns: dict[ColID, PyListTile]
+    columns: dict[str, PyListTile]
     partition_id: PartID
 
     def __post_init__(self) -> None:
         size = None
-        for col_id, tile in self.columns.items():
+        for name, tile in self.columns.items():
             if tile.partition_id != self.partition_id:
                 raise ValueError(f"mismatch of partition id: {tile.partition_id} vs {self.partition_id}")
             if len(tile) != 0 and size is None:
                 size = len(tile)
             if len(tile) != 0 and len(tile) != size:
                 raise ValueError(f"mismatch of tile lengths: {len(tile)} vs {size}")
-            if col_id != tile.column_id:
-                raise ValueError(f"mismatch of column id: {col_id} vs {tile.column_id}")
+            if name != tile.column_name:
+                raise ValueError(f"mismatch of tile name: {name} vs {tile.column_name}")
 
     def __len__(self) -> int:
         if len(self.columns) == 0:
@@ -185,7 +166,7 @@ class vPartition:
     def metadata(self) -> PartitionMetadata:
         return PartitionMetadata(num_rows=len(self))
 
-    def get_unresolved_col_expressions(self) -> ExpressionList:
+    def get_col_expressions(self) -> ExpressionList:
         """Generates column expressions that represent the vPartition's schema"""
         colexprs = []
         for _, tile in self.columns.items():
@@ -206,44 +187,38 @@ class vPartition:
         return ExpressionList(colexprs)
 
     def eval_expression(self, expr: Expression) -> PyListTile:
-        expr_col_id = expr.get_id()
+        # Avoid recomputing expressions that have been computed before
 
         expr_name = expr.name()
 
-        assert expr_col_id is not None
         assert expr_name is not None
 
         required_cols = expr.required_columns()
         required_blocks = {}
         for c in required_cols:
-            col_id = c.get_id()
-            assert col_id is not None
-            block = self.columns[col_id].block
             name = c.name()
             assert name is not None
+            block = self.columns[name].block
             required_blocks[name] = block
         exec = ExpressionExecutor()
         result = exec.eval(expr, required_blocks)
-        expr_col_id = expr.get_id()
         expr_name = expr.name()
-        assert expr_col_id is not None
         assert expr_name is not None
-        return PyListTile(column_id=expr_col_id, column_name=expr_name, partition_id=self.partition_id, block=result)
+        return PyListTile(column_name=expr_name, partition_id=self.partition_id, block=result)
 
     def eval_expression_list(self, exprs: ExpressionList) -> vPartition:
         tile_list = [self.eval_expression(e) for e in exprs]
-        new_columns = {t.column_id: t for t in tile_list}
+        new_columns = {t.column_name: t for t in tile_list}
         return vPartition(columns=new_columns, partition_id=self.partition_id)
 
     @classmethod
-    def from_arrow_table(cls, table: pa.Table, column_ids: list[ColID], partition_id: PartID) -> vPartition:
+    def from_arrow_table(cls, table: pa.Table, partition_id: PartID) -> vPartition:
         names = table.column_names
-        assert len(names) == len(column_ids)
         tiles = {}
-        for i, (col_id, name) in enumerate(zip(column_ids, names)):
+        for i, name in enumerate(names):
             arr = table[i]
             block: DataBlock[ArrowArrType] = DataBlock.make_block(arr)
-            tiles[col_id] = PyListTile(column_id=col_id, column_name=name, partition_id=partition_id, block=block)
+            tiles[name] = PyListTile(column_name=name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
     @classmethod
@@ -251,7 +226,6 @@ class vPartition:
         column_exprs = schema.to_column_expressions()
         tiles = {}
         for col_expr in column_exprs:
-            col_id = col_expr.get_id()
             col_name = col_expr.name()
             col_type = col_expr.resolved_type()
             col_data = data[col_name]
@@ -263,7 +237,7 @@ class vPartition:
                     col_data = pa.array(col_data, type=col_type.to_arrow_type())
 
             block = DataBlock.make_block(col_data)
-            tiles[col_id] = PyListTile(column_id=col_id, column_name=col_name, partition_id=partition_id, block=block)
+            tiles[col_name] = PyListTile(column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
     @classmethod
@@ -315,8 +289,7 @@ class vPartition:
                 convert_options=csv.ConvertOptions(include_columns=read_options.column_names),
             )
 
-        column_ids = _get_column_ids(table, schema_options)
-        return vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+        return vPartition.from_arrow_table(table, partition_id=partition_id)
 
     @classmethod
     def from_json(
@@ -343,8 +316,7 @@ class vPartition:
         if read_options.column_names is not None:
             table = table.select(read_options.column_names)
 
-        column_ids = _get_column_ids(table, schema_options)
-        return vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+        return vPartition.from_arrow_table(table, partition_id=partition_id)
 
     @classmethod
     def from_parquet(
@@ -380,8 +352,7 @@ class vPartition:
                 if read_options.num_rows is not None:
                     table = table.slice(length=read_options.num_rows)
 
-        column_ids = _get_column_ids(table, schema_options)
-        return vPartition.from_arrow_table(table, column_ids=column_ids, partition_id=partition_id)
+        return vPartition.from_arrow_table(table, partition_id=partition_id)
 
     def to_pydict(self) -> dict[str, Sequence]:
         output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
@@ -389,13 +360,13 @@ class vPartition:
 
     def to_pandas(self, schema: ExpressionList | None = None) -> pd.DataFrame:
         if schema is not None:
-            output_schema = [(expr.name(), expr.get_id()) for expr in schema]
+            output_schema = [expr.name() for expr in schema]
         else:
-            output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
+            output_schema = [tile for tile in self.columns.keys()]
 
         data = {}
-        for name, id in output_schema:
-            block = self.columns[id].block
+        for name in output_schema:
+            block = self.columns[name].block
             # PyListDataBlocks contain Python objects
             if isinstance(block, PyListDataBlock) and block.is_scalar():
                 data[name] = pd.Series([block.data for _ in range(len(self))])
@@ -410,7 +381,7 @@ class vPartition:
         return pd.DataFrame(data)
 
     def for_each_column_block(self, func: Callable[[DataBlock], DataBlock]) -> vPartition:
-        return dataclasses.replace(self, columns={col_id: col.apply(func) for col_id, col in self.columns.items()})
+        return dataclasses.replace(self, columns={col_name: col.apply(func) for col_name, col in self.columns.items()})
 
     def head(self, num: int) -> vPartition:
         # TODO make optimization for when num=0
@@ -446,10 +417,10 @@ class vPartition:
 
     def search_sorted(self, keys: vPartition, input_reversed: list[bool] | None = None) -> DataBlock:
         assert self.columns.keys() == keys.columns.keys()
-        col_ids = list(self.columns.keys())
+        col_names = list(self.columns.keys())
         idx = DataBlock.search_sorted(
-            [self.columns[k].block for k in col_ids],
-            [keys.columns[k].block for k in col_ids],
+            [self.columns[k].block for k in col_names],
+            [keys.columns[k].block for k in col_names],
             input_reversed=input_reversed,
         )
         return idx
@@ -462,8 +433,8 @@ class vPartition:
         ops = [op for _, op in to_agg]
         if group_by is None:
             agged = {}
-            for op, (col_id, tile) in zip(ops, evaled_expressions.columns.items()):
-                agged[col_id] = tile.apply(func=partial(tile.block.__class__.agg, op=op))
+            for op, (col_name, tile) in zip(ops, evaled_expressions.columns.items()):
+                agged[col_name] = tile.apply(func=partial(tile.block.__class__.agg, op=op))
             return vPartition(partition_id=self.partition_id, columns=agged)
         else:
             grouped_blocked = self.eval_expression_list(group_by)
@@ -475,11 +446,11 @@ class vPartition:
             )
             new_columns = {}
 
-            for block, (col_id, tile) in zip(gcols, grouped_blocked.columns.items()):
-                new_columns[col_id] = dataclasses.replace(tile, block=block)
+            for block, (col_name, tile) in zip(gcols, grouped_blocked.columns.items()):
+                new_columns[col_name] = dataclasses.replace(tile, block=block)
 
-            for block, (col_id, tile) in zip(acols, evaled_expressions.columns.items()):
-                new_columns[col_id] = dataclasses.replace(tile, block=block)
+            for block, (col_name, tile) in zip(acols, evaled_expressions.columns.items()):
+                new_columns[col_name] = dataclasses.replace(tile, block=block)
             return vPartition(partition_id=self.partition_id, columns=new_columns)
 
     def split_by_hash(self, exprs: ExpressionList, num_partitions: int) -> list[vPartition]:
@@ -497,14 +468,14 @@ class vPartition:
 
     def split_by_index(self, num_partitions: int, target_partition_indices: DataBlock) -> list[vPartition]:
         assert len(target_partition_indices) == len(self)
-        new_partition_to_columns: list[dict[ColID, PyListTile]] = [{} for _ in range(num_partitions)]
+        new_partition_to_columns: list[dict[str, PyListTile]] = [{} for _ in range(num_partitions)]
         argsort_targets = DataBlock.argsort([target_partition_indices])
         sorted_targets = target_partition_indices.take(argsort_targets)
         sorted_targets_np = sorted_targets.to_numpy()
         pivots = np.where(np.diff(sorted_targets_np, prepend=np.nan))[0]
         target_partitions = sorted_targets_np[pivots]
 
-        for col_id, tile in self.columns.items():
+        for name, tile in self.columns.items():
             new_tiles = tile.split_by_index(
                 num_partitions=num_partitions,
                 pivots=pivots,
@@ -512,7 +483,7 @@ class vPartition:
                 argsorted_target_partition_indices=argsort_targets,
             )
             for part_id, nt in enumerate(new_tiles):
-                new_partition_to_columns[part_id][col_id] = nt
+                new_partition_to_columns[part_id][name] = nt
 
         return [vPartition(partition_id=i, columns=columns) for i, columns in enumerate(new_partition_to_columns)]
 
@@ -529,13 +500,13 @@ class vPartition:
         partition_to_explode = self.eval_expression_list(columns)
         exploded_col_names = {tile.column_name for tile in partition_to_explode.columns.values()}
         partition_to_repeat = vPartition(
-            {cid: tile for cid, tile in self.columns.items() if tile.column_name not in exploded_col_names},
+            {name: tile for name, tile in self.columns.items() if name not in exploded_col_names},
             partition_id=self.partition_id,
         )
 
         exploded_cols = {}
         found_list_lengths = None
-        for col_id, tile in partition_to_explode.columns.items():
+        for name, tile in partition_to_explode.columns.items():
             exploded_block, list_lengths = tile.block.list_explode()
 
             # Ensure that each row has the same length as other rows
@@ -548,9 +519,8 @@ class vPartition:
                         "but found row(s) with mismatched lengths"
                     )
 
-            exploded_cols[col_id] = PyListTile(
-                column_id=tile.column_id,
-                column_name=tile.column_name,
+            exploded_cols[name] = PyListTile(
+                column_name=name,
                 partition_id=tile.partition_id,
                 block=exploded_block,
             )
@@ -589,8 +559,8 @@ class vPartition:
         left_key_ids = list(left_key_part.columns.keys())
 
         right_key_part = right.eval_expression_list(right_on)
-        left_key_list = [left_key_part.columns[le.get_id()].block for le in left_on]
-        right_key_list = [right_key_part.columns[re.get_id()].block for re in right_on]
+        left_key_list = [left_key_part.columns[le.name()].block for le in left_on]
+        right_key_list = [right_key_part.columns[re.name()].block for re in right_on]
 
         left_nonjoin_ids = [i for i in self.columns.keys() if i not in left_key_part.columns]
         right_nonjoin_ids = [i for i in right.columns.keys() if i not in right_key_part.columns]
@@ -629,7 +599,7 @@ class vPartition:
         partition_cols: ExpressionList | None = None,
         compression: str | None = None,
     ) -> list[str]:
-        keys = [col_id for col_id in self.columns.keys()]
+        keys = [col_name for col_name in self.columns.keys()]
         names = [self.columns[k].column_name for k in keys]
         data = [self.columns[k].block.to_arrow() for k in keys]
         arrow_table = pa.table(data, names=names)
@@ -639,10 +609,10 @@ class vPartition:
                 assert isinstance(
                     col, ColumnExpression
                 ), "we can only support ColumnExpressions for partitioning parquet"
-                col_id = col.get_id()
-                assert col_id is not None
-                assert col_id in keys
-                partition_col_names.append(self.columns[col_id].column_name)
+                col_name = col.name()
+                assert col_name is not None
+                assert col_name in keys
+                partition_col_names.append(col_name)
 
         visited_paths = []
 
@@ -690,16 +660,16 @@ class vPartition:
             return to_merge[0]
 
         pid = to_merge[0].partition_id
-        col_ids = set(to_merge[0].columns.keys())
+        col_names = set(to_merge[0].columns.keys())
         # first perform sanity check
         for part in to_merge[1:]:
             assert not verify_partition_id or part.partition_id == pid
-            assert set(part.columns.keys()) == col_ids
+            assert set(part.columns.keys()) == col_names
 
         new_columns = {}
-        for col_id in to_merge[0].columns.keys():
-            new_columns[col_id] = PyListTile.merge_tiles(
-                [vp.columns[col_id] for vp in to_merge], verify_partition_id=verify_partition_id
+        for col_name in to_merge[0].columns.keys():
+            new_columns[col_name] = PyListTile.merge_tiles(
+                [vp.columns[col_name] for vp in to_merge], verify_partition_id=verify_partition_id
             )
         return dataclasses.replace(to_merge[0], columns=new_columns)
 

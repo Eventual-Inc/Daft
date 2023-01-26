@@ -21,6 +21,6 @@ pub type DaftResult<T> = std::result::Result<T, DaftError>;
 impl Display for DaftError {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }

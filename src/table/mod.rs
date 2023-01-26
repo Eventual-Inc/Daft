@@ -96,7 +96,7 @@ impl Table {
                     Divide => Ok(lhs / rhs),
                     Multiply => Ok(lhs * rhs),
                     Modulus => Ok(lhs % rhs),
-                    _ => panic!("{:?} not supported", op),
+                    _ => panic!("{op:?} not supported"),
                 }
             }
             Literal(lit_value) => Ok(lit_value.to_series()),
@@ -167,7 +167,7 @@ impl Display for Table {
             table.add_row(row.into());
         }
 
-        write!(f, "{}", table)
+        write!(f, "{table}")
     }
 }
 

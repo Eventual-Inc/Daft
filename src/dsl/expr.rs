@@ -80,21 +80,21 @@ impl Display for Expr {
     fn fmt(&self, f: &mut Formatter) -> Result {
         use Expr::*;
         match self {
-            Alias(expr, name) => write!(f, "{} AS {}", expr, name),
+            Alias(expr, name) => write!(f, "{expr} AS {name}"),
             BinaryOp { op, left, right } => {
                 let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
-                    Alias(e, _) => write!(f, "{}", e),
-                    BinaryOp { .. } => write!(f, "[{}]", input),
-                    _ => write!(f, "{}", input),
+                    Alias(e, _) => write!(f, "{e}"),
+                    BinaryOp { .. } => write!(f, "[{input}]"),
+                    _ => write!(f, "{input}"),
                 };
 
                 write_out_expr(f, left)?;
-                write!(f, " {} ", op)?;
+                write!(f, " {op} ")?;
                 write_out_expr(f, right)?;
                 Ok(())
             }
-            Column(name) => write!(f, "col({})", name),
-            Literal(val) => write!(f, "lit({})", val),
+            Column(name) => write!(f, "col({name})"),
+            Literal(val) => write!(f, "lit({val})"),
         }
     }
 }
@@ -141,7 +141,7 @@ impl Display for Operator {
             Or => "|",
             Xor => "^",
         };
-        write!(f, "{}", tkn)
+        write!(f, "{tkn}")
     }
 }
 
@@ -192,8 +192,7 @@ mod tests {
         match b {
             Expr::Alias(..) => Ok(()),
             other => Err(crate::error::DaftError::ValueError(format!(
-                "expected expression to be a alias, got {:?}",
-                other
+                "expected expression to be a alias, got {other:?}"
             ))),
         }
     }

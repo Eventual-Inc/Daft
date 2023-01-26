@@ -26,7 +26,7 @@
       ~Expression.is_eq
       ~Expression.is_nan
       ~Expression.is_null
-      ~Expression.is_same
+      ~Expression.is_eq
       ~Expression.name
       ~Expression.post_order
       ~Expression.required_columns

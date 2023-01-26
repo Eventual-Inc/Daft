@@ -58,6 +58,6 @@ impl Display for Schema {
             .map(|(name, field)| format!("{}\n{:?}", name, field.dtype))
             .collect();
         table.add_row(header);
-        write!(f, "{}", table)
+        write!(f, "{table}")
     }
 }

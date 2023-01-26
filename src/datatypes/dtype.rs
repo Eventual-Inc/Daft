@@ -112,8 +112,7 @@ impl DataType {
                 ArrowType::Struct(fields?)
             }),
             _ => Err(DaftError::TypeError(format!(
-                "Can not convert {:?} into arrow type",
-                self
+                "Can not convert {self:?} into arrow type"
             ))),
         }
     }

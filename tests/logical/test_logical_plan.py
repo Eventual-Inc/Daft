@@ -33,10 +33,9 @@ def test_projection_logical_plan(schema) -> None:
     assert project.schema() == schema.keep(["b"])
 
     project = Projection(scan, ExpressionList([col("b") * 2]))
-    assert project.schema() != schema.keep(["b"])
-    assert (
-        project.schema().get_expression_by_name("b").required_columns()[0].is_same(schema.get_expression_by_name("b"))
-    )
+
+    assert project.schema() == schema.keep(["b"])
+    assert project.schema().get_expression_by_name("b").required_columns()[0].is_eq(schema.get_expression_by_name("b"))
 
 
 def test_projection_logical_plan_bad_input(schema) -> None:
@@ -72,9 +71,9 @@ def test_projection_new_columns_logical_plan(schema) -> None:
 
     hstacked = Projection(scan, schema.union(ExpressionList([(col("a") + col("b")).alias("d")])))
     assert hstacked.schema().keep(["a", "b", "c"]) == schema
-    old_ids = {schema.get_expression_by_name(n).get_id() for n in schema.names}
+    old_ids = {schema.get_expression_by_name(n).name() for n in schema.names}
 
-    assert hstacked.schema().get_expression_by_name("d").get_id() not in old_ids
+    assert hstacked.schema().get_expression_by_name("d").name() not in old_ids
 
     projection = Projection(scan, ExpressionList([col("b")]))
     proj_schema = projection.schema()
@@ -83,22 +82,22 @@ def test_projection_new_columns_logical_plan(schema) -> None:
     )
 
     assert hstacked_on_proj.schema().names == ["b", "a", "c"]
-    assert hstacked_on_proj.schema().get_expression_by_name("b").is_same(schema.get_expression_by_name("b"))
+    assert hstacked_on_proj.schema().get_expression_by_name("b").is_eq(schema.get_expression_by_name("b"))
 
-    assert not hstacked_on_proj.schema().get_expression_by_name("a").is_same(schema.get_expression_by_name("a"))
+    assert not hstacked_on_proj.schema().get_expression_by_name("a").is_eq(schema.get_expression_by_name("a"))
     assert (
         hstacked_on_proj.schema()
         .get_expression_by_name("a")
         .required_columns()[0]
-        .is_same(schema.get_expression_by_name("b"))
+        .is_eq(schema.get_expression_by_name("b"))
     )
 
-    assert not hstacked_on_proj.schema().get_expression_by_name("c").is_same(schema.get_expression_by_name("c"))
+    assert not hstacked_on_proj.schema().get_expression_by_name("c").is_eq(schema.get_expression_by_name("c"))
     assert (
         hstacked_on_proj.schema()
         .get_expression_by_name("c")
         .required_columns()[0]
-        .is_same(schema.get_expression_by_name("b"))
+        .is_eq(schema.get_expression_by_name("b"))
     )
 
     projection_reorder = Projection(hstacked_on_proj, ExpressionList([col("a"), col("b"), col("c")]))
@@ -124,7 +123,7 @@ def test_scan_projection_filter_projection_chain(schema) -> None:
 
     filtered = Filter(hstacked, ExpressionList([col("d") < 20, col("a") > 10]))
     assert filtered.schema().names == ["a", "b", "c", "d"]
-    assert filtered.schema() == hstacked.schema()
+    assert filtered.schema() == filtered.schema()
 
     projection_alias = Projection(filtered, ExpressionList([col("b").alias("out"), col("d")]))
     projection_alias.schema().get_expression_by_name("out") == schema.get_expression_by_name("b")

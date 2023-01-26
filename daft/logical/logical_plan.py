@@ -381,6 +381,7 @@ class Filter(UnaryNode):
             input.schema().to_column_expressions(), partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION
         )
         self._register_child(input)
+
         self._predicate = predicate.resolve(input.schema())
 
         resolved_type = self._predicate.exprs[0].resolved_type()
@@ -755,7 +756,7 @@ class LocalAggregate(UnaryNode):
     def rebuild(self) -> LogicalPlan:
         return LocalAggregate(
             input=self._children()[0].rebuild(),
-            agg=[(e._unresolve(), op) for e, op in self._agg],
+            agg=[(e, op) for e, op in self._agg],
             group_by=self._group_by.unresolve() if self._group_by is not None else None,
         )
 
@@ -902,9 +903,11 @@ class Join(BinaryNode):
             raise NotImplementedError()
         elif how == JoinType.INNER:
             num_partitions = max(left.num_partitions(), right.num_partitions())
-            right_id_set = self._right_on.to_id_set()
-            filtered_right = [e for e in right.schema() if e.get_id() not in right_id_set]
+            right_id_set = self._right_on.to_name_set()
+            filtered_right = [e for e in right.schema() if e.name() not in right_id_set]
             schema = left.schema().union(ExpressionList(filtered_right), rename_dup="right.")
+            self._left_columns = left.schema()
+            self._right_columns = ExpressionList(schema.exprs[len(self._left_columns.exprs) :])
 
         left_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._left_on)
         right_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._right_on)
