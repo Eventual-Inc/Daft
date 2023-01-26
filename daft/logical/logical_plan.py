@@ -756,7 +756,7 @@ class LocalAggregate(UnaryNode):
     def rebuild(self) -> LogicalPlan:
         return LocalAggregate(
             input=self._children()[0].rebuild(),
-            agg=[(e._unresolve(), op) for e, op in self._agg],
+            agg=[(e, op) for e, op in self._agg],
             group_by=self._group_by.unresolve() if self._group_by is not None else None,
         )
 

@@ -335,7 +335,7 @@ class DataFrame:
                     num_rows=100,  # sample 100 rows for inferring schema
                     column_names=None,  # read all columns
                 ),
-            ).get_unresolved_col_expressions()
+            ).get_col_expressions()
 
         plan = _get_tabular_files_scan(
             path,
@@ -395,7 +395,7 @@ class DataFrame:
                     num_rows=100,  # sample 100 rows for schema inference
                     column_names=None,  # read all columns
                 ),
-            ).get_unresolved_col_expressions()
+            ).get_col_expressions()
 
         plan = _get_tabular_files_scan(
             path,
@@ -443,7 +443,7 @@ class DataFrame:
                     num_rows=0,  # sample 0 rows since Parquet has metadata
                     column_names=None,  # read all columns
                 ),
-            ).get_unresolved_col_expressions()
+            ).get_col_expressions()
 
         plan = _get_tabular_files_scan(
             path,

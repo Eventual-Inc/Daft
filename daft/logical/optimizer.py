@@ -4,7 +4,7 @@ import copy
 
 from loguru import logger
 
-from daft.expressions import ColID, ColumnExpression, col
+from daft.expressions import ColumnExpression, col
 from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
     Coalesce,
@@ -180,7 +180,7 @@ class PruneColumns(Rule[LogicalPlan]):
         new_grandchildren = [self._create_pruning_child(gc, required_set) for gc in child._children()]
         return parent.copy_with_new_children([child.copy_with_new_children(new_grandchildren)])
 
-    def _create_pruning_child(self, child: LogicalPlan, parent_name_set: set[ColID]) -> LogicalPlan:
+    def _create_pruning_child(self, child: LogicalPlan, parent_name_set: set[str]) -> LogicalPlan:
         child_ids = child.schema().to_name_set()
         if child_ids.issubset(parent_name_set):
             return child

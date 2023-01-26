@@ -4,18 +4,8 @@ import datetime
 import itertools
 import warnings
 from abc import abstractmethod
-from copy import deepcopy
 from functools import partial, partialmethod
-from typing import (
-    Any,
-    Callable,
-    NewType,
-    Sequence,
-    Tuple,
-    TypeVar,
-    cast,
-    get_type_hints,
-)
+from typing import Any, Callable, Sequence, Tuple, TypeVar, cast, get_type_hints
 
 import numpy as np
 import pandas as pd
@@ -72,7 +62,6 @@ def lit(val: Any) -> LiteralExpression:
 
 
 _COUNTER = itertools.count()
-ColID = NewType("ColID", int)
 
 
 class ExpressionExecutor:
@@ -203,12 +192,12 @@ class Expression(TreeNode["Expression"]):
         """Expressions have a resolved_type only if they are resolved"""
         return None
 
-    def name(self) -> str | None:
+    def name(self) -> str:
         for child in self._children():
             name = child.name()
             if name is not None:
                 return name
-        return None
+        raise ValueError("name should not be None")
 
     def to_column_expression(self) -> ColumnExpression:
         name = self.name()
@@ -235,16 +224,6 @@ class Expression(TreeNode["Expression"]):
                 col_expr, new_expr
             )
         return self
-
-    def _unresolve(self) -> Expression:
-        expr = deepcopy(self)
-
-        def helper(e: Expression) -> None:
-            for child in e._children():
-                helper(child)
-
-        helper(expr)
-        return expr
 
     # UnaryOps
 
@@ -732,7 +711,8 @@ class ColumnExpression(Expression):
     def __repr__(self) -> str:
         return self._display_str()
 
-    def name(self) -> str | None:
+    def name(self) -> str:
+        assert self._name is not None
         return self._name
 
     def required_columns(self) -> list[ColumnExpression]:
@@ -745,7 +725,7 @@ class ColumnExpression(Expression):
         return self.name()
 
     def _is_eq_local(self, other: Expression) -> bool:
-        return isinstance(other, ColumnExpression) and self._name == other._name
+        return isinstance(other, ColumnExpression) and self.name() == other.name()
 
 
 class AliasExpression(Expression):
@@ -769,7 +749,8 @@ class AliasExpression(Expression):
     def _display_str(self) -> str:
         return f"[{self._expr}].alias({self._name})"
 
-    def name(self) -> str | None:
+    def name(self) -> str:
+        assert self._name is not None
         return self._name
 
     def _is_eq_local(self, other: Expression) -> bool:

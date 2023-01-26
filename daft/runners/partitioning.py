@@ -166,7 +166,7 @@ class vPartition:
     def metadata(self) -> PartitionMetadata:
         return PartitionMetadata(num_rows=len(self))
 
-    def get_unresolved_col_expressions(self) -> ExpressionList:
+    def get_col_expressions(self) -> ExpressionList:
         """Generates column expressions that represent the vPartition's schema"""
         colexprs = []
         for _, tile in self.columns.items():
