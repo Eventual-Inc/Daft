@@ -23,11 +23,11 @@ def test_vpartition_eval_expression() -> None:
     tiles = {}
     for c in expr.required_columns():
         block = DataBlock.make_block(np.ones(10))
-        tiles[c.get_id()] = PyListTile(column_id=c.get_id(), column_name=c.name(), partition_id=0, block=block)
+        tiles[c.name()] = PyListTile(column_id=c.name(), column_name=c.name(), partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     result_tile = part.eval_expression(expr=expr)
     assert result_tile.partition_id == 0
-    assert result_tile.column_id == expr.get_id()
+    assert result_tile.column_id == expr.name()
     assert result_tile.column_name == expr.name()
     assert result_tile.block == DataBlock.make_block(np.ones(10) * 2)
 
@@ -45,7 +45,7 @@ def test_vpartition_eval_expression_list() -> None:
     tiles = {}
     for c in expr.required_columns():
         block = DataBlock.make_block(np.ones(10))
-        tiles[c.get_id()] = PyListTile(column_id=c.get_id(), column_name=c.name(), partition_id=0, block=block)
+        tiles[c.name()] = PyListTile(column_id=c.name(), column_name=c.name(), partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     assert len(part) == 10
 
@@ -55,10 +55,10 @@ def test_vpartition_eval_expression_list() -> None:
     assert len(result_vpart.columns) == 4
     for i in range(4):
         expr = list_of_expr[i]
-        col_id = expr.get_id()
+        col_id = expr.name()
         result_tile = result_vpart.columns[col_id]
         assert result_vpart.partition_id == 0
-        assert result_tile.column_id == expr.get_id()
+        assert result_tile.column_id == expr.name()
         assert result_tile.column_name == expr.name()
         assert result_tile.block == DataBlock.make_block((np.ones(10) * 2) + i)
 
@@ -149,18 +149,16 @@ def test_vpartition_filter() -> None:
     expr = col("x") < 4
     expr = resolve_expr(expr)
 
-    # Need to make sure there are no conflicts with column ID of `expr`
-    col_ids = [expr.required_columns()[0].get_id()] + list(range(expr.get_id() + 1, expr.get_id() + 4))
-
     tiles = {}
-    for i in col_ids:
+    col_id = expr.required_columns()[0].get_id()
+    for i in range(col_id, col_id + 4):
         block = DataBlock.make_block(np.arange(0, 10, 1))
         tiles[i] = PyListTile(column_id=i, column_name=f"col_{i}", partition_id=0, block=block)
 
     part = vPartition(columns=tiles, partition_id=0)
     part = part.filter(ExpressionList([expr]))
     arrow_table = pa.Table.from_pandas(part.to_pandas())
-    assert arrow_table.column_names == [f"col_{i}" for i in col_ids]
+    assert arrow_table.column_names == [f"col_{i}" for i in range(col_id, col_id + 4)]
 
     for i in range(4):
         assert np.all(arrow_table[i].to_numpy() < 4)
@@ -171,7 +169,7 @@ def test_vpartition_sort() -> None:
     expr = resolve_expr(expr)
 
     tiles = {}
-    col_id = expr.required_columns()[0].get_id()
+    col_id = expr.required_columns()[0].name()
 
     for i in range(col_id, col_id + 4):
         if i == col_id:
@@ -196,7 +194,7 @@ def test_vpartition_sort_desc() -> None:
     expr = resolve_expr(expr)
 
     tiles = {}
-    col_id = expr.required_columns()[0].get_id()
+    col_id = expr.required_columns()[0].name()
 
     for i in range(col_id, col_id + 4):
         if i == col_id:
@@ -244,7 +242,7 @@ def test_hash_partition(n) -> None:
     expr = resolve_expr(expr)
 
     tiles = {}
-    col_id = expr.required_columns()[0].get_id()
+    col_id = expr.required_columns()[0].name()
 
     for i in range(col_id, col_id + 4):
         block = DataBlock.make_block(np.arange(0, 2 * n, 1) % n)

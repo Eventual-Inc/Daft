@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from daft.expressions import col
@@ -14,12 +15,21 @@ from tests.dataframe_cookbook.conftest import (
 def test_sorted_by_expr(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Sort by a column that undergoes an expression"""
     daft_df = daft_df.repartition(repartition_nparts)
-    daft_sorted_df = daft_df.sort(col("Unique Key") + 1)
-
+    daft_sorted_df = daft_df.sort(((col("Unique Key") % 2) == 0).if_else(col("Unique Key"), col("Unique Key") * -1))
     daft_sorted_pd_df = daft_sorted_df.to_pandas()
+
+    service_requests_csv_pd_df["tmp"] = service_requests_csv_pd_df["Unique Key"]
+    service_requests_csv_pd_df["tmp"] = np.where(
+        service_requests_csv_pd_df["tmp"] % 2 == 0,
+        service_requests_csv_pd_df["tmp"],
+        service_requests_csv_pd_df["tmp"] * -1,
+    )
+    service_requests_csv_pd_df = service_requests_csv_pd_df.sort_values("tmp", ascending=True)
+    service_requests_csv_pd_df = service_requests_csv_pd_df.drop(["tmp"], axis=1)
+
     assert_df_equals(
         daft_sorted_pd_df,
-        service_requests_csv_pd_df.sort_values(by=["Unique Key"]),
+        service_requests_csv_pd_df,
         assert_ordering=True,
     )
 
