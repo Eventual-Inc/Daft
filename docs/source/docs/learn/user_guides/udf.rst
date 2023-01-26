@@ -84,7 +84,7 @@ For many Machine Learning applications, we often have expensive initialization s
 
 Daft provides an API for Stateful UDFs to do this. Stateful UDFs are just like Stateless UDFs, except that they are represented by Classes instead of Functions. Stateful UDF classes define any expensive initialization steps in their __init__ methods, and run on any columns or data in the __call__ method.
 
-For example, to download and run a model on a column of images as shown in the :doc:`../quickstart` guide:
+For example, to download and run a model on a column of images:
 
 .. code:: python
 
