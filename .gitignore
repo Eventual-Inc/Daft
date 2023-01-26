@@ -8,6 +8,7 @@ dist
 requirements.txt
 build
 .cython_build
+.hypothesis
 
 **/.ipynb_checkpoints/
 

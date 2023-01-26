@@ -4,6 +4,7 @@ docker
 
 # For aws and serving
 fastapi
+hypothesis
 icebridge
 
 # DevTools
