@@ -29,8 +29,6 @@ class ExplodeOp(MapPartitionOp):
     explode_columns: ExpressionList
 
     def __post_init__(self) -> None:
-        assert all([e.has_id() for e in self.explode_columns]), "Columns in ExplodeOp must be resolved"
-
         for c in self.explode_columns:
             resolved_type = c.resolved_type()
             # TODO(jay): Will have to change this after introducing nested types

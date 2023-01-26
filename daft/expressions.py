@@ -148,18 +148,17 @@ class ExpressionExecutor:
 class Expression(TreeNode["Expression"]):
     def __init__(self) -> None:
         super().__init__()
-        self._id: ColID | None = None
 
     def __repr__(self) -> str:
-        if self.has_id():
-            return f"{self._display_str()} AS {self.name()}#{self.get_id()}"
-        else:
-            return self._display_str()
+        return self._display_str()
 
     def _to_expression(self, input: Any) -> Expression:
         if not isinstance(input, Expression):
             return LiteralExpression(input)
         return input
+
+    def _input_mapping(self) -> str | None:
+        return None
 
     def __bool__(self) -> bool:
         raise ValueError(
@@ -211,26 +210,7 @@ class Expression(TreeNode["Expression"]):
                 return name
         return None
 
-    def _assign_id(self, strict: bool = True) -> ColID:
-        if not self.has_id():
-            self._id = ColID(next(_COUNTER))
-            return self._id
-        else:
-            if strict:
-                raise ValueError(f"We have already assigned an id, {self.get_id()}")
-            else:
-                assert self._id is not None
-                return self._id
-
-    def get_id(self) -> ColID | None:
-        return self._id
-
-    def has_id(self) -> bool:
-        return self.get_id() is not None
-
     def to_column_expression(self) -> ColumnExpression:
-        if not self.has_id():
-            raise ValueError("we can only convert expressions with assigned id to ColumnExpressions")
         name = self.name()
         if name is None:
             raise ValueError("we can only convert expressions to ColumnExpressions if they have a name")
@@ -238,27 +218,26 @@ class Expression(TreeNode["Expression"]):
         ce.resolve_to_expression(self)
         return ce
 
-    def required_columns(self, unresolved_only: bool = False) -> list[ColumnExpression]:
+    def required_columns(self) -> list[ColumnExpression]:
         to_rtn: list[ColumnExpression] = []
         for child in self._children():
-            to_rtn.extend(child.required_columns(unresolved_only))
+            to_rtn.extend(child.required_columns())
         return to_rtn
 
-    def _replace_column_with_expression(self, col_expr: ColumnExpression, new_expr: Expression) -> Expression:
-        assert col_expr.is_same(new_expr)
-        if isinstance(self, ColumnExpression) and self.is_eq(col_expr):
-            return new_expr
-        for i in range(len(self._children())):
-            self._registered_children[i] = self._registered_children[i]._replace_column_with_expression(
-                col_expr, new_expr
-            )
-        return self
+    # def _replace_column_with_expression(self, col_expr: ColumnExpression, new_expr: Expression) -> Expression:
+    #     assert col_expr.name() == new_expr.name()
+    #     if isinstance(self, ColumnExpression) and self.is_eq(col_expr):
+    #         return new_expr
+    #     for i in range(len(self._children())):
+    #         self._registered_children[i] = self._registered_children[i]._replace_column_with_expression(
+    #             col_expr, new_expr
+    #         )
+    #     return self
 
     def _unresolve(self) -> Expression:
         expr = deepcopy(self)
 
         def helper(e: Expression) -> None:
-            e._id = None
             for child in e._children():
                 helper(child)
 
@@ -458,18 +437,12 @@ class Expression(TreeNode["Expression"]):
             return any(c.has_call() for c in self._children())
         return False
 
-    def is_same(self, other: Expression) -> bool:
-        if self is other:
-            return True
-        ids_match = self.has_id() and self.get_id() == other.get_id()
-        return ids_match
-
     @abstractmethod
     def _is_eq_local(self, other: Expression) -> bool:
         raise NotImplementedError()
 
     def is_eq(self, other: Expression) -> bool:
-        if self.is_same(other):
+        if self is other:
             return True
 
         if not self._is_eq_local(other):
@@ -746,12 +719,13 @@ class ColumnExpression(Expression):
 
     def _display_str(self) -> str:
         s = f"col({self._name}"
-        if self.has_id():
-            s += f"#{self._id}"
         if self.resolved_type() is not None:
             s += f": {self.resolved_type()}"
         s = s + ")"
         return s
+
+    def _input_mapping(self) -> str | None:
+        return self._name
 
     def __repr__(self) -> str:
         return self._display_str()
@@ -759,21 +733,17 @@ class ColumnExpression(Expression):
     def name(self) -> str | None:
         return self._name
 
-    def required_columns(self, unresolved_only: bool = False) -> list[ColumnExpression]:
-        if unresolved_only and self.has_id():
-            return []
+    def required_columns(self) -> list[ColumnExpression]:
         return [self]
 
-    def resolve_to_expression(self, other: Expression) -> ColID:
+    def resolve_to_expression(self, other: Expression) -> str:
         assert self.name() == other.name()
-        self._id = other.get_id()
-        assert self._id is not None
         self._type = other.resolved_type()
         assert self._type is not None
-        return self._id
+        return self.name()
 
     def _is_eq_local(self, other: Expression) -> bool:
-        return isinstance(other, ColumnExpression) and self._name == other._name and self.get_id() == other.get_id()
+        return isinstance(other, ColumnExpression) and self._name == other._name
 
 
 class AliasExpression(Expression):
@@ -787,6 +757,9 @@ class AliasExpression(Expression):
     def resolved_type(self) -> ExpressionType | None:
         return self._expr.resolved_type()
 
+    def _input_mapping(self) -> str | None:
+        return self._children()[0].name()
+
     @property
     def _expr(self) -> Expression:
         return self._children()[0]
@@ -796,12 +769,6 @@ class AliasExpression(Expression):
 
     def name(self) -> str | None:
         return self._name
-
-    def get_id(self) -> ColID | None:
-        return self._expr.get_id()
-
-    def _assign_id(self, strict: bool = True) -> ColID:
-        return self._expr._assign_id(strict)
 
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, AliasExpression) and self._name == other._name
@@ -877,12 +844,6 @@ class AsPyExpression(Expression):
 
     def resolved_type(self) -> ExpressionType | None:
         return self._type
-
-    def get_id(self) -> ColID | None:
-        return self._expr.get_id()
-
-    def _assign_id(self, strict: bool = True) -> ColID:
-        return self._expr._assign_id(strict)
 
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, AliasExpression) and self._name == other._name
