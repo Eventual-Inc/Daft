@@ -187,7 +187,6 @@ class vPartition:
         return ExpressionList(colexprs)
 
     def eval_expression(self, expr: Expression) -> PyListTile:
-        # Avoid recomputing expressions that have been computed before
 
         expr_name = expr.name()
         # if expr_name in self.columns and self.columns[expr_name].is_eq(expr):
