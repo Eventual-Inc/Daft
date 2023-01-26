@@ -190,8 +190,6 @@ class vPartition:
         # Avoid recomputing expressions that have been computed before
 
         expr_name = expr.name()
-        # if expr_name in self.columns and self.columns[expr_name].is_eq(expr):
-        #     return self.columns[expr_name]
 
         assert expr_name is not None
 

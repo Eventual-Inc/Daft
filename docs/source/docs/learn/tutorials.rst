@@ -1,19 +1,29 @@
 Tutorials
 =========
 
-Generating images from text with Mini DALL-E
---------------------------------------------
+MNIST Digit Classification
+--------------------------
 
-In this series of tutorials, we will be exploring using Daft to build a model that can generate images from text using the Mini DALL-E model. We will explore how to scale this up with GPUs and Ray, and eventually deploy our model as a HTTP service that can serve incoming requests.
+Load the MNIST image dataset and use a simple deep learning model to run classification on each image. Evaluate the model's performance with simple aggregations.
 
-1. `Running on GPUs <https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb>`_
-2. Scaling up in the cloud with Ray **[Coming Soon]**
-3. Building a HTTP service **[Coming Soon]**
+`Run this tutorial on Google Colab <https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/mnist.ipynb>`__
 
-Data-Centric Machine Learning with KITTI
-----------------------------------------
+Querying Images with UDFs
+-------------------------
 
-Machine Learning models are only as good as the data that they are trained on, but building a workflow to continually improve your training datasets can often be very challenging. In this tutorial series, we show how Daft can be leveraged to easily process, query and leverage your data with the end goal of improving model performance on the autonomous driving dataset, KITTI.
+Query the Open Images dataset to retrieve the top N "reddest" images. This tutorial uses common open-source tools such as numpy and Pillow inside Daft UDFs to execute this query.
 
-1. Interacting with external services to build a data annotation pipeline **[Coming Soon]**
-2. Data preparation for ML model training **[Coming Soon]**
+`Run this tutorial on Google Colab <https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/image_querying/top_n_red_color.ipynb>`__
+
+Image generation on GPUs
+------------------------
+
+Generate images from text prompts using a deep learning model (Mini DALL-E) and Daft UDFs. Run Daft UDFs on GPUs for more efficient resource allocation.
+
+`Run this tutorial on Google Colab <https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb>`__
+
+.. Other ideas:
+.. Scaling up in the cloud with Ray **[Coming Soon]**
+.. Building a HTTP service **[Coming Soon]**
+.. Interacting with external services to build a data annotation pipeline **[Coming Soon]**
+.. Data preparation for ML model training **[Coming Soon]**
