@@ -232,7 +232,6 @@ class PyRunner(Runner):
         )
 
     def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
-        return plan
         return self._optimizer.optimize(plan)
 
     def partition_set_factory(self) -> PartitionSetFactory:

@@ -207,7 +207,6 @@ class Expression(TreeNode["Expression"]):
     def resolve_type(self, schema: Schema) -> ExpressionType:
         raise NotImplementedError()
 
-    @abstractmethod
     def to_field(self, schema: Schema) -> Field:
         return Field(name=self.name(), dtype=self.resolve_type(schema))
 
@@ -224,16 +223,16 @@ class Expression(TreeNode["Expression"]):
             raise ValueError("we can only convert expressions to ColumnExpressions if they have a name")
         return ColumnExpression(name)
 
-    def required_columns(self) -> list[str]:
-        to_rtn: list[str] = []
+    def required_columns(self) -> set[str]:
+        to_rtn: set[str] = set()
         for child in self._children():
-            to_rtn.extend(child.required_columns())
+            to_rtn |= child.required_columns()
         return to_rtn
 
     def _replace_column_with_expression(self, col_expr: ColumnExpression, new_expr: Expression) -> Expression:
         if isinstance(self, ColumnExpression):
             if self.name() == col_expr.name():
-                return new_expr
+                return copy.deepcopy(new_expr)
             else:
                 return self
         for i in range(len(self._children())):
@@ -612,8 +611,6 @@ class CallExpression(Expression):
 
     def resolve_type(self, schema: Schema) -> ExpressionType:
         args_resolved_types = tuple(arg.resolve_type(schema) for arg in self._args)
-        if any([arg_type is None for arg_type in args_resolved_types]):
-            return None
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
         ret_type = self._operator.value.get_return_type(args_resolved_types_non_none)
         if ret_type == ExpressionType.unknown():
@@ -731,8 +728,8 @@ class ColumnExpression(Expression):
         assert self._name is not None
         return self._name
 
-    def required_columns(self) -> list[str]:
-        return [self.name()]
+    def required_columns(self) -> set[str]:
+        return {self.name()}
 
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, ColumnExpression) and self.name() == other.name()
@@ -1029,13 +1026,21 @@ class ExpressionList(Iterable[Expression]):
     def __len__(self) -> int:
         return len(self.exprs)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ExpressionList):
+            return False
+
+        return len(self.exprs) == len(other.exprs) and all(
+            (s.name() == o.name()) and (s.is_eq(o)) for s, o in zip(self.exprs, other.exprs)
+        )
+
     def __iter__(self) -> Iterator[Expression]:
         return iter(self.exprs)
 
-    def required_columns(self) -> list[str]:
-        result = []
+    def required_columns(self) -> set[str]:
+        result = set()
         for e in self.exprs:
-            result.extend(e.required_columns())
+            result |= e.required_columns()
         return result
 
     def to_schema(self, input_schema: Schema) -> Schema:
@@ -1108,3 +1113,9 @@ class ExpressionList(Iterable[Expression]):
 
     def to_column_expressions(self) -> ExpressionList:
         return ExpressionList([e.to_column_expression() for e in self.exprs])
+
+    def get_expression_by_name(self, name: str) -> ExpressionType | None:
+        for i, n in enumerate(self.names):
+            if n == name:
+                return self.exprs[i]
+        raise ValueError(f"{name} not found in ExpressionList")

@@ -47,7 +47,7 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         raise NotImplementedError()
 
     @abstractmethod
-    def required_columns(self) -> list[str]:
+    def required_columns(self) -> set[str]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -236,8 +236,8 @@ class TabularFilesScan(UnaryNode):
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
 
-    def required_columns(self) -> list[str]:
-        return [self._filepaths_column_name] + self._predicate.required_columns()
+    def required_columns(self) -> set[str]:
+        return {self._filepaths_column_name} | self._predicate.required_columns()
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -293,8 +293,8 @@ class InMemoryScan(UnaryNode):
             and self.schema() == other.schema()
         )
 
-    def required_columns(self) -> list[str]:
-        return []
+    def required_columns(self) -> set[str]:
+        return set()
 
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
@@ -344,7 +344,7 @@ class FileWrite(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper()
 
-    def required_columns(self) -> list[str]:
+    def required_columns(self) -> set[str]:
         return self._partition_cols.required_columns()
 
     def resource_request(self) -> ResourceRequest:
@@ -396,7 +396,7 @@ class Filter(UnaryNode):
     def resource_request(self) -> ResourceRequest:
         return self._predicate.resource_request()
 
-    def required_columns(self) -> list[str]:
+    def required_columns(self) -> set[str]:
         return self._predicate.required_columns()
 
     def _local_eq(self, other: Any) -> bool:
@@ -420,12 +420,12 @@ class Projection(UnaryNode):
         self._projection = projection
 
     def __repr__(self) -> str:
-        return self._repr_helper()
+        return self._repr_helper(output=self._projection.exprs)
 
     def resource_request(self) -> ResourceRequest:
         return self._projection.resource_request()
 
-    def required_columns(self) -> list[str]:
+    def required_columns(self) -> set[str]:
         return self._projection.required_columns()
 
     def _local_eq(self, other: Any) -> bool:
@@ -463,7 +463,7 @@ class Sort(UnaryNode):
     def resource_request(self) -> ResourceRequest:
         return self._sort_by.resource_request()
 
-    def required_columns(self) -> list[str]:
+    def required_columns(self) -> set[str]:
         return self._sort_by.required_columns()
 
     def _local_eq(self, other: Any) -> bool:
@@ -527,7 +527,7 @@ class Explode(MapPartition[ExplodeOp]):
     def __repr__(self) -> str:
         return self._repr_helper()
 
-    def required_columns(self) -> list[str]:
+    def required_columns(self) -> set[str]:
         return self._map_partition_op.explode_columns.required_columns()
 
     def rebuild(self) -> LogicalPlan:
@@ -557,8 +557,8 @@ class LocalLimit(UnaryNode):
         assert len(new_children) == 1
         return LocalLimit(new_children[0], self._num)
 
-    def required_columns(self) -> list[str]:
-        return []
+    def required_columns(self) -> set[str]:
+        return set()
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, LocalLimit) and self.schema() == other.schema() and self._num == self._num
@@ -583,8 +583,8 @@ class GlobalLimit(UnaryNode):
         assert len(new_children) == 1
         return GlobalLimit(new_children[0], self._num)
 
-    def required_columns(self) -> list[str]:
-        return []
+    def required_columns(self) -> set[str]:
+        return set()
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, GlobalLimit) and self.schema() == other.schema() and self._num == self._num
@@ -643,7 +643,7 @@ class Repartition(UnaryNode):
             scheme=self._scheme,
         )
 
-    def required_columns(self) -> list[str]:
+    def required_columns(self) -> set[str]:
         return self._partition_by.required_columns()
 
     def _local_eq(self, other: Any) -> bool:
@@ -689,8 +689,8 @@ class Coalesce(UnaryNode):
             num_partitions=self.num_partitions(),
         )
 
-    def required_columns(self) -> list[str]:
-        return []
+    def required_columns(self) -> set[str]:
+        return set()
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -724,7 +724,7 @@ class LocalAggregate(UnaryNode):
         else:
             schema = cols_to_agg.to_schema(input.schema())
 
-        self._required_cols = list(required_cols)
+        self._required_cols = required_cols
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
         self._agg = [(e, op) for e, (_, op) in zip(cols_to_agg, agg)]
@@ -743,7 +743,7 @@ class LocalAggregate(UnaryNode):
         assert len(new_children) == 1
         return LocalAggregate(new_children[0], agg=self._agg, group_by=self._group_by)
 
-    def required_columns(self) -> list[str]:
+    def required_columns(self) -> set[str]:
         return self._required_cols
 
     def _local_eq(self, other: Any) -> bool:
@@ -788,7 +788,7 @@ class LocalDistinct(UnaryNode):
         assert len(new_children) == 1
         return LocalDistinct(new_children[0], group_by=self._group_by)
 
-    def required_columns(self) -> list[str]:
+    def required_columns(self) -> set[str]:
         return self._group_by.required_columns()
 
     def _local_eq(self, other: Any) -> bool:
@@ -818,7 +818,7 @@ class HTTPRequest(LogicalPlan):
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
 
-    def required_columns(self) -> list[str]:
+    def required_columns(self) -> set[str]:
         raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
@@ -849,7 +849,7 @@ class HTTPResponse(UnaryNode):
     def resource_request(self) -> ResourceRequest:
         return ResourceRequest.default()
 
-    def required_columns(self) -> list[str]:
+    def required_columns(self) -> set[str]:
         raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
@@ -952,8 +952,8 @@ class Join(BinaryNode):
         assert len(new_children) == 2
         return Join(new_children[0], new_children[1], left_on=self._left_on, right_on=self._right_on, how=self._how)
 
-    def required_columns(self) -> list[str]:
-        return self._left_on.required_columns().union(self._right_on.required_columns(), rename_dup="right.")
+    def required_columns(self) -> set[str]:
+        return self._left_on.required_columns() | self._right_on.required_columns()
 
     def _local_eq(self, other: Any) -> bool:
         return (

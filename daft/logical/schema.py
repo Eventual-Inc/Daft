@@ -31,14 +31,21 @@ class Schema:
     def __iter__(self) -> Iterator[Field]:
         return iter(self.fields.values())
 
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Schema) and self.fields == other.fields
+
     def column_names(self) -> list[str]:
         return list(self.fields.keys())
 
+    def to_name_set(self) -> set[str]:
+        return set(self.column_names())
+
     def __repr__(self) -> str:
-        headers = [(field.name, field.dtype) for field in self.fields.values()]
+        return repr([(field.name, field.dtype) for field in self.fields.values()])
         return tabulate(headers)
 
     def _repr_html_(self) -> str:
+        return repr([(field.name, field.dtype) for field in self.fields.values()])
         headers = [(field.name, field.dtype) for field in self.fields.values()]
         return tabulate(headers, tablefmt="unsafehtml")
 
