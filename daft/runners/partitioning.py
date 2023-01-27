@@ -811,7 +811,7 @@ class PartitionSetFactory(Generic[PartitionT]):
     def glob_paths(
         self,
         source_path: str,
-    ) -> tuple[PartitionSet[PartitionT], ExpressionList]:
+    ) -> tuple[PartitionSet[PartitionT], Schema]:
         """Globs the specified filepath to construct a PartitionSet of file or dir paths
 
         Args:
@@ -827,7 +827,7 @@ class PartitionSetFactory(Generic[PartitionT]):
     def glob_paths_details(
         self,
         source_path: str,
-    ) -> tuple[PartitionSet[PartitionT], ExpressionList]:
+    ) -> tuple[PartitionSet[PartitionT], Schema]:
         """Globs the specified filepath to construct a PartitionSet of file and dir metadata
 
         Args:
