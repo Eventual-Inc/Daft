@@ -18,7 +18,6 @@ from hypothesis.strategies import (
     text,
 )
 
-from daft import DataFrame
 from daft.types import ExpressionType
 
 
@@ -70,7 +69,7 @@ numeric_dtypes = sampled_from(
 )
 
 # Dtypes that are hashable and can be used for sorts, joins, repartitions etc
-hashable_dtypes = sampled_from(
+total_order_dtypes = sampled_from(
     [
         allstr_dtype,
         int64_dtype,
@@ -81,7 +80,7 @@ hashable_dtypes = sampled_from(
 )
 
 # Dtypes that are not hashable, and should throw an error if used for sorts, joins, repartitions etc
-non_hashable_dtypes = sampled_from(
+non_total_order_dtypes = sampled_from(
     [
         double_dtype,
         user_object_dtype,
@@ -115,32 +114,51 @@ def column(draw, length: int = 64, dtypes: SearchStrategy = all_dtypes) -> Colum
 
 
 @composite
-def dataframe(
+def row_nums_column(draw, length: int = 64) -> ColumnData:
+    return pa.array([i for i in range(length)], type=pa.int64())
+
+
+@composite
+def columns_dict(
     draw,
-    columns: dict[str, SearchStrategy[tuple[SearchStrategy, type]]] = {},
+    generate_columns_with_type: dict[str, SearchStrategy[tuple[SearchStrategy, type]]] = {},
+    generate_columns_with_strategy: dict[str, SearchStrategy[ColumnData]] = {},
     num_rows_strategy: SearchStrategy[int] = integers(min_value=0, max_value=8),
     num_other_generated_columns_strategy: SearchStrategy[int] = integers(min_value=0, max_value=2),
-) -> DataFrame:
+) -> dict[str, ColumnData]:
     """Hypothesis composite strategy for generating in-memory Daft DataFrames.
 
     Args:
         draw: Hypothesis draw function
         num_rows_strategy: strategy for generating number of rows
-        columns: {col_name: column_strategy} for specific strategies (e.g. hashable columns, numeric columns etc)
+        generate_columns_with_type: {col_name: column_strategy} for specific strategies (e.g. hashable columns, numeric columns etc)
         num_other_generated_columns_strategy: generate N more columns with random names and data according to this strategy
     """
     df_len = draw(num_rows_strategy, label="Number of rows")
 
     # Generate requested columns according to requested types
     requested_columns = {
-        col_name: draw(column(length=df_len, dtypes=col_type_strategy), label=f"Requested column {col_name}")
-        for col_name, col_type_strategy in columns.items()
+        col_name: draw(column(length=df_len, dtypes=col_type_strategy), label=f"Requested column {col_name} by type")
+        for col_name, col_type_strategy in generate_columns_with_type.items()
+    }
+
+    # Generate requested columns according to requested strategies
+    requested_strategy_columns = {
+        col_name: draw(col_strategy(length=df_len), label=f"Requested column {col_name} by strategy")
+        for col_name, col_strategy in generate_columns_with_strategy.items()
     }
 
     # Generate additional columns with random types and names
     num_cols = draw(num_other_generated_columns_strategy, label="Number of additional columns")
     additional_column_names = draw(
-        lists(text().filter(lambda name: name in requested_columns), min_size=num_cols, max_size=num_cols, unique=True),
+        lists(
+            text().filter(
+                lambda name: name not in requested_columns.keys() and name not in requested_strategy_columns.keys()
+            ),
+            min_size=num_cols,
+            max_size=num_cols,
+            unique=True,
+        ),
         label="Additional column names",
     )
     additional_columns = {
@@ -148,4 +166,4 @@ def dataframe(
         for col_name in additional_column_names
     }
 
-    return DataFrame.from_pydict({**requested_columns, **additional_columns})
+    return {**requested_columns, **requested_strategy_columns, **additional_columns}
