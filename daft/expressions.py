@@ -5,7 +5,16 @@ import itertools
 import warnings
 from abc import abstractmethod
 from functools import partial, partialmethod
-from typing import Any, Callable, Sequence, Tuple, TypeVar, cast, get_type_hints
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Sequence,
+    Tuple,
+    TypeVar,
+    cast,
+    get_type_hints,
+)
 
 import numpy as np
 import pandas as pd
@@ -29,6 +38,10 @@ from daft.runners.blocks import (
     zip_blocks_as_py,
 )
 from daft.types import ExpressionType, PrimitiveExpressionType
+
+if TYPE_CHECKING:
+    from daft.logical.field import Field
+    from daft.logical.schema import Schema
 
 
 def col(name: str) -> ColumnExpression:
@@ -188,9 +201,12 @@ class Expression(TreeNode["Expression"]):
         )
 
     @abstractmethod
-    def resolved_type(self) -> ExpressionType | None:
-        """Expressions have a resolved_type only if they are resolved"""
-        return None
+    def resolve_type(self, schema: Schema) -> ExpressionType:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def to_field(self, schema: Schema) -> Field:
+        raise Field(name=self.name(), dtype=self.resolve_type(schema))
 
     def name(self) -> str:
         for child in self._children():
@@ -203,9 +219,7 @@ class Expression(TreeNode["Expression"]):
         name = self.name()
         if name is None:
             raise ValueError("we can only convert expressions to ColumnExpressions if they have a name")
-        ce = ColumnExpression(name)
-        ce.resolve_to_expression(self)
-        return ce
+        return ColumnExpression(name)
 
     def required_columns(self) -> list[ColumnExpression]:
         to_rtn: list[ColumnExpression] = []
@@ -570,8 +584,11 @@ class LiteralExpression(Expression):
         super().__init__()
         self._value = value
 
-    def resolved_type(self) -> ExpressionType | None:
+    def resolve_type(self, schema: Schema) -> ExpressionType:
         return ExpressionType.from_py_type(type(self._value))
+
+    def name(self) -> str:
+        return "lit"
 
     def _display_str(self) -> str:
         return f"lit({self._value})"
@@ -590,8 +607,8 @@ class CallExpression(Expression):
         self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         self._operator = operator
 
-    def resolved_type(self) -> ExpressionType | None:
-        args_resolved_types = tuple(arg.resolved_type() for arg in self._args)
+    def resolve_type(self, schema: Schema) -> ExpressionType:
+        args_resolved_types = tuple(arg.resolve_type(schema) for arg in self._args)
         if any([arg_type is None for arg_type in args_resolved_types]):
             return None
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
@@ -660,7 +677,7 @@ class UdfExpression(Expression):
     def _kwargs(self) -> dict[str, Expression]:
         return {kw: self._children()[i] for kw, i in self._kwargs_ids.items()}
 
-    def resolved_type(self) -> ExpressionType | None:
+    def resolve_type(self, schema: Schema) -> ExpressionType:
         return self._func_ret_type
 
     def _display_str(self) -> str:
@@ -688,21 +705,17 @@ T = TypeVar("T")
 
 
 class ColumnExpression(Expression):
-    def __init__(self, name: str, expr_type: ExpressionType | None = None) -> None:
+    def __init__(self, name: str) -> None:
         super().__init__()
         if not isinstance(name, str):
             raise TypeError(f"Expected name to be type str, is {type(name)}")
         self._name = name
-        self._type = expr_type
 
-    def resolved_type(self) -> ExpressionType | None:
-        return self._type
+    def resolve_type(self, schema: Schema) -> ExpressionType:
+        return schema[self.name()].dtype
 
     def _display_str(self) -> str:
-        s = f"col({self._name}"
-        if self.resolved_type() is not None:
-            s += f": {self.resolved_type()}"
-        s = s + ")"
+        s = f"col({self._name})"
         return s
 
     def _input_mapping(self) -> str | None:
@@ -718,12 +731,6 @@ class ColumnExpression(Expression):
     def required_columns(self) -> list[ColumnExpression]:
         return [self]
 
-    def resolve_to_expression(self, other: Expression) -> str:
-        assert self.name() == other.name()
-        self._type = other.resolved_type()
-        assert self._type is not None
-        return self.name()
-
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, ColumnExpression) and self.name() == other.name()
 
@@ -736,8 +743,8 @@ class AliasExpression(Expression):
         self._register_child(expr)
         self._name = name
 
-    def resolved_type(self) -> ExpressionType | None:
-        return self._expr.resolved_type()
+    def resolve_type(self, schema: Schema) -> ExpressionType:
+        return self._expr.resolve_type(schema)
 
     def _input_mapping(self) -> str | None:
         return self._children()[0].name()
@@ -825,7 +832,7 @@ class AsPyExpression(Expression):
     def _expr(self) -> Expression:
         return self._children()[0]
 
-    def resolved_type(self) -> ExpressionType | None:
+    def resolve_type(self, schema: Schema) -> ExpressionType:
         return self._type
 
     def _is_eq_local(self, other: Expression) -> bool:
