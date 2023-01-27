@@ -114,7 +114,7 @@ def test_type_matrix_execution(op_name: str, arg_types: tuple[ExpressionType, ..
     op = OPS[op_name]
     df = df.with_column("bar", op(*[col(str(et)) for et in arg_types]))
 
-    assert df.schema()["bar"].daft_type == ret_type
+    assert df.schema()["bar"].dtype == ret_type
 
     df.collect()
     collected_columns = df.to_pydict()

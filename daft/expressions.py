@@ -9,6 +9,8 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Iterable,
+    Iterator,
     Sequence,
     Tuple,
     TypeVar,
@@ -40,8 +42,9 @@ from daft.runners.blocks import (
 from daft.types import ExpressionType, PrimitiveExpressionType
 
 if TYPE_CHECKING:
-    from daft.logical.field import Field
     from daft.logical.schema import Schema
+
+from daft.logical.field import Field
 
 
 def col(name: str) -> ColumnExpression:
@@ -206,7 +209,7 @@ class Expression(TreeNode["Expression"]):
 
     @abstractmethod
     def to_field(self, schema: Schema) -> Field:
-        raise Field(name=self.name(), dtype=self.resolve_type(schema))
+        return Field(name=self.name(), dtype=self.resolve_type(schema))
 
     def name(self) -> str:
         for child in self._children():
@@ -221,8 +224,8 @@ class Expression(TreeNode["Expression"]):
             raise ValueError("we can only convert expressions to ColumnExpressions if they have a name")
         return ColumnExpression(name)
 
-    def required_columns(self) -> list[ColumnExpression]:
-        to_rtn: list[ColumnExpression] = []
+    def required_columns(self) -> list[str]:
+        to_rtn: list[str] = []
         for child in self._children():
             to_rtn.extend(child.required_columns())
         return to_rtn
@@ -728,8 +731,8 @@ class ColumnExpression(Expression):
         assert self._name is not None
         return self._name
 
-    def required_columns(self) -> list[ColumnExpression]:
-        return [self]
+    def required_columns(self) -> list[str]:
+        return [self.name()]
 
     def _is_eq_local(self, other: Expression) -> bool:
         return isinstance(other, ColumnExpression) and self.name() == other.name()
@@ -1003,3 +1006,105 @@ class DatetimeMethodAccessor(BaseMethodAccessor):
             OperatorEnum.DT_DAY_OF_WEEK,
             (self._expr,),
         )
+
+
+import copy
+
+
+class ExpressionList(Iterable[Expression]):
+    def __init__(self, exprs: list[Expression]) -> None:
+        self.exprs = copy.deepcopy(exprs)
+        self.names: list[str] = []
+        name_set = set()
+        for i, e in enumerate(exprs):
+            assert isinstance(e, Expression), f"expect Expression got {type(e)}"
+            e_name = e.name()
+            if e_name is None:
+                e_name = "col_{i}"
+            if e_name in name_set:
+                raise ValueError(f"duplicate name found {e_name}")
+            self.names.append(e_name)
+            name_set.add(e_name)
+
+    def __len__(self) -> int:
+        return len(self.exprs)
+
+    def __iter__(self) -> Iterator[Expression]:
+        return iter(self.exprs)
+
+    def required_columns(self) -> list[str]:
+        result = []
+        for e in self.exprs:
+            result.extend(e.required_columns())
+        return result
+
+    def to_schema(self, input_schema: Schema) -> Schema:
+        from daft.logical.schema import Schema
+
+        result = []
+        for e in self.exprs:
+            result.append(e.to_field(input_schema))
+        return Schema(result)
+
+    def union(
+        self, other: ExpressionList, rename_dup: str | None = None, other_override: bool = False
+    ) -> ExpressionList:
+        """Unions two schemas together
+
+        Note: only one of rename_dup or other_override can be specified as the behavior when resolving naming conflicts.
+
+        Args:
+            other (ExpressionList): other ExpressionList to union with this one
+            rename_dup (Optional[str], optional): when conflicts in naming happen, append this string to the conflicting column in `other`. Defaults to None.
+            other_override (bool, optional): when conflicts in naming happen, use the `other` column instead of `self`. Defaults to False.
+        """
+        assert not ((rename_dup is not None) and other_override), "Only can specify one of rename_dup or other_override"
+        deduped = self.exprs.copy()
+        seen: dict[str, ExpressionType] = {}
+        for e in self.exprs:
+            name = e.name()
+            if name is not None:
+                seen[name] = e
+
+        for e in other:
+            name = e.name()
+            assert name is not None
+
+            if name in seen:
+                if rename_dup is not None:
+                    name = f"{rename_dup}{name}"
+                    e = cast(ExpressionType, e.alias(name))
+                elif other_override:
+                    # Allow this expression in `other` to override the existing expressions
+                    deduped = [current_expr for current_expr in deduped if current_expr.name() != name]
+                else:
+                    raise ValueError(
+                        f"Duplicate name found with different expression. name: {name}, seen: {seen[name]}, current: {e}"
+                    )
+            deduped.append(e)
+            seen[name] = e
+
+        return ExpressionList(deduped)
+
+    def to_name_set(self) -> set[str]:
+        id_set = set()
+        for c in self:
+            name = c.name()
+            assert name is not None
+            id_set.add(name)
+        return id_set
+
+    def input_mapping(self) -> dict[str, str]:
+        result = {}
+        for e in self.exprs:
+            input_map = e._input_mapping()
+            if input_map is not None:
+                result[e.name()] = input_map
+        return result
+
+    def resource_request(self) -> ResourceRequest:
+        """Returns the requested resources for the execution of all expressions in this list"""
+        return ResourceRequest.max_resources([e.resource_request() for e in self.exprs])
+
+    def to_column_expressions(self) -> ExpressionList:
+        return ExpressionList([e.to_column_expression() for e in self.exprs])

@@ -20,11 +20,11 @@ def test_col_expr_add() -> None:
 def test_name() -> None:
     expr = col("a") + col("b")
     assert expr.name() == "a"
-    assert all(l.is_eq(r) for l, r in zip(expr.required_columns(), [col("a"), col("b")]))
+    assert expr.required_columns() == ["a", "b"]
 
     new_expr = col("c") + expr
     new_expr.name() == "c"
-    assert all(l.is_eq(r) for l, r in zip(new_expr.required_columns(), [col("c"), col("a"), col("b")]))
+    assert new_expr.required_columns() == ["c", "a", "b"]
 
 
 def test_alias() -> None:
@@ -33,11 +33,11 @@ def test_alias() -> None:
 
     alias_expr = expr.alias("ab")
     assert alias_expr.name() == "ab"
-    assert all(l.is_eq(r) for l, r in zip(alias_expr.required_columns(), [col("a"), col("b")]))
+    assert alias_expr.required_columns() == ["a", "b"]
     assert (alias_expr + col("c")).name() == "ab"
     assert (col("c") + alias_expr).name() == "c"
 
-    assert all(l.is_eq(r) for l, r in zip((col("c") + alias_expr).required_columns(), [col("c"), col("a"), col("b")]))
+    assert (col("c") + alias_expr).required_columns() == ["c", "a", "b"]
 
 
 def test_column_expr_eq() -> None:

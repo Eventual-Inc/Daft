@@ -224,9 +224,8 @@ class LogicalPartitionOpRunner:
 
         output_schema = file_write.schema()
         assert len(output_schema) == 1
-        file_name_expr = output_schema.exprs[0]
+        col_name = output_schema.column_names()[0]
         columns: dict[str, PyListTile] = {}
-        col_name = file_name_expr.name()
         assert col_name is not None
         columns[col_name] = PyListTile(
             col_name,
@@ -353,7 +352,7 @@ class LogicalGlobalOpRunner:
             return (
                 part.sample(SAMPLES_PER_PARTITION)
                 .eval_expression_list(exprs)
-                .filter(ExpressionList([~e.to_column_expression().is_null() for e in exprs]).resolve(exprs))
+                .filter(ExpressionList([~e.to_column_expression().is_null() for e in exprs]))
             )
 
         def quantile_reduce_func(to_reduce: list[vPartition]) -> vPartition:

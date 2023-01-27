@@ -170,7 +170,7 @@ def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     )
 
     # Running .str expressions will fail on PyObj columns
-    assert daft_df.schema()["string_key"].daft_type == ExpressionType.python_object()
+    assert daft_df.schema()["string_key"].dtype == ExpressionType.python_object()
     # TODO(jay): This should fail during column resolving instead of at runtime
     daft_df_fail = daft_df.with_column("string_key_starts_with_1", col("string_key").str.startswith("1"))
     with pytest.raises(AssertionError):
@@ -187,8 +187,8 @@ def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df_pass, service_requests_csv_pd_df)
 
     # Assert that the data after UDF runs is an ArrowDataBlock with type string and bool_
-    assert daft_df_pass.schema()["string_key"].daft_type == ExpressionType.string()
-    assert daft_df_pass.schema()["string_key_starts_with_1"].daft_type == ExpressionType.logical()
+    assert daft_df_pass.schema()["string_key"].dtype == ExpressionType.string()
+    assert daft_df_pass.schema()["string_key_starts_with_1"].dtype == ExpressionType.logical()
     daft_df_pass.collect()
     assert_df_column_type(
         daft_df_pass._result,

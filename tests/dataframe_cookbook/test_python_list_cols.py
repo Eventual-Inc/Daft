@@ -62,8 +62,8 @@ def parametrize_udfs(name: str, funcs: Callable | list[Callable], return_type: t
 def test_python_dict(repartition_nparts):
     data = {"id": [i for i in range(10)], "dicts": [{"foo": i} for i in range(10)]}
     daft_df = DataFrame.from_pydict(data).repartition(repartition_nparts)
-    assert daft_df.schema()["id"].daft_type == ExpressionType.from_py_type(int)
-    assert daft_df.schema()["dicts"].daft_type == ExpressionType.from_py_type(dict)
+    assert daft_df.schema()["id"].dtype == ExpressionType.from_py_type(int)
+    assert daft_df.schema()["dicts"].dtype == ExpressionType.from_py_type(dict)
     pd_df = pd.DataFrame.from_dict(data)
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
@@ -162,8 +162,8 @@ def test_python_chained_expression_calls(repartition_nparts):
 def test_load_pydict_with_obj(repartition_nparts):
     data = {"id": [i for i in range(10)], "features": [np.ones(i) for i in range(10)]}
     daft_df = DataFrame.from_pydict(data).repartition(repartition_nparts)
-    assert daft_df.schema()["id"].daft_type == ExpressionType.from_py_type(int)
-    assert daft_df.schema()["features"].daft_type == ExpressionType.from_py_type(np.ndarray)
+    assert daft_df.schema()["id"].dtype == ExpressionType.from_py_type(int)
+    assert daft_df.schema()["features"].dtype == ExpressionType.from_py_type(np.ndarray)
     pd_df = pd.DataFrame.from_dict(data)
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")

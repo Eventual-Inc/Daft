@@ -37,12 +37,12 @@ class PushDownPredicates(Rule[LogicalPlan]):
     def _filter_through_projection(self, parent: Filter, child: Projection) -> LogicalPlan | None:
         filter_predicate = parent._predicate
         grandchild = child._children()[0]
-        child_input_mapping = child.schema().input_mapping()
+        child_input_mapping = child._projection.input_mapping()
 
         can_push_down = []
         can_not_push_down = []
         for pred in filter_predicate:
-            required_names = {e.name() for e in pred.required_columns()}
+            required_names = {e for e in pred.required_columns()}
             if all(name in child_input_mapping for name in required_names):
                 pred = copy.deepcopy(pred)
                 for name in required_names:
@@ -172,7 +172,7 @@ class PruneColumns(Rule[LogicalPlan]):
             return None
         if len(child._children()) == 0:
             return None
-        required_set = parent.required_columns().to_name_set().union(child.required_columns().to_name_set())
+        required_set = set(parent.required_columns() + child.required_columns())
         child_output_set = child.schema().to_name_set()
         if child_output_set.issubset(required_set):
             return None
