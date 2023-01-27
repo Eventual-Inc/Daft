@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import datetime
-
 import pyarrow as pa
 from hypothesis.strategies import (
     SearchStrategy,
@@ -39,60 +37,85 @@ def user_object(draw) -> UserObject:
 # Various strategies for dtypes and their corresponding Daft type
 ###
 
-allstr_dtype = (text(), str)
-int64_dtype = (integers(min_value=-(2**63), max_value=(2**63) - 1), int)
-double_dtype = (floats(), float)
-boolean_dtype = (booleans(), bool)
-byte_dtype = (binary(), bytes)
-date_dtype = (dates(), datetime.date)
-user_object_dtype = (user_object(), UserObject)
+_strat_allstr = text()
+_strat_int64 = integers(min_value=-(2**63), max_value=(2**63) - 1)
+_strat_double = floats()
+_strat_boolean = booleans()
+_strat_byte = binary()
+_strat_date = dates()
+_strat_user_object = user_object()
+
+_default_strategies = {
+    ExpressionType.string(): _strat_allstr,
+    ExpressionType.integer(): _strat_int64,
+    ExpressionType.float(): _strat_double,
+    ExpressionType.logical(): _strat_boolean,
+    ExpressionType.bytes(): _strat_byte,
+    ExpressionType.date(): _strat_date,
+    ExpressionType.from_py_type(UserObject): _strat_user_object,
+}
+
+
+@composite
+def generate_data(
+    draw, daft_type: ExpressionType, strategies: dict[ExpressionType, SearchStrategy] = _default_strategies
+):
+    """Helper to generate data when given a daft_type"""
+    if daft_type not in strategies:
+        raise NotImplementedError(f"Strategy for type {daft_type} not implemented")
+    return draw(strategies[daft_type], label=f"Generated data for type {daft_type}")
+
 
 # All available dtypes
 all_dtypes = sampled_from(
     [
-        allstr_dtype,
-        int64_dtype,
-        double_dtype,
-        boolean_dtype,
-        byte_dtype,
-        date_dtype,
-        user_object_dtype,
+        ExpressionType.string(),
+        ExpressionType.integer(),
+        ExpressionType.float(),
+        ExpressionType.logical(),
+        ExpressionType.bytes(),
+        ExpressionType.date(),
+        ExpressionType.from_py_type(UserObject),
     ]
 )
 
-# Dtypes that are numeric
-numeric_dtypes = sampled_from(
-    [
-        int64_dtype,
-        double_dtype,
-    ]
-)
-
-# Dtypes that are hashable and can be used for sorts, joins, repartitions etc
+# Dtypes that have a total ordering
 total_order_dtypes = sampled_from(
     [
-        allstr_dtype,
-        int64_dtype,
-        boolean_dtype,
-        byte_dtype,
-        date_dtype,
-    ]
-)
-
-# Dtypes that are not hashable, and should throw an error if used for sorts, joins, repartitions etc
-non_total_order_dtypes = sampled_from(
-    [
-        double_dtype,
-        user_object_dtype,
+        ExpressionType.string(),
+        ExpressionType.integer(),
+        ExpressionType.float(),
+        ExpressionType.logical(),
+        ExpressionType.bytes(),
+        ExpressionType.date(),
     ]
 )
 
 ColumnData = "list[Any] | pa.Array"
 
 
+###
+# Strategies for creation of column data
+###
+
+
 @composite
-def column(draw, length: int = 64, dtypes: SearchStrategy = all_dtypes) -> ColumnData:
-    dtype_strategy, dtype = draw(dtypes, label="Column dtype strategy")
+def column(
+    draw,
+    length: int = 64,
+    dtypes: SearchStrategy[ExpressionType] = all_dtypes,
+    strategies: dict[ExpressionType, SearchStrategy] = _default_strategies,
+) -> ColumnData:
+    """Generate a column of data
+
+    Args:
+        draw: Hypothesis draw function
+        length: length of column
+        dtypes: strategy for generating daft_type
+        strategies: strategies for generating data for each daft_type, defaults to `_default_strategies`
+    """
+    daft_type = draw(dtypes, label="Column dtype")
+    dtype_strategy = strategies[daft_type]
     nullable_dtype_strategy = one_of(dtype_strategy, none())
     col_data = draw(
         one_of(
@@ -107,7 +130,6 @@ def column(draw, length: int = 64, dtypes: SearchStrategy = all_dtypes) -> Colum
     )
 
     # Convert sampled data to appropriate underlying format
-    daft_type = ExpressionType.from_py_type(dtype)
     if ExpressionType.is_py(daft_type):
         return col_data
     return pa.array(col_data, type=daft_type.to_arrow_type())
@@ -121,7 +143,7 @@ def row_nums_column(draw, length: int = 64) -> ColumnData:
 @composite
 def columns_dict(
     draw,
-    generate_columns_with_type: dict[str, SearchStrategy[tuple[SearchStrategy, type]]] = {},
+    generate_columns_with_type: dict[str, SearchStrategy[ExpressionType]] = {},
     generate_columns_with_strategy: dict[str, SearchStrategy[ColumnData]] = {},
     num_rows_strategy: SearchStrategy[int] = integers(min_value=0, max_value=8),
     num_other_generated_columns_strategy: SearchStrategy[int] = integers(min_value=0, max_value=2),
@@ -138,8 +160,8 @@ def columns_dict(
 
     # Generate requested columns according to requested types
     requested_columns = {
-        col_name: draw(column(length=df_len, dtypes=col_type_strategy), label=f"Requested column {col_name} by type")
-        for col_name, col_type_strategy in generate_columns_with_type.items()
+        col_name: draw(column(length=df_len, dtypes=daft_type_strategy), label=f"Requested column {col_name} by type")
+        for col_name, daft_type_strategy in generate_columns_with_type.items()
     }
 
     # Generate requested columns according to requested strategies
