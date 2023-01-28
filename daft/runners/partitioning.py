@@ -17,12 +17,7 @@ from pyarrow import dataset as pada
 from pyarrow import json, parquet
 
 from daft.execution.operators import OperatorEnum
-from daft.expressions import (
-    ColumnExpression,
-    Expression,
-    ExpressionExecutor,
-    ExpressionList,
-)
+from daft.expressions import Expression, ExpressionExecutor, ExpressionList
 from daft.filesystem import get_filesystem_from_path
 from daft.logical.field import Field
 from daft.logical.schema import Schema
@@ -611,9 +606,7 @@ class vPartition:
         partition_col_names = []
         if partition_cols is not None:
             for col in partition_cols:
-                assert isinstance(
-                    col, ColumnExpression
-                ), "we can only support ColumnExpressions for partitioning parquet"
+                assert col.is_column(), "we can only support Column Expressions for partitioning parquet"
                 col_name = col.name()
                 assert col_name is not None
                 assert col_name in keys

@@ -16,7 +16,7 @@ from daft.experimental.serving.backends import (
     MultiprocessingEndpointBackend,
 )
 from daft.experimental.serving.env import DaftEnv, get_docker_client
-from daft.expressions import ColumnExpression
+from daft.expressions import col
 from daft.logical.schema import ExpressionList
 
 TEST_BACKEND_CONFIG = {
@@ -25,7 +25,7 @@ TEST_BACKEND_CONFIG = {
 }
 
 FAKE_ENDPOINT_NAME = "test-endpoint"
-SCHEMA = ExpressionList([ColumnExpression("foo")])
+SCHEMA = ExpressionList([col("foo")])
 
 
 @pytest.fixture(scope="function")

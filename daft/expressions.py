@@ -217,6 +217,9 @@ class Expression(TreeNode["Expression"]):
                 return name
         raise ValueError("name should not be None")
 
+    def is_column(self) -> bool:
+        return isinstance(self, ColumnExpression)
+
     def to_column_expression(self) -> ColumnExpression:
         name = self.name()
         if name is None:

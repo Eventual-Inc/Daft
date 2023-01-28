@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from daft.expressions import ColumnExpression, Expression, col
+from daft.expressions import Expression, col
 
 
 def test_column_expression_creation() -> None:
@@ -12,7 +12,7 @@ def test_column_expression_creation() -> None:
 
 def test_col_expr_add() -> None:
     id = col("id")
-    assert isinstance(id, ColumnExpression)
+    assert id.is_column()
     new_id = id + 1
     assert new_id.has_call()
 

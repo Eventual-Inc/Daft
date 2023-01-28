@@ -19,7 +19,7 @@ from daft.datasources import (
 )
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionType
-from daft.expressions import ColumnExpression, Expression, col
+from daft.expressions import Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
@@ -167,10 +167,10 @@ class DataFrame:
 
     @property
     def columns(self) -> list[Expression]:
-        """Returns column of DataFrame as a list of ColumnExpressions.
+        """Returns column of DataFrame as a list of Expressions.
 
         Returns:
-            List[ColumnExpression]: Columns of this DataFrame.
+            List[Expression]: Columns of this DataFrame.
         """
         return [expr.to_column_expression() for expr in self.__plan.schema()]
 
@@ -533,7 +533,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
-            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports ColumnExpressions with any calls. Defaults to None.
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -545,7 +545,7 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
-                assert isinstance(c, ColumnExpression), "we cant support non ColumnExpressions for partition writing"
+                assert c.is_column(), "we cant support non Column Expressions for partition writing"
             df = self.repartition(self.num_partitions(), *cols)
         else:
             df = self
@@ -577,7 +577,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
-            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports ColumnExpressions with any calls. Defaults to None.
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -586,7 +586,7 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
-                assert isinstance(c, ColumnExpression), "we cant support non ColumnExpressions for partition writing"
+                assert c.is_column(), "we cant support non Column Expressions for partition writing"
             df = self.repartition(self.num_partitions(), *cols)
         else:
             df = self
