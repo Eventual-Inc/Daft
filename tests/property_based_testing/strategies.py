@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+
 import pyarrow as pa
 from hypothesis.strategies import (
     SearchStrategy,
@@ -27,6 +29,9 @@ class UserObject:
     def __repr__(self):
         return f"UserObject(x={self.x}, y={self.y})"
 
+    def add(self, other: UserObject) -> UserObject:
+        return UserObject(x=self.x + other.x, y=self.y + other.y)
+
 
 @composite
 def user_object(draw) -> UserObject:
@@ -42,7 +47,7 @@ _strat_int64 = integers(min_value=-(2**63), max_value=(2**63) - 1)
 _strat_double = floats()
 _strat_boolean = booleans()
 _strat_byte = binary()
-_strat_date = dates()
+_strat_date = dates(min_value=datetime.date(2000, 1, 1), max_value=datetime.date(2100, 1, 1))
 _strat_user_object = user_object()
 
 _default_strategies = {
@@ -53,6 +58,7 @@ _default_strategies = {
     ExpressionType.bytes(): _strat_byte,
     ExpressionType.date(): _strat_date,
     ExpressionType.from_py_type(UserObject): _strat_user_object,
+    ExpressionType.null(): none(),
 }
 
 
