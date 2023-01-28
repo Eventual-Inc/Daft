@@ -24,6 +24,7 @@ pyarrow
 # needed for testing
 pytest>=7.1.2
 pytest-benchmark
+pytest-cov
 PyYAML
 
 ray[data, default]
