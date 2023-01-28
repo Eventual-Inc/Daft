@@ -58,7 +58,7 @@ jobs:
         maturin develop
 
     - name: Run Hypothesis property based tests
-      run: pytest tests/property_based_testing -m 'hypothesis'
+      run: pytest tests/property_based_testing -m 'hypothesis' --hypothesis-seed=0
       env:
         DAFT_RUNNER: ${{ matrix.daft_runner }}
         HYPOTHESIS_MAX_EXAMPLES: 10000
