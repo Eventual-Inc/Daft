@@ -10,7 +10,7 @@ env:
   DAFT_ANALYTICS_ENABLED: '0'
 
 jobs:
-  build:
+  rust-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
