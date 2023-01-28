@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from dataclasses import dataclass
 
-from daft.logical.schema import ExpressionList
+from daft.logical.schema import ExpressionList, Schema
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import vPartition
 from daft.types import ExpressionType
@@ -15,22 +14,34 @@ class MapPartitionOp:
         """Returns the resource request of running this MapPartitionOp on one vPartition"""
 
     @abstractmethod
-    def get_output_schema(self, input_schema: ExpressionList) -> ExpressionList:
-        """Returns the output schema after running this MapPartitionOp on the supplied input_schema"""
+    def get_output_schema(self) -> Schema:
+        """Returns the output schema after running this MapPartitionOp"""
 
     @abstractmethod
     def run(self, input_partition: vPartition) -> vPartition:
         """Runs this MapPartitionOp on the supplied vPartition"""
 
 
-@dataclass
 class ExplodeOp(MapPartitionOp):
-
+    input_schema: Schema
     explode_columns: ExpressionList
 
-    def __post_init__(self) -> None:
+    def __init__(self, input_schema: Schema, explode_columns: ExpressionList) -> None:
+        super().__init__()
+        self.input_schema = input_schema
+        output_fields = []
+        explode_schema = explode_columns.to_schema(input_schema)
+        for f in input_schema.fields.values():
+            if f.name in explode_schema.column_names():
+                output_fields.append(explode_schema[f.name])
+            else:
+                output_fields.append(f)
+
+        self.output_schema = Schema(output_fields)
+        self.explode_columns = explode_columns
+
         for c in self.explode_columns:
-            resolved_type = c.resolved_type()
+            resolved_type = c.resolve_type(self.input_schema)
             # TODO(jay): Will have to change this after introducing nested types
             if ExpressionType.is_primitive(resolved_type):
                 raise ValueError(
@@ -40,8 +51,8 @@ class ExplodeOp(MapPartitionOp):
     def resource_request(self) -> ResourceRequest:
         return self.explode_columns.resource_request()
 
-    def get_output_schema(self, input_schema: ExpressionList) -> ExpressionList:
-        return input_schema.union(self.explode_columns, other_override=True)
+    def get_output_schema(self) -> Schema:
+        return self.output_schema
 
     def run(self, input_partition: vPartition) -> vPartition:
         return input_partition.explode(self.explode_columns)

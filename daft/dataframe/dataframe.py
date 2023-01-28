@@ -10,7 +10,6 @@ import pyarrow as pa
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.dataframe.preview import DataFramePreview
-from daft.dataframe.schema import DataFrameSchema
 from daft.datasources import (
     CSVSourceInfo,
     JSONSourceInfo,
@@ -20,7 +19,7 @@ from daft.datasources import (
 )
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionType
-from daft.expressions import ColumnExpression, Expression, col
+from daft.expressions import Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
@@ -39,13 +38,16 @@ from daft.viz import DataFrameDisplay
 if TYPE_CHECKING:
     from ray.data.dataset import Dataset as RayDataset
 
+from daft.logical.field import Field
+from daft.logical.schema import Schema
+
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
 
 
 def _get_tabular_files_scan(
-    path: str, get_schema: Callable[[str], ExpressionList], source_info: SourceInfo
+    path: str, get_schema: Callable[[str], Schema], source_info: SourceInfo
 ) -> logical_plan.TabularFilesScan:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
     # Glob the path and return as a DataFrame with a column containing the filepaths
@@ -72,7 +74,6 @@ def _get_tabular_files_scan(
 
     # TODO: infer schema from all sampled schemas instead of just taking the first one
     schema = sampled_schemas[0]
-    schema = schema.resolve()
 
     # Return a TabularFilesScan node that will scan from the globbed filepaths filepaths
     return logical_plan.TabularFilesScan(
@@ -106,9 +107,7 @@ class DataFrame:
         if self._result_cache is None:
             return self.__plan
         else:
-            return logical_plan.InMemoryScan(
-                self._result_cache, self.__plan.schema().to_column_expressions(), self.__plan.partition_spec()
-            )
+            return logical_plan.InMemoryScan(self._result_cache, self.__plan.schema(), self.__plan.partition_spec())
 
     @property
     def _result(self) -> PartitionSet | None:
@@ -149,13 +148,13 @@ class DataFrame:
         return self.__plan.num_partitions()
 
     @DataframePublicAPI
-    def schema(self) -> DataFrameSchema:
-        """Returns the DataFrameSchema of the DataFrame, which provides information about each column
+    def schema(self) -> Schema:
+        """Returns the Schema of the DataFrame, which provides information about each column
 
         Returns:
-            DataFrameSchema: schema of the DataFrame
+            Schema: schema of the DataFrame
         """
-        return DataFrameSchema.from_expression_list(self.__plan.schema())
+        return self.__plan.schema()
 
     @property
     def column_names(self) -> list[str]:
@@ -164,14 +163,14 @@ class DataFrame:
         Returns:
             List[str]: Column names of this DataFrame.
         """
-        return [expr.name() for expr in self.__plan.schema()]
+        return self.__plan.schema().column_names()
 
     @property
-    def columns(self) -> list[ColumnExpression]:
-        """Returns column of DataFrame as a list of ColumnExpressions.
+    def columns(self) -> list[Expression]:
+        """Returns column of DataFrame as a list of Expressions.
 
         Returns:
-            List[ColumnExpression]: Columns of this DataFrame.
+            List[Expression]: Columns of this DataFrame.
         """
         return [expr.to_column_expression() for expr in self.__plan.schema()]
 
@@ -280,9 +279,7 @@ class DataFrame:
             expr_type = ExpressionType.from_arrow_type(arrow_type)
             block_data[header] = (expr_type, list(arr) if ExpressionType.is_py(expr_type) else pa.array(arr))
 
-        schema = ExpressionList(
-            [ColumnExpression(header, expr_type=expr_type) for header, (expr_type, _) in block_data.items()]
-        ).resolve()
+        schema = Schema([Field(header, expr_type) for header, (expr_type, _) in block_data.items()])
         data_vpartition = vPartition.from_pydict(
             data={header: arr for header, (_, arr) in block_data.items()}, schema=schema, partition_id=0
         )
@@ -323,7 +320,7 @@ class DataFrame:
             DataFrame: parsed DataFrame
         """
 
-        def get_schema(filepath: str) -> ExpressionList:
+        def get_schema(filepath: str) -> Schema:
             return vPartition.from_json(
                 filepath,
                 partition_id=0,
@@ -335,7 +332,7 @@ class DataFrame:
                     num_rows=100,  # sample 100 rows for inferring schema
                     column_names=None,  # read all columns
                 ),
-            ).get_col_expressions()
+            ).get_schema()
 
         plan = _get_tabular_files_scan(
             path,
@@ -377,7 +374,7 @@ class DataFrame:
             DataFrame: parsed DataFrame
         """
 
-        def get_schema(filepath: str) -> ExpressionList:
+        def get_schema(filepath: str) -> Schema:
             return vPartition.from_csv(
                 path=filepath,
                 partition_id=0,
@@ -395,7 +392,7 @@ class DataFrame:
                     num_rows=100,  # sample 100 rows for schema inference
                     column_names=None,  # read all columns
                 ),
-            ).get_col_expressions()
+            ).get_schema()
 
         plan = _get_tabular_files_scan(
             path,
@@ -431,7 +428,7 @@ class DataFrame:
             DataFrame: parsed DataFrame
         """
 
-        def get_schema(filepath: str) -> ExpressionList:
+        def get_schema(filepath: str) -> Schema:
             return vPartition.from_parquet(
                 filepath,
                 partition_id=0,
@@ -443,7 +440,7 @@ class DataFrame:
                     num_rows=0,  # sample 0 rows since Parquet has metadata
                     column_names=None,  # read all columns
                 ),
-            ).get_col_expressions()
+            ).get_schema()
 
         plan = _get_tabular_files_scan(
             path,
@@ -536,7 +533,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
-            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports ColumnExpressions with any calls. Defaults to None.
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -548,7 +545,7 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
-                assert isinstance(c, ColumnExpression), "we cant support non ColumnExpressions for partition writing"
+                assert c.is_column(), "we cant support non Column Expressions for partition writing"
             df = self.repartition(self.num_partitions(), *cols)
         else:
             df = self
@@ -580,7 +577,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
-            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports ColumnExpressions with any calls. Defaults to None.
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -589,7 +586,7 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
-                assert isinstance(c, ColumnExpression), "we cant support non ColumnExpressions for partition writing"
+                assert c.is_column(), "we cant support non Column Expressions for partition writing"
             df = self.repartition(self.num_partitions(), *cols)
         else:
             df = self
@@ -614,45 +611,46 @@ class DataFrame:
         expressions = [col(c) if isinstance(c, str) else c for c in columns]
         return ExpressionList(expressions)
 
-    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> ColumnExpression | DataFrame:
+    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> Expression | DataFrame:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)"""
-        result: ColumnExpression | None
+        result: Expression | None
 
         if isinstance(item, int):
-            exprs = self._plan.schema()
-            if item < -len(exprs.exprs) or item >= len(exprs.exprs):
-                raise ValueError(f"{item} out of bounds for {exprs.exprs}")
-            result = exprs.exprs[item]
+            schema = self._plan.schema()
+            if item < -len(schema) or item >= len(schema):
+                raise ValueError(f"{item} out of bounds for {schema}")
+            result = schema.to_column_expressions().exprs[item]
             assert result is not None
-            return result.to_column_expression()
+            return result
         elif isinstance(item, str):
-            exprs = self._plan.schema()
-            result = exprs.get_expression_by_name(item)
-            if result is None:
-                raise ValueError(f"{item} not found in DataFrame schema {exprs}")
-            assert result is not None
-            return result.to_column_expression()  # type: ignore
+            schema = self._plan.schema()
+            result = schema[item].to_column_expression()
+            return result
         elif isinstance(item, Iterable):
-            exprs = self._plan.schema()
+            schema = self._plan.schema()
+            col_exprs = self._plan.schema().to_column_expressions()
+
             columns = []
             for it in item:
                 if isinstance(it, str):
-                    result = exprs.get_expression_by_name(it)
+                    result = schema[it].to_column_expression()
                     if result is None:
-                        raise ValueError(f"{it} not found in DataFrame schema {exprs}")
+                        raise ValueError(f"{it} not found in DataFrame schema {schema}")
                     columns.append(result)
                 elif isinstance(it, int):
-                    if it < -len(exprs.exprs) or it >= len(exprs.exprs):
-                        raise ValueError(f"{it} out of bounds for {exprs.exprs}")
-                    result = exprs.exprs[it]
+                    if it < -len(schema) or it >= len(schema):
+                        raise ValueError(f"{it} out of bounds for {schema}")
+                    result = col_exprs.exprs[it]
                     assert result is not None
-                    columns.append(result.to_column_expression())
+                    columns.append(result)
                 else:
                     raise ValueError(f"unknown indexing type: {type(it)}")
             return self.select(*columns)
         elif isinstance(item, slice):
-            exprs = self._plan.schema()
-            return self.select(*[val.to_column_expression() for val in exprs.exprs[item]])
+            schema = self._plan.schema()
+            columns_exprs: ExpressionList = schema.to_column_expressions()
+            selected_columns = columns_exprs.exprs[item]
+            return self.select(*selected_columns)
         else:
             raise ValueError(f"unknown indexing type: {type(item)}")
 
@@ -694,7 +692,7 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame that has only  unique rows.
         """
-        all_exprs = self._plan.schema()
+        all_exprs = self._plan.schema().to_column_expressions()
         plan: logical_plan.LogicalPlan = logical_plan.LocalDistinct(self._plan, all_exprs)
         if self.num_partitions() > 1:
             plan = logical_plan.Repartition(
@@ -722,7 +720,7 @@ class DataFrame:
             DataFrame: DataFrame with some columns excluded.
         """
         names_to_skip = set(names)
-        el = ExpressionList([e for e in self._plan.schema() if e.name() not in names_to_skip])
+        el = ExpressionList([col(e.name) for e in self._plan.schema() if e.name not in names_to_skip])
         return DataFrame(logical_plan.Projection(self._plan, el))
 
     @DataframePublicAPI
@@ -1249,12 +1247,11 @@ class GroupedDataFrame:
     group_by: ExpressionList
 
     def __post_init__(self):
-        resolved_groupby = self.group_by.resolve(self.df._plan.schema())
-        for e in resolved_groupby:
-            if e.resolved_type() == ExpressionType.null():
+        for e in self.group_by:
+            if e.resolve_type(self.df._plan.schema()) == ExpressionType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
-    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> ColumnExpression | DataFrame:
+    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> Expression | DataFrame:
         """Gets a column from the DataFrame as an Expression"""
         return self.df.__getitem__(item)
 

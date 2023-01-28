@@ -25,7 +25,7 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
-from daft.logical.schema import ExpressionList
+from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartID,
@@ -89,7 +89,7 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
     def glob_paths(
         self,
         source_path: str,
-    ) -> tuple[LocalPartitionSet, ExpressionList]:
+    ) -> tuple[LocalPartitionSet, Schema]:
         filepaths = glob_path(source_path)
 
         if len(filepaths) == 0:
@@ -109,7 +109,7 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
     def glob_paths_details(
         self,
         source_path: str,
-    ) -> tuple[LocalPartitionSet, ExpressionList]:
+    ) -> tuple[LocalPartitionSet, Schema]:
         files_info = glob_path_with_stats(source_path)
 
         if len(files_info) == 0:

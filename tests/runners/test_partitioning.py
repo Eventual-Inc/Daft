@@ -15,7 +15,7 @@ def test_vpartition_eval_expression() -> None:
     tiles = {}
     for c in expr.required_columns():
         block = DataBlock.make_block(np.ones(10))
-        tiles[c.name()] = PyListTile(column_name=c.name(), partition_id=0, block=block)
+        tiles[c] = PyListTile(column_name=c, partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     result_tile = part.eval_expression(expr=expr)
     assert result_tile.partition_id == 0
@@ -34,7 +34,7 @@ def test_vpartition_eval_expression_list() -> None:
     tiles = {}
     for c in expr.required_columns():
         block = DataBlock.make_block(np.ones(10))
-        tiles[c.name()] = PyListTile(column_name=c.name(), partition_id=0, block=block)
+        tiles[c] = PyListTile(column_name=c, partition_id=0, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     assert len(part) == 10
 

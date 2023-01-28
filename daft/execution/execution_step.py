@@ -269,7 +269,7 @@ class Sample(Instruction):
         result = (
             input.sample(self.num_samples)
             .eval_expression_list(self.sort_by)
-            .filter(ExpressionList([~e.to_column_expression().is_null() for e in self.sort_by]).resolve(self.sort_by))
+            .filter(ExpressionList([~e.to_column_expression().is_null() for e in self.sort_by]))
         )
         return [result]
 
@@ -348,7 +348,7 @@ class ReduceToQuantiles(ReduceInstruction):
     def _reduce_to_quantiles(self, inputs: list[vPartition]) -> list[vPartition]:
         merged = vPartition.merge_partitions(inputs, verify_partition_id=False)
 
-        # Skip evaluation of expressions by converting to ColumnExpression, since evaluation was done in Sample
+        # Skip evaluation of expressions by converting to Column Expression, since evaluation was done in Sample
         merged_sorted = merged.sort(self.sort_by.to_column_expressions(), descending=self.descending)
 
         result = merged_sorted.quantiles(self.num_quantiles)

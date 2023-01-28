@@ -17,9 +17,10 @@ from pyarrow import dataset as pada
 from pyarrow import json, parquet
 
 from daft.execution.operators import OperatorEnum
-from daft.expressions import ColumnExpression, Expression, ExpressionExecutor
+from daft.expressions import Expression, ExpressionExecutor, ExpressionList
 from daft.filesystem import get_filesystem_from_path
-from daft.logical.schema import ExpressionList
+from daft.logical.field import Field
+from daft.logical.schema import Schema
 from daft.runners.blocks import ArrowArrType, ArrowDataBlock, DataBlock, PyListDataBlock
 from daft.types import ExpressionType, PythonExpressionType
 
@@ -48,13 +49,13 @@ class vPartitionSchemaInferenceOptions:
         inference_column_names: Column names to use when performing schema inference
     """
 
-    schema: ExpressionList | None = None
+    schema: Schema | None = None
     inference_column_names: list[str] | None = None
 
     def full_schema_column_names(self) -> list[str] | None:
         """Returns all column names for the schema, or None if not provided."""
         if self.schema is not None:
-            return [expr.name() for expr in self.schema]
+            return self.schema.column_names()
         return self.inference_column_names
 
 
@@ -166,9 +167,9 @@ class vPartition:
     def metadata(self) -> PartitionMetadata:
         return PartitionMetadata(num_rows=len(self))
 
-    def get_col_expressions(self) -> ExpressionList:
+    def get_schema(self) -> Schema:
         """Generates column expressions that represent the vPartition's schema"""
-        colexprs = []
+        fields = []
         for _, tile in self.columns.items():
             col_name = tile.column_name
             col_type: ExpressionType
@@ -182,9 +183,9 @@ class vPartition:
                     col_type = PythonExpressionType(py_types.pop())
                 else:
                     col_type = ExpressionType.python_object()
-            colexpr = ColumnExpression(name=col_name, expr_type=col_type)
-            colexprs.append(colexpr)
-        return ExpressionList(colexprs)
+            field = Field(col_name, col_type)
+            fields.append(field)
+        return Schema(fields)
 
     def eval_expression(self, expr: Expression) -> PyListTile:
         # Avoid recomputing expressions that have been computed before
@@ -195,9 +196,7 @@ class vPartition:
 
         required_cols = expr.required_columns()
         required_blocks = {}
-        for c in required_cols:
-            name = c.name()
-            assert name is not None
+        for name in required_cols:
             block = self.columns[name].block
             required_blocks[name] = block
         exec = ExpressionExecutor()
@@ -222,12 +221,13 @@ class vPartition:
         return vPartition(columns=tiles, partition_id=partition_id)
 
     @classmethod
-    def from_pydict(cls, data: dict[str, list[Any]], schema: ExpressionList, partition_id: PartID) -> vPartition:
-        column_exprs = schema.to_column_expressions()
+    def from_pydict(cls, data: dict[str, list[Any]], schema: Schema, partition_id: PartID) -> vPartition:
+        fields = schema.fields
         tiles = {}
-        for col_expr in column_exprs:
-            col_name = col_expr.name()
-            col_type = col_expr.resolved_type()
+        for f in fields.values():
+
+            col_name = f.name
+            col_type = f.dtype
             col_data = data[col_name]
 
             if ExpressionType.is_py(col_type):
@@ -358,9 +358,9 @@ class vPartition:
         output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
         return {name: self.columns[id].block.data for name, id in output_schema}
 
-    def to_pandas(self, schema: ExpressionList | None = None) -> pd.DataFrame:
+    def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
         if schema is not None:
-            output_schema = [expr.name() for expr in schema]
+            output_schema = [f.name for f in schema.fields.values()]
         else:
             output_schema = [tile for tile in self.columns.keys()]
 
@@ -551,7 +551,7 @@ class vPartition:
         right: vPartition,
         left_on: ExpressionList,
         right_on: ExpressionList,
-        output_schema: ExpressionList,
+        output_schema: Schema,
         how: str = "inner",
     ) -> vPartition:
         assert how == "inner"
@@ -590,7 +590,7 @@ class vPartition:
         assert joined_block_idx == len(result_keys)
 
         output = vPartition(columns=result_columns, partition_id=self.partition_id)
-        return output.eval_expression_list(output_schema)
+        return output.eval_expression_list(output_schema.to_column_expressions())
 
     def _to_file(
         self,
@@ -606,9 +606,7 @@ class vPartition:
         partition_col_names = []
         if partition_cols is not None:
             for col in partition_cols:
-                assert isinstance(
-                    col, ColumnExpression
-                ), "we can only support ColumnExpressions for partitioning parquet"
+                assert col.is_column(), "we can only support Column Expressions for partitioning parquet"
                 col_name = col.name()
                 assert col_name is not None
                 assert col_name in keys
@@ -686,7 +684,7 @@ class PartitionSet(Generic[PartitionT]):
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pydict()
 
-    def to_pandas(self, schema: ExpressionList | None = None) -> pd.DataFrame:
+    def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pandas(schema=schema)
 
@@ -784,29 +782,29 @@ class PartitionSetFactory(Generic[PartitionT]):
     FS_LISTING_SIZE_COLUMN_NAME = "size"
     FS_LISTING_TYPE_COLUMN_NAME = "type"
 
-    def _get_listing_paths_schema(self) -> ExpressionList:
+    def _get_listing_paths_schema(self) -> Schema:
         """Construct the schema for a DataFrame of path listing"""
-        return ExpressionList(
+        return Schema(
             [
-                ColumnExpression(self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
+                Field(self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
             ]
-        ).resolve()
+        )
 
-    def _get_listing_paths_details_schema(self) -> ExpressionList:
+    def _get_listing_paths_details_schema(self) -> Schema:
         """Construct the schema for a DataFrame of detailed path listing"""
-        return ExpressionList(
+        return Schema(
             [
-                ColumnExpression(self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
-                ColumnExpression(self.FS_LISTING_SIZE_COLUMN_NAME, ExpressionType.integer()),
-                ColumnExpression(self.FS_LISTING_TYPE_COLUMN_NAME, ExpressionType.string()),
+                Field(self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
+                Field(self.FS_LISTING_SIZE_COLUMN_NAME, ExpressionType.integer()),
+                Field(self.FS_LISTING_TYPE_COLUMN_NAME, ExpressionType.string()),
             ]
-        ).resolve()
+        )
 
     @abstractmethod
     def glob_paths(
         self,
         source_path: str,
-    ) -> tuple[PartitionSet[PartitionT], ExpressionList]:
+    ) -> tuple[PartitionSet[PartitionT], Schema]:
         """Globs the specified filepath to construct a PartitionSet of file or dir paths
 
         Args:
@@ -822,7 +820,7 @@ class PartitionSetFactory(Generic[PartitionT]):
     def glob_paths_details(
         self,
         source_path: str,
-    ) -> tuple[PartitionSet[PartitionT], ExpressionList]:
+    ) -> tuple[PartitionSet[PartitionT], Schema]:
         """Globs the specified filepath to construct a PartitionSet of file and dir metadata
 
         Args:

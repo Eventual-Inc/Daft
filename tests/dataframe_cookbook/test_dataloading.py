@@ -84,8 +84,8 @@ def test_load_json(tmp_path: pathlib.Path):
     pd_df.to_json(json_file, lines=True, orient="records")
     daft_df = DataFrame.read_json(str(json_file))
 
-    assert daft_df.schema()["dicts"].daft_type == PythonExpressionType(dict)
-    assert daft_df.schema()["lists"].daft_type == PythonExpressionType(list)
+    assert daft_df.schema()["dicts"].dtype == PythonExpressionType(dict)
+    assert daft_df.schema()["lists"].dtype == PythonExpressionType(list)
 
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, assert_ordering=True)
@@ -124,7 +124,7 @@ def test_load_pydict():
 
     assert collected_data.keys() == data.keys() == expected.keys()
     for colname, expected_schema_type in expected.items():
-        assert daft_df.schema()[colname].daft_type == expected_schema_type
+        assert daft_df.schema()[colname].dtype == expected_schema_type
         expected_container_type = list if ExpressionType.is_py(expected_schema_type) else pa.ChunkedArray
         assert isinstance(collected_data[colname], expected_container_type)
 

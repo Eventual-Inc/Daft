@@ -43,5 +43,4 @@ def test_filter_join_pushdown_nonvalid(valid_data: list[dict[str, float]], optim
     optimized = optimizer(filtered.plan())
 
     assert isinstance(optimized, Filter)
-
     assert optimized.is_eq(filtered.plan())
