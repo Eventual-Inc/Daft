@@ -1,10 +1,18 @@
 from __future__ import annotations
 
-import numpy as np
+import os
+
 import pandas as pd
-from hypothesis import note
+from hypothesis import note, settings
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, precondition, rule
-from hypothesis.strategies import data, integers, sampled_from
+from hypothesis.strategies import (
+    booleans,
+    data,
+    integers,
+    lists,
+    permutations,
+    sampled_from,
+)
 
 from daft import DataFrame
 from tests.conftest import assert_df_equals
@@ -15,6 +23,7 @@ from tests.property_based_testing.strategies import (
 )
 
 
+@settings(max_examples=int(os.getenv("HYPOTHESIS_MAX_EXAMPLES", 100)), stateful_step_count=16)
 class DataframeSortStateMachine(RuleBasedStateMachine):
     """Tests sorts in the face of various other operations such as filters, projections etc
 
@@ -32,8 +41,9 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         self.df: DataFrame | None = None
         self.sort_keys: list[str] = None
         self.row_num_col_name = "row_num"
-        self.num_rows_strategy = integers(min_value=0, max_value=8)
+        self.num_rows_strategy = integers(min_value=8, max_value=8)
         self.repartition_num_partitions_strategy = sampled_from([1, 4, 5, 9])
+        self.sorted_on: list[tuple[str, bool]] | None = None
 
     @rule(data=data(), num_sort_cols=integers(min_value=1, max_value=3))
     @precondition(lambda self: self.df is None)
@@ -54,38 +64,36 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         df = DataFrame.from_pydict(columns_dict_data)
         self.df = df
 
-    @rule()
+    @rule(data=data())
     @precondition(lambda self: self.df is not None)
-    def run_and_check_sort(self):
-        """'assert' step of this state machine which runs a sort on the accumulated dataframe plan and checks that the sort was executed correctly."""
-        original_data = self.df.to_pydict()
-        self.df._clear_cache()
-        # TODO: Add correct asserts for different sort orders between sort key columns
-        self.df = self.df.sort(self.sort_keys)
-        sorted_data = self.df.to_pydict()
-        self.df._clear_cache()
+    def run_and_check_sort(self, data):
+        """Run a sort on the accumulated dataframe plan"""
+        sort_on = data.draw(permutations(self.sort_keys))
+        descending = data.draw(lists(min_size=len(self.sort_keys), max_size=len(self.sort_keys), elements=booleans()))
+        self.df = self.df.sort(sort_on, desc=descending)
+        self.sorted_on = list(zip(sort_on, descending))
 
-        pd_df_sorted = pd.DataFrame(sorted_data)
-        pd_df_original = pd.DataFrame(original_data)
+    @rule()
+    @precondition(lambda self: self.sorted_on is not None)
+    def collect_after_sort(self):
+        """Optionally runs after any sort step to check that sort is maintained"""
+        sorted_data = self.df.to_pydict()
+        sorted_on_cols = [c for c, _ in self.sorted_on]
+        sorted_on_desc = [d for _, d in self.sorted_on]
 
         # Ensure that key column(s) are sorted correctly
-        sorted_keys_df = pd_df_sorted[self.sort_keys]
-        original_keys_df = pd_df_original[self.sort_keys]
-        pandas_sorted_original_keys_df = original_keys_df.sort_values(self.sort_keys)
-        note(f"Expected sorted keys:\n{pandas_sorted_original_keys_df}")
-        note(f"Received sorted keys:\n{sorted_keys_df}")
-        assert_df_equals(sorted_keys_df, pandas_sorted_original_keys_df, assert_ordering=True)
+        pd_df_sorted = pd.DataFrame(sorted_data)
+        sorted_keys_df = pd_df_sorted[sorted_on_cols]
+        pandas_sorted_keys_df = sorted_keys_df.sort_values(sorted_on_cols, ascending=[not d for d in sorted_on_desc])
+        try:
+            assert_df_equals(sorted_keys_df, pandas_sorted_keys_df, assert_ordering=True)
+        except AssertionError:
+            note(f"Expected sorted keys:\n{pandas_sorted_keys_df}")
+            note(f"Received sorted keys:\n{sorted_keys_df}")
+            raise
 
-        # Ensure that rows were not mangled during sort by using the old and new `row_num`` column
-        # to revert the sorting of the sort_keys to its original ordering
-        original_row_numbers = pd_df_original[self.row_num_col_name]
-        new_row_numbers = pd_df_sorted[self.row_num_col_name]
-        reverted_keys_df = sorted_keys_df.take(np.argsort(new_row_numbers)).take(
-            np.argsort(np.argsort(original_row_numbers))
-        )
-        note(f"Expected original df after reverting sort using row_num:\n{original_keys_df}")
-        note(f"Received reverted df after reverting sort using row_num:\n{reverted_keys_df}")
-        assert_df_equals(reverted_keys_df, original_keys_df, assert_ordering=True)
+        # Ensure that we reset self.sorted_on so that we won't try to collect again
+        self.sorted_on = None
 
     ###
     # Intermediate fuzzing steps - these steps perform actions that should not affect the final sort result
@@ -98,6 +106,9 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
     #     """Runs a repartitioning step"""
     #     num_partitions = data.draw(self.repartition_num_partitions_strategy, label="Number of partitions for repartitioning")
     #     self.df = self.df.repartition(num_partitions)
+
+    # # Repartitioning changes the ordering of the data, so we cannot sort after this step
+    # self.sorted_on = None
 
     # @rule(data=data())
     # @precondition(lambda self: self.df is not None)

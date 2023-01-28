@@ -4,6 +4,10 @@ SHELL=/bin/bash
 VENV = venv
 IS_M1 ?= 0
 
+# Hypothesis
+HYPOTHESIS_MAX_EXAMPLES ?= 100
+HYPOTHESIS_SEED ?= 0
+
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts
 else
@@ -39,7 +43,7 @@ build-release: venv  ## Compile and install a faster Daft binary
 
 .PHONY: test
 test: venv build  ## Run tests
-	$(VENV_BIN)/pytest
+	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED)
 
 .PHONY: clean
 clean:
