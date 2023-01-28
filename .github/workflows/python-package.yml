@@ -79,6 +79,8 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft_runner }}
     - name: Upload coverage reports to Codecov with GitHub Action
       uses: codecov/codecov-action@v3
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   test-imports:
     runs-on: ubuntu-latest
