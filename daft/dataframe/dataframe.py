@@ -47,7 +47,7 @@ ColumnInputType = Union[Expression, str]
 
 
 def _get_tabular_files_scan(
-    path: str, get_schema: Callable[[str], ExpressionList], source_info: SourceInfo
+    path: str, get_schema: Callable[[str], Schema], source_info: SourceInfo
 ) -> logical_plan.TabularFilesScan:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
     # Glob the path and return as a DataFrame with a column containing the filepaths
@@ -166,7 +166,7 @@ class DataFrame:
         return self.__plan.schema().column_names()
 
     @property
-    def columns(self) -> list[ColumnExpression]:
+    def columns(self) -> list[Expression]:
         """Returns column of DataFrame as a list of ColumnExpressions.
 
         Returns:
@@ -611,24 +611,21 @@ class DataFrame:
         expressions = [col(c) if isinstance(c, str) else c for c in columns]
         return ExpressionList(expressions)
 
-    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> ColumnExpression | DataFrame:
+    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> Expression | DataFrame:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)"""
-        result: ColumnExpression | None
+        result: Expression | None
 
         if isinstance(item, int):
             schema = self._plan.schema()
             if item < -len(schema) or item >= len(schema):
                 raise ValueError(f"{item} out of bounds for {schema}")
-            result = schema.to_column_expressions()[item]
+            result = schema.to_column_expressions().exprs[item]
             assert result is not None
             return result
         elif isinstance(item, str):
             schema = self._plan.schema()
-            result = schema[item]
-            if result is None:
-                raise ValueError(f"{item} not found in DataFrame schema {schema}")
-            assert result is not None
-            return result.to_column_expression()  # type: ignore
+            result = schema[item].to_column_expression()
+            return result
         elif isinstance(item, Iterable):
             schema = self._plan.schema()
             col_exprs = self._plan.schema().to_column_expressions()
@@ -643,7 +640,7 @@ class DataFrame:
                 elif isinstance(it, int):
                     if it < -len(schema) or it >= len(schema):
                         raise ValueError(f"{it} out of bounds for {schema}")
-                    result = col_exprs[it]
+                    result = col_exprs.exprs[it]
                     assert result is not None
                     columns.append(result)
                 else:
@@ -651,8 +648,9 @@ class DataFrame:
             return self.select(*columns)
         elif isinstance(item, slice):
             schema = self._plan.schema()
-            columns = schema.to_column_expressions()
-            return self.select(*columns.exprs[item])
+            columns_exprs: ExpressionList = schema.to_column_expressions()
+            selected_columns = columns_exprs.exprs[item]
+            return self.select(*selected_columns)
         else:
             raise ValueError(f"unknown indexing type: {type(item)}")
 
@@ -1253,7 +1251,7 @@ class GroupedDataFrame:
             if e.resolve_type(self.df._plan.schema()) == ExpressionType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
-    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> ColumnExpression | DataFrame:
+    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> Expression | DataFrame:
         """Gets a column from the DataFrame as an Expression"""
         return self.df.__getitem__(item)
 

@@ -42,7 +42,6 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
-from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.blocks import ArrowDataBlock, zip_blocks_as_py
 from daft.runners.partitioning import (
@@ -195,7 +194,7 @@ class RayPartitionSetFactory(PartitionSetFactory[ray.ObjectRef]):
     def glob_paths(
         self,
         source_path: str,
-    ) -> tuple[RayPartitionSet, ExpressionList]:
+    ) -> tuple[RayPartitionSet, Schema]:
         schema = self._get_listing_paths_schema()
         partition_refs = ray.get(_glob_path_into_vpartitions.remote(source_path, schema))
         return RayPartitionSet({part_id: part for part_id, part in partition_refs}), schema
@@ -203,7 +202,7 @@ class RayPartitionSetFactory(PartitionSetFactory[ray.ObjectRef]):
     def glob_paths_details(
         self,
         source_path: str,
-    ) -> tuple[RayPartitionSet, ExpressionList]:
+    ) -> tuple[RayPartitionSet, Schema]:
         schema = self._get_listing_paths_details_schema()
         partition_refs = ray.get(_glob_path_into_details_vpartitions.remote(source_path, schema))
         return RayPartitionSet({part_id: part for part_id, part in partition_refs}), schema

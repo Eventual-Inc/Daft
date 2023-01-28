@@ -5,7 +5,6 @@ from typing import Iterator, TypeVar
 from daft.expressions import Expression, ExpressionList, col
 
 ExpressionType = TypeVar("ExpressionType", bound=Expression)
-from tabulate import tabulate
 
 from daft.logical.field import Field
 
@@ -42,12 +41,9 @@ class Schema:
 
     def __repr__(self) -> str:
         return repr([(field.name, field.dtype) for field in self.fields.values()])
-        return tabulate(headers)
 
     def _repr_html_(self) -> str:
         return repr([(field.name, field.dtype) for field in self.fields.values()])
-        headers = [(field.name, field.dtype) for field in self.fields.values()]
-        return tabulate(headers, tablefmt="unsafehtml")
 
     def to_column_expressions(self) -> ExpressionList:
         return ExpressionList([col(f.name) for f in self.fields.values()])

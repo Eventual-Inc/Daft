@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from daft.dataframe.preview import DataFramePreview
-from daft.dataframe.schema import DataFrameSchema
+from daft.logical.schema import Schema
 from daft.viz.repr import vpartition_repr, vpartition_repr_html
 
 HAS_PILLOW = False
@@ -21,7 +21,7 @@ if HAS_PILLOW:
 class DataFrameDisplay:
 
     preview: DataFramePreview
-    schema: DataFrameSchema
+    schema: Schema
     column_char_width: int = 20
     max_col_rows: int = 3
     num_rows: int = 10

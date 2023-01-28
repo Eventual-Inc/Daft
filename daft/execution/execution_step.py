@@ -269,7 +269,7 @@ class Sample(Instruction):
         result = (
             input.sample(self.num_samples)
             .eval_expression_list(self.sort_by)
-            .filter(ExpressionList([~e.to_column_expression().is_null() for e in self.sort_by]).resolve(self.sort_by))
+            .filter(ExpressionList([~e.to_column_expression().is_null() for e in self.sort_by]))
         )
         return [result]
 

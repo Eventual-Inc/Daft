@@ -720,7 +720,7 @@ class LocalAggregate(UnaryNode):
         if group_by is not None:
             group_and_agg_cols = ExpressionList(group_by.exprs + [e for e, _ in agg])
             schema = group_and_agg_cols.to_schema(input.schema())
-            required_cols = required_cols | set(self._group_by.required_columns())
+            required_cols = required_cols | set(group_by.required_columns())
         else:
             schema = cols_to_agg.to_schema(input.schema())
 
@@ -805,7 +805,7 @@ class HTTPRequest(LogicalPlan):
         self,
         schema: Schema,
     ) -> None:
-        self._output_schema = schema.resolve()
+        self._output_schema = schema
         pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=1)
         super().__init__(schema, partition_spec=pspec, op_level=OpLevel.ROW)
 
@@ -898,7 +898,7 @@ class Join(BinaryNode):
                 raise ExpressionTypeError(f"Cannot join on null type expression: {e}")
 
         self._how = how
-        schema: ExpressionList
+        output_schema: Schema
         if how == JoinType.LEFT:
             num_partitions = left.num_partitions()
             raise NotImplementedError()
@@ -913,7 +913,9 @@ class Join(BinaryNode):
             unioned_expressions = left_columns.union(right_columns, rename_dup="right.")
             self._left_columns = left_columns
             self._right_columns = ExpressionList(unioned_expressions.exprs[len(self._left_columns.exprs) :])
-            schema = self._left_columns.to_schema(left.schema()).union(self._right_columns.to_schema(right.schema()))
+            output_schema = self._left_columns.to_schema(left.schema()).union(
+                self._right_columns.to_schema(right.schema())
+            )
 
         left_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._left_on)
         right_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._right_on)
@@ -935,7 +937,7 @@ class Join(BinaryNode):
         elif right.partition_spec() != right_pspec:
             right = new_right
 
-        super().__init__(schema, partition_spec=left.partition_spec(), op_level=OpLevel.PARTITION)
+        super().__init__(output_schema, partition_spec=left.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(left)
         self._register_child(right)
 

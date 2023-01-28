@@ -623,7 +623,7 @@ class CallExpression(Expression):
                 else f"{operator_symbol}({', '.join([str(arg) for arg in self._args])})"
             )
             raise ExpressionTypeError(f"Unable to resolve type for operation: {op_pretty_print}")
-
+        assert ret_type is not None
         return ret_type
 
     @property
@@ -1065,7 +1065,7 @@ class ExpressionList(Iterable[Expression]):
         """
         assert not ((rename_dup is not None) and other_override), "Only can specify one of rename_dup or other_override"
         deduped = self.exprs.copy()
-        seen: dict[str, ExpressionType] = {}
+        seen: dict[str, Expression] = {}
         for e in self.exprs:
             name = e.name()
             if name is not None:
@@ -1078,7 +1078,7 @@ class ExpressionList(Iterable[Expression]):
             if name in seen:
                 if rename_dup is not None:
                     name = f"{rename_dup}{name}"
-                    e = cast(ExpressionType, e.alias(name))
+                    e = cast(Expression, e.alias(name))
                 elif other_override:
                     # Allow this expression in `other` to override the existing expressions
                     deduped = [current_expr for current_expr in deduped if current_expr.name() != name]
@@ -1114,7 +1114,7 @@ class ExpressionList(Iterable[Expression]):
     def to_column_expressions(self) -> ExpressionList:
         return ExpressionList([e.to_column_expression() for e in self.exprs])
 
-    def get_expression_by_name(self, name: str) -> ExpressionType | None:
+    def get_expression_by_name(self, name: str) -> Expression:
         for i, n in enumerate(self.names):
             if n == name:
                 return self.exprs[i]
