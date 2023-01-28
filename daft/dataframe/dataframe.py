@@ -1152,14 +1152,6 @@ class DataFrame:
             assert result is not None
             result.wait()
 
-    def _clear_cache(self) -> None:
-        """Clears the cached results"""
-        if self._result is None:
-            return
-        cache = self._result_cache
-        self._result_cache = None
-        del cache
-
     @DataframePublicAPI
     def collect(self, num_preview_rows: int | None = 10) -> DataFrame:
         """Executes the entire DataFrame and materializes the results
