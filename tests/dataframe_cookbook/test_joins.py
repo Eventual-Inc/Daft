@@ -26,6 +26,23 @@ def test_simple_join(daft_df, service_requests_csv_pd_df, repartition_nparts):
 
 
 @parametrize_service_requests_csv_repartition
+def test_simple_self_join(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    daft_df = daft_df.repartition(repartition_nparts)
+    daft_df = daft_df.select(col("Unique Key"), col("Borough"))
+
+    daft_df = daft_df.join(daft_df, col("Unique Key"))
+
+    service_requests_csv_pd_df = service_requests_csv_pd_df[["Unique Key", "Borough"]]
+    service_requests_csv_pd_df = (
+        service_requests_csv_pd_df.set_index("Unique Key")
+        .join(service_requests_csv_pd_df.set_index("Unique Key"), how="inner", rsuffix="right.")
+        .reset_index()
+    )
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
+
+
+@parametrize_service_requests_csv_repartition
 def test_simple_join_missing_rvalues(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df_right = daft_df.sort("Unique Key").limit(25).repartition(repartition_nparts)
     daft_df_left = daft_df.repartition(repartition_nparts)
