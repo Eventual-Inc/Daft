@@ -551,7 +551,7 @@ class vPartition:
         right: vPartition,
         left_on: ExpressionList,
         right_on: ExpressionList,
-        output_schema: Schema,
+        output_projection: ExpressionList,
         how: str = "inner",
     ) -> vPartition:
         assert how == "inner"
@@ -590,7 +590,7 @@ class vPartition:
         assert joined_block_idx == len(result_keys)
 
         output = vPartition(columns=result_columns, partition_id=self.partition_id)
-        return output.eval_expression_list(output_schema.to_column_expressions())
+        return output.eval_expression_list(output_projection)
 
     def _to_file(
         self,

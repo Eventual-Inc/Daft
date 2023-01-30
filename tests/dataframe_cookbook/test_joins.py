@@ -35,9 +35,10 @@ def test_simple_self_join(daft_df, service_requests_csv_pd_df, repartition_npart
     service_requests_csv_pd_df = service_requests_csv_pd_df[["Unique Key", "Borough"]]
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df.set_index("Unique Key")
-        .join(service_requests_csv_pd_df.set_index("Unique Key"), how="inner", rsuffix="right.")
+        .join(service_requests_csv_pd_df.set_index("Unique Key"), how="inner", rsuffix="_right")
         .reset_index()
     )
+    service_requests_csv_pd_df = service_requests_csv_pd_df.rename({"Borough_right": "right.Borough"}, axis=1)
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 

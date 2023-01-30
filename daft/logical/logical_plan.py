@@ -913,6 +913,7 @@ class Join(BinaryNode):
             unioned_expressions = left_columns.union(right_columns, rename_dup="right.")
             self._left_columns = left_columns
             self._right_columns = ExpressionList(unioned_expressions.exprs[len(self._left_columns.exprs) :])
+            self._output_projection = unioned_expressions
             output_schema = self._left_columns.to_schema(left.schema()).union(
                 self._right_columns.to_schema(right.schema())
             )
