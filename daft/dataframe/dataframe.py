@@ -1301,6 +1301,17 @@ class GroupedDataFrame:
 
         return self.df._agg([(c, "max") for c in cols], group_by=self.group_by)
 
+    def count(self) -> DataFrame:
+        """Performs grouped count on this GroupedDataFrame.
+
+        Returns:
+            DataFrame: DataFrame with grouped count per column.
+        """
+
+        return self.df._agg(
+            [(c, "count") for c in self.df.column_names if c not in self.group_by.names], group_by=self.group_by
+        )
+
     def agg(self, to_agg: list[tuple[ColumnInputType, str]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
 
