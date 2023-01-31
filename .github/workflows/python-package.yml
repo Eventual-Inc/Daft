@@ -70,13 +70,66 @@ jobs:
       working-directory: data/tpch-sqlite
       run: SCALE_FACTOR=0.2 make
     - name: Test with pytest
-      run: pytest --cov=./ --cov-report=xml
+      run: mkdir -p report-output && pytest --cov=./ --cov-report=xml:./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft_runner }}.xml
       env:
         DAFT_RUNNER: ${{ matrix.daft_runner }}
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v2
+      with:
+        name: coverage-reports
+        path: ./report-output
+
+  rust-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+    - uses: actions/cache@v3
+      env:
+        cache-name: cache-cargo
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-rust-package-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    - name: Generate code coverage
+      run: mkdir -p report-output && cargo llvm-cov --all-features --workspace --lcov --output-path ./report-output/lcov.info
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v2
+      with:
+        name: coverage-reports
+        path: ./report-output
+
+  publish-coverage-reports:
+    name: Publish coverage reports to CodeCov
+    runs-on: ubuntu-latest
+    needs:
+    - build
+    - rust-tests
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/download-artifact@v2
+      with:
+        name: coverage-reports
+        path: ./report-output
     - name: Upload coverage reports to Codecov with GitHub Action
       uses: codecov/codecov-action@v3
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        files: ./report-output/*
 
   test-imports:
     runs-on: ubuntu-latest
