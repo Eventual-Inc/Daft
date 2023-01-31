@@ -4,7 +4,6 @@ import pyarrow as pa
 import pytest
 
 from daft import DataFrame
-from tests.conftest import assert_arrow_equals
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])

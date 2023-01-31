@@ -5,7 +5,6 @@ import pytest
 
 from daft import DataFrame
 from daft.errors import ExpressionTypeError
-from tests.conftest import assert_arrow_equals
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
