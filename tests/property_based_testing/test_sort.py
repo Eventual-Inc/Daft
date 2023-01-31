@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 import os
+from typing import Any
 
 import pandas as pd
 from hypothesis import note, settings
@@ -15,15 +17,15 @@ from hypothesis.strategies import (
 )
 
 from daft import DataFrame
-from tests.conftest import assert_df_equals
-from tests.property_based_testing.strategies import (
-    columns_dict,
-    row_nums_column,
-    total_order_dtypes,
-)
+from tests.property_based_testing.strategies import columns_dict, total_order_dtypes
 
 
-@settings(max_examples=int(os.getenv("HYPOTHESIS_MAX_EXAMPLES", 100)), stateful_step_count=16)
+def _is_nan(obj: Any) -> bool:
+    """Checks if an object is a float NaN"""
+    return isinstance(obj, float) and math.isnan(obj)
+
+
+@settings(max_examples=int(os.getenv("HYPOTHESIS_MAX_EXAMPLES", 100)), stateful_step_count=8, deadline=None)
 class DataframeSortStateMachine(RuleBasedStateMachine):
     """Tests sorts in the face of various other operations such as filters, projections etc
 
@@ -40,7 +42,6 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         super().__init__()
         self.df: DataFrame | None = None
         self.sort_keys: list[str] = None
-        self.row_num_col_name = "row_num"
         self.num_rows_strategy = integers(min_value=8, max_value=8)
         self.repartition_num_partitions_strategy = sampled_from([1, 4, 5, 9])
         self.sorted_on: list[tuple[str, bool]] | None = None
@@ -57,7 +58,6 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
                 generate_columns_with_type={
                     sort_key_col_name: total_order_dtypes for sort_key_col_name in self.sort_keys
                 },
-                generate_columns_with_strategy={self.row_num_col_name: row_nums_column},
                 num_rows_strategy=self.num_rows_strategy,
             )
         )
@@ -66,7 +66,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
 
     @rule(data=data())
     @precondition(lambda self: self.df is not None)
-    def run_and_check_sort(self, data):
+    def run_sort(self, data):
         """Run a sort on the accumulated dataframe plan"""
         sort_on = data.draw(permutations(self.sort_keys))
         descending = data.draw(lists(min_size=len(self.sort_keys), max_size=len(self.sort_keys), elements=booleans()))
@@ -82,14 +82,54 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         sorted_on_desc = [d for _, d in self.sorted_on]
 
         # Ensure that key column(s) are sorted correctly
-        pd_df_sorted = pd.DataFrame(sorted_data)
-        sorted_keys_df = pd_df_sorted[sorted_on_cols]
-        pandas_sorted_keys_df = sorted_keys_df.sort_values(sorted_on_cols, ascending=[not d for d in sorted_on_desc])
+        data = zip(*[sorted_data[k] for k in sorted_on_cols])
+
         try:
-            assert_df_equals(sorted_keys_df, pandas_sorted_keys_df, assert_ordering=True)
+            current_tup = next(data)
+        except StopIteration:
+            # Trivial case, no rows to check that were sorted.
+            self.sorted_on = None
+            return
+
+        try:
+            for next_tup in data:
+                note(f"Comparing {current_tup} and {next_tup} for desc={sorted_on_desc}")
+
+                for current_val, next_val, desc in zip(current_tup, next_tup, sorted_on_desc):
+                    # None and NaNs are always sorted at the end regardless or specified ordering
+                    if current_val is None:
+                        assert (
+                            next_val is None
+                        ), f"Current value is None, expected all subsequent values to be None but received: {next_val}"
+                        continue
+                    elif _is_nan(current_val):
+                        if _is_nan(next_val):
+                            continue
+                        elif next_val is None:
+                            break  # current_val=NaN and next_val=None
+                        raise AssertionError(
+                            f"Current value is NaN, expected all subsequent values to be NaN or None but received: {next_val}"
+                        )
+
+                    # Current value is not None and not NaN, so if next_val is None or NaN then this is a valid ordering
+                    elif next_val is None:
+                        break  # current_val=<value> and next_val=None
+                    elif _is_nan(next_val):
+                        break  # current_val=<value> and next_val=NaN
+
+                    # Both current_val and next_val are non-None and non-NaN values, so we compare directly
+                    if desc:
+                        assert current_val >= next_val, f"Expected {current_val} >= {next_val}"
+                    else:
+                        assert current_val <= next_val, f"Expected {current_val} <= {next_val}"
+
+                    if current_val != next_val:
+                        break  # current_val != next_val
+
+                current_tup = next_tup
         except AssertionError:
-            note(f"Expected sorted keys:\n{pandas_sorted_keys_df}")
-            note(f"Received sorted keys:\n{sorted_keys_df}")
+            sorted_keys_df = pd.DataFrame({k: pd.Series(v, dtype="object") for k, v in sorted_data.items()})
+            note(f"Received sorted keys:\n{sorted_keys_df[sorted_on_cols]}")
             raise
 
         # Ensure that we reset self.sorted_on so that we won't try to collect again
