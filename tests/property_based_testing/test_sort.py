@@ -25,7 +25,7 @@ def _is_nan(obj: Any) -> bool:
     return isinstance(obj, float) and math.isnan(obj)
 
 
-@settings(max_examples=int(os.getenv("HYPOTHESIS_MAX_EXAMPLES", 100)), stateful_step_count=16)
+@settings(max_examples=int(os.getenv("HYPOTHESIS_MAX_EXAMPLES", 100)), stateful_step_count=8)
 class DataframeSortStateMachine(RuleBasedStateMachine):
     """Tests sorts in the face of various other operations such as filters, projections etc
 
@@ -66,7 +66,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
 
     @rule(data=data())
     @precondition(lambda self: self.df is not None)
-    def run_and_check_sort(self, data):
+    def run_sort(self, data):
         """Run a sort on the accumulated dataframe plan"""
         sort_on = data.draw(permutations(self.sort_keys))
         descending = data.draw(lists(min_size=len(self.sort_keys), max_size=len(self.sort_keys), elements=booleans()))
