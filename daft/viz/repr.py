@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable
 
 from tabulate import tabulate
 
@@ -57,7 +57,7 @@ def _stringify_object_html(val: Any, max_col_width: int, max_lines: int):
 
 
 def _stringify_vpartition(
-    data: dict[str, Sequence[Any]],
+    data: dict[str, list[Any]],
     daft_schema: Schema,
     custom_stringify_object: Callable = _stringify_object_default,
     max_col_width: int = DEFAULT_MAX_COL_WIDTH,

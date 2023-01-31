@@ -1207,8 +1207,9 @@ class DataFrame:
         return pd_df
 
     @DataframePublicAPI
-    def to_pydict(self) -> pandas.DataFrame:
-        """Converts the current DataFrame to a python dict.
+    def to_pydict(self) -> dict[str, list[Any]]:
+        """Converts the current DataFrame to a python dictionary. The dictionary contains Python lists of Python objects for each column.
+
         If results have not computed yet, collect will be called.
 
         Returns:

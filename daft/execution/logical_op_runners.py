@@ -103,8 +103,7 @@ class LogicalPartitionOpRunner:
         assert (
             scan._filepaths_column_name in data
         ), f"TabularFilesScan should be ran on vPartitions with '{scan._filepaths_column_name}' column"
-        # HACK: Ignore type here because this is a PyArrow array
-        filepaths = data[scan._filepaths_column_name].to_pylist()  # type: ignore
+        filepaths = data[scan._filepaths_column_name]
 
         # Common options for reading vPartition
         schema = scan._schema
