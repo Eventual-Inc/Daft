@@ -106,44 +106,25 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
                         if _is_nan(next_val):
                             continue
                         elif next_val is None:
-                            break
+                            break  # current_val=NaN and next_val=None
                         raise AssertionError(
                             f"Current value is NaN, expected all subsequent values to be NaN or None but received: {next_val}"
                         )
 
                     # Current value is not None and not NaN, so if next_val is None or NaN then this is a valid ordering
                     elif next_val is None:
-                        break
+                        break  # current_val=<value> and next_val=None
                     elif _is_nan(next_val):
-                        break
+                        break  # current_val=<value> and next_val=NaN
 
-                    def assert_decreasing_or_same_order(v1, v2) -> bool:
-                        """Asserts that v1 >= v2. Returns whether v1 == v2."""
-                        # All values are same or ordered before None
-                        if v1 is None:
-                            return v2 is None
-
-                        # All non-None values are same or ordered before NaN
-                        if _is_nan(v1):
-                            assert (
-                                v2 is not None
-                            ), f"Expected {v1} >= {v2}: NaN should be sorted after all non-NaN values but before None values"
-                            return _is_nan(v2)
-
-                        # `v1` is a value. Thus `v2` cannot be None or NaN since those are ordered after values
-                        assert v1 is not None and not _is_nan(v1)
-                        assert v2 is not None, f"Expected {v1} >= {v2}: None is ordered after all values"
-                        assert not _is_nan(v2), f"Expected {v1} >= {v2}: NaN is ordered after all non-NaN values"
-                        assert v1 >= v2, f"Expected {v1} >= {v2}: {v1} should be greater than or equal to {v2}"
-                        return v1 == v2
-
+                    # Both current_val and next_val are non-None and non-NaN values, so we compare directly
                     if desc:
                         assert current_val >= next_val, f"Expected {current_val} >= {next_val}"
                     else:
                         assert current_val <= next_val, f"Expected {current_val} <= {next_val}"
 
-                    if not current_val == next_val:
-                        break
+                    if current_val != next_val:
+                        break  # current_val != next_val
 
                 current_tup = next_tup
         except AssertionError:
