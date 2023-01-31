@@ -660,10 +660,16 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         if op == "sum":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
+            # Sum of an all-null array is NULL, as per PostgreSQL
+            elif pac.count(self.data).as_py() == 0:
+                return ArrowDataBlock(data=pa.chunked_array([[None]], type=self.data.type))
             return ArrowDataBlock(data=pa.chunked_array([[pac.sum(self.data, min_count=0).as_py()]]))
         elif op == "mean":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.float64()))
+            # Mean of an all-null array is NULL, as per PostgreSQL
+            elif pac.count(self.data).as_py() == 0:
+                return ArrowDataBlock(data=pa.chunked_array([[None]], type=pa.float64()))
             return ArrowDataBlock(data=pa.chunked_array([[pac.mean(self.data).as_py()]], type=pa.float64()))
         elif op == "list":
             if len(self) == 0:

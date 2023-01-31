@@ -75,8 +75,8 @@ def test_agg_global_all_null(repartition_nparts):
         )
     )
     expected = {
-        "sum": [0],
-        "mean": [float("nan")],
+        "sum": [None],
+        "mean": [None],
         "min": [None],
         "max": [None],
         "count": [0],
@@ -192,8 +192,7 @@ def test_agg_groupby(repartition_nparts):
     )
 
 
-# @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-@pytest.mark.parametrize("repartition_nparts", [2])
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
 def test_agg_groupby_all_null(repartition_nparts):
     daft_df = DataFrame.from_pydict(
         {
@@ -217,8 +216,8 @@ def test_agg_groupby_all_null(repartition_nparts):
 
     expected = {
         "group": [1, 2],
-        "sum": [0, 0],
-        "mean": [float("nan"), float("nan")],
+        "sum": [None, None],
+        "mean": [None, None],
         "min": [None, None],
         "max": [None, None],
         "count": [0, 0],
