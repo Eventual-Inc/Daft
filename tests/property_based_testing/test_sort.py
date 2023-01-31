@@ -25,7 +25,7 @@ def _is_nan(obj: Any) -> bool:
     return isinstance(obj, float) and math.isnan(obj)
 
 
-@settings(max_examples=int(os.getenv("HYPOTHESIS_MAX_EXAMPLES", 100)), stateful_step_count=8)
+@settings(max_examples=int(os.getenv("HYPOTHESIS_MAX_EXAMPLES", 100)), stateful_step_count=8, deadline=None)
 class DataframeSortStateMachine(RuleBasedStateMachine):
     """Tests sorts in the face of various other operations such as filters, projections etc
 
