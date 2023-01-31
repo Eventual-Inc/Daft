@@ -3,16 +3,11 @@ from __future__ import annotations
 from abc import abstractmethod
 
 from daft.logical.schema import ExpressionList, Schema
-from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import vPartition
 from daft.types import ExpressionType
 
 
 class MapPartitionOp:
-    @abstractmethod
-    def resource_request(self) -> ResourceRequest:
-        """Returns the resource request of running this MapPartitionOp on one vPartition"""
-
     @abstractmethod
     def get_output_schema(self) -> Schema:
         """Returns the output schema after running this MapPartitionOp"""
@@ -47,9 +42,6 @@ class ExplodeOp(MapPartitionOp):
                 raise ValueError(
                     f"Expected expression {c} to resolve to an explodable type such as PY, but received: {resolved_type}"
                 )
-
-    def resource_request(self) -> ResourceRequest:
-        return self.explode_columns.resource_request()
 
     def get_output_schema(self) -> Schema:
         return self.output_schema

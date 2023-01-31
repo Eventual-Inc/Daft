@@ -7,6 +7,7 @@ from enum import Enum, IntEnum
 from pprint import pformat
 from typing import Any, Generic, TypeVar
 
+from daft import resource_request
 from daft.datasources import SourceInfo, StorageType
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import OperatorEnum
@@ -15,7 +16,6 @@ from daft.internal.treenode import TreeNode
 from daft.logical.field import Field
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
-from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry, vPartition
 from daft.types import ExpressionType
 
@@ -29,7 +29,13 @@ class OpLevel(IntEnum):
 class LogicalPlan(TreeNode["LogicalPlan"]):
     id_iter = itertools.count()
 
-    def __init__(self, schema: Schema, partition_spec: PartitionSpec, op_level: OpLevel) -> None:
+    def __init__(
+        self,
+        schema: Schema,
+        partition_spec: PartitionSpec,
+        op_level: OpLevel,
+        requested_resources: resource_request.ResourceRequest | None = None,
+    ) -> None:
         super().__init__()
         if not isinstance(schema, Schema):
             raise ValueError(f"expected Schema Object for LogicalPlan but got {type(schema)}")
@@ -37,14 +43,15 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         self._op_level = op_level
         self._partition_spec = partition_spec
         self._id = next(LogicalPlan.id_iter)
+        self._resource_request = (
+            requested_resources if requested_resources is not None else resource_request._get_current_resource_request()
+        )
 
     def schema(self) -> Schema:
         return self._schema
 
-    @abstractmethod
-    def resource_request(self) -> ResourceRequest:
-        """Resources required to execute this LogicalPlan"""
-        raise NotImplementedError()
+    def resource_request(self) -> resource_request.ResourceRequest:
+        return self._resource_request
 
     @abstractmethod
     def required_columns(self) -> set[str]:
@@ -233,9 +240,6 @@ class TabularFilesScan(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper(columns_pruned=len(self._columns) - len(self.schema()), source_info=self._source_info)
 
-    def resource_request(self) -> ResourceRequest:
-        return ResourceRequest.default()
-
     def required_columns(self) -> set[str]:
         return {self._filepaths_column_name} | self._predicate.required_columns()
 
@@ -296,9 +300,6 @@ class InMemoryScan(UnaryNode):
     def required_columns(self) -> set[str]:
         return set()
 
-    def resource_request(self) -> ResourceRequest:
-        return ResourceRequest.default()
-
     def rebuild(self) -> LogicalPlan:
         # if we are rebuilding, this will be cached when this is ran
         return InMemoryScan(
@@ -347,9 +348,6 @@ class FileWrite(UnaryNode):
     def required_columns(self) -> set[str]:
         return self._partition_cols.required_columns()
 
-    def resource_request(self) -> ResourceRequest:
-        return ResourceRequest.default()
-
     def _local_eq(self, other: Any) -> bool:
         return (
             isinstance(other, FileWrite)
@@ -393,9 +391,6 @@ class Filter(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper(predicate=self._predicate)
 
-    def resource_request(self) -> ResourceRequest:
-        return self._predicate.resource_request()
-
     def required_columns(self) -> set[str]:
         return self._predicate.required_columns()
 
@@ -421,9 +416,6 @@ class Projection(UnaryNode):
 
     def __repr__(self) -> str:
         return self._repr_helper(output=self._projection.exprs)
-
-    def resource_request(self) -> ResourceRequest:
-        return self._projection.resource_request()
 
     def required_columns(self) -> set[str]:
         return self._projection.required_columns()
@@ -460,9 +452,6 @@ class Sort(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper(sort_by=self._sort_by, desc=self._descending)
 
-    def resource_request(self) -> ResourceRequest:
-        return self._sort_by.resource_request()
-
     def required_columns(self) -> set[str]:
         return self._sort_by.required_columns()
 
@@ -497,9 +486,6 @@ class MapPartition(UnaryNode, Generic[TMapPartitionOp]):
 
     def __repr__(self) -> str:
         return self._repr_helper(op=self._map_partition_op)
-
-    def resource_request(self) -> ResourceRequest:
-        return self._map_partition_op.resource_request()
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -550,9 +536,6 @@ class LocalLimit(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper(num=self._num)
 
-    def resource_request(self) -> ResourceRequest:
-        return ResourceRequest.default()
-
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1
         return LocalLimit(new_children[0], self._num)
@@ -575,9 +558,6 @@ class GlobalLimit(UnaryNode):
 
     def __repr__(self) -> str:
         return self._repr_helper(num=self._num)
-
-    def resource_request(self) -> ResourceRequest:
-        return ResourceRequest.default()
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1
@@ -631,9 +611,6 @@ class Repartition(UnaryNode):
             partition_by=self._partition_by, num_partitions=self.num_partitions(), scheme=self._scheme
         )
 
-    def resource_request(self) -> ResourceRequest:
-        return self._partition_by.resource_request()
-
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1
         return Repartition(
@@ -678,9 +655,6 @@ class Coalesce(UnaryNode):
 
     def __repr__(self) -> str:
         return self._repr_helper(num_partitions=self.num_partitions())
-
-    def resource_request(self) -> ResourceRequest:
-        return ResourceRequest.default()
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1
@@ -732,13 +706,6 @@ class LocalAggregate(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper(agg=[e for e, _ in self._agg], group_by=self._group_by)
 
-    def resource_request(self) -> ResourceRequest:
-        req = ResourceRequest.default()
-        if self._group_by is not None:
-            req = self._group_by.resource_request()
-        req = ResourceRequest.max_resources([expr.resource_request() for expr, _ in self._agg] + [req])
-        return req
-
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1
         return LocalAggregate(new_children[0], agg=self._agg, group_by=self._group_by)
@@ -777,13 +744,6 @@ class LocalDistinct(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper(group_by=self._group_by)
 
-    def resource_request(self) -> ResourceRequest:
-        req = ResourceRequest.default()
-        if self._group_by is not None:
-            req = self._group_by.resource_request()
-        req = ResourceRequest.max_resources([req])
-        return req
-
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1
         return LocalDistinct(new_children[0], group_by=self._group_by)
@@ -815,9 +775,6 @@ class HTTPRequest(LogicalPlan):
     def __repr__(self) -> str:
         return self._repr_helper()
 
-    def resource_request(self) -> ResourceRequest:
-        return ResourceRequest.default()
-
     def required_columns(self) -> set[str]:
         raise NotImplementedError()
 
@@ -845,9 +802,6 @@ class HTTPResponse(UnaryNode):
 
     def __repr__(self) -> str:
         return self._repr_helper()
-
-    def resource_request(self) -> ResourceRequest:
-        return ResourceRequest.default()
 
     def required_columns(self) -> set[str]:
         raise NotImplementedError()
@@ -944,12 +898,6 @@ class Join(BinaryNode):
 
     def __repr__(self) -> str:
         return self._repr_helper(left_on=self._left_on, right_on=self._right_on, num_partitions=self.num_partitions())
-
-    def resource_request(self) -> ResourceRequest:
-        # Note that this join creates two Repartition LogicalPlans using the left_on and right_on ExpressionLists
-        # The Repartition LogicalPlans will have the (potentially) expensive ResourceRequests, but the Join itself
-        # after repartitioning is done should be relatively cheap.
-        return ResourceRequest.default()
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 2
