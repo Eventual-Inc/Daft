@@ -300,7 +300,7 @@ class Join(Instruction):
             right,
             left_on=self.logplan._left_on,
             right_on=self.logplan._right_on,
-            output_schema=self.logplan.schema(),
+            output_projection=self.logplan._output_projection,
             how=self.logplan._how.value,
         )
         return [result]

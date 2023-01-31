@@ -202,7 +202,7 @@ class LogicalPartitionOpRunner:
             right_partition,
             left_on=join._left_on,
             right_on=join._right_on,
-            output_schema=join.schema(),
+            output_projection=join._output_projection,
             how=join._how.value,
         )
 
