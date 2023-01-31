@@ -34,6 +34,39 @@ def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
 
 
 @parametrize_service_requests_csv_repartition
+def test_min(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    """min across a column for entire table"""
+    daft_df = daft_df.repartition(repartition_nparts).min(col("Unique Key").alias("unique_key_mean"))
+    service_requests_csv_pd_df = pd.DataFrame.from_records(
+        [{"unique_key_mean": service_requests_csv_pd_df["Unique Key"].min()}]
+    )
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_mean")
+
+
+@parametrize_service_requests_csv_repartition
+def test_max(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    """max across a column for entire table"""
+    daft_df = daft_df.repartition(repartition_nparts).max(col("Unique Key").alias("unique_key_mean"))
+    service_requests_csv_pd_df = pd.DataFrame.from_records(
+        [{"unique_key_mean": service_requests_csv_pd_df["Unique Key"].max()}]
+    )
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_mean")
+
+
+@parametrize_service_requests_csv_repartition
+def test_count(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    """count a column for entire table"""
+    daft_df = daft_df.repartition(repartition_nparts).count(col("Unique Key").alias("unique_key_mean"))
+    service_requests_csv_pd_df = pd.DataFrame.from_records(
+        [{"unique_key_mean": service_requests_csv_pd_df["Unique Key"].count()}]
+    )
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_mean")
+
+
+@parametrize_service_requests_csv_repartition
 def test_global_agg(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Averages across a column for entire table"""
     daft_df = daft_df.repartition(repartition_nparts).agg(
@@ -95,8 +128,38 @@ def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
 
 
-# We are skippping due to a bug in polars with groupby aggregations with min
-@pytest.mark.skip()
+@parametrize_service_requests_csv_repartition
+@pytest.mark.parametrize(
+    "keys",
+    [
+        pytest.param(["Borough"], id="NumGroupByKeys:1"),
+        pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
+    ],
+)
+def test_mean_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
+    """Sums across groups"""
+    daft_df = daft_df.repartition(repartition_nparts).groupby(*[col(k) for k in keys]).mean(col("Unique Key"))
+    service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).mean("Unique Key").reset_index()
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
+
+
+@parametrize_service_requests_csv_repartition
+@pytest.mark.parametrize(
+    "keys",
+    [
+        pytest.param(["Borough"], id="NumGroupByKeys:1"),
+        pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
+    ],
+)
+def test_count_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
+    """count across groups"""
+    daft_df = daft_df.repartition(repartition_nparts).groupby(*[col(k) for k in keys]).count()
+    service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).count().reset_index()
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
+
+
 @parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "keys",
@@ -106,7 +169,7 @@ def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
     ],
 )
 def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
-    """Sums across groups"""
+    """min across groups"""
     daft_df = (
         daft_df.repartition(repartition_nparts)
         .groupby(*[col(k) for k in keys])
@@ -114,6 +177,28 @@ def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
     )
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df.groupby(keys)["Unique Key", "Created Date"].min().reset_index()
+    )
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
+
+
+@parametrize_service_requests_csv_repartition
+@pytest.mark.parametrize(
+    "keys",
+    [
+        pytest.param(["Borough"], id="NumGroupByKeys:1"),
+        pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
+    ],
+)
+def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
+    """max across groups"""
+    daft_df = (
+        daft_df.repartition(repartition_nparts)
+        .groupby(*[col(k) for k in keys])
+        .max(col("Unique Key"), col("Created Date"))
+    )
+    service_requests_csv_pd_df = (
+        service_requests_csv_pd_df.groupby(keys)["Unique Key", "Created Date"].max().reset_index()
     )
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
