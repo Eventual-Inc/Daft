@@ -5,6 +5,7 @@ import pytest
 
 from daft import DataFrame
 from daft.errors import ExpressionTypeError
+from tests.conftest import assert_pydict_equals
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -17,13 +18,13 @@ def test_int_sort_with_nulls(repartition_nparts):
     ).repartition(repartition_nparts)
     daft_df = daft_df.sort(daft_df["id"])
 
-    expected_arrow_table = {
-        "id": pa.array([1, 2, None]),
-        "values": pa.array(["c1", "a1", "b1"]),
+    expected = {
+        "id": [1, 2, None],
+        "values": ["c1", "a1", "b1"],
     }
     daft_df.collect()
 
-    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, assert_ordering=True)
+    assert_pydict_equals(daft_df.to_pydict(), expected, assert_ordering=True)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -36,12 +37,12 @@ def test_str_sort_with_nulls(repartition_nparts):
     ).repartition(repartition_nparts)
     daft_df = daft_df.sort(daft_df["values"])
 
-    expected_arrow_table = {
-        "id": pa.array([2, 1, None]),
-        "values": pa.array(["a1", "c1", None]),
+    expected = {
+        "id": [2, 1, None],
+        "values": ["a1", "c1", None],
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, assert_ordering=True)
+    assert_pydict_equals(daft_df.to_pydict(), expected, assert_ordering=True)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 4, 6])
@@ -55,13 +56,13 @@ def test_sort_with_nulls_multikey(repartition_nparts):
     ).repartition(repartition_nparts)
     daft_df = daft_df.sort([daft_df["id1"], daft_df["id2"]])
 
-    expected_arrow_table = {
-        "id1": pa.array([1, 2, 2, None, None]),
-        "id2": pa.array([None, 1, 2, 1, None]),
-        "values": pa.array(["e1", "c1", "a1", "d1", "b1"]),
+    expected = {
+        "id1": [1, 2, 2, None, None],
+        "id2": [None, 1, 2, 1, None],
+        "values": ["e1", "c1", "a1", "d1", "b1"],
     }
     daft_df.collect()
-    assert_arrow_equals(daft_df.to_pydict(), expected_arrow_table, assert_ordering=True)
+    assert_pydict_equals(daft_df.to_pydict(), expected, assert_ordering=True)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
