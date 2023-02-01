@@ -122,7 +122,7 @@ def test_with_column_folded_rayrunner():
     df = df.with_column(
         "more_cpu_request",
         assert_resources(col("id"), **expected),
-        resource_request=resource_request.ResourceRequest(num_cpus=2, memory_bytes=1_000_000, num_gpus=None),
+        resource_request=resource_request.ResourceRequest(num_cpus=2, memory_bytes=None, num_gpus=None),
     )
     df.collect()
 

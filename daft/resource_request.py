@@ -11,10 +11,6 @@ class ResourceRequest:
     num_gpus: int | float | None = None
     memory_bytes: int | float | None = None
 
-    @classmethod
-    def default(cls) -> ResourceRequest:
-        return ResourceRequest(num_cpus=None, num_gpus=None, memory_bytes=None)
-
     @staticmethod
     def max_resources(resource_requests: list[ResourceRequest | None]) -> ResourceRequest:
         """Gets the maximum of all resources in a list of ResourceRequests as a new ResourceRequest"""
