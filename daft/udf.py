@@ -80,17 +80,16 @@ def udf(
     Args:
         f: Function to wrap as a UDF, accepts column inputs as Numpy arrays and returns a column of data as a Polars Series/Numpy array/Python list/Pandas series.
         return_type: The return type of the UDF
-        num_gpus: Deprecated - please use `with daft.resource_request(...):` instead
-        num_cpus: Deprecated - please use `with daft.resource_request(...):` instead
-        memory_bytes: Deprecated - please use `with daft.resource_request(...):` instead
+        num_gpus: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
+        num_cpus: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
+        memory_bytes: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
     """
     warnings.warn(
         "DEPRECATION WARNING: @udf will be deprecated in 0.1.0 in favor of @polars_udf which is much more efficient and handles Null/NaN semantics correctly"
     )
     if any(arg is not None for arg in [num_gpus, num_cpus, memory_bytes]):
         raise ValueError(
-            "The num_gpus, num_cpus, and memory_bytes kwargs have been deprecated for @udf. Please use `with daft.resource_request(...):` instead"
-            " to specify resource requests for dataframe operations"
+            "The num_gpus, num_cpus, and memory_bytes kwargs have been deprecated for @udf. Please use `DataFrame.with_column(..., resource_request=...)` instead"
         )
 
     func_ret_type = ExpressionType.from_py_type(return_type)
@@ -178,16 +177,15 @@ def polars_udf(
     Args:
         f: Function to wrap as a UDF, accepts column inputs as Polars Series and returns a column of data as a Polars Series/Numpy array/Python list/Pandas series.
         return_type: The return type of the UDF
-        num_gpus: Deprecated - please use `with daft.resource_request(...):` instead
-        num_cpus: Deprecated - please use `with daft.resource_request(...):` instead
-        memory_bytes: Deprecated - please use `with daft.resource_request(...):` instead
+        num_gpus: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
+        num_cpus: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
+        memory_bytes: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
     """
     if not _POLARS_AVAILABLE:
         raise ImportError("polars_udf requires polars to be installed")
     if any(arg is not None for arg in [num_gpus, num_cpus, memory_bytes]):
         raise ValueError(
-            "The num_gpus, num_cpus, and memory_bytes kwargs have been deprecated for @polars_udf. Please use `with daft.resource_request(...):` instead"
-            " to specify resource requests for dataframe operations"
+            "The num_gpus, num_cpus, and memory_bytes kwargs have been deprecated for @polars_udf. Please use `DataFrame.with_column(..., resource_request=...)` instead"
         )
 
     func_ret_type = ExpressionType.from_py_type(return_type)
