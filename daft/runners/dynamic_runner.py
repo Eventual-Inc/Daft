@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import multiprocessing
 from dataclasses import dataclass
-from typing import Iterator
 
 import psutil
 
 from daft.execution import physical_plan_factory
 from daft.execution.execution_step import (
-    MaterializationRequest,
-    MaterializationRequestBase,
-    MaterializationRequestMulti,
-    MaterializationResult,
+    ExecutionStep,
+    ExecutionStepMulti,
+    ExecutionStepSingle,
+    MaterializedResult,
 )
 from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
@@ -79,9 +78,7 @@ class DynamicRunner(Runner):
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()
             if entry.value is not None
         }
-        phys_plan: Iterator[
-            None | MaterializationRequestBase[vPartition]
-        ] = physical_plan_factory.get_materializing_physical_plan(plan, psets)
+        phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
 
         result_pset = LocalPartitionSet({})
 
@@ -116,21 +113,21 @@ class DynamicRunner(Runner):
                 f"Requested {resource_request.memory_bytes} bytes of memory but found only {psutil.virtual_memory().total} available"
             )
 
-    def _build_partitions(self, partspec: MaterializationRequestBase[vPartition]) -> None:
+    def _build_partitions(self, partspec: ExecutionStep[vPartition]) -> None:
         partitions = partspec.inputs
         for instruction in partspec.instructions:
             partitions = instruction.run(partitions)
-        if isinstance(partspec, MaterializationRequestMulti):
-            partspec.results = [PyMaterializationResult(partition) for partition in partitions]
-        elif isinstance(partspec, MaterializationRequest):
+        if isinstance(partspec, ExecutionStepMulti):
+            partspec.results = [PyMaterializedResult(partition) for partition in partitions]
+        elif isinstance(partspec, ExecutionStepSingle):
             [partition] = partitions
-            partspec.result = PyMaterializationResult(partition)
+            partspec.result = PyMaterializedResult(partition)
         else:
             raise TypeError(f"Cannot typematch input {partspec}")
 
 
 @dataclass(frozen=True)
-class PyMaterializationResult(MaterializationResult[vPartition]):
+class PyMaterializedResult(MaterializedResult[vPartition]):
     _partition: vPartition
 
     def partition(self) -> vPartition:

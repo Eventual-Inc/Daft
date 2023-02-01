@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Iterator
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 import pyarrow as pa
 from loguru import logger
@@ -18,12 +18,12 @@ except ImportError:
 from daft.execution import physical_plan_factory
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.execution_step import (
+    ExecutionStep,
+    ExecutionStepMulti,
+    ExecutionStepSingle,
     FanoutInstruction,
     Instruction,
-    MaterializationRequest,
-    MaterializationRequestBase,
-    MaterializationRequestMulti,
-    MaterializationResult,
+    MaterializedResult,
     ReduceInstruction,
 )
 from daft.execution.logical_op_runners import (
@@ -454,15 +454,13 @@ def remote_run_plan(
 
     from loguru import logger
 
-    phys_plan: Iterator[
-        None | MaterializationRequestBase[vPartition]
-    ] = physical_plan_factory.get_materializing_physical_plan(plan, psets)
+    phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
 
     # Note: For autoscaling clusters, we will probably want to query cores dynamically.
     # Keep in mind this call takes about 0.3ms.
     cores = int(ray.cluster_resources()["CPU"])
 
-    inflight_tasks: dict[str, MaterializationRequestBase[ray.ObjectRef]] = dict()
+    inflight_tasks: dict[str, ExecutionStep[ray.ObjectRef]] = dict()
     inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
 
     result_partitions = None
@@ -488,9 +486,9 @@ def remote_run_plan(
 
                         # If this task is a no-op, just run it locally immediately.
                         while next_step is not None and len(next_step.instructions) == 0:
-                            assert isinstance(next_step, MaterializationRequest)
+                            assert isinstance(next_step, ExecutionStepSingle)
                             [partition] = next_step.inputs
-                            next_step.result = RayMaterializationResult(partition)
+                            next_step.result = RayMaterializedResult(partition)
                             next_step = next(phys_plan)
 
                         if next_step is None:
@@ -525,9 +523,9 @@ def remote_run_plan(
 
                 # Mark the entire task associated with the result as done.
                 task = inflight_tasks[task_id]
-                if isinstance(task, MaterializationRequest):
+                if isinstance(task, ExecutionStepSingle):
                     del inflight_ref_to_task[ready]
-                elif isinstance(task, MaterializationRequestMulti):
+                elif isinstance(task, ExecutionStepMulti):
                     assert task.results is not None
                     for result in task.results:
                         del inflight_ref_to_task[result.partition()]
@@ -535,8 +533,8 @@ def remote_run_plan(
                 del inflight_tasks[task_id]
 
 
-def _build_partitions(task: MaterializationRequestBase[ray.ObjectRef]) -> list[ray.ObjectRef]:
-    """Run a MaterializationRequest and return the resulting list of partitions."""
+def _build_partitions(task: ExecutionStep[ray.ObjectRef]) -> list[ray.ObjectRef]:
+    """Run a ExecutionStep and return the resulting list of partitions."""
     ray_options: dict[str, Any] = {
         "num_returns": task.num_results,
     }
@@ -555,11 +553,11 @@ def _build_partitions(task: MaterializationRequestBase[ray.ObjectRef]) -> list[r
     if task.num_results == 1:
         partitions = [partitions]
 
-    if isinstance(task, MaterializationRequestMulti):
-        task.results = [RayMaterializationResult(partition) for partition in partitions]
-    elif isinstance(task, MaterializationRequest):
+    if isinstance(task, ExecutionStepMulti):
+        task.results = [RayMaterializedResult(partition) for partition in partitions]
+    elif isinstance(task, ExecutionStepSingle):
         [partition] = partitions
-        task.result = RayMaterializationResult(partition)
+        task.result = RayMaterializedResult(partition)
     else:
         raise TypeError(f"Could not type match input {task}")
 
@@ -605,7 +603,7 @@ class DynamicRayRunner(RayRunner):
 
 
 @dataclass(frozen=True)
-class RayMaterializationResult(MaterializationResult[ray.ObjectRef]):
+class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
     _partition: ray.ObjectRef
 
     def partition(self) -> ray.ObjectRef:
