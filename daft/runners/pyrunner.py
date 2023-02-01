@@ -194,10 +194,7 @@ class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
         SortOp: PyRunnerSortOp,
     }
 
-    def map_partitions(
-        self, pset: PartitionSet, func: Callable[[vPartition], vPartition], resource_request: ResourceRequest
-    ) -> PartitionSet:
-        # NOTE: resource_request is ignored since there isn't any actual distribution of workloads in PyRunner
+    def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition]) -> PartitionSet:
         return LocalPartitionSet({i: func(pset.get_partition(i)) for i in range(pset.num_partitions())})
 
     def reduce_partitions(self, pset: PartitionSet, func: Callable[[list[vPartition]], ReduceType]) -> ReduceType:

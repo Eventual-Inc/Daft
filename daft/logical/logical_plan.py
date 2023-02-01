@@ -7,7 +7,6 @@ from enum import Enum, IntEnum
 from pprint import pformat
 from typing import Any, Generic, TypeVar
 
-from daft import resource_request
 from daft.datasources import SourceInfo, StorageType
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import OperatorEnum
@@ -16,6 +15,7 @@ from daft.internal.treenode import TreeNode
 from daft.logical.field import Field
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
+from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry, vPartition
 from daft.types import ExpressionType
 
@@ -34,7 +34,6 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         schema: Schema,
         partition_spec: PartitionSpec,
         op_level: OpLevel,
-        requested_resources: resource_request.ResourceRequest | None = None,
     ) -> None:
         super().__init__()
         if not isinstance(schema, Schema):
@@ -43,15 +42,16 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         self._op_level = op_level
         self._partition_spec = partition_spec
         self._id = next(LogicalPlan.id_iter)
-        self._resource_request = (
-            requested_resources if requested_resources is not None else resource_request._get_current_resource_request()
-        )
 
     def schema(self) -> Schema:
         return self._schema
 
-    def resource_request(self) -> resource_request.ResourceRequest:
-        return self._resource_request
+    def resource_request(self) -> ResourceRequest | None:
+        """Returns a custom ResourceRequest if one has been attached to this LogicalPlan
+
+        Implementations should override this if they allow for customized ResourceRequests.
+        """
+        return None
 
     @abstractmethod
     def required_columns(self) -> set[str]:
@@ -408,11 +408,17 @@ class Filter(UnaryNode):
 class Projection(UnaryNode):
     """Which columns to keep"""
 
-    def __init__(self, input: LogicalPlan, projection: ExpressionList) -> None:
+    def __init__(
+        self, input: LogicalPlan, projection: ExpressionList, custom_resource_request: ResourceRequest | None
+    ) -> None:
         schema = projection.to_schema(input.schema())
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.ROW)
         self._register_child(input)
         self._projection = projection
+        self._custom_resource_request = custom_resource_request
+
+    def resource_request(self) -> ResourceRequest | None:
+        return self._custom_resource_request
 
     def __repr__(self) -> str:
         return self._repr_helper(output=self._projection.exprs)
@@ -426,11 +432,15 @@ class Projection(UnaryNode):
         )
 
     def rebuild(self) -> LogicalPlan:
-        return Projection(input=self._children()[0].rebuild(), projection=self._projection)
+        return Projection(
+            input=self._children()[0].rebuild(),
+            projection=self._projection,
+            custom_resource_request=self.resource_request(),
+        )
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1
-        return Projection(new_children[0], self._projection)
+        return Projection(new_children[0], self._projection, custom_resource_request=self.resource_request())
 
 
 class Sort(UnaryNode):

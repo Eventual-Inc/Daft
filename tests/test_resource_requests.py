@@ -7,7 +7,7 @@ import pandas as pd
 import psutil
 import pytest
 
-from daft import DataFrame, resources, udf
+from daft import DataFrame, resource_request, udf
 from daft.context import get_context
 from daft.expressions import col
 from daft.internal.gpu import cuda_device_count
@@ -41,11 +41,6 @@ def my_udf(c):
     return [1] * len(c)
 
 
-@udf(return_type=int, memory_bytes=psutil.virtual_memory().total + 1)
-def requesting_too_much_memory(c):
-    return [1] * len(c)
-
-
 ###
 # Assert PyRunner behavior for GPU requests:
 # Fail if requesting more GPUs than is available, but otherwise we do not modify anything
@@ -54,48 +49,57 @@ def requesting_too_much_memory(c):
 ###
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "py", reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name not in {"py", "dynamic"}, reason="requires PyRunner to be in use")
 def test_requesting_too_many_cpus():
     df = DataFrame.from_pydict(DATA)
 
-    with resources(num_cpus=multiprocessing.cpu_count() + 1):
-        df = df.with_column("foo", my_udf(col("id")))
+    df = df.with_column(
+        "foo",
+        my_udf(col("id")),
+        resource_request=resource_request.ResourceRequest(num_cpus=multiprocessing.cpu_count() + 1),
+    )
 
     with pytest.raises(RuntimeError):
         df.to_pandas()
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "py", reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name not in {"py", "dynamic"}, reason="requires PyRunner to be in use")
 def test_requesting_too_many_gpus():
     df = DataFrame.from_pydict(DATA)
-
-    with resources(num_gpus=cuda_device_count() + 1):
-        df = df.with_column("foo", my_udf(col("id")))
+    df = df.with_column(
+        "foo", my_udf(col("id")), resource_request=resource_request.ResourceRequest(num_gpus=cuda_device_count() + 1)
+    )
 
     with pytest.raises(RuntimeError):
         df.to_pandas()
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "py", reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name not in {"py", "dynamic"}, reason="requires PyRunner to be in use")
 def test_requesting_too_much_memory():
     df = DataFrame.from_pydict(DATA)
 
-    with resources(memory_bytes=psutil.virtual_memory().total + 1):
-        df = df.with_column("foo", my_udf(col("id")))
+    df = df.with_column(
+        "foo",
+        my_udf(col("id")),
+        resource_request=resource_request.ResourceRequest(memory_bytes=psutil.virtual_memory().total + 1),
+    )
 
     with pytest.raises(RuntimeError):
         df.to_pandas()
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "py", reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name not in {"py", "dynamic"}, reason="requires PyRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 def test_with_column_pyrunner():
     df = DataFrame.from_pydict(DATA).repartition(5)
 
     # We do not do any masking of devices for the local PyRunner, even if the user requests fewer GPUs
     # than the host actually has.
-    with resources(num_gpus=1):
-        df = df.with_column("foo", assert_num_cuda_visible_devices(col("id"), num_gpus=cuda_device_count()))
+    df = df.with_column(
+        "foo",
+        assert_num_cuda_visible_devices(col("id"), num_gpus=cuda_device_count()),
+        resource_request=resource_request.ResourceRequest(num_gpus=1),
+    )
 
     pd_df = pd.DataFrame.from_dict(DATA)
     pd_df["foo"] = pd_df["id"]
@@ -117,60 +121,45 @@ def noop_assert_gpu_available(c):
     return c
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="requires RayRunner to be in use")
+@pytest.mark.skipif(
+    get_context().runner_config.name not in {"ray", "dynamicray"}, reason="requires RayRunner to be in use"
+)
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 @pytest.mark.parametrize("num_gpus", [None, 1])
 def test_with_column_rayrunner(num_gpus):
     df = DataFrame.from_pydict(DATA).repartition(2)
 
-    with resources(num_gpus=num_gpus):
-        df = df.with_column(
-            "num_cuda_visible_devices",
-            assert_num_cuda_visible_devices(col("id"), num_gpus=num_gpus if num_gpus is not None else 0),
-        )
+    df = df.with_column(
+        "num_cuda_visible_devices",
+        assert_num_cuda_visible_devices(col("id"), num_gpus=num_gpus if num_gpus is not None else 0),
+        resource_request=resource_request.ResourceRequest(num_gpus=num_gpus),
+    )
 
     pd_df = pd.DataFrame.from_dict(DATA)
     pd_df["num_cuda_visible_devices"] = pd_df["id"]
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="requires RayRunner to be in use")
+@pytest.mark.skipif(
+    get_context().runner_config.name not in {"ray", "dynamicray"}, reason="requires RayRunner to be in use"
+)
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 def test_with_column_max_resources_rayrunner():
     df = DataFrame.from_pydict(DATA).repartition(2)
-    # This operation should be optimized to perform a single projection with the max resource request of both operations
-    # Hence both ops should have access to 1 GPU
-    with resources(num_gpus=0):
-        df = df.with_column("0_gpu_col", assert_num_cuda_visible_devices(col("id"), num_gpus=1))
 
-    with resources(num_gpus=1):
-        df = df.with_column("1_gpu_col", assert_num_cuda_visible_devices(col("id"), num_gpus=1))
-
-    pd_df = pd.DataFrame.from_dict(DATA)
-    pd_df["f0"] = pd_df["id"]
-    pd_df["f1"] = pd_df["id"]
-    assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
-
-
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="requires RayRunner to be in use")
-@pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
-def test_sort_rayrunner():
-    df = DataFrame.from_pydict(DATA).repartition(2)
-
-    with resources(num_gpus=1):
-        df = df.sort(noop_assert_gpu_available(col("id")))
+    # Because of projection folding optimizations, both UDFs should run with num_gpus=1 even though 0_gpu_col requested for 0 GPUs
+    df = df.with_column(
+        "0_gpu_col",
+        assert_num_cuda_visible_devices(col("id"), num_gpus=1),
+        resource_request=resource_request.ResourceRequest(num_gpus=0),
+    )
+    df = df.with_column(
+        "1_gpu_col",
+        assert_num_cuda_visible_devices(col("id"), num_gpus=1),
+        resource_request=resource_request.ResourceRequest(num_gpus=1),
+    )
 
     pd_df = pd.DataFrame.from_dict(DATA)
-    assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
-
-
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="requires RayRunner to be in use")
-@pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
-def test_repartition_rayrunner():
-    df = DataFrame.from_pydict(DATA)
-
-    with resources(num_gpus=1):
-        df = df.repartition(2, noop_assert_gpu_available(col("id")))
-
-    pd_df = pd.DataFrame.from_dict(DATA)
+    pd_df["0_gpu_col"] = pd_df["id"]
+    pd_df["1_gpu_col"] = pd_df["id"]
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
