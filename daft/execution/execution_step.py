@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import itertools
 import sys
-from abc import ABC
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
@@ -25,7 +24,7 @@ ID_GEN = itertools.count()
 
 
 @dataclass
-class ExecutionStep(Generic[PartitionT], ABC):
+class ExecutionStep(Generic[PartitionT]):
     """An ExecutionStep describes a task that will run to create a partition.
 
     The partition will be created by running a function pipeline (`instructions`) over some input partition(s) (`inputs`).

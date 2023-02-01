@@ -15,8 +15,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from collections.abc import Generator, Iterator
-from typing import List, TypeVar, Union
+from typing import Generator, Iterator, List, TypeVar, Union
 
 from daft.execution import execution_step
 from daft.execution.execution_step import (
