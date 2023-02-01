@@ -4,6 +4,7 @@ import copy
 
 from loguru import logger
 
+from daft import resource_request
 from daft.expressions import col
 from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
@@ -54,7 +55,9 @@ class PushDownPredicates(Rule[LogicalPlan]):
             return None
         logger.debug(f"Pushing down Filter predicate {can_push_down} into {child}")
         pushed_down_filter = Projection(
-            input=Filter(grandchild, predicate=ExpressionList(can_push_down)), projection=child._projection
+            input=Filter(grandchild, predicate=ExpressionList(can_push_down)),
+            projection=child._projection,
+            custom_resource_request=child.resource_request(),
         )
 
         if len(can_not_push_down) == 0:
@@ -139,7 +142,15 @@ class PruneColumns(Rule[LogicalPlan]):
         new_child_exprs = [e for e in child_projections if e.name() in parent_required_set]
         grandchild = child._children()[0]
 
-        return parent.copy_with_new_children([Projection(grandchild, projection=ExpressionList(new_child_exprs))])
+        return parent.copy_with_new_children(
+            [
+                Projection(
+                    grandchild,
+                    projection=ExpressionList(new_child_exprs),
+                    custom_resource_request=child.resource_request(),
+                )
+            ]
+        )
 
     def _projection_aggregate(self, parent: Projection, child: LocalAggregate) -> LogicalPlan | None:
         parent_required_set = parent.required_columns()
@@ -186,6 +197,7 @@ class PruneColumns(Rule[LogicalPlan]):
         return Projection(
             child,
             projection=ExpressionList([e.to_column_expression() for e in child.schema() if e.name in parent_name_set]),
+            custom_resource_request=None,
         )
 
 
@@ -283,7 +295,13 @@ class FoldProjections(Rule[LogicalPlan]):
                     for name in to_replace:
                         e = e._replace_column_with_expression(col(name), child_projection.get_expression_by_name(name))
                 new_exprs.append(e)
-            return Projection(grandchild, ExpressionList(new_exprs))
+            return Projection(
+                grandchild,
+                ExpressionList(new_exprs),
+                custom_resource_request=resource_request.ResourceRequest.max_resources(
+                    [parent.resource_request(), child.resource_request()]
+                ),
+            )
         else:
             return None
 

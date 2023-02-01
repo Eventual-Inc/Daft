@@ -26,14 +26,14 @@ def test_projection_logical_plan(schema) -> None:
     scan = InMemoryScan(cache_entry=PartitionCacheEntry("", None), schema=schema)
     assert scan.schema() == schema
 
-    full_project = Projection(scan, ExpressionList([col("a"), col("b"), col("c")]))
+    full_project = Projection(scan, ExpressionList([col("a"), col("b"), col("c")]), custom_resource_request=None)
 
     assert full_project.schema().column_names() == ["a", "b", "c"]
 
-    project = Projection(scan, ExpressionList([col("b")]))
+    project = Projection(scan, ExpressionList([col("b")]), custom_resource_request=None)
     assert project.schema().column_names() == ["b"]
 
-    project = Projection(scan, ExpressionList([col("b") * 2]))
+    project = Projection(scan, ExpressionList([col("b") * 2]), custom_resource_request=None)
 
     assert project.schema().column_names() == ["b"]
 
@@ -43,7 +43,7 @@ def test_projection_logical_plan_bad_input(schema) -> None:
     assert scan.schema() == schema
 
     with pytest.raises(ValueError):
-        Projection(scan, ExpressionList([col("d")]))
+        Projection(scan, ExpressionList([col("d")]), custom_resource_request=None)
 
 
 def test_filter_logical_plan(schema) -> None:
@@ -69,19 +69,26 @@ def test_projection_new_columns_logical_plan(schema) -> None:
     scan = InMemoryScan(cache_entry=PartitionCacheEntry("", None), schema=schema)
     assert scan.schema() == schema
 
-    Projection(scan, schema.to_column_expressions().union(ExpressionList([(col("a") + col("b")).alias("d")])))
-    projection = Projection(scan, ExpressionList([col("b")]))
+    Projection(
+        scan,
+        schema.to_column_expressions().union(ExpressionList([(col("a") + col("b")).alias("d")])),
+        custom_resource_request=None,
+    )
+    projection = Projection(scan, ExpressionList([col("b")]), custom_resource_request=None)
     proj_schema = projection.schema()
     hstacked_on_proj = Projection(
         projection,
         proj_schema.to_column_expressions().union(
             ExpressionList([(col("b") + 1).alias("a"), (col("b") + 2).alias("c")])
         ),
+        custom_resource_request=None,
     )
 
     assert hstacked_on_proj.schema().column_names() == ["b", "a", "c"]
 
-    projection_reorder = Projection(hstacked_on_proj, ExpressionList([col("a"), col("b"), col("c")]))
+    projection_reorder = Projection(
+        hstacked_on_proj, ExpressionList([col("a"), col("b"), col("c")]), custom_resource_request=None
+    )
     assert projection_reorder.schema().column_names() == ["a", "b", "c"]
 
 
@@ -90,7 +97,7 @@ def test_filter_logical_plan_bad_input(schema) -> None:
     assert scan.schema() == schema
 
     with pytest.raises(ValueError):
-        scan = Projection(scan, ExpressionList([col("a"), (col("b") + 1).alias("a")]))
+        scan = Projection(scan, ExpressionList([col("a"), (col("b") + 1).alias("a")]), custom_resource_request=None)
 
 
 def test_scan_projection_filter_projection_chain(schema) -> None:
@@ -98,7 +105,9 @@ def test_scan_projection_filter_projection_chain(schema) -> None:
     assert scan.schema() == schema
 
     hstacked = Projection(
-        scan, schema.to_column_expressions().union(ExpressionList([(col("a") + col("b")).alias("d")]))
+        scan,
+        schema.to_column_expressions().union(ExpressionList([(col("a") + col("b")).alias("d")])),
+        custom_resource_request=None,
     )
     assert hstacked.schema().column_names() == ["a", "b", "c", "d"]
 
@@ -106,8 +115,10 @@ def test_scan_projection_filter_projection_chain(schema) -> None:
     assert filtered.schema().column_names() == ["a", "b", "c", "d"]
     assert filtered.schema() == filtered.schema()
 
-    projection_alias = Projection(filtered, ExpressionList([col("b").alias("out"), col("d")]))
+    projection_alias = Projection(
+        filtered, ExpressionList([col("b").alias("out"), col("d")]), custom_resource_request=None
+    )
 
-    projection = Projection(projection_alias, ExpressionList([col("out")]))
+    projection = Projection(projection_alias, ExpressionList([col("out")]), custom_resource_request=None)
 
     assert projection.schema().column_names() == ["out"]
