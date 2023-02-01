@@ -11,7 +11,7 @@ use arrow2::{
 };
 pub use dtype::DataType;
 pub use field::Field;
-use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
+use num_traits::{Bounded, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 pub use time_unit::TimeUnit;
 
 /// Trait to wrap DataType Enum
@@ -60,6 +60,7 @@ impl_daft_datatype!(StructType, Unknown);
 
 pub trait NumericNative:
     PartialOrd
+    + PartialEq
     + NativeType
     + Num
     + NumCast
@@ -74,6 +75,7 @@ pub trait NumericNative:
     + Rem<Output = Self>
     + Bounded
     + FromPrimitive
+    + ToPrimitive
     + NativeArithmetics
 {
     type DAFTTYPE: DaftNumericType;

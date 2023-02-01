@@ -46,6 +46,17 @@ impl From<(&str, &[bool])> for BooleanArray {
     }
 }
 
+impl From<(&str, arrow2::array::BooleanArray)> for BooleanArray {
+    fn from(item: (&str, arrow2::array::BooleanArray)) -> Self {
+        let (name, arrow_array) = item;
+        DataArray::new(
+            Field::new(name, DataType::Boolean).into(),
+            arrow_array.arced(),
+        )
+        .unwrap()
+    }
+}
+
 impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
     fn from(item: (&str, &[T])) -> Self {
         let (name, slice) = item;
