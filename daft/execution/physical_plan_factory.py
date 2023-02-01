@@ -77,9 +77,8 @@ def get_physical_plan(node: LogicalPlan) -> Iterator[None | ExecutionStep[Partit
             return physical_plan.file_write(child_plan, node)
 
         elif isinstance(node, logical_plan.LocalLimit):
-            # Ignore LocalLimit logical nodes; the GlobalLimit physical plan handles everything
-            # and will dynamically dispatch appropriate local limit instructions.
-            return child_plan
+            # Note that the GlobalLimit physical plan also dynamically dispatches its own LocalLimit instructions.
+            return physical_plan.local_limit(child_plan, node._num)
 
         elif isinstance(node, logical_plan.GlobalLimit):
             return physical_plan.global_limit(child_plan, node)
