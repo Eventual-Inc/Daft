@@ -367,6 +367,15 @@ class RayRunner(Runner):
             ]
         )
 
+    def __del__(self) -> None:
+        logger.info("Shutting down Ray connection")
+        try:
+            ray.shutdown()
+        # ImportError: sys.meta_path is None, Python is likely shutting down is thrown when
+        # ray.shutdown() is called as the Python kernel is shutting down. This is expected.
+        except ImportError:
+            pass
+
     def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
         if isinstance(pset, LocalPartitionSet):
             pset = RayPartitionSet({pid: ray.put(val) for pid, val in pset._partitions.items()})
