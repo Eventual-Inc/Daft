@@ -106,8 +106,8 @@ def join(
 
     # Materialize the steps from the left and right sources to get partitions.
     # As the materializations complete, emit new steps to join each left and right partition.
-    left_requests: deque[ExecutionStepSingle] = deque()
-    right_requests: deque[ExecutionStepSingle] = deque()
+    left_requests: deque[ExecutionStepSingle[PartitionT]] = deque()
+    right_requests: deque[ExecutionStepSingle[PartitionT]] = deque()
 
     while True:
         # Emit new join steps if we have left and right partitions ready.
@@ -186,7 +186,7 @@ def global_limit(
     assert remaining_rows >= 0, f"Invalid value for limit: {remaining_rows}"
     remaining_partitions = global_limit.num_partitions()
 
-    materializations: deque[ExecutionStepSingle] = deque()
+    materializations: deque[ExecutionStepSingle[PartitionT]] = deque()
 
     # To dynamically schedule the global limit, we need to apply an appropriate limit to each child partition.
     # We don't know their exact sizes since they are pending execution, so we will have to iteratively execute them,
@@ -272,7 +272,7 @@ def coalesce(
     # For each output partition, the number of input partitions to merge in.
     merges_per_result = deque([stop - start for start, stop in zip(starts, stops)])
 
-    materializations: deque[ExecutionStepSingle] = deque()
+    materializations: deque[ExecutionStepSingle[PartitionT]] = deque()
 
     while True:
 
