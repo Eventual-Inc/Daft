@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import warnings
 from typing import TYPE_CHECKING, ClassVar
 
 from loguru import logger
@@ -58,64 +59,65 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     return _PyRunnerConfig()
 
 
-# Global Runner singleton, initialized when accessed through the DaftContext
-_RUNNER: Runner | None = None
-
-
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass()
 class DaftContext:
     """Global context for the current Daft execution environment"""
 
-    runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
-    disallow_set_runner: bool = False
+    _runner: Runner | None
+    runner_config: _RunnerConfig
 
     def runner(self) -> Runner:
-        global _RUNNER
-        if _RUNNER is not None:
-            return _RUNNER
+        if self._runner is not None:
+            return self._runner
         if self.runner_config.name == "ray":
             from daft.runners.ray_runner import RayRunner
 
             logger.info("Using RayRunner")
             assert isinstance(self.runner_config, _RayRunnerConfig)
-            _RUNNER = RayRunner(address=self.runner_config.address)
+            self._runner = RayRunner(address=self.runner_config.address)
         elif self.runner_config.name == "py":
             from daft.runners.pyrunner import PyRunner
 
             logger.info("Using PyRunner")
-            _RUNNER = PyRunner()
+            self._runner = PyRunner()
 
         elif self.runner_config.name == "dynamic":
             from daft.runners.dynamic_runner import DynamicRunner
 
             logger.info("Using DynamicRunner")
-            _RUNNER = DynamicRunner()
+            self._runner = DynamicRunner()
 
         elif self.runner_config.name == "dynamicray":
             from daft.runners.ray_runner import DynamicRayRunner
 
             logger.info("Using DynamicRayRunner")
             assert isinstance(self.runner_config, _DynamicRayRunnerConfig)
-            _RUNNER = DynamicRayRunner(address=self.runner_config.address)
+            self._runner = DynamicRayRunner(address=self.runner_config.address)
         else:
             raise NotImplementedError(f"Runner config implemented: {self.runner_config.name}")
 
-        # Mark DaftContext as having the runner set, which prevents any subsequent setting of the config
-        # after the runner has been initialized once
-        global _DaftContext
-        _DaftContext = dataclasses.replace(
-            _DaftContext,
-            disallow_set_runner=True,
-        )
+        return self._runner
 
-        return _RUNNER
+    def reset_runner(self) -> None:
+        del self._runner
+        self._runner = None
 
 
-_DaftContext = DaftContext()
+_DaftContext = DaftContext(_runner=None, runner_config=_get_runner_config_from_env())
 
 
 def get_context() -> DaftContext:
     return _DaftContext
+
+
+def _set_runner(config: _RunnerConfig):
+    if _DaftContext._runner is not None:
+        warnings.warn(
+            f"The current active runner {_DaftContext._runner} with config {_DaftContext.runner_config} will be replaced."
+            " It is not recommended to set the runner more than once in a single Python session."
+        )
+    _DaftContext.runner_config = config
+    _DaftContext.reset_runner()
 
 
 def set_runner_ray(address: str | None = None) -> DaftContext:
@@ -132,27 +134,13 @@ def set_runner_ray(address: str | None = None) -> DaftContext:
     Returns:
         DaftContext: Daft context after setting the Ray runner
     """
-    global _DaftContext
-    if _DaftContext.disallow_set_runner:
-        raise RuntimeError("Cannot set runner more than once")
-    _DaftContext = dataclasses.replace(
-        _DaftContext,
-        runner_config=_RayRunnerConfig(address=address),
-        disallow_set_runner=True,
-    )
+    _set_runner(_RayRunnerConfig(address=address))
     return _DaftContext
 
 
 def set_runner_dynamic_ray(address: str | None = None) -> DaftContext:
     """[Experimental] Sets the runner for executing Daft dataframes to the DynamicRayRunner."""
-    global _DaftContext
-    if _DaftContext.disallow_set_runner:
-        raise RuntimeError("Cannot set runner more than once")
-    _DaftContext = dataclasses.replace(
-        _DaftContext,
-        runner_config=_DynamicRayRunnerConfig(address=address),
-        disallow_set_runner=True,
-    )
+    _set_runner(_DynamicRayRunnerConfig(address=address))
     return _DaftContext
 
 
@@ -164,25 +152,11 @@ def set_runner_py() -> DaftContext:
     Returns:
         DaftContext: Daft context after setting the Py runner
     """
-    global _DaftContext
-    if _DaftContext.disallow_set_runner:
-        raise RuntimeError("Cannot set runner more than once")
-    _DaftContext = dataclasses.replace(
-        _DaftContext,
-        runner_config=_PyRunnerConfig(),
-        disallow_set_runner=True,
-    )
+    _set_runner(_PyRunnerConfig())
     return _DaftContext
 
 
 def set_runner_dynamic() -> DaftContext:
     """[Experimental] Sets the runner for executing Daft dataframes to the DynamicRunner."""
-    global _DaftContext
-    if _DaftContext.disallow_set_runner:
-        raise RuntimeError("Cannot set runner more than once")
-    _DaftContext = dataclasses.replace(
-        _DaftContext,
-        runner_config=_DynamicRunnerConfig(),
-        disallow_set_runner=True,
-    )
+    _set_runner(_DynamicRunnerConfig())
     return _DaftContext
