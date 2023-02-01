@@ -150,24 +150,25 @@ def join(
 def local_limit(
     child_plan: Iterator[None | ExecutionStep[PartitionT]],
     limit: int,
-) -> Generator[None | ExecutionStep[PartitionT], int, None]:
+) -> Generator[None | ExecutionStep[PartitionT], None | int, None]:
     """Apply a limit instruction to each partition in the child_plan.
 
     limit:
-        The value of the limit to apply to the first partition.
-        For subsequent partitions, send the value of the limit to apply back into this generator.
+        The value of the limit to apply to each partition.
 
     Yields: ExecutionStep with the limit applied.
-    Send back: The next limit to apply.
+    Send back: A new value to the limit (optional). This allows you to update the limit after each partition if desired.
     """
     for step in child_plan:
         if not isinstance(step, OpenExecutionQueue):
             yield step
         else:
-            limit = yield step.add_instruction(
+            maybe_new_limit = yield step.add_instruction(
                 execution_step.LocalLimit(limit),
                 resource_request=None,
             )
+            if maybe_new_limit is not None:
+                limit = maybe_new_limit
 
 
 def global_limit(
