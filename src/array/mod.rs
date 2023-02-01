@@ -1,4 +1,5 @@
 pub mod from;
+pub mod iterator;
 pub mod ops;
 
 use std::{any::Any, marker::PhantomData, sync::Arc};
@@ -60,6 +61,19 @@ where
             data,
             marker_: PhantomData,
         })
+    }
+
+    pub fn with_validity(&self, validity: &[bool]) -> DaftResult<Self> {
+        if validity.len() != self.data.len() {
+            return Err(DaftError::ValueError(format!(
+                "validity mask length does not match DataArray length, {} vs {}",
+                validity.len(),
+                self.data.len()
+            )));
+        }
+        use arrow2::bitmap::Bitmap;
+        let with_bitmap = self.data.with_validity(Some(Bitmap::from(validity)));
+        DataArray::new(self.field.clone(), with_bitmap.into())
     }
 }
 

@@ -66,8 +66,15 @@ where
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
         let arrow_array = self.downcast();
+
         let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
-        let arrow_result = comparison::eq_scalar_and_validity(self.downcast(), &scalar);
+
+        let validity = match self.downcast().validity() {
+            Some(bitmap) => Some(bitmap.clone()),
+            None => None,
+        };
+
+        let arrow_result = comparison::eq_scalar(self.downcast(), &scalar).with_validity(validity);
         DataArray::from((self.name(), arrow_result))
     }
 
@@ -77,8 +84,12 @@ where
 
         let arrow_array = self.downcast();
         let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
+        let validity = match self.downcast().validity() {
+            Some(bitmap) => Some(bitmap.clone()),
+            None => None,
+        };
 
-        let arrow_result = comparison::neq_scalar_and_validity(arrow_array, &scalar);
+        let arrow_result = comparison::neq_scalar(arrow_array, &scalar).with_validity(validity);
         DataArray::from((self.name(), arrow_result))
     }
 
@@ -140,5 +151,27 @@ where
         };
         let arrow_result = comparison::gt_eq_scalar(arrow_array, &scalar).with_validity(validity);
         DataArray::from((self.name(), arrow_result))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{array::ops::DaftCompare, datatypes::Int64Array, error::DaftResult};
+
+    #[test]
+    fn equal_int_array_with_scalar() -> DaftResult<()> {
+        let array = Int64Array::from(("a", vec![1, 2, 3].as_slice()));
+        let result: Vec<_> = array.equal(2).into_iter().collect();
+        assert_eq!(result[..], [Some(false), Some(true), Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn equal_int_array_with_null_with_scalar() -> DaftResult<()> {
+        let array = Int64Array::from(("a", vec![1, 2, 3].as_slice()))
+            .with_validity(&[true, false, true])?;
+        let result: Vec<_> = array.equal(2).into_iter().collect();
+        assert_eq!(result[..], [Some(false), None, Some(false)]);
+        Ok(())
     }
 }
