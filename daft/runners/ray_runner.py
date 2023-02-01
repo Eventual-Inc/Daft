@@ -517,6 +517,9 @@ class DynamicRayRunner(RayRunner):
             "num_returns": task.num_results,
         }
 
+        if task.resource_request is not None:
+            ray_options = {**ray_options, **_get_ray_task_options(task.resource_request)}
+
         if isinstance(task.instructions[0], ReduceInstruction):
             ray_options["scheduling_strategy"] = "SPREAD"
 
