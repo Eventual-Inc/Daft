@@ -24,6 +24,17 @@ def optimizer() -> RuleRunner[LogicalPlan]:
     )
 
 
+def test_no_pushdown_on_modified_column(optimizer) -> None:
+    df = DataFrame.from_pydict({"ints": [i for i in range(3)], "ints_dup": [i for i in range(3)]})
+    df = df.with_column(
+        "modified",
+        col("ints_dup") + 1,
+    ).where(col("ints") == col("modified"))
+
+    # Optimizer cannot push down the filter because it uses a column that was projected
+    assert optimizer(df.plan()).is_eq(df.plan())
+
+
 def test_filter_pushdown_select(valid_data: list[dict[str, float]], optimizer) -> None:
     df = DataFrame.from_pylist(valid_data)
     unoptimized = df.select("sepal_length", "sepal_width").where(col("sepal_length") > 4.8)

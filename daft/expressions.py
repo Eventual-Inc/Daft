@@ -163,6 +163,7 @@ class Expression(TreeNode["Expression"]):
         return input
 
     def _input_mapping(self) -> str | None:
+        """If the leaf Expression on this Expression is not modified, return the name of the leaf Expression. Otherwise, return None."""
         return None
 
     def __bool__(self) -> bool:
@@ -750,7 +751,7 @@ class AliasExpression(Expression):
         return self._expr.resolve_type(schema)
 
     def _input_mapping(self) -> str | None:
-        return self._children()[0].name()
+        return self._children()[0]._input_mapping()
 
     @property
     def _expr(self) -> Expression:
@@ -1103,6 +1104,7 @@ class ExpressionList(Iterable[Expression]):
         return id_set
 
     def input_mapping(self) -> dict[str, str]:
+        """Returns a map of {output_name: input_name} for all expressions that are just no-ops/aliases of an existing input"""
         result = {}
         for e in self.exprs:
             input_map = e._input_mapping()
