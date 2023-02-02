@@ -451,8 +451,9 @@ class Sort(UnaryNode):
         self._sort_by = sort_by
 
         for e in self._sort_by:
-            if e.resolve_type(input.schema()) == ExpressionType.null():
-                raise ExpressionTypeError(f"Cannot sort on null type expression: {e}")
+            dtype = e.resolve_type(input.schema())
+            if dtype in {ExpressionType.null(), ExpressionType.bytes(), ExpressionType.logical()}:
+                raise ExpressionTypeError(f"Cannot sort on expression {e} with type: {e}")
 
         if isinstance(descending, bool):
             self._descending = [descending for _ in self._sort_by]

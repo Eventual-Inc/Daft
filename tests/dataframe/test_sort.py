@@ -5,11 +5,42 @@ import math
 import pytest
 
 import daft
+from daft.errors import ExpressionTypeError
+
+###
+# Validation tests
+###
+
+
+def test_disallowed_sort_bool():
+    df = daft.DataFrame.from_pydict({"A": [True, False]})
+
+    with pytest.raises(ExpressionTypeError):
+        df.sort("A")
+
+
+def test_disallowed_sort_null():
+    df = daft.DataFrame.from_pydict({"A": [None, None]})
+
+    with pytest.raises(ExpressionTypeError):
+        df.sort("A")
+
+
+def test_disallowed_sort_bytes():
+    df = daft.DataFrame.from_pydict({"A": [b"a", b"b"]})
+
+    with pytest.raises(ExpressionTypeError):
+        df.sort("A")
+
+
+###
+# Functional tests
+###
 
 
 @pytest.mark.parametrize("desc", [True, False])
 @pytest.mark.parametrize("n_partitions", [1, 3])
-def test_single_float_col_sort(desc, n_partitions):
+def test_single_float_col_sort(desc: bool, n_partitions: int):
     df = daft.DataFrame.from_pydict({"A": [1.0, None, 3.0, float("nan"), 2.0]})
     df = df.repartition(n_partitions)
     df = df.sort("A", desc=desc)
