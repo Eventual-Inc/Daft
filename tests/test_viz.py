@@ -75,10 +75,10 @@ def test_empty_repr():
 
 
 def test_alias_repr():
-    df = DataFrame.from_pydict({"A": [1, 2, 3]})
-    df = df.select(df["A"].alias("A2"))
+    df = DataFrame.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
+    df = df.select(df["A"].alias("A2"), df["B"])
 
-    expected_data = {"A2": ("INTEGER", [])}
+    expected_data = {"A2": ("INTEGER", []), "B": ("STRING", [])}
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
     assert parse_html_table(df._repr_html_(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
 
@@ -88,7 +88,11 @@ def test_alias_repr():
         "A2": (
             "INTEGER",
             ["1", "2", "3"],
-        )
+        ),
+        "B": (
+            "STRING",
+            ["a", "b", "c"],
+        ),
     }
     assert parse_str_table(df.__repr__()) == expected_data
     assert parse_html_table(df._repr_html_()) == expected_data
