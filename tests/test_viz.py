@@ -44,11 +44,14 @@ def parse_html_table(
 
     html_table = lines[1:-2]
 
-    [pd_df] = pd.read_html("\n".join(html_table))
+    # Pandas has inconsistent behavior when parsing <br> tags, so we manually replace it with a space
+    html_table = [line.replace("<br>", " ") for line in html_table]
 
-    # If only one HTML row, then the table is empty and the Pandas dataframe has one row
-    # which has the column types and names
-    num_html_rows = sum([line.count("<tr") for line in html_table])
+    pd_df = pd.read_html("\n".join(html_table))[0]
+
+    # If only one HTML row, then the table is empty and Pandas has backward incompatible parsing behavior
+    # between certain versions, so we parse the HTML ourselves.
+    num_html_rows = sum([line.count("<tr>") for line in html_table])
     if num_html_rows == 1:
         result = {}
         for idx in range(len(pd_df.columns)):
