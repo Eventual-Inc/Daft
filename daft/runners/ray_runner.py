@@ -382,7 +382,6 @@ class RayRunner(Runner):
             last = exec_plan.execution_ops[-1].logical_ops[-1]
             final_result = partition_intermediate_results[last.id()]
             pset_entry = self._part_set_cache.put_partition_set(final_result)
-            len(final_result)
             return pset_entry
 
 
@@ -478,8 +477,10 @@ def remote_run_plan(
                     result_partitions = e.value
 
                 # Dispatch the batch of tasks.
+                logger.debug(
+                    f"{(datetime.now() - start).total_seconds()}s: DynamicRayRunner dispatching {len(tasks_to_dispatch)} tasks:"
+                )
                 for task in tasks_to_dispatch:
-                    logger.debug(f"{(datetime.now() - start).total_seconds()}s: " f"DynamicRayRunner dispatching task:")
                     results = _build_partitions(task)
                     logger.debug(f"{task} -> {results}")
                     inflight_tasks[task.id()] = task
@@ -571,7 +572,6 @@ class DynamicRayRunner(RayRunner):
             result_pset.set_partition(i, partition)
 
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
-        len(result_pset)
 
         return pset_entry
 
