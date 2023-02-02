@@ -93,6 +93,8 @@ def vpartition_repr_html(
     max_lines: int = DEFAULT_MAX_LINES,
 ) -> str:
     """Converts a vPartition into a HTML string"""
+    if len(daft_schema) == 0:
+        return "<small>(No data to display: Dataframe has no columns)</small>"
     data = (
         {k: v[:num_rows] for k, v in vpartition.to_pydict().items()}
         if vpartition is not None
@@ -134,12 +136,10 @@ def vpartition_repr_html(
     assert tabulate_html_string.startswith("<table")
     tabulate_html_string = '<table class="dataframe"' + tabulate_html_string[len("<table") :]
 
-    return f"""
-        <div>
-            {tabulate_html_string}
-            <small>{user_message}</small>
-        </div>
-    """
+    return f"""<div>
+    {tabulate_html_string}
+    <small>{user_message}</small>
+</div>"""
 
 
 def vpartition_repr(
@@ -151,6 +151,9 @@ def vpartition_repr(
     max_lines: int = DEFAULT_MAX_LINES,
 ) -> str:
     """Converts a vPartition into a prettified string for display in a REPL"""
+    if len(daft_schema) == 0:
+        return "(No data to display: Dataframe has no columns)"
+
     data = (
         {k: v[:num_rows] for k, v in vpartition.to_pydict().items()}
         if vpartition is not None

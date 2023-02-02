@@ -9,6 +9,7 @@ icebridge
 
 # DevTools
 ipdb
+lxml
 maturin
 myst-nb>=0.16.0
 numpy < 1.24
