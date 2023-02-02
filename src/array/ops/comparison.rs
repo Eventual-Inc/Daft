@@ -1,5 +1,3 @@
-use std::ops::Not;
-
 use num_traits::{NumCast, ToPrimitive};
 
 use crate::{
@@ -8,10 +6,7 @@ use crate::{
 };
 
 use super::DaftCompare;
-use arrow2::{
-    compute::comparison::{self},
-    scalar::{PrimitiveScalar, Scalar},
-};
+use arrow2::{compute::comparison, scalar::PrimitiveScalar};
 
 // fn comparison_helper<T, >(
 //     lhs: &DataArray<T>,
@@ -54,7 +49,7 @@ fn arrow_bitmap_validity(
         (None, None) => None,
         (Some(l), None) => Some(l.clone()),
         (None, Some(r)) => Some(r.clone()),
-        (Some(l), Some(r)) => Some(arrow2::bitmap::and(&l, &r)),
+        (Some(l), Some(r)) => Some(arrow2::bitmap::and(l, r)),
     }
 }
 
