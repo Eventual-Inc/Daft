@@ -423,7 +423,12 @@ def get_meta(partition: vPartition) -> PartitionMetadata:
 
 
 @ray.remote
-def remote_run_plan(plan: logical_plan.LogicalPlan, psets: dict[str, ray.ObjectRef]) -> list[ray.ObjectRef]:
+def remote_run_plan(
+    plan: logical_plan.LogicalPlan,
+    psets: dict[str, ray.ObjectRef],
+    min_tasks_per_core: int,
+    min_refs_per_core: int,
+) -> list[ray.ObjectRef]:
 
     phys_plan: Iterator[
         None | MaterializationRequestBase[vPartition]
@@ -449,7 +454,10 @@ def remote_run_plan(plan: logical_plan.LogicalPlan, psets: dict[str, ray.ObjectR
             try:
                 # for i in range(parallelism_available):
                 # while True:
-                while len(inflight_tasks) < 4 * cores or len(inflight_ref_to_task) < 4 * cores * cores:
+                while (
+                    len(inflight_tasks) < min_tasks_per_core * cores
+                    or len(inflight_ref_to_task) < min_refs_per_core * cores
+                ):
 
                     next_step = next(phys_plan)
 
@@ -524,6 +532,16 @@ def _build_partitions(task: MaterializationRequestBase[ray.ObjectRef]) -> list[r
 
 
 class DynamicRayRunner(RayRunner):
+    def __init__(
+        self,
+        address: str | None,
+        min_tasks_per_core: int | None,
+        min_refs_per_core: int | None,
+    ) -> None:
+        super().__init__(address=address)
+        self.min_tasks_per_core = min_tasks_per_core if min_tasks_per_core is not None else 4
+        self.min_refs_per_core = min_refs_per_core if min_refs_per_core is not None else 0
+
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         result_pset = RayPartitionSet({})
 
@@ -534,7 +552,14 @@ class DynamicRayRunner(RayRunner):
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()
             if entry.value is not None
         }
-        partitions = ray.get(remote_run_plan.remote(plan, psets))
+        partitions = ray.get(
+            remote_run_plan.remote(
+                plan=plan,
+                psets=psets,
+                min_tasks_per_core=self.min_tasks_per_core,
+                min_refs_per_core=self.min_refs_per_core,
+            )
+        )
 
         for i, partition in enumerate(partitions):
             result_pset.set_partition(i, partition)
