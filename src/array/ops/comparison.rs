@@ -8,39 +8,6 @@ use crate::{
 use super::DaftCompare;
 use arrow2::{compute::comparison, scalar::PrimitiveScalar};
 
-// fn comparison_helper<T, >(
-//     lhs: &DataArray<T>,
-//     rhs: &DataArray<T>,
-//     array_func: impl Fn(&dyn arrow2::array::Array, &dyn arrow2::array::Array) -> arrow2::array::BooleanArray,
-//     array_func: impl Fn(&dyn arrow2::array::Array, &dyn arrow2::array::Array) -> arrow2::array::BooleanArray,
-
-// ) -> BooleanArray
-// where
-//     T: DaftNumericType,{
-//     let ca = match (lhs.len(), rhs.len()) {
-//         (a, b) if a == b => {
-//             BooleanArray::from((lhs.name(), array_func(lhs.downcast(), rhs.downcast())))
-//         }
-//         // broadcast right path
-//         (_, 1) => {
-//             let opt_rhs = rhs.get(0);
-//             match opt_rhs {
-//                 None => DataArray::full_null(lhs.name(), lhs.len()),
-//                 Some(rhs) => ),
-//             }
-//         }
-//         (1, _) => {
-//             let opt_lhs = lhs.get(0);
-//             match opt_lhs {
-//                 None => DataArray::full_null(rhs.name(), rhs.len()),
-//                 Some(lhs) => rhs.apply(|rhs| operation(lhs, rhs)),
-//             }
-//         }
-//         _ => panic!("Cannot apply operation on arrays of different lengths"),
-//     };
-//     ca
-// }
-
 fn arrow_bitmap_validity(
     l_bitmap: Option<&arrow2::bitmap::Bitmap>,
     r_bitmap: Option<&arrow2::bitmap::Bitmap>,
