@@ -452,6 +452,8 @@ def remote_run_plan(
     max_refs_per_core: int,
 ) -> list[ray.ObjectRef]:
 
+    from loguru import logger
+
     phys_plan: Iterator[
         None | MaterializationRequestBase[vPartition]
     ] = physical_plan_factory.get_materializing_physical_plan(plan, psets)
