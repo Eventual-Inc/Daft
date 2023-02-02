@@ -156,22 +156,85 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::array::{BaseArray, DataArray};
+    use crate::datatypes::{DaftDataType, DaftNumericType, DataType, Int16Type};
     use crate::{array::ops::DaftCompare, datatypes::Int64Array, error::DaftResult};
 
     #[test]
-    fn equal_int_array_with_scalar() -> DaftResult<()> {
-        let array = Int64Array::from(("a", vec![1, 2, 3].as_slice()));
+    fn equal_int64_array_with_scalar() -> DaftResult<()> {
+        let array = Int64Array::arange("a", 1, 4, 1)?;
+        assert_eq!(array.len(), 3);
         let result: Vec<_> = array.equal(2).into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(true), Some(false)]);
+
+        let array = array.with_validity(&[true, false, true])?;
+        let result: Vec<_> = array.equal(2).into_iter().collect();
+        assert_eq!(result[..], [Some(false), None, Some(false)]);
         Ok(())
     }
 
     #[test]
-    fn equal_int_array_with_null_with_scalar() -> DaftResult<()> {
-        let array = Int64Array::from(("a", vec![1, 2, 3].as_slice()))
-            .with_validity(&[true, false, true])?;
-        let result: Vec<_> = array.equal(2).into_iter().collect();
-        assert_eq!(result[..], [Some(false), None, Some(false)]);
+    fn not_equal_int64_array_with_scalar() -> DaftResult<()> {
+        let array = Int64Array::arange("a", 1, 4, 1)?;
+        assert_eq!(array.len(), 3);
+        let result: Vec<_> = array.not_equal(2).into_iter().collect();
+        assert_eq!(result[..], [Some(true), Some(false), Some(true)]);
+
+        let array = array.with_validity(&[true, false, true])?;
+        let result: Vec<_> = array.not_equal(2).into_iter().collect();
+        assert_eq!(result[..], [Some(true), None, Some(true)]);
+        Ok(())
+    }
+
+    #[test]
+    fn lt_int64_array_with_scalar() -> DaftResult<()> {
+        let array = Int64Array::arange("a", 1, 4, 1)?;
+        assert_eq!(array.len(), 3);
+        let result: Vec<_> = array.lt(2).into_iter().collect();
+        assert_eq!(result[..], [Some(true), Some(false), Some(false)]);
+
+        let array = array.with_validity(&[true, false, true])?;
+        let result: Vec<_> = array.lt(2).into_iter().collect();
+        assert_eq!(result[..], [Some(true), None, Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn lte_int64_array_with_scalar() -> DaftResult<()> {
+        let array = Int64Array::arange("a", 1, 4, 1)?;
+        assert_eq!(array.len(), 3);
+        let result: Vec<_> = array.lte(2).into_iter().collect();
+        assert_eq!(result[..], [Some(true), Some(true), Some(false)]);
+
+        let array = array.with_validity(&[true, false, true])?;
+        let result: Vec<_> = array.lte(2).into_iter().collect();
+        assert_eq!(result[..], [Some(true), None, Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn gt_int64_array_with_scalar() -> DaftResult<()> {
+        let array = Int64Array::arange("a", 1, 4, 1)?;
+        assert_eq!(array.len(), 3);
+        let result: Vec<_> = array.gt(2).into_iter().collect();
+        assert_eq!(result[..], [Some(false), Some(false), Some(true)]);
+
+        let array = array.with_validity(&[true, false, true])?;
+        let result: Vec<_> = array.gt(2).into_iter().collect();
+        assert_eq!(result[..], [Some(false), None, Some(true)]);
+        Ok(())
+    }
+
+    #[test]
+    fn gte_int64_array_with_scalar() -> DaftResult<()> {
+        let array = Int64Array::arange("a", 1, 4, 1)?;
+        assert_eq!(array.len(), 3);
+        let result: Vec<_> = array.gte(2).into_iter().collect();
+        assert_eq!(result[..], [Some(false), Some(true), Some(true)]);
+
+        let array = array.with_validity(&[true, false, true])?;
+        let result: Vec<_> = array.gte(2).into_iter().collect();
+        assert_eq!(result[..], [Some(false), None, Some(true)]);
         Ok(())
     }
 }

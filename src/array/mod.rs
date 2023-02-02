@@ -36,11 +36,17 @@ impl std::fmt::Debug for dyn BaseArray {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct DataArray<T: DaftDataType> {
     field: Arc<Field>,
     data: Arc<dyn arrow2::array::Array>,
     marker_: PhantomData<T>,
+}
+
+impl<T: DaftDataType> Clone for DataArray<T> {
+    fn clone(&self) -> Self {
+        DataArray::new(self.field.clone(), self.data.clone()).unwrap()
+    }
 }
 
 impl<T> DataArray<T>

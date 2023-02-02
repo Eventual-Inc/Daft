@@ -1,4 +1,5 @@
 mod apply;
+mod arange;
 mod arithmetic;
 mod broadcast;
 mod cast;
