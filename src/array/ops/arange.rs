@@ -11,8 +11,7 @@ where
     pub fn arange<S: AsRef<str>>(name: S, start: i64, end: i64, step: usize) -> DaftResult<Self> {
         if start > end {
             return Err(crate::error::DaftError::ValueError(format!(
-                "invalid range, start greater than end, {} vs {}",
-                start, end
+                "invalid range, start greater than end, {start} vs {end}"
             )));
         }
         let data: Vec<i64> = (start..end).step_by(step).collect();

@@ -7,7 +7,7 @@ use crate::{
 
 use super::DaftCompare;
 use arrow2::{
-    compute::comparison::{self, Simd8, Simd8PartialEq, Simd8PartialOrd},
+    compute::comparison::{self},
     scalar::PrimitiveScalar,
 };
 
@@ -69,10 +69,7 @@ where
 
         let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
 
-        let validity = match self.downcast().validity() {
-            Some(bitmap) => Some(bitmap.clone()),
-            None => None,
-        };
+        let validity = self.downcast().validity().cloned();
 
         let arrow_result = comparison::eq_scalar(self.downcast(), &scalar).with_validity(validity);
         DataArray::from((self.name(), arrow_result))
@@ -84,10 +81,7 @@ where
 
         let arrow_array = self.downcast();
         let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
-        let validity = match self.downcast().validity() {
-            Some(bitmap) => Some(bitmap.clone()),
-            None => None,
-        };
+        let validity = self.downcast().validity().cloned();
 
         let arrow_result = comparison::neq_scalar(arrow_array, &scalar).with_validity(validity);
         DataArray::from((self.name(), arrow_result))
@@ -100,10 +94,7 @@ where
         let arrow_array = self.downcast();
         let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
 
-        let validity = match self.downcast().validity() {
-            Some(bitmap) => Some(bitmap.clone()),
-            None => None,
-        };
+        let validity = self.downcast().validity().cloned();
         let arrow_result = comparison::lt_scalar(arrow_array, &scalar).with_validity(validity);
         DataArray::from((self.name(), arrow_result))
     }
@@ -115,10 +106,7 @@ where
         let arrow_array = self.downcast();
         let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
 
-        let validity = match self.downcast().validity() {
-            Some(bitmap) => Some(bitmap.clone()),
-            None => None,
-        };
+        let validity = self.downcast().validity().cloned();
         let arrow_result = comparison::lt_eq_scalar(arrow_array, &scalar).with_validity(validity);
         DataArray::from((self.name(), arrow_result))
     }
@@ -130,10 +118,7 @@ where
         let arrow_array = self.downcast();
         let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
 
-        let validity = match arrow_array.validity() {
-            Some(bitmap) => Some(bitmap.clone()),
-            None => None,
-        };
+        let validity = arrow_array.validity().cloned();
         let arrow_result = comparison::gt_scalar(arrow_array, &scalar).with_validity(validity);
         DataArray::from((self.name(), arrow_result))
     }
@@ -145,10 +130,7 @@ where
         let arrow_array = self.downcast();
         let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
 
-        let validity = match arrow_array.validity() {
-            Some(bitmap) => Some(bitmap.clone()),
-            None => None,
-        };
+        let validity = arrow_array.validity().cloned();
         let arrow_result = comparison::gt_eq_scalar(arrow_array, &scalar).with_validity(validity);
         DataArray::from((self.name(), arrow_result))
     }
@@ -156,8 +138,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::array::{BaseArray, DataArray};
-    use crate::datatypes::{DaftDataType, DaftNumericType, DataType, Int16Type};
+    use crate::array::BaseArray;
+
     use crate::{array::ops::DaftCompare, datatypes::Int64Array, error::DaftResult};
 
     #[test]
