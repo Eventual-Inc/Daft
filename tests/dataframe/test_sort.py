@@ -54,3 +54,18 @@ def test_single_float_col_sort(desc: bool, n_partitions: int):
         expected = list(reversed(expected))
 
     assert _replace_nan_with_string(sorted_data["A"]) == _replace_nan_with_string(expected)
+
+
+@pytest.mark.parametrize("desc", [True, False])
+@pytest.mark.parametrize("n_partitions", [1, 3])
+def test_single_string_col_sort(desc: bool, n_partitions: int):
+    df = daft.DataFrame.from_pydict({"A": ["0", None, "1", "", "01"]})
+    df = df.repartition(n_partitions)
+    df = df.sort("A", desc=desc)
+    sorted_data = df.to_pydict()
+
+    expected = ["", "0", "01", "1", None]
+    if desc:
+        expected = list(reversed(expected))
+
+    assert sorted_data["A"] == expected
