@@ -9,6 +9,7 @@ from daft import DataFrame
 ROW_DIVIDER_REGEX = re.compile(r"\+-+\+")
 SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")
 UNMATERIALIZED_REGEX = re.compile(r".*\(No data to display: Dataframe not materialized\).*")
+MATERIALIZED_NO_ROWS_REGEX = re.compile(r".*\(No data to display: Materialized dataframe has no rows\).*")
 
 
 def parse_str_table(
@@ -75,6 +76,28 @@ def test_empty_repr():
     df.collect()
     assert df.__repr__() == "(No data to display: Dataframe has no columns)"
     assert df._repr_html_() == "<small>(No data to display: Dataframe has no columns)</small>"
+
+
+def test_empty_df_repr():
+    df = DataFrame.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
+    df = df.where(df["A"] > 10)
+    expected_data = {"A": ("INTEGER", []), "B": ("STRING", [])}
+    assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
+    assert parse_html_table(df._repr_html_(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
+
+    df.collect()
+    expected_data = {
+        "A": (
+            "INTEGER",
+            [],
+        ),
+        "B": (
+            "STRING",
+            [],
+        ),
+    }
+    assert parse_str_table(df.__repr__(), expected_user_msg_regex=MATERIALIZED_NO_ROWS_REGEX) == expected_data
+    assert parse_html_table(df._repr_html_(), expected_user_msg_regex=MATERIALIZED_NO_ROWS_REGEX) == expected_data
 
 
 def test_alias_repr():

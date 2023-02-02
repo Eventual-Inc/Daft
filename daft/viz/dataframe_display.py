@@ -30,7 +30,7 @@ class DataFrameDisplay:
         if self.preview.preview_partition is None:
             return "(No data to display: Dataframe not materialized)"
         if self.preview.dataframe_num_rows == 0:
-            return "(Materialized dataframe has no rows)"
+            return "(No data to display: Materialized dataframe has no rows)"
         if self.preview.dataframe_num_rows is None:
             return f"(Showing first {min(self.num_rows, len(self.preview.preview_partition))} rows)"
         return f"(Showing first {min(self.num_rows, len(self.preview.preview_partition))} of {self.preview.dataframe_num_rows} rows)"
