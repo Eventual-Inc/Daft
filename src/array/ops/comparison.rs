@@ -8,7 +8,7 @@ use crate::{
 use super::DaftCompare;
 use arrow2::{
     compute::comparison::{self},
-    scalar::PrimitiveScalar,
+    scalar::{PrimitiveScalar, Scalar},
 };
 
 // fn comparison_helper<T, Kernel, F>(
@@ -55,6 +55,29 @@ use arrow2::{
 //     fn equal(&self, rhs: &DataArray<T>) -> Self::Output {}
 // }
 
+impl<T> DataArray<T>
+where
+    T: DaftNumericType,
+{
+    fn compare_to_scalar(
+        &self,
+        rhs: T::Native,
+        func: impl Fn(
+            &dyn arrow2::array::Array,
+            &dyn arrow2::scalar::Scalar,
+        ) -> arrow2::array::BooleanArray,
+    ) -> BooleanArray {
+        let arrow_array = self.downcast();
+
+        let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
+
+        let validity = self.downcast().validity().cloned();
+
+        let arrow_result = func(self.downcast(), &scalar).with_validity(validity);
+        DataArray::from((self.name(), arrow_result))
+    }
+}
+
 impl<T, Scalar> DaftCompare<Scalar> for DataArray<T>
 where
     T: DaftNumericType,
@@ -65,81 +88,42 @@ where
     fn equal(&self, rhs: Scalar) -> Self::Output {
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
-        let arrow_array = self.downcast();
-
-        let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
-
-        let validity = self.downcast().validity().cloned();
-
-        let arrow_result = comparison::eq_scalar(self.downcast(), &scalar).with_validity(validity);
-        DataArray::from((self.name(), arrow_result))
+        self.compare_to_scalar(rhs, comparison::eq_scalar)
     }
 
     fn not_equal(&self, rhs: Scalar) -> Self::Output {
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
-
-        let arrow_array = self.downcast();
-        let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
-        let validity = self.downcast().validity().cloned();
-
-        let arrow_result = comparison::neq_scalar(arrow_array, &scalar).with_validity(validity);
-        DataArray::from((self.name(), arrow_result))
+        self.compare_to_scalar(rhs, comparison::neq_scalar)
     }
 
     fn lt(&self, rhs: Scalar) -> Self::Output {
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
-
-        let arrow_array = self.downcast();
-        let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
-
-        let validity = self.downcast().validity().cloned();
-        let arrow_result = comparison::lt_scalar(arrow_array, &scalar).with_validity(validity);
-        DataArray::from((self.name(), arrow_result))
+        self.compare_to_scalar(rhs, comparison::lt_scalar)
     }
 
     fn lte(&self, rhs: Scalar) -> Self::Output {
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
-
-        let arrow_array = self.downcast();
-        let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
-
-        let validity = self.downcast().validity().cloned();
-        let arrow_result = comparison::lt_eq_scalar(arrow_array, &scalar).with_validity(validity);
-        DataArray::from((self.name(), arrow_result))
+        self.compare_to_scalar(rhs, comparison::lt_eq_scalar)
     }
 
     fn gt(&self, rhs: Scalar) -> Self::Output {
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
-
-        let arrow_array = self.downcast();
-        let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
-
-        let validity = arrow_array.validity().cloned();
-        let arrow_result = comparison::gt_scalar(arrow_array, &scalar).with_validity(validity);
-        DataArray::from((self.name(), arrow_result))
+        self.compare_to_scalar(rhs, comparison::gt_scalar)
     }
 
     fn gte(&self, rhs: Scalar) -> Self::Output {
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
-
-        let arrow_array = self.downcast();
-        let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
-
-        let validity = arrow_array.validity().cloned();
-        let arrow_result = comparison::gt_eq_scalar(arrow_array, &scalar).with_validity(validity);
-        DataArray::from((self.name(), arrow_result))
+        self.compare_to_scalar(rhs, comparison::gt_eq_scalar)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::array::BaseArray;
-
     use crate::{array::ops::DaftCompare, datatypes::Int64Array, error::DaftResult};
 
     #[test]
