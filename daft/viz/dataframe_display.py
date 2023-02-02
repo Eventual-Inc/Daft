@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from daft.dataframe.preview import DataFramePreview
-from daft.dataframe.schema import DataFrameSchema
+from daft.logical.schema import Schema
 from daft.viz.repr import vpartition_repr, vpartition_repr_html
 
 HAS_PILLOW = False
@@ -21,7 +21,7 @@ if HAS_PILLOW:
 class DataFrameDisplay:
 
     preview: DataFramePreview
-    schema: DataFrameSchema
+    schema: Schema
     column_char_width: int = 20
     max_col_rows: int = 3
     num_rows: int = 10
@@ -30,7 +30,7 @@ class DataFrameDisplay:
         if self.preview.preview_partition is None:
             return "(No data to display: Dataframe not materialized)"
         if self.preview.dataframe_num_rows == 0:
-            return "(Materialized dataframe has no rows)"
+            return "(No data to display: Materialized dataframe has no rows)"
         if self.preview.dataframe_num_rows is None:
             return f"(Showing first {min(self.num_rows, len(self.preview.preview_partition))} rows)"
         return f"(Showing first {min(self.num_rows, len(self.preview.preview_partition))} of {self.preview.dataframe_num_rows} rows)"

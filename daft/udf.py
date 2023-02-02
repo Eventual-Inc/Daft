@@ -7,7 +7,6 @@ from typing import Callable, Sequence, Union
 
 from daft.execution.operators import ExpressionType
 from daft.expressions import UdfExpression
-from daft.resource_request import ResourceRequest
 from daft.runners.blocks import DataBlock
 
 _POLARS_AVAILABLE = True
@@ -81,13 +80,17 @@ def udf(
     Args:
         f: Function to wrap as a UDF, accepts column inputs as Numpy arrays and returns a column of data as a Polars Series/Numpy array/Python list/Pandas series.
         return_type: The return type of the UDF
-        num_gpus: How many GPUs the UDF requires for execution, used for resource allocation when running in a distributed setting
-        num_cpus: How many CPUs the UDF requires for execution, used for resource allocation when running in a distributed setting
-        memory_bytes: How many bytes of memory this UDF requires for execution, used for resource allocation when running in a distributed setting
+        num_gpus: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
+        num_cpus: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
+        memory_bytes: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
     """
     warnings.warn(
         "DEPRECATION WARNING: @udf will be deprecated in 0.1.0 in favor of @polars_udf which is much more efficient and handles Null/NaN semantics correctly"
     )
+    if any(arg is not None for arg in [num_gpus, num_cpus, memory_bytes]):
+        raise ValueError(
+            "The num_gpus, num_cpus, and memory_bytes kwargs have been deprecated for @udf. Please use `DataFrame.with_column(..., resource_request=...)` instead"
+        )
 
     func_ret_type = ExpressionType.from_py_type(return_type)
 
@@ -118,7 +121,6 @@ def udf(
                 func_ret_type=func_ret_type,
                 func_args=args,
                 func_kwargs=kwargs,
-                resource_request=ResourceRequest(num_cpus=num_cpus, num_gpus=num_gpus, memory_bytes=memory_bytes),
             )
             return out_expr
 
@@ -175,12 +177,16 @@ def polars_udf(
     Args:
         f: Function to wrap as a UDF, accepts column inputs as Polars Series and returns a column of data as a Polars Series/Numpy array/Python list/Pandas series.
         return_type: The return type of the UDF
-        num_gpus: How many GPUs the UDF requires for execution, used for resource allocation when running in a distributed setting
-        num_cpus: How many CPUs the UDF requires for execution, used for resource allocation when running in a distributed setting
-        memory_bytes: How many bytes of memory this UDF requires for execution, used for resource allocation when running in a distributed setting
+        num_gpus: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
+        num_cpus: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
+        memory_bytes: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
     """
     if not _POLARS_AVAILABLE:
         raise ImportError("polars_udf requires polars to be installed")
+    if any(arg is not None for arg in [num_gpus, num_cpus, memory_bytes]):
+        raise ValueError(
+            "The num_gpus, num_cpus, and memory_bytes kwargs have been deprecated for @polars_udf. Please use `DataFrame.with_column(..., resource_request=...)` instead"
+        )
 
     func_ret_type = ExpressionType.from_py_type(return_type)
 
@@ -211,7 +217,6 @@ def polars_udf(
                 func_ret_type=func_ret_type,
                 func_args=args,
                 func_kwargs=kwargs,
-                resource_request=ResourceRequest(num_cpus=num_cpus, num_gpus=num_gpus, memory_bytes=memory_bytes),
             )
             return out_expr
 

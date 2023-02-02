@@ -16,6 +16,8 @@ DataFrame
 Construction
 ############
 
+.. _df-construction:
+
 From Files
 **********
 
@@ -28,10 +30,12 @@ From Files
     daft.DataFrame.read_csv
     daft.DataFrame.read_json
     daft.DataFrame.read_parquet
-    daft.DataFrame.from_files
+    daft.DataFrame.from_glob_path
 
 From In-Memory Data
 *******************
+
+.. _df-memory-construction-api:
 
 .. autosummary::
     :nosignatures:
@@ -98,6 +102,8 @@ Combining
 
     daft.DataFrame.join
 
+.. _df-aggregations:
+
 Aggregations
 ************
 
@@ -148,6 +154,8 @@ Visualization
 
 Writing Data
 ************
+
+.. _df-writing-data:
 
 .. autosummary::
     :nosignatures:

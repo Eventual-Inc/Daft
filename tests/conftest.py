@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from itertools import chain
-
+import numpy as np
 import pandas as pd
 import pyarrow as pa
-import pyarrow.compute as pac
 import pytest
 
 from daft.runners.blocks import ArrowDataBlock, PyListDataBlock
@@ -55,6 +53,58 @@ def assert_df_column_type(
         raise NotImplementedError(f"assert_df_column_type not implemented for {et}")
 
 
+def assert_pydict_equals(
+    daft_pydict: dict[str, list],
+    expected_pydict: dict[str, list],
+    sort_key: str | list[str] = "Unique Key",
+    assert_ordering: bool = False,
+):
+    """Asserts the equality of two python dictionaries containing Dataframe data as Python objects.
+
+    Args:
+        daft_pydict (dict[str, list]): Pydict retrieved from a Daft DataFrame.to_pydict()
+        expected_pydict (dict[str, list]): expected data
+        sort_key (str | list[str], optional): column to sort data by. Defaults to "Unique Key".
+        assert_ordering (bool, optional): whether to check sorting order. Defaults to False.
+    """
+    if len(daft_pydict) == 0 and len(expected_pydict) == 0:
+        return
+    elif len(daft_pydict[list(daft_pydict.keys())[0]]) == 0:
+        assert len(expected_pydict[list(expected_pydict.keys())[0]]) == 0
+        return
+
+    sort_key = [sort_key] if isinstance(sort_key, str) else sort_key
+    daft_clean_pydict, expected_clean_pydict = (daft_pydict, expected_pydict)
+
+    if not assert_ordering:
+        sorted_pydicts = []
+        for pydict in (daft_clean_pydict, expected_clean_pydict):
+            pydict_sort_keys = list(zip(*[pydict[key] for key in sort_key]))
+            pydict_sort_indices = sorted(
+                range(len(pydict_sort_keys)),
+                key=lambda x: (tuple(obj is not None for obj in pydict_sort_keys[x]), pydict_sort_keys[x]),
+            )
+            sorted_pydict = {k: [data[pydict_sort_indices[i]] for i in range(len(data))] for k, data in pydict.items()}
+            sorted_pydicts.append(sorted_pydict)
+        daft_clean_pydict, expected_clean_pydict = sorted_pydicts
+
+    # Replace float("nan") with a sentinel value that will be equal to itself
+    class SentinelNaN:
+        def __repr__(self) -> str:
+            return "NaN"
+
+    float_nan = SentinelNaN()
+    replaced_nan_pydicts = []
+    for pydict in (daft_clean_pydict, expected_clean_pydict):
+        replaced_nan_pydict = {
+            k: [float_nan if isinstance(v, float) and np.isnan(v) else v for v in data] for k, data in pydict.items()
+        }
+        replaced_nan_pydicts.append(replaced_nan_pydict)
+    daft_clean_pydict, expected_clean_pydict = replaced_nan_pydicts
+
+    assert daft_clean_pydict == expected_clean_pydict
+
+
 def assert_df_equals(
     daft_df: pd.DataFrame,
     pd_df: pd.DataFrame,
@@ -97,112 +147,3 @@ def assert_df_equals(
         except AssertionError:
             print(f"Failed assertion for col: {col}")
             raise
-
-
-def assert_list_columns_equal(
-    daft_columns: dict[str, list[list]],
-    expected_columns: dict[str, list[list]],
-    daft_col_keys: list | None = None,
-    assert_list_element_ordering: bool = False,
-) -> None:
-    """Assert that two dictionaries of columns with list elements are equal.
-
-    Special cased because:
-        1. list element column implementation is currently not in Arrow;
-        2. individual elements need to be sorted for the equality check.
-    """
-    if not assert_list_element_ordering:
-        for col in chain(daft_columns.values(), expected_columns.values()):
-            for elem in col:
-                elem.sort(key=lambda x: (x is None, x))
-
-    if daft_col_keys:
-        for key in daft_columns:
-            daft_columns[key] = [elem for key, elem in sorted(zip(daft_col_keys, daft_columns[key]))]
-
-    assert daft_columns == expected_columns
-
-
-def assert_arrow_equals(
-    daft_columns: dict[str, pa.Array | pa.ChunkedArray],
-    expected_columns: dict[str, pa.Array | pa.ChunkedArray],
-    sort_key: str | list[str] = "id",
-    assert_ordering: bool = False,
-):
-    """Asserts that two dictionaries of columns are equal.
-    By default, we do not assert that the ordering is equal and will sort the columns according to `sort_key`.
-    However, if asserting on ordering is intended behavior, set `assert_ordering=True` and this function will
-    no longer run sorting before running the equality comparison.
-    """
-    daft_sort_indices: pa.Array | None = None
-    expected_sort_indices: pa.Array | None = None
-    if not assert_ordering:
-        sort_key_list: list[str] = [sort_key] if isinstance(sort_key, str) else sort_key
-        for key in sort_key_list:
-            assert key in daft_columns, (
-                f"DaFt Data missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
-                "breaking, but our testing utilities require sorting on this key in order to compare your "
-                "Dataframe against the expected Data."
-            )
-            assert key in expected_columns, (
-                f"Expectred Data missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
-                "breaking, but our testing utilities require sorting on this key in order to compare your "
-                "Dataframe against the expected Data."
-            )
-        daft_sort_indices = pac.sort_indices(
-            pa.Table.from_pydict(daft_columns), sort_keys=[(k, "ascending") for k in sort_key_list]
-        )
-        expected_sort_indices = pac.sort_indices(
-            pa.Table.from_pydict(expected_columns), sort_keys=[(k, "ascending") for k in sort_key_list]
-        )
-
-    assert sorted(daft_columns.keys()) == sorted(
-        expected_columns.keys()
-    ), f"Found {daft_columns.keys()} expected {expected_columns.keys()}"
-    columns = list(daft_columns.keys())
-
-    for coldict, sort_indices in ((daft_columns, daft_sort_indices), (expected_columns, expected_sort_indices)):
-        for col in columns:
-            arr: pa.Array
-            if isinstance(coldict[col], pa.ChunkedArray) and coldict[col].num_chunks > 0:
-                arr = coldict[col].combine_chunks()
-            elif isinstance(coldict[col], pa.ChunkedArray):
-                arr = pa.array([], type=coldict[col].type)
-            else:
-                arr = coldict[col]
-            arr = pac.array_take(arr, sort_indices) if sort_indices is not None else arr
-            coldict[col] = arr
-
-    for col in columns:
-        daft_arr = daft_columns[col]
-        expected_arr = expected_columns[col]
-
-        assert len(daft_arr) == len(expected_arr), f"{col} failed length check: {len(daft_arr)} vs {len(expected_arr)}"
-
-        # Float types NaNs do not equal each other, so we special-case floating arrays by checking that they are NaN in
-        # the same indices, and then filtering out the NaN indices when checking equality
-        assert expected_arr.type == daft_arr.type, f"{col} failed type check: {daft_arr.type} vs {expected_arr.type}"
-        nan_indices = None
-        if pa.types.is_floating(expected_arr.type):
-            assert pac.all(
-                pac.equal(pac.is_nan(daft_arr), pac.is_nan(expected_arr))
-            ), f"{col} failed NaN check: {daft_arr} vs {expected_arr}"
-            nan_indices = pac.is_nan(daft_arr)
-
-        # pac.equal not implemented for null arrays
-        arr_eq = (
-            pac.equal(daft_arr, expected_arr)
-            if not pa.types.is_null(daft_arr.type)
-            else pa.array([True] * len(daft_arr))
-        )
-
-        if nan_indices is not None:
-            arr_eq = pac.array_filter(arr_eq, pac.invert(nan_indices))
-
-        # No elements to compare
-        if pac.all(arr_eq).as_py() is None:
-            continue
-
-        assert pac.all(
-            arr_eq
-        ).as_py(), f"{col} failed equality check: {daft_arr} vs {expected_arr} (equality array={arr_eq})"

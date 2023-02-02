@@ -12,8 +12,7 @@ from daft.execution.logical_op_runners import (
     LogicalPartitionOpRunner,
     ReduceType,
 )
-from daft.expressions import ColumnExpression
-from daft.filesystem import glob_path
+from daft.filesystem import glob_path, glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
@@ -26,7 +25,7 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
-from daft.logical.schema import ExpressionList
+from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartID,
@@ -45,7 +44,6 @@ from daft.runners.shuffle_ops import (
     Shuffler,
     SortOp,
 )
-from daft.types import ExpressionType
 
 
 @dataclass
@@ -88,23 +86,49 @@ class LocalPartitionSet(PartitionSet[vPartition]):
 
 
 class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
-    def glob_filepaths(
+    def glob_paths(
         self,
         source_path: str,
-    ) -> tuple[LocalPartitionSet, ExpressionList]:
+    ) -> tuple[LocalPartitionSet, Schema]:
         filepaths = glob_path(source_path)
 
         if len(filepaths) == 0:
             raise FileNotFoundError(f"No files found at {source_path}")
 
-        schema = ExpressionList([ColumnExpression(self.FILEPATH_COLUMN_NAME, ExpressionType.string())]).resolve()
+        schema = self._get_listing_paths_schema()
         pset = LocalPartitionSet(
             {
                 i: vPartition.from_pydict(
-                    data={self.FILEPATH_COLUMN_NAME: [filepaths[i]]}, schema=schema, partition_id=i
+                    data={self.FS_LISTING_PATH_COLUMN_NAME: [path]}, schema=schema, partition_id=i
                 )
-                for i in range(len(filepaths))  # Hardcoded to 1 path per partition
+                for i, path in enumerate(filepaths)  # Hardcoded to 1 path per partition
             },
+        )
+        return pset, schema
+
+    def glob_paths_details(
+        self,
+        source_path: str,
+    ) -> tuple[LocalPartitionSet, Schema]:
+        files_info = glob_path_with_stats(source_path)
+
+        if len(files_info) == 0:
+            raise FileNotFoundError(f"No files found at {source_path}")
+
+        schema = self._get_listing_paths_details_schema()
+        pset = LocalPartitionSet(
+            {
+                # Hardcoded to 1 partition
+                0: vPartition.from_pydict(
+                    data={
+                        self.FS_LISTING_PATH_COLUMN_NAME: [f.path for f in files_info],
+                        self.FS_LISTING_SIZE_COLUMN_NAME: [f.size for f in files_info],
+                        self.FS_LISTING_TYPE_COLUMN_NAME: [f.type for f in files_info],
+                    },
+                    schema=schema,
+                    partition_id=0,
+                ),
+            }
         )
         return pset, schema
 
@@ -170,10 +194,7 @@ class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
         SortOp: PyRunnerSortOp,
     }
 
-    def map_partitions(
-        self, pset: PartitionSet, func: Callable[[vPartition], vPartition], resource_request: ResourceRequest
-    ) -> PartitionSet:
-        # NOTE: resource_request is ignored since there isn't any actual distribution of workloads in PyRunner
+    def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition]) -> PartitionSet:
         return LocalPartitionSet({i: func(pset.get_partition(i)) for i in range(pset.num_partitions())})
 
     def reduce_partitions(self, pset: PartitionSet, func: Callable[[list[vPartition]], ReduceType]) -> ReduceType:

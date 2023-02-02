@@ -5,14 +5,14 @@
 
 .. autoclass:: DataFrame
 
-
+   
    .. automethod:: __init__
 
-
+   
    .. rubric:: Methods
 
    .. autosummary::
-
+   
       ~DataFrame.__init__
       ~DataFrame.agg
       ~DataFrame.collect
@@ -23,6 +23,7 @@
       ~DataFrame.explode
       ~DataFrame.from_csv
       ~DataFrame.from_files
+      ~DataFrame.from_glob_path
       ~DataFrame.from_json
       ~DataFrame.from_parquet
       ~DataFrame.from_pydict
@@ -51,14 +52,16 @@
       ~DataFrame.with_column
       ~DataFrame.write_csv
       ~DataFrame.write_parquet
+   
+   
 
-
-
-
-
+   
+   
    .. rubric:: Attributes
 
    .. autosummary::
-
+   
       ~DataFrame.column_names
       ~DataFrame.columns
+   
+   

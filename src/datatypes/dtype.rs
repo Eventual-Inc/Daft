@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow2::datatypes::DataType as ArrowType;
 
 use crate::{
@@ -72,13 +70,13 @@ pub enum DataType {
     Struct(Vec<Field>),
     // Stop ArrowTypes
     DaftType(Box<DataType>),
-    PythonType(Arc<String>),
+    PythonType(String),
     Unknown,
 }
 
 impl DataType {
-    pub fn new_null() -> Box<DataType> {
-        Box::new(DataType::Null)
+    pub fn new_null() -> DataType {
+        DataType::Null
     }
 
     pub fn to_arrow(&self) -> DaftResult<ArrowType> {
@@ -114,8 +112,7 @@ impl DataType {
                 ArrowType::Struct(fields?)
             }),
             _ => Err(DaftError::TypeError(format!(
-                "Can not convert {:?} into arrow type",
-                self
+                "Can not convert {self:?} into arrow type"
             ))),
         }
     }

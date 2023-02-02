@@ -17,10 +17,12 @@ html_favicon = "_static/daft-favicon.png"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    "sphinx_reredirects",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.autosummary",
     "sphinx.ext.linkcode",
+    "IPython.sphinxext.ipython_console_highlighting",
     "myst_nb",
 ]
 
@@ -49,6 +51,15 @@ html_theme_options = {
     "logo_only": True,
 }
 
+# -- Options for redirecting URLs
+redirects = {
+    "docs/learn/install": "../install.html",
+    "docs/learn/user_guides/dataframes": "intro-dataframes.html",
+    "docs/learn/user_guides/types_and_ops": "intro-dataframes.html",
+    "docs/learn/user_guides/remote_cluster_execution": "scaling-up.html",
+    "docs/learn/quickstart": "docs/learn/10-min.html",
+}
+
 # Resolving code links to github
 # Adapted from: https://github.com/aaugustin/websockets/blob/778a1ca6936ac67e7a3fe1bbe585db2eafeaa515/docs/conf.py#L100-L134
 
@@ -74,6 +85,10 @@ def linkcode_resolve(domain, info):
             return None
     else:
         obj = getattr(mod, info["fullname"])
+
+    # Handle case where object is a decorated function
+    while hasattr(obj, "__wrapped__"):
+        obj = obj.__wrapped__
 
     try:
         file = inspect.getsourcefile(obj)

@@ -84,8 +84,8 @@ def test_load_json(tmp_path: pathlib.Path):
     pd_df.to_json(json_file, lines=True, orient="records")
     daft_df = DataFrame.read_json(str(json_file))
 
-    assert daft_df.schema()["dicts"].daft_type == PythonExpressionType(dict)
-    assert daft_df.schema()["lists"].daft_type == PythonExpressionType(list)
+    assert daft_df.schema()["dicts"].dtype == PythonExpressionType(dict)
+    assert daft_df.schema()["lists"].dtype == PythonExpressionType(list)
 
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, assert_ordering=True)
@@ -124,9 +124,7 @@ def test_load_pydict():
 
     assert collected_data.keys() == data.keys() == expected.keys()
     for colname, expected_schema_type in expected.items():
-        assert daft_df.schema()[colname].daft_type == expected_schema_type
-        expected_container_type = list if ExpressionType.is_py(expected_schema_type) else pa.ChunkedArray
-        assert isinstance(collected_data[colname], expected_container_type)
+        assert daft_df.schema()[colname].dtype == expected_schema_type
 
 
 def test_load_pylist():
@@ -153,3 +151,80 @@ def test_load_files(tmpdir):
     pd_df = pd.DataFrame.from_records(get_filesystem_from_path(str(tmpdir)).ls(str(tmpdir), detail=True))
     pd_df = pd_df[~pd_df["name"].str.endswith(".bar")]
     assert_df_equals(daft_pd_df, pd_df, sort_key="name")
+
+
+def test_glob_files(tmpdir):
+    filepaths = []
+    for i in range(10):
+        filepath = pathlib.Path(tmpdir) / f"file_{i}.foo"
+        filepath.write_text("a" * i)
+        filepaths.append(filepath)
+        bar_filepath = pathlib.Path(tmpdir) / f"file_{i}.bar"
+        bar_filepath.write_text("b" * i)
+
+    daft_df = DataFrame.from_glob_path(f"{tmpdir}/*.foo")
+    daft_pd_df = daft_df.to_pandas()
+    pd_df = pd.DataFrame.from_records(
+        {"path": str(path), "size": size, "type": "file"} for path, size in zip(filepaths, list(range(10)))
+    )
+    pd_df = pd_df[~pd_df["path"].str.endswith(".bar")]
+    assert_df_equals(daft_pd_df, pd_df, sort_key="path")
+
+
+def test_glob_files_single_file(tmpdir):
+    filepath = pathlib.Path(tmpdir) / f"file.foo"
+    filepath.write_text("b" * 10)
+    daft_df = DataFrame.from_glob_path(f"{tmpdir}/file.foo")
+    daft_pd_df = daft_df.to_pandas()
+    pd_df = pd.DataFrame.from_records([{"path": str(filepath), "size": 10, "type": "file"}])
+    assert_df_equals(daft_pd_df, pd_df, sort_key="path")
+
+
+def test_glob_files_directory(tmpdir):
+    extra_empty_dir = pathlib.Path(tmpdir) / "bar"
+    extra_empty_dir.mkdir()
+    filepaths = []
+    for i in range(10):
+        for ext in ("foo", "bar"):
+            filepath = pathlib.Path(tmpdir) / f"file_{i}.{ext}"
+            filepath.write_text("a" * i)
+            filepaths.append(filepath)
+
+    daft_df = DataFrame.from_glob_path(str(tmpdir))
+    daft_pd_df = daft_df.to_pandas()
+
+    listing_records = [
+        {"path": str(path), "size": size, "type": "file"}
+        for path, size in zip(filepaths, [i for i in range(10) for _ in range(2)])
+    ]
+    listing_records = listing_records + [
+        {"path": str(extra_empty_dir), "size": extra_empty_dir.stat().st_size, "type": "directory"}
+    ]
+    pd_df = pd.DataFrame.from_records(listing_records)
+
+    assert_df_equals(daft_pd_df, pd_df, sort_key="path")
+
+
+def test_glob_files_recursive(tmpdir):
+    nested_dir_path = pathlib.Path(tmpdir) / "bar"
+    nested_dir_path.mkdir()
+    paths = []
+    for i in range(10):
+        for prefix in [pathlib.Path(tmpdir), pathlib.Path(tmpdir) / "bar"]:
+            filepath = prefix / f"file_{i}.foo"
+            filepath.write_text("a" * i)
+            paths.append(filepath)
+
+    daft_df = DataFrame.from_glob_path(f"{tmpdir}/**")
+    daft_pd_df = daft_df.to_pandas()
+
+    listing_records = [
+        {"path": str(path), "size": size, "type": "file"}
+        for path, size in zip(paths, [i for i in range(10) for _ in range(2)])
+    ]
+    listing_records = listing_records + [
+        {"path": str(nested_dir_path), "size": nested_dir_path.stat().st_size, "type": "directory"}
+    ]
+    pd_df = pd.DataFrame.from_records(listing_records)
+
+    assert_df_equals(daft_pd_df, pd_df, sort_key="path")

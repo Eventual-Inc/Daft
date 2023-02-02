@@ -36,10 +36,12 @@ Installation
 
 Install Daft with ``pip install getdaft``.
 
+For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://getdaft.io/docs/install.html>`_
+
 Quickstart
 ^^^^^^^^^^
 
-  Check out our `full quickstart tutorial <https://getdaft.io/docs/learn/quickstart.html>`_!
+  Check out our `10-minute quickstart <https://getdaft.io/docs/learn/10-min.html>`_!
 
 In this example, we load images from an AWS S3 bucket and run a simple function to generate thumbnails for each image:
 
@@ -79,6 +81,11 @@ More Resources
 * `10-minute tour of Daft <https://getdaft.io/docs/learn/10-min.html>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
 * `User Guide <https://getdaft.io/docs/learn/user_guides.html>`_ - take a deep-dive into each topic within Daft
 * `API Reference <https://getdaft.io/docs/api_docs/index.html>`_ - API reference for public classes/functions of Daft
+
+Contributing
+------------
+
+To start contributing to Daft, please read `CONTRIBUTING.md <https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md>`_
 
 Telemetry
 ---------

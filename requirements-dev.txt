@@ -4,10 +4,12 @@ docker
 
 # For aws and serving
 fastapi
+hypothesis
 icebridge
 
 # DevTools
 ipdb
+lxml
 maturin
 myst-nb>=0.16.0
 numpy < 1.24
@@ -24,6 +26,7 @@ pyarrow
 # needed for testing
 pytest>=7.1.2
 pytest-benchmark
+pytest-cov
 PyYAML
 
 ray[data, default]
@@ -33,6 +36,7 @@ s3fs
 
 Sphinx <= 5
 sphinx-book-theme>=0.3.3
+sphinx-reredirects>=0.1.1
 uvicorn
 viztracer
 xxhash>=3.0.0

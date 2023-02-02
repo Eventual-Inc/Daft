@@ -1,7 +1,11 @@
-use std::sync::Arc;
+use std::{
+    fmt::{Display, Formatter, Result},
+    sync::Arc,
+};
+
+use indexmap::IndexMap;
 
 use crate::{
-    datatypes::DataType,
     datatypes::Field,
     error::{DaftError, DaftResult},
 };
@@ -9,21 +13,15 @@ use crate::{
 type SchemaRef = Arc<Schema>;
 
 pub struct Schema {
-    fields: indexmap::IndexMap<String, Field>,
+    pub fields: indexmap::IndexMap<String, Field>,
 }
 
 impl Schema {
-    pub fn new(fields: &[(String, DataType)]) -> Self {
-        let mut map = indexmap::IndexMap::new();
+    pub fn new(fields: Vec<Field>) -> Self {
+        let mut map: IndexMap<String, Field> = indexmap::IndexMap::new();
 
-        for (name, dt) in fields.iter() {
-            map.insert(
-                name.clone(),
-                Field {
-                    name: name.clone(),
-                    dtype: dt.clone(),
-                },
-            );
+        for f in fields.into_iter() {
+            map.insert(f.name.clone(), f);
         }
 
         Schema { fields: map }
@@ -46,5 +44,20 @@ impl Schema {
             None => Err(DaftError::NotFound(name.into())),
             Some(val) => Ok(val),
         }
+    }
+}
+
+impl Display for Schema {
+    // `f` is a buffer, and this method must write the formatted string into it
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        let mut table = prettytable::Table::new();
+
+        let header = self
+            .fields
+            .iter()
+            .map(|(name, field)| format!("{}\n{:?}", name, field.dtype))
+            .collect();
+        table.add_row(header);
+        write!(f, "{table}")
     }
 }

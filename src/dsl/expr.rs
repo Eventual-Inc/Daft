@@ -2,15 +2,15 @@ use crate::{
     datatypes::DataType, datatypes::Field, dsl::lit, error::DaftResult, schema::Schema,
     utils::supertype::try_get_supertype,
 };
+use serde::{Deserialize, Serialize};
 use std::{
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display, Formatter, Result},
     sync::Arc,
 };
 
-pub use lit::lit;
 type ExprRef = Arc<Expr>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Expr {
     Alias(ExprRef, Arc<str>),
     BinaryOp {
@@ -23,16 +23,28 @@ pub enum Expr {
     Literal(lit::LiteralValue),
 }
 
-pub fn col(name: &str) -> Expr {
+pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
     Expr::Column(name.into())
 }
 
+pub fn binary_op(op: Operator, left: &Expr, right: &Expr) -> Expr {
+    Expr::BinaryOp {
+        op,
+        left: left.clone().into(),
+        right: right.clone().into(),
+    }
+}
+
 impl Expr {
+    pub fn alias<S: Into<Arc<str>>>(&self, name: S) -> Self {
+        Expr::Alias(self.clone().into(), name.into())
+    }
+
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use Expr::*;
 
         match self {
-            Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema)?)),
+            Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Column(name) => Ok(schema.get_field(name).cloned()?),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
 
@@ -63,8 +75,32 @@ impl Expr {
     }
 }
 
+impl Display for Expr {
+    // `f` is a buffer, and this method must write the formatted string into it
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        use Expr::*;
+        match self {
+            Alias(expr, name) => write!(f, "{expr} AS {name}"),
+            BinaryOp { op, left, right } => {
+                let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
+                    Alias(e, _) => write!(f, "{e}"),
+                    BinaryOp { .. } => write!(f, "[{input}]"),
+                    _ => write!(f, "{input}"),
+                };
+
+                write_out_expr(f, left)?;
+                write!(f, " {op} ")?;
+                write_out_expr(f, right)?;
+                Ok(())
+            }
+            Column(name) => write!(f, "col({name})"),
+            Literal(val) => write!(f, "lit({val})"),
+        }
+    }
+}
+
 /// Based on Polars first class operators: https://github.com/pola-rs/polars/blob/master/polars/polars-lazy/polars-plan/src/dsl/expr.rs
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Operator {
     Eq,
     NotEq,
@@ -105,7 +141,7 @@ impl Display for Operator {
             Or => "|",
             Xor => "^",
         };
-        write!(f, "{}", tkn)
+        write!(f, "{tkn}")
     }
 }
 
@@ -134,7 +170,7 @@ impl Operator {
 mod tests {
 
     use super::*;
-
+    use crate::dsl::lit;
     #[test]
     fn check_comparision_type() -> DaftResult<()> {
         let x = lit(10.);
@@ -148,6 +184,17 @@ mod tests {
         };
         assert_eq!(z.get_type(&schema)?, DataType::Boolean);
         Ok(())
+    }
+
+    fn check_alias_type() -> DaftResult<()> {
+        let a = col("a");
+        let b = a.alias("b");
+        match b {
+            Expr::Alias(..) => Ok(()),
+            other => Err(crate::error::DaftError::ValueError(format!(
+                "expected expression to be a alias, got {other:?}"
+            ))),
+        }
     }
 
     #[test]
@@ -180,9 +227,9 @@ mod tests {
     fn check_arithmetic_type_with_columns() -> DaftResult<()> {
         let x = col("x");
         let y = col("y");
-        let schema = Schema::new(&[
-            ("x".to_string(), DataType::Float64),
-            ("y".to_string(), DataType::Int64),
+        let schema = Schema::new(vec![
+            Field::new("x", DataType::Float64),
+            Field::new("y", DataType::Int64),
         ]);
 
         let z = Expr::BinaryOp {

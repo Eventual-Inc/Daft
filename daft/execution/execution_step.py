@@ -11,11 +11,11 @@ if sys.version_info < (3, 8):
 else:
     from typing import Protocol
 
-
 from daft.expressions import Expression
 from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import ExpressionList
+from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionMetadata, vPartition
 from daft.runners.pyrunner import LocalLogicalPartitionOpRunner
 from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, SortOp
@@ -38,11 +38,13 @@ class ExecutionStep(Generic[PartitionT], ABC):
 
     inputs: list[PartitionT]
     instructions: list[Instruction]
+    resource_request: ResourceRequest | None
 
     def __str__(self) -> str:
         return (
             f"{self.__class__.__name__}\n"
             f"  Inputs: {self.inputs}\n"
+            f"  Resource Request: {self.resource_request}\n"
             f"  Instructions: {[i.__class__.__name__ for i in self.instructions]}"
         )
 
@@ -57,11 +59,17 @@ class OpenExecutionQueue(ExecutionStep[PartitionT]):
         return OpenExecutionQueue[PartitionT](
             inputs=self.inputs.copy(),
             instructions=self.instructions.copy(),
+            resource_request=self.resource_request,  # ResourceRequest is immutable (dataclass with frozen=True)
         )
 
-    def add_instruction(self, instruction: Instruction) -> OpenExecutionQueue[PartitionT]:
+    def add_instruction(
+        self,
+        instruction: Instruction,
+        resource_request: ResourceRequest | None,
+    ) -> OpenExecutionQueue[PartitionT]:
         """Append an instruction to this ExecutionStep's pipeline."""
         self.instructions.append(instruction)
+        self.resource_request = ResourceRequest.max_resources([self.resource_request, resource_request])
         return self
 
     def as_materialization_request(self) -> MaterializationRequest[PartitionT]:
@@ -73,6 +81,7 @@ class OpenExecutionQueue(ExecutionStep[PartitionT]):
             inputs=self.inputs,
             instructions=self.instructions,
             num_results=1,
+            resource_request=self.resource_request,
         )
 
     def as_materialization_request_multi(self, num_results: int) -> MaterializationRequestMulti[PartitionT]:
@@ -85,6 +94,7 @@ class OpenExecutionQueue(ExecutionStep[PartitionT]):
             inputs=self.inputs,
             instructions=self.instructions,
             num_results=num_results,
+            resource_request=self.resource_request,
         )
 
 
@@ -104,9 +114,11 @@ class MaterializationRequestBase(ExecutionStep[PartitionT]):
         return f"{self.__class__.__name__}_{self._id}"
 
     def __str__(self) -> str:
+
         return (
             f"{self.id()}\n"
             f"  Inputs: {self.inputs}\n"
+            f"  Resource Request: {self.resource_request}\n"
             f"  Instructions: {[i.__class__.__name__ for i in self.instructions]}"
         )
 
@@ -269,7 +281,7 @@ class Sample(Instruction):
         result = (
             input.sample(self.num_samples)
             .eval_expression_list(self.sort_by)
-            .filter(ExpressionList([~e.to_column_expression().is_null() for e in self.sort_by]).resolve(self.sort_by))
+            .filter(ExpressionList([~e.to_column_expression().is_null() for e in self.sort_by]))
         )
         return [result]
 
@@ -300,7 +312,7 @@ class Join(Instruction):
             right,
             left_on=self.logplan._left_on,
             right_on=self.logplan._right_on,
-            output_schema=self.logplan.schema(),
+            output_projection=self.logplan._output_projection,
             how=self.logplan._how.value,
         )
         return [result]
@@ -347,7 +359,10 @@ class ReduceToQuantiles(ReduceInstruction):
 
     def _reduce_to_quantiles(self, inputs: list[vPartition]) -> list[vPartition]:
         merged = vPartition.merge_partitions(inputs, verify_partition_id=False)
-        merged_sorted = merged.sort(self.sort_by, descending=self.descending)
+
+        # Skip evaluation of expressions by converting to Column Expression, since evaluation was done in Sample
+        merged_sorted = merged.sort(self.sort_by.to_column_expressions(), descending=self.descending)
+
         result = merged_sorted.quantiles(self.num_quantiles)
         return [result]
 

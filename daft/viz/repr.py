@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import base64
 import io
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable
 
 from tabulate import tabulate
 
-from daft.dataframe.schema import DataFrameSchema
+from daft.logical.schema import Schema
 from daft.runners.partitioning import vPartition
 from daft.types import ExpressionType
 
@@ -57,8 +57,8 @@ def _stringify_object_html(val: Any, max_col_width: int, max_lines: int):
 
 
 def _stringify_vpartition(
-    data: dict[str, Sequence[Any]],
-    daft_schema: DataFrameSchema,
+    data: dict[str, list[Any]],
+    daft_schema: Schema,
     custom_stringify_object: Callable = _stringify_object_default,
     max_col_width: int = DEFAULT_MAX_COL_WIDTH,
     max_lines: int = DEFAULT_MAX_LINES,
@@ -71,11 +71,11 @@ def _stringify_vpartition(
     data_stringified: dict[str, Iterable[str]] = {}
     for colname in daft_schema.column_names():
         field = daft_schema[colname]
-        if ExpressionType.is_py(field.daft_type):
+        if ExpressionType.is_py(field.dtype):
             data_stringified[colname] = [
                 custom_stringify_object(val, max_col_width, max_lines) for val in data[colname]
             ]
-        elif field.daft_type == ExpressionType.logical():
+        elif field.dtype == ExpressionType.logical():
             # BUG: tabulate library does not handle string literal values "True" and "False" correctly, so we lowercase them.
             data_stringified[colname] = [_truncate(str(val).lower(), max_col_width, max_lines) for val in data[colname]]
         else:
@@ -86,13 +86,15 @@ def _stringify_vpartition(
 
 def vpartition_repr_html(
     vpartition: vPartition | None,
-    daft_schema: DataFrameSchema,
+    daft_schema: Schema,
     num_rows: int,
     user_message: str,
     max_col_width: int = DEFAULT_MAX_COL_WIDTH,
     max_lines: int = DEFAULT_MAX_LINES,
 ) -> str:
     """Converts a vPartition into a HTML string"""
+    if len(daft_schema) == 0:
+        return "<small>(No data to display: Dataframe has no columns)</small>"
     data = (
         {k: v[:num_rows] for k, v in vpartition.to_pydict().items()}
         if vpartition is not None
@@ -106,7 +108,7 @@ def vpartition_repr_html(
         max_lines=max_lines,
     )
 
-    headers = [f"{name}<br>{daft_schema[name].daft_type}" for name in daft_schema.column_names()]
+    headers = [f"{name}<br>{daft_schema[name].dtype}" for name in daft_schema.column_names()]
 
     # Workaround for https://github.com/astanin/python-tabulate/issues/224
     # tabulate library doesn't render header if there are no rows;
@@ -134,23 +136,24 @@ def vpartition_repr_html(
     assert tabulate_html_string.startswith("<table")
     tabulate_html_string = '<table class="dataframe"' + tabulate_html_string[len("<table") :]
 
-    return f"""
-        <div>
-            {tabulate_html_string}
-            <small>{user_message}</small>
-        </div>
-    """
+    return f"""<div>
+    {tabulate_html_string}
+    <small>{user_message}</small>
+</div>"""
 
 
 def vpartition_repr(
     vpartition: vPartition | None,
-    daft_schema: DataFrameSchema,
+    daft_schema: Schema,
     num_rows: int,
     user_message: str,
     max_col_width: int = DEFAULT_MAX_COL_WIDTH,
     max_lines: int = DEFAULT_MAX_LINES,
 ) -> str:
     """Converts a vPartition into a prettified string for display in a REPL"""
+    if len(daft_schema) == 0:
+        return "(No data to display: Dataframe has no columns)"
+
     data = (
         {k: v[:num_rows] for k, v in vpartition.to_pydict().items()}
         if vpartition is not None
@@ -167,7 +170,7 @@ def vpartition_repr(
     return (
         tabulate(
             data_stringified,
-            headers=[f"{name}\n{daft_schema[name].daft_type}" for name in daft_schema.column_names()],
+            headers=[f"{name}\n{daft_schema[name].dtype}" for name in daft_schema.column_names()],
             tablefmt="grid",
             missingval="None",
             # Workaround for https://github.com/astanin/python-tabulate/issues/223

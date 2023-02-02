@@ -35,7 +35,10 @@ T = TypeVar("T")
 
 def partition_read(partitions: Iterator[PartitionT]) -> Iterator[None | ExecutionStep[PartitionT]]:
     """Instantiate a (no-op) physical plan from existing partitions."""
-    yield from (OpenExecutionQueue[PartitionT](inputs=[partition], instructions=[]) for partition in partitions)
+    yield from (
+        OpenExecutionQueue[PartitionT](inputs=[partition], instructions=[], resource_request=None)
+        for partition in partitions
+    )
 
 
 def file_read(
@@ -47,7 +50,10 @@ def file_read(
     Yield a plan to read those filenames.
     """
     yield from (
-        step.add_instruction(execution_step.ReadFile(partition_id=index, logplan=scan_info))
+        step.add_instruction(
+            execution_step.ReadFile(partition_id=index, logplan=scan_info),
+            resource_request=None,
+        )
         if isinstance(step, OpenExecutionQueue)
         else step
         for index, step in enumerate_open_executions(child_plan)
@@ -61,7 +67,10 @@ def file_write(
     """Write the results of `child_plan` into files described by `write_info`."""
 
     yield from (
-        step.add_instruction(execution_step.WriteFile(partition_id=index, logplan=write_info))
+        step.add_instruction(
+            execution_step.WriteFile(partition_id=index, logplan=write_info),
+            resource_request=None,
+        )
         if isinstance(step, OpenExecutionQueue)
         else step
         for index, step in enumerate_open_executions(child_plan)
@@ -71,11 +80,12 @@ def file_write(
 def pipeline_instruction(
     child_plan: Iterator[None | ExecutionStep[PartitionT]],
     pipeable_instruction: Instruction,
+    resource_request: execution_step.ResourceRequest | None,
 ) -> Iterator[None | ExecutionStep[PartitionT]]:
     """Apply an instruction to the results of `child_plan`."""
 
     yield from (
-        step.add_instruction(pipeable_instruction) if isinstance(step, OpenExecutionQueue) else step
+        step.add_instruction(pipeable_instruction, resource_request) if isinstance(step, OpenExecutionQueue) else step
         for step in child_plan
     )
 
@@ -108,6 +118,7 @@ def join(
             join_step = OpenExecutionQueue[PartitionT](
                 inputs=[next_left.result.partition(), next_right.result.partition()],
                 instructions=[execution_step.Join(join)],
+                resource_request=None,
             )
             yield join_step
 
@@ -139,21 +150,25 @@ def join(
 def local_limit(
     child_plan: Iterator[None | ExecutionStep[PartitionT]],
     limit: int,
-) -> Generator[None | ExecutionStep[PartitionT], int, None]:
+) -> Generator[None | ExecutionStep[PartitionT], None | int, None]:
     """Apply a limit instruction to each partition in the child_plan.
 
     limit:
-        The value of the limit to apply to the first partition.
-        For subsequent partitions, send the value of the limit to apply back into this generator.
+        The value of the limit to apply to each partition.
 
     Yields: ExecutionStep with the limit applied.
-    Send back: The next limit to apply.
+    Send back: A new value to the limit (optional). This allows you to update the limit after each partition if desired.
     """
     for step in child_plan:
         if not isinstance(step, OpenExecutionQueue):
             yield step
         else:
-            limit = yield step.add_instruction(execution_step.LocalLimit(limit))
+            maybe_new_limit = yield step.add_instruction(
+                execution_step.LocalLimit(limit),
+                resource_request=None,
+            )
+            if maybe_new_limit is not None:
+                limit = maybe_new_limit
 
 
 def global_limit(
@@ -189,6 +204,7 @@ def global_limit(
             global_limit_step = OpenExecutionQueue[PartitionT](
                 inputs=[result.partition()],
                 instructions=[execution_step.LocalLimit(limit)],
+                resource_request=None,
             )
             yield global_limit_step
             remaining_partitions -= 1
@@ -209,6 +225,7 @@ def global_limit(
                     OpenExecutionQueue[PartitionT](
                         inputs=[result.partition()],
                         instructions=[execution_step.LocalLimit(0)],
+                        resource_request=None,
                     )
                     for _ in range(remaining_partitions)
                 )
@@ -270,6 +287,7 @@ def coalesce(
                 merge_step = OpenExecutionQueue[PartitionT](
                     inputs=[_.partition() for _ in ready_to_coalesce],
                     instructions=[execution_step.ReduceMerge()],
+                    resource_request=None,
                 )
                 [materializations.popleft() for _ in range(num_partitions_to_merge)]
                 merges_per_result.popleft()
@@ -326,6 +344,7 @@ def reduce(
         yield OpenExecutionQueue[PartitionT](
             inputs=[result.partition() for result in (_.popleft() for _ in inputs_to_reduce)],
             instructions=[reduce_instruction],
+            resource_request=None,
         )
 
 
@@ -351,6 +370,7 @@ def sort(
         sample = OpenExecutionQueue[PartitionT](
             inputs=[source.result.partition()],
             instructions=[execution_step.Sample(sort_by=sort_info._sort_by)],
+            resource_request=None,
         ).as_materialization_request()
         sample_materializations.append(sample)
         yield sample
@@ -373,6 +393,7 @@ def sort(
                 descending=sort_info._descending,
             ),
         ],
+        resource_request=None,
     ).as_materialization_request()
     yield boundaries
 
@@ -393,6 +414,7 @@ def sort(
                     descending=sort_info._descending,
                 ),
             ],
+            resource_request=None,
         )
         for source_partition in (
             source.result.partition() for source in consume_deque(source_materializations) if source.result is not None

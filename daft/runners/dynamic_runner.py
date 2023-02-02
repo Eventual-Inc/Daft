@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import multiprocessing
 from dataclasses import dataclass
 from typing import Iterator
+
+import psutil
 
 from daft.execution import physical_plan_factory
 from daft.execution.execution_step import (
@@ -10,6 +13,7 @@ from daft.execution.execution_step import (
     MaterializationRequestMulti,
     MaterializationResult,
 )
+from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
 from daft.logical.optimizer import (
@@ -21,6 +25,7 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
+from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionMetadata,
@@ -85,6 +90,7 @@ class DynamicRunner(Runner):
                 while True:
                     next_step = next(phys_plan)
                     assert next_step is not None, "Got a None ExecutionStep in singlethreaded mode"
+                    self._check_resource_requests(next_step.resource_request)
                     self._build_partitions(next_step)
             except StopIteration as e:
                 for i, partition in enumerate(e.value):
@@ -92,6 +98,23 @@ class DynamicRunner(Runner):
 
         pset_entry = self.put_partition_set_into_cache(result_pset)
         return pset_entry
+
+    def _check_resource_requests(self, resource_request: ResourceRequest | None) -> None:
+        """Validates that the requested ResourceRequest is possible to run locally"""
+        if resource_request is None:
+            return
+        if resource_request.num_cpus is not None and resource_request.num_cpus > multiprocessing.cpu_count():
+            raise RuntimeError(
+                f"Requested {resource_request.num_cpus} CPUs but found only {multiprocessing.cpu_count()} available"
+            )
+        if resource_request.num_gpus is not None and resource_request.num_gpus > cuda_device_count():
+            raise RuntimeError(
+                f"Requested {resource_request.num_gpus} GPUs but found only {cuda_device_count()} available"
+            )
+        if resource_request.memory_bytes is not None and resource_request.memory_bytes > psutil.virtual_memory().total:
+            raise RuntimeError(
+                f"Requested {resource_request.memory_bytes} bytes of memory but found only {psutil.virtual_memory().total} available"
+            )
 
     def _build_partitions(self, partspec: MaterializationRequestBase[vPartition]) -> None:
         partitions = partspec.inputs

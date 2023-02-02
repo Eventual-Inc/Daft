@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8']
+        python-version: ['3.7']
     steps:
     - uses: actions/checkout@v3
     - name: Set up Python ${{ matrix.python-version }}
@@ -26,5 +26,7 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install -U jupyter papermill
-    - name: Run notebooks
+    - name: Run notebooks in docs
       run: find docs -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb --no-progress-bar --cwd /tmp/
+    - name: Run notebooks in tutorials
+      run: find tutorials -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb --no-progress-bar --cwd /tmp/

@@ -14,11 +14,11 @@ In the following example, we have a user-defined ``Video`` type.
 
     class Video:
 
-    def num_frames(self) -> int:
-        return self.num_frames
+        def num_frames(self) -> int:
+            return self.num_frames
 
-    def get_frame(self, frame_index: int) -> Image:
-        return self.frames[frame_index]
+        def get_frame(self, frame_index: int) -> Image:
+            return self.frames[frame_index]
 
 Given a Dataframe ``df`` with a column ``"videos"`` containing ``Video`` objects, we can run extract each video's number of frames using the ``.as_py(UserClass).user_method(...)`` inline UDF idiom.
 
@@ -32,7 +32,7 @@ To run a more complicated function such as a function to "get the last frame of 
 .. code:: python
 
     def get_last_frame(video):
-    return video.get_frame(video.num_frames() - 1)
+        return video.get_frame(video.num_frames() - 1)
 
     # Run get_last_frame on each item in column "videos"
     df.with_column("last_frame", col("videos").apply(get_last_frame))
@@ -84,20 +84,20 @@ For many Machine Learning applications, we often have expensive initialization s
 
 Daft provides an API for Stateful UDFs to do this. Stateful UDFs are just like Stateless UDFs, except that they are represented by Classes instead of Functions. Stateful UDF classes define any expensive initialization steps in their __init__ methods, and run on any columns or data in the __call__ method.
 
-For example, to download and run a model on a column of images as shown in the :doc:`../quickstart` guide:
+For example, to download and run a model on a column of images:
 
 .. code:: python
 
     @udf(return_type=int)
     class ClassifyImages:
 
-    def __init__(self):
-        # Run any expensive initializations
-        self._model = get_model()
+        def __init__(self):
+            # Run any expensive initializations
+            self._model = get_model()
 
-    def __call__(self, images):
-        # Run model on columnes
-        return self._model(images)
+        def __call__(self, images):
+            # Run model on columnes
+            return self._model(images)
 
 Running Stateful UDFs are exactly the same as running their Stateless cousins.
 
@@ -111,13 +111,21 @@ Resource Requests
 
 Sometimes, you may want to request for specific resources for your UDF. For example, some UDFs need one GPU to run as they will load a model onto the GPU.
 
-Daft provides a simple API for indicating GPU and CPU requests.
+As of Daft v0.0.22, resource requests are no longer in UDF definition. Instead, custom resources can be requested when you call ``.with_column``:
 
 .. code:: python
 
-    # Requires one GPU and eight CPUs to run
-    @udf(return_type=int, num_gpus=1, num_cpus=8)
+    from daft.resource_request import ResourceRequest
+
+    @udf(return_type=int)
     def func():
         model = get_model().cuda()
+
+    # Runs the UDF `func` with the specified resource requests
+    df = df.with_column(
+        "image_classifications",
+        func(df["images"]),
+        resource_request=ResourceRequest(num_gpus=1, num_cpus=8),
+    )
 
 In the above example, if ran Daft on a Ray cluster consisting of 8 GPUs and 64 CPUs, Daft would be able to run 8 replicas of your UDF in parallel, thus massively increasing the throughput of your UDF!

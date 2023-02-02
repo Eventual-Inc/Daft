@@ -5,14 +5,14 @@
 
 .. autoclass:: Expression
 
-
+   
    .. automethod:: __init__
 
-
+   
    .. rubric:: Methods
 
    .. autosummary::
-
+   
       ~Expression.__init__
       ~Expression.alias
       ~Expression.apply
@@ -26,7 +26,7 @@
       ~Expression.is_eq
       ~Expression.is_nan
       ~Expression.is_null
-      ~Expression.is_same
+      ~Expression.is_eq
       ~Expression.name
       ~Expression.post_order
       ~Expression.required_columns
@@ -35,15 +35,17 @@
       ~Expression.to_column_expression
       ~Expression.to_dot
       ~Expression.to_dot_file
+   
+   
 
-
-
-
-
+   
+   
    .. rubric:: Attributes
 
    .. autosummary::
-
+   
       ~Expression.dt
       ~Expression.str
       ~Expression.url
+   
+   

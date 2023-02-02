@@ -1,7 +1,7 @@
 use arrow2::array::PrimitiveArray;
 
 use crate::{
-    array::data_array::{BaseArray, DataArray},
+    array::{BaseArray, DataArray},
     datatypes::DaftNumericType,
 };
 
@@ -19,6 +19,6 @@ where
             PrimitiveArray::from_trusted_len_values_iter(arr.values_iter().map(|v| func(*v)))
                 .with_validity(arr.validity().cloned());
 
-        DataArray::from(Box::new(result_arr))
+        DataArray::from((self.name(), Box::new(result_arr)))
     }
 }

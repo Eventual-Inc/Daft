@@ -41,39 +41,45 @@ def get_physical_plan(
 
         elif isinstance(node, logical_plan.Filter):
             return physical_plan.pipeline_instruction(
-                child_plan=child_plan, pipeable_instruction=execution_step.Filter(node._predicate)
+                child_plan=child_plan,
+                pipeable_instruction=execution_step.Filter(node._predicate),
+                resource_request=node.resource_request(),
             )
 
         elif isinstance(node, logical_plan.Projection):
             return physical_plan.pipeline_instruction(
-                child_plan=child_plan, pipeable_instruction=execution_step.Project(node._projection)
+                child_plan=child_plan,
+                pipeable_instruction=execution_step.Project(node._projection),
+                resource_request=node.resource_request(),
             )
 
         elif isinstance(node, logical_plan.MapPartition):
             return physical_plan.pipeline_instruction(
                 child_plan=child_plan,
                 pipeable_instruction=execution_step.MapPartition(node._map_partition_op),
+                resource_request=node.resource_request(),
             )
 
         elif isinstance(node, logical_plan.LocalAggregate):
             return physical_plan.pipeline_instruction(
                 child_plan=child_plan,
                 pipeable_instruction=execution_step.Aggregate(to_agg=node._agg, group_by=node._group_by),
+                resource_request=node.resource_request(),
             )
 
         elif isinstance(node, logical_plan.LocalDistinct):
             return physical_plan.pipeline_instruction(
                 child_plan=child_plan,
                 pipeable_instruction=execution_step.Aggregate(to_agg=[], group_by=node._group_by),
+                resource_request=node.resource_request(),
             )
 
         elif isinstance(node, logical_plan.FileWrite):
             return physical_plan.file_write(child_plan, node)
 
         elif isinstance(node, logical_plan.LocalLimit):
-            # Ignore LocalLimit logical nodes; the GlobalLimit physical plan handles everything
-            # and will dynamically dispatch appropriate local limit instructions.
-            return child_plan
+            # Note that the GlobalLimit physical plan also dynamically dispatches its own LocalLimit instructions.
+            return physical_plan.local_limit(child_plan, node._num)
 
         elif isinstance(node, logical_plan.GlobalLimit):
             return physical_plan.global_limit(child_plan, node)
@@ -95,6 +101,7 @@ def get_physical_plan(
             fanout_plan = physical_plan.pipeline_instruction(
                 child_plan=child_plan,
                 pipeable_instruction=fanout_instruction,
+                resource_request=node.resource_request(),
             )
 
             # Do the reduce.
