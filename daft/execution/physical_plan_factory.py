@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Iterator, TypeVar
 
-from daft.context import get_context
 from daft.execution import execution_step, physical_plan
 from daft.execution.execution_step import ExecutionStep, MaterializationRequestBase
 from daft.logical import logical_plan
@@ -11,13 +10,17 @@ from daft.logical.logical_plan import LogicalPlan, PartitionScheme
 PartitionT = TypeVar("PartitionT")
 
 
-def get_materializing_physical_plan(node: LogicalPlan) -> Iterator[None | MaterializationRequestBase[PartitionT]]:
+def get_materializing_physical_plan(
+    node: LogicalPlan, psets: dict[str, list[PartitionT]]
+) -> Iterator[None | MaterializationRequestBase[PartitionT]]:
     """Translates a LogicalPlan into an appropriate physical plan that materializes its final results."""
 
-    return physical_plan.materialize(get_physical_plan(node))
+    return physical_plan.materialize(get_physical_plan(node, psets))
 
 
-def get_physical_plan(node: LogicalPlan) -> Iterator[None | ExecutionStep[PartitionT]]:
+def get_physical_plan(
+    node: LogicalPlan, psets: dict[str, list[PartitionT]]
+) -> Iterator[None | ExecutionStep[PartitionT]]:
     """Translates a LogicalPlan into an appropriate physical plan.
 
     See physical_plan.py for more details.
@@ -25,15 +28,13 @@ def get_physical_plan(node: LogicalPlan) -> Iterator[None | ExecutionStep[Partit
 
     # -- Leaf nodes. --
     if isinstance(node, logical_plan.InMemoryScan):
-        pset = get_context().runner().get_partition_set_from_cache(node._cache_entry.key).value
-        assert pset is not None
-        partitions = pset.values()
+        partitions = psets[node._cache_entry.key]
         return physical_plan.partition_read(_ for _ in partitions)
 
     # -- Unary nodes. --
     elif isinstance(node, logical_plan.UnaryNode):
         [child_node] = node._children()
-        child_plan: Iterator[None | ExecutionStep[PartitionT]] = get_physical_plan(child_node)
+        child_plan: Iterator[None | ExecutionStep[PartitionT]] = get_physical_plan(child_node, psets)
 
         if isinstance(node, logical_plan.TabularFilesScan):
             return physical_plan.file_read(child_plan=child_plan, scan_info=node)
@@ -125,8 +126,8 @@ def get_physical_plan(node: LogicalPlan) -> Iterator[None | ExecutionStep[Partit
 
         if isinstance(node, logical_plan.Join):
             return physical_plan.join(
-                left_plan=get_physical_plan(left_child),
-                right_plan=get_physical_plan(right_child),
+                left_plan=get_physical_plan(left_child, psets),
+                right_plan=get_physical_plan(right_child, psets),
                 join=node,
             )
 

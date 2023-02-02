@@ -74,9 +74,14 @@ class DynamicRunner(Runner):
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         plan = self.optimize(plan)
 
+        psets = {
+            key: entry.value.values()
+            for key, entry in self._part_set_cache._uuid_to_partition_set.items()
+            if entry.value is not None
+        }
         phys_plan: Iterator[
             None | MaterializationRequestBase[vPartition]
-        ] = physical_plan_factory.get_materializing_physical_plan(plan)
+        ] = physical_plan_factory.get_materializing_physical_plan(plan, psets)
 
         result_pset = LocalPartitionSet({})
 

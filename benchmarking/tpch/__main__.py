@@ -126,7 +126,6 @@ def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output
     metrics_builder = MetricsBuilder(daft_context.runner_config.name)
 
     for i in range(1, 11):
-
         if i in skip_questions:
             logger.warning(f"Skipping TPC-H q{i}")
             continue
