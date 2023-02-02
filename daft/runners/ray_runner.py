@@ -426,8 +426,8 @@ def get_meta(partition: vPartition) -> PartitionMetadata:
 def remote_run_plan(
     plan: logical_plan.LogicalPlan,
     psets: dict[str, ray.ObjectRef],
-    min_tasks_per_core: int,
-    min_refs_per_core: int,
+    max_tasks_per_core: int,
+    max_refs_per_core: int,
 ) -> list[ray.ObjectRef]:
 
     phys_plan: Iterator[
@@ -451,8 +451,8 @@ def remote_run_plan(
         while True:
 
             while (
-                len(inflight_tasks) < min_tasks_per_core * cores
-                or len(inflight_ref_to_task) < min_refs_per_core * cores
+                len(inflight_tasks) < max_tasks_per_core * cores
+                and len(inflight_ref_to_task) < max_refs_per_core * cores
             ):
 
                 # Get the next batch of tasks to dispatch.
@@ -541,12 +541,12 @@ class DynamicRayRunner(RayRunner):
     def __init__(
         self,
         address: str | None,
-        min_tasks_per_core: int | None,
-        min_refs_per_core: int | None,
+        max_tasks_per_core: int | None,
+        max_refs_per_core: int | None,
     ) -> None:
         super().__init__(address=address)
-        self.min_tasks_per_core = min_tasks_per_core if min_tasks_per_core is not None else 4
-        self.min_refs_per_core = min_refs_per_core if min_refs_per_core is not None else 0
+        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 4
+        self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 10000
 
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         result_pset = RayPartitionSet({})
@@ -562,8 +562,8 @@ class DynamicRayRunner(RayRunner):
             remote_run_plan.remote(
                 plan=plan,
                 psets=psets,
-                min_tasks_per_core=self.min_tasks_per_core,
-                min_refs_per_core=self.min_refs_per_core,
+                max_tasks_per_core=self.max_tasks_per_core,
+                max_refs_per_core=self.max_refs_per_core,
             )
         )
 
