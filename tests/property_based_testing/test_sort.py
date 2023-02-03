@@ -17,7 +17,13 @@ from hypothesis.strategies import (
 )
 
 from daft import DataFrame
-from tests.property_based_testing.strategies import columns_dict, total_order_dtypes
+from daft.types import ExpressionType
+from tests.property_based_testing.strategies import (
+    UserObject,
+    columns_dict,
+    generate_data,
+    total_order_dtypes,
+)
 
 # TODO: multi-column sorts' null placement currently broken: https://github.com/Eventual-Inc/Daft/issues/546
 # This property-based test only tests single-column sorts for now
@@ -146,15 +152,17 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
     # Some steps are skipped because they encounter bugs that need to be fixed.
     ###
 
-    # @rule(data=data())
-    # @precondition(lambda self: self.df is not None)
-    # def repartition_df(self, data):
-    #     """Runs a repartitioning step"""
-    #     num_partitions = data.draw(self.repartition_num_partitions_strategy, label="Number of partitions for repartitioning")
-    #     self.df = self.df.repartition(num_partitions)
+    @rule(data=data())
+    @precondition(lambda self: self.df is not None)
+    def repartition_df(self, data):
+        """Runs a repartitioning step"""
+        num_partitions = data.draw(
+            self.repartition_num_partitions_strategy, label="Number of partitions for repartitioning"
+        )
+        self.df = self.df.repartition(num_partitions)
 
-    #     # Repartitioning changes the ordering of the data, so we cannot sort after this step
-    #     self.sorted_on = None
+        # Repartitioning changes the ordering of the data, so we cannot sort after this step
+        self.sorted_on = None
 
     # @rule(data=data())
     # @precondition(lambda self: self.df is not None)
@@ -174,29 +182,32 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
     #         filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
     #         self.df = self.df.where(self.df[col_name_to_filter] == filter_value)
 
-    # @rule(data=data())
-    # @precondition(lambda self: self.df is not None)
-    # def project_df(self, data):
-    #     """Runs a projection on a random column, replacing it"""
-    #     assert self.df is not None
-    #     column_name = data.draw(sampled_from(self.df.schema().column_names()), label="Column to filter on")
-    #     column_daft_type = self.df.schema()[column_name].daft_type
-    #     type_to_op_mapping = {
-    #         ExpressionType.string(): lambda e, other: e.str.concat(other),
-    #         ExpressionType.integer(): lambda e, other: e + other,
-    #         ExpressionType.float(): lambda e, other: e + other,
-    #         ExpressionType.logical(): lambda e, other: e & other,
-    #         ExpressionType.from_py_type(UserObject): lambda e, other: e.apply(
-    #             lambda x: x.add(other) if x is not None else None, return_type=UserObject
-    #         ),
-    #         # No meaningful binary operations supported for these yet
-    #         ExpressionType.date(): lambda e, other: e.dt.year(),
-    #         ExpressionType.bytes(): lambda e, other: e,
-    #         ExpressionType.null(): lambda e, other: e,
-    #     }
-    #     op = type_to_op_mapping[column_daft_type]
-    #     other_binary_value = data.draw(generate_data(column_daft_type), label="Binary *other* value")
-    #     self.df = self.df.with_column(column_name, op(self.df[column_name], other_binary_value))
+    @rule(data=data())
+    @precondition(lambda self: self.df is not None)
+    def project_df(self, data):
+        """Runs a projection on a random column, replacing it"""
+        assert self.df is not None
+        column_name = data.draw(sampled_from(self.df.schema().column_names()), label="Column to filter on")
+        column_daft_type = self.df.schema()[column_name].dtype
+        type_to_op_mapping = {
+            ExpressionType.string(): lambda e, other: e.str.concat(other),
+            ExpressionType.integer(): lambda e, other: e + other,
+            ExpressionType.float(): lambda e, other: e + other,
+            ExpressionType.logical(): lambda e, other: e & other,
+            ExpressionType.from_py_type(UserObject): lambda e, other: e.apply(
+                lambda x: x.add(other) if x is not None else None, return_type=UserObject
+            ),
+            # No meaningful binary operations supported for these yet
+            ExpressionType.date(): lambda e, other: e.dt.year(),
+            ExpressionType.bytes(): lambda e, other: e,
+            ExpressionType.null(): lambda e, other: e,
+        }
+        op = type_to_op_mapping[column_daft_type]
+        other_binary_value = data.draw(generate_data(column_daft_type), label="Binary *other* value")
+        self.df = self.df.with_column(column_name, op(self.df[column_name], other_binary_value))
+
+        # Some of the projections change the ordering of the data, so we cannot sort after this step
+        self.sorted_on = None
 
 
 TestDataframeSortStateMachine = DataframeSortStateMachine.TestCase
