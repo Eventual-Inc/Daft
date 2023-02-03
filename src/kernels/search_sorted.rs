@@ -3,22 +3,25 @@ use std::{cmp::Ordering, iter::zip};
 use arrow2::{
     array::ord::build_compare,
     array::Array,
-    array::{ord::DynComparator, PrimitiveArray, Utf8Array},
+    array::{PrimitiveArray, Utf8Array},
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
     types::{NativeType, Offset},
 };
+use num_traits::Float;
 
 use crate::ffi;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
+#[allow(clippy::eq_op)]
 fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
     sorted_array: &PrimitiveArray<T>,
     keys: &PrimitiveArray<T>,
     input_reversed: bool,
-) -> PrimitiveArray<u64> {
+) -> PrimitiveArray<u64>
+where {
     let array_size = sorted_array.len();
 
     let mut left = 0_usize;
@@ -27,15 +30,20 @@ fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
 
     let mut last_key = keys.iter().next().unwrap_or(None);
-
+    let less = |l: &T, r: &T| l < r || (r != r && l == l);
     for key_val in keys.iter() {
-        let is_last_key_le = match (last_key, key_val) {
-            (None, None) => false,
-            (Some(last_key), Some(key_val)) => last_key.le(key_val),
-            (None, _) => false,
-            (_, None) => true,
+        let is_last_key_lt = match (last_key, key_val) {
+            (None, _) => input_reversed,
+            (Some(last_key), Some(key_val)) => {
+                if !input_reversed {
+                    less(last_key, key_val)
+                } else {
+                    less(key_val, last_key)
+                }
+            }
+            (_, None) => !input_reversed,
         };
-        if is_last_key_le {
+        if is_last_key_lt {
             right = array_size;
         } else {
             left = 0;
@@ -47,30 +55,26 @@ fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
         }
         while left < right {
             let mid_idx = left + ((right - left) >> 1);
-            let corrected_idx = if input_reversed {
-                array_size - mid_idx - 1
-            } else {
-                mid_idx
+            let mid_val = unsafe { sorted_array.value_unchecked(mid_idx) };
+            let is_key_val_lt = match (key_val, sorted_array.is_valid(mid_idx)) {
+                (None, _) => input_reversed,
+                (Some(key_val), true) => {
+                    if !input_reversed {
+                        less(key_val, &mid_val)
+                    } else {
+                        less(&mid_val, key_val)
+                    }
+                }
+                (Some(_), false) => !input_reversed,
             };
-            let mid_val = unsafe { sorted_array.value_unchecked(corrected_idx) };
-            let is_key_val_le = match (key_val, sorted_array.is_valid(corrected_idx)) {
-                (None, true) => false,
-                (None, false) => true,
-                (Some(key_val), true) => key_val.le(&mid_val),
-                (_, false) => true,
-            };
-            if is_key_val_le {
+
+            if is_key_val_lt {
                 right = mid_idx;
             } else {
                 left = mid_idx + 1;
             }
         }
-        let result_idx = if input_reversed {
-            array_size - left
-        } else {
-            left
-        };
-        results.push(result_idx.try_into().unwrap());
+        results.push(left.try_into().unwrap());
         last_key = key_val;
     }
 
@@ -89,13 +93,13 @@ fn search_sorted_utf_array<O: Offset>(
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
     let mut last_key = keys.iter().next().unwrap_or(None);
     for key_val in keys.iter() {
-        let is_last_key_le = match (last_key, key_val) {
+        let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
-            (Some(last_key), Some(key_val)) => last_key.le(key_val),
+            (Some(last_key), Some(key_val)) => last_key.lt(key_val),
             (None, _) => false,
             (_, None) => true,
         };
-        if is_last_key_le {
+        if is_last_key_lt {
             right = array_size;
         } else {
             left = 0;
@@ -113,13 +117,13 @@ fn search_sorted_utf_array<O: Offset>(
                 mid_idx
             };
             let mid_val = unsafe { sorted_array.value_unchecked(corrected_idx) };
-            let is_key_val_le = match (key_val, sorted_array.is_valid(corrected_idx)) {
+            let is_key_val_lt = match (key_val, sorted_array.is_valid(corrected_idx)) {
                 (None, true) => false,
-                (None, false) => true,
-                (Some(key_val), true) => key_val.le(mid_val),
+                (None, false) => false,
+                (Some(key_val), true) => key_val.lt(mid_val),
                 (_, false) => true,
             };
-            if is_key_val_le {
+            if is_key_val_lt {
                 right = mid_idx;
             } else {
                 left = mid_idx + 1;
@@ -174,14 +178,56 @@ fn build_is_valid(array: &dyn Array) -> IsValid {
     }
 }
 
-fn build_compare_with_nulls(
-    left: &dyn Array,
-    right: &dyn Array,
+#[allow(clippy::eq_op)]
+#[inline]
+fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
+    use std::cmp::Ordering::*;
+    if (*l < *r) || (*r != *r && *l == *l) {
+        Less
+    } else if (*l > *r) || (*l != *l && *r == *r) {
+        Greater
+    } else {
+        Equal
+    }
+}
+
+fn build_compare_with_nan<'a>(
+    left: &'a dyn Array,
+    right: &'a dyn Array,
+) -> Result<Box<dyn Fn(usize, usize) -> Ordering + Sync + Send + 'a>> {
+    if (left.data_type() == &DataType::Float32) && (right.data_type() == &DataType::Float32) {
+        let left: &PrimitiveArray<f32> = unsafe { left.as_any().downcast_ref().unwrap_unchecked() };
+        let right: &PrimitiveArray<f32> =
+            unsafe { right.as_any().downcast_ref().unwrap_unchecked() };
+        Ok(Box::new(move |l, r| {
+            let lv = unsafe { left.value_unchecked(l) };
+            let rv = unsafe { right.value_unchecked(r) };
+            cmp_float::<f32>(&lv, &rv)
+        }))
+    } else if (left.data_type() == &DataType::Float64) && (right.data_type() == &DataType::Float64)
+    {
+        let left: &PrimitiveArray<f64> = unsafe { left.as_any().downcast_ref().unwrap_unchecked() };
+        let right: &PrimitiveArray<f64> =
+            unsafe { right.as_any().downcast_ref().unwrap_unchecked() };
+        return Ok(Box::new(move |l, r| {
+            let lv = unsafe { left.value_unchecked(l) };
+            let rv = unsafe { right.value_unchecked(r) };
+            cmp_float::<f64>(&lv, &rv)
+        }));
+    } else {
+        return build_compare(left, right);
+    }
+}
+
+fn build_compare_with_nulls<'a>(
+    left: &'a dyn Array,
+    right: &'a dyn Array,
     reversed: bool,
-) -> Result<DynComparator> {
-    let comparator = build_compare(left, right)?;
+) -> Result<Box<dyn Fn(usize, usize) -> Ordering + Sync + Send + 'a>> {
+    let comparator = build_compare_with_nan(left, right)?;
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);
+
     if reversed {
         Ok(Box::new(move |i: usize, j: usize| {
             match (left_is_valid(i), right_is_valid(j)) {
@@ -261,10 +307,10 @@ pub fn search_sorted_multi_array(
         let mut right = sorted_array_size;
         while left < right {
             let mid_idx = left + ((right - left) >> 1);
-            if combined_comparator(mid_idx, key_idx).is_ge() {
-                right = mid_idx;
-            } else {
+            if combined_comparator(mid_idx, key_idx).is_le() {
                 left = mid_idx + 1;
+            } else {
+                right = mid_idx;
             }
         }
         results.push(left.try_into().unwrap());
