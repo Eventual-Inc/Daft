@@ -75,10 +75,7 @@ def test_number_array_with_null_needle_reverse() -> None:
     pa_data = pa.chunked_array([[0, 1, 2, 2, 3, float("nan"), float("nan"), None, None][::-1]], type=pa.float32())
     pa_needle = pa.chunked_array([[-1, 2, float("nan"), None]], type=pa.float32())
     result = search_sorted(pa_data, pa_needle, input_reversed=True).to_numpy()
-    import ipdb
-
-    ipdb.set_trace()
-    assert np.all(result == np.array([9, 7, 4, 2]))
+    assert np.all(result == np.array([9, 7, 4, 0]))
 
 
 def test_multi_number_array_with_null_needle() -> None:
@@ -108,6 +105,33 @@ def test_number_array_with_nans() -> None:
     pa_needle = pa.chunked_array([[float("nan"), 2]], type=pa.float32())
     result = search_sorted(pa_data, pa_needle).to_numpy()
     assert np.all(result == np.array([2, 1]))
+
+
+def test_number_array_with_nans_reversed() -> None:
+    pa_data = pa.chunked_array([[2, float("nan")][::-1]], type=pa.float32())
+    pa_needle = pa.chunked_array([[float("nan"), 2]], type=pa.float32())
+    result = search_sorted(pa_data, pa_needle, input_reversed=True).to_numpy()
+    assert np.all(result == np.array([1, 2]))
+
+
+def test_multi_number_arrays_with_nans() -> None:
+    pa_data = pa.chunked_array([[2, float("nan")]], type=pa.float32())
+    data_table = pa.Table.from_pydict({"x": pa_data, "y": pa_data})
+
+    pa_needle = pa.chunked_array([[float("nan"), 2]], type=pa.float32())
+    needle_table = pa.Table.from_pydict({"x": pa_needle, "y": pa_needle})
+    result = search_sorted(data_table, needle_table).to_numpy()
+    assert np.all(result == np.array([2, 1]))
+
+
+def test_multi_number_arrays_with_nans_reversed() -> None:
+    pa_data = pa.chunked_array([[2, float("nan")][::-1]], type=pa.float32())
+    data_table = pa.Table.from_pydict({"x": pa_data, "y": pa_data})
+
+    pa_needle = pa.chunked_array([[float("nan"), 2]], type=pa.float32())
+    needle_table = pa.Table.from_pydict({"x": pa_needle, "y": pa_needle})
+    result = search_sorted(data_table, needle_table, input_reversed=True).to_numpy()
+    assert np.all(result == np.array([1, 2]))
 
 
 def test_str_array_with_empty_needle() -> None:

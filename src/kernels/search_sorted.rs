@@ -15,6 +15,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
+#[allow(clippy::eq_op)]
 fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
     sorted_array: &PrimitiveArray<T>,
     keys: &PrimitiveArray<T>,
@@ -32,10 +33,15 @@ where {
     let less = |l: &T, r: &T| l < r || (r != r && l == l);
     for key_val in keys.iter() {
         let is_last_key_lt = match (last_key, key_val) {
-            (None, None) => false,
-            (Some(last_key), Some(key_val)) => less(last_key, key_val),
-            (None, Some(_)) => false,
-            (Some(_), None) => true,
+            (None, _) => input_reversed,
+            (Some(last_key), Some(key_val)) => {
+                if !input_reversed {
+                    less(last_key, key_val)
+                } else {
+                    less(key_val, last_key)
+                }
+            }
+            (_, None) => !input_reversed,
         };
         if is_last_key_lt {
             right = array_size;
@@ -49,30 +55,26 @@ where {
         }
         while left < right {
             let mid_idx = left + ((right - left) >> 1);
-            let corrected_idx = if input_reversed {
-                array_size - mid_idx - 1
-            } else {
-                mid_idx
+            let mid_val = unsafe { sorted_array.value_unchecked(mid_idx) };
+            let is_key_val_lt = match (key_val, sorted_array.is_valid(mid_idx)) {
+                (None, _) => input_reversed,
+                (Some(key_val), true) => {
+                    if !input_reversed {
+                        less(key_val, &mid_val)
+                    } else {
+                        less(&mid_val, key_val)
+                    }
+                }
+                (Some(_), false) => !input_reversed,
             };
-            let mid_val = unsafe { sorted_array.value_unchecked(corrected_idx) };
-            let is_key_val_lt = match (key_val, sorted_array.is_valid(corrected_idx)) {
-                (None, true) => false,
-                (None, false) => false,
-                (Some(key_val), true) => less(key_val, &mid_val),
-                (Some(_), false) => true,
-            };
+
             if is_key_val_lt {
                 right = mid_idx;
             } else {
                 left = mid_idx + 1;
             }
         }
-        let result_idx = if input_reversed {
-            array_size - left
-        } else {
-            left
-        };
-        results.push(result_idx.try_into().unwrap());
+        results.push(left.try_into().unwrap());
         last_key = key_val;
     }
 
@@ -176,6 +178,7 @@ fn build_is_valid(array: &dyn Array) -> IsValid {
     }
 }
 
+#[allow(clippy::eq_op)]
 #[inline]
 fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
     use std::cmp::Ordering::*;
