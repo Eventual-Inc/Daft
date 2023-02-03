@@ -67,6 +67,13 @@ def test_number_array_with_null_needle() -> None:
     assert np.all(result == np.array([0, 4, 7, 9]))
 
 
+def test_number_array_with_nans() -> None:
+    pa_data = pa.chunked_array([[2, float("nan")]], type=pa.float32())
+    pa_needle = pa.chunked_array([[float("nan"), 2]], type=pa.float32())
+    result = search_sorted(pa_data, pa_needle).to_numpy()
+    assert np.all(result == np.array([2, 1]))
+
+
 def test_str_array_with_empty_needle() -> None:
     pa_data = pa.chunked_array([["a", "b", "c"]], type=pa.string())
     pa_needle = pa.chunked_array([["", None]], type=pa.string())
