@@ -5,7 +5,7 @@ import os
 from typing import Any
 
 import pandas as pd
-from hypothesis import note, settings
+from hypothesis import note, reject, settings
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, precondition, rule
 from hypothesis.strategies import (
     booleans,
@@ -164,23 +164,27 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         # Repartitioning changes the ordering of the data, so we cannot sort after this step
         self.sorted_on = None
 
-    # @rule(data=data())
-    # @precondition(lambda self: self.df is not None)
-    # def filter_df(self, data):
-    #     """Runs a filter on a simple equality predicate on a random column"""
-    #     assert self.df is not None
-    #     col_name_to_filter = data.draw(sampled_from(self.df.schema().column_names()), label="Column to filter on")
-    #     col_daft_type = self.df.schema()[col_name_to_filter].daft_type
+    @rule(data=data())
+    @precondition(lambda self: self.df is not None)
+    def filter_df(self, data):
+        """Runs a filter on a simple equality predicate on a random column"""
+        assert self.df is not None
+        col_name_to_filter = data.draw(sampled_from(self.df.schema().column_names()), label="Column to filter on")
+        col_daft_type = self.df.schema()[col_name_to_filter].dtype
 
-    #     # Logical types do not accept equality operators, but can be filtered on by themselves
-    #     if col_daft_type == ExpressionType.logical():
-    #         self.df = self.df.where(self.df[col_name_to_filter])
-    #     # Reject if filtering on a null column - not a meaningful operation
-    #     elif col_daft_type == ExpressionType.null():
-    #         reject()
-    #     else:
-    #         filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
-    #         self.df = self.df.where(self.df[col_name_to_filter] == filter_value)
+        # Logical types do not accept equality operators, but can be filtered on by themselves
+        if col_daft_type == ExpressionType.logical():
+            self.df = self.df.where(self.df[col_name_to_filter])
+        # Python object columns return another PY column after equality, so we have to cast to bool
+        elif col_daft_type == ExpressionType.from_py_type(UserObject):
+            filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
+            self.df = self.df.where((self.df[col_name_to_filter] == filter_value).cast(bool))
+        # Reject if filtering on a null column - not a meaningful operation
+        elif col_daft_type == ExpressionType.null():
+            reject()
+        else:
+            filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
+            self.df = self.df.where(self.df[col_name_to_filter] == filter_value)
 
     @rule(data=data())
     @precondition(lambda self: self.df is not None)
