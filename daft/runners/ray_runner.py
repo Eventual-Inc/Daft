@@ -450,6 +450,7 @@ def remote_run_plan(
     psets: dict[str, ray.ObjectRef],
     max_tasks_per_core: int,
     max_refs_per_core: int,
+    batch_task_dispatch: bool,
 ) -> list[ray.ObjectRef]:
 
     from loguru import logger
@@ -482,7 +483,7 @@ def remote_run_plan(
                 # Get the next batch of tasks to dispatch.
                 tasks_to_dispatch = []
                 try:
-                    for _ in range(cores):
+                    for _ in range(cores if batch_task_dispatch else 1):
 
                         next_step = next(phys_plan)
 
@@ -517,7 +518,7 @@ def remote_run_plan(
                     return result_partitions
 
             # Await a batch of tasks.
-            for i in range(min(cores, len(inflight_tasks))):
+            for i in range(min(cores if batch_task_dispatch else 1, len(inflight_tasks))):
                 dispatch = datetime.now()
                 [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
                 task_id = inflight_ref_to_task[ready]
@@ -572,10 +573,12 @@ class DynamicRayRunner(RayRunner):
         address: str | None,
         max_tasks_per_core: int | None,
         max_refs_per_core: int | None,
+        batch_task_dispatch: bool | None,
     ) -> None:
         super().__init__(address=address)
-        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 4
+        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 1
         self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 10000
+        self.batch_task_dispatch = batch_task_dispatch if batch_task_dispatch is not None else False
 
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         result_pset = RayPartitionSet({})
@@ -593,6 +596,7 @@ class DynamicRayRunner(RayRunner):
                 psets=psets,
                 max_tasks_per_core=self.max_tasks_per_core,
                 max_refs_per_core=self.max_refs_per_core,
+                batch_task_dispatch=self.batch_task_dispatch,
             )
         )
 
