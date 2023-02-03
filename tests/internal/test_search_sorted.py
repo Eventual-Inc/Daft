@@ -75,7 +75,7 @@ def test_number_array_with_null_needle_reverse() -> None:
     pa_data = pa.chunked_array([[0, 1, 2, 2, 3, float("nan"), float("nan"), None, None][::-1]], type=pa.float32())
     pa_needle = pa.chunked_array([[-1, 2, float("nan"), None]], type=pa.float32())
     result = search_sorted(pa_data, pa_needle, input_reversed=True).to_numpy()
-    assert np.all(result == np.array([9, 7, 4, 0]))
+    assert np.all(result == np.array([9, 7, 4, 2]))
 
 
 def test_multi_number_array_with_null_needle() -> None:
@@ -173,6 +173,22 @@ def test_string_array(str_len, num_chunks) -> None:
 
 
 def test_string_array_with_nulls() -> None:
+    haystack = pa.Table.from_pydict({"A": ["", "0", "01", "1", None]})
+    needle = pa.Table.from_pydict({"A": ["0", None, "1", "", "01"]})
+    result = search_sorted(haystack, needle).to_numpy()
+    expected = [2, 5, 4, 1, 3]
+    assert np.all(result == expected)
+
+
+def test_string_array_with_nulls_reversed() -> None:
+    haystack = pa.chunked_array([["", "0", "01", "1", None][::-1]])
+    needle = pa.chunked_array([["0", None, "1", "", "01"]])
+    result = search_sorted(haystack, needle, input_reversed=True).to_numpy()
+    expected = [4, 1, 2, 5, 3]
+    assert np.all(result == expected)
+
+
+def test_string_array_with_nulls_many() -> None:
     py_keys = [str(i) for i in range(100)]
     random.shuffle(py_keys)
     keys = np.array(py_keys)
