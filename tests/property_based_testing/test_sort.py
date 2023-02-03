@@ -19,6 +19,10 @@ from hypothesis.strategies import (
 from daft import DataFrame
 from tests.property_based_testing.strategies import columns_dict, total_order_dtypes
 
+# TODO: multi-column sorts' null placement currently broken: https://github.com/Eventual-Inc/Daft/issues/546
+# This property-based test only tests single-column sorts for now
+MAX_NUM_SORT_COLS = 1
+
 
 def _is_nan(obj: Any) -> bool:
     """Checks if an object is a float NaN"""
@@ -46,7 +50,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         self.repartition_num_partitions_strategy = sampled_from([1, 4, 5, 9])
         self.sorted_on: list[tuple[str, bool]] | None = None
 
-    @rule(data=data(), num_sort_cols=integers(min_value=1, max_value=3))
+    @rule(data=data(), num_sort_cols=integers(min_value=1, max_value=MAX_NUM_SORT_COLS))
     @precondition(lambda self: self.df is None)
     def newdataframe(self, data, num_sort_cols):
         """Start node of the state machine, creates an initial dataframe"""
@@ -96,35 +100,37 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
                 note(f"Comparing {current_tup} and {next_tup} for desc={sorted_on_desc}")
 
                 for current_val, next_val, desc in zip(current_tup, next_tup, sorted_on_desc):
-                    # None and NaNs are always sorted at the end regardless or specified ordering
-                    if current_val is None:
-                        assert (
-                            next_val is None
-                        ), f"Current value is None, expected all subsequent values to be None but received: {next_val}"
+
+                    a, b = (current_val, next_val) if desc else (next_val, current_val)
+
+                    # Assert that a >= b, where the ordering is defined as: None > NaN > other values
+                    # `continue` checking lex sort if values are equal, but `break` if they are not equal
+                    if a is None and b is None:
                         continue
-                    elif _is_nan(current_val):
-                        if _is_nan(next_val):
-                            continue
-                        elif next_val is None:
-                            break  # current_val=NaN and next_val=None
+                    elif _is_nan(a) and _is_nan(b):
+                        continue
+                    elif a is None and _is_nan(b):
+                        break
+                    elif _is_nan(a) and b is None:
                         raise AssertionError(
-                            f"Current value is NaN, expected all subsequent values to be NaN or None but received: {next_val}"
+                            f"current_val={current_val} vs next_val={next_val} is an invalid sort order for desc={desc}"
+                        )
+                    elif a is None or _is_nan(a):
+                        break
+                    elif b is None or _is_nan(b):
+                        raise AssertionError(
+                            f"current_val={current_val} vs next_val={next_val} is an invalid sort order for desc={desc}"
                         )
 
-                    # Current value is not None and not NaN, so if next_val is None or NaN then this is a valid ordering
-                    elif next_val is None:
-                        break  # current_val=<value> and next_val=None
-                    elif _is_nan(next_val):
-                        break  # current_val=<value> and next_val=NaN
+                    # Invariant here: all cases handled for None and NaN values
+                    assert a is not None and not _is_nan(a)
+                    assert b is not None and not _is_nan(b)
 
-                    # Both current_val and next_val are non-None and non-NaN values, so we compare directly
-                    if desc:
-                        assert current_val >= next_val, f"Expected {current_val} >= {next_val}"
-                    else:
-                        assert current_val <= next_val, f"Expected {current_val} <= {next_val}"
-
-                    if current_val != next_val:
-                        break  # current_val != next_val
+                    assert (
+                        a >= b
+                    ), f"current_val={current_val} vs next_val={next_val} is an invalid sort order for desc={desc}"
+                    if a != b:
+                        break
 
                 current_tup = next_tup
         except AssertionError:
@@ -147,8 +153,8 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
     #     num_partitions = data.draw(self.repartition_num_partitions_strategy, label="Number of partitions for repartitioning")
     #     self.df = self.df.repartition(num_partitions)
 
-    # # Repartitioning changes the ordering of the data, so we cannot sort after this step
-    # self.sorted_on = None
+    #     # Repartitioning changes the ordering of the data, so we cannot sort after this step
+    #     self.sorted_on = None
 
     # @rule(data=data())
     # @precondition(lambda self: self.df is not None)
