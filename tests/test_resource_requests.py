@@ -91,6 +91,12 @@ def assert_resources(c, num_cpus=None, num_gpus=None, memory=None):
     return c
 
 
+RAY_VERSION_LT_2 = int(ray.__version__.split(".")[0]) < 2
+
+
+@pytest.mark.skipif(
+    RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
+)
 @pytest.mark.skipif(
     get_context().runner_config.name not in {"ray", "dynamicray"}, reason="requires RayRunner to be in use"
 )
@@ -106,6 +112,9 @@ def test_with_column_rayrunner():
     df.collect()
 
 
+@pytest.mark.skipif(
+    RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
+)
 @pytest.mark.skipif(
     get_context().runner_config.name not in {"ray", "dynamicray"}, reason="requires RayRunner to be in use"
 )
