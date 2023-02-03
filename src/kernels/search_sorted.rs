@@ -31,13 +31,13 @@ where {
     let mut last_key = keys.iter().next().unwrap_or(None);
     let less = |l: &T, r: &T| l < r || (r != r && l == l);
     for key_val in keys.iter() {
-        let is_last_key_le = match (last_key, key_val) {
+        let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (Some(last_key), Some(key_val)) => less(last_key, key_val),
             (None, Some(_)) => false,
             (Some(_), None) => true,
         };
-        if is_last_key_le {
+        if is_last_key_lt {
             right = array_size;
         } else {
             left = 0;
@@ -91,13 +91,13 @@ fn search_sorted_utf_array<O: Offset>(
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
     let mut last_key = keys.iter().next().unwrap_or(None);
     for key_val in keys.iter() {
-        let is_last_key_le = match (last_key, key_val) {
+        let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (Some(last_key), Some(key_val)) => last_key.lt(key_val),
             (None, _) => false,
             (_, None) => true,
         };
-        if is_last_key_le {
+        if is_last_key_lt {
             right = array_size;
         } else {
             left = 0;
@@ -178,15 +178,13 @@ fn build_is_valid(array: &dyn Array) -> IsValid {
 
 #[inline]
 fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
-    // The order here is important to generate more optimal assembly.
-    // See <https://github.com/rust-lang/rust/issues/63758> for more info.
     use std::cmp::Ordering::*;
     if (*l < *r) || (*r != *r && *l == *l) {
         Less
-    } else if *l == *r {
-        Equal
-    } else {
+    } else if (*l > *r) || (*l != *l && *r == *r) {
         Greater
+    } else {
+        Equal
     }
 }
 
@@ -306,7 +304,7 @@ pub fn search_sorted_multi_array(
         let mut right = sorted_array_size;
         while left < right {
             let mid_idx = left + ((right - left) >> 1);
-            if combined_comparator(mid_idx, key_idx).is_lt() {
+            if combined_comparator(mid_idx, key_idx).is_le() {
                 left = mid_idx + 1;
             } else {
                 right = mid_idx;
