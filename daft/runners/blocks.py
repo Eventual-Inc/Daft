@@ -557,8 +557,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         table = pa.table(arrs, names=arr_names)
 
         # HACK: This is a workaround for correct null placement in single column sorts
-        # However, this fails for a multi-column sort because null_placement needs to be at_start for descending
-        # columns and at_end for ascending columns. This is not possible with the current API.
+        # However, this fails for a multi-column sort because we need different null placements for each column.
+        # This is not possible with the current API which assigns the same null_placement to all columns.
+        #
+        # See: https://github.com/Eventual-Inc/Daft/issues/546
         if descending[0]:
             indices = pac.sort_indices(table, sort_keys=list(zip(arr_names, order)), null_placement="at_start")
         else:
