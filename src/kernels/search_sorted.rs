@@ -1,9 +1,9 @@
-use std::{any::TypeId, cmp::Ordering, iter::zip};
+use std::{cmp::Ordering, iter::zip};
 
 use arrow2::{
     array::ord::build_compare,
     array::Array,
-    array::{ord::DynComparator, PrimitiveArray, Utf8Array},
+    array::{PrimitiveArray, Utf8Array},
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
     types::{NativeType, Offset},
@@ -214,7 +214,7 @@ fn build_compare_with_nan<'a>(
             cmp_float::<f64>(&lv, &rv)
         }));
     } else {
-        return Ok(build_compare(left, right)?);
+        return build_compare(left, right);
     }
 }
 
@@ -227,12 +227,6 @@ fn build_compare_with_nulls<'a>(
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);
 
-    let comparator = match (left.data_type(), right.data_type()) {
-        (DataType::Float32, DataType::Float32) | (DataType::Float64, DataType::Float64) => {
-            Box::new(move |l, r| comparator(l, r))
-        }
-        _ => comparator,
-    };
     if reversed {
         Ok(Box::new(move |i: usize, j: usize| {
             match (left_is_valid(i), right_is_valid(j)) {
