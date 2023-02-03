@@ -198,11 +198,11 @@ fn build_compare_with_nan<'a>(
         let left: &PrimitiveArray<f32> = unsafe { left.as_any().downcast_ref().unwrap_unchecked() };
         let right: &PrimitiveArray<f32> =
             unsafe { right.as_any().downcast_ref().unwrap_unchecked() };
-        return Ok(Box::new(move |l, r| {
+        Ok(Box::new(move |l, r| {
             let lv = unsafe { left.value_unchecked(l) };
             let rv = unsafe { right.value_unchecked(r) };
             cmp_float::<f32>(&lv, &rv)
-        }));
+        }))
     } else if (left.data_type() == &DataType::Float64) && (right.data_type() == &DataType::Float64)
     {
         let left: &PrimitiveArray<f64> = unsafe { left.as_any().downcast_ref().unwrap_unchecked() };
