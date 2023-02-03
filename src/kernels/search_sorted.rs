@@ -34,8 +34,8 @@ where {
         let is_last_key_le = match (last_key, key_val) {
             (None, None) => false,
             (Some(last_key), Some(key_val)) => less(last_key, key_val),
-            (None, _) => false,
-            (_, None) => true,
+            (None, Some(_)) => false,
+            (Some(_), None) => true,
         };
         if is_last_key_le {
             right = array_size;
@@ -55,13 +55,13 @@ where {
                 mid_idx
             };
             let mid_val = unsafe { sorted_array.value_unchecked(corrected_idx) };
-            let is_key_val_le = match (key_val, sorted_array.is_valid(corrected_idx)) {
+            let is_key_val_lt = match (key_val, sorted_array.is_valid(corrected_idx)) {
                 (None, true) => false,
                 (None, false) => false,
                 (Some(key_val), true) => less(key_val, &mid_val),
                 (Some(_), false) => true,
             };
-            if is_key_val_le {
+            if is_key_val_lt {
                 right = mid_idx;
             } else {
                 left = mid_idx + 1;
@@ -93,7 +93,7 @@ fn search_sorted_utf_array<O: Offset>(
     for key_val in keys.iter() {
         let is_last_key_le = match (last_key, key_val) {
             (None, None) => false,
-            (Some(last_key), Some(key_val)) => last_key.le(key_val),
+            (Some(last_key), Some(key_val)) => last_key.lt(key_val),
             (None, _) => false,
             (_, None) => true,
         };
@@ -115,13 +115,13 @@ fn search_sorted_utf_array<O: Offset>(
                 mid_idx
             };
             let mid_val = unsafe { sorted_array.value_unchecked(corrected_idx) };
-            let is_key_val_le = match (key_val, sorted_array.is_valid(corrected_idx)) {
+            let is_key_val_lt = match (key_val, sorted_array.is_valid(corrected_idx)) {
                 (None, true) => false,
                 (None, false) => false,
-                (Some(key_val), true) => key_val.le(mid_val),
+                (Some(key_val), true) => key_val.lt(mid_val),
                 (_, false) => true,
             };
-            if is_key_val_le {
+            if is_key_val_lt {
                 right = mid_idx;
             } else {
                 left = mid_idx + 1;
@@ -306,10 +306,10 @@ pub fn search_sorted_multi_array(
         let mut right = sorted_array_size;
         while left < right {
             let mid_idx = left + ((right - left) >> 1);
-            if combined_comparator(mid_idx, key_idx).is_ge() {
-                right = mid_idx;
-            } else {
+            if combined_comparator(mid_idx, key_idx).is_lt() {
                 left = mid_idx + 1;
+            } else {
+                right = mid_idx;
             }
         }
         results.push(left.try_into().unwrap());

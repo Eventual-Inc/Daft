@@ -39,7 +39,6 @@ def test_number_array_with_nulls() -> None:
     pa_keys = pa.chunked_array([pa.chunked_array([keys] + [[None] * 10] + [keys]).combine_chunks()])
     pa_result = search_sorted(pa_data, pa_keys)
     np_result = pa_result.to_numpy()
-
     assert np.all(result == np_result[:1000])
     assert np.all(result == np_result[1000 + 10 :])
     assert np.all(np_result[1000 : 1000 + 10] == np_result[1000])
