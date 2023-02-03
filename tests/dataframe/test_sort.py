@@ -49,10 +49,9 @@ def test_single_float_col_sort(desc: bool, n_partitions: int):
     def _replace_nan_with_string(l):
         return ["nan" if isinstance(item, float) and math.isnan(item) else item for item in l]
 
-    expected = [1.0, 2.0, 3.0]
+    expected = [1.0, 2.0, 3.0, float("nan"), None]
     if desc:
         expected = list(reversed(expected))
-    expected = expected + [float("nan"), None]
 
     assert _replace_nan_with_string(sorted_data["A"]) == _replace_nan_with_string(expected)
 
@@ -65,9 +64,8 @@ def test_single_string_col_sort(desc: bool, n_partitions: int):
     df = df.sort("A", desc=desc)
     sorted_data = df.to_pydict()
 
-    expected = ["", "0", "01", "1"]
+    expected = ["", "0", "01", "1", None]
     if desc:
         expected = list(reversed(expected))
-    expected = expected + [None]
 
     assert sorted_data["A"] == expected

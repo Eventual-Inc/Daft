@@ -547,11 +547,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
                 yield py_scalar
         yield from self.data.to_pylist()
 
-    # def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
-    #     order = "descending" if desc else "ascending"
-    #     sort_indices = pac.array_sort_indices(self.data, order=order)
-    #     return ArrowDataBlock(data=sort_indices)
-
     @staticmethod
     def _argsort(blocks: list[DataBlock[ArrType]], descending: list[bool] | None = None) -> DataBlock[ArrowArrType]:
         arrs = [a.data for a in blocks]
@@ -560,7 +555,15 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             descending = [False for _ in range(len(blocks))]
         order = ["descending" if desc else "ascending" for desc in descending]
         table = pa.table(arrs, names=arr_names)
-        indices = pac.sort_indices(table, sort_keys=list(zip(arr_names, order)))
+
+        # HACK: This is a workaround for correct null placement in single column sorts
+        # However, this fails for a multi-column sort because null_placement needs to be at_start for descending
+        # columns and at_end for ascending columns. This is not possible with the current API.
+        if descending[0]:
+            indices = pac.sort_indices(table, sort_keys=list(zip(arr_names, order)), null_placement="at_start")
+        else:
+            indices = pac.sort_indices(table, sort_keys=list(zip(arr_names, order)), null_placement="at_end")
+
         return DataBlock.make_block(indices)
 
     @staticmethod
