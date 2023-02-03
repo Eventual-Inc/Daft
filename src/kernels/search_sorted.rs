@@ -33,7 +33,8 @@ where {
     let less = |l: &T, r: &T| l < r || (r != r && l == l);
     for key_val in keys.iter() {
         let is_last_key_lt = match (last_key, key_val) {
-            (None, _) => input_reversed,
+            (None, None) => false,
+            (None, Some(_)) => input_reversed,
             (Some(last_key), Some(key_val)) => {
                 if !input_reversed {
                     less(last_key, key_val)
@@ -41,7 +42,7 @@ where {
                     less(key_val, last_key)
                 }
             }
-            (_, None) => !input_reversed,
+            (Some(_), None) => !input_reversed,
         };
         if is_last_key_lt {
             right = array_size;
@@ -57,7 +58,8 @@ where {
             let mid_idx = left + ((right - left) >> 1);
             let mid_val = unsafe { sorted_array.value_unchecked(mid_idx) };
             let is_key_val_lt = match (key_val, sorted_array.is_valid(mid_idx)) {
-                (None, _) => input_reversed,
+                (None, false) => false,
+                (None, true) => input_reversed,
                 (Some(key_val), true) => {
                     if !input_reversed {
                         less(key_val, &mid_val)
@@ -95,9 +97,15 @@ fn search_sorted_utf_array<O: Offset>(
     for key_val in keys.iter() {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
-            (Some(last_key), Some(key_val)) => last_key.lt(key_val),
-            (None, _) => false,
-            (_, None) => true,
+            (None, Some(_)) => input_reversed,
+            (Some(last_key), Some(key_val)) => {
+                if !input_reversed {
+                    last_key.lt(key_val)
+                } else {
+                    last_key.gt(key_val)
+                }
+            }
+            (Some(_), None) => !input_reversed,
         };
         if is_last_key_lt {
             right = array_size;
@@ -111,30 +119,27 @@ fn search_sorted_utf_array<O: Offset>(
         }
         while left < right {
             let mid_idx = left + ((right - left) >> 1);
-            let corrected_idx = if input_reversed {
-                array_size - mid_idx - 1
-            } else {
-                mid_idx
-            };
-            let mid_val = unsafe { sorted_array.value_unchecked(corrected_idx) };
-            let is_key_val_lt = match (key_val, sorted_array.is_valid(corrected_idx)) {
-                (None, true) => false,
+            let mid_val = unsafe { sorted_array.value_unchecked(mid_idx) };
+            let is_key_val_lt = match (key_val, sorted_array.is_valid(mid_idx)) {
                 (None, false) => false,
-                (Some(key_val), true) => key_val.lt(mid_val),
-                (_, false) => true,
+                (None, true) => input_reversed,
+                (Some(key_val), true) => {
+                    if !input_reversed {
+                        key_val.lt(mid_val)
+                    } else {
+                        mid_val.lt(key_val)
+                    }
+                }
+                (Some(_), false) => !input_reversed,
             };
+
             if is_key_val_lt {
                 right = mid_idx;
             } else {
                 left = mid_idx + 1;
             }
         }
-        let result_idx = if input_reversed {
-            array_size - left
-        } else {
-            left
-        };
-        results.push(result_idx.try_into().unwrap());
+        results.push(left.try_into().unwrap());
         last_key = key_val;
     }
 
