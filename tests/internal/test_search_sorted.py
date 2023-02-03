@@ -61,6 +61,21 @@ def test_number_array_with_nulls() -> None:
     assert np.all(np_result_slice[1000 : 1000 + 10] == np_result_slice[1000])
 
 
+def test_number_array_with_null_needle() -> None:
+    pa_data = pa.chunked_array([[0, 1, 2, 2, 3, float("nan"), float("nan"), None, None]], type=pa.float32())
+    pa_needle = pa.chunked_array([[-1, 2, float("nan"), None]], type=pa.float32())
+    result = search_sorted(pa_data, pa_needle).to_numpy()
+    assert np.all(result == np.array([0, 4, 7, 9]))
+
+
+def test_str_array_with_empty_needle() -> None:
+    pa_data = pa.chunked_array([["a", "b", "c"]], type=pa.string())
+    pa_needle = pa.chunked_array([["", None]], type=pa.string())
+    search_sorted(pa_data, pa_needle)
+    result = search_sorted(pa_data, pa_needle).to_numpy()
+    assert np.all(result == np.array([0, 3]))
+
+
 def gen_random_str(k: int):
     return "".join(random.choices(string.ascii_uppercase + string.ascii_lowercase, k=k))
 

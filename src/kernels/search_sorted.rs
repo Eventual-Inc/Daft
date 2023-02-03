@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, iter::zip};
+use std::{any::TypeId, cmp::Ordering, iter::zip};
 
 use arrow2::{
     array::ord::build_compare,
@@ -8,6 +8,7 @@ use arrow2::{
     error::{Error, Result},
     types::{NativeType, Offset},
 };
+use num_traits::Float;
 
 use crate::ffi;
 use pyo3::exceptions::PyValueError;
@@ -18,7 +19,8 @@ fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
     sorted_array: &PrimitiveArray<T>,
     keys: &PrimitiveArray<T>,
     input_reversed: bool,
-) -> PrimitiveArray<u64> {
+) -> PrimitiveArray<u64>
+where {
     let array_size = sorted_array.len();
 
     let mut left = 0_usize;
@@ -27,11 +29,11 @@ fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
 
     let mut last_key = keys.iter().next().unwrap_or(None);
-
+    let less = |l: &T, r: &T| l < r || (r != r && l == l);
     for key_val in keys.iter() {
         let is_last_key_le = match (last_key, key_val) {
             (None, None) => false,
-            (Some(last_key), Some(key_val)) => last_key.le(key_val),
+            (Some(last_key), Some(key_val)) => less(last_key, key_val),
             (None, _) => false,
             (_, None) => true,
         };
@@ -55,9 +57,9 @@ fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
             let mid_val = unsafe { sorted_array.value_unchecked(corrected_idx) };
             let is_key_val_le = match (key_val, sorted_array.is_valid(corrected_idx)) {
                 (None, true) => false,
-                (None, false) => true,
-                (Some(key_val), true) => key_val.le(&mid_val),
-                (_, false) => true,
+                (None, false) => false,
+                (Some(key_val), true) => less(key_val, &mid_val),
+                (Some(_), false) => true,
             };
             if is_key_val_le {
                 right = mid_idx;
@@ -115,7 +117,7 @@ fn search_sorted_utf_array<O: Offset>(
             let mid_val = unsafe { sorted_array.value_unchecked(corrected_idx) };
             let is_key_val_le = match (key_val, sorted_array.is_valid(corrected_idx)) {
                 (None, true) => false,
-                (None, false) => true,
+                (None, false) => false,
                 (Some(key_val), true) => key_val.le(mid_val),
                 (_, false) => true,
             };
@@ -174,14 +176,63 @@ fn build_is_valid(array: &dyn Array) -> IsValid {
     }
 }
 
-fn build_compare_with_nulls(
-    left: &dyn Array,
-    right: &dyn Array,
+#[inline]
+fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
+    // The order here is important to generate more optimal assembly.
+    // See <https://github.com/rust-lang/rust/issues/63758> for more info.
+    use std::cmp::Ordering::*;
+    if (*l < *r) || (*r != *r && *l == *l) {
+        Less
+    } else if *l == *r {
+        Equal
+    } else {
+        Greater
+    }
+}
+
+fn build_compare_with_nan<'a>(
+    left: &'a dyn Array,
+    right: &'a dyn Array,
+) -> Result<Box<dyn Fn(usize, usize) -> Ordering + Sync + Send + 'a>> {
+    if (left.data_type() == &DataType::Float32) && (right.data_type() == &DataType::Float32) {
+        let left: &PrimitiveArray<f32> = unsafe { left.as_any().downcast_ref().unwrap_unchecked() };
+        let right: &PrimitiveArray<f32> =
+            unsafe { right.as_any().downcast_ref().unwrap_unchecked() };
+        return Ok(Box::new(move |l, r| {
+            let lv = unsafe { left.value_unchecked(l) };
+            let rv = unsafe { right.value_unchecked(r) };
+            cmp_float::<f32>(&lv, &rv)
+        }));
+    } else if (left.data_type() == &DataType::Float64) && (right.data_type() == &DataType::Float64)
+    {
+        let left: &PrimitiveArray<f64> = unsafe { left.as_any().downcast_ref().unwrap_unchecked() };
+        let right: &PrimitiveArray<f64> =
+            unsafe { right.as_any().downcast_ref().unwrap_unchecked() };
+        return Ok(Box::new(move |l, r| {
+            let lv = unsafe { left.value_unchecked(l) };
+            let rv = unsafe { right.value_unchecked(r) };
+            cmp_float::<f64>(&lv, &rv)
+        }));
+    } else {
+        return Ok(build_compare(left, right)?);
+    }
+}
+
+fn build_compare_with_nulls<'a>(
+    left: &'a dyn Array,
+    right: &'a dyn Array,
     reversed: bool,
-) -> Result<DynComparator> {
-    let comparator = build_compare(left, right)?;
+) -> Result<Box<dyn Fn(usize, usize) -> Ordering + Sync + Send + 'a>> {
+    let comparator = build_compare_with_nan(left, right)?;
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);
+
+    let comparator = match (left.data_type(), right.data_type()) {
+        (DataType::Float32, DataType::Float32) | (DataType::Float64, DataType::Float64) => {
+            Box::new(move |l, r| comparator(l, r))
+        }
+        _ => comparator,
+    };
     if reversed {
         Ok(Box::new(move |i: usize, j: usize| {
             match (left_is_valid(i), right_is_valid(j)) {
