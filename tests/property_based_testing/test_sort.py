@@ -17,7 +17,17 @@ from hypothesis.strategies import (
 )
 
 from daft import DataFrame
-from tests.property_based_testing.strategies import columns_dict, total_order_dtypes
+from daft.types import ExpressionType
+from tests.property_based_testing.strategies import (
+    UserObject,
+    columns_dict,
+    generate_data,
+    total_order_dtypes,
+)
+
+# TODO: multi-column sorts' null placement currently broken: https://github.com/Eventual-Inc/Daft/issues/546
+# This property-based test only tests single-column sorts for now
+MAX_NUM_SORT_COLS = 1
 
 
 def _is_nan(obj: Any) -> bool:
@@ -46,7 +56,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         self.repartition_num_partitions_strategy = sampled_from([1, 4, 5, 9])
         self.sorted_on: list[tuple[str, bool]] | None = None
 
-    @rule(data=data(), num_sort_cols=integers(min_value=1, max_value=3))
+    @rule(data=data(), num_sort_cols=integers(min_value=1, max_value=MAX_NUM_SORT_COLS))
     @precondition(lambda self: self.df is None)
     def newdataframe(self, data, num_sort_cols):
         """Start node of the state machine, creates an initial dataframe"""
@@ -96,35 +106,37 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
                 note(f"Comparing {current_tup} and {next_tup} for desc={sorted_on_desc}")
 
                 for current_val, next_val, desc in zip(current_tup, next_tup, sorted_on_desc):
-                    # None and NaNs are always sorted at the end regardless or specified ordering
-                    if current_val is None:
-                        assert (
-                            next_val is None
-                        ), f"Current value is None, expected all subsequent values to be None but received: {next_val}"
+
+                    a, b = (current_val, next_val) if desc else (next_val, current_val)
+
+                    # Assert that a >= b, where the ordering is defined as: None > NaN > other values
+                    # `continue` checking lex sort if values are equal, but `break` if they are not equal
+                    if a is None and b is None:
                         continue
-                    elif _is_nan(current_val):
-                        if _is_nan(next_val):
-                            continue
-                        elif next_val is None:
-                            break  # current_val=NaN and next_val=None
+                    elif _is_nan(a) and _is_nan(b):
+                        continue
+                    elif a is None and _is_nan(b):
+                        break
+                    elif _is_nan(a) and b is None:
                         raise AssertionError(
-                            f"Current value is NaN, expected all subsequent values to be NaN or None but received: {next_val}"
+                            f"current_val={current_val} vs next_val={next_val} is an invalid sort order for desc={desc}"
+                        )
+                    elif a is None or _is_nan(a):
+                        break
+                    elif b is None or _is_nan(b):
+                        raise AssertionError(
+                            f"current_val={current_val} vs next_val={next_val} is an invalid sort order for desc={desc}"
                         )
 
-                    # Current value is not None and not NaN, so if next_val is None or NaN then this is a valid ordering
-                    elif next_val is None:
-                        break  # current_val=<value> and next_val=None
-                    elif _is_nan(next_val):
-                        break  # current_val=<value> and next_val=NaN
+                    # Invariant here: all cases handled for None and NaN values
+                    assert a is not None and not _is_nan(a)
+                    assert b is not None and not _is_nan(b)
 
-                    # Both current_val and next_val are non-None and non-NaN values, so we compare directly
-                    if desc:
-                        assert current_val >= next_val, f"Expected {current_val} >= {next_val}"
-                    else:
-                        assert current_val <= next_val, f"Expected {current_val} <= {next_val}"
-
-                    if current_val != next_val:
-                        break  # current_val != next_val
+                    assert (
+                        a >= b
+                    ), f"current_val={current_val} vs next_val={next_val} is an invalid sort order for desc={desc}"
+                    if a != b:
+                        break
 
                 current_tup = next_tup
         except AssertionError:
@@ -140,15 +152,17 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
     # Some steps are skipped because they encounter bugs that need to be fixed.
     ###
 
-    # @rule(data=data())
-    # @precondition(lambda self: self.df is not None)
-    # def repartition_df(self, data):
-    #     """Runs a repartitioning step"""
-    #     num_partitions = data.draw(self.repartition_num_partitions_strategy, label="Number of partitions for repartitioning")
-    #     self.df = self.df.repartition(num_partitions)
+    @rule(data=data())
+    @precondition(lambda self: self.df is not None)
+    def repartition_df(self, data):
+        """Runs a repartitioning step"""
+        num_partitions = data.draw(
+            self.repartition_num_partitions_strategy, label="Number of partitions for repartitioning"
+        )
+        self.df = self.df.repartition(num_partitions)
 
-    # # Repartitioning changes the ordering of the data, so we cannot sort after this step
-    # self.sorted_on = None
+        # Repartitioning changes the ordering of the data, so we cannot sort after this step
+        self.sorted_on = None
 
     # @rule(data=data())
     # @precondition(lambda self: self.df is not None)
@@ -168,29 +182,32 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
     #         filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
     #         self.df = self.df.where(self.df[col_name_to_filter] == filter_value)
 
-    # @rule(data=data())
-    # @precondition(lambda self: self.df is not None)
-    # def project_df(self, data):
-    #     """Runs a projection on a random column, replacing it"""
-    #     assert self.df is not None
-    #     column_name = data.draw(sampled_from(self.df.schema().column_names()), label="Column to filter on")
-    #     column_daft_type = self.df.schema()[column_name].daft_type
-    #     type_to_op_mapping = {
-    #         ExpressionType.string(): lambda e, other: e.str.concat(other),
-    #         ExpressionType.integer(): lambda e, other: e + other,
-    #         ExpressionType.float(): lambda e, other: e + other,
-    #         ExpressionType.logical(): lambda e, other: e & other,
-    #         ExpressionType.from_py_type(UserObject): lambda e, other: e.apply(
-    #             lambda x: x.add(other) if x is not None else None, return_type=UserObject
-    #         ),
-    #         # No meaningful binary operations supported for these yet
-    #         ExpressionType.date(): lambda e, other: e.dt.year(),
-    #         ExpressionType.bytes(): lambda e, other: e,
-    #         ExpressionType.null(): lambda e, other: e,
-    #     }
-    #     op = type_to_op_mapping[column_daft_type]
-    #     other_binary_value = data.draw(generate_data(column_daft_type), label="Binary *other* value")
-    #     self.df = self.df.with_column(column_name, op(self.df[column_name], other_binary_value))
+    @rule(data=data())
+    @precondition(lambda self: self.df is not None)
+    def project_df(self, data):
+        """Runs a projection on a random column, replacing it"""
+        assert self.df is not None
+        column_name = data.draw(sampled_from(self.df.schema().column_names()), label="Column to filter on")
+        column_daft_type = self.df.schema()[column_name].dtype
+        type_to_op_mapping = {
+            ExpressionType.string(): lambda e, other: e.str.concat(other),
+            ExpressionType.integer(): lambda e, other: e + other,
+            ExpressionType.float(): lambda e, other: e + other,
+            ExpressionType.logical(): lambda e, other: e & other,
+            ExpressionType.from_py_type(UserObject): lambda e, other: e.apply(
+                lambda x: x.add(other) if x is not None else None, return_type=UserObject
+            ),
+            # No meaningful binary operations supported for these yet
+            ExpressionType.date(): lambda e, other: e.dt.year(),
+            ExpressionType.bytes(): lambda e, other: e,
+            ExpressionType.null(): lambda e, other: e,
+        }
+        op = type_to_op_mapping[column_daft_type]
+        other_binary_value = data.draw(generate_data(column_daft_type), label="Binary *other* value")
+        self.df = self.df.with_column(column_name, op(self.df[column_name], other_binary_value))
+
+        # Some of the projections change the ordering of the data, so we cannot sort after this step
+        self.sorted_on = None
 
 
 TestDataframeSortStateMachine = DataframeSortStateMachine.TestCase

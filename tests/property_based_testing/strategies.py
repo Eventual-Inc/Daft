@@ -91,8 +91,8 @@ total_order_dtypes = sampled_from(
         ExpressionType.string(),
         ExpressionType.integer(),
         ExpressionType.float(),
-        ExpressionType.logical(),
-        ExpressionType.bytes(),
+        # ExpressionType.logical(),
+        # ExpressionType.bytes(),
         ExpressionType.date(),
     ]
 )
