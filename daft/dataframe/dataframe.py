@@ -802,6 +802,29 @@ class DataFrame:
         local_limit = logical_plan.LocalLimit(self._plan, num=num)
         global_limit = logical_plan.GlobalLimit(local_limit, num=num)
         return DataFrame(global_limit)
+    
+    @DataframePublicAPI
+    def count_rows(self) -> int:
+        """Performs a global count to get number of rows.
+
+        Returns:
+            int: Aggregated count of rows. Should be a Integer.
+        """
+        
+        local_count_op = logical_plan.LocalCount(self._plan)
+        single_part = logical_plan.Coalesce(local_count_op, 1)
+        local_agg = logical_plan.LocalAggregate(single_part, [(Expression._sum(col('count')), 'sum')])
+        
+
+        context = get_context()
+        row_count = context.runner().run(local_agg)
+
+        # DataFrame(local_agg).collect()
+
+        num_rows = row_count.value.get_partition(0).to_pydict()['count'].to_pylist()[0]
+
+        return num_rows
+
 
     @DataframePublicAPI
     def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
@@ -1187,6 +1210,21 @@ class DataFrame:
             )
 
         return self
+
+    def __len__(self):
+        """Returns the length/number of rows.
+        If results have not computed yet, raises an error.
+
+        Returns:
+            int: count of rows.
+
+        """
+
+        if self._result is not None:
+            return len(self._result)
+
+        message = "No data loaded. Call `df.collect()` to materialize the Dataframe first."
+        raise Exception(message)
 
     @DataframePublicAPI
     def to_pandas(self) -> pandas.DataFrame:

@@ -230,6 +230,27 @@ class Project(Instruction):
     def _project(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         return [input.eval_expression_list(self.projection)]
+    
+
+@dataclass(frozen=True)
+class LocalCount(Instruction):
+    partition_id: int
+    logplan: logical_plan.LocalCount
+
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._count(inputs)
+
+    def _count(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+
+        partition = LocalLogicalPartitionOpRunner()._handle_local_count(
+            inputs={self.logplan._children()[0].id(): input},
+            count=self.logplan,
+            partition_id=self.partition_id,
+        )
+
+        return [partition]
+
 
 
 @dataclass(frozen=True)
