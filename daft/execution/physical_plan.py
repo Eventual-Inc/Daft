@@ -21,9 +21,9 @@ from daft.execution import execution_step
 from daft.execution.execution_step import (
     ExecutionStep,
     ExecutionStepBuilder,
-    ExecutionStepSingle,
     Instruction,
     ReduceInstruction,
+    SingleOutputExecutionStep,
 )
 from daft.logical import logical_plan
 
@@ -105,8 +105,8 @@ def join(
 
     # Materialize the steps from the left and right sources to get partitions.
     # As the materializations complete, emit new steps to join each left and right partition.
-    left_requests: deque[ExecutionStepSingle[PartitionT]] = deque()
-    right_requests: deque[ExecutionStepSingle[PartitionT]] = deque()
+    left_requests: deque[SingleOutputExecutionStep[PartitionT]] = deque()
+    right_requests: deque[SingleOutputExecutionStep[PartitionT]] = deque()
 
     while True:
         # Emit new join steps if we have left and right partitions ready.
@@ -185,7 +185,7 @@ def global_limit(
     assert remaining_rows >= 0, f"Invalid value for limit: {remaining_rows}"
     remaining_partitions = global_limit.num_partitions()
 
-    materializations: deque[ExecutionStepSingle[PartitionT]] = deque()
+    materializations: deque[SingleOutputExecutionStep[PartitionT]] = deque()
 
     # To dynamically schedule the global limit, we need to apply an appropriate limit to each child partition.
     # We don't know their exact sizes since they are pending execution, so we will have to iteratively execute them,
@@ -271,7 +271,7 @@ def coalesce(
     # For each output partition, the number of input partitions to merge in.
     merges_per_result = deque([stop - start for start, stop in zip(starts, stops)])
 
-    materializations: deque[ExecutionStepSingle[PartitionT]] = deque()
+    materializations: deque[SingleOutputExecutionStep[PartitionT]] = deque()
 
     while True:
 
@@ -357,7 +357,7 @@ def sort(
     """Sort the result of `child_plan` according to `sort_info`."""
 
     # First, materialize the child plan.
-    source_materializations: deque[ExecutionStepSingle[PartitionT]] = deque()
+    source_materializations: deque[SingleOutputExecutionStep[PartitionT]] = deque()
     for step in child_plan:
         if isinstance(step, ExecutionStepBuilder):
             step = step.build_materialization_request_single()
@@ -365,7 +365,7 @@ def sort(
         yield step
 
     # Sample all partitions (to be used for calculating sort boundaries).
-    sample_materializations: deque[ExecutionStepSingle[PartitionT]] = deque()
+    sample_materializations: deque[SingleOutputExecutionStep[PartitionT]] = deque()
     for source in source_materializations:
         while source.result is None:
             yield None

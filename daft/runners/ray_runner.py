@@ -19,12 +19,12 @@ from daft.execution import physical_plan_factory
 from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.execution_step import (
     ExecutionStep,
-    ExecutionStepMulti,
-    ExecutionStepSingle,
     FanoutInstruction,
     Instruction,
     MaterializedResult,
+    MultiOutputExecutionStep,
     ReduceInstruction,
+    SingleOutputExecutionStep,
 )
 from daft.execution.logical_op_runners import (
     LogicalGlobalOpRunner,
@@ -486,7 +486,7 @@ def remote_run_plan(
 
                         # If this task is a no-op, just run it locally immediately.
                         while next_step is not None and len(next_step.instructions) == 0:
-                            assert isinstance(next_step, ExecutionStepSingle)
+                            assert isinstance(next_step, SingleOutputExecutionStep)
                             [partition] = next_step.inputs
                             next_step.result = RayMaterializedResult(partition)
                             next_step = next(phys_plan)
@@ -523,9 +523,9 @@ def remote_run_plan(
 
                 # Mark the entire task associated with the result as done.
                 task = inflight_tasks[task_id]
-                if isinstance(task, ExecutionStepSingle):
+                if isinstance(task, SingleOutputExecutionStep):
                     del inflight_ref_to_task[ready]
-                elif isinstance(task, ExecutionStepMulti):
+                elif isinstance(task, MultiOutputExecutionStep):
                     assert task.results is not None
                     for result in task.results:
                         del inflight_ref_to_task[result.partition()]
@@ -553,9 +553,9 @@ def _build_partitions(task: ExecutionStep[ray.ObjectRef]) -> list[ray.ObjectRef]
     if task.num_results == 1:
         partitions = [partitions]
 
-    if isinstance(task, ExecutionStepMulti):
+    if isinstance(task, MultiOutputExecutionStep):
         task.results = [RayMaterializedResult(partition) for partition in partitions]
-    elif isinstance(task, ExecutionStepSingle):
+    elif isinstance(task, SingleOutputExecutionStep):
         [partition] = partitions
         task.result = RayMaterializedResult(partition)
     else:

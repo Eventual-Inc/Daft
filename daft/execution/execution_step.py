@@ -84,25 +84,25 @@ class ExecutionStepBuilder(Generic[PartitionT]):
         self.resource_request = ResourceRequest.max_resources([self.resource_request, resource_request])
         return self
 
-    def build_materialization_request_single(self) -> ExecutionStepSingle[PartitionT]:
-        """Create an ExecutionStepSingle from this ExecutionStepBuilder.
+    def build_materialization_request_single(self) -> SingleOutputExecutionStep[PartitionT]:
+        """Create an SingleOutputExecutionStep from this ExecutionStepBuilder.
 
         Returns a "frozen" version of this ExecutionStep that cannot have instructions added.
         """
-        return ExecutionStepSingle[PartitionT](
+        return SingleOutputExecutionStep[PartitionT](
             inputs=self.inputs,
             instructions=self.instructions,
             num_results=1,
             resource_request=self.resource_request,
         )
 
-    def build_materialization_request_multi(self, num_results: int) -> ExecutionStepMulti[PartitionT]:
-        """Create an ExecutionStepMulti from this ExecutionStepBuilder.
+    def build_materialization_request_multi(self, num_results: int) -> MultiOutputExecutionStep[PartitionT]:
+        """Create an MultiOutputExecutionStep from this ExecutionStepBuilder.
 
         Same as as_materization_request, except the output of this ExecutionStep is a list of partitions.
         This is intended for execution steps that do a fanout.
         """
-        return ExecutionStepMulti[PartitionT](
+        return MultiOutputExecutionStep[PartitionT](
             inputs=self.inputs,
             instructions=self.instructions,
             num_results=num_results,
@@ -119,7 +119,7 @@ class ExecutionStepBuilder(Generic[PartitionT]):
 
 
 @dataclass
-class ExecutionStepSingle(ExecutionStep[PartitionT]):
+class SingleOutputExecutionStep(ExecutionStep[PartitionT]):
     """An ExecutionStep that is ready to run. More instructions cannot be added.
 
     result: When available, the partition created from run the ExecutionStep.
@@ -129,7 +129,7 @@ class ExecutionStepSingle(ExecutionStep[PartitionT]):
 
 
 @dataclass
-class ExecutionStepMulti(ExecutionStep[PartitionT]):
+class MultiOutputExecutionStep(ExecutionStep[PartitionT]):
     """An ExecutionStep that is ready to run. More instructions cannot be added.
     This ExecutionStep will return a list of any number of partitions.
 

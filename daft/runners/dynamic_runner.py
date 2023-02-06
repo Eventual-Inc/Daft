@@ -8,9 +8,9 @@ import psutil
 from daft.execution import physical_plan_factory
 from daft.execution.execution_step import (
     ExecutionStep,
-    ExecutionStepMulti,
-    ExecutionStepSingle,
     MaterializedResult,
+    MultiOutputExecutionStep,
+    SingleOutputExecutionStep,
 )
 from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
@@ -117,9 +117,9 @@ class DynamicRunner(Runner):
         partitions = partspec.inputs
         for instruction in partspec.instructions:
             partitions = instruction.run(partitions)
-        if isinstance(partspec, ExecutionStepMulti):
+        if isinstance(partspec, MultiOutputExecutionStep):
             partspec.results = [PyMaterializedResult(partition) for partition in partitions]
-        elif isinstance(partspec, ExecutionStepSingle):
+        elif isinstance(partspec, SingleOutputExecutionStep):
             [partition] = partitions
             partspec.result = PyMaterializedResult(partition)
         else:
