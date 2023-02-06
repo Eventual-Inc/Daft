@@ -35,7 +35,12 @@ all = ["daft[aws, ray]"]
 aws = ["s3fs"]
 experimental = ["daft[serving, iceberg]"]
 iceberg = ["icebridge"]
-ray = ["ray[data, default]>=1.10.0"]  # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
+ray = [
+  # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
+  "ray[data, default]>=1.10.0",
+  # Ray has a bug with grpcio 1.52.0: https://github.com/ray-project/ray/issues/32246
+  "grpcio<=1.51.1"
+]
 serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
 
 [project.urls]
