@@ -4,6 +4,9 @@ docker
 
 # For aws and serving
 fastapi
+
+# Pinned for Ray
+grpcio==1.51.1
 hypothesis
 icebridge
 
