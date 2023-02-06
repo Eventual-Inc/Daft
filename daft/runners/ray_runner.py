@@ -576,7 +576,7 @@ class DynamicRayRunner(RayRunner):
         batch_task_dispatch: bool | None,
     ) -> None:
         super().__init__(address=address)
-        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 1
+        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 4
         self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 10000
         self.batch_task_dispatch = batch_task_dispatch if batch_task_dispatch is not None else False
 
