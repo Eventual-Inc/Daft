@@ -1064,6 +1064,8 @@ class ExpressionList(Iterable[Expression]):
             if name in seen:
                 if rename_dup is not None:
                     name = f"{rename_dup}{name}"
+                    while name in seen:
+                        name = f"{rename_dup}{name}"
                     e = cast(Expression, e.alias(name))
                 elif other_override:
                     # Allow this expression in `other` to override the existing expressions
