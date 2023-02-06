@@ -99,7 +99,7 @@ class ExecutionStepBuilder(Generic[PartitionT]):
     def build_materialization_request_multi(self, num_results: int) -> MultiOutputExecutionStep[PartitionT]:
         """Create an MultiOutputExecutionStep from this ExecutionStepBuilder.
 
-        Same as as_materization_request, except the output of this ExecutionStep is a list of partitions.
+        Same as build_materialization_request_single, except the output of this ExecutionStep is a list of partitions.
         This is intended for execution steps that do a fanout.
         """
         return MultiOutputExecutionStep[PartitionT](
