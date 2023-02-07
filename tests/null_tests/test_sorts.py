@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pyarrow as pa
 import pytest
 
 from daft import DataFrame
@@ -69,11 +68,11 @@ def test_sort_with_nulls_multikey(repartition_nparts):
 def test_sort_with_all_nulls(repartition_nparts):
     daft_df = DataFrame.from_pydict(
         {
-            "id": pa.array([None, None, None], type=pa.int64()),
+            "id": [None, None, None],
             "values": ["c1", None, "a1"],
         }
     ).repartition(repartition_nparts)
-    daft_df = daft_df.sort(daft_df["id"])
+    daft_df = daft_df.with_column("id", daft_df["id"].cast(int)).sort(daft_df["id"])
     daft_df.collect()
 
     resultset = daft_df.to_pydict()
@@ -100,7 +99,7 @@ def test_sort_with_empty(repartition_nparts):
 def test_sort_with_all_null_type_column():
     daft_df = DataFrame.from_pydict(
         {
-            "id": pa.array([None, None, None], pa.null()),
+            "id": [None, None, None],
             "values": ["a1", "b1", "c1"],
         }
     )

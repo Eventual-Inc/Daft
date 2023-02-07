@@ -5,11 +5,22 @@ import json
 import tempfile
 import uuid
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
 
 from daft.dataframe import DataFrame
+from daft.types import ExpressionType
+
+
+class MyObj:
+    pass
+
+
+class MyObj2:
+    pass
+
 
 COL_NAMES = [
     "sepal_length",
@@ -88,6 +99,38 @@ def test_create_dataframe_pydict_ragged_col_lens() -> None:
 def test_error_thrown_create_dataframe_constructor(data) -> None:
     with pytest.raises(ValueError):
         DataFrame(data)
+
+
+def test_load_pydict_types():
+    data = {
+        "arrow_int": [None, 2, 3],
+        "arrow_float": [None, 1.0, 3.0],
+        "arrow_str": [None, "b", "c"],
+        "arrow_struct": [None, {"foo": 1}, {"bar": 1}],
+        "arrow_nulls": [None, None, None],
+        "py_objs": [None, MyObj(), MyObj()],
+        "heterogenous_py_objs": [None, MyObj(), MyObj2()],
+        "numpy_arrays": [np.array([1]), np.array([2]), np.array([3])],
+    }
+    daft_df = DataFrame.from_pydict(data)
+
+    daft_df.collect()
+    collected_data = daft_df.to_pydict()
+
+    expected = {
+        "arrow_int": ExpressionType.integer(),
+        "arrow_float": ExpressionType.float(),
+        "arrow_str": ExpressionType.string(),
+        "arrow_struct": ExpressionType.from_py_type(dict),
+        "arrow_nulls": ExpressionType.null(),
+        "py_objs": ExpressionType.from_py_type(MyObj),
+        "heterogenous_py_objs": ExpressionType.python_object(),
+        "numpy_arrays": ExpressionType.from_py_type(np.ndarray),
+    }
+
+    assert collected_data.keys() == data.keys() == expected.keys()
+    for colname, expected_schema_type in expected.items():
+        assert daft_df.schema()[colname].dtype == expected_schema_type
 
 
 ###

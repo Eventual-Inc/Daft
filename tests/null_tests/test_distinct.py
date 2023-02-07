@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pyarrow as pa
 import pytest
 
 from daft import DataFrame
@@ -30,11 +29,11 @@ def test_distinct_with_nulls(repartition_nparts):
 def test_distinct_with_all_nulls(repartition_nparts):
     daft_df = DataFrame.from_pydict(
         {
-            "id": pa.array([None, None, None, None], type=pa.int64()),
+            "id": [None, None, None, None],
             "values": ["a1", "b1", "b1", "c1"],
         }
     ).repartition(repartition_nparts)
-    daft_df = daft_df.distinct()
+    daft_df = daft_df.with_column("id", daft_df["id"].cast(int)).distinct()
 
     expected = {
         "id": [None, None, None],
