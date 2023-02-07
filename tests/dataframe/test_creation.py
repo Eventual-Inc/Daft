@@ -105,6 +105,7 @@ def test_load_pydict_types():
     data = {
         "arrow_int": [None, 2, 3],
         "arrow_float": [None, 1.0, 3.0],
+        "arrow_mixed_numbers": [None, 1.0, 3],
         "arrow_str": [None, "b", "c"],
         "arrow_struct": [None, {"foo": 1}, {"bar": 1}],
         "arrow_nulls": [None, None, None],
@@ -120,6 +121,7 @@ def test_load_pydict_types():
     expected = {
         "arrow_int": ExpressionType.integer(),
         "arrow_float": ExpressionType.float(),
+        "arrow_mixed_numbers": ExpressionType.float(),
         "arrow_str": ExpressionType.string(),
         "arrow_struct": ExpressionType.from_py_type(dict),
         "arrow_nulls": ExpressionType.null(),

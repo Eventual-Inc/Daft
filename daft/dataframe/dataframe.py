@@ -282,6 +282,8 @@ class DataFrame:
                 column_types[header] = ExpressionType.null()
             elif len(found_types) == 1:
                 column_types[header] = ExpressionType.from_py_type(found_types.pop())
+            elif found_types == {int, float}:
+                column_types[header] = ExpressionType.float()
             else:
                 column_types[header] = ExpressionType.python_object()
 
