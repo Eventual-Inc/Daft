@@ -2,7 +2,7 @@ use num_traits::{NumCast, ToPrimitive};
 
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BooleanArray, DaftNumericType},
+    datatypes::{BooleanArray, DaftNumericType, Utf8Array},
 };
 
 use super::DaftCompare;
@@ -283,6 +283,502 @@ where
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
         self.compare_to_scalar(rhs, comparison::gt_eq_scalar)
+    }
+}
+
+impl DaftCompare<&BooleanArray> for BooleanArray {
+    type Output = BooleanArray;
+
+    fn equal(&self, rhs: &BooleanArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::eq(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.equal(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.equal(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+
+    fn not_equal(&self, rhs: &BooleanArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::neq(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.not_equal(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.not_equal(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+
+    fn lt(&self, rhs: &BooleanArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::lt(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.lt(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.gt(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+
+    fn lte(&self, rhs: &BooleanArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::lt_eq(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.lte(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.gte(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+
+    fn gt(&self, rhs: &BooleanArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::gt(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.gt(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.lt(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+
+    fn gte(&self, rhs: &BooleanArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::gt_eq(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.gte(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.lte(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+}
+
+impl DaftCompare<bool> for BooleanArray {
+    type Output = BooleanArray;
+
+    fn equal(&self, rhs: bool) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::boolean::eq_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
+    }
+
+    fn not_equal(&self, rhs: bool) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::boolean::neq_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
+    }
+
+    fn lt(&self, rhs: bool) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::boolean::lt_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
+    }
+
+    fn lte(&self, rhs: bool) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::boolean::lt_eq_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
+    }
+
+    fn gt(&self, rhs: bool) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::boolean::gt_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
+    }
+
+    fn gte(&self, rhs: bool) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::boolean::gt_eq_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
+    }
+}
+
+impl DaftCompare<&Utf8Array> for Utf8Array {
+    type Output = BooleanArray;
+
+    fn equal(&self, rhs: &Utf8Array) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::eq(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.equal(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.equal(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+
+    fn not_equal(&self, rhs: &Utf8Array) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::neq(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.not_equal(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.not_equal(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+
+    fn lt(&self, rhs: &Utf8Array) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::lt(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.lt(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.gt(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+
+    fn lte(&self, rhs: &Utf8Array) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::lt_eq(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.lte(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.gte(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+
+    fn gt(&self, rhs: &Utf8Array) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::gt(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.gt(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.lt(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+
+    fn gte(&self, rhs: &Utf8Array) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let validity =
+                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                BooleanArray::from((
+                    self.name(),
+                    comparison::gt_eq(self.downcast(), rhs.downcast()).with_validity(validity),
+                ))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.gte(value)
+                } else {
+                    BooleanArray::full_null(self.name(), l_size)
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.lte(value)
+                } else {
+                    BooleanArray::full_null(self.name(), r_size)
+                }
+            }
+            (l, r) => panic!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ),
+        }
+    }
+}
+
+impl DaftCompare<&str> for Utf8Array {
+    type Output = BooleanArray;
+
+    fn equal(&self, rhs: &str) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::utf8::eq_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
+    }
+
+    fn not_equal(&self, rhs: &str) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::utf8::neq_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
+    }
+
+    fn lt(&self, rhs: &str) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::utf8::lt_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
+    }
+
+    fn lte(&self, rhs: &str) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::utf8::lt_eq_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
+    }
+
+    fn gt(&self, rhs: &str) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::utf8::gt_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
+    }
+
+    fn gte(&self, rhs: &str) -> Self::Output {
+        let validity = self.downcast().validity().cloned();
+        let arrow_result =
+            comparison::utf8::gt_eq_scalar(self.downcast(), rhs).with_validity(validity);
+
+        BooleanArray::from((self.name(), arrow_result))
     }
 }
 
