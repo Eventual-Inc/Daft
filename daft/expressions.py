@@ -32,7 +32,6 @@ import pyarrow as pa
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionOperator, OperatorEnum
 from daft.internal.treenode import TreeNode
-from daft.resource_request import ResourceRequest
 from daft.runners.blocks import (
     ArrowDataBlock,
     DataBlock,
@@ -163,6 +162,7 @@ class Expression(TreeNode["Expression"]):
         return input
 
     def _input_mapping(self) -> str | None:
+        """If the leaf Expression on this Expression is not modified, return the name of the leaf Expression. Otherwise, return None."""
         return None
 
     def __bool__(self) -> bool:
@@ -192,16 +192,6 @@ class Expression(TreeNode["Expression"]):
     ) -> Expression:
         other_expr = self._to_expression(other)
         return other_expr._binary_op(operator, self)
-
-    def _self_resource_request(self) -> ResourceRequest:
-        """Returns the ResourceRequest required by this specific Expression (not including its children)"""
-        return ResourceRequest.default()
-
-    def resource_request(self) -> ResourceRequest:
-        """Returns the maximum ResourceRequest that is required by this Expression and all its children"""
-        return ResourceRequest.max_resources(
-            [e.resource_request() for e in self._children()] + [self._self_resource_request()]
-        )
 
     @abstractmethod
     def resolve_type(self, schema: Schema) -> ExpressionType:
@@ -658,19 +648,12 @@ class UdfExpression(Expression):
         func_ret_type: ExpressionType,
         func_args: tuple,
         func_kwargs: dict[str, Any],
-        resource_request: ResourceRequest | None = None,
     ) -> None:
         super().__init__()
         self._func = func
         self._func_ret_type = func_ret_type
         self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         self._kwargs_ids = {kw: self._register_child(self._to_expression(arg)) for kw, arg in func_kwargs.items()}
-        self._resource_request = resource_request
-
-    def _self_resource_request(self) -> ResourceRequest:
-        if self._resource_request is not None:
-            return self._resource_request
-        return ResourceRequest.default()
 
     @property
     def _args(self) -> tuple[Expression, ...]:
@@ -750,7 +733,7 @@ class AliasExpression(Expression):
         return self._expr.resolve_type(schema)
 
     def _input_mapping(self) -> str | None:
-        return self._children()[0].name()
+        return self._children()[0]._input_mapping()
 
     @property
     def _expr(self) -> Expression:
@@ -1081,6 +1064,8 @@ class ExpressionList(Iterable[Expression]):
             if name in seen:
                 if rename_dup is not None:
                     name = f"{rename_dup}{name}"
+                    while name in seen:
+                        name = f"{rename_dup}{name}"
                     e = cast(Expression, e.alias(name))
                 elif other_override:
                     # Allow this expression in `other` to override the existing expressions
@@ -1103,16 +1088,13 @@ class ExpressionList(Iterable[Expression]):
         return id_set
 
     def input_mapping(self) -> dict[str, str]:
+        """Returns a map of {output_name: input_name} for all expressions that are just no-ops/aliases of an existing input"""
         result = {}
         for e in self.exprs:
             input_map = e._input_mapping()
             if input_map is not None:
                 result[e.name()] = input_map
         return result
-
-    def resource_request(self) -> ResourceRequest:
-        """Returns the requested resources for the execution of all expressions in this list"""
-        return ResourceRequest.max_resources([e.resource_request() for e in self.exprs])
 
     def to_column_expressions(self) -> ExpressionList:
         return ExpressionList([e.to_column_expression() for e in self.exprs])

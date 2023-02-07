@@ -16,7 +16,8 @@ dependencies = [
   "psutil",
   "typing-extensions >= 4.0.0; python_version < '3.8'",
   "pickle5 >= 0.0.12; python_version < '3.8'",
-  "polars[timezone]"
+  # Breaking change in list aggregations in 0.16.1: https://github.com/pola-rs/polars/issues/6584
+  "polars[timezone] < 0.16.0"
 ]
 description = "A Distributed DataFrame library for large scale complex data processing."
 dynamic = ["version"]
@@ -34,7 +35,12 @@ all = ["daft[aws, ray]"]
 aws = ["s3fs"]
 experimental = ["daft[serving, iceberg]"]
 iceberg = ["icebridge"]
-ray = ["ray[data, default]>=1.10.0"]  # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
+ray = [
+  # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
+  "ray[data, default]>=1.10.0",
+  # Ray has a bug with grpcio 1.52.0: https://github.com/ray-project/ray/issues/32246
+  "grpcio<1.52.0"
+]
 serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
 
 [project.urls]
@@ -74,7 +80,7 @@ module = 'daft.*'
 warn_return_any = false
 
 [tool.pytest.ini_options]
-addopts = "--benchmark-skip"
+addopts = "--benchmark-skip -m 'not hypothesis'"
 minversion = "6.0"
 testpaths = [
   "tests"

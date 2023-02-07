@@ -36,4 +36,4 @@ git-fetch-with-cli = true
 [package]
 edition = "2021"
 name = "daft"
-version = "0.0.21"
+version = "0.0.22"

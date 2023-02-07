@@ -547,11 +547,6 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
                 yield py_scalar
         yield from self.data.to_pylist()
 
-    # def _argsort(self, desc: bool = False) -> DataBlock[ArrowArrType]:
-    #     order = "descending" if desc else "ascending"
-    #     sort_indices = pac.array_sort_indices(self.data, order=order)
-    #     return ArrowDataBlock(data=sort_indices)
-
     @staticmethod
     def _argsort(blocks: list[DataBlock[ArrType]], descending: list[bool] | None = None) -> DataBlock[ArrowArrType]:
         arrs = [a.data for a in blocks]
@@ -560,7 +555,17 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             descending = [False for _ in range(len(blocks))]
         order = ["descending" if desc else "ascending" for desc in descending]
         table = pa.table(arrs, names=arr_names)
-        indices = pac.sort_indices(table, sort_keys=list(zip(arr_names, order)))
+
+        # HACK: This is a workaround for correct null placement in single column sorts
+        # However, this fails for a multi-column sort because we need different null placements for each column.
+        # This is not possible with the current API which assigns the same null_placement to all columns.
+        #
+        # See: https://github.com/Eventual-Inc/Daft/issues/546
+        if descending[0]:
+            indices = pac.sort_indices(table, sort_keys=list(zip(arr_names, order)), null_placement="at_start")
+        else:
+            indices = pac.sort_indices(table, sort_keys=list(zip(arr_names, order)), null_placement="at_end")
+
         return DataBlock.make_block(indices)
 
     @staticmethod
@@ -660,10 +665,16 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         if op == "sum":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
+            # Sum of an all-null array is NULL, as per PostgreSQL
+            elif pac.count(self.data).as_py() == 0:
+                return ArrowDataBlock(data=pa.chunked_array([[None]], type=self.data.type))
             return ArrowDataBlock(data=pa.chunked_array([[pac.sum(self.data, min_count=0).as_py()]]))
         elif op == "mean":
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=pa.float64()))
+            # Mean of an all-null array is NULL, as per PostgreSQL
+            elif pac.count(self.data).as_py() == 0:
+                return ArrowDataBlock(data=pa.chunked_array([[None]], type=pa.float64()))
             return ArrowDataBlock(data=pa.chunked_array([[pac.mean(self.data).as_py()]], type=pa.float64()))
         elif op == "list":
             if len(self) == 0:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import itertools
 import sys
-from abc import ABC
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
@@ -11,11 +10,11 @@ if sys.version_info < (3, 8):
 else:
     from typing import Protocol
 
-
 from daft.expressions import Expression
 from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import ExpressionList
+from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionMetadata, vPartition
 from daft.runners.pyrunner import LocalLogicalPartitionOpRunner
 from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, SortOp
@@ -25,78 +24,18 @@ ID_GEN = itertools.count()
 
 
 @dataclass
-class ExecutionStep(Generic[PartitionT], ABC):
+class ExecutionStep(Generic[PartitionT]):
     """An ExecutionStep describes a task that will run to create a partition.
 
     The partition will be created by running a function pipeline (`instructions`) over some input partition(s) (`inputs`).
     Each function takes an entire set of inputs and produces a new set of partitions to pass into the next function.
 
-    This class should not be instantiated directly. See subclasses for usage:
-        - OpenExecutionQueue: to create a new ExecutionStep, and append functions to its pipeline.
-        - MaterializeRequest: to "freeze" an ExecutionStep and mark it for execution.
+    This class should not be instantiated directly. To create the appropriate ExecutionStep for your use-case, use the ExecutionStepBuilder.
     """
 
     inputs: list[PartitionT]
     instructions: list[Instruction]
-
-    def __str__(self) -> str:
-        return (
-            f"{self.__class__.__name__}\n"
-            f"  Inputs: {self.inputs}\n"
-            f"  Instructions: {[i.__class__.__name__ for i in self.instructions]}"
-        )
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-
-class OpenExecutionQueue(ExecutionStep[PartitionT]):
-    """This is an ExecutionStep that can still have functions added to its function pipeline."""
-
-    def __copy__(self) -> OpenExecutionQueue[PartitionT]:
-        return OpenExecutionQueue[PartitionT](
-            inputs=self.inputs.copy(),
-            instructions=self.instructions.copy(),
-        )
-
-    def add_instruction(self, instruction: Instruction) -> OpenExecutionQueue[PartitionT]:
-        """Append an instruction to this ExecutionStep's pipeline."""
-        self.instructions.append(instruction)
-        return self
-
-    def as_materialization_request(self) -> MaterializationRequest[PartitionT]:
-        """Create an MaterializationRequest from this ExecutionStep.
-
-        Returns a "frozen" version of this ExecutionStep that cannot have instructions added.
-        """
-        return MaterializationRequest[PartitionT](
-            inputs=self.inputs,
-            instructions=self.instructions,
-            num_results=1,
-        )
-
-    def as_materialization_request_multi(self, num_results: int) -> MaterializationRequestMulti[PartitionT]:
-        """Create an MaterializationRequestMulti from this ExecutionStep.
-
-        Same as as_materization_request, except the output of this ExecutionStep is a list of partitions.
-        This is intended for execution steps that do a fanout.
-        """
-        return MaterializationRequestMulti[PartitionT](
-            inputs=self.inputs,
-            instructions=self.instructions,
-            num_results=num_results,
-        )
-
-
-@dataclass
-class MaterializationRequestBase(ExecutionStep[PartitionT]):
-    """Common helpers for MaterializationRequest and MaterializationRequestMulti.
-    See those classes for more details.
-
-    num_results: The number of partitions that will be returned.
-    _id: A unique identifier for this ExecutionStep.
-    """
-
+    resource_request: ResourceRequest | None
     num_results: int
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
@@ -107,32 +46,100 @@ class MaterializationRequestBase(ExecutionStep[PartitionT]):
         return (
             f"{self.id()}\n"
             f"  Inputs: {self.inputs}\n"
+            f"  Resource Request: {self.resource_request}\n"
+            f"  Instructions: {[i.__class__.__name__ for i in self.instructions]}"
+        )
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
+class ExecutionStepBuilder(Generic[PartitionT]):
+    """Builds an ExecutionStep by adding instructions to its pipeline."""
+
+    def __init__(
+        self,
+        inputs: list[PartitionT],
+        instructions: list[Instruction] | None = None,
+        resource_request: ResourceRequest | None = None,
+    ) -> None:
+        self.inputs = inputs
+        self.instructions: list[Instruction] = [] if instructions is None else instructions
+        self.resource_request: ResourceRequest | None = resource_request
+
+    def __copy__(self) -> ExecutionStepBuilder[PartitionT]:
+        return ExecutionStepBuilder[PartitionT](
+            inputs=self.inputs.copy(),
+            instructions=self.instructions.copy(),
+            resource_request=self.resource_request,  # ResourceRequest is immutable (dataclass with frozen=True)
+        )
+
+    def add_instruction(
+        self,
+        instruction: Instruction,
+        resource_request: ResourceRequest | None,
+    ) -> ExecutionStepBuilder[PartitionT]:
+        """Append an instruction to this ExecutionStep's pipeline."""
+        self.instructions.append(instruction)
+        self.resource_request = ResourceRequest.max_resources([self.resource_request, resource_request])
+        return self
+
+    def build_materialization_request_single(self) -> SingleOutputExecutionStep[PartitionT]:
+        """Create an SingleOutputExecutionStep from this ExecutionStepBuilder.
+
+        Returns a "frozen" version of this ExecutionStep that cannot have instructions added.
+        """
+        return SingleOutputExecutionStep[PartitionT](
+            inputs=self.inputs,
+            instructions=self.instructions,
+            num_results=1,
+            resource_request=self.resource_request,
+        )
+
+    def build_materialization_request_multi(self, num_results: int) -> MultiOutputExecutionStep[PartitionT]:
+        """Create an MultiOutputExecutionStep from this ExecutionStepBuilder.
+
+        Same as build_materialization_request_single, except the output of this ExecutionStep is a list of partitions.
+        This is intended for execution steps that do a fanout.
+        """
+        return MultiOutputExecutionStep[PartitionT](
+            inputs=self.inputs,
+            instructions=self.instructions,
+            num_results=num_results,
+            resource_request=self.resource_request,
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"ExecutionStepBuilder\n"
+            f"  Inputs: {self.inputs}\n"
+            f"  Resource Request: {self.resource_request}\n"
             f"  Instructions: {[i.__class__.__name__ for i in self.instructions]}"
         )
 
 
 @dataclass
-class MaterializationRequest(MaterializationRequestBase[PartitionT]):
+class SingleOutputExecutionStep(ExecutionStep[PartitionT]):
     """An ExecutionStep that is ready to run. More instructions cannot be added.
 
     result: When available, the partition created from run the ExecutionStep.
     """
 
-    result: None | MaterializationResult[PartitionT] = None
+    result: None | MaterializedResult[PartitionT] = None
 
 
 @dataclass
-class MaterializationRequestMulti(MaterializationRequestBase[PartitionT]):
+class MultiOutputExecutionStep(ExecutionStep[PartitionT]):
     """An ExecutionStep that is ready to run. More instructions cannot be added.
     This ExecutionStep will return a list of any number of partitions.
 
     results: When available, the partitions created from run the ExecutionStep.
     """
 
-    results: None | list[MaterializationResult[PartitionT]] = None
+    results: None | list[MaterializedResult[PartitionT]] = None
 
 
-class MaterializationResult(Protocol[PartitionT]):
+class MaterializedResult(Protocol[PartitionT]):
     """A protocol for accessing the result partition of a ExecutionStep.
 
     Different Runners can fill in their own implementation here.
@@ -318,7 +325,7 @@ class Join(Instruction):
             right,
             left_on=self.logplan._left_on,
             right_on=self.logplan._right_on,
-            output_schema=self.logplan.schema(),
+            output_projection=self.logplan._output_projection,
             how=self.logplan._how.value,
         )
         return [result]

@@ -106,8 +106,7 @@ class LogicalPartitionOpRunner:
         assert (
             scan._filepaths_column_name in data
         ), f"TabularFilesScan should be ran on vPartitions with '{scan._filepaths_column_name}' column"
-        # HACK: Ignore type here because this is a PyArrow array
-        filepaths = data[scan._filepaths_column_name].to_pylist()  # type: ignore
+        filepaths = data[scan._filepaths_column_name]
 
         # Common options for reading vPartition
         schema = scan._schema
@@ -214,7 +213,7 @@ class LogicalPartitionOpRunner:
             right_partition,
             left_on=join._left_on,
             right_on=join._right_on,
-            output_schema=join.schema(),
+            output_projection=join._output_projection,
             how=join._how.value,
         )
 
@@ -287,9 +286,7 @@ class LogicalGlobalOpRunner:
             raise NotImplementedError(f"{type(node)} not implemented")
 
     @abstractmethod
-    def map_partitions(
-        self, pset: PartitionSet, func: Callable[[vPartition], vPartition], resource_request: ResourceRequest
-    ) -> PartitionSet:
+    def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition]) -> PartitionSet:
         raise NotImplementedError()
 
     @abstractmethod
@@ -332,18 +329,15 @@ class LogicalGlobalOpRunner:
             else:
                 return part.head(0)
 
-        return self.map_partitions(prev_part, limit_map_func, limit.resource_request())
+        return self.map_partitions(prev_part, limit_map_func)
 
     def _handle_repartition(self, inputs: dict[int, PartitionSet], repartition: Repartition) -> PartitionSet:
         child_id = repartition._children()[0].id()
         repartitioner: ShuffleOp
         if repartition._scheme == PartitionScheme.RANDOM:
-            repartitioner = self._get_shuffle_op_klass(RepartitionRandomOp)(
-                expr_eval_resource_request=ResourceRequest.default()
-            )
+            repartitioner = self._get_shuffle_op_klass(RepartitionRandomOp)()
         elif repartition._scheme == PartitionScheme.HASH:
             repartitioner = self._get_shuffle_op_klass(RepartitionHashOp)(
-                expr_eval_resource_request=repartition.resource_request(),
                 map_args={"exprs": repartition._partition_by},
             )
         else:
@@ -376,11 +370,10 @@ class LogicalGlobalOpRunner:
             return merged_sorted.quantiles(num_partitions)
 
         prev_part = inputs[child_id]
-        sampled_partitions = self.map_partitions(prev_part, sample_map_func, sort.resource_request())
+        sampled_partitions = self.map_partitions(prev_part, sample_map_func)
         boundaries = self.reduce_partitions(sampled_partitions, quantile_reduce_func)
         sort_shuffle_op_klass = self._get_shuffle_op_klass(SortOp)
         sort_op = sort_shuffle_op_klass(
-            expr_eval_resource_request=sort.resource_request(),
             map_args={"exprs": exprs, "boundaries": boundaries, "descending": descending},
             reduce_args={"exprs": exprs, "descending": descending},
         )
@@ -395,7 +388,6 @@ class LogicalGlobalOpRunner:
         coalesce_op_klass = self._get_shuffle_op_klass(CoalesceOp)
 
         coalesce_op = coalesce_op_klass(
-            expr_eval_resource_request=ResourceRequest.default(),
             map_args={"num_input_partitions": prev_part.num_partitions()},
         )
         return coalesce_op.run(input=prev_part, num_target_partitions=num_partitions)

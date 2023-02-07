@@ -6,7 +6,7 @@ import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import IO, Any, Callable, Generic, Sequence, TypeVar
+from typing import IO, Any, Callable, Generic, TypeVar
 from uuid import uuid4
 
 import numpy as np
@@ -354,9 +354,16 @@ class vPartition:
 
         return vPartition.from_arrow_table(table, partition_id=partition_id)
 
-    def to_pydict(self) -> dict[str, Sequence]:
+    def to_pydict(self) -> dict[str, list[Any]]:
         output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
-        return {name: self.columns[id].block.data for name, id in output_schema}
+
+        results = {}
+        for name, id in output_schema:
+            block = self.columns[id].block
+            data = [block.data for _ in range(len(self))] if block.is_scalar() else list(block.iter_py())
+            results[name] = data
+
+        return results
 
     def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
         if schema is not None:
@@ -551,7 +558,7 @@ class vPartition:
         right: vPartition,
         left_on: ExpressionList,
         right_on: ExpressionList,
-        output_schema: Schema,
+        output_projection: ExpressionList,
         how: str = "inner",
     ) -> vPartition:
         assert how == "inner"
@@ -590,7 +597,7 @@ class vPartition:
         assert joined_block_idx == len(result_keys)
 
         output = vPartition(columns=result_columns, partition_id=self.partition_id)
-        return output.eval_expression_list(output_schema.to_column_expressions())
+        return output.eval_expression_list(output_projection)
 
     def _to_file(
         self,
@@ -679,7 +686,7 @@ class PartitionSet(Generic[PartitionT]):
     def _get_merged_vpartition(self) -> vPartition:
         raise NotImplementedError()
 
-    def to_pydict(self) -> dict[str, Sequence]:
+    def to_pydict(self) -> dict[str, list[Any]]:
         """Retrieves all the data in a PartitionSet as a Python dictionary. Values are the raw data from each Block."""
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pydict()

@@ -1,0 +1,64 @@
+name: Run property based tests with Hypothesis
+
+on:
+  schedule:
+  - cron: 0 20 * * *
+  workflow_dispatch:
+
+env:
+  DAFT_ANALYTICS_ENABLED: '0'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.7']
+        daft_runner: [py, dynamic]
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+    - uses: actions/cache@v3
+      env:
+        cache-name: cache-cargo
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt
+
+    - name: Build Rust Library
+      run: |
+        source activate
+        maturin develop
+
+    - name: Run Hypothesis property based tests
+      run: pytest tests/property_based_testing -m 'hypothesis' --hypothesis-seed=0
+      env:
+        DAFT_RUNNER: ${{ matrix.daft_runner }}
+        HYPOTHESIS_MAX_EXAMPLES: 10000

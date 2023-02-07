@@ -125,8 +125,6 @@ def test_load_pydict():
     assert collected_data.keys() == data.keys() == expected.keys()
     for colname, expected_schema_type in expected.items():
         assert daft_df.schema()[colname].dtype == expected_schema_type
-        expected_container_type = list if ExpressionType.is_py(expected_schema_type) else pa.ChunkedArray
-        assert isinstance(collected_data[colname], expected_container_type)
 
 
 def test_load_pylist():

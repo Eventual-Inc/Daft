@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable
 
 from tabulate import tabulate
 
@@ -57,7 +57,7 @@ def _stringify_object_html(val: Any, max_col_width: int, max_lines: int):
 
 
 def _stringify_vpartition(
-    data: dict[str, Sequence[Any]],
+    data: dict[str, list[Any]],
     daft_schema: Schema,
     custom_stringify_object: Callable = _stringify_object_default,
     max_col_width: int = DEFAULT_MAX_COL_WIDTH,
@@ -93,6 +93,8 @@ def vpartition_repr_html(
     max_lines: int = DEFAULT_MAX_LINES,
 ) -> str:
     """Converts a vPartition into a HTML string"""
+    if len(daft_schema) == 0:
+        return "<small>(No data to display: Dataframe has no columns)</small>"
     data = (
         {k: v[:num_rows] for k, v in vpartition.to_pydict().items()}
         if vpartition is not None
@@ -134,12 +136,10 @@ def vpartition_repr_html(
     assert tabulate_html_string.startswith("<table")
     tabulate_html_string = '<table class="dataframe"' + tabulate_html_string[len("<table") :]
 
-    return f"""
-        <div>
-            {tabulate_html_string}
-            <small>{user_message}</small>
-        </div>
-    """
+    return f"""<div>
+    {tabulate_html_string}
+    <small>{user_message}</small>
+</div>"""
 
 
 def vpartition_repr(
@@ -151,6 +151,9 @@ def vpartition_repr(
     max_lines: int = DEFAULT_MAX_LINES,
 ) -> str:
     """Converts a vPartition into a prettified string for display in a REPL"""
+    if len(daft_schema) == 0:
+        return "(No data to display: Dataframe has no columns)"
+
     data = (
         {k: v[:num_rows] for k, v in vpartition.to_pydict().items()}
         if vpartition is not None

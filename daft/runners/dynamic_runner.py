@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import multiprocessing
 from dataclasses import dataclass
-from typing import Iterator
+
+import psutil
 
 from daft.execution import physical_plan_factory
 from daft.execution.execution_step import (
-    MaterializationRequest,
-    MaterializationRequestBase,
-    MaterializationRequestMulti,
-    MaterializationResult,
+    ExecutionStep,
+    MaterializedResult,
+    MultiOutputExecutionStep,
+    SingleOutputExecutionStep,
 )
+from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
 from daft.logical.optimizer import (
@@ -21,6 +24,7 @@ from daft.logical.optimizer import (
     PushDownLimit,
     PushDownPredicates,
 )
+from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionMetadata,
@@ -69,9 +73,12 @@ class DynamicRunner(Runner):
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         plan = self.optimize(plan)
 
-        phys_plan: Iterator[
-            None | MaterializationRequestBase[vPartition]
-        ] = physical_plan_factory.get_materializing_physical_plan(plan)
+        psets = {
+            key: entry.value.values()
+            for key, entry in self._part_set_cache._uuid_to_partition_set.items()
+            if entry.value is not None
+        }
+        phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
 
         result_pset = LocalPartitionSet({})
 
@@ -80,6 +87,7 @@ class DynamicRunner(Runner):
                 while True:
                     next_step = next(phys_plan)
                     assert next_step is not None, "Got a None ExecutionStep in singlethreaded mode"
+                    self._check_resource_requests(next_step.resource_request)
                     self._build_partitions(next_step)
             except StopIteration as e:
                 for i, partition in enumerate(e.value):
@@ -88,21 +96,38 @@ class DynamicRunner(Runner):
         pset_entry = self.put_partition_set_into_cache(result_pset)
         return pset_entry
 
-    def _build_partitions(self, partspec: MaterializationRequestBase[vPartition]) -> None:
+    def _check_resource_requests(self, resource_request: ResourceRequest | None) -> None:
+        """Validates that the requested ResourceRequest is possible to run locally"""
+        if resource_request is None:
+            return
+        if resource_request.num_cpus is not None and resource_request.num_cpus > multiprocessing.cpu_count():
+            raise RuntimeError(
+                f"Requested {resource_request.num_cpus} CPUs but found only {multiprocessing.cpu_count()} available"
+            )
+        if resource_request.num_gpus is not None and resource_request.num_gpus > cuda_device_count():
+            raise RuntimeError(
+                f"Requested {resource_request.num_gpus} GPUs but found only {cuda_device_count()} available"
+            )
+        if resource_request.memory_bytes is not None and resource_request.memory_bytes > psutil.virtual_memory().total:
+            raise RuntimeError(
+                f"Requested {resource_request.memory_bytes} bytes of memory but found only {psutil.virtual_memory().total} available"
+            )
+
+    def _build_partitions(self, partspec: ExecutionStep[vPartition]) -> None:
         partitions = partspec.inputs
         for instruction in partspec.instructions:
             partitions = instruction.run(partitions)
-        if isinstance(partspec, MaterializationRequestMulti):
-            partspec.results = [PyMaterializationResult(partition) for partition in partitions]
-        elif isinstance(partspec, MaterializationRequest):
+        if isinstance(partspec, MultiOutputExecutionStep):
+            partspec.results = [PyMaterializedResult(partition) for partition in partitions]
+        elif isinstance(partspec, SingleOutputExecutionStep):
             [partition] = partitions
-            partspec.result = PyMaterializationResult(partition)
+            partspec.result = PyMaterializedResult(partition)
         else:
             raise TypeError(f"Cannot typematch input {partspec}")
 
 
 @dataclass(frozen=True)
-class PyMaterializationResult(MaterializationResult[vPartition]):
+class PyMaterializedResult(MaterializedResult[vPartition]):
     _partition: vPartition
 
     def partition(self) -> vPartition:

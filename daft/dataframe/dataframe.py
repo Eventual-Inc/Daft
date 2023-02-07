@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
 import pandas
 import pyarrow as pa
 
+from daft import resource_request
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.dataframe.preview import DataFramePreview
@@ -679,7 +680,9 @@ class DataFrame:
             DataFrame: new DataFrame that will select the passed in columns
         """
         assert len(columns) > 0
-        projection = logical_plan.Projection(self._plan, self.__column_input_to_expression(columns))
+        projection = logical_plan.Projection(
+            self._plan, self.__column_input_to_expression(columns), custom_resource_request=None
+        )
         return DataFrame(projection)
 
     @DataframePublicAPI
@@ -721,7 +724,7 @@ class DataFrame:
         """
         names_to_skip = set(names)
         el = ExpressionList([col(e.name) for e in self._plan.schema() if e.name not in names_to_skip])
-        return DataFrame(logical_plan.Projection(self._plan, el))
+        return DataFrame(logical_plan.Projection(self._plan, el, custom_resource_request=None))
 
     @DataframePublicAPI
     def where(self, predicate: Expression) -> DataFrame:
@@ -740,7 +743,9 @@ class DataFrame:
         return DataFrame(plan)
 
     @DataframePublicAPI
-    def with_column(self, column_name: str, expr: Expression) -> DataFrame:
+    def with_column(
+        self, column_name: str, expr: Expression, resource_request: resource_request.ResourceRequest | None = None
+    ) -> DataFrame:
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
 
@@ -750,13 +755,16 @@ class DataFrame:
         Args:
             column_name (str): name of new column
             expr (Expression): expression of the new column.
+            resource_request (resource_request.ResourceRequest): a custom resource request for the execution of this operation
 
         Returns:
             DataFrame: DataFrame with new column.
         """
         prev_schema_as_cols = self._plan.schema().to_column_expressions()
         projection = logical_plan.Projection(
-            self._plan, prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]), other_override=True)
+            self._plan,
+            prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]), other_override=True),
+            custom_resource_request=resource_request,
         )
         return DataFrame(projection)
 
@@ -1058,7 +1066,7 @@ class DataFrame:
 
         final_op: logical_plan.LogicalPlan
         if need_final_projection:
-            final_op = logical_plan.Projection(gagg_op, final_schema)
+            final_op = logical_plan.Projection(gagg_op, final_schema, custom_resource_request=None)
         else:
             final_op = gagg_op
 
@@ -1241,8 +1249,9 @@ class DataFrame:
         return pd_df
 
     @DataframePublicAPI
-    def to_pydict(self) -> pandas.DataFrame:
-        """Converts the current DataFrame to a python dict.
+    def to_pydict(self) -> dict[str, list[Any]]:
+        """Converts the current DataFrame to a python dictionary. The dictionary contains Python lists of Python objects for each column.
+
         If results have not computed yet, collect will be called.
 
         Returns:
@@ -1334,6 +1343,17 @@ class GroupedDataFrame:
         """
 
         return self.df._agg([(c, "max") for c in cols], group_by=self.group_by)
+
+    def count(self) -> DataFrame:
+        """Performs grouped count on this GroupedDataFrame.
+
+        Returns:
+            DataFrame: DataFrame with grouped count per column.
+        """
+
+        return self.df._agg(
+            [(c, "count") for c in self.df.column_names if c not in self.group_by.names], group_by=self.group_by
+        )
 
     def agg(self, to_agg: list[tuple[ColumnInputType, str]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.

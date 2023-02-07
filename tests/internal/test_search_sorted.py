@@ -14,13 +14,17 @@ float_types = [pa.float32(), pa.float64()]
 number_types = int_types + float_types
 
 
+def np_search_sorted(haystack, needles):
+    return np.searchsorted(haystack, needles, side="right")
+
+
 @pytest.mark.parametrize("num_chunks", range(1, 4))
 @pytest.mark.parametrize("dtype", number_types, ids=[repr(it) for it in number_types])
 def test_number_array(num_chunks, dtype) -> None:
     pa_keys = pa.chunked_array([np.array([4, 2, 1, 3], dtype=dtype.to_pandas_dtype()) for _ in range(num_chunks)])
     np_keys = pa_keys.to_numpy()
     np_sorted_arr = np.arange(100, dtype=dtype.to_pandas_dtype())
-    result = np.searchsorted(np_sorted_arr, np_keys)
+    result = np_search_sorted(np_sorted_arr, np_keys)
     pa_sorted_arr = pa.chunked_array([np_sorted_arr], type=dtype)
     pa_result = search_sorted(pa_sorted_arr, pa_keys)
 
@@ -34,12 +38,11 @@ def test_number_array(num_chunks, dtype) -> None:
 def test_number_array_with_nulls() -> None:
     keys = np.random.randint(0, 100, 1000)
     data = np.arange(100)
-    result = np.searchsorted(data, keys)
+    result = np_search_sorted(data, keys)
     pa_data = pa.chunked_array([data])
     pa_keys = pa.chunked_array([pa.chunked_array([keys] + [[None] * 10] + [keys]).combine_chunks()])
     pa_result = search_sorted(pa_data, pa_keys)
     np_result = pa_result.to_numpy()
-
     assert np.all(result == np_result[:1000])
     assert np.all(result == np_result[1000 + 10 :])
     assert np.all(np_result[1000 : 1000 + 10] == np_result[1000])
@@ -61,6 +64,84 @@ def test_number_array_with_nulls() -> None:
     assert np.all(np_result_slice[1000 : 1000 + 10] == np_result_slice[1000])
 
 
+def test_number_array_with_null_needle() -> None:
+    pa_data = pa.chunked_array([[0, 1, 2, 2, 3, float("nan"), float("nan"), None, None]], type=pa.float32())
+    pa_needle = pa.chunked_array([[-1, 2, float("nan"), None]], type=pa.float32())
+    result = search_sorted(pa_data, pa_needle).to_numpy()
+    assert np.all(result == np.array([0, 4, 7, 9]))
+
+
+def test_number_array_with_null_needle_reverse() -> None:
+    pa_data = pa.chunked_array([[0, 1, 2, 2, 3, float("nan"), float("nan"), None, None][::-1]], type=pa.float32())
+    pa_needle = pa.chunked_array([[-1, 2, float("nan"), None]], type=pa.float32())
+    result = search_sorted(pa_data, pa_needle, input_reversed=True).to_numpy()
+    assert np.all(result == np.array([9, 7, 4, 2]))
+
+
+def test_multi_number_array_with_null_needle() -> None:
+    pa_data = pa.chunked_array([[0, 1, 2, 2, 3, float("nan"), float("nan"), None, None]], type=pa.float32())
+
+    data_table = pa.Table.from_pydict({"x": pa_data, "y": pa_data})
+
+    pa_needle = pa.chunked_array([[-1, 2, float("nan"), None]], type=pa.float32())
+    needle_table = pa.Table.from_pydict({"x": pa_needle, "y": pa_needle})
+    result = search_sorted(data_table, needle_table).to_numpy()
+    assert np.all(result == np.array([0, 4, 7, 9]))
+
+
+def test_multi_number_array_with_null_needle_reverse() -> None:
+    pa_data = pa.chunked_array([[0, 1, 2, 2, 3, float("nan"), float("nan"), None, None][::-1]], type=pa.float32())
+
+    data_table = pa.Table.from_pydict({"x": pa_data, "y": pa_data})
+
+    pa_needle = pa.chunked_array([[-1, 2, float("nan"), None]], type=pa.float32())
+    needle_table = pa.Table.from_pydict({"x": pa_needle, "y": pa_needle})
+    result = search_sorted(data_table, needle_table, input_reversed=True).to_numpy()
+    assert np.all(result == np.array([9, 7, 4, 2]))
+
+
+def test_number_array_with_nans() -> None:
+    pa_data = pa.chunked_array([[2, float("nan")]], type=pa.float32())
+    pa_needle = pa.chunked_array([[float("nan"), 2]], type=pa.float32())
+    result = search_sorted(pa_data, pa_needle).to_numpy()
+    assert np.all(result == np.array([2, 1]))
+
+
+def test_number_array_with_nans_reversed() -> None:
+    pa_data = pa.chunked_array([[2, float("nan")][::-1]], type=pa.float32())
+    pa_needle = pa.chunked_array([[float("nan"), 2]], type=pa.float32())
+    result = search_sorted(pa_data, pa_needle, input_reversed=True).to_numpy()
+    assert np.all(result == np.array([1, 2]))
+
+
+def test_multi_number_arrays_with_nans() -> None:
+    pa_data = pa.chunked_array([[2, float("nan")]], type=pa.float32())
+    data_table = pa.Table.from_pydict({"x": pa_data, "y": pa_data})
+
+    pa_needle = pa.chunked_array([[float("nan"), 2]], type=pa.float32())
+    needle_table = pa.Table.from_pydict({"x": pa_needle, "y": pa_needle})
+    result = search_sorted(data_table, needle_table).to_numpy()
+    assert np.all(result == np.array([2, 1]))
+
+
+def test_multi_number_arrays_with_nans_reversed() -> None:
+    pa_data = pa.chunked_array([[2, float("nan")][::-1]], type=pa.float32())
+    data_table = pa.Table.from_pydict({"x": pa_data, "y": pa_data})
+
+    pa_needle = pa.chunked_array([[float("nan"), 2]], type=pa.float32())
+    needle_table = pa.Table.from_pydict({"x": pa_needle, "y": pa_needle})
+    result = search_sorted(data_table, needle_table, input_reversed=True).to_numpy()
+    assert np.all(result == np.array([1, 2]))
+
+
+def test_str_array_with_empty_needle() -> None:
+    pa_data = pa.chunked_array([["a", "b", "c"]], type=pa.string())
+    pa_needle = pa.chunked_array([["", None]], type=pa.string())
+    search_sorted(pa_data, pa_needle)
+    result = search_sorted(pa_data, pa_needle).to_numpy()
+    assert np.all(result == np.array([0, 3]))
+
+
 def gen_random_str(k: int):
     return "".join(random.choices(string.ascii_uppercase + string.ascii_lowercase, k=k))
 
@@ -76,7 +157,7 @@ def test_string_array(str_len, num_chunks) -> None:
 
     data = np.array([gen_random_str(str_len + 1) for i in range(10)])
     data.sort()
-    result = np.searchsorted(data, keys)
+    result = np_search_sorted(data, keys)
     pa_data = pa.chunked_array([data])
     pa_result = search_sorted(pa_data, pa_keys)
     assert np.all(result == pa_result.to_numpy())
@@ -92,12 +173,28 @@ def test_string_array(str_len, num_chunks) -> None:
 
 
 def test_string_array_with_nulls() -> None:
+    haystack = pa.Table.from_pydict({"A": ["", "0", "01", "1", None]})
+    needle = pa.Table.from_pydict({"A": ["0", None, "1", "", "01"]})
+    result = search_sorted(haystack, needle).to_numpy()
+    expected = [2, 5, 4, 1, 3]
+    assert np.all(result == expected)
+
+
+def test_string_array_with_nulls_reversed() -> None:
+    haystack = pa.chunked_array([["", "0", "01", "1", None][::-1]])
+    needle = pa.chunked_array([["0", None, "1", "", "01"]])
+    result = search_sorted(haystack, needle, input_reversed=True).to_numpy()
+    expected = [4, 1, 2, 5, 3]
+    assert np.all(result == expected)
+
+
+def test_string_array_with_nulls_many() -> None:
     py_keys = [str(i) for i in range(100)]
     random.shuffle(py_keys)
     keys = np.array(py_keys)
     data = np.array([gen_random_str(10 + 1) for i in range(10)])
     data.sort()
-    result = np.searchsorted(data, keys)
+    result = np_search_sorted(data, keys)
     pa_data = pa.chunked_array([data])
     pa_keys = pa.chunked_array([py_keys + [None] * 10 + py_keys])
     pa_result = search_sorted(pa_data, pa_keys)
@@ -132,7 +229,7 @@ def test_large_string_array(str_len, num_chunks) -> None:
     keys = pa_keys.cast(pa.string()).to_numpy()
     data = np.array([gen_random_str(10 + 1) for i in range(10)])
     data.sort()
-    result = np.searchsorted(data, keys)
+    result = np_search_sorted(data, keys)
     pa_data = pa.chunked_array([data]).cast(pa.large_string())
     pa_result = search_sorted(pa_data, pa_keys)
     pa_result = search_sorted(pa_data, pa_keys)
@@ -147,7 +244,7 @@ def test_large_string_array_with_nulls() -> None:
     keys = np.array(py_keys)
     data = np.array([gen_random_str(10 + 1) for i in range(10)])
     data.sort()
-    result = np.searchsorted(data, keys)
+    result = np_search_sorted(data, keys)
     pa_data = pa.chunked_array([data]).cast(pa.large_string())
     pa_keys = pa.chunked_array([py_keys + [None] * 10 + py_keys], type=pa.large_string())
     pa_result = search_sorted(pa_data, pa_keys)
@@ -164,7 +261,7 @@ def test_single_column_number_table(num_chunks, dtype) -> None:
     pa_keys = pa.chunked_array([np.array([4, 2, 1, 3], dtype=dtype.to_pandas_dtype()) for _ in range(num_chunks)])
     np_keys = pa_keys.to_numpy()
     np_sorted_arr = np.arange(100, dtype=dtype.to_pandas_dtype())
-    result = np.searchsorted(np_sorted_arr, np_keys)
+    result = np_search_sorted(np_sorted_arr, np_keys)
     pa_sorted_arr = pa.chunked_array([np_sorted_arr], type=dtype)
     pa_sorted_table = pa.table([pa_sorted_arr], ["a"])
     pa_table_keys = pa.table([pa_keys], ["a"])
@@ -189,7 +286,7 @@ def test_multi_column_number_table(num_chunks, dtype) -> None:
     np_keys = pa_keys.to_numpy()
     np_sorted_arr = np.arange(100, dtype=dtype.to_pandas_dtype())
 
-    result = np.searchsorted(np_sorted_arr, np_keys)
+    result = np_search_sorted(np_sorted_arr, np_keys)
 
     pa_sorted_arr = pa.chunked_array([np_sorted_arr], type=dtype)
 
@@ -220,7 +317,7 @@ def test_multi_column_mixed_number_table(num_chunks) -> None:
     np_keys = pa_keys.to_numpy()
     np_sorted_arr = np.arange(100, dtype=np.uint32())
 
-    result = np.searchsorted(np_sorted_arr, np_keys)
+    result = np_search_sorted(np_sorted_arr, np_keys)
 
     pa_sorted_arr = pa.chunked_array([np_sorted_arr], type=pa.uint32())
 
@@ -258,7 +355,7 @@ def test_number_string_table(str_len, num_chunks) -> None:
 
     data = np.array([gen_random_str(str_len + 1) for i in range(10)])
     data.sort()
-    result = np.searchsorted(data, keys)
+    result = np_search_sorted(data, keys)
     pa_data = pa.chunked_array([data])
     sorted_table = pa.table([np.zeros(10), pa_data], names=["a", "b"])
     key_table = pa.table([pa_int_keys, pa_str_keys], names=["a", "b"])
@@ -293,7 +390,7 @@ def test_number_string_table_desc(str_len, num_chunks) -> None:
 
     data = np.array([gen_random_str(str_len + 1) for i in range(100)])
     data.sort()
-    result = len(data) - np.searchsorted(data, keys)
+    result = len(data) - np_search_sorted(data, keys)
 
     data = data[::-1]
 
@@ -317,7 +414,7 @@ def test_string_number_table(str_len, num_chunks) -> None:
 
     data = np.array([gen_random_str(str_len + 1) for i in range(10)])
     data.sort()
-    result = np.searchsorted(data, keys)
+    result = np_search_sorted(data, keys)
     pa_data = pa.chunked_array([data])
     sorted_table = pa.table([pa_data, np.zeros(10)], names=["a", "b"])
     key_table = pa.table([pa_str_keys, pa_int_keys], names=["a", "b"])
@@ -338,7 +435,7 @@ def test_string_table(str_len, num_chunks) -> None:
 
     data = np.array([gen_random_str(str_len + 1) for i in range(10)])
     data.sort()
-    result = np.searchsorted(data, keys)
+    result = np_search_sorted(data, keys)
     pa_data = pa.chunked_array([data])
 
     sorted_table = pa.table([pa_data, pa_data, pa_data], names=["a", "b", "c"])
@@ -355,7 +452,7 @@ def test_string_table_with_nulls() -> None:
     keys = np.array(py_keys)
     data = np.array([gen_random_str(10 + 1) for i in range(10)])
     data.sort()
-    result = np.searchsorted(data, keys)
+    result = np_search_sorted(data, keys)
     pa_data = pa.chunked_array([data])
     pa_keys = pa.chunked_array([py_keys + [None] * 10 + py_keys])
     pa_data_table = pa.table([pa_data, pa_data], names=["a", "b"])
