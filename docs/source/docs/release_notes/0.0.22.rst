@@ -1,0 +1,102 @@
+Daft 0.0.22 Release Notes
+=========================
+
+The Daft 0.0.22 release adds much more testing and bug fixes. The highlights are:
+
+* Dynamic Runner speedups - our dynamic runners now outperform the existing runners and will be the default in the next release.
+* Property-based tests with Hypothesis for ``.sort``
+* Refactors to enable integration of Rust Series/vPartition/Expressions
+
+
+Enhancements
+------------
+
+* Always translate LocalLimit logical plan to its own physical plan. `#539 <https://github.com/Eventual-Inc/Daft/pull/539>`_
+* Performance improvements for distributed Ray clusters. `#537 <https://github.com/Eventual-Inc/Daft/pull/537>`_
+* Add resource request to dynamic runners `#530 <https://github.com/Eventual-Inc/Daft/pull/530>`_
+* Refactor resource requests out of Expressions `#528 <https://github.com/Eventual-Inc/Daft/pull/528>`_
+* Introduce Schema and Fields for logical plan schema rather than use ExpressionList `#516 <https://github.com/Eventual-Inc/Daft/pull/516>`_
+* Refactor Expressions to drop column ids `#508 <https://github.com/Eventual-Inc/Daft/pull/508>`_
+* DynamicRayRunner: increase inflight tasks; fix spread condition `#494 <https://github.com/Eventual-Inc/Daft/pull/494>`_
+* Add DataFrame.from\_glob\_path, deprecating DataFrame.from\_files `#492 <https://github.com/Eventual-Inc/Daft/pull/492>`_
+* \[Rust\] Table and Series implementations that support arrow interops and expr evaluation `#443 <https://github.com/Eventual-Inc/Daft/pull/443>`_
+
+Bug Fixes
+---------
+
+* Add filter step to hypothesis test and fix filter bug `#551 <https://github.com/Eventual-Inc/Daft/pull/551>`_
+* Skip Ray resource request tests if ray version less than 2 `#550 <https://github.com/Eventual-Inc/Daft/pull/550>`_
+* Fix Expression input\_mapping query optimization bug `#536 <https://github.com/Eventual-Inc/Daft/pull/536>`_
+* Remove walrus operators for Py 3.7 compatibility `#489 <https://github.com/Eventual-Inc/Daft/pull/489>`_
+* \[bugfix\] Fix bisect left behavior when search sorting in reverse for utf8 and numeric arrays `#547 <https://github.com/Eventual-Inc/Daft/pull/547>`_
+* \[bugfix\] Fix Behavior in Search Sorted \(Partitioning\) for Nulls and NaNs `#545 <https://github.com/Eventual-Inc/Daft/pull/545>`_
+* Fix to\_pydict to return python lists instead of arrow arrays `#527 <https://github.com/Eventual-Inc/Daft/pull/527>`_
+* Fix self join where column name can conflict `#521 <https://github.com/Eventual-Inc/Daft/pull/521>`_
+* Fix dynamic runners sorting `#512 <https://github.com/Eventual-Inc/Daft/pull/512>`_
+* Fixes \#299 to work without relying on expression IDs `#510 <https://github.com/Eventual-Inc/Daft/pull/510>`_
+* Fix anonymous s3 file access in .url.download\(\) `#505 <https://github.com/Eventual-Inc/Daft/pull/505>`_
+* Add custom handling of s3 filesystem creation when no credentials are found `#504 <https://github.com/Eventual-Inc/Daft/pull/504>`_
+* Fix Literal typing import for 3.7 compatibility `#498 <https://github.com/Eventual-Inc/Daft/pull/498>`_
+* Dynamic runners: Assert against negative limit\(\) `#463 <https://github.com/Eventual-Inc/Daft/pull/463>`_
+* Better user messages on import errors of optional dependencies `#462 <https://github.com/Eventual-Inc/Daft/pull/462>`_
+* Add handling of missing filepaths with FileNotFoundError `#460 <https://github.com/Eventual-Inc/Daft/pull/460>`_
+* Add fix for duplicate URL downloads only filling out bytes for one row `#361 <https://github.com/Eventual-Inc/Daft/pull/361>`_
+
+Testing
+-------
+
+* Better organize tests, separating optimizer tests from dataframe tests `#552 <https://github.com/Eventual-Inc/Daft/pull/552>`_
+* Fix hypothesis test to assert that nulls greater than all values `#549 <https://github.com/Eventual-Inc/Daft/pull/549>`_
+* \[codecov\] Enable Code Coverage for Rust From python tests `#548 <https://github.com/Eventual-Inc/Daft/pull/548>`_
+* Add sort tests `#544 <https://github.com/Eventual-Inc/Daft/pull/544>`_
+* Skip Ray runner tests in property based testing `#543 <https://github.com/Eventual-Inc/Daft/pull/543>`_
+* Tests for dataframe repr and html repr `#541 <https://github.com/Eventual-Inc/Daft/pull/541>`_
+* \[Coverage\] Update CodeCov Threshold to 1 percent `#540 <https://github.com/Eventual-Inc/Daft/pull/540>`_
+* \[Coverage\] Batch upload of coverage files to CodeCov, ignore non-daft python files, update comment config for CodeCov `#526 <https://github.com/Eventual-Inc/Daft/pull/526>`_
+* Add simple unit tests for Aggs `#525 <https://github.com/Eventual-Inc/Daft/pull/525>`_
+* Fix hypothesis sort test `#524 <https://github.com/Eventual-Inc/Daft/pull/524>`_
+* add rust to code coverage `#518 <https://github.com/Eventual-Inc/Daft/pull/518>`_
+* Codecov Python Code Coverage `#517 <https://github.com/Eventual-Inc/Daft/pull/517>`_
+* Property based testing `#515 <https://github.com/Eventual-Inc/Daft/pull/515>`_
+* Add pytest benchmarking for benchmark suites with a simple agg test `#455 <https://github.com/Eventual-Inc/Daft/pull/455>`_
+
+Build Changes
+-------------
+
+* Fix Ray grpcio issues in CI `#555 <https://github.com/Eventual-Inc/Daft/pull/555>`_
+* Fix cloud ray tutorial `#542 <https://github.com/Eventual-Inc/Daft/pull/542>`_
+* Run tutorial notebooks in CI `#532 <https://github.com/Eventual-Inc/Daft/pull/532>`_
+* Pin polars to versions \<= 0.15.18 due to issue \#6584 `#523 <https://github.com/Eventual-Inc/Daft/pull/523>`_
+* Temporary workaround for issue \#501 `#502 <https://github.com/Eventual-Inc/Daft/pull/502>`_
+* downgrade python version in CI `#500 <https://github.com/Eventual-Inc/Daft/pull/500>`_
+* Fix CI issue with pre-commit toml sorting `#490 <https://github.com/Eventual-Inc/Daft/pull/490>`_
+* Disable telemetry in CI jobs `#471 <https://github.com/Eventual-Inc/Daft/pull/471>`_
+* Daft Publishing: dont increment patch version to not clobber newer version of daft `#456 <https://github.com/Eventual-Inc/Daft/pull/456>`_
+
+Documentation
+-------------
+
+* Fix readme links `#535 <https://github.com/Eventual-Inc/Daft/pull/535>`_
+* Refactor tutorials `#509 <https://github.com/Eventual-Inc/Daft/pull/509>`_
+* Add basic CONTRIBUTING information `#497 <https://github.com/Eventual-Inc/Daft/pull/497>`_
+* install nightly daft in quick start notebook `#495 <https://github.com/Eventual-Inc/Daft/pull/495>`_
+* Documentation user guide refactor `#461 <https://github.com/Eventual-Inc/Daft/pull/461>`_
+* v0.0.21 release notes - addendum `#458 <https://github.com/Eventual-Inc/Daft/pull/458>`_
+
+Closed Issues
+-------------
+
+* Unable to access public S3 buckets without credentials `#503 <https://github.com/Eventual-Inc/Daft/issues/503>`_
+* Run CI in Python 3.7 to ensure compatibility `#499 <https://github.com/Eventual-Inc/Daft/issues/499>`_
+* Fix walrus usage for 3.7 compatibility `#488 <https://github.com/Eventual-Inc/Daft/issues/488>`_
+* More informative ImportError on failed imports of optional dependencies `#459 <https://github.com/Eventual-Inc/Daft/issues/459>`_
+* MNIST tutorial broken `#534 <https://github.com/Eventual-Inc/Daft/issues/534>`_
+* Dynamic Runners should respect ResourceRequests `#529 <https://github.com/Eventual-Inc/Daft/issues/529>`_
+* Dataframe tests for dataframe API `#522 <https://github.com/Eventual-Inc/Daft/issues/522>`_
+* DataFrame.to\_pydict\(\) should produce Python objects, not Arrow objects `#467 <https://github.com/Eventual-Inc/Daft/issues/467>`_
+* IndexError instead of FileNotFoundError when attempting to read from an invalid path `#457 <https://github.com/Eventual-Inc/Daft/issues/457>`_
+* Check execution-time error presentation in new Runners `#440 <https://github.com/Eventual-Inc/Daft/issues/440>`_
+* Run file listing for `DataFrame.from_files` inside the Runner `#426 <https://github.com/Eventual-Inc/Daft/issues/426>`_
+* Expanded datetime/interval expression support `#373 <https://github.com/Eventual-Inc/Daft/issues/373>`_
+* Fix caching semantics `#366 <https://github.com/Eventual-Inc/Daft/issues/366>`_
+* More String Expressions `#333 <https://github.com/Eventual-Inc/Daft/issues/333>`_
