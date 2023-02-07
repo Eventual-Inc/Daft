@@ -38,6 +38,12 @@ def test_create_dataframe_pydict(valid_data: list[dict[str, float]]) -> None:
     assert df.column_names == COL_NAMES
 
 
+@pytest.mark.parametrize("data", [{"foo": [1, 2, 3]}, [{"foo": i} for i in range(3)], "foo"])
+def test_error_thrown_create_dataframe_constructor(data) -> None:
+    with pytest.raises(ValueError):
+        DataFrame(data)
+
+
 ###
 # CSV tests
 ###

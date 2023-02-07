@@ -99,6 +99,17 @@ class DataFrame:
         Args:
             plan: LogicalPlan describing the steps required to arrive at this DataFrame
         """
+        if not isinstance(plan, logical_plan.LogicalPlan):
+            if isinstance(plan, dict):
+                raise ValueError(
+                    f"DataFrames should be constructed with a dictionary of columns using `DataFrame.from_pydict`"
+                )
+            if isinstance(plan, list):
+                raise ValueError(
+                    f"DataFrames should be constructed with a list of dictionaries using `DataFrame.from_pylist`"
+                )
+            raise ValueError(f"Expected DataFrame to be constructed with a LogicalPlan, received: {plan}")
+
         self.__plan = plan
         self._result_cache: PartitionCacheEntry | None = None
         self._preview = DataFramePreview(preview_partition=None, dataframe_num_rows=None)
