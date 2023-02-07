@@ -14,6 +14,19 @@ impl PySeries {
     #[staticmethod]
     pub fn from_arrow(name: &str, pyarrow_array: &PyAny) -> PyResult<Self> {
         let arrow_array = ffi::array_to_rust(pyarrow_array)?;
+        use arrow2::compute::cast;
+        let arrow_array = match arrow_array.data_type() {
+            arrow2::datatypes::DataType::Utf8 => {
+                cast::utf8_to_large_utf8(arrow_array.as_ref().as_any().downcast_ref().unwrap())
+                    .boxed()
+            }
+            arrow2::datatypes::DataType::Binary => cast::binary_to_large_binary(
+                arrow_array.as_ref().as_any().downcast_ref().unwrap(),
+                arrow2::datatypes::DataType::LargeBinary,
+            )
+            .boxed(),
+            _ => arrow_array,
+        };
         let series = series::Series::try_from((name, arrow_array))?;
         Ok(series.into())
     }
