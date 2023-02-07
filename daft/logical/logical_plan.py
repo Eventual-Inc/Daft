@@ -453,7 +453,7 @@ class Sort(UnaryNode):
         for e in self._sort_by:
             dtype = e.resolve_type(input.schema())
             if dtype in {ExpressionType.null(), ExpressionType.bytes(), ExpressionType.logical()}:
-                raise ExpressionTypeError(f"Cannot sort on expression {e} with type: {e}")
+                raise ExpressionTypeError(f"Cannot sort on expression {e} with type: {dtype}")
 
         if isinstance(descending, bool):
             self._descending = [descending for _ in self._sort_by]
