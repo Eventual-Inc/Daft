@@ -61,7 +61,10 @@ def get_physical_plan(node: LogicalPlan) -> Iterator[None | ExecutionStep[Partit
             )
         
         elif isinstance(node, logical_plan.LocalCount):
-            return physical_plan.local_count(child_plan, node)
+            return physical_plan.pipeline_instruction(
+                child_plan=child_plan,
+                pipeable_instruction=execution_step.LocalCount(logplan=node),
+            )
 
         elif isinstance(node, logical_plan.LocalDistinct):
             return physical_plan.pipeline_instruction(

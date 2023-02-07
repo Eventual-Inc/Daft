@@ -177,28 +177,13 @@ class LogicalPartitionOpRunner:
         return prev_partition.filter(predicate)
     
     def _handle_local_count(self, inputs: dict[int, vPartition], count: LocalCount, partition_id: int) -> vPartition:
-
-        import pyarrow as pa
-
         child_id = count._children()[0].id()
         prev_partition = inputs[child_id]
-
-        num_rows = prev_partition.metadata().num_rows
-        
-        col_name = 'count'
-        columns: dict[str, PyListTile] = {}
-        columns[col_name] = PyListTile(
-            col_name,
-            partition_id=partition_id,
-            block=DataBlock.make_block(pa.array([num_rows])),
+        return vPartition.from_pydict(
+            {"count": [len(prev_partition)]}, 
+            schema=count._schema, 
+            partition_id=prev_partition.partition_id
         )
-
-        
-        return vPartition(
-            columns,
-            partition_id=partition_id,
-        )
-
 
     def _handle_local_limit(self, inputs: dict[int, vPartition], limit: LocalLimit, partition_id: int) -> vPartition:
         num = limit._num
@@ -323,7 +308,7 @@ class LogicalGlobalOpRunner:
         assert result is not None
         return result
 
-    def _handle_global_limit(self, inputs: dict[int, PartitionSet], limit: GlobalLimit):
+    def _handle_global_limit(self, inputs: dict[int, PartitionSet], limit: GlobalLimit) -> PartitionSet:
         child_id = limit._children()[0].id()
         prev_part = inputs[child_id]
 

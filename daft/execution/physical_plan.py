@@ -136,23 +136,6 @@ def join(
                 return
 
 
-def local_count(
-    child_plan: Iterator[None | ExecutionStep[PartitionT]],
-    plan_info: logical_plan.LocalCount,
-) -> Iterator[None | ExecutionStep[PartitionT]]:
-    
-    """child_plan represents partitions with filenames.
-
-    Yield a plan to calculate length of each partition.
-    """
-    yield from (
-        step.add_instruction(execution_step.LocalCount(partition_id=index, logplan=plan_info))
-        if isinstance(step, OpenExecutionQueue)
-        else step
-        for index, step in enumerate_open_executions(child_plan)
-    )
-
-
 def local_limit(
     child_plan: Iterator[None | ExecutionStep[PartitionT]],
     limit: int,

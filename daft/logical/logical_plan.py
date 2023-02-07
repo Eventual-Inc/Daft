@@ -595,15 +595,12 @@ class GlobalLimit(UnaryNode):
 
 class LocalCount(UnaryNode):
     def __init__(self, input: LogicalPlan) -> None:
-        schema = Schema([Field("count", ExpressionType.from_py_type(int))])
+        schema = Schema([Field("count", ExpressionType.integer())])
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
 
     def __repr__(self) -> str:
         return self._repr_helper()
-
-    def resource_request(self) -> ResourceRequest:
-        return ResourceRequest.default()
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1

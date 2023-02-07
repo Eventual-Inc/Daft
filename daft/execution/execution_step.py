@@ -234,7 +234,6 @@ class Project(Instruction):
 
 @dataclass(frozen=True)
 class LocalCount(Instruction):
-    partition_id: int
     logplan: logical_plan.LocalCount
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
@@ -242,13 +241,11 @@ class LocalCount(Instruction):
 
     def _count(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
-
-        partition = LocalLogicalPartitionOpRunner()._handle_local_count(
-            inputs={self.logplan._children()[0].id(): input},
-            count=self.logplan,
-            partition_id=self.partition_id,
+        partition = vPartition.from_pydict(
+            {"count": [len(input)]}, 
+            schema=self.logplan._schema, 
+            partition_id=input.partition_id
         )
-
         return [partition]
 
 
