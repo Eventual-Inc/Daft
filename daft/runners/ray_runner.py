@@ -444,7 +444,7 @@ def get_meta(partition: vPartition) -> PartitionMetadata:
     return partition.metadata()
 
 
-@ray.remote
+@ray.remote(num_cpus=0)
 def remote_run_plan(
     plan: logical_plan.LogicalPlan,
     psets: dict[str, ray.ObjectRef],
