@@ -38,6 +38,12 @@ def test_load_missing(read_method):
         getattr(DataFrame, read_method)(str(uuid.uuid4()))
 
 
+@pytest.mark.parametrize("data", [{"foo": [1, 2, 3]}, [{"foo": i} for i in range(3)], "foo"])
+def test_error_thrown_create_dataframe_constructor(data) -> None:
+    with pytest.raises(ValueError):
+        DataFrame(data)
+
+
 ###
 # List tests
 ###
@@ -95,10 +101,10 @@ def test_create_dataframe_pydict_ragged_col_lens() -> None:
     assert "Expected all columns to be of the same length" in str(e.value)
 
 
-@pytest.mark.parametrize("data", [{"foo": [1, 2, 3]}, [{"foo": i} for i in range(3)], "foo"])
-def test_error_thrown_create_dataframe_constructor(data) -> None:
-    with pytest.raises(ValueError):
-        DataFrame(data)
+def test_create_dataframe_pydict_bad_columns() -> None:
+    with pytest.raises(ValueError) as e:
+        DataFrame.from_pydict({"foo": "somestring"})
+    assert "Expected all columns to be of type list" in str(e.value)
 
 
 def test_load_pydict_types():
