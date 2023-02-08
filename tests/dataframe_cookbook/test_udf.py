@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import polars as pl
 import pyarrow as pa
@@ -9,7 +10,7 @@ import pytest
 
 from daft.expressions import col
 from daft.types import ExpressionType
-from daft.udf import polars_udf, udf
+from daft.udf import udf
 from tests.conftest import assert_df_column_type, assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     parametrize_service_requests_csv_repartition,
@@ -32,7 +33,7 @@ class MyObj:
 
 
 @udf(return_type=int)
-def multiply_np(x, num=2, container="numpy"):
+def multiply_np(x: np.ndarray, num=2, container="numpy"):
     arr = x * num
     if container == "numpy":
         return arr
@@ -49,33 +50,14 @@ def multiply_np(x, num=2, container="numpy"):
     raise NotImplementedError(container)
 
 
-@polars_udf(return_type=int)
-def multiply_polars(x, num=2, container="numpy"):
-    arr = x * num
-    if container == "numpy":
-        return arr.to_numpy()
-    elif container == "list":
-        return arr.to_list()
-    elif container == "arrow":
-        return arr.to_arrow()
-    elif container == "arrow_chunked":
-        return pa.chunked_array([arr.to_arrow()])
-    elif container == "pandas":
-        return arr.to_pandas()
-    elif container == "polars":
-        return arr
-    raise NotImplementedError(container)
-
-
 @parametrize_service_requests_csv_repartition
-@pytest.mark.parametrize("multiply_kwarg", [multiply_np, multiply_polars])
 @pytest.mark.parametrize(
     "return_container",
     ["numpy", "list", "arrow", "arrow_chunked", "pandas", "polars"],
 )
-def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts, multiply_kwarg, return_container):
+def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts, return_container):
     daft_df = daft_df.repartition(repartition_nparts).with_column(
-        "unique_key_multiply_2", multiply_kwarg(col("Unique Key"), container=return_container)
+        "unique_key_multiply_2", multiply_np(col("Unique Key"), container=return_container)
     )
     service_requests_csv_pd_df["unique_key_multiply_2"] = service_requests_csv_pd_df["Unique Key"] * 2
     daft_pd_df = daft_df.to_pandas()
@@ -105,23 +87,13 @@ class RunModelNumpy:
     def __init__(self) -> None:
         self._model = MyModel()
 
-    def __call__(self, x):
-        return self._model.predict(x)
-
-
-@polars_udf(return_type=int)
-class RunModelPolars:
-    def __init__(self) -> None:
-        self._model = MyModel()
-
-    def __call__(self, x):
+    def __call__(self, x: np.ndarray):
         return self._model.predict(x)
 
 
 @parametrize_service_requests_csv_repartition
-@pytest.mark.parametrize("RunModel", [RunModelNumpy, RunModelPolars])
-def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartition_nparts, RunModel):
-    daft_df = daft_df.repartition(repartition_nparts).with_column("model_results", RunModel(col("Unique Key")))
+def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    daft_df = daft_df.repartition(repartition_nparts).with_column("model_results", RunModelNumpy(col("Unique Key")))
     service_requests_csv_pd_df["model_results"] = service_requests_csv_pd_df["Unique Key"]
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
