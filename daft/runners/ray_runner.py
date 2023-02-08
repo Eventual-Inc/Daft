@@ -444,96 +444,101 @@ def get_meta(partition: vPartition) -> PartitionMetadata:
     return partition.metadata()
 
 
-@ray.remote(num_cpus=0)
-def remote_run_plan(
-    plan: logical_plan.LogicalPlan,
-    psets: dict[str, ray.ObjectRef],
-    max_tasks_per_core: int,
-    max_refs_per_core: int,
-    batch_task_dispatch: bool,
-) -> list[ray.ObjectRef]:
+@ray.remote
+class SchedulerActor:
+    def remote_run_plan(
+        self,
+        plan: logical_plan.LogicalPlan,
+        psets: dict[str, ray.ObjectRef],
+        max_tasks_per_core: int,
+        max_refs_per_core: int,
+        batch_task_dispatch: bool,
+    ) -> list[ray.ObjectRef]:
 
-    from loguru import logger
+        from loguru import logger
 
-    phys_plan: Iterator[
-        None | MaterializationRequestBase[vPartition]
-    ] = physical_plan_factory.get_materializing_physical_plan(plan, psets)
+        phys_plan: Iterator[
+            None | MaterializationRequestBase[vPartition]
+        ] = physical_plan_factory.get_materializing_physical_plan(plan, psets)
 
-    # Note: For autoscaling clusters, we will probably want to query cores dynamically.
-    # Keep in mind this call takes about 0.3ms.
-    cores = int(ray.cluster_resources()["CPU"])
+        # Note: For autoscaling clusters, we will probably want to query cores dynamically.
+        # Keep in mind this call takes about 0.3ms.
+        cores = int(ray.cluster_resources()["CPU"])
 
-    inflight_tasks: dict[str, MaterializationRequestBase[ray.ObjectRef]] = dict()
-    inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
+        inflight_tasks: dict[str, MaterializationRequestBase[ray.ObjectRef]] = dict()
+        inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
 
-    result_partitions = None
-    start = datetime.now()
-    profile_filename = (
-        f"profile_DynamicRayRunner.run()_"
-        f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
-    )
-    with profiler(profile_filename):
-        while True:
+        result_partitions = None
+        start = datetime.now()
+        profile_filename = (
+            f"profile_DynamicRayRunner.run()_"
+            f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
+        )
+        with profiler(profile_filename):
+            while True:
 
-            while (
-                len(inflight_tasks) < max_tasks_per_core * cores
-                and len(inflight_ref_to_task) < max_refs_per_core * cores
-            ):
+                while (
+                    len(inflight_tasks) < max_tasks_per_core * cores
+                    and len(inflight_ref_to_task) < max_refs_per_core * cores
+                ):
 
-                # Get the next batch of tasks to dispatch.
-                tasks_to_dispatch = []
-                try:
-                    for _ in range(cores if batch_task_dispatch else 1):
+                    # Get the next batch of tasks to dispatch.
+                    tasks_to_dispatch = []
+                    try:
+                        maybe_empty_cores = max(0, cores - len(inflight_tasks))
+                        configured_dispatch = cores if batch_task_dispatch else 1
+                        num_to_dispatch = max(configured_dispatch, maybe_empty_cores)
+                        for _ in range(num_to_dispatch):
 
-                        next_step = next(phys_plan)
-
-                        # If this task is a no-op, just run it locally immediately.
-                        while next_step is not None and len(next_step.instructions) == 0:
-                            assert isinstance(next_step, MaterializationRequest)
-                            [partition] = next_step.inputs
-                            next_step.result = RayMaterializationResult(partition)
                             next_step = next(phys_plan)
 
-                        if next_step is None:
-                            break
+                            # If this task is a no-op, just run it locally immediately.
+                            while next_step is not None and len(next_step.instructions) == 0:
+                                assert isinstance(next_step, MaterializationRequest)
+                                [partition] = next_step.inputs
+                                next_step.result = RayMaterializationResult(partition)
+                                next_step = next(phys_plan)
 
-                        tasks_to_dispatch.append(next_step)
+                            if next_step is None:
+                                break
 
-                except StopIteration as e:
-                    result_partitions = e.value
+                            tasks_to_dispatch.append(next_step)
 
-                # Dispatch the batch of tasks.
-                logger.debug(
-                    f"{(datetime.now() - start).total_seconds()}s: DynamicRayRunner dispatching {len(tasks_to_dispatch)} tasks:"
-                )
-                for task in tasks_to_dispatch:
-                    results = _build_partitions(task)
-                    logger.debug(f"{task} -> {results}")
-                    inflight_tasks[task.id()] = task
-                    for result in results:
-                        inflight_ref_to_task[result] = task.id()
+                    except StopIteration as e:
+                        result_partitions = e.value
 
-                # Exit if the plan is complete and the result references are available.
-                if result_partitions is not None:
-                    return result_partitions
+                    # Dispatch the batch of tasks.
+                    logger.debug(
+                        f"{(datetime.now() - start).total_seconds()}s: DynamicRayRunner dispatching {len(tasks_to_dispatch)} tasks:"
+                    )
+                    for task in tasks_to_dispatch:
+                        results = _build_partitions(task)
+                        logger.debug(f"{task} -> {results}")
+                        inflight_tasks[task.id()] = task
+                        for result in results:
+                            inflight_ref_to_task[result] = task.id()
 
-            # Await a batch of tasks.
-            for i in range(min(cores if batch_task_dispatch else 1, len(inflight_tasks))):
-                dispatch = datetime.now()
-                [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
-                task_id = inflight_ref_to_task[ready]
-                logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
+                    # Exit if the plan is complete and the result references are available.
+                    if result_partitions is not None:
+                        return result_partitions
 
-                # Mark the entire task associated with the result as done.
-                task = inflight_tasks[task_id]
-                if isinstance(task, MaterializationRequest):
-                    del inflight_ref_to_task[ready]
-                elif isinstance(task, MaterializationRequestMulti):
-                    assert task.results is not None
-                    for result in task.results:
-                        del inflight_ref_to_task[result.partition()]
+                # Await a batch of tasks.
+                for i in range(min(cores if batch_task_dispatch else 1, len(inflight_tasks))):
+                    dispatch = datetime.now()
+                    [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
+                    task_id = inflight_ref_to_task[ready]
+                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
 
-                del inflight_tasks[task_id]
+                    # Mark the entire task associated with the result as done.
+                    task = inflight_tasks[task_id]
+                    if isinstance(task, MaterializationRequest):
+                        del inflight_ref_to_task[ready]
+                    elif isinstance(task, MaterializationRequestMulti):
+                        assert task.results is not None
+                        for result in task.results:
+                            del inflight_ref_to_task[result.partition()]
+
+                    del inflight_tasks[task_id]
 
 
 def _build_partitions(task: MaterializationRequestBase[ray.ObjectRef]) -> list[ray.ObjectRef]:
@@ -580,6 +585,8 @@ class DynamicRayRunner(RayRunner):
         self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 10000
         self.batch_task_dispatch = batch_task_dispatch if batch_task_dispatch is not None else False
 
+        self.scheduler_actor = SchedulerActor.remote()  # type: ignore
+
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         result_pset = RayPartitionSet({})
 
@@ -591,7 +598,7 @@ class DynamicRayRunner(RayRunner):
             if entry.value is not None
         }
         partitions = ray.get(
-            remote_run_plan.remote(
+            self.scheduler_actor.remote_run_plan.remote(
                 plan=plan,
                 psets=psets,
                 max_tasks_per_core=self.max_tasks_per_core,
