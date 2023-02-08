@@ -478,17 +478,18 @@ class SchedulerActor:
             while True:
 
                 while (
-                    len(inflight_tasks) < max_tasks_per_core * cores
+                    # len(inflight_tasks) < max_tasks_per_core * cores
+                    len(inflight_tasks) < cores - 1
                     and len(inflight_ref_to_task) < max_refs_per_core * cores
                 ):
 
                     # Get the next batch of tasks to dispatch.
                     tasks_to_dispatch = []
                     try:
-                        maybe_empty_cores = max(0, cores - len(inflight_tasks))
-                        configured_dispatch = cores if batch_task_dispatch else 1
-                        num_to_dispatch = max(configured_dispatch, maybe_empty_cores)
-                        for _ in range(num_to_dispatch):
+                        # maybe_empty_cores = max(0, cores - len(inflight_tasks))
+                        # configured_dispatch = cores if batch_task_dispatch else 1
+                        # num_to_dispatch = max(configured_dispatch, maybe_empty_cores)
+                        for _ in range(cores - 1 - len(inflight_tasks)):
 
                             next_step = next(phys_plan)
 
