@@ -64,3 +64,28 @@ def test_comparisons_int_and_float(l_dtype, r_dtype) -> None:
 
     gt = (l > r).to_pylist()
     assert gt == [False, False, True, None, None, None]
+
+
+def test_comparisons_bad_right_value() -> None:
+    l_arrow = pa.array([1, 2, 3, None, 5, None])
+
+    l = Series.from_arrow(l_arrow)
+    r = [1, 2, 3, None, 5, None]
+
+    with pytest.raises(ValueError, match="another Series"):
+        (l < r)
+
+    with pytest.raises(ValueError, match="another Series"):
+        le = l <= r
+
+    with pytest.raises(ValueError, match="another Series"):
+        eq = l == r
+
+    with pytest.raises(ValueError, match="another Series"):
+        neq = l != r
+
+    with pytest.raises(ValueError, match="another Series"):
+        ge = l >= r
+
+    with pytest.raises(ValueError, match="another Series"):
+        (l > r)
