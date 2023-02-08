@@ -73,19 +73,19 @@ def test_comparisons_bad_right_value() -> None:
     r = [1, 2, 3, None, 5, None]
 
     with pytest.raises(ValueError, match="another Series"):
-        (l < r)
+        l < r
 
     with pytest.raises(ValueError, match="another Series"):
-        le = l <= r
+        l <= r
 
     with pytest.raises(ValueError, match="another Series"):
-        eq = l == r
+        l == r
 
     with pytest.raises(ValueError, match="another Series"):
-        neq = l != r
+        l != r
 
     with pytest.raises(ValueError, match="another Series"):
-        ge = l >= r
+        l >= r
 
     with pytest.raises(ValueError, match="another Series"):
-        (l > r)
+        l > r
