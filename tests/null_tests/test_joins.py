@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pyarrow as pa
 import pytest
 
 from daft import DataFrame
@@ -66,17 +65,17 @@ def test_inner_join_multikey(repartition_nparts):
 def test_inner_join_all_null(repartition_nparts):
     daft_df = DataFrame.from_pydict(
         {
-            "id": pa.array([None, None, None], type=pa.int64()),
+            "id": [None, None, None],
             "values_left": ["a1", "b1", "c1"],
         }
     ).repartition(repartition_nparts)
     daft_df2 = DataFrame.from_pydict(
         {
-            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "id": [1, 2, 3],
             "values_right": ["a2", "b2", "c2"],
         }
     ).repartition(repartition_nparts)
-    daft_df = daft_df.join(daft_df2, on="id", how="inner")
+    daft_df = daft_df.with_column("id", daft_df["id"].cast(int)).join(daft_df2, on="id", how="inner")
 
     expected = {
         "id": [],
@@ -90,13 +89,13 @@ def test_inner_join_all_null(repartition_nparts):
 def test_inner_join_null_type_column():
     daft_df = DataFrame.from_pydict(
         {
-            "id": pa.array([None, None, None], type=pa.null()),
+            "id": [None, None, None],
             "values_left": ["a1", "b1", "c1"],
         }
     )
     daft_df2 = DataFrame.from_pydict(
         {
-            "id": pa.array([None, None, None], type=pa.null()),
+            "id": [None, None, None],
             "values_right": ["a2", "b2", "c2"],
         }
     )

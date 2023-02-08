@@ -4,7 +4,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
 import pytest
 
 from daft import DataFrame, col
@@ -54,7 +53,7 @@ def test_explode_single_col_pylist(nrepartitions):
 @pytest.mark.parametrize("nrepartitions", [1, 5])
 def test_explode_single_col_arrow(nrepartitions):
     data = {
-        "explode": pa.array([[1, 2, 3], [4, 5], [], None]),
+        "explode": [[1, 2, 3], [4, 5], [], None],
         "repeat": ["a", "b", "c", "d"],
         "repeat2": ["a", "b", "c", "d"],
     }
