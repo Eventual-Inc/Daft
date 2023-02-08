@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import pandas as pd
 import pytest
 
 from daft.expressions import col
-from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
     parametrize_service_requests_csv_repartition,
-    parametrize_sort_desc,
 )
 
 
@@ -21,11 +18,7 @@ def test_count_rows(daft_df, service_requests_csv_pd_df, repartition_nparts):
 @parametrize_service_requests_csv_repartition
 def test_filtered_count_rows(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Count rows on a table filtered by a certain condition"""
-    daft_df_row_count = (
-        daft_df.repartition(repartition_nparts)
-        .where(col("Borough") == "BROOKLYN")
-        .count_rows()
-    )
+    daft_df_row_count = daft_df.repartition(repartition_nparts).where(col("Borough") == "BROOKLYN").count_rows()
 
     pd_df_row_count = len(service_requests_csv_pd_df[service_requests_csv_pd_df["Borough"] == "BROOKLYN"])
     assert daft_df_row_count == pd_df_row_count
@@ -42,7 +35,7 @@ def test_filtered_count_rows(daft_df, service_requests_csv_pd_df, repartition_np
 def test_groupby_count_rows(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
     """Count rows after group by"""
     daft_df = daft_df.repartition(repartition_nparts).groupby(*[col(k) for k in keys]).sum(col("Unique Key"))
-    service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).sum("Unique Key").reset_index()    
+    service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).sum("Unique Key").reset_index()
     assert daft_df.count_rows() == len(service_requests_csv_pd_df)
 
 
@@ -56,6 +49,4 @@ def test_dataframe_length_after_collect(daft_df, service_requests_csv_pd_df, rep
 def test_dataframe_length_before_collect(daft_df):
     """Count rows for the entire table"""
     with pytest.raises(RuntimeError) as err_info:
-        num_rows = len(daft_df)
-
-
+        len(daft_df)

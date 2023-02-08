@@ -63,11 +63,12 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
                 pipeable_instruction=execution_step.Aggregate(to_agg=node._agg, group_by=node._group_by),
                 resource_request=node.resource_request(),
             )
-        
+
         elif isinstance(node, logical_plan.LocalCount):
             return physical_plan.pipeline_instruction(
                 child_plan=child_plan,
                 pipeable_instruction=execution_step.LocalCount(logplan=node),
+                resource_request=node.resource_request(),
             )
 
         elif isinstance(node, logical_plan.LocalDistinct):

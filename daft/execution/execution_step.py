@@ -237,7 +237,7 @@ class Project(Instruction):
     def _project(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         return [input.eval_expression_list(self.projection)]
-    
+
 
 @dataclass(frozen=True)
 class LocalCount(Instruction):
@@ -249,12 +249,9 @@ class LocalCount(Instruction):
     def _count(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         partition = vPartition.from_pydict(
-            {"count": [len(input)]}, 
-            schema=self.logplan._schema, 
-            partition_id=input.partition_id
+            {"count": [len(input)]}, schema=self.logplan._schema, partition_id=input.partition_id
         )
         return [partition]
-
 
 
 @dataclass(frozen=True)

@@ -810,23 +810,19 @@ class DataFrame:
         local_limit = logical_plan.LocalLimit(self._plan, num=num)
         global_limit = logical_plan.GlobalLimit(local_limit, num=num)
         return DataFrame(global_limit)
-    
+
     @DataframePublicAPI
     def count_rows(self) -> int:
-        """Performs a LocalCount() + Coalesce(1) + LocalAggregate(sum) to get number of rows.
+        """Executes the Dataframe to count the number of rows.
 
         Returns:
-            int: Aggregated count of rows. Should be a Integer.
+            int: count of the number of rows in this DataFrame.
         """
         local_count_op = logical_plan.LocalCount(self._plan)
         coalease_op = logical_plan.Coalesce(local_count_op, 1)
-        local_sum_op = logical_plan.LocalAggregate(coalease_op, [(Expression._sum(col('count')), 'sum')])
-        
-        context = get_context()
-        result = context.runner().run(local_sum_op)
-        num_rows = result.value.get_partition(0).to_pydict()['count'].to_pylist()[0]
+        local_sum_op = logical_plan.LocalAggregate(coalease_op, [(Expression._sum(col("count")), "sum")])
+        num_rows = DataFrame(local_sum_op).to_pydict()["count"][0]
         return num_rows
-
 
     @DataframePublicAPI
     def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
@@ -1225,9 +1221,11 @@ class DataFrame:
         if self._result is not None:
             return len(self._result)
 
-        message = "Cannot call len() on an unmaterialized dataframe:" \
-            " either materialize your dataframe with df.collect() first before calling len()," \
+        message = (
+            "Cannot call len() on an unmaterialized dataframe:"
+            " either materialize your dataframe with df.collect() first before calling len(),"
             " or use `df.count_rows()` instead which will calculate the total number of rows."
+        )
         raise RuntimeError(message)
 
     @DataframePublicAPI
