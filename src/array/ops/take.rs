@@ -29,7 +29,7 @@ where
         let val = self.get(idx);
         match val {
             None => Ok("None".to_string()),
-            Some(v) => Ok(v.to_string()),
+            Some(v) => Ok(format!("{v}")),
         }
     }
 }

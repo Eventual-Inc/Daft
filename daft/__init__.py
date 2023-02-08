@@ -54,6 +54,7 @@ if not dev_build and not user_opted_out:
 
 from daft.dataframe import DataFrame
 from daft.expressions import col, lit
+from daft.series import Series
 from daft.udf import polars_udf, udf
 
-__all__ = ["DataFrame", "col", "lit", "udf", "polars_udf"]
+__all__ = ["DataFrame", "col", "lit", "udf", "polars_udf", "Series"]
