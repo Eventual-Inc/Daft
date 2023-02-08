@@ -79,6 +79,12 @@ def test_create_dataframe_list_empty_dicts() -> None:
     assert df.column_names == []
 
 
+def test_create_dataframe_list_non_dicts() -> None:
+    with pytest.raises(ValueError) as e:
+        DataFrame.from_pylist([1, 2, 3])
+    assert "Expected list of dictionaries of {column_name: value}" in str(e.value)
+
+
 ###
 # Dict tests
 ###

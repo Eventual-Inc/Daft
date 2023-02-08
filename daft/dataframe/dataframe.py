@@ -245,6 +245,8 @@ class DataFrame:
         """
         headers: set[str] = set()
         for row in data:
+            if not isinstance(row, dict):
+                raise ValueError(f"Expected list of dictionaries of {{column_name: value}}, received: {type(row)}")
             headers.update(row.keys())
         return cls.from_pydict(data={header: [row.get(header, None) for row in data] for header in headers})
 
