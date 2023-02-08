@@ -99,6 +99,17 @@ class DataFrame:
         Args:
             plan: LogicalPlan describing the steps required to arrive at this DataFrame
         """
+        if not isinstance(plan, logical_plan.LogicalPlan):
+            if isinstance(plan, dict):
+                raise ValueError(
+                    f"DataFrames should be constructed with a dictionary of columns using `DataFrame.from_pydict`"
+                )
+            if isinstance(plan, list):
+                raise ValueError(
+                    f"DataFrames should be constructed with a list of dictionaries using `DataFrame.from_pylist`"
+                )
+            raise ValueError(f"Expected DataFrame to be constructed with a LogicalPlan, received: {plan}")
+
         self.__plan = plan
         self._result_cache: PartitionCacheEntry | None = None
         self._preview = DataFramePreview(preview_partition=None, dataframe_num_rows=None)
@@ -234,9 +245,10 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame created from list of dictionaries
         """
-        if not data:
-            raise ValueError("Unable to create DataFrame from empty list")
-        return cls.from_pydict(data={header: [row[header] for row in data] for header in data[0]})
+        headers: set[str] = set()
+        for row in data:
+            headers.update(row.keys())
+        return cls.from_pydict(data={header: [row.get(header, None) for row in data] for header in headers})
 
     @classmethod
     @DataframePublicAPI
@@ -253,6 +265,11 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame created from dictionary of columns
         """
+        column_lengths = {key: len(data[key]) for key in data}
+        if len(set(column_lengths.values())) > 1:
+            raise ValueError(
+                f"Expected all columns to be of the same length, but received columns with lengths: {column_lengths}"
+            )
 
         block_data: dict[str, tuple[ExpressionType, Any]] = {}
         for header in data:

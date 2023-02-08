@@ -27,15 +27,67 @@ def test_load_missing(read_method):
         getattr(DataFrame, read_method)(str(uuid.uuid4()))
 
 
-def test_create_dataframe(valid_data: list[dict[str, float]]) -> None:
+###
+# List tests
+###
+
+
+def test_create_dataframe_list(valid_data: list[dict[str, float]]) -> None:
     df = DataFrame.from_pylist(valid_data)
-    assert df.column_names == COL_NAMES
+    assert set(df.column_names) == set(COL_NAMES)
+
+
+def test_create_dataframe_list_empty() -> None:
+    df = DataFrame.from_pylist([])
+    assert df.column_names == []
+
+
+def test_create_dataframe_list_ragged_keys() -> None:
+    df = DataFrame.from_pylist(
+        [
+            {"foo": 1},
+            {"foo": 2, "bar": 1},
+            {"foo": 3, "bar": 2, "baz": 1},
+        ]
+    )
+    assert df.to_pydict() == {
+        "foo": [1, 2, 3],
+        "bar": [None, 1, 2],
+        "baz": [None, None, 1],
+    }
+
+
+def test_create_dataframe_list_empty_dicts() -> None:
+    df = DataFrame.from_pylist([{}, {}, {}])
+    assert df.column_names == []
+
+
+###
+# Dict tests
+###
 
 
 def test_create_dataframe_pydict(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     df = DataFrame.from_pydict(pydict)
-    assert df.column_names == COL_NAMES
+    assert set(df.column_names) == set(COL_NAMES)
+
+
+def test_create_dataframe_empty_pydict() -> None:
+    df = DataFrame.from_pydict({})
+    assert df.column_names == []
+
+
+def test_create_dataframe_pydict_ragged_col_lens() -> None:
+    with pytest.raises(ValueError) as e:
+        DataFrame.from_pydict({"foo": [1, 2], "bar": [1, 2, 3]})
+    assert "Expected all columns to be of the same length" in str(e.value)
+
+
+@pytest.mark.parametrize("data", [{"foo": [1, 2, 3]}, [{"foo": i} for i in range(3)], "foo"])
+def test_error_thrown_create_dataframe_constructor(data) -> None:
+    with pytest.raises(ValueError):
+        DataFrame(data)
 
 
 ###
