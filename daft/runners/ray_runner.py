@@ -420,22 +420,24 @@ def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) 
 
 
 @ray.remote
-def pipeline_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def single_partition_pipeline(
+    instruction_stack: list[Instruction], *inputs: vPartition
+) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote
-def fanout_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def fanout_pipeline(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def reduce_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def reduce_pipeline(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def reduce_fanout_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def reduce_and_fanout(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
@@ -461,9 +463,23 @@ class SchedulerActor:
             When dispatching or awaiting tasks, do it in batches of size coeff * number of cores.
             If 0, batching is disabled (i.e. batch size is set to 1).
         """
-        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 2.0
+        # The default values set below were determined in empirical benchmarking to deliver the best performance
+        # (runtime, data locality, memory pressure) across different configurations.
+        # They differ from the original intended values of the scheduler; the original values are discussed in comments.
+
+        # Theoretically, this should be around 2;
+        # higher values increase the likelihood of dispatching redundant tasks,
+        # and lower values reduce the cluster's ability to pipeline tasks and introduces worker idling during scheduling.
+        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 4.0
+
+        # This default is a vacuous limit for now.
+        # The option exists because Ray clusters anecdotally sometimes choke when there are too many object refs in flight.
         self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 10000.0
-        self.batch_dispatch_coeff = batch_dispatch_coeff if batch_dispatch_coeff is not None else 1.0
+
+        # Theoretically, this should be 1.0: we should batch enough tasks for all the cores in a single dispatch;
+        # otherwise, we begin dispatching downstream dependencies (that are not immediately executable)
+        # before saturating all the cores (and their pipelines).
+        self.batch_dispatch_coeff = batch_dispatch_coeff if batch_dispatch_coeff is not None else 0.0
 
     def remote_run_plan(
         self,
@@ -502,9 +518,7 @@ class SchedulerActor:
                     # Get the next batch of tasks to dispatch.
                     tasks_to_dispatch = []
                     try:
-                        maybe_empty_cores = max(0, cores - 1 - len(inflight_tasks))
-                        num_to_dispatch = max(batch_dispatch_size, maybe_empty_cores)
-                        for _ in range(num_to_dispatch):
+                        for _ in range(batch_dispatch_size):
 
                             next_step = next(phys_plan)
 
@@ -567,9 +581,11 @@ def _build_partitions(task: MaterializationRequestBase[ray.ObjectRef]) -> list[r
         ray_options = {**ray_options, **_get_ray_task_options(task.resource_request)}
 
     if isinstance(task.instructions[0], ReduceInstruction):
-        build_remote = reduce_fanout_build if isinstance(task.instructions[-1], FanoutInstruction) else reduce_build
+        build_remote = reduce_and_fanout if isinstance(task.instructions[-1], FanoutInstruction) else reduce_pipeline
     else:
-        build_remote = fanout_build if isinstance(task.instructions[-1], FanoutInstruction) else pipeline_build
+        build_remote = (
+            fanout_pipeline if isinstance(task.instructions[-1], FanoutInstruction) else single_partition_pipeline
+        )
 
     build_remote = build_remote.options(**ray_options)
     partitions = build_remote.remote(task.instructions, *task.inputs)
