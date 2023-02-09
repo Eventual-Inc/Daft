@@ -9,6 +9,11 @@ import pytest
 from daft import DataFrame, udf
 
 
+class MyObj:
+    def __init__(self, x: int):
+        self._x = x
+
+
 @udf(return_type=int)
 def my_udf(
     # Test different arg containers
@@ -25,11 +30,11 @@ def my_udf(
     # Test arg non-containers
     arg_int: int,
     arg_str: str,
-    arg_2_by_2_np_arr: np.ndarray,
+    arg_myobj: MyObj,
     # Test custom kwargs non-containers
     kwarg_untyped=1,
     kwarg_int: int = 3,
-    kwarg_2_by_2_np_arr: np.ndarray = np.ones((2, 2)),
+    kwarg_myobj: np.ndarray = MyObj(1),
     return_container: str = "numpy",
 ):
     # Test that containers are passed in as the correct container type according to type hints
@@ -47,10 +52,10 @@ def my_udf(
     # Test that user's values are passed in correctly as scalar values
     assert isinstance(arg_int, int)
     assert isinstance(arg_str, str)
-    assert isinstance(arg_2_by_2_np_arr, np.ndarray)
+    assert isinstance(arg_myobj, MyObj)
     assert isinstance(kwarg_untyped, int)
     assert isinstance(kwarg_int, int)
-    assert isinstance(kwarg_2_by_2_np_arr, np.ndarray) and kwarg_2_by_2_np_arr.shape == (2, 2)
+    assert isinstance(kwarg_myobj, MyObj)
 
     # Test different combinations of return container types
     if return_container == "numpy":
@@ -88,13 +93,39 @@ def test_udf_typing(return_container):
             # arg non-containers
             3,
             "foo",
-            np.ones((2, 2)),
+            MyObj(2),
             # kwargs non-containers
             kwarg_untyped=2,
             kwarg_int=3,
-            kwarg_2_by_2_np_arr=np.ones((2, 2)),
+            kwarg_myobj=MyObj(2),
             # Try different return containers
             return_container=return_container,
+        ),
+    )
+    data = df.to_pydict()
+    assert data["a"] == [1, 2, 3]
+
+
+def test_udf_typing_kwargs():
+    df = DataFrame.from_pydict({"a": [1, 2, 3]})
+    df = df.with_column(
+        "newcol",
+        my_udf(
+            # args
+            arg_untyped=df["a"],
+            arg_list=df["a"],
+            arg_list_int=df["a"],
+            arg_typing_list=df["a"],
+            arg_typing_list_int=df["a"],
+            arg_numpy_array=df["a"],
+            arg_numpy_array_int=df["a"],
+            arg_polars_series=df["a"],
+            arg_pandas_series=df["a"],
+            arg_pyarrow_array=df["a"],
+            # arg non-containers
+            arg_int=3,
+            arg_str="foo",
+            arg_myobj=MyObj(2),
         ),
     )
     data = df.to_pydict()
