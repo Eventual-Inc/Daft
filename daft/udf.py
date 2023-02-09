@@ -121,34 +121,58 @@ def udf(
     num_cpus: int | float | None = None,
     memory_bytes: int | float | None = None,
 ) -> Callable:
-    """Decorator for creating a UDF
+    """Decorator for creating a UDF. This decorator wraps any custom Python code into a funciton that can be used to process
+    columns of data in a Daft DataFrame.
 
-    This decorator wraps a function into a DaFt UDF that can then be used on Dataframes.
-    At runtime, Daft will pass columns of data to the function as equal-length Numpy arrays.
+    .. NOTE::
+        UDFs are much slower than native Daft expressions because they run Python code instead of Daft's optimized Rust kernels.
+        You should only use UDFs when performing operations that are not supported by Daft's native expressions, or when you
+        need to run custom Python code. For example, the following UDF will be much slower than ``df["x"] + 100``.
 
-    The possible types of input a UDF can take in are:
+    Example:
 
-    1. f(col("foo")) - A Column expression, which will instruct DaFt to pass the referenced column into the function at runtime as a Numpy array.
-    2. f(x) - When `x` is some object that is not a Column, DaFt will pass it into the function with no modifications. Note that this object must be pickleable, and that users should use this to pass light data around. For heavier initializations, use the __init__ method in a stateful UDF.
+    >>> @udf(return_type=int)
+    >>> def add_val(x, val=1):
+    >>>    # Your custom Python code here
+    >>>    return [x + 1 for value in x]
 
-    For example, a simple UDF that randomly rotates some user-defined Image type could look like:
+    To invoke your UDF, you can use the ``DataFrame.with_column`` method:
 
-    >>> @udf(return_type=Image)
-    >>> def random_rotations(image_col, rotation_bounds_degrees: int):
-    >>>     return [
-    >>>         img.rotate(random.uniform(0, 1) * rotation_bounds_degrees)
-    >>>         for img in image_col
-    >>>     ]
+    >>> df = DataFrame.from_pydict({"x": [1, 2, 3]})
+    >>> df = df.with_column("x_add_100", add_val(df["x"], val=100))
+
+    Input/Return Types
+    ^^^^^^^^^^^^^^^^^^
+    By default, Daft will pass columns of data into your function as Python lists. However, if this is a bottleneck for your
+    application, you may choose more optimized types for your inputs by annotating your function inputs with type hints.
+
+    In the following example, we annotate the ``x`` input parameter as a numpy array. Daft will now pass your data in as a Numpy
+    array which is much more efficient to work with than a Python list.
+
+    >>> import numpy as np
     >>>
-    >>> # Usage on a DataFrame:
-    >>> df.select(random_rotations(col("images"), rotation_bounds_degrees=90))
+    >>> @udf(return_type=int)
+    >>> def add_val(x: np.ndarray, val: int = 1):
+    >>>     return x + val
+
+    Note also that Daft supports return types other than lists. In the above example, the returned value is a Numpy array as well.
+
+    Input and Return types supported by Daft UDFs and their respective type annotations:
+
+    1. Numpy Arrays (``np.ndarray``)
+    2. Pandas Series (``pd.Series``)
+    3. Polars Series (``polars.Series``)
+    4. PyArrow Arrays (``pa.Array``)
+    5. Python lists (``list`` or ``typing.List``)
+
+    Stateful UDFs
+    ^^^^^^^^^^^^^
 
     UDFs can also be created on Classes, which allow for initialization on some expensive state that can be shared
     between invocations of the class, for example downloading data or creating a model.
 
     >>> @udf(return_type=int)
     >>> class RunModel:
-    >>>
     >>>     def __init__(self):
     >>>         # Perform expensive initializations
     >>>         self._model = create_model()
