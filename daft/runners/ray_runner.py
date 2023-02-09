@@ -446,13 +446,29 @@ def get_meta(partition: vPartition) -> PartitionMetadata:
 
 @ray.remote(num_cpus=1)
 class SchedulerActor:
+    def __init__(
+        self,
+        max_tasks_per_core: float | None,
+        max_refs_per_core: float | None,
+        batch_dispatch_coeff: float | None,
+    ) -> None:
+        """
+        max_tasks_per_core:
+            Maximum allowed inflight tasks per core.
+        max_refs_per_core:
+            Maximum allowed inflight objectrefs per core.
+        batch_dispatch_coeff:
+            When dispatching or awaiting tasks, do it in batches of size coeff * number of cores.
+            If 0, batching is disabled (i.e. batch size is set to 1).
+        """
+        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 2.0
+        self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 10000.0
+        self.batch_dispatch_coeff = batch_dispatch_coeff if batch_dispatch_coeff is not None else 1.0
+
     def remote_run_plan(
         self,
         plan: logical_plan.LogicalPlan,
         psets: dict[str, ray.ObjectRef],
-        max_tasks_per_core: int,
-        max_refs_per_core: int,
-        batch_task_dispatch: bool,
     ) -> list[ray.ObjectRef]:
 
         from loguru import logger
@@ -464,6 +480,7 @@ class SchedulerActor:
         # Note: For autoscaling clusters, we will probably want to query cores dynamically.
         # Keep in mind this call takes about 0.3ms.
         cores = int(ray.cluster_resources()["CPU"])
+        batch_dispatch_size = int(cores * self.batch_dispatch_coeff) or 1
 
         inflight_tasks: dict[str, MaterializationRequestBase[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
@@ -478,16 +495,15 @@ class SchedulerActor:
             while True:
 
                 while (
-                    len(inflight_tasks) < max_tasks_per_core * cores
-                    and len(inflight_ref_to_task) < max_refs_per_core * cores
+                    len(inflight_tasks) < self.max_tasks_per_core * cores
+                    and len(inflight_ref_to_task) < self.max_refs_per_core * cores
                 ):
 
                     # Get the next batch of tasks to dispatch.
                     tasks_to_dispatch = []
                     try:
-                        maybe_empty_cores = max(0, cores - len(inflight_tasks))
-                        configured_dispatch = cores if batch_task_dispatch else 1
-                        num_to_dispatch = max(configured_dispatch, maybe_empty_cores)
+                        maybe_empty_cores = max(0, cores - 1 - len(inflight_tasks))
+                        num_to_dispatch = max(batch_dispatch_size, maybe_empty_cores)
                         for _ in range(num_to_dispatch):
 
                             next_step = next(phys_plan)
@@ -523,7 +539,7 @@ class SchedulerActor:
                         return result_partitions
 
                 # Await a batch of tasks.
-                for i in range(min(cores if batch_task_dispatch else 1, len(inflight_tasks))):
+                for i in range(min(batch_dispatch_size, len(inflight_tasks))):
                     dispatch = datetime.now()
                     [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
                     task_id = inflight_ref_to_task[ready]
@@ -576,16 +592,17 @@ class DynamicRayRunner(RayRunner):
     def __init__(
         self,
         address: str | None,
-        max_tasks_per_core: int | None,
-        max_refs_per_core: int | None,
-        batch_task_dispatch: bool | None,
+        max_tasks_per_core: float | None,
+        max_refs_per_core: float | None,
+        batch_dispatch_coeff: float | None,
     ) -> None:
         super().__init__(address=address)
-        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 4
-        self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 10000
-        self.batch_task_dispatch = batch_task_dispatch if batch_task_dispatch is not None else False
 
-        self.scheduler_actor = SchedulerActor.remote()  # type: ignore
+        self.scheduler_actor = SchedulerActor.remote(  # type: ignore
+            max_tasks_per_core=max_tasks_per_core,
+            max_refs_per_core=max_refs_per_core,
+            batch_dispatch_coeff=batch_dispatch_coeff,
+        )
 
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         result_pset = RayPartitionSet({})
@@ -601,9 +618,6 @@ class DynamicRayRunner(RayRunner):
             self.scheduler_actor.remote_run_plan.remote(
                 plan=plan,
                 psets=psets,
-                max_tasks_per_core=self.max_tasks_per_core,
-                max_refs_per_core=self.max_refs_per_core,
-                batch_task_dispatch=self.batch_task_dispatch,
             )
         )
 
