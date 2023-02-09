@@ -4,7 +4,8 @@ import enum
 import functools
 import inspect
 import logging
-from typing import Any, Callable, List, Sequence, Union, get_origin, get_type_hints
+import sys
+from typing import Any, Callable, List, Sequence, Union, get_type_hints
 
 from daft.execution.operators import ExpressionType
 from daft.expressions import UdfExpression
@@ -42,6 +43,18 @@ UDF = Union[StatefulUDF, StatelessUDF]
 logger = logging.getLogger(__name__)
 
 
+def _get_origin(t) -> type | None:
+    """Get the origin of a type annotation"""
+    # get_origin is introduced only in Python>=3.8
+    if sys.version_info <= (3, 7):
+        if hasattr(t, "__origin__"):
+            return t.__origin__
+        return None
+    from typing import get_origin
+
+    return get_origin(t)
+
+
 def _initialize_func(func):
     """Initializes a function if it is a class, otherwise noop"""
     try:
@@ -72,9 +85,14 @@ def _get_input_types_from_annotation(func: Callable) -> dict[str, UdfInputType]:
 
     udf_input_types = {}
     for name, annotation in param_types.items():
-        if annotation == list or annotation == List or get_origin(annotation) == list or get_origin(annotation) == List:
+        if (
+            annotation == list
+            or annotation == List
+            or _get_origin(annotation) == list
+            or _get_origin(annotation) == List
+        ):
             udf_input_types[name] = UdfInputType.LIST
-        elif _NUMPY_AVAILABLE and (annotation == np.ndarray or get_origin(annotation) == np.ndarray):
+        elif _NUMPY_AVAILABLE and (annotation == np.ndarray or _get_origin(annotation) == np.ndarray):
             udf_input_types[name] = UdfInputType.NUMPY
         elif _PANDAS_AVAILABLE and annotation == pd.Series:
             udf_input_types[name] = UdfInputType.PANDAS
