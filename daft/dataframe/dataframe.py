@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
 
 import pandas
-import pyarrow as pa
 
 from daft import resource_request
 from daft.api_annotations import DataframePublicAPI
@@ -33,7 +32,6 @@ from daft.runners.partitioning import (
     vPartitionSchemaInferenceOptions,
 )
 from daft.runners.pyrunner import LocalPartitionSet
-from daft.types import PythonExpressionType
 from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
@@ -99,6 +97,17 @@ class DataFrame:
         Args:
             plan: LogicalPlan describing the steps required to arrive at this DataFrame
         """
+        if not isinstance(plan, logical_plan.LogicalPlan):
+            if isinstance(plan, dict):
+                raise ValueError(
+                    f"DataFrames should be constructed with a dictionary of columns using `DataFrame.from_pydict`"
+                )
+            if isinstance(plan, list):
+                raise ValueError(
+                    f"DataFrames should be constructed with a list of dictionaries using `DataFrame.from_pylist`"
+                )
+            raise ValueError(f"Expected DataFrame to be constructed with a LogicalPlan, received: {plan}")
+
         self.__plan = plan
         self._result_cache: PartitionCacheEntry | None = None
         self._preview = DataFramePreview(preview_partition=None, dataframe_num_rows=None)
@@ -234,13 +243,16 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame created from list of dictionaries
         """
-        if not data:
-            raise ValueError("Unable to create DataFrame from empty list")
-        return cls.from_pydict(data={header: [row[header] for row in data] for header in data[0]})
+        headers: set[str] = set()
+        for row in data:
+            if not isinstance(row, dict):
+                raise ValueError(f"Expected list of dictionaries of {{column_name: value}}, received: {type(row)}")
+            headers.update(row.keys())
+        return cls.from_pydict(data={header: [row.get(header, None) for row in data] for header in headers})
 
     @classmethod
     @DataframePublicAPI
-    def from_pydict(cls, data: dict[str, list | pa.Array]) -> DataFrame:
+    def from_pydict(cls, data: dict[str, list]) -> DataFrame:
         """Creates a DataFrame from a Python dictionary
 
         Example:
@@ -248,41 +260,38 @@ class DataFrame:
 
         Args:
             data: Key -> Sequence[item] of data. Each Key is created as a column, and must have a value that is
-                either a Python list or PyArrow array. Values must be equal in length across all keys.
+                a Python list. Values must be equal in length across all keys.
 
         Returns:
             DataFrame: DataFrame created from dictionary of columns
         """
+        column_lengths = {key: len(data[key]) for key in data}
+        if len(set(column_lengths.values())) > 1:
+            raise ValueError(
+                f"Expected all columns to be of the same length, but received columns with lengths: {column_lengths}"
+            )
 
-        block_data: dict[str, tuple[ExpressionType, Any]] = {}
         for header in data:
-            arr = data[header]
-
-            if isinstance(arr, pa.Array) or isinstance(arr, pa.ChunkedArray):
-                expr_type = ExpressionType.from_arrow_type(arr.type)
-                block_data[header] = (expr_type, arr.to_pylist() if ExpressionType.is_py(expr_type) else arr)
-                continue
-
-            try:
-                arrow_type = pa.infer_type(arr)
-            except pa.lib.ArrowInvalid:
-                arrow_type = None
-
-            if arrow_type is None or pa.types.is_nested(arrow_type):
-                found_types = {type(o) for o in data[header]} - {type(None)}
-                block_data[header] = (
-                    (ExpressionType.python_object(), list(arr))
-                    if len(found_types) > 1
-                    else (PythonExpressionType(found_types.pop()), list(arr))
+            if not isinstance(data[header], list):
+                raise ValueError(
+                    f"Expected all columns to be of type list, but received {type(data[header])} for {header}"
                 )
-                continue
 
-            expr_type = ExpressionType.from_arrow_type(arrow_type)
-            block_data[header] = (expr_type, list(arr) if ExpressionType.is_py(expr_type) else pa.array(arr))
+        column_types: dict[str, ExpressionType] = {}
+        for header in data:
+            found_types = {type(o) for o in data[header]} - {type(None)}
+            if len(found_types) == 0:
+                column_types[header] = ExpressionType.null()
+            elif len(found_types) == 1:
+                column_types[header] = ExpressionType.from_py_type(found_types.pop())
+            elif found_types == {int, float}:
+                column_types[header] = ExpressionType.float()
+            else:
+                column_types[header] = ExpressionType.python_object()
 
-        schema = Schema([Field(header, expr_type) for header, (expr_type, _) in block_data.items()])
+        schema = Schema([Field(header, expr_type) for header, expr_type in column_types.items()])
         data_vpartition = vPartition.from_pydict(
-            data={header: arr for header, (_, arr) in block_data.items()}, schema=schema, partition_id=0
+            data={header: arr for header, arr in data.items()}, schema=schema, partition_id=0
         )
         result_pset = LocalPartitionSet({0: data_vpartition})
 

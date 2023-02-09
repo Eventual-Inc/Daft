@@ -5,11 +5,22 @@ import json
 import tempfile
 import uuid
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
 
 from daft.dataframe import DataFrame
+from daft.types import ExpressionType
+
+
+class MyObj:
+    pass
+
+
+class MyObj2:
+    pass
+
 
 COL_NAMES = [
     "sepal_length",
@@ -27,15 +38,113 @@ def test_load_missing(read_method):
         getattr(DataFrame, read_method)(str(uuid.uuid4()))
 
 
-def test_create_dataframe(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("data", [{"foo": [1, 2, 3]}, [{"foo": i} for i in range(3)], "foo"])
+def test_error_thrown_create_dataframe_constructor(data) -> None:
+    with pytest.raises(ValueError):
+        DataFrame(data)
+
+
+###
+# List tests
+###
+
+
+def test_create_dataframe_list(valid_data: list[dict[str, float]]) -> None:
     df = DataFrame.from_pylist(valid_data)
-    assert df.column_names == COL_NAMES
+    assert set(df.column_names) == set(COL_NAMES)
+
+
+def test_create_dataframe_list_empty() -> None:
+    df = DataFrame.from_pylist([])
+    assert df.column_names == []
+
+
+def test_create_dataframe_list_ragged_keys() -> None:
+    df = DataFrame.from_pylist(
+        [
+            {"foo": 1},
+            {"foo": 2, "bar": 1},
+            {"foo": 3, "bar": 2, "baz": 1},
+        ]
+    )
+    assert df.to_pydict() == {
+        "foo": [1, 2, 3],
+        "bar": [None, 1, 2],
+        "baz": [None, None, 1],
+    }
+
+
+def test_create_dataframe_list_empty_dicts() -> None:
+    df = DataFrame.from_pylist([{}, {}, {}])
+    assert df.column_names == []
+
+
+def test_create_dataframe_list_non_dicts() -> None:
+    with pytest.raises(ValueError) as e:
+        DataFrame.from_pylist([1, 2, 3])
+    assert "Expected list of dictionaries of {column_name: value}" in str(e.value)
+
+
+###
+# Dict tests
+###
 
 
 def test_create_dataframe_pydict(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     df = DataFrame.from_pydict(pydict)
-    assert df.column_names == COL_NAMES
+    assert set(df.column_names) == set(COL_NAMES)
+
+
+def test_create_dataframe_empty_pydict() -> None:
+    df = DataFrame.from_pydict({})
+    assert df.column_names == []
+
+
+def test_create_dataframe_pydict_ragged_col_lens() -> None:
+    with pytest.raises(ValueError) as e:
+        DataFrame.from_pydict({"foo": [1, 2], "bar": [1, 2, 3]})
+    assert "Expected all columns to be of the same length" in str(e.value)
+
+
+def test_create_dataframe_pydict_bad_columns() -> None:
+    with pytest.raises(ValueError) as e:
+        DataFrame.from_pydict({"foo": "somestring"})
+    assert "Expected all columns to be of type list" in str(e.value)
+
+
+def test_load_pydict_types():
+    data = {
+        "arrow_int": [None, 2, 3],
+        "arrow_float": [None, 1.0, 3.0],
+        "arrow_mixed_numbers": [None, 1.0, 3],
+        "arrow_str": [None, "b", "c"],
+        "arrow_struct": [None, {"foo": 1}, {"bar": 1}],
+        "arrow_nulls": [None, None, None],
+        "py_objs": [None, MyObj(), MyObj()],
+        "heterogenous_py_objs": [None, MyObj(), MyObj2()],
+        "numpy_arrays": [np.array([1]), np.array([2]), np.array([3])],
+    }
+    daft_df = DataFrame.from_pydict(data)
+
+    daft_df.collect()
+    collected_data = daft_df.to_pydict()
+
+    expected = {
+        "arrow_int": ExpressionType.integer(),
+        "arrow_float": ExpressionType.float(),
+        "arrow_mixed_numbers": ExpressionType.float(),
+        "arrow_str": ExpressionType.string(),
+        "arrow_struct": ExpressionType.from_py_type(dict),
+        "arrow_nulls": ExpressionType.null(),
+        "py_objs": ExpressionType.from_py_type(MyObj),
+        "heterogenous_py_objs": ExpressionType.python_object(),
+        "numpy_arrays": ExpressionType.from_py_type(np.ndarray),
+    }
+
+    assert collected_data.keys() == data.keys() == expected.keys()
+    for colname, expected_schema_type in expected.items():
+        assert daft_df.schema()[colname].dtype == expected_schema_type
 
 
 ###

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Iterator, TypeVar
+from typing import TypeVar
 
 from daft.execution import execution_step, physical_plan
-from daft.execution.execution_step import ExecutionStep, MaterializationRequestBase
 from daft.logical import logical_plan
 from daft.logical.logical_plan import LogicalPlan, PartitionScheme
 
@@ -12,15 +11,13 @@ PartitionT = TypeVar("PartitionT")
 
 def get_materializing_physical_plan(
     node: LogicalPlan, psets: dict[str, list[PartitionT]]
-) -> Iterator[None | MaterializationRequestBase[PartitionT]]:
+) -> physical_plan.MaterializedPhysicalPlan:
     """Translates a LogicalPlan into an appropriate physical plan that materializes its final results."""
 
-    return physical_plan.materialize(get_physical_plan(node, psets))
+    return physical_plan.materialize(_get_physical_plan(node, psets))
 
 
-def get_physical_plan(
-    node: LogicalPlan, psets: dict[str, list[PartitionT]]
-) -> Iterator[None | ExecutionStep[PartitionT]]:
+def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) -> physical_plan.InProgressPhysicalPlan:
     """Translates a LogicalPlan into an appropriate physical plan.
 
     See physical_plan.py for more details.
@@ -34,7 +31,7 @@ def get_physical_plan(
     # -- Unary nodes. --
     elif isinstance(node, logical_plan.UnaryNode):
         [child_node] = node._children()
-        child_plan: Iterator[None | ExecutionStep[PartitionT]] = get_physical_plan(child_node, psets)
+        child_plan = _get_physical_plan(child_node, psets)
 
         if isinstance(node, logical_plan.TabularFilesScan):
             return physical_plan.file_read(child_plan=child_plan, scan_info=node)
@@ -126,8 +123,8 @@ def get_physical_plan(
 
         if isinstance(node, logical_plan.Join):
             return physical_plan.join(
-                left_plan=get_physical_plan(left_child, psets),
-                right_plan=get_physical_plan(right_child, psets),
+                left_plan=_get_physical_plan(left_child, psets),
+                right_plan=_get_physical_plan(right_child, psets),
                 join=node,
             )
 
