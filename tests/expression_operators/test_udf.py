@@ -26,7 +26,8 @@ def my_udf(
     arg_typing_list: List,
     arg_typing_list_int: List[int],
     arg_numpy_array: np.ndarray,
-    arg_numpy_array_int: np.ndarray[int],
+    # Unsupported in Python 3.7
+    # arg_numpy_array_int: np.ndarray[int],
     arg_polars_series: pl.Series,
     arg_pandas_series: pd.Series,
     arg_pyarrow_array: pa.Array,
@@ -46,7 +47,6 @@ def my_udf(
     assert isinstance(arg_typing_list, list)
     assert isinstance(arg_typing_list_int, list)
     assert isinstance(arg_numpy_array, np.ndarray)
-    assert isinstance(arg_numpy_array_int, np.ndarray)
     assert isinstance(arg_polars_series, pl.Series)
     assert isinstance(arg_pandas_series, pd.Series)
     assert isinstance(arg_pyarrow_array, pa.Array)
@@ -90,7 +90,6 @@ def test_udf_typing(return_container):
             df["a"],
             df["a"],
             df["a"],
-            df["a"],
             # arg non-containers
             3,
             "foo",
@@ -118,7 +117,6 @@ def test_udf_typing_kwargs():
             arg_typing_list=df["a"],
             arg_typing_list_int=df["a"],
             arg_numpy_array=df["a"],
-            arg_numpy_array_int=df["a"],
             arg_polars_series=df["a"],
             arg_pandas_series=df["a"],
             arg_pyarrow_array=df["a"],
