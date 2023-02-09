@@ -5,7 +5,12 @@ import functools
 import inspect
 import logging
 import sys
-from typing import Any, Callable, List, Sequence, Union, get_type_hints
+from typing import Any, Callable, List, Sequence, Union
+
+if sys.version_info < (3, 8):
+    from typing_extensions import get_type_hints
+else:
+    from typing import get_type_hints
 
 from daft.execution.operators import ExpressionType
 from daft.expressions import UdfExpression

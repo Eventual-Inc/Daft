@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from typing import List, Optional
-
 from loguru import logger
 
 from daft import filesystem
 from daft.udf import udf
 
 
-def _download_udf(urls: List[Optional[str]]) -> List[Optional[bytes]]:
+def _download_udf(urls: list[str | None]) -> list[bytes | None]:
     """Downloads the contents of the supplied URLs."""
     results: list[bytes | None] = []
     filesystems: dict[str, filesystem.AbstractFileSystem] = {}

@@ -22,12 +22,12 @@ def my_udf(
     arg_untyped,
     arg_list: list,
     # Unsupported in Python 3.7
-    # arg_list_int: list[int],
+    arg_list_int: list[int],
     arg_typing_list: List,
     arg_typing_list_int: List[int],
     arg_numpy_array: np.ndarray,
     # Unsupported in Python 3.7
-    # arg_numpy_array_int: np.ndarray[int],
+    arg_numpy_array_int: np.ndarray[int],
     arg_polars_series: pl.Series,
     arg_pandas_series: pd.Series,
     arg_pyarrow_array: pa.Array,
@@ -44,9 +44,11 @@ def my_udf(
     # Test that containers are passed in as the correct container type according to type hints
     assert isinstance(arg_untyped, list)
     assert isinstance(arg_list, list)
+    assert isinstance(arg_list_int, list)
     assert isinstance(arg_typing_list, list)
     assert isinstance(arg_typing_list_int, list)
     assert isinstance(arg_numpy_array, np.ndarray)
+    assert isinstance(arg_numpy_array_int, np.ndarray)
     assert isinstance(arg_polars_series, pl.Series)
     assert isinstance(arg_pandas_series, pd.Series)
     assert isinstance(arg_pyarrow_array, pa.Array)
