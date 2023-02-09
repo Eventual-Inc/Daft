@@ -105,8 +105,8 @@ def test_with_column_rayrunner():
 
     df = df.with_column(
         "resources_ok",
-        assert_resources(col("id"), num_cpus=2, num_gpus=None, memory=1_000_000),
-        resource_request=resource_request.ResourceRequest(num_cpus=2, memory_bytes=1_000_000, num_gpus=None),
+        assert_resources(col("id"), num_cpus=1, num_gpus=None, memory=1_000_000),
+        resource_request=resource_request.ResourceRequest(num_cpus=1, memory_bytes=1_000_000, num_gpus=None),
     )
 
     df.collect()
@@ -122,7 +122,7 @@ def test_with_column_folded_rayrunner():
     df = DataFrame.from_pydict(DATA).repartition(2)
 
     # Because of Projection Folding optimizations, the expected resource request is the max of the three .with_column requests
-    expected = dict(num_cpus=2, num_gpus=None, memory=5_000_000)
+    expected = dict(num_cpus=1, num_gpus=None, memory=5_000_000)
     df = df.with_column(
         "no_requests",
         assert_resources(col("id"), **expected),
@@ -135,7 +135,7 @@ def test_with_column_folded_rayrunner():
     df = df.with_column(
         "more_cpu_request",
         assert_resources(col("id"), **expected),
-        resource_request=resource_request.ResourceRequest(num_cpus=2, memory_bytes=None, num_gpus=None),
+        resource_request=resource_request.ResourceRequest(num_cpus=1, memory_bytes=None, num_gpus=None),
     )
     df.collect()
 

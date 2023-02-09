@@ -420,22 +420,24 @@ def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) 
 
 
 @ray.remote
-def pipeline_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def single_partition_pipeline(
+    instruction_stack: list[Instruction], *inputs: vPartition
+) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote
-def fanout_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def fanout_pipeline(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def reduce_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def reduce_pipeline(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def reduce_fanout_build(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def reduce_and_fanout(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
@@ -444,93 +446,127 @@ def get_meta(partition: vPartition) -> PartitionMetadata:
     return partition.metadata()
 
 
-@ray.remote
-def remote_run_plan(
-    plan: logical_plan.LogicalPlan,
-    psets: dict[str, ray.ObjectRef],
-    max_tasks_per_core: int,
-    max_refs_per_core: int,
-) -> list[ray.ObjectRef]:
+@ray.remote(num_cpus=1)
+class SchedulerActor:
+    def __init__(
+        self,
+        max_tasks_per_core: float | None,
+        max_refs_per_core: float | None,
+        batch_dispatch_coeff: float | None,
+    ) -> None:
+        """
+        max_tasks_per_core:
+            Maximum allowed inflight tasks per core.
+        max_refs_per_core:
+            Maximum allowed inflight objectrefs per core.
+        batch_dispatch_coeff:
+            When dispatching or awaiting tasks, do it in batches of size coeff * number of cores.
+            If 0, batching is disabled (i.e. batch size is set to 1).
+        """
+        # The default values set below were determined in empirical benchmarking to deliver the best performance
+        # (runtime, data locality, memory pressure) across different configurations.
+        # They differ from the original intended values of the scheduler; the original values are discussed in comments.
 
-    from loguru import logger
+        # Theoretically, this should be around 2;
+        # higher values increase the likelihood of dispatching redundant tasks,
+        # and lower values reduce the cluster's ability to pipeline tasks and introduces worker idling during scheduling.
+        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 4.0
 
-    phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
+        # This default is a vacuous limit for now.
+        # The option exists because Ray clusters anecdotally sometimes choke when there are too many object refs in flight.
+        self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 10000.0
 
-    # Note: For autoscaling clusters, we will probably want to query cores dynamically.
-    # Keep in mind this call takes about 0.3ms.
-    cores = int(ray.cluster_resources()["CPU"])
+        # Theoretically, this should be 1.0: we should batch enough tasks for all the cores in a single dispatch;
+        # otherwise, we begin dispatching downstream dependencies (that are not immediately executable)
+        # before saturating all the cores (and their pipelines).
+        self.batch_dispatch_coeff = batch_dispatch_coeff if batch_dispatch_coeff is not None else 0.0
 
-    inflight_tasks: dict[str, ExecutionStep[ray.ObjectRef]] = dict()
-    inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
+    def remote_run_plan(
+        self,
+        plan: logical_plan.LogicalPlan,
+        psets: dict[str, ray.ObjectRef],
+    ) -> list[ray.ObjectRef]:
 
-    result_partitions = None
-    start = datetime.now()
-    profile_filename = (
-        f"profile_DynamicRayRunner.run()_"
-        f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
-    )
-    with profiler(profile_filename):
-        while True:
+        from loguru import logger
 
-            while (
-                len(inflight_tasks) < max_tasks_per_core * cores
-                and len(inflight_ref_to_task) < max_refs_per_core * cores
-            ):
+        phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
 
-                # Get the next batch of tasks to dispatch.
-                tasks_to_dispatch = []
-                try:
-                    for _ in range(cores):
+        # Note: For autoscaling clusters, we will probably want to query cores dynamically.
+        # Keep in mind this call takes about 0.3ms.
+        cores = int(ray.cluster_resources()["CPU"])
+        batch_dispatch_size = int(cores * self.batch_dispatch_coeff) or 1
 
-                        next_step = next(phys_plan)
+        inflight_tasks: dict[str, ExecutionStep[ray.ObjectRef]] = dict()
+        inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
 
-                        # If this task is a no-op, just run it locally immediately.
-                        while next_step is not None and len(next_step.instructions) == 0:
-                            assert isinstance(next_step, SingleOutputExecutionStep)
-                            [partition] = next_step.inputs
-                            next_step.result = RayMaterializedResult(partition)
+        result_partitions = None
+        start = datetime.now()
+        profile_filename = (
+            f"profile_DynamicRayRunner.run()_"
+            f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
+        )
+        with profiler(profile_filename):
+            while True:
+
+                while (
+                    len(inflight_tasks) < self.max_tasks_per_core * cores
+                    and len(inflight_ref_to_task) < self.max_refs_per_core * cores
+                ):
+
+                    # Get the next batch of tasks to dispatch.
+                    tasks_to_dispatch = []
+                    try:
+                        for _ in range(batch_dispatch_size):
+
                             next_step = next(phys_plan)
 
-                        if next_step is None:
-                            break
+                            # If this task is a no-op, just run it locally immediately.
+                            while next_step is not None and len(next_step.instructions) == 0:
+                                assert isinstance(next_step, SingleOutputExecutionStep)
+                                [partition] = next_step.inputs
+                                next_step.result = RayMaterializedResult(partition)
+                                next_step = next(phys_plan)
 
-                        tasks_to_dispatch.append(next_step)
+                            if next_step is None:
+                                break
 
-                except StopIteration as e:
-                    result_partitions = e.value
+                            tasks_to_dispatch.append(next_step)
 
-                # Dispatch the batch of tasks.
-                logger.debug(
-                    f"{(datetime.now() - start).total_seconds()}s: DynamicRayRunner dispatching {len(tasks_to_dispatch)} tasks:"
-                )
-                for task in tasks_to_dispatch:
-                    results = _build_partitions(task)
-                    logger.debug(f"{task} -> {results}")
-                    inflight_tasks[task.id()] = task
-                    for result in results:
-                        inflight_ref_to_task[result] = task.id()
+                    except StopIteration as e:
+                        result_partitions = e.value
 
-                # Exit if the plan is complete and the result references are available.
-                if result_partitions is not None:
-                    return result_partitions
+                    # Dispatch the batch of tasks.
+                    logger.debug(
+                        f"{(datetime.now() - start).total_seconds()}s: DynamicRayRunner dispatching {len(tasks_to_dispatch)} tasks:"
+                    )
+                    for task in tasks_to_dispatch:
+                        results = _build_partitions(task)
+                        logger.debug(f"{task} -> {results}")
+                        inflight_tasks[task.id()] = task
+                        for result in results:
+                            inflight_ref_to_task[result] = task.id()
 
-            # Await a batch of tasks.
-            for i in range(min(cores, len(inflight_tasks))):
-                dispatch = datetime.now()
-                [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
-                task_id = inflight_ref_to_task[ready]
-                logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
+                    # Exit if the plan is complete and the result references are available.
+                    if result_partitions is not None:
+                        return result_partitions
 
-                # Mark the entire task associated with the result as done.
-                task = inflight_tasks[task_id]
-                if isinstance(task, SingleOutputExecutionStep):
-                    del inflight_ref_to_task[ready]
-                elif isinstance(task, MultiOutputExecutionStep):
-                    assert task.results is not None
-                    for result in task.results:
-                        del inflight_ref_to_task[result.partition()]
+                # Await a batch of tasks.
+                for i in range(min(batch_dispatch_size, len(inflight_tasks))):
+                    dispatch = datetime.now()
+                    [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
+                    task_id = inflight_ref_to_task[ready]
+                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
 
-                del inflight_tasks[task_id]
+                    # Mark the entire task associated with the result as done.
+                    task = inflight_tasks[task_id]
+                    if isinstance(task, SingleOutputExecutionStep):
+                        del inflight_ref_to_task[ready]
+                    elif isinstance(task, MultiOutputExecutionStep):
+                        assert task.results is not None
+                        for result in task.results:
+                            del inflight_ref_to_task[result.partition()]
+
+                    del inflight_tasks[task_id]
 
 
 def _build_partitions(task: ExecutionStep[ray.ObjectRef]) -> list[ray.ObjectRef]:
@@ -543,9 +579,11 @@ def _build_partitions(task: ExecutionStep[ray.ObjectRef]) -> list[ray.ObjectRef]
         ray_options = {**ray_options, **_get_ray_task_options(task.resource_request)}
 
     if isinstance(task.instructions[0], ReduceInstruction):
-        build_remote = reduce_fanout_build if isinstance(task.instructions[-1], FanoutInstruction) else reduce_build
+        build_remote = reduce_and_fanout if isinstance(task.instructions[-1], FanoutInstruction) else reduce_pipeline
     else:
-        build_remote = fanout_build if isinstance(task.instructions[-1], FanoutInstruction) else pipeline_build
+        build_remote = (
+            fanout_pipeline if isinstance(task.instructions[-1], FanoutInstruction) else single_partition_pipeline
+        )
 
     build_remote = build_remote.options(**ray_options)
     partitions = build_remote.remote(task.instructions, *task.inputs)
@@ -568,12 +606,17 @@ class DynamicRayRunner(RayRunner):
     def __init__(
         self,
         address: str | None,
-        max_tasks_per_core: int | None,
-        max_refs_per_core: int | None,
+        max_tasks_per_core: float | None,
+        max_refs_per_core: float | None,
+        batch_dispatch_coeff: float | None,
     ) -> None:
         super().__init__(address=address)
-        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 4
-        self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 10000
+
+        self.scheduler_actor = SchedulerActor.remote(  # type: ignore
+            max_tasks_per_core=max_tasks_per_core,
+            max_refs_per_core=max_refs_per_core,
+            batch_dispatch_coeff=batch_dispatch_coeff,
+        )
 
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         result_pset = RayPartitionSet({})
@@ -586,11 +629,9 @@ class DynamicRayRunner(RayRunner):
             if entry.value is not None
         }
         partitions = ray.get(
-            remote_run_plan.remote(
+            self.scheduler_actor.remote_run_plan.remote(
                 plan=plan,
                 psets=psets,
-                max_tasks_per_core=self.max_tasks_per_core,
-                max_refs_per_core=self.max_refs_per_core,
             )
         )
 

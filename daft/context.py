@@ -34,8 +34,9 @@ class _RayRunnerConfig(_RunnerConfig):
 class _DynamicRayRunnerConfig(_RunnerConfig):
     name = "dynamicray"
     address: str | None
-    max_tasks_per_core: int | None
-    max_refs_per_core: int | None
+    max_tasks_per_core: float | None
+    max_refs_per_core: float | None
+    batch_dispatch_coeff: float | None
 
 
 def _get_runner_config_from_env() -> _RunnerConfig:
@@ -55,12 +56,14 @@ def _get_runner_config_from_env() -> _RunnerConfig:
         elif runner.upper() == "DYNAMIC":
             return _DynamicRunnerConfig()
         elif runner.upper() == "DYNAMICRAY":
-            tasks_per_core_env = os.getenv("DAFT_RAY_MAX_TASKS_PER_CORE")
-            refs_per_core_env = os.getenv("DAFT_RAY_MAX_REFS_PER_CORE")
+            tasks_per_core_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_TASKS_PER_CORE")
+            refs_per_core_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_REFS_PER_CORE")
+            batch_dispatch_env = os.getenv("DAFT_DEVELOPER_RAY_BATCH_DISPATCH_COEFF")
             return _DynamicRayRunnerConfig(
                 address=os.getenv("DAFT_RAY_ADDRESS"),
-                max_tasks_per_core=int(tasks_per_core_env) if tasks_per_core_env else None,
-                max_refs_per_core=int(refs_per_core_env) if refs_per_core_env else None,
+                max_tasks_per_core=float(tasks_per_core_env) if tasks_per_core_env else None,
+                max_refs_per_core=float(refs_per_core_env) if refs_per_core_env else None,
+                batch_dispatch_coeff=float(batch_dispatch_env) if batch_dispatch_env else None,
             )
         raise ValueError(f"Unsupported DAFT_RUNNER variable: {os.environ['DAFT_RUNNER']}")
     return _PyRunnerConfig()
@@ -108,6 +111,7 @@ class DaftContext:
                 address=self.runner_config.address,
                 max_tasks_per_core=self.runner_config.max_tasks_per_core,
                 max_refs_per_core=self.runner_config.max_refs_per_core,
+                batch_dispatch_coeff=self.runner_config.batch_dispatch_coeff,
             )
         else:
             raise NotImplementedError(f"Runner config implemented: {self.runner_config.name}")
@@ -157,8 +161,9 @@ def set_runner_ray(address: str | None = None) -> DaftContext:
 
 def set_runner_dynamic_ray(
     address: str | None = None,
-    max_tasks_per_core: int | None = None,
-    max_refs_per_core: int | None = None,
+    max_tasks_per_core: float | None = None,
+    max_refs_per_core: float | None = None,
+    batch_dispatch_coeff: float | None = None,
 ) -> DaftContext:
     """[Experimental] Sets the runner for executing Daft dataframes to the DynamicRayRunner."""
     global _DaftContext
@@ -167,7 +172,10 @@ def set_runner_dynamic_ray(
     _DaftContext = dataclasses.replace(
         _DaftContext,
         runner_config=_DynamicRayRunnerConfig(
-            address=address, max_tasks_per_core=max_tasks_per_core, max_refs_per_core=max_refs_per_core
+            address=address,
+            max_tasks_per_core=max_tasks_per_core,
+            max_refs_per_core=max_refs_per_core,
+            batch_dispatch_coeff=batch_dispatch_coeff,
         ),
         disallow_set_runner=True,
     )
