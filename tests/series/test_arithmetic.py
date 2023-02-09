@@ -168,6 +168,28 @@ def test_add_for_int_and_string_null_scalar(l_dtype, r_dtype) -> None:
     assert add == [None, None, None, None, None, None]
 
 
+def test_comparisons_bad_right_value() -> None:
+    l_arrow = pa.array([1, 2, 3, None, 5, None])
+
+    l = Series.from_arrow(l_arrow)
+    r = [1, 2, 3, None, 5, None]
+
+    with pytest.raises(ValueError, match="another Series"):
+        l + r
+
+    with pytest.raises(ValueError, match="another Series"):
+        l - r
+
+    with pytest.raises(ValueError, match="another Series"):
+        l / r
+
+    with pytest.raises(ValueError, match="another Series"):
+        l * r
+
+    with pytest.raises(ValueError, match="another Series"):
+        l % r
+
+
 def test_arithmetic_numbers_array_mismatch_length() -> None:
     l_arrow = pa.array([1, 2, 3, None, 5, None])
     r_arrow = pa.array([1, 4, 1, 5, None])

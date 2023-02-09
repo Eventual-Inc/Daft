@@ -306,3 +306,29 @@ def test_comparisons_bad_right_value() -> None:
 
     with pytest.raises(ValueError, match="another Series"):
         l > r
+
+
+def test_arithmetic_numbers_array_mismatch_length() -> None:
+    l_arrow = pa.array([1, 2, 3, None, 5, None])
+    r_arrow = pa.array([1, 4, 1, 5, None])
+
+    l = Series.from_arrow(l_arrow)
+    r = Series.from_arrow(r_arrow)
+
+    with pytest.raises(ValueError, match="different length"):
+        l < r
+
+    with pytest.raises(ValueError, match="different length"):
+        l <= r
+
+    with pytest.raises(ValueError, match="different length"):
+        l == r
+
+    with pytest.raises(ValueError, match="different length"):
+        l != r
+
+    with pytest.raises(ValueError, match="different length"):
+        l > r
+
+    with pytest.raises(ValueError, match="different length"):
+        l >= r

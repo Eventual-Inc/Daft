@@ -12,7 +12,7 @@ impl DaftCompare<&Series> for Series {
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
-            Ok(lhs.equal(rhs))
+            lhs.equal(rhs)
         })
     }
 
@@ -21,7 +21,7 @@ impl DaftCompare<&Series> for Series {
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
-            Ok(lhs.not_equal(rhs))
+            lhs.not_equal(rhs)
         })
     }
 
@@ -30,7 +30,7 @@ impl DaftCompare<&Series> for Series {
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
-            Ok(lhs.lt(rhs))
+            lhs.lt(rhs)
         })
     }
 
@@ -39,7 +39,7 @@ impl DaftCompare<&Series> for Series {
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
-            Ok(lhs.lte(rhs))
+            lhs.lte(rhs)
         })
     }
 
@@ -48,7 +48,7 @@ impl DaftCompare<&Series> for Series {
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
-            Ok(lhs.gt(rhs))
+            lhs.gt(rhs)
         })
     }
 
@@ -57,7 +57,7 @@ impl DaftCompare<&Series> for Series {
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
-            Ok(lhs.gte(rhs))
+            lhs.gte(rhs)
         })
     }
 }
