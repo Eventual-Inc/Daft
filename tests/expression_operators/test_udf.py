@@ -165,7 +165,7 @@ def test_udf_new_typing_annotations():
     my_udf_new_typing_annotations_udf = udf(
         my_udf_new_typing_annotations,
         return_type=int,
-        type_hints={"arg_list_int": List[int], "arg_numpy_array_int": np.ndarray[int]},
+        type_hints={"arg_list_int": List[int], "arg_numpy_array_int": np.ndarray},
     )
     df = DataFrame.from_pydict({"a": [1, 2, 3]})
     df = df.with_column(

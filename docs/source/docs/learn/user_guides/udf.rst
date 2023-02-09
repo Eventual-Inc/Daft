@@ -106,8 +106,16 @@ Other supported input types and their type annotations are:
 * PyArrow array: ``pyarrow.Array``
 
 .. WARNING::
+    Type annotation can be finicky in Python, depending on the version of Python you are using and if you are using typing
+    functionality from future Python versions with ``from __future__ import annotations``.
 
-    Numpy arrays and Pandas series cannot properly represent Nulls - they will cast Nulls to NaNs! If you need to represent Nulls, use Polars series or PyArrow arrays instead.
+    Daft will throw an error if it cannot infer types from your annotations, and you may choose to provide your types
+    explicitly as a dictionary of input parameter name to its type in the ``@udf(type_hints=...)`` keyword argument.
+
+.. NOTE::
+
+    Numpy arrays and Pandas series cannot properly represent Nulls - they will cast Nulls to NaNs! If you need to represent Nulls,
+    use Polars series or PyArrow arrays instead.
 
 Return Types
 ^^^^^^^^^^^^
