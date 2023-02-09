@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import multiprocessing
 from dataclasses import dataclass
-from typing import Callable, ClassVar
 
 import psutil
 
@@ -13,11 +12,7 @@ from daft.execution.execution_step import (
     MultiOutputExecutionStep,
     SingleOutputExecutionStep,
 )
-from daft.execution.logical_op_runners import (
-    LogicalGlobalOpRunner,
-    LogicalPartitionOpRunner,
-    ReduceType,
-)
+from daft.execution.logical_op_runners import LogicalPartitionOpRunner
 from daft.filesystem import glob_path, glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
@@ -43,14 +38,6 @@ from daft.runners.partitioning import (
 )
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
-from daft.runners.shuffle_ops import (
-    CoalesceOp,
-    RepartitionHashOp,
-    RepartitionRandomOp,
-    ShuffleOp,
-    Shuffler,
-    SortOp,
-)
 
 
 @dataclass
@@ -140,73 +127,8 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
         return pset, schema
 
 
-class PyRunnerSimpleShuffler(Shuffler):
-    def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
-        map_args = self._map_args if self._map_args is not None else {}
-        reduce_args = self._reduce_args if self._reduce_args is not None else {}
-
-        source_partitions = input.num_partitions()
-        map_results = [
-            self.map_fn(input=input.get_partition(i), output_partitions=num_target_partitions, **map_args)
-            for i in range(source_partitions)
-        ]
-        reduced_results = []
-        for t in range(num_target_partitions):
-            reduced_part = self.reduce_fn(
-                [map_results[i][t] for i in range(source_partitions) if t in map_results[i]], **reduce_args
-            )
-            reduced_results.append(reduced_part)
-
-        return LocalPartitionSet({i: part for i, part in enumerate(reduced_results)})
-
-
-class PyRunnerRepartitionRandom(PyRunnerSimpleShuffler, RepartitionRandomOp):
-    ...
-
-
-class PyRunnerRepartitionHash(PyRunnerSimpleShuffler, RepartitionHashOp):
-    ...
-
-
-class PyRunnerCoalesceOp(PyRunnerSimpleShuffler, CoalesceOp):
-    ...
-
-
-class PyRunnerSortOp(PyRunnerSimpleShuffler, SortOp):
-    ...
-
-
 class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
-    def run_node_list(
-        self,
-        inputs: dict[int, PartitionSet],
-        nodes: list[logical_plan.LogicalPlan],
-        num_partitions: int,
-        resource_request: ResourceRequest,
-    ) -> PartitionSet:
-        # NOTE: resource_request is ignored since there isn't any actual distribution of workloads in PyRunner
-        result = LocalPartitionSet({})
-        for i in range(num_partitions):
-            input_partitions = {nid: inputs[nid].get_partition(i) for nid in inputs}
-            result_partition = self.run_node_list_single_partition(input_partitions, nodes=nodes, partition_id=i)
-            result.set_partition(i, result_partition)
-        return result
-
-
-class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
-    shuffle_ops: ClassVar[dict[type[ShuffleOp], type[Shuffler]]] = {
-        RepartitionRandomOp: PyRunnerRepartitionRandom,
-        RepartitionHashOp: PyRunnerRepartitionHash,
-        CoalesceOp: PyRunnerCoalesceOp,
-        SortOp: PyRunnerSortOp,
-    }
-
-    def map_partitions(self, pset: PartitionSet, func: Callable[[vPartition], vPartition]) -> PartitionSet:
-        return LocalPartitionSet({i: func(pset.get_partition(i)) for i in range(pset.num_partitions())})
-
-    def reduce_partitions(self, pset: PartitionSet, func: Callable[[list[vPartition]], ReduceType]) -> ReduceType:
-        data = [pset.get_partition(i) for i in range(pset.num_partitions())]
-        return func(data)
+    ...
 
 
 class PyRunner(Runner):
