@@ -1,7 +1,10 @@
 use arrow2::datatypes::Field as ArrowField;
 
 use crate::{datatypes::dtype::DataType, error::DaftResult};
-#[derive(Clone, Debug, PartialEq, Eq)]
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Field {
     pub name: String,
     pub dtype: DataType,

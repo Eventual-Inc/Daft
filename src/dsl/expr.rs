@@ -18,7 +18,7 @@ pub enum Expr {
         left: ExprRef,
         right: ExprRef,
     },
-
+    Cast(ExprRef, DataType),
     Column(Arc<str>),
     Literal(lit::LiteralValue),
 }
@@ -40,11 +40,19 @@ impl Expr {
         Expr::Alias(self.clone().into(), name.into())
     }
 
+    pub fn cast(&self, dtype: &DataType) -> Self {
+        Expr::Cast(self.clone().into(), dtype.clone())
+    }
+
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use Expr::*;
 
         match self {
             Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
+            Cast(expr, dtype) => Ok(Field::new(
+                expr.to_field(schema)?.name.as_str(),
+                dtype.clone(),
+            )),
             Column(name) => Ok(schema.get_field(name).cloned()?),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
 
@@ -96,6 +104,7 @@ impl Display for Expr {
                 write_out_expr(f, right)?;
                 Ok(())
             }
+            Cast(expr, dtype) => write!(f, "cast({expr} AS {dtype})"),
             Column(name) => write!(f, "col({name})"),
             Literal(val) => write!(f, "lit({val})"),
         }

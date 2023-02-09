@@ -6,6 +6,8 @@ use pyo3::{
     types::{PyBool, PyBytes, PyFloat, PyInt, PyString, PyTuple},
 };
 
+use super::datatype::PyDataType;
+
 #[pyfunction]
 pub fn col(name: &str) -> PyResult<PyExpr> {
     Ok(PyExpr::from(dsl::col(name)))
@@ -72,6 +74,10 @@ impl PyExpr {
 
     pub fn alias(&self, name: &str) -> PyResult<Self> {
         Ok(self.expr.alias(name).into())
+    }
+
+    pub fn cast(&self, dtype: PyDataType) -> PyResult<Self> {
+        Ok(self.expr.cast(&dtype.into()).into())
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {

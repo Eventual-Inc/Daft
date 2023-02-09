@@ -85,6 +85,7 @@ impl Table {
         use crate::dsl::Expr::*;
         match expr {
             Alias(child, _name) => self.eval_expression(child),
+            Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             Column(name) => self.get_column(name),
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;

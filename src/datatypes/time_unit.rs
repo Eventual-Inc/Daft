@@ -2,7 +2,9 @@ use arrow2::datatypes::TimeUnit as ArrowTimeUnit;
 
 use crate::error::DaftResult;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum TimeUnit {
     Nanoseconds,
     Microseconds,
