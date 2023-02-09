@@ -1,10 +1,5 @@
 use crate::datatypes::DataType;
-use pyo3::{
-    exceptions::PyValueError,
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyString, PyTuple},
-};
+use pyo3::prelude::*;
 
 #[pyclass]
 #[derive(Clone)]

@@ -172,6 +172,6 @@ impl From<&ArrowType> for DataType {
 impl Display for DataType {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
