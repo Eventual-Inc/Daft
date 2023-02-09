@@ -43,3 +43,15 @@ def test_series_pylist_round_trip(dtype) -> None:
     assert s.name() in words
     assert words[s.name()] == 1
     assert words["None"] == 2
+
+
+@pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types + arrow_string_types)
+def test_series_pylist_round_trip(dtype) -> None:
+    data = pa.array([1, 2, 3, None, 5, None])
+
+    s = Series.from_arrow(data.cast(dtype))
+
+    words = Counter(repr(s).split())
+    assert s.name() in words
+    assert words[s.name()] == 1
+    assert words["None"] == 2
