@@ -4,7 +4,7 @@ import enum
 import functools
 import inspect
 import logging
-from typing import Any, Callable, Sequence, Union, get_type_hints
+from typing import Any, Callable, List, Sequence, Union, get_origin, get_type_hints
 
 from daft.execution.operators import ExpressionType
 from daft.expressions import UdfExpression
@@ -64,6 +64,7 @@ class UdfInputType(enum.Enum):
 
 
 def _get_input_types_from_annotation(func: Callable) -> dict[str, UdfInputType]:
+    """Parses a function's type annotations to determine the input types for each argument"""
     assert callable(func), f"Expected func to be callable, got {func}"
 
     type_hints = get_type_hints(func)
@@ -71,9 +72,9 @@ def _get_input_types_from_annotation(func: Callable) -> dict[str, UdfInputType]:
 
     udf_input_types = {}
     for name, annotation in param_types.items():
-        if annotation == list:
+        if annotation == list or annotation == List or get_origin(annotation) == list or get_origin(annotation) == List:
             udf_input_types[name] = UdfInputType.LIST
-        elif _NUMPY_AVAILABLE and annotation == np.ndarray:
+        elif _NUMPY_AVAILABLE and (annotation == np.ndarray or get_origin(annotation) == np.ndarray):
             udf_input_types[name] = UdfInputType.NUMPY
         elif _PANDAS_AVAILABLE and annotation == pd.Series:
             udf_input_types[name] = UdfInputType.PANDAS
@@ -90,6 +91,7 @@ def _get_input_types_from_annotation(func: Callable) -> dict[str, UdfInputType]:
 
 
 def _convert_argument(arg: Any, input_type: UdfInputType, partition_length: int) -> Any:
+    """Converts a UDF argument input to the appropriate user-facing container type"""
     if isinstance(arg, DataBlock) and arg.is_scalar():
         return next(arg.iter_py())
     elif isinstance(arg, DataBlock):
@@ -108,8 +110,7 @@ def _convert_argument(arg: Any, input_type: UdfInputType, partition_length: int)
             return arg.to_polars()
         else:
             raise NotImplementedError(f"Unsupported UDF input type {input_type}")
-    else:
-        return arg
+    return arg
 
 
 def udf(
@@ -123,7 +124,7 @@ def udf(
     """Decorator for creating a UDF
 
     This decorator wraps a function into a DaFt UDF that can then be used on Dataframes.
-    At runtime, DaFt will pass columns of data to the function as equal-length Numpy arrays.
+    At runtime, Daft will pass columns of data to the function as equal-length Numpy arrays.
 
     The possible types of input a UDF can take in are:
 

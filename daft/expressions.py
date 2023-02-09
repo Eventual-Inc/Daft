@@ -94,7 +94,7 @@ class ExpressionExecutor:
             return result
         elif isinstance(expr, LiteralExpression):
             result = expr._value
-            return DataBlock.make_block(result)
+            return DataBlock.make_block(result, scalar=True)
         elif isinstance(expr, AliasExpression):
             result = self.eval(expr._expr, operands)
             return result

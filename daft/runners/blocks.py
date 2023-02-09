@@ -130,7 +130,21 @@ class DataBlock(Generic[ArrType]):
         raise NotImplementedError()
 
     @classmethod
-    def make_block(cls, data: Any) -> DataBlock:
+    def make_block(cls, data: Any, scalar: bool = False) -> DataBlock:
+        if scalar:
+            if isinstance(data, pa.Scalar):
+                if pa.types.is_nested(data.type):
+                    return PyListDataBlock(data=data.as_py())
+                return ArrowDataBlock(data=data)
+            else:
+                try:
+                    arrow_type = pa.infer_type([data])
+                except pa.lib.ArrowInvalid:
+                    arrow_type = None
+                if arrow_type is None or pa.types.is_nested(arrow_type):
+                    return PyListDataBlock(data=data)
+                return ArrowDataBlock(data=pa.scalar(data, type=arrow_type))
+
         # Data is a sequence of data
         # Arrow data: nested types get casted to a list and stored as PyListDataBlock
         if isinstance(data, pa.ChunkedArray):
@@ -156,19 +170,7 @@ class DataBlock(Generic[ArrType]):
                 return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
             arrow_type = pa.from_numpy_dtype(data.dtype)
             return ArrowDataBlock(data=pa.chunked_array([pa.array(data, type=arrow_type)]))
-        # Data is a scalar
-        elif isinstance(data, pa.Scalar):
-            if pa.types.is_nested(data.type):
-                return PyListDataBlock(data=data.as_py())
-            return ArrowDataBlock(data=data)
-        else:
-            try:
-                arrow_type = pa.infer_type([data])
-            except pa.lib.ArrowInvalid:
-                arrow_type = None
-            if arrow_type is None or pa.types.is_nested(arrow_type):
-                return PyListDataBlock(data=data)
-            return ArrowDataBlock(data=pa.scalar(data, type=arrow_type))
+        raise NotImplementedError(f"Cannot convert {type(data)} to DataBlock")
 
     def _unary_op(self, fn: Callable[[ArrType], ArrType], **kwargs) -> DataBlock[ArrType]:
         return DataBlock.make_block(data=fn(self.data, **kwargs))

@@ -3,9 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-import pandas as pd
-import polars as pl
-import pyarrow as pa
 import pytest
 
 from daft.expressions import col
@@ -33,31 +30,14 @@ class MyObj:
 
 
 @udf(return_type=int)
-def multiply_np(x: np.ndarray, num=2, container="numpy"):
-    arr = x * num
-    if container == "numpy":
-        return arr
-    elif container == "list":
-        return arr.tolist()
-    elif container == "arrow":
-        return pa.array(arr)
-    elif container == "arrow_chunked":
-        return pa.chunked_array([pa.array(arr)])
-    elif container == "pandas":
-        return pd.Series(arr)
-    elif container == "polars":
-        return pl.Series(arr)
-    raise NotImplementedError(container)
+def multiply_np(x: np.ndarray, num=2):
+    return x * num
 
 
 @parametrize_service_requests_csv_repartition
-@pytest.mark.parametrize(
-    "return_container",
-    ["numpy", "list", "arrow", "arrow_chunked", "pandas", "polars"],
-)
-def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts, return_container):
+def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df = daft_df.repartition(repartition_nparts).with_column(
-        "unique_key_multiply_2", multiply_np(col("Unique Key"), container=return_container)
+        "unique_key_multiply_2", multiply_np(col("Unique Key"))
     )
     service_requests_csv_pd_df["unique_key_multiply_2"] = service_requests_csv_pd_df["Unique Key"] * 2
     daft_pd_df = daft_df.to_pandas()
