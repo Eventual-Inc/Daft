@@ -31,7 +31,7 @@ macro_rules! impl_expr_op {
 impl_expr_op!(Add, add, Plus);
 impl_expr_op!(Sub, sub, Minus);
 impl_expr_op!(Mul, mul, Multiply);
-impl_expr_op!(Div, div, Divide);
+impl_expr_op!(Div, div, TrueDivide);
 impl_expr_op!(Rem, rem, Modulus);
 
 #[cfg(test)]
