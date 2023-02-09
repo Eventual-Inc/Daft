@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import List
 
 import numpy as np
@@ -21,13 +22,9 @@ def my_udf(
     # Test different arg containers
     arg_untyped,
     arg_list: list,
-    # Unsupported in Python 3.7
-    arg_list_int: list[int],
     arg_typing_list: List,
     arg_typing_list_int: List[int],
     arg_numpy_array: np.ndarray,
-    # Unsupported in Python 3.7
-    arg_numpy_array_int: np.ndarray[int],
     arg_polars_series: pl.Series,
     arg_pandas_series: pd.Series,
     arg_pyarrow_array: pa.Array,
@@ -44,11 +41,9 @@ def my_udf(
     # Test that containers are passed in as the correct container type according to type hints
     assert isinstance(arg_untyped, list)
     assert isinstance(arg_list, list)
-    assert isinstance(arg_list_int, list)
     assert isinstance(arg_typing_list, list)
     assert isinstance(arg_typing_list_int, list)
     assert isinstance(arg_numpy_array, np.ndarray)
-    assert isinstance(arg_numpy_array_int, np.ndarray)
     assert isinstance(arg_polars_series, pl.Series)
     assert isinstance(arg_pandas_series, pd.Series)
     assert isinstance(arg_pyarrow_array, pa.Array)
@@ -105,7 +100,7 @@ def test_udf_typing(return_container):
         ),
     )
     data = df.to_pydict()
-    assert data["a"] == [1, 2, 3]
+    assert data["newcol"] == [1, 2, 3]
 
 
 def test_udf_typing_kwargs():
@@ -129,4 +124,56 @@ def test_udf_typing_kwargs():
         ),
     )
     data = df.to_pydict()
-    assert data["a"] == [1, 2, 3]
+    assert data["newcol"] == [1, 2, 3]
+
+
+###
+# Tests for type_hints=... kwarg
+###
+
+
+@udf(return_type=int, type_hints={"a": np.ndarray})
+def my_udf_type_hints(a: list):
+    assert isinstance(a, np.ndarray)
+    return a
+
+
+def test_udf_type_hints_override():
+    df = DataFrame.from_pydict({"a": [1, 2, 3]})
+    df = df.with_column("newcol", my_udf_type_hints(df["a"]))
+    data = df.to_pydict()
+    assert data["newcol"] == [1, 2, 3]
+
+
+@pytest.mark.skipif(
+    sys.version_info > (3, 8), reason="Requires python3.8 or lower which does not support advanced type annotations"
+)
+def test_udf_new_typing_annotations():
+    """Test behavior on unsupported advanced type annotations, using `type_hints` as the workaround"""
+
+    def my_udf_new_typing_annotations(
+        arg_list_int: list[int],
+        arg_numpy_array_int: np.ndarray[int],
+    ):
+        assert isinstance(arg_list_int, list)
+        assert isinstance(arg_numpy_array_int, np.ndarray)
+        return arg_list_int
+
+    with pytest.raises(TypeError):
+        udf(my_udf_new_typing_annotations, return_type=int)
+
+    my_udf_new_typing_annotations_udf = udf(
+        my_udf_new_typing_annotations,
+        return_type=int,
+        type_hints={"arg_list_int": List[int], "arg_numpy_array_int": np.ndarray[int]},
+    )
+    df = DataFrame.from_pydict({"a": [1, 2, 3]})
+    df = df.with_column(
+        "newcol",
+        my_udf_new_typing_annotations_udf(
+            arg_list_int=df["a"],
+            arg_numpy_array_int=df["a"],
+        ),
+    )
+    data = df.to_pydict()
+    assert data["newcol"] == [1, 2, 3]

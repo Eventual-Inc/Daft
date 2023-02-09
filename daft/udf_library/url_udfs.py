@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import List, Optional
+
 from loguru import logger
 
 from daft import filesystem
@@ -33,4 +35,4 @@ def _download_udf(urls: list[str | None]) -> list[bytes | None]:
 
 # HACK: Workaround for Ray pickling issues if we use the @polars_udf decorator instead.
 # There may be some issues around runtime imports and Ray pickling of decorated functions
-download_udf = udf(_download_udf, return_type=bytes)
+download_udf = udf(_download_udf, return_type=bytes, type_hints={"urls": List[Optional[str]]})

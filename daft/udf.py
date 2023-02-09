@@ -8,9 +8,9 @@ import sys
 from typing import Any, Callable, List, Sequence, Union
 
 if sys.version_info < (3, 8):
-    from typing_extensions import get_type_hints
+    from typing_extensions import get_origin, get_type_hints
 else:
-    from typing import get_type_hints
+    from typing import get_type_hints, get_origin
 
 from daft.execution.operators import ExpressionType
 from daft.expressions import UdfExpression
@@ -48,18 +48,6 @@ UDF = Union[StatefulUDF, StatelessUDF]
 logger = logging.getLogger(__name__)
 
 
-def _get_origin(t) -> type | None:
-    """Get the origin of a type annotation"""
-    # get_origin is introduced only in Python>=3.8
-    if sys.version_info < (3, 8):
-        if hasattr(t, "__origin__"):
-            return t.__origin__
-        return None
-    from typing import get_origin
-
-    return get_origin(t)
-
-
 def _initialize_func(func):
     """Initializes a function if it is a class, otherwise noop"""
     try:
@@ -81,23 +69,28 @@ class UdfInputType(enum.Enum):
     POLARS = 6
 
 
-def _get_input_types_from_annotation(func: Callable) -> dict[str, UdfInputType]:
+def _get_input_types_from_annotation(func: Callable, type_hints: dict[str, type] | None) -> dict[str, UdfInputType]:
     """Parses a function's type annotations to determine the input types for each argument"""
     assert callable(func), f"Expected func to be callable, got {func}"
 
-    type_hints = get_type_hints(func)
+    # If type_hints are not explicitly provided try to derive them from the function instead
+    if type_hints is None:
+        try:
+            type_hints = get_type_hints(func)
+        except TypeError as e:
+            raise TypeError(
+                f"Could not get type hints for function {func.__name__}. This is likely because you are using an advanced typing feature "
+                "that is not yet supported in your current version of Python (e.g. features from PEP 585 and PEP 604 in Python 3.7).\n"
+                "Please either only use compatible typing features for your Python version, or use the @udf(type_hints=...) keyword argument instead.\n"
+                f"Error message: {str(e)}"
+            )
     param_types = {param: type_hints.get(param, None) for param in inspect.signature(func).parameters}
 
     udf_input_types = {}
     for name, annotation in param_types.items():
-        if (
-            annotation == list
-            or annotation == List
-            or _get_origin(annotation) == list
-            or _get_origin(annotation) == List
-        ):
+        if annotation == list or annotation == List or get_origin(annotation) == list or get_origin(annotation) == List:
             udf_input_types[name] = UdfInputType.LIST
-        elif _NUMPY_AVAILABLE and (annotation == np.ndarray or _get_origin(annotation) == np.ndarray):
+        elif _NUMPY_AVAILABLE and (annotation == np.ndarray or get_origin(annotation) == np.ndarray):
             udf_input_types[name] = UdfInputType.NUMPY
         elif _PANDAS_AVAILABLE and annotation == pd.Series:
             udf_input_types[name] = UdfInputType.PANDAS
@@ -140,6 +133,7 @@ def udf(
     f: Callable | None = None,
     *,
     return_type: type,
+    type_hints: dict[str, type] | None = None,
     num_gpus: int | float | None = None,
     num_cpus: int | float | None = None,
     memory_bytes: int | float | None = None,
@@ -188,6 +182,12 @@ def udf(
     4. PyArrow Arrays (``pa.Array``)
     5. Python lists (``list`` or ``typing.List``)
 
+    .. NOTE::
+        Type annotation can be finicky in Python, depending on the version of Python you are using and if you are using typing
+        functionality from future Python versions with ``from __future__ import annotations``. Daft will alert you if it cannot
+        infer types from your annotations, and you may choose to provide your types explicitly as a dictionary of input parameter
+        name to its type in the ``@udf(type_hints=...)`` keyword argument.
+
     Stateful UDFs
     ^^^^^^^^^^^^^
 
@@ -218,13 +218,13 @@ def udf(
     func_ret_type = ExpressionType.from_py_type(return_type)
 
     def udf_decorator(func: UDF) -> Callable:
+
+        call_method = func.__call__ if isinstance(func, type) else func
+        input_types = _get_input_types_from_annotation(call_method, type_hints)
+        ordered_func_arg_names = list(inspect.signature(call_method).parameters.keys())
+
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
-
-            call_method = func.__call__ if isinstance(func, type) else func
-            input_types = _get_input_types_from_annotation(call_method)
-            ordered_func_arg_names = list(inspect.signature(call_method).parameters.keys())
-
             @functools.wraps(func)
             def pre_process_data_block_func(*args, **kwargs):
                 # TODO: The initialization of stateful UDFs is currently done on the execution on every partition here,
