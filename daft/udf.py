@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 def _get_origin(t) -> type | None:
     """Get the origin of a type annotation"""
     # get_origin is introduced only in Python>=3.8
-    if sys.version_info <= (3, 7):
+    if sys.version_info < (3, 8):
         if hasattr(t, "__origin__"):
             return t.__origin__
         return None
