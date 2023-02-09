@@ -74,6 +74,10 @@ impl PySeries {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.series))
     }
+
+    pub fn name(&self) -> PyResult<String> {
+        Ok(self.series.name().to_string())
+    }
 }
 
 impl From<series::Series> for PySeries {

@@ -33,6 +33,11 @@ class Series:
         arrow_array = pa.array(data)
         return Series.from_arrow(arrow_array, name=name)
 
+    def name(self) -> str:
+        if self._series is None:
+            raise ValueError("This Series isn't backed by a Rust PySeries, can not get name")
+        return self._series.name()
+
     def to_arrow(self) -> pa.Array:
         if self._series is None:
             raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
