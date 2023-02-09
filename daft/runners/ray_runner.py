@@ -16,7 +16,6 @@ except ImportError:
     raise
 
 from daft.execution import physical_plan_factory
-from daft.execution.execution_plan import ExecutionPlan
 from daft.execution.execution_step import (
     ExecutionStep,
     FanoutInstruction,
@@ -331,83 +330,6 @@ class RayLogicalGlobalOpRunner(LogicalGlobalOpRunner):
         return result
 
 
-class RayRunner(Runner):
-    def __init__(self, address: str | None) -> None:
-        super().__init__()
-        if ray.is_initialized():
-            logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context")
-        else:
-            ray.init(address=address)
-        self._part_op_runner = RayLogicalPartitionOpRunner()
-        self._global_op_runner = RayLogicalGlobalOpRunner()
-        self._optimizer = RuleRunner(
-            [
-                RuleBatch(
-                    "SinglePassPushDowns",
-                    Once,
-                    [
-                        DropRepartition(),
-                        PushDownPredicates(),
-                        PruneColumns(),
-                        FoldProjections(),
-                        PushDownClausesIntoScan(),
-                    ],
-                ),
-                RuleBatch(
-                    "PushDownLimitsAndRepartitions",
-                    FixedPointPolicy(3),
-                    [PushDownLimit(), DropRepartition(), DropProjections()],
-                ),
-            ]
-        )
-
-    def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
-        if isinstance(pset, LocalPartitionSet):
-            pset = RayPartitionSet({pid: ray.put(val) for pid, val in pset._partitions.items()})
-
-        return self._part_set_cache.put_partition_set(pset=pset)
-
-    def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
-        return self._optimizer.optimize(plan)
-
-    def partition_set_factory(self) -> PartitionSetFactory:
-        return RayPartitionSetFactory()
-
-    def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
-        plan = self.optimize(plan)
-        exec_plan = ExecutionPlan.plan_from_logical(plan)
-        result_partition_set: PartitionSet
-        partition_intermediate_results: dict[int, PartitionSet] = {}
-        profile_filename = (
-            f"profile_RayRunner.run()_{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
-        )
-        with profiler(profile_filename):
-            for exec_op in exec_plan.execution_ops:
-
-                data_deps = exec_op.data_deps
-                input_partition_set = {nid: partition_intermediate_results[nid] for nid in data_deps}
-
-                if exec_op.is_global_op:
-                    input_partition_set = {nid: partition_intermediate_results[nid] for nid in data_deps}
-                    result_partition_set = self._global_op_runner.run_node_list(
-                        input_partition_set, exec_op.logical_ops
-                    )
-                else:
-                    result_partition_set = self._part_op_runner.run_node_list(
-                        input_partition_set, exec_op.logical_ops, exec_op.num_partitions, exec_op.resource_request()
-                    )
-
-                for child_id in data_deps:
-                    del partition_intermediate_results[child_id]
-
-                partition_intermediate_results[exec_op.logical_ops[-1].id()] = result_partition_set
-
-            last = exec_plan.execution_ops[-1].logical_ops[-1]
-            final_result = partition_intermediate_results[last.id()]
-            pset_entry = self._part_set_cache.put_partition_set(final_result)
-            return pset_entry
-
-
 def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
     partitions = list(inputs)
     for instruction in instruction_stack:
@@ -502,7 +424,7 @@ class SchedulerActor:
         result_partitions = None
         start = datetime.now()
         profile_filename = (
-            f"profile_DynamicRayRunner.run()_"
+            f"profile_RayRunner.run()_"
             f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
         )
         with profiler(profile_filename):
@@ -537,7 +459,7 @@ class SchedulerActor:
 
                     # Dispatch the batch of tasks.
                     logger.debug(
-                        f"{(datetime.now() - start).total_seconds()}s: DynamicRayRunner dispatching {len(tasks_to_dispatch)} tasks:"
+                        f"{(datetime.now() - start).total_seconds()}s: RayRunner dispatching {len(tasks_to_dispatch)} tasks:"
                     )
                     for task in tasks_to_dispatch:
                         results = _build_partitions(task)
@@ -602,7 +524,7 @@ def _build_partitions(task: ExecutionStep[ray.ObjectRef]) -> list[ray.ObjectRef]
     return partitions
 
 
-class DynamicRayRunner(RayRunner):
+class RayRunner(Runner):
     def __init__(
         self,
         address: str | None,
@@ -610,7 +532,33 @@ class DynamicRayRunner(RayRunner):
         max_refs_per_core: float | None,
         batch_dispatch_coeff: float | None,
     ) -> None:
-        super().__init__(address=address)
+        super().__init__()
+        if ray.is_initialized():
+            logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context")
+        else:
+            ray.init(address=address)
+        self._part_op_runner = RayLogicalPartitionOpRunner()
+        self._global_op_runner = RayLogicalGlobalOpRunner()
+        self._optimizer = RuleRunner(
+            [
+                RuleBatch(
+                    "SinglePassPushDowns",
+                    Once,
+                    [
+                        DropRepartition(),
+                        PushDownPredicates(),
+                        PruneColumns(),
+                        FoldProjections(),
+                        PushDownClausesIntoScan(),
+                    ],
+                ),
+                RuleBatch(
+                    "PushDownLimitsAndRepartitions",
+                    FixedPointPolicy(3),
+                    [PushDownLimit(), DropRepartition(), DropProjections()],
+                ),
+            ]
+        )
 
         self.scheduler_actor = SchedulerActor.remote(  # type: ignore
             max_tasks_per_core=max_tasks_per_core,
@@ -641,6 +589,18 @@ class DynamicRayRunner(RayRunner):
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
 
         return pset_entry
+
+    def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
+        if isinstance(pset, LocalPartitionSet):
+            pset = RayPartitionSet({pid: ray.put(val) for pid, val in pset._partitions.items()})
+
+        return self._part_set_cache.put_partition_set(pset=pset)
+
+    def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
+        return self._optimizer.optimize(plan)
+
+    def partition_set_factory(self) -> PartitionSetFactory:
+        return RayPartitionSetFactory()
 
 
 @dataclass(frozen=True)

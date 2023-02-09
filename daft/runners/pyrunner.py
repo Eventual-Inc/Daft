@@ -6,7 +6,13 @@ from typing import Callable, ClassVar
 
 import psutil
 
-from daft.execution.execution_plan import ExecutionPlan
+from daft.execution import physical_plan_factory
+from daft.execution.execution_step import (
+    ExecutionStep,
+    MaterializedResult,
+    MultiOutputExecutionStep,
+    SingleOutputExecutionStep,
+)
 from daft.execution.logical_op_runners import (
     LogicalGlobalOpRunner,
     LogicalPartitionOpRunner,
@@ -30,6 +36,7 @@ from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartID,
     PartitionCacheEntry,
+    PartitionMetadata,
     PartitionSet,
     PartitionSetFactory,
     vPartition,
@@ -205,8 +212,6 @@ class LocalLogicalGlobalOpRunner(LogicalGlobalOpRunner):
 class PyRunner(Runner):
     def __init__(self) -> None:
         super().__init__()
-        self._part_op_runner = LocalLogicalPartitionOpRunner()
-        self._global_op_runner = LocalLogicalGlobalOpRunner()
         self._optimizer = RuleRunner(
             [
                 RuleBatch(
@@ -229,57 +234,80 @@ class PyRunner(Runner):
         )
 
     def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
+        # From PyRunner
         return self._optimizer.optimize(plan)
 
     def partition_set_factory(self) -> PartitionSetFactory:
         return LocalPartitionSetFactory()
 
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
-        optimized_plan = self.optimize(plan)
+        plan = self.optimize(plan)
 
-        exec_plan = ExecutionPlan.plan_from_logical(optimized_plan)
-        result_partition_set: PartitionSet
+        psets = {
+            key: entry.value.values()
+            for key, entry in self._part_set_cache._uuid_to_partition_set.items()
+            if entry.value is not None
+        }
+        phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
 
-        # Check that the local machine has sufficient resources available for execution
-        for exec_op in exec_plan.execution_ops:
-            resource_request = exec_op.resource_request()
-            if resource_request.num_cpus is not None and resource_request.num_cpus > multiprocessing.cpu_count():
-                raise RuntimeError(
-                    f"Requested {resource_request.num_cpus} CPUs but found only {multiprocessing.cpu_count()} available"
-                )
-            if resource_request.num_gpus is not None and resource_request.num_gpus > cuda_device_count():
-                raise RuntimeError(
-                    f"Requested {resource_request.num_gpus} GPUs but found only {cuda_device_count()} available"
-                )
-            if (
-                resource_request.memory_bytes is not None
-                and resource_request.memory_bytes > psutil.virtual_memory().total
-            ):
-                raise RuntimeError(
-                    f"Requested {resource_request.memory_bytes} bytes of memory but found only {psutil.virtual_memory().total} available"
-                )
-        partition_intermediate_results: dict[int, PartitionSet] = {}
-        with profiler("profile.json"):
-            for exec_op in exec_plan.execution_ops:
+        result_pset = LocalPartitionSet({})
 
-                data_deps = exec_op.data_deps
-                input_partition_set = {nid: partition_intermediate_results[nid] for nid in data_deps}
+        with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
+            try:
+                while True:
+                    next_step = next(phys_plan)
+                    assert next_step is not None, "Got a None ExecutionStep in singlethreaded mode"
+                    self._check_resource_requests(next_step.resource_request)
+                    self._build_partitions(next_step)
+            except StopIteration as e:
+                for i, partition in enumerate(e.value):
+                    result_pset.set_partition(i, partition)
 
-                if exec_op.is_global_op:
-                    result_partition_set = self._global_op_runner.run_node_list(
-                        input_partition_set, exec_op.logical_ops
-                    )
-                else:
-                    result_partition_set = self._part_op_runner.run_node_list(
-                        input_partition_set, exec_op.logical_ops, exec_op.num_partitions, exec_op.resource_request()
-                    )
+        pset_entry = self.put_partition_set_into_cache(result_pset)
+        return pset_entry
 
-                for child_id in data_deps:
-                    del partition_intermediate_results[child_id]
+    def _check_resource_requests(self, resource_request: ResourceRequest | None) -> None:
+        """Validates that the requested ResourceRequest is possible to run locally"""
+        if resource_request is None:
+            return
+        if resource_request.num_cpus is not None and resource_request.num_cpus > multiprocessing.cpu_count():
+            raise RuntimeError(
+                f"Requested {resource_request.num_cpus} CPUs but found only {multiprocessing.cpu_count()} available"
+            )
+        if resource_request.num_gpus is not None and resource_request.num_gpus > cuda_device_count():
+            raise RuntimeError(
+                f"Requested {resource_request.num_gpus} GPUs but found only {cuda_device_count()} available"
+            )
+        if resource_request.memory_bytes is not None and resource_request.memory_bytes > psutil.virtual_memory().total:
+            raise RuntimeError(
+                f"Requested {resource_request.memory_bytes} bytes of memory but found only {psutil.virtual_memory().total} available"
+            )
 
-                partition_intermediate_results[exec_op.logical_ops[-1].id()] = result_partition_set
+    def _build_partitions(self, partspec: ExecutionStep[vPartition]) -> None:
+        partitions = partspec.inputs
+        for instruction in partspec.instructions:
+            partitions = instruction.run(partitions)
+        if isinstance(partspec, MultiOutputExecutionStep):
+            partspec.results = [PyMaterializedResult(partition) for partition in partitions]
+        elif isinstance(partspec, SingleOutputExecutionStep):
+            [partition] = partitions
+            partspec.result = PyMaterializedResult(partition)
+        else:
+            raise TypeError(f"Cannot typematch input {partspec}")
 
-            last = exec_plan.execution_ops[-1].logical_ops[-1]
-            final_result = partition_intermediate_results[last.id()]
-            pset_entry = self._part_set_cache.put_partition_set(final_result)
-            return pset_entry
+
+@dataclass(frozen=True)
+class PyMaterializedResult(MaterializedResult[vPartition]):
+    _partition: vPartition
+
+    def partition(self) -> vPartition:
+        return self._partition
+
+    def metadata(self) -> PartitionMetadata:
+        return self._partition.metadata()
+
+    def cancel(self) -> None:
+        return None
+
+    def _noop(self, _: vPartition) -> None:
+        return None
