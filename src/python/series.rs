@@ -40,23 +40,23 @@ impl PySeries {
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
-        Ok((&self.series).add(&other.series).into())
+        Ok((&self.series).add(&other.series)?.into())
     }
 
     pub fn __sub__(&self, other: &Self) -> PyResult<Self> {
-        Ok((&self.series).sub(&other.series).into())
+        Ok((&self.series).sub(&other.series)?.into())
     }
 
     pub fn __mul__(&self, other: &Self) -> PyResult<Self> {
-        Ok((&self.series).mul(&other.series).into())
+        Ok((&self.series).mul(&other.series)?.into())
     }
 
     pub fn __truediv__(&self, other: &Self) -> PyResult<Self> {
-        Ok((&self.series).div(&other.series).into())
+        Ok((&self.series).div(&other.series)?.into())
     }
 
     pub fn __mod__(&self, other: &Self) -> PyResult<Self> {
-        Ok((&self.series).rem(&other.series).into())
+        Ok((&self.series).rem(&other.series)?.into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {

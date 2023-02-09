@@ -91,11 +91,11 @@ impl Table {
                 let rhs = self.eval_expression(right)?;
                 use crate::dsl::Operator::*;
                 match op {
-                    Plus => Ok(lhs + rhs),
-                    Minus => Ok(lhs - rhs),
-                    TrueDivide => Ok(lhs / rhs),
-                    Multiply => Ok(lhs * rhs),
-                    Modulus => Ok(lhs % rhs),
+                    Plus => lhs + rhs,
+                    Minus => lhs - rhs,
+                    TrueDivide => lhs / rhs,
+                    Multiply => lhs * rhs,
+                    Modulus => lhs % rhs,
                     _ => panic!("{op:?} not supported"),
                 }
             }

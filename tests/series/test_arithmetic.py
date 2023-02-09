@@ -33,6 +33,9 @@ def test_arithmetic_numbers_array(l_dtype, r_dtype) -> None:
     div = (l / r).to_pylist()
     assert div == [1.0, 0.5, 3.0, None, None, None]
 
+    # mod = (l % r).to_pylist()
+    # assert mod == [0, 2, 0, None, None, None]
+
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
 def test_arithmetic_numbers_left_scalar(l_dtype, r_dtype) -> None:
@@ -54,6 +57,9 @@ def test_arithmetic_numbers_left_scalar(l_dtype, r_dtype) -> None:
 
     div = (l / r).to_pylist()
     assert div == [1.0, 0.25, 1.0, 0.2, None, None]
+
+    # mod = (l % r).to_pylist()
+    # assert mod == [0, 1, 0, 1, None, None]
 
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
@@ -77,6 +83,9 @@ def test_arithmetic_numbers_right_scalar(l_dtype, r_dtype) -> None:
     div = (l / r).to_pylist()
     assert div == [1.0, 2.0, 3.0, None, 5.0, None]
 
+    mod = (l % r).to_pylist()
+    assert mod == [0, 0, 0, None, 0, None]
+
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
 def test_arithmetic_numbers_null_scalar(l_dtype, r_dtype) -> None:
@@ -98,6 +107,9 @@ def test_arithmetic_numbers_null_scalar(l_dtype, r_dtype) -> None:
 
     div = (l / r).to_pylist()
     assert div == [None, None, None, None, None, None]
+
+    mod = (l % r).to_pylist()
+    assert mod == [None, None, None, None, None, None]
 
 
 @pytest.mark.parametrize(
@@ -154,3 +166,26 @@ def test_add_for_int_and_string_null_scalar(l_dtype, r_dtype) -> None:
 
     add = (l + r).to_pylist()
     assert add == [None, None, None, None, None, None]
+
+
+def test_arithmetic_numbers_array_mismatch_length() -> None:
+    l_arrow = pa.array([1, 2, 3, None, 5, None])
+    r_arrow = pa.array([1, 4, 1, 5, None])
+
+    l = Series.from_arrow(l_arrow)
+    r = Series.from_arrow(r_arrow)
+
+    with pytest.raises(ValueError, match="different lengths"):
+        l + r
+
+    with pytest.raises(ValueError, match="different lengths"):
+        l - r
+
+    with pytest.raises(ValueError, match="different lengths"):
+        l * r
+
+    with pytest.raises(ValueError, match="different lengths"):
+        l / r
+
+    with pytest.raises(ValueError, match="different lengths"):
+        l % r

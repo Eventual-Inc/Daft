@@ -5,6 +5,7 @@ use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 use crate::{
     array::{BaseArray, DataArray},
     datatypes::{DaftNumericType, Float64Array, Utf8Array},
+    error::{DaftError, DaftResult},
     kernels::utf8::add_utf8_arrays,
 };
 /// Helper function to perform arithmetic operations on a DataArray
@@ -36,51 +37,53 @@ fn arithmetic_helper<T, Kernel, F>(
     rhs: &DataArray<T>,
     kernel: Kernel,
     operation: F,
-) -> DataArray<T>
+) -> DaftResult<DataArray<T>>
 where
     T: DaftNumericType,
     Kernel: Fn(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    let ca = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => {
-            DataArray::from((lhs.name(), Box::new(kernel(lhs.downcast(), rhs.downcast()))))
-        }
+    match (lhs.len(), rhs.len()) {
+        (a, b) if a == b => Ok(DataArray::from((
+            lhs.name(),
+            Box::new(kernel(lhs.downcast(), rhs.downcast())),
+        ))),
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);
-            match opt_rhs {
+            Ok(match opt_rhs {
                 None => DataArray::full_null(lhs.name(), lhs.len()),
                 Some(rhs) => lhs.apply(|lhs| operation(lhs, rhs)),
-            }
+            })
         }
         (1, _) => {
             let opt_lhs = lhs.get(0);
-            match opt_lhs {
+            Ok(match opt_lhs {
                 None => DataArray::full_null(rhs.name(), rhs.len()),
                 Some(lhs) => rhs.apply(|rhs| operation(lhs, rhs)),
-            }
+            })
         }
-        _ => panic!("Cannot apply operation on arrays of different lengths"),
-    };
-    ca
+        (a, b) => Err(DaftError::ValueError(format!(
+            "Cannot apply operation on arrays of different lengths: {a} vs {b}"
+        ))),
+    }
 }
 
 impl<T> Add for &DataArray<T>
 where
     T: DaftNumericType,
 {
-    type Output = DataArray<T>;
+    type Output = DaftResult<DataArray<T>>;
     fn add(self, rhs: Self) -> Self::Output {
         arithmetic_helper(self, rhs, basic::add, |l, r| l + r)
     }
 }
 
 impl Add for &Utf8Array {
-    type Output = Utf8Array;
+    type Output = DaftResult<Utf8Array>;
     fn add(self, rhs: Self) -> Self::Output {
-        let result = Box::new(add_utf8_arrays(self.downcast(), rhs.downcast()).unwrap());
-        Utf8Array::from((self.name(), result))
+        let result = Box::new(add_utf8_arrays(self.downcast(), rhs.downcast())?);
+        Ok(Utf8Array::from((self.name(), result)))
     }
 }
 
@@ -88,7 +91,7 @@ impl<T> Sub for &DataArray<T>
 where
     T: DaftNumericType,
 {
-    type Output = DataArray<T>;
+    type Output = DaftResult<DataArray<T>>;
     fn sub(self, rhs: Self) -> Self::Output {
         arithmetic_helper(self, rhs, basic::sub, |l, r| l - r)
     }
@@ -98,14 +101,14 @@ impl<T> Mul for &DataArray<T>
 where
     T: DaftNumericType,
 {
-    type Output = DataArray<T>;
+    type Output = DaftResult<DataArray<T>>;
     fn mul(self, rhs: Self) -> Self::Output {
         arithmetic_helper(self, rhs, basic::mul, |l, r| l * r)
     }
 }
 
 impl Div for &Float64Array {
-    type Output = Float64Array;
+    type Output = DaftResult<Float64Array>;
     fn div(self, rhs: Self) -> Self::Output {
         arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
     }
@@ -115,7 +118,7 @@ impl<T> Rem for &DataArray<T>
 where
     T: DaftNumericType,
 {
-    type Output = DataArray<T>;
+    type Output = DaftResult<DataArray<T>>;
     fn rem(self, rhs: Self) -> Self::Output {
         arithmetic_helper(self, rhs, basic::rem, |l, r| l % r)
     }
