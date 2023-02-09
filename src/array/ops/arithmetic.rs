@@ -4,7 +4,7 @@ use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{DaftNumericType, Utf8Array},
+    datatypes::{DaftNumericType, Float64Array, Utf8Array},
     kernels::utf8::add_utf8_arrays,
 };
 /// Helper function to perform arithmetic operations on a DataArray
@@ -104,11 +104,8 @@ where
     }
 }
 
-impl<T> Div for &DataArray<T>
-where
-    T: DaftNumericType,
-{
-    type Output = DataArray<T>;
+impl Div for &Float64Array {
+    type Output = Float64Array;
     fn div(self, rhs: Self) -> Self::Output {
         arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
     }

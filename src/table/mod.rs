@@ -93,7 +93,7 @@ impl Table {
                 match op {
                     Plus => Ok(lhs + rhs),
                     Minus => Ok(lhs - rhs),
-                    Divide => Ok(lhs / rhs),
+                    TrueDivide => Ok(lhs / rhs),
                     Multiply => Ok(lhs * rhs),
                     Modulus => Ok(lhs % rhs),
                     _ => panic!("{op:?} not supported"),

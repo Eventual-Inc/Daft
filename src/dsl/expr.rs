@@ -60,6 +60,9 @@ impl Expr {
                     | Operator::Or => {
                         Field::new(left.to_field(schema)?.name.as_str(), DataType::Boolean)
                     }
+                    Operator::TrueDivide => {
+                        Field::new(left.to_field(schema)?.name.as_str(), DataType::Float64)
+                    }
                     _ => Field::new(
                         left.to_field(schema)?.name.as_str(),
                         try_get_supertype(&left.get_type(schema)?, &right.get_type(schema)?)?,
@@ -111,7 +114,6 @@ pub enum Operator {
     Plus,
     Minus,
     Multiply,
-    Divide,
     TrueDivide,
     FloorDivide,
     Modulus,
@@ -133,9 +135,8 @@ impl Display for Operator {
             Plus => "+",
             Minus => "-",
             Multiply => "*",
-            Divide => "//",
             TrueDivide => "/",
-            FloorDivide => "floor_div",
+            FloorDivide => "//",
             Modulus => "%",
             And => "&",
             Or => "|",

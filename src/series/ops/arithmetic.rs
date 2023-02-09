@@ -2,6 +2,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use super::match_types_on_series;
 use crate::array::BaseArray;
+use crate::datatypes::Float64Type;
 use crate::series::Series;
 use crate::with_match_numeric_and_utf_daft_types;
 use crate::with_match_numeric_daft_types;
@@ -48,8 +49,27 @@ impl Add for Series {
     }
 }
 
+impl Div for &Series {
+    type Output = Series;
+    fn div(self, rhs: Self) -> Self::Output {
+        let lhs = self.cast(&crate::datatypes::DataType::Float64).unwrap();
+        let rhs = rhs.cast(&crate::datatypes::DataType::Float64).unwrap();
+
+        lhs.downcast::<Float64Type>()
+            .unwrap()
+            .div(rhs.downcast::<Float64Type>().unwrap())
+            .into_series()
+    }
+}
+
+impl Div for Series {
+    type Output = Series;
+    fn div(self, rhs: Self) -> Self::Output {
+        (&self).add(&rhs)
+    }
+}
+
 impl_series_math_op!(Sub, sub);
-impl_series_math_op!(Div, div);
 impl_series_math_op!(Mul, mul);
 impl_series_math_op!(Rem, rem);
 
