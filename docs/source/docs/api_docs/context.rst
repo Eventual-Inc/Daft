@@ -12,5 +12,3 @@ Control the execution backend that Daft will run on by calling these functions o
 
     daft.context.set_runner_py
     daft.context.set_runner_ray
-    daft.context.set_runner_dynamic
-    daft.context.set_runner_dynamic_ray
