@@ -56,6 +56,13 @@ repos:
   hooks:
   - id: pyupgrade
     args: [--py37-plus]
+    # NOTE: Python 3.7's typing.get_type_hints() does not support some advanced PEP 585 features
+    # As long as we are supporting Python 3.7, these files cannot use PEP 585 features for compatibility
+    exclude: |
+      (?x)^(
+          tests/expression_operators/test_udf.py|
+          daft/udf_library/url_udfs.py
+      )$
 
 - repo: https://github.com/myint/autoflake
   rev: v2.0.0

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import List
+
 import numpy as np
 import pandas as pd
 import polars as pl
@@ -19,9 +21,10 @@ def my_udf(
     # Test different arg containers
     arg_untyped,
     arg_list: list,
-    arg_list_int: list[int],
-    arg_typing_list: list,
-    arg_typing_list_int: list[int],
+    # Unsupported in Python 3.7
+    # arg_list_int: list[int],
+    arg_typing_list: List,
+    arg_typing_list_int: List[int],
     arg_numpy_array: np.ndarray,
     arg_numpy_array_int: np.ndarray[int],
     arg_polars_series: pl.Series,
@@ -40,7 +43,6 @@ def my_udf(
     # Test that containers are passed in as the correct container type according to type hints
     assert isinstance(arg_untyped, list)
     assert isinstance(arg_list, list)
-    assert isinstance(arg_list_int, list)
     assert isinstance(arg_typing_list, list)
     assert isinstance(arg_typing_list_int, list)
     assert isinstance(arg_numpy_array, np.ndarray)
@@ -89,7 +91,6 @@ def test_udf_typing(return_container):
             df["a"],
             df["a"],
             df["a"],
-            df["a"],
             # arg non-containers
             3,
             "foo",
@@ -114,7 +115,6 @@ def test_udf_typing_kwargs():
             # args
             arg_untyped=df["a"],
             arg_list=df["a"],
-            arg_list_int=df["a"],
             arg_typing_list=df["a"],
             arg_typing_list_int=df["a"],
             arg_numpy_array=df["a"],
