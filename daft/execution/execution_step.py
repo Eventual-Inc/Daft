@@ -10,13 +10,13 @@ if sys.version_info < (3, 8):
 else:
     from typing import Protocol
 
+import daft
 from daft.expressions import Expression
 from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionMetadata, vPartition
-from daft.runners.pyrunner import LocalLogicalPartitionOpRunner
 from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, SortOp
 
 PartitionT = TypeVar("PartitionT")
@@ -189,7 +189,7 @@ class ReadFile(Instruction):
     def _read_file(self, inputs: list[vPartition]) -> list[vPartition]:
         assert len(inputs) == 1
         [filepaths_partition] = inputs
-        partition = LocalLogicalPartitionOpRunner()._handle_tabular_files_scan(
+        partition = daft.runners.pyrunner.LocalLogicalPartitionOpRunner()._handle_tabular_files_scan(
             inputs={self.logplan._filepaths_child.id(): filepaths_partition},
             scan=self.logplan,
             partition_id=self.partition_id,
@@ -207,7 +207,7 @@ class WriteFile(Instruction):
 
     def _write_file(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
-        partition = LocalLogicalPartitionOpRunner()._handle_file_write(
+        partition = daft.runners.pyrunner.LocalLogicalPartitionOpRunner()._handle_file_write(
             inputs={self.logplan._children()[0].id(): input},
             file_write=self.logplan,
             partition_id=self.partition_id,
