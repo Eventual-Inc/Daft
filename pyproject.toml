@@ -75,7 +75,7 @@ module = [
 ]
 
 [[tool.mypy.overrides]]
-enable-error-code = ["attr-defined"]
+enable_error_code = ["attr-defined"]
 module = 'daft.*'
 warn_return_any = false
 

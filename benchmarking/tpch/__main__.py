@@ -96,7 +96,7 @@ class MetricsBuilder:
         logger.info(f"Finished benchmarks for q{qnum}: {walltime_s}s")
         self._metrics[f"tpch_q{qnum}"] = walltime_s
 
-        if str(os.getenv("RAY_PROFILING")) == str(1) and self._runner in ("ray", "dynamicray"):
+        if str(os.getenv("RAY_PROFILING")) == str(1) and self._runner == "ray":
             profile_filename = (
                 f"tpch_q{qnum}_{self._runner}_{datetime.replace(start, microsecond=0).isoformat()}_raytimeline.json"
             )
@@ -165,7 +165,7 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
     """Performs necessary setup of Daft on the current benchmarking environment"""
     ctx = daft.context.get_context()
 
-    if ctx.runner_config.name in ("ray", "dynamicray"):
+    if ctx.runner_config.name == "ray":
         runtime_env = {"py_modules": [daft]}
         if requirements:
             runtime_env.update({"pip": requirements})

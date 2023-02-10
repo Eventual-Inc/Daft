@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.7']
-        daft_runner: [py, ray, dynamic, dynamicray]
+        daft_runner: [py, ray]
     steps:
     - uses: actions/checkout@v3
     - uses: actions-rs/toolchain@v1
