@@ -77,7 +77,7 @@ jobs:
         cargo llvm-cov clean --workspace
         maturin develop
         mkdir -p report-output && pytest --cov=daft
-        coverage combine -a || True
+        coverage combine -a || true
         coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft_runner }}.xml
         cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft_runner }}.lcov
       env:
