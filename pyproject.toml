@@ -44,7 +44,7 @@ ray = [
 serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
 
 [project.urls]
-homepage = "https://getdaft.io"
+homepage = "https://www.getdaft.io"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [tool]
