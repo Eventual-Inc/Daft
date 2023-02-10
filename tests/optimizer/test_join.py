@@ -27,3 +27,15 @@ def test_self_join_groupby_aggregate(optimizer) -> None:
     # No optimization should be possible
     optimized = optimizer(df.plan())
     assert optimized.is_eq(df.plan())
+
+
+def test_join_same_names(optimizer) -> None:
+    lhs = DataFrame.from_pydict({"v1": list(range(10)), "v2": list(range(10))})
+    rhs = DataFrame.from_pydict({"v1": list(range(100)), "v2": list(range(100))})
+    joined = (
+        lhs.join(rhs, on="v1").select((lhs["v1"] > 50).if_else(lhs["v1"] + lhs["v2"], lhs["v1"] * lhs["v2"])).collect()
+    )
+
+    # TODO: No optimization made, but in the future could do a pushdown into the LHS dataframe
+    optimized = optimizer(joined.plan())
+    assert optimized.is_eq(joined.plan())
