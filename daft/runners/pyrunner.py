@@ -90,6 +90,7 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
             raise FileNotFoundError(f"No files found at {source_path}")
 
         schema = self._get_listing_paths_schema()
+
         pset = LocalPartitionSet(
             {
                 i: vPartition.from_pydict(
@@ -98,6 +99,7 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
                 for i, path in enumerate(filepaths)  # Hardcoded to 1 path per partition
             },
         )
+
         return pset, schema
 
     def glob_paths_details(

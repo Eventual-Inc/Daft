@@ -204,8 +204,11 @@ class TabularFilesScan(UnaryNode):
         columns: list[str] | None = None,
         filepaths_child: LogicalPlan,
         filepaths_column_name: str,
+        num_partitions: int | None = None,
     ) -> None:
-        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=filepaths_child.num_partitions())
+        if num_partitions is None:
+            num_partitions = filepaths_child.num_partitions()
+        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=num_partitions)
         super().__init__(schema, partition_spec=pspec, op_level=OpLevel.PARTITION)
 
         if predicate is not None:

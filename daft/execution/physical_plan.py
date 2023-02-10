@@ -55,15 +55,43 @@ def file_read(
 
     Yield a plan to read those filenames.
     """
-    yield from (
-        step.add_instruction(
-            execution_step.ReadFile(partition_id=index, logplan=scan_info),
-            resource_request=None,
-        )
-        if isinstance(step, ExecutionStepBuilder)
-        else step
-        for index, step in enumerate_open_executions(child_plan)
-    )
+
+    materializations: deque[SingleOutputExecutionStep[PartitionT]] = deque()
+    output_partition_index = 0
+
+    while True:
+        # Check if any inputs finished executing.
+        while len(materializations) > 0 and materializations[0].result is not None:
+            result = materializations.popleft().result
+            assert result is not None  # for mypy only
+
+            # NOTE: hardcoded for now; emit one partition for each file.
+            for i in range(result.metadata().num_rows):
+
+                file_read_step = ExecutionStepBuilder[PartitionT](inputs=[result.partition()]).add_instruction(
+                    instruction=execution_step.ReadFile(
+                        partition_id=output_partition_index,
+                        logplan=scan_info,
+                        index=i,
+                    ),
+                    resource_request=None,  # XXX TODO
+                )
+                yield file_read_step
+                output_partition_index += 1
+
+        # Materialize a single dependency.
+        try:
+            child_step = next(child_plan)
+            if isinstance(child_step, ExecutionStepBuilder):
+                child_step = child_step.build_materialization_request_single()
+                materializations.append(child_step)
+            yield child_step
+
+        except StopIteration:
+            if len(materializations) > 0:
+                yield None
+            else:
+                return
 
 
 def file_write(
