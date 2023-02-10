@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pyarrow as pa
 import pytest
 
 from daft import DataFrame, col
@@ -239,7 +238,7 @@ def test_agg_groupby_null_type_column():
         {
             "id": [1, 2, 3, 4],
             "group": [1, 1, 2, 2],
-            "values": pa.array([None, None, None, None], type=pa.null()),
+            "values": [None, None, None, None],
         }
     )
     daft_df = daft_df.groupby(col("group"))
@@ -285,13 +284,14 @@ def test_all_null_groupby_keys(repartition_nparts):
     daft_df = DataFrame.from_pydict(
         {
             "id": [0, 1, 2],
-            "group": pa.array([None, None, None], type=pa.int64()),
+            "group": [None, None, None],
             "values": [1, 2, 3],
         }
     )
 
     daft_df = (
         daft_df.repartition(repartition_nparts)
+        .with_column("group", daft_df["group"].cast(int))
         .groupby(col("group"))
         .agg(
             [
@@ -312,7 +312,7 @@ def test_null_type_column_groupby_keys():
     daft_df = DataFrame.from_pydict(
         {
             "id": [0, 1, 2],
-            "group": pa.array([None, None, None], pa.null()),
+            "group": [None, None, None],
             "values": [1, 2, 3],
         }
     )

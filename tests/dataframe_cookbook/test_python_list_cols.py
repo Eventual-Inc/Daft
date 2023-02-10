@@ -1,57 +1,14 @@
 from __future__ import annotations
 
-from typing import Callable
-
 import numpy as np
 import pandas as pd
-import polars as pl
 import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col, lit
 from daft.types import ExpressionType
-from daft.udf import polars_udf, udf
+from daft.udf import udf
 from tests.conftest import assert_df_equals
-
-
-def parametrize_udfs(name: str, funcs: Callable | list[Callable], return_type: type):
-    """Parametrizes a test with the different variants of UDFs (numpy and polars) when given
-    a function to wrap.
-
-    >>> def f(): ...
-    >>>
-    >>> @parametrize_udfs(name, f, return_type=int)
-    >>> def test_foo(): ...
-
-    Is equivalent to:
-
-    >>> @polars_udf(return_type=int)
-    >>> def f_pl(): ...
-    >>>
-    >>> @udf(return_type=int)
-    >>> def f_np(): ...
-    >>>
-    >>> @pytest.mark.parametrize(name, [f_np, f_pl], return_type=int)
-    >>> def test_foo(name):
-    >>>     ...
-    """
-    funclist = funcs
-    if not isinstance(funclist, list):
-        funclist = [funclist]
-
-    def _wrapper(test_func):
-        udfs = []
-        for func in funclist:
-            udfs.extend(
-                [
-                    udf(func, return_type=return_type),
-                    polars_udf(func, return_type=return_type),
-                ]
-            )
-        return pytest.mark.parametrize(name, udfs)(test_func)
-
-    return _wrapper
-
 
 ###
 # Using Python dicts as an object
@@ -69,37 +26,16 @@ def test_python_dict(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
 
 
-def rename_key_list(dicts):
+@udf(return_type=dict)
+def rename_key(dicts):
     new_dicts = []
     for d in dicts:
         new_dicts.append({"bar": d["foo"]})
     return new_dicts
 
 
-def rename_key_np(dicts):
-    new_dicts = []
-    for d in dicts:
-        new_dicts.append({"bar": d["foo"]})
-    return np.array(new_dicts)
-
-
-def rename_key_pd(dicts):
-    new_dicts = []
-    for d in dicts:
-        new_dicts.append({"bar": d["foo"]})
-    return pd.Series(new_dicts)
-
-
-def rename_key_pl(dicts):
-    new_dicts = []
-    for d in dicts:
-        new_dicts.append({"bar": d["foo"]})
-    return pl.Series(new_dicts)
-
-
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
-@parametrize_udfs("rename_key", [rename_key_list, rename_key_np, rename_key_pd, rename_key_pl], return_type=dict)
-def test_python_dict_udf(repartition_nparts, rename_key):
+def test_python_dict_udf(repartition_nparts):
     data = {"id": [i for i in range(10)], "dicts": [{"foo": i} for i in range(10)]}
     daft_df = (
         DataFrame.from_pydict(data)
@@ -112,6 +48,7 @@ def test_python_dict_udf(repartition_nparts, rename_key):
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
 
 
+@udf(return_type=dict)
 def merge_dicts(dicts, to_merge):
     new_dicts = []
     for d in dicts:
@@ -119,13 +56,8 @@ def merge_dicts(dicts, to_merge):
     return new_dicts
 
 
-merge_dicts_np = udf(merge_dicts, return_type=dict)
-merge_dicts_pl = polars_udf(merge_dicts, return_type=dict)
-
-
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
-@parametrize_udfs("merge_dicts", merge_dicts, return_type=dict)
-def test_python_dict_udf_merge_dicts(repartition_nparts, merge_dicts):
+def test_python_dict_udf_merge_dicts(repartition_nparts):
     to_merge = {"new_field": 1}
     data = {"id": [i for i in range(10)], "dicts": [{"foo": i} for i in range(10)]}
     daft_df = (
@@ -210,21 +142,23 @@ def test_pyobj_add(repartition_nparts, op):
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
 
 
+@udf(return_type=int)
 def get_length(features):
     return [len(feature) for feature in features]
 
 
+@udf(return_type=np.ndarray)
 def zeroes(features):
     return [np.zeros(feature.shape) for feature in features]
 
 
+@udf(return_type=np.ndarray)
 def make_features(lengths):
     return [np.ones(length) for length in lengths]
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
-@parametrize_udfs("get_length", get_length, return_type=int)
-def test_pyobj_obj_to_primitive_udf(repartition_nparts, get_length):
+def test_pyobj_obj_to_primitive_udf(repartition_nparts):
     data = {"id": [i for i in range(10)], "features": [np.ndarray(i) for i in range(10)]}
     daft_df = (
         DataFrame.from_pydict(data).repartition(repartition_nparts).with_column("length", get_length(col("features")))
@@ -236,8 +170,7 @@ def test_pyobj_obj_to_primitive_udf(repartition_nparts, get_length):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
-@parametrize_udfs("zeroes", zeroes, return_type=dict)
-def test_pyobj_obj_to_obj_udf(repartition_nparts, zeroes):
+def test_pyobj_obj_to_obj_udf(repartition_nparts):
     data = {"id": [i for i in range(10)], "features": [np.ones(i) for i in range(10)]}
     daft_df = (
         DataFrame.from_pydict(data).repartition(repartition_nparts).with_column("zero_objs", zeroes(col("features")))
@@ -249,8 +182,7 @@ def test_pyobj_obj_to_obj_udf(repartition_nparts, zeroes):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
-@parametrize_udfs("make_features", make_features, return_type=dict)
-def test_pyobj_primitive_to_obj_udf(repartition_nparts, make_features):
+def test_pyobj_primitive_to_obj_udf(repartition_nparts):
     data = {"lengths": [i for i in range(10)]}
     daft_df = (
         DataFrame.from_pydict(data)
@@ -270,8 +202,7 @@ def test_pyobj_filter_error_on_pyobj():
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 6, 10, 11])
-@parametrize_udfs("get_length", get_length, return_type=int)
-def test_pyobj_filter_udf(repartition_nparts, get_length):
+def test_pyobj_filter_udf(repartition_nparts):
     data = {"id": [i for i in range(10)], "features": [np.ndarray(i) for i in range(10)]}
     daft_df = DataFrame.from_pydict(data).repartition(repartition_nparts).where(get_length(col("features")) > 5)
     daft_pd_df = daft_df.to_pandas()

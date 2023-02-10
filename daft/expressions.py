@@ -19,7 +19,12 @@ from typing import (
 )
 
 import numpy as np
-import pandas as pd
+
+_PANDAS_AVAILABLE = True
+try:
+    import pandas as pd
+except ImportError:
+    _PANDAS_AVAILABLE = False
 
 _POLARS_AVAILABLE = True
 try:
@@ -123,7 +128,7 @@ class ExpressionExecutor:
                 results = pa.chunked_array([results.to_arrow()])
             elif isinstance(results, np.ndarray):
                 results = pa.chunked_array([pa.array(results)])
-            elif isinstance(results, pd.Series):
+            elif _PANDAS_AVAILABLE and isinstance(results, pd.Series):
                 results = pa.chunked_array([pa.array(results)])
             elif isinstance(results, list):
                 results = pa.chunked_array([pa.array(results)])

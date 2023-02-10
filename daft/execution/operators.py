@@ -242,6 +242,7 @@ class OperatorEnum(Enum):
         name="cast_int",
         type_matrix=frozenset(
             {
+                (ExpressionType.null(),): ExpressionType.integer(),
                 (ExpressionType.integer(),): ExpressionType.integer(),
                 (ExpressionType.float(),): ExpressionType.integer(),
                 (ExpressionType.logical(),): ExpressionType.integer(),
@@ -253,6 +254,7 @@ class OperatorEnum(Enum):
         name="cast_float",
         type_matrix=frozenset(
             {
+                (ExpressionType.null(),): ExpressionType.float(),
                 (ExpressionType.float(),): ExpressionType.float(),
                 (ExpressionType.integer(),): ExpressionType.float(),
                 (ExpressionType.python_object(),): ExpressionType.float(),
@@ -263,6 +265,7 @@ class OperatorEnum(Enum):
         name="cast_string",
         type_matrix=frozenset(
             {
+                (ExpressionType.null(),): ExpressionType.string(),
                 (ExpressionType.string(),): ExpressionType.string(),
                 (ExpressionType.integer(),): ExpressionType.string(),
                 (ExpressionType.logical(),): ExpressionType.string(),
@@ -275,6 +278,7 @@ class OperatorEnum(Enum):
         name="cast_logical",
         type_matrix=frozenset(
             {
+                (ExpressionType.null(),): ExpressionType.logical(),
                 (ExpressionType.logical(),): ExpressionType.logical(),
                 (ExpressionType.python_object(),): ExpressionType.logical(),
             }.items()
@@ -284,6 +288,7 @@ class OperatorEnum(Enum):
         name="cast_date",
         type_matrix=frozenset(
             {
+                (ExpressionType.null(),): ExpressionType.date(),
                 (ExpressionType.date(),): ExpressionType.date(),
                 (ExpressionType.python_object(),): ExpressionType.date(),
             }.items()
@@ -293,6 +298,7 @@ class OperatorEnum(Enum):
         name="cast_bytes",
         type_matrix=frozenset(
             {
+                (ExpressionType.null(),): ExpressionType.bytes(),
                 (ExpressionType.bytes(),): ExpressionType.bytes(),
                 (ExpressionType.python_object(),): ExpressionType.bytes(),
             }.items()

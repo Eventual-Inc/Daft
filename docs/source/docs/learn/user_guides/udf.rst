@@ -15,10 +15,13 @@ In the following example, we have a user-defined ``Video`` type.
     class Video:
 
         def num_frames(self) -> int:
-            return self.num_frames
+            return ...
 
         def get_frame(self, frame_index: int) -> Image:
-            return self.frames[frame_index]
+            return ...
+
+        def clip(self, start: float, end: float) -> Video:
+            return ...
 
 Given a Dataframe ``df`` with a column ``"videos"`` containing ``Video`` objects, we can run extract each video's number of frames using the ``.as_py(UserClass).user_method(...)`` inline UDF idiom.
 
@@ -31,7 +34,7 @@ To run a more complicated function such as a function to "get the last frame of 
 
 .. code:: python
 
-    def get_last_frame(video):
+    def get_last_frame(video) -> Image:
         return video.get_frame(video.num_frames() - 1)
 
     # Run get_last_frame on each item in column "videos"
@@ -46,15 +49,15 @@ Inline UDFs are great for convenience, but have two main limitations:
 1. They can only run on single columns
 2. They can only run on single items at a time
 
-Daft provides the ``@polars_udf`` decorator for defining your own UDFs that process multiple columns or multiple rows at a time.
+Daft provides the ``@udf`` decorator for defining your own UDFs that process multiple columns or multiple rows at a time.
 
 For example, let's try writing a function that will clip Videos in a column, based on a start/end timestamps in another column.
 
 .. code:: python
 
-    from daft import polars_udf
+    from daft import udf
 
-    @polars_udf(return_type=Video)
+    @udf(return_type=Video)
     def clip_video_udf(
         videos,
         timestamps_start,
@@ -71,10 +74,55 @@ For example, let's try writing a function that will clip Videos in a column, bas
         clip_video_udf(col("videos"), col("clip_start"), col("clip_end")),
     )
 
-1. The ``@polars_udf`` decorator wraps a normal Python function as a Daft UDF. You can define the return type of the UDF by passing in the ``return_type=`` keyword argument.
-2. Daft will pass columns into your UDF as a `Polars Series <https://pola-rs.github.io/polars/py-polars/html/reference/series/index.html>`_. If the UDF operates on multiple columns, all columns will be represented by Polars Series of the same length.
-3. Your UDF can execute any arbitrary user-defined logic, but needs to return a sequence equal to the lengths of the inputs. Valid DaFt UDF return sequence types are: ``list``, ``numpy.ndarray``, ``pandas.Series`` and ``polars.Series``.
-4. To obtain a new column with our intended results, we simply run our UDF on columns in the DataFrame.
+Some important things to note:
+
+Input Types
+^^^^^^^^^^^
+
+The inputs to our UDF in the above example (``videos``, ``timestamps_start`` and ``timestamps_end``) are provided to our functions as Python lists by default.
+
+However, if your application can benefit from more efficient datastructures, you may choose to have Daft pass in other datastructures instead such as a Numpy array. You can do so simply by type-annotating your function parameters with the appropriate type:
+
+.. code:: python
+
+    import numpy as np
+
+    @udf(return_type=Video)
+    def clip_video_udf(
+        videos,
+        timestamps_start: np.ndarray,
+        timestamps_end: np.ndarray,
+    ):
+        ...
+
+If you don't provide any type annotations, then Daft just passes in a normal Python list!
+
+Other supported input types and their type annotations are:
+
+* Python list: ``list`` or ``typing.List``
+* Numpy array: ``numpy.ndarray``
+* Pandas series: ``pandas.Series``
+* Polars series: ``polars.Series``
+* PyArrow array: ``pyarrow.Array``
+
+.. WARNING::
+    Type annotation can be finicky in Python, depending on the version of Python you are using and if you are using typing
+    functionality from future Python versions with ``from __future__ import annotations``.
+
+    Daft will throw an error if it cannot infer types from your annotations, and you may choose to provide your types
+    explicitly as a dictionary of input parameter name to its type in the ``@udf(type_hints=...)`` keyword argument.
+
+.. NOTE::
+
+    Numpy arrays and Pandas series cannot properly represent Nulls - they will cast Nulls to NaNs! If you need to represent Nulls,
+    use Polars series or PyArrow arrays instead.
+
+Return Types
+^^^^^^^^^^^^
+
+You can define the return type of the UDF by passing in the ``return_type=`` keyword argument to the ``@udf`` decorator. This will inform Daft what the type of the resulting column from your UDF is.
+
+Inside of your function itself, you can return data in any of the options that are supported as input types (lists, numpy arrays, pandas series, polars series or PyArrow arrays).
 
 
 Stateful UDFs
@@ -95,7 +143,7 @@ For example, to download and run a model on a column of images:
             # Run any expensive initializations
             self._model = get_model()
 
-        def __call__(self, images):
+        def __call__(self, images: np.ndarray):
             # Run model on columnes
             return self._model(images)
 

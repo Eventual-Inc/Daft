@@ -2,15 +2,13 @@ from __future__ import annotations
 
 import pathlib
 
-import numpy as np
 import pandas as pd
-import pyarrow as pa
 import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
 from daft.filesystem import get_filesystem_from_path
-from daft.types import ExpressionType, PythonExpressionType
+from daft.types import PythonExpressionType
 from tests.assets.assets import (
     IRIS_CSV,
     SERVICE_REQUESTS_PARQUET,
@@ -21,14 +19,6 @@ from tests.dataframe_cookbook.conftest import (
     COLUMNS,
     parametrize_service_requests_csv_repartition,
 )
-
-
-class MyObj:
-    pass
-
-
-class MyObj2:
-    pass
 
 
 @parametrize_service_requests_csv_repartition
@@ -92,39 +82,11 @@ def test_load_json(tmp_path: pathlib.Path):
 
 
 def test_load_pydict():
-    data = {
-        "arrow_int": [None, 2, 3],
-        "arrow_float": [None, 1.0, 3.0],
-        "arrow_str": [None, "b", "c"],
-        "arrow_struct": [None, {"foo": 1}, {"bar": 1}],
-        "arrow_nulls": [None, None, None],
-        "arrow_arr_int_all_null": pa.array([None, None, None], type=pa.int64()),
-        "arrow_arr_structs": pa.array([None, {"foo": 1}, {"bar": 1}]),
-        "py_objs": [None, MyObj(), MyObj()],
-        "heterogenous_py_objs": [None, MyObj(), MyObj2()],
-        "numpy_arrays": [np.array([1]), np.array([2]), np.array([3])],
-    }
+    data = {"foo": [1, 2, 3], "bar": [1.0, 2.0, 3.0], "baz": ["a", "b", "c"]}
     daft_df = DataFrame.from_pydict(data)
-
-    daft_df.collect()
-    collected_data = daft_df.to_pydict()
-
-    expected = {
-        "arrow_int": ExpressionType.integer(),
-        "arrow_float": ExpressionType.float(),
-        "arrow_str": ExpressionType.string(),
-        "arrow_struct": PythonExpressionType(dict),
-        "arrow_nulls": ExpressionType.null(),
-        "arrow_arr_int_all_null": ExpressionType.integer(),
-        "arrow_arr_structs": PythonExpressionType(dict),
-        "py_objs": PythonExpressionType(MyObj),
-        "heterogenous_py_objs": ExpressionType.python_object(),
-        "numpy_arrays": PythonExpressionType(np.ndarray),
-    }
-
-    assert collected_data.keys() == data.keys() == expected.keys()
-    for colname, expected_schema_type in expected.items():
-        assert daft_df.schema()[colname].dtype == expected_schema_type
+    pd_df = pd.DataFrame(data)
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, pd_df, sort_key="foo")
 
 
 def test_load_pylist():

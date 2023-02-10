@@ -17,10 +17,6 @@ Polars UDFs
 
 ``@polars_udf`` added which works similarly to ``@udf``, but provides function inputs as a Polars Series instead of Numpy array. Polars Series is a more efficient format to cast our underlying Arrow data representation and handles NaN vs Null semantics correctly.
 
-.. WARNING::
-
-    ``@udf`` will be deprecated in 0.1.0.
-
 
 See: `#204 <https://github.com/Eventual-Inc/Daft/pull/204>`_
 
@@ -68,12 +64,6 @@ Build Changes
 
 * Downgrade minimum Arrow version to 6.0 `#222 <https://github.com/Eventual-Inc/Daft/pull/222>`_
 * MacOS build bug when multiprocessing method is set to spawn `#207 <https://github.com/Eventual-Inc/Daft/pull/207>`_
-
-
-Deprecations
-------------
-
-* ``@udf`` will be deprecated in 0.1.0 in favor of ``@polars_udf``
 
 
 Closed Issues

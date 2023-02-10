@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import math
 from abc import abstractmethod
 from typing import Any
 
 import numpy as np
 
 from daft.runners.blocks import ArrowArrType, DataBlock
-from daft.runners.partitioning import PartID, PartitionSet, vPartition
+from daft.runners.partitioning import PartID, vPartition
 
 from ..logical.schema import ExpressionList
 
@@ -66,22 +65,6 @@ class RepartitionHashOp(ShuffleOp):
         return vPartition.merge_partitions(mapped_outputs)
 
 
-class CoalesceOp(ShuffleOp):
-    @staticmethod
-    def map_fn(
-        input: vPartition, output_partitions: int, num_input_partitions: int | None = None
-    ) -> dict[PartID, vPartition]:
-        assert num_input_partitions is not None
-        assert output_partitions <= num_input_partitions
-
-        tgt_idx = math.floor((output_partitions / num_input_partitions) * input.partition_id)
-        return {PartID(tgt_idx): input}
-
-    @staticmethod
-    def reduce_fn(mapped_outputs: list[vPartition]) -> vPartition:
-        return vPartition.merge_partitions(mapped_outputs, verify_partition_id=False)
-
-
 class SortOp(ShuffleOp):
     @staticmethod
     def map_fn(
@@ -109,9 +92,3 @@ class SortOp(ShuffleOp):
         assert exprs is not None and descending is not None
         assert len(exprs) == len(descending)
         return vPartition.merge_partitions(mapped_outputs).sort(exprs, descending=descending)
-
-
-class Shuffler(ShuffleOp):
-    @abstractmethod
-    def run(self, input: PartitionSet, num_target_partitions: int) -> PartitionSet:
-        raise NotImplementedError()

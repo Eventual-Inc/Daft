@@ -33,7 +33,7 @@ def my_udf(c):
 ###
 
 
-@pytest.mark.skipif(get_context().runner_config.name not in {"py", "dynamic"}, reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_requesting_too_many_cpus():
     df = DataFrame.from_pydict(DATA)
 
@@ -47,7 +47,7 @@ def test_requesting_too_many_cpus():
         df.collect()
 
 
-@pytest.mark.skipif(get_context().runner_config.name not in {"py", "dynamic"}, reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_requesting_too_many_gpus():
     df = DataFrame.from_pydict(DATA)
     df = df.with_column(
@@ -58,7 +58,7 @@ def test_requesting_too_many_gpus():
         df.collect()
 
 
-@pytest.mark.skipif(get_context().runner_config.name not in {"py", "dynamic"}, reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_requesting_too_much_memory():
     df = DataFrame.from_pydict(DATA)
 
@@ -97,16 +97,14 @@ RAY_VERSION_LT_2 = int(ray.__version__.split(".")[0]) < 2
 @pytest.mark.skipif(
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
-@pytest.mark.skipif(
-    get_context().runner_config.name not in {"ray", "dynamicray"}, reason="requires RayRunner to be in use"
-)
+@pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
 def test_with_column_rayrunner():
     df = DataFrame.from_pydict(DATA).repartition(2)
 
     df = df.with_column(
         "resources_ok",
-        assert_resources(col("id"), num_cpus=2, num_gpus=None, memory=1_000_000),
-        resource_request=resource_request.ResourceRequest(num_cpus=2, memory_bytes=1_000_000, num_gpus=None),
+        assert_resources(col("id"), num_cpus=1, num_gpus=None, memory=1_000_000),
+        resource_request=resource_request.ResourceRequest(num_cpus=1, memory_bytes=1_000_000, num_gpus=None),
     )
 
     df.collect()
@@ -115,14 +113,12 @@ def test_with_column_rayrunner():
 @pytest.mark.skipif(
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
-@pytest.mark.skipif(
-    get_context().runner_config.name not in {"ray", "dynamicray"}, reason="requires RayRunner to be in use"
-)
+@pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
 def test_with_column_folded_rayrunner():
     df = DataFrame.from_pydict(DATA).repartition(2)
 
     # Because of Projection Folding optimizations, the expected resource request is the max of the three .with_column requests
-    expected = dict(num_cpus=2, num_gpus=None, memory=5_000_000)
+    expected = dict(num_cpus=1, num_gpus=None, memory=5_000_000)
     df = df.with_column(
         "no_requests",
         assert_resources(col("id"), **expected),
@@ -135,7 +131,7 @@ def test_with_column_folded_rayrunner():
     df = df.with_column(
         "more_cpu_request",
         assert_resources(col("id"), **expected),
-        resource_request=resource_request.ResourceRequest(num_cpus=2, memory_bytes=None, num_gpus=None),
+        resource_request=resource_request.ResourceRequest(num_cpus=1, memory_bytes=None, num_gpus=None),
     )
     df.collect()
 
@@ -160,7 +156,7 @@ def assert_num_cuda_visible_devices(c, num_gpus: int = 0):
     return c
 
 
-@pytest.mark.skipif(get_context().runner_config.name not in {"py", "dynamic"}, reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 def test_with_column_pyrunner_gpu():
     df = DataFrame.from_pydict(DATA).repartition(5)
@@ -176,9 +172,7 @@ def test_with_column_pyrunner_gpu():
     df.collect()
 
 
-@pytest.mark.skipif(
-    get_context().runner_config.name not in {"ray", "dynamicray"}, reason="requires RayRunner to be in use"
-)
+@pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 @pytest.mark.parametrize("num_gpus", [None, 1])
 def test_with_column_rayrunner_gpu(num_gpus):
@@ -193,9 +187,7 @@ def test_with_column_rayrunner_gpu(num_gpus):
     df.collect()
 
 
-@pytest.mark.skipif(
-    get_context().runner_config.name not in {"ray", "dynamicray"}, reason="requires RayRunner to be in use"
-)
+@pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 def test_with_column_max_resources_rayrunner_gpu():
     df = DataFrame.from_pydict(DATA).repartition(2)
