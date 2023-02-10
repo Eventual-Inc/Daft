@@ -28,7 +28,7 @@ def _get_s3fs_kwargs() -> dict[str, Any]:
         import botocore.session
     except ImportError:
         logger.error(
-            "Error when importing botocore. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://getdaft.io/docs/learn/install.html)"
+            "Error when importing botocore. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://getdaft.io/project/docs/en/latest/learn/install.html)"
         )
         raise
 
@@ -54,7 +54,7 @@ def get_filesystem(protocol: str, **kwargs) -> AbstractFileSystem:
         klass = get_filesystem_class(protocol)
     except ImportError:
         logger.error(
-            f"Error when importing dependencies for accessing data with: {protocol}. Please ensure that getdaft was installed with the appropriate extra dependencies (https://getdaft.io/docs/learn/install.html)"
+            f"Error when importing dependencies for accessing data with: {protocol}. Please ensure that getdaft was installed with the appropriate extra dependencies (https://getdaft.io/project/docs/en/latest/learn/install.html)"
         )
         raise
 

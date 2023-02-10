@@ -2,7 +2,7 @@
 
 |CI| |PyPI| |Latest Tag|
 
-`Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io/docs>`_ • `Installation`_ • `10-minute tour of Daft <https://getdaft.io/docs/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
+`Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io/docs>`_ • `Installation`_ • `10-minute tour of Daft <https://getdaft.io/project/docs/en/latest/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
 Daft: the distributed Python dataframe for complex data
 =======================================================
@@ -36,12 +36,12 @@ Installation
 
 Install Daft with ``pip install getdaft``.
 
-For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://getdaft.io/docs/install.html>`_
+For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://getdaft.io/project/docs/en/latest/install.html>`_
 
 Quickstart
 ^^^^^^^^^^
 
-  Check out our `10-minute quickstart <https://getdaft.io/docs/learn/10-min.html>`_!
+  Check out our `10-minute quickstart <https://getdaft.io/project/docs/en/latest/learn/10-min.html>`_!
 
 In this example, we load images from an AWS S3 bucket and run a simple function to generate thumbnails for each image:
 
@@ -78,9 +78,9 @@ In this example, we load images from an AWS S3 bucket and run a simple function 
 More Resources
 ^^^^^^^^^^^^^^
 
-* `10-minute tour of Daft <https://getdaft.io/docs/learn/10-min.html>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
-* `User Guide <https://getdaft.io/docs/learn/user_guides.html>`_ - take a deep-dive into each topic within Daft
-* `API Reference <https://getdaft.io/docs/api_docs/index.html>`_ - API reference for public classes/functions of Daft
+* `10-minute tour of Daft <https://getdaft.io/project/docs/en/latest/learn/10-min.html>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
+* `User Guide <https://getdaft.io/project/docs/en/latest/learn/user_guides.html>`_ - take a deep-dive into each topic within Daft
+* `API Reference <https://getdaft.io/project/docs/en/latest/api_docs/index.html>`_ - API reference for public classes/functions of Daft
 
 Contributing
 ------------
@@ -100,7 +100,7 @@ The data that we collect is:
 2. **Metadata-only:** we do not collect any of our users’ proprietary code or data
 3. **For development only:** we do not buy or sell any user data
 
-Please see our `documentation <https://getdaft.io/docs/telemetry.html>`_ for more details.
+Please see our `documentation <https://getdaft.io/project/docs/en/latest/telemetry.html>`_ for more details.
 
 License
 -------

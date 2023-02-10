@@ -5,10 +5,14 @@
 
 from __future__ import annotations
 
+import importlib
+import inspect
+import subprocess
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 project = "Daft"
-copyright = "2022, Eventual"
+copyright = "2023, Eventual"
 author = "Eventual"
 # html_logo = "_static/daft-logo.png"
 html_favicon = "_static/daft-favicon.png"
@@ -27,7 +31,7 @@ extensions = [
 ]
 
 templates_path = ["_templates"]
-exclude_patterns = ["docs/release_notes/_template.rst"]
+exclude_patterns = ["release_notes/_template.rst"]
 
 
 # -- Options for Notebook rendering
@@ -41,7 +45,7 @@ nb_execution_mode = "off"
 
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
-html_css_files = ["header.css", "landing-page.css", "custom-function-signatures.css"]
+html_css_files = ["header.css", "custom-function-signatures.css"]
 html_theme_options = {
     # This is the footer of the primary sidebar as HTML
     "extra_navbar": "",
@@ -53,19 +57,16 @@ html_theme_options = {
 
 # -- Options for redirecting URLs
 redirects = {
-    "docs/learn/install": "../install.html",
-    "docs/learn/user_guides/dataframes": "intro-dataframes.html",
-    "docs/learn/user_guides/types_and_ops": "intro-dataframes.html",
-    "docs/learn/user_guides/remote_cluster_execution": "scaling-up.html",
-    "docs/learn/quickstart": "docs/learn/10-min.html",
+    "learn/install": "../install.html",
+    "learn/user_guides/dataframes": "intro-dataframes.html",
+    "learn/user_guides/types_and_ops": "intro-dataframes.html",
+    "learn/user_guides/remote_cluster_execution": "scaling-up.html",
+    "learn/quickstart": "learn/10-min.html",
 }
 
 # Resolving code links to github
 # Adapted from: https://github.com/aaugustin/websockets/blob/778a1ca6936ac67e7a3fe1bbe585db2eafeaa515/docs/conf.py#L100-L134
 
-import importlib
-import inspect
-import subprocess
 
 commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd="../..").strip().decode("utf-8")
 code_url = f"https://github.com/Eventual-Inc/Daft/blob/{commit}"
