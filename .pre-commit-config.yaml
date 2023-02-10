@@ -13,9 +13,9 @@ repos:
   hooks:
   - id: detect-private-key
   - id: trailing-whitespace
-    exclude: docs/source/docs/api_docs/
+    exclude: docs/source/api_docs/
   - id: end-of-file-fixer
-    exclude: docs/source/docs/api_docs/
+    exclude: docs/source/api_docs/
   - id: check-yaml
     exclude: kubernetes-ops
   - id: pretty-format-json
