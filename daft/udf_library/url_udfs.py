@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from typing import Sequence
+from typing import List, Optional
 
 from loguru import logger
 
 from daft import filesystem
-from daft.udf import polars_udf
+from daft.udf import udf
 
 
-def _download_udf(urls: Sequence[str | None]) -> Sequence[bytes | None]:
+def _download_udf(urls: list[str | None]) -> list[bytes | None]:
     """Downloads the contents of the supplied URLs."""
     results: list[bytes | None] = []
     filesystems: dict[str, filesystem.AbstractFileSystem] = {}
@@ -35,4 +35,4 @@ def _download_udf(urls: Sequence[str | None]) -> Sequence[bytes | None]:
 
 # HACK: Workaround for Ray pickling issues if we use the @polars_udf decorator instead.
 # There may be some issues around runtime imports and Ray pickling of decorated functions
-download_udf = polars_udf(_download_udf, return_type=bytes)
+download_udf = udf(_download_udf, return_type=bytes, type_hints={"urls": List[Optional[str]]})
