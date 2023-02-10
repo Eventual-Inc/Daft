@@ -128,6 +128,27 @@ def test_udf_typing_kwargs():
 
 
 ###
+# Tests for class UDFs
+###
+
+
+@udf(return_type=int)
+class MyUDF:
+    def __init__(self):
+        self._a = 1
+
+    def __call__(self, b: np.ndarray):
+        return b + self._a
+
+
+def test_class_udf():
+    df = DataFrame.from_pydict({"a": [1, 2, 3]})
+    df = df.with_column("newcol", MyUDF(df["a"]))
+    data = df.to_pydict()
+    assert data["newcol"] == [2, 3, 4]
+
+
+###
 # Tests for type_hints=... kwarg
 ###
 

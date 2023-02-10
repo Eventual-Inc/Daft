@@ -221,7 +221,11 @@ def udf(
 
         call_method = func.__call__ if isinstance(func, type) else func
         input_types = _get_input_types_from_annotation(call_method, type_hints)
+
+        # Get function argument names, excluding `self` if it is a class method
         ordered_func_arg_names = list(inspect.signature(call_method).parameters.keys())
+        if isinstance(func, type):
+            ordered_func_arg_names = ordered_func_arg_names[1:]
 
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
