@@ -26,6 +26,7 @@ from daft.execution.execution_step import (
     SingleOutputExecutionStep,
 )
 from daft.logical import logical_plan
+from daft.resource_request import ResourceRequest
 
 PartitionT = TypeVar("PartitionT")
 T = TypeVar("T")
@@ -65,8 +66,11 @@ def file_read(
             result = materializations.popleft().result
             assert result is not None  # for mypy only
 
-            # NOTE: hardcoded for now; emit one partition for each file.
-            for i in range(result.metadata().num_rows):
+            vpartition = result.vpartition()
+            file_sizes_bytes = vpartition.to_pydict()["size"]
+
+            # Emit one partition for each file (NOTE: hardcoded for now).
+            for i in range(vpartition.metadata().num_rows):
 
                 file_read_step = ExecutionStepBuilder[PartitionT](inputs=[result.partition()]).add_instruction(
                     instruction=execution_step.ReadFile(
@@ -74,7 +78,7 @@ def file_read(
                         logplan=scan_info,
                         index=i,
                     ),
-                    resource_request=None,  # XXX TODO
+                    resource_request=ResourceRequest(memory_bytes=file_sizes_bytes[i]),
                 )
                 yield file_read_step
                 output_partition_index += 1

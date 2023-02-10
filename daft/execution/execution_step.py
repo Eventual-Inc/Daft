@@ -149,6 +149,10 @@ class MaterializedResult(Protocol[PartitionT]):
         """Get the partition of this result."""
         ...
 
+    def vpartition(self) -> vPartition:
+        """Get the vPartition of this result."""
+        ...
+
     def metadata(self) -> PartitionMetadata:
         """Get the metadata of the partition in this result."""
         ...
