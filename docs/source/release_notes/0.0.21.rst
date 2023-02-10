@@ -19,7 +19,7 @@ Telemetry
 
 Telemetry was added to help Daft development. To disable, use the environment variable ``DAFT_ANALYTICS_ENABLED=0``.
 
-See: `#413 <https://github.com/Eventual-Inc/Daft/pull/413>`_ and `Telemetry docs <../telemetry>`_ for more details
+See: `#413 <https://github.com/Eventual-Inc/Daft/pull/413>`_ and :doc:`Telemetry docs <../telemetry>` for more details
 
 Enhancements
 ------------
