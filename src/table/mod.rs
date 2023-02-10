@@ -195,6 +195,11 @@ mod test {
         assert_eq!(*result.data_type(), DataType::Float64);
         assert_eq!(result.len(), 3);
 
+        let e2 = (col("a") + col("b")).cast(&DataType::Int64);
+        let result = table.eval_expression(&e2)?;
+        assert_eq!(*result.data_type(), DataType::Int64);
+        assert_eq!(result.len(), 3);
+
         Ok(())
     }
 }
