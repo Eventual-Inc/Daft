@@ -84,6 +84,10 @@ impl PySeries {
     pub fn name(&self) -> PyResult<String> {
         Ok(self.series.name().to_string())
     }
+
+    pub fn data_type(&self) -> PyResult<PyDataType> {
+        Ok(self.series.data_type().clone().into())
+    }
 }
 
 impl From<series::Series> for PySeries {
