@@ -6,6 +6,22 @@ from typing import TYPE_CHECKING
 from daft.logging import setup_logger
 
 ###
+# Set up code coverage for when running code coverage with ray
+###
+if "COV_CORE_SOURCE" in os.environ:
+    try:
+        from pytest_cov.embed import init
+
+        init()
+    except Exception as exc:
+        import sys
+
+        sys.stderr.write(
+            "pytest-cov: Failed to setup subprocess coverage. "
+            "Environ: {!r} "
+            "Exception: {!r}\n".format({k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc)
+        )
+###
 # Setup logging
 ###
 
