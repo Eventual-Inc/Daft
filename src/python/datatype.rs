@@ -82,6 +82,15 @@ impl PyDataType {
     pub fn string() -> PyResult<Self> {
         Ok(DataType::Utf8.into())
     }
+
+    pub fn is_equal(&self, other: &PyAny) -> PyResult<bool> {
+        if other.is_instance_of::<PyDataType>()? {
+            let other = other.extract::<PyDataType>()?;
+            Ok(self.dtype == other.dtype)
+        } else {
+            Ok(false)
+        }
+    }
 }
 
 impl From<DataType> for PyDataType {
