@@ -80,39 +80,36 @@ class DataType:
 
     @staticmethod
     def from_arrow_type(arrow_type: pa.lib.DataType) -> DataType:
-        daft_type: PyDataType | None = None
         if pa.types.is_int8(arrow_type):
-            daft_type = PyDataType.int8()
+            return DataType.int8()
         elif pa.types.is_int16(arrow_type):
-            daft_type = PyDataType.int16()
+            return DataType.int16()
         elif pa.types.is_int32(arrow_type):
-            daft_type = PyDataType.int32()
+            return DataType.int32()
         elif pa.types.is_int64(arrow_type):
-            daft_type = PyDataType.int64()
+            return DataType.int64()
         elif pa.types.is_uint8(arrow_type):
-            daft_type = PyDataType.uint8()
+            return DataType.uint8()
         elif pa.types.is_uint16(arrow_type):
-            daft_type = PyDataType.uint16()
+            return DataType.uint16()
         elif pa.types.is_uint32(arrow_type):
-            daft_type = PyDataType.uint32()
+            return DataType.uint32()
         elif pa.types.is_uint64(arrow_type):
-            daft_type = PyDataType.uint64()
+            return DataType.uint64()
         elif pa.types.is_float32(arrow_type):
-            daft_type = PyDataType.float32()
+            return DataType.float32()
         elif pa.types.is_float64(arrow_type):
-            daft_type = PyDataType.float64()
+            return DataType.float64()
         elif pa.types.is_string(arrow_type) or pa.types.is_large_string(arrow_type):
-            daft_type = PyDataType.string()
+            return DataType.string()
         elif pa.types.is_binary(arrow_type) or pa.types.is_large_binary(arrow_type):
-            daft_type = PyDataType.binary()
+            return DataType.binary()
         elif pa.types.is_boolean(arrow_type):
-            daft_type = PyDataType.bool()
+            return DataType.bool()
         elif pa.types.is_null(arrow_type):
-            daft_type = PyDataType.null()
+            return DataType.null()
         else:
             raise NotImplementedError(f"we cant convert arrow type: {arrow_type} to a daft type")
-        assert daft_type is not None
-        return DataType._from_pydatatype(daft_type)
 
     def __repr__(self) -> str:
         return f"DataType({self._dtype})"
