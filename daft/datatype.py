@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import builtins
+
 import pyarrow as pa
 
 from daft.daft import PyDataType
@@ -64,9 +66,9 @@ class DataType:
     def string() -> DataType:
         return DataType._from_pydatatype(PyDataType.string())
 
-    # @staticmethod
-    # def bool() -> DataType:
-    #     return DataType._from_pydatatype(PyDataType.bool())
+    @staticmethod
+    def bool() -> DataType:
+        return DataType._from_pydatatype(PyDataType.bool())
 
     @staticmethod
     def binary() -> DataType:
@@ -115,5 +117,5 @@ class DataType:
     def __repr__(self) -> str:
         return f"DataType({self._dtype})"
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other: object) -> builtins.bool:
         return isinstance(other, DataType) and self._dtype.is_equal(other._dtype)
