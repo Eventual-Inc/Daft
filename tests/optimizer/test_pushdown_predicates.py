@@ -29,7 +29,7 @@ def test_no_pushdown_on_modified_column(optimizer) -> None:
     df = df.with_column(
         "modified",
         col("ints_dup") + 1,
-    ).where(col("ints") == col("modified"))
+    ).where(col("ints") == col("modified").alias("ints_dup"))
 
     # Optimizer cannot push down the filter because it uses a column that was projected
     assert optimizer(df.plan()).is_eq(df.plan())
@@ -43,6 +43,14 @@ def test_filter_pushdown_select(valid_data: list[dict[str, float]], optimizer) -
     assert optimizer(unoptimized.plan()).is_eq(optimized.plan())
 
 
+def test_filter_pushdown_select_alias(valid_data: list[dict[str, float]], optimizer) -> None:
+    df = DataFrame.from_pylist(valid_data)
+    unoptimized = df.select("sepal_length", "sepal_width").where(col("sepal_length").alias("foo") > 4.8)
+    optimized = df.where(col("sepal_length").alias("foo") > 4.8).select("sepal_length", "sepal_width")
+    assert unoptimized.column_names == ["sepal_length", "sepal_width"]
+    assert optimizer(unoptimized.plan()).is_eq(optimized.plan())
+
+
 def test_filter_pushdown_with_column(valid_data: list[dict[str, float]], optimizer) -> None:
     df = DataFrame.from_pylist(valid_data)
     unoptimized = df.with_column("foo", col("sepal_length") + 1).where(col("sepal_length") > 4.8)
@@ -51,12 +59,25 @@ def test_filter_pushdown_with_column(valid_data: list[dict[str, float]], optimiz
     assert optimizer(unoptimized.plan()).is_eq(optimized.plan())
 
 
-@pytest.mark.skip(reason="Currently fails until we implement breaking up & expressions into expression lists")
-def test_filter_merge(valid_data: list[dict[str, float]]) -> None:
+def test_filter_pushdown_with_column_alias(valid_data: list[dict[str, float]], optimizer) -> None:
+    df = DataFrame.from_pylist(valid_data)
+    unoptimized = df.with_column("foo", col("sepal_length").alias("foo") + 1).where(
+        col("sepal_length").alias("foo") > 4.8
+    )
+    optimized = df.where(col("sepal_length").alias("foo") > 4.8).with_column(
+        "foo", col("sepal_length").alias("foo") + 1
+    )
+    assert unoptimized.column_names == [*df.column_names, "foo"]
+    assert optimizer(unoptimized.plan()).is_eq(optimized.plan())
+
+
+def test_filter_merge(valid_data: list[dict[str, float]], optimizer) -> None:
     df = DataFrame.from_pylist(valid_data)
     unoptimized = df.where(col("sepal_length") > 4.8).where(col("sepal_width") > 2.4)
     optimized = df.where((col("sepal_width") > 2.4) & (col("sepal_length") > 4.8))
-    assert optimizer(unoptimized.plan()).is_eq(optimized.plan())
+    assert optimizer(unoptimized.plan()).is_eq(
+        optimized.plan()
+    ), f"Expected:\n{optimized.plan()}\n\n--------\n\nReceived:\n{optimizer(unoptimized.plan())}"
 
 
 def test_filter_pushdown_sort(valid_data: list[dict[str, float]], optimizer) -> None:

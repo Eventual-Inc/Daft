@@ -26,6 +26,8 @@ from daft.logical.schema import ExpressionList
 
 
 class PushDownPredicates(Rule[LogicalPlan]):
+    """Push Filter nodes down through its children when possible - run filters early to reduce amount of data processed"""
+
     def __init__(self) -> None:
         super().__init__()
         self._combine_filters_rule = CombineFilters()
@@ -36,6 +38,10 @@ class PushDownPredicates(Rule[LogicalPlan]):
         self.register_fn(Filter, Join, self._filter_through_join)
 
     def _filter_through_projection(self, parent: Filter, child: Projection) -> LogicalPlan | None:
+        """Filter-Projection-* -> Projection-Filter-*
+
+        Only if filter does not rely on any projected columns
+        """
         filter_predicate = parent._predicate
         grandchild = child._children()[0]
         child_input_mapping = child._projection.input_mapping()
@@ -66,12 +72,17 @@ class PushDownPredicates(Rule[LogicalPlan]):
             return Filter(pushed_down_filter, ExpressionList(can_not_push_down))
 
     def _filter_through_unary_node(self, parent: Filter, child: UnaryNode) -> LogicalPlan | None:
+        """Filter-Unary-* -> Unary-Filter-*
+
+        Only if Unary is a 'supported' node (see: self._supported_unary_nodes)
+        """
         assert type(child) in self._supported_unary_nodes
         grandchild = child._children()[0]
         logger.debug(f"Pushing Filter {parent} through {child}")
         return child.copy_with_new_children([Filter(grandchild, parent._predicate)])
 
     def _filter_through_join(self, parent: Filter, child: Join) -> LogicalPlan | None:
+        """Filter-Join-Left/Right-* -> Join-Filter-Left/Right-*"""
         left = child._children()[0]
         right = child._children()[1]
 
@@ -119,6 +130,8 @@ class PushDownPredicates(Rule[LogicalPlan]):
 
 
 class PruneColumns(Rule[LogicalPlan]):
+    """Inserts Projection nodes to prune columns that are unnecessary"""
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -128,6 +141,7 @@ class PruneColumns(Rule[LogicalPlan]):
         self.register_fn(LocalAggregate, LogicalPlan, self._aggregate_logical_plan)
 
     def _projection_projection(self, parent: Projection, child: Projection) -> LogicalPlan | None:
+        """Projection-Projection-* -> Projection-<Projection with pruned expressions>-*"""
         parent_required_set = parent.required_columns()[0]
         child_output_set = child.schema().to_name_set()
         if child_output_set.issubset(parent_required_set):
@@ -150,6 +164,7 @@ class PruneColumns(Rule[LogicalPlan]):
         )
 
     def _projection_aggregate(self, parent: Projection, child: LocalAggregate) -> LogicalPlan | None:
+        """Projection-LocalAggregate-* -> Projection-<LocalAggregate with pruned columns>-*"""
         parent_required_set = parent.required_columns()[0]
         agg_op_pairs = child._agg
         agg_ids = {e.name() for e, _ in agg_op_pairs}
@@ -165,6 +180,7 @@ class PruneColumns(Rule[LogicalPlan]):
         )
 
     def _aggregate_logical_plan(self, parent: LocalAggregate, child: LogicalPlan) -> LogicalPlan | None:
+        """LocalAggregate-* -> LocalAggregate-Projection-*"""
         parent_required_set = parent.required_columns()[0]
         child_output_set = child.schema().to_name_set()
         if child_output_set.issubset(parent_required_set):
@@ -175,6 +191,7 @@ class PruneColumns(Rule[LogicalPlan]):
         return parent.copy_with_new_children([self._create_pruning_child(child, parent_required_set)])
 
     def _projection_logical_plan(self, parent: Projection, child: LogicalPlan) -> LogicalPlan | None:
+        """Projection-Any-* -> Projection-Any-<New Projection>-*"""
         if isinstance(child, Projection) or isinstance(child, LocalAggregate) or isinstance(child, TabularFilesScan):
             return None
         if len(child._children()) == 0:
@@ -220,11 +237,14 @@ class PruneColumns(Rule[LogicalPlan]):
 
 
 class CombineFilters(Rule[LogicalPlan]):
+    """Combines two Filters into one"""
+
     def __init__(self) -> None:
         super().__init__()
         self.register_fn(Filter, Filter, self._combine_filters)
 
     def _combine_filters(self, parent: Filter, child: Filter) -> Filter:
+        """Filter-Filter-* -> <New Combined Filter>-*"""
         logger.debug(f"combining {parent} into {child}")
         new_predicate = parent._predicate.union(child._predicate, rename_dup="copyname.")
         grand_child = child._children()[0]
@@ -238,6 +258,10 @@ class DropRepartition(Rule[LogicalPlan]):
         self.register_fn(Repartition, Repartition, self._drop_double_repartition, override=True)
 
     def _drop_repartition_if_same_spec(self, parent: Repartition, child: LogicalPlan) -> LogicalPlan | None:
+        """Repartition-Any-* -> Any-*
+
+        Only if the repartition node has the same spec as its child.
+        """
         if (
             parent.partition_spec() == child.partition_spec()
             and parent.partition_spec().scheme != PartitionScheme.RANGE
@@ -252,6 +276,7 @@ class DropRepartition(Rule[LogicalPlan]):
         return None
 
     def _drop_double_repartition(self, parent: Repartition, child: Repartition) -> LogicalPlan:
+        """Repartition1-Repartition2-* -> Repartition1-*"""
         grandchild = child._children()[0]
         logger.debug(f"Dropping: {child}")
         return parent.copy_with_new_children([grandchild])
