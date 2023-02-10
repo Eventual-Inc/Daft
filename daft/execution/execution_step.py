@@ -240,6 +240,21 @@ class Project(Instruction):
 
 
 @dataclass(frozen=True)
+class LocalCount(Instruction):
+    logplan: logical_plan.LocalCount
+
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._count(inputs)
+
+    def _count(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+        partition = vPartition.from_pydict(
+            {"count": [len(input)]}, schema=self.logplan._schema, partition_id=input.partition_id
+        )
+        return [partition]
+
+
+@dataclass(frozen=True)
 class LocalLimit(Instruction):
     limit: int
 

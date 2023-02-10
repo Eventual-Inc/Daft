@@ -821,6 +821,19 @@ class DataFrame:
         return DataFrame(global_limit)
 
     @DataframePublicAPI
+    def count_rows(self) -> int:
+        """Executes the Dataframe to count the number of rows.
+
+        Returns:
+            int: count of the number of rows in this DataFrame.
+        """
+        local_count_op = logical_plan.LocalCount(self._plan)
+        coalease_op = logical_plan.Coalesce(local_count_op, 1)
+        local_sum_op = logical_plan.LocalAggregate(coalease_op, [(Expression._sum(col("count")), "sum")])
+        num_rows = DataFrame(local_sum_op).to_pydict()["count"][0]
+        return num_rows
+
+    @DataframePublicAPI
     def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
         """Repartitions DataFrame to ``num`` partitions
 
@@ -1204,6 +1217,25 @@ class DataFrame:
             )
 
         return self
+
+    def __len__(self):
+        """Returns the count of rows when dataframe is materialized.
+        If dataframe is not materialized yet, raises a runtime error.
+
+        Returns:
+            int: count of rows.
+
+        """
+
+        if self._result is not None:
+            return len(self._result)
+
+        message = (
+            "Cannot call len() on an unmaterialized dataframe:"
+            " either materialize your dataframe with df.collect() first before calling len(),"
+            " or use `df.count_rows()` instead which will calculate the total number of rows."
+        )
+        raise RuntimeError(message)
 
     @DataframePublicAPI
     def to_pandas(self) -> pandas.DataFrame:

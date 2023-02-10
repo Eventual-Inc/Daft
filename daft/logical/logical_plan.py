@@ -584,6 +584,31 @@ class GlobalLimit(UnaryNode):
         return GlobalLimit(input=self._children()[0].rebuild(), num=self._num)
 
 
+class LocalCount(UnaryNode):
+    def __init__(self, input: LogicalPlan) -> None:
+        schema = Schema([Field("count", ExpressionType.integer())])
+        super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
+        self._register_child(input)
+
+    def __repr__(self) -> str:
+        return self._repr_helper()
+
+    def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 1
+        return LocalCount(new_children[0])
+
+    def required_columns(self) -> set[str]:
+        # HACK: Arbitrarily return the first column in the child to ensure that
+        # at least one column is computed by the optimizer
+        return {self._children()[0].schema().column_names()[0]}
+
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, LocalCount) and self.schema() == other.schema()
+
+    def rebuild(self) -> LogicalPlan:
+        return LocalCount(input=self._children()[0].rebuild())
+
+
 class PartitionScheme(Enum):
     UNKNOWN = "UNKNOWN"
     RANGE = "RANGE"
