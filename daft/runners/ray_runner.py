@@ -11,7 +11,7 @@ try:
     import ray
 except ImportError:
     logger.error(
-        f"Error when importing Ray. Please ensure that getdaft was installed with the Ray extras tag: getdaft[ray] (https://getdaft.io/project/docs/en/latest/learn/install.html)"
+        f"Error when importing Ray. Please ensure that getdaft was installed with the Ray extras tag: getdaft[ray] (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
     )
     raise
 

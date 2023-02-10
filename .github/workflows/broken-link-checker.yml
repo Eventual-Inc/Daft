@@ -15,4 +15,4 @@ jobs:
     - name: setup broken link checker
       run: npm install -g broken-link-checker
     - name: Check getdaft.io
-      run: blc https://getdaft.io -ro --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/
+      run: blc https://www.getdaft.io -ro --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/
