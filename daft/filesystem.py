@@ -91,23 +91,6 @@ def _path_is_glob(path: str) -> bool:
     return any([char in path for char in ["*", "?", "["]])
 
 
-def glob_path(path: str) -> list[str]:
-    """Glob a path, returning a list of paths. Returned paths will have their protocol prefixes."""
-    fs = get_filesystem_from_path(path)
-    protocol = get_protocol_from_path(path)
-
-    if _path_is_glob(path):
-        globbed_data = fs.glob(path, detail=False)
-        return [_fix_returned_path(protocol, path) for path in globbed_data]
-
-    if fs.isfile(path):
-        return [path]
-    elif fs.isdir(path):
-        files_info = fs.ls(path, detail=False)
-        return [_fix_returned_path(protocol, path) for path in files_info]
-    raise FileNotFoundError(f"File or directory not found: {path}")
-
-
 def glob_path_with_stats(path: str) -> list[ListingInfo]:
     """Glob a path, returning a list ListingInfo."""
     fs = get_filesystem_from_path(path)
