@@ -149,6 +149,10 @@ class MaterializedResult(Protocol[PartitionT]):
         """Get the partition of this result."""
         ...
 
+    def vpartition(self) -> vPartition:
+        """Get the vPartition of this result."""
+        ...
+
     def metadata(self) -> PartitionMetadata:
         """Get the metadata of the partition in this result."""
         ...
@@ -181,6 +185,7 @@ class Instruction(Protocol):
 @dataclass(frozen=True)
 class ReadFile(Instruction):
     partition_id: int
+    index: int | None
     logplan: logical_plan.TabularFilesScan
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
@@ -193,6 +198,7 @@ class ReadFile(Instruction):
             inputs={self.logplan._filepaths_child.id(): filepaths_partition},
             scan=self.logplan,
             partition_id=self.partition_id,
+            index=self.index,
         )
         return [partition]
 

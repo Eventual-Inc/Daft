@@ -21,7 +21,7 @@ class LogicalPartitionOpRunner:
     # TODO(charles): move to ExecutionStep
 
     def _handle_tabular_files_scan(
-        self, inputs: dict[int, vPartition], scan: TabularFilesScan, partition_id: int
+        self, inputs: dict[int, vPartition], scan: TabularFilesScan, partition_id: int, index: int | None = None
     ) -> vPartition:
         child_id = scan._children()[0].id()
         prev_partition = inputs[child_id]
@@ -30,6 +30,9 @@ class LogicalPartitionOpRunner:
             scan._filepaths_column_name in data
         ), f"TabularFilesScan should be ran on vPartitions with '{scan._filepaths_column_name}' column"
         filepaths = data[scan._filepaths_column_name]
+
+        if index is not None:
+            filepaths = [filepaths[index]]
 
         # Common options for reading vPartition
         schema = scan._schema

@@ -804,22 +804,6 @@ class PartitionSetFactory(Generic[PartitionT]):
         )
 
     @abstractmethod
-    def glob_paths(
-        self,
-        source_path: str,
-    ) -> tuple[PartitionSet[PartitionT], Schema]:
-        """Globs the specified filepath to construct a PartitionSet of file or dir paths
-
-        Args:
-            source_path (str): path to glob
-
-        Returns:
-            PartitionSet[PartitionT]: PartitionSet containing the listings' paths
-            ExpressionList: Schema of the PartitionSet that was constructed
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
     def glob_paths_details(
         self,
         source_path: str,

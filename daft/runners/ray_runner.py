@@ -25,7 +25,7 @@ from daft.execution.execution_step import (
     ReduceInstruction,
     SingleOutputExecutionStep,
 )
-from daft.filesystem import glob_path, glob_path_with_stats
+from daft.filesystem import glob_path_with_stats
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
 from daft.logical.optimizer import (
@@ -62,25 +62,6 @@ except ImportError:
     _RAY_FROM_ARROW_REFS_AVAILABLE = False
 
 from daft.logical.schema import Schema
-
-
-@ray.remote
-def _glob_path_into_vpartitions(path: str, schema: Schema) -> list[tuple[PartID, vPartition]]:
-    assert len(schema) == 1
-    listing_path_name = "path"
-
-    listing_paths = glob_path(path)
-    if len(listing_paths) == 0:
-        raise FileNotFoundError(f"No files found at {path}")
-
-    # Hardcoded to 1 filepath per partition
-    partition_refs = []
-    for i, path in enumerate(listing_paths):
-        partition = vPartition.from_pydict({listing_path_name: [path]}, schema=schema, partition_id=i)
-        partition_ref = ray.put(partition)
-        partition_refs.append((i, partition_ref))
-
-    return partition_refs
 
 
 @ray.remote
@@ -179,14 +160,6 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 
 
 class RayPartitionSetFactory(PartitionSetFactory[ray.ObjectRef]):
-    def glob_paths(
-        self,
-        source_path: str,
-    ) -> tuple[RayPartitionSet, Schema]:
-        schema = self._get_listing_paths_schema()
-        partition_refs = ray.get(_glob_path_into_vpartitions.remote(source_path, schema))
-        return RayPartitionSet({part_id: part for part_id, part in partition_refs}), schema
-
     def glob_paths_details(
         self,
         source_path: str,
@@ -486,6 +459,9 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
 
     def partition(self) -> ray.ObjectRef:
         return self._partition
+
+    def vpartition(self) -> vPartition:
+        return ray.get(self._partition)
 
     def metadata(self) -> PartitionMetadata:
         return ray.get(get_meta.remote(self._partition))

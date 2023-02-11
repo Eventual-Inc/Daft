@@ -13,7 +13,7 @@ from daft.execution.execution_step import (
     SingleOutputExecutionStep,
 )
 from daft.execution.logical_op_runners import LogicalPartitionOpRunner
-from daft.filesystem import glob_path, glob_path_with_stats
+from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
@@ -80,26 +80,6 @@ class LocalPartitionSet(PartitionSet[vPartition]):
 
 
 class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
-    def glob_paths(
-        self,
-        source_path: str,
-    ) -> tuple[LocalPartitionSet, Schema]:
-        filepaths = glob_path(source_path)
-
-        if len(filepaths) == 0:
-            raise FileNotFoundError(f"No files found at {source_path}")
-
-        schema = self._get_listing_paths_schema()
-        pset = LocalPartitionSet(
-            {
-                i: vPartition.from_pydict(
-                    data={self.FS_LISTING_PATH_COLUMN_NAME: [path]}, schema=schema, partition_id=i
-                )
-                for i, path in enumerate(filepaths)  # Hardcoded to 1 path per partition
-            },
-        )
-        return pset, schema
-
     def glob_paths_details(
         self,
         source_path: str,
@@ -223,6 +203,9 @@ class PyMaterializedResult(MaterializedResult[vPartition]):
     _partition: vPartition
 
     def partition(self) -> vPartition:
+        return self._partition
+
+    def vpartition(self) -> vPartition:
         return self._partition
 
     def metadata(self) -> PartitionMetadata:
