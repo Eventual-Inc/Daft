@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+from urllib.parse import urlparse
 
 if sys.version_info < (3, 8):
     from typing_extensions import Literal
@@ -80,9 +81,14 @@ def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
 ###
 
 
-def _fix_returned_path(protocol: str, returned_path: str) -> str:
+def _ensure_path_protocol(protocol: str, returned_path: str) -> str:
     """This function adds the protocol that fsspec strips from returned results"""
-    return returned_path if protocol == "file" else f"{protocol}://{returned_path}"
+    if protocol == "file":
+        return returned_path
+    parsed_scheme = urlparse(returned_path).scheme
+    if parsed_scheme == "" or parsed_scheme is None:
+        return f"{protocol}://{returned_path}"
+    return returned_path
 
 
 def _path_is_glob(path: str) -> bool:
@@ -99,7 +105,7 @@ def glob_path_with_stats(path: str) -> list[ListingInfo]:
     if _path_is_glob(path):
         globbed_data = fs.glob(path, detail=True)
         return [
-            ListingInfo(path=_fix_returned_path(protocol, path), size=details["size"], type=details["type"])
+            ListingInfo(path=_ensure_path_protocol(protocol, path), size=details["size"], type=details["type"])
             for path, details in globbed_data.items()
         ]
 
@@ -107,14 +113,14 @@ def glob_path_with_stats(path: str) -> list[ListingInfo]:
         file_info = fs.info(path)
         return [
             ListingInfo(
-                path=_fix_returned_path(protocol, file_info["name"]), size=file_info["size"], type=file_info["type"]
+                path=_ensure_path_protocol(protocol, file_info["name"]), size=file_info["size"], type=file_info["type"]
             )
         ]
     elif fs.isdir(path):
         files_info = fs.ls(path, detail=True)
         return [
             ListingInfo(
-                path=_fix_returned_path(protocol, file_info["name"]), size=file_info["size"], type=file_info["type"]
+                path=_ensure_path_protocol(protocol, file_info["name"]), size=file_info["size"], type=file_info["type"]
             )
             for file_info in files_info
         ]
