@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter, Result};
+
 use arrow2::datatypes::DataType as ArrowType;
 
 use crate::{
@@ -5,9 +7,11 @@ use crate::{
     error::{DaftError, DaftResult},
 };
 
+use serde::{Deserialize, Serialize};
+
 pub type TimeZone = String;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataType {
     // Start ArrowTypes
     /// Null type
@@ -162,5 +166,12 @@ impl From<&ArrowType> for DataType {
             }
             _ => panic!("DataType :{item:?} is not supported"),
         }
+    }
+}
+
+impl Display for DataType {
+    // `f` is a buffer, and this method must write the formatted string into it
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "{self:?}")
     }
 }

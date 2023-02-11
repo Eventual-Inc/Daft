@@ -85,6 +85,7 @@ impl Table {
         use crate::dsl::Expr::*;
         match expr {
             Alias(child, _name) => self.eval_expression(child),
+            Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             Column(name) => self.get_column(name),
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
@@ -192,6 +193,11 @@ mod test {
         let e1 = col("a") + col("b");
         let result = table.eval_expression(&e1)?;
         assert_eq!(*result.data_type(), DataType::Float64);
+        assert_eq!(result.len(), 3);
+
+        let e2 = (col("a") + col("b")).cast(&DataType::Int64);
+        let result = table.eval_expression(&e2)?;
+        assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
 
         Ok(())

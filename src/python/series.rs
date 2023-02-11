@@ -4,6 +4,8 @@ use pyo3::{prelude::*, pyclass::CompareOp};
 
 use crate::{array::BaseArray, ffi, series};
 
+use super::datatype::PyDataType;
+
 #[pyclass]
 pub struct PySeries {
     pub series: series::Series,
@@ -71,12 +73,20 @@ impl PySeries {
         }
     }
 
+    pub fn cast(&self, dtype: PyDataType) -> PyResult<Self> {
+        Ok(self.series.cast(&dtype.into())?.into())
+    }
+
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.series))
     }
 
     pub fn name(&self) -> PyResult<String> {
         Ok(self.series.name().to_string())
+    }
+
+    pub fn data_type(&self) -> PyResult<PyDataType> {
+        Ok(self.series.data_type().clone().into())
     }
 }
 
