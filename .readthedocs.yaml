@@ -6,5 +6,5 @@ build:
     python: '3.10'
     rust: '1.64'
   commands:
-    - make VENV=venv build
-    - . venv/bin/activate && make -C docs BUILDDIR=../_readthedocs html
+  - make VENV=venv build
+  - . venv/bin/activate && make -C docs BUILDDIR=../_readthedocs html
