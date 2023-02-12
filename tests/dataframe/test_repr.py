@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+import numpy as np
 import pandas as pd
 
 from daft import DataFrame
@@ -101,10 +102,10 @@ def test_empty_df_repr():
 
 
 def test_alias_repr():
-    df = DataFrame.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
-    df = df.select(df["A"].alias("A2"), df["B"])
+    df = DataFrame.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"], "NP": [np.ones((i,)) for i in range(1, 4)]})
+    df = df.select(df["A"].alias("A2"), df["B"], df["NP"])
 
-    expected_data = {"A2": ("INTEGER", []), "B": ("STRING", [])}
+    expected_data = {"A2": ("INTEGER", []), "B": ("STRING", []), "NP": ("PY[ndarray]", [])}
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
     assert parse_html_table(df._repr_html_(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
 
@@ -119,6 +120,14 @@ def test_alias_repr():
             "STRING",
             ["a", "b", "c"],
         ),
+        "NP": (
+            "PY[ndarray]",
+            [str(np.ones((i,))) for i in range(1, 4)],
+        ),
+    }
+    expected_data_html = {
+        **expected_data,
+        "NP": ("PY[ndarray]", [f"&ltnp.ndarray shape=({i},) dtype=float64&gt" for i in range(1, 4)]),
     }
     assert parse_str_table(df.__repr__()) == expected_data
-    assert parse_html_table(df._repr_html_()) == expected_data
+    assert parse_html_table(df._repr_html_()) == expected_data_html
