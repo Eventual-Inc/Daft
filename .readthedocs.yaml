@@ -4,6 +4,11 @@ build:
   os: ubuntu-22.04
   tools:
     python: '3.10'
+    rust: '1.64'
+  jobs:
+    post_install:
+    - maturin build --out dist
+    - pip install dist/*.whl
 
 sphinx:
   configuration: docs/source/conf.py
