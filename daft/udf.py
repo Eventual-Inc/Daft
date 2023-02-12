@@ -158,13 +158,13 @@ def udf(
     >>> df = DataFrame.from_pydict({"x": [1, 2, 3]})
     >>> df = df.with_column("x_add_100", add_val(df["x"], val=100))
 
-    Input/Return Types
-    ^^^^^^^^^^^^^^^^^^
+    **Input/Return Types**
+
     By default, Daft will pass columns of data into your function as Python lists. However, if this is a bottleneck for your
     application, you may choose more optimized types for your inputs by annotating your function inputs with type hints.
 
-    In the following example, we annotate the ``x`` input parameter as a numpy array. Daft will now pass your data in as a Numpy
-    array which is much more efficient to work with than a Python list.
+    In the following example, we annotate the ``x`` input parameter as an ``np.ndarray``. Daft will now pass your data in as a Numpy
+    array which is much more efficient to work with than a Python list for numerical operations.
 
     >>> import numpy as np
     >>>
@@ -188,8 +188,7 @@ def udf(
         infer types from your annotations, and you may choose to provide your types explicitly as a dictionary of input parameter
         name to its type in the ``@udf(type_hints=...)`` keyword argument.
 
-    Stateful UDFs
-    ^^^^^^^^^^^^^
+    **Stateful UDFs**
 
     UDFs can also be created on Classes, which allow for initialization on some expensive state that can be shared
     between invocations of the class, for example downloading data or creating a model.
@@ -206,6 +205,7 @@ def udf(
     Args:
         f: Function to wrap as a UDF, accepts column inputs as Numpy arrays and returns a column of data as a Polars Series/Numpy array/Python list/Pandas series.
         return_type: The return type of the UDF
+        type_hints: Optional dictionary of input parameter names to their types. If provided, this will override type hints provided using the function's type annotations.
         num_gpus: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
         num_cpus: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
         memory_bytes: Deprecated - please use `DataFrame.with_column(..., resource_request=...)` instead
