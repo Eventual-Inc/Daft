@@ -17,6 +17,7 @@
       ~DataFrame.agg
       ~DataFrame.collect
       ~DataFrame.count
+      ~DataFrame.count_rows
       ~DataFrame.distinct
       ~DataFrame.exclude
       ~DataFrame.explain
