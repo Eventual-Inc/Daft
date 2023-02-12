@@ -6,13 +6,8 @@ build:
     python: '3.10'
     rust: '1.64'
   jobs:
-    post_install:
-    - maturin build --out dist
-    - pip install dist/*.whl
+    pre_build:
+    - make VENV=${READTHEDOCS_VIRTUALENV_PATH} build
 
 sphinx:
   configuration: docs/source/conf.py
-
-python:
-  install:
-  - requirements: requirements-dev.txt
