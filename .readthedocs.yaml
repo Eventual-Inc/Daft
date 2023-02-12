@@ -7,7 +7,8 @@ build:
     rust: '1.64'
   jobs:
     post_install:
-    - maturin develop
+    - maturin build --out dist
+    - pip install dist/*.whl
 
 sphinx:
   configuration: docs/source/conf.py
