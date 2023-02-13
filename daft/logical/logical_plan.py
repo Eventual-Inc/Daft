@@ -632,10 +632,13 @@ class LocalCount(UnaryNode):
         assert len(new_children) == 1
         return LocalCount(new_children[0])
 
-    def required_columns(self) -> set[str]:
+    def required_columns(self) -> list[set[str]]:
         # HACK: Arbitrarily return the first column in the child to ensure that
         # at least one column is computed by the optimizer
-        return {self._children()[0].schema().column_names()[0]}
+        return [{self._children()[0].schema().column_names()[0]}]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return []
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, LocalCount) and self.schema() == other.schema()
