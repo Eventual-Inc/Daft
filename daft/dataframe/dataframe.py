@@ -4,8 +4,6 @@ import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
 
-import pandas
-
 from daft import resource_request
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -36,6 +34,9 @@ from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
     from ray.data.dataset import Dataset as RayDataset
+    import numpy as np
+    import pandas
+    import pyarrow as pa
 
 from daft.logical.field import Field
 from daft.logical.schema import Schema
@@ -254,7 +255,7 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_pydict(cls, data: dict[str, list]) -> DataFrame:
+    def from_pydict(cls, data: dict[str, list | np.ndarray | pa.Array]) -> DataFrame:
         """Creates a DataFrame from a Python dictionary
 
         Example:
@@ -262,7 +263,7 @@ class DataFrame:
 
         Args:
             data: Key -> Sequence[item] of data. Each Key is created as a column, and must have a value that is
-                a Python list. Values must be equal in length across all keys.
+                a Python list, Numpy array or PyArrow array. Values must be equal in length across all keys.
 
         Returns:
             DataFrame: DataFrame created from dictionary of columns
@@ -273,24 +274,7 @@ class DataFrame:
                 f"Expected all columns to be of the same length, but received columns with lengths: {column_lengths}"
             )
 
-        for header in data:
-            if not isinstance(data[header], list):
-                raise ValueError(
-                    f"Expected all columns to be of type list, but received {type(data[header])} for {header}"
-                )
-
-        column_types: dict[str, ExpressionType] = {}
-        for header in data:
-            found_types = {type(o) for o in data[header]} - {type(None)}
-            if len(found_types) == 0:
-                column_types[header] = ExpressionType.null()
-            elif len(found_types) == 1:
-                column_types[header] = ExpressionType.from_py_type(found_types.pop())
-            elif found_types == {int, float}:
-                column_types[header] = ExpressionType.float()
-            else:
-                column_types[header] = ExpressionType.python_object()
-
+        column_types: dict[str, ExpressionType] = {header: ExpressionType.infer_type(data[header]) for header in data}
         schema = Schema([Field(header, expr_type) for header, expr_type in column_types.items()])
         data_vpartition = vPartition.from_pydict(
             data={header: arr for header, arr in data.items()}, schema=schema, partition_id=0
