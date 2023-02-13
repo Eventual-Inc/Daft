@@ -74,11 +74,8 @@ class PushDownPredicates(Rule[LogicalPlan]):
     def _filter_through_join(self, parent: Filter, child: Join) -> LogicalPlan | None:
         left = child._children()[0]
         right = child._children()[1]
-        left.schema().to_name_set()
-        right.schema().to_name_set()
 
-        left_input_mapping = child._left_columns.input_mapping()
-        right_input_mapping = child._right_columns.input_mapping()
+        left_input_mapping, right_input_mapping = child.input_mapping()
 
         filter_predicate = parent._predicate
         can_not_push_down = []
@@ -131,7 +128,7 @@ class PruneColumns(Rule[LogicalPlan]):
         self.register_fn(LocalAggregate, LogicalPlan, self._aggregate_logical_plan)
 
     def _projection_projection(self, parent: Projection, child: Projection) -> LogicalPlan | None:
-        parent_required_set = parent.required_columns()
+        parent_required_set = parent.required_columns()[0]
         child_output_set = child.schema().to_name_set()
         if child_output_set.issubset(parent_required_set):
             return None
@@ -153,7 +150,7 @@ class PruneColumns(Rule[LogicalPlan]):
         )
 
     def _projection_aggregate(self, parent: Projection, child: LocalAggregate) -> LogicalPlan | None:
-        parent_required_set = parent.required_columns()
+        parent_required_set = parent.required_columns()[0]
         agg_op_pairs = child._agg
         agg_ids = {e.name() for e, _ in agg_op_pairs}
         if agg_ids.issubset(parent_required_set):
@@ -168,7 +165,7 @@ class PruneColumns(Rule[LogicalPlan]):
         )
 
     def _aggregate_logical_plan(self, parent: LocalAggregate, child: LogicalPlan) -> LogicalPlan | None:
-        parent_required_set = parent.required_columns()
+        parent_required_set = parent.required_columns()[0]
         child_output_set = child.schema().to_name_set()
         if child_output_set.issubset(parent_required_set):
             return None
@@ -182,18 +179,39 @@ class PruneColumns(Rule[LogicalPlan]):
             return None
         if len(child._children()) == 0:
             return None
-        required_set = parent.required_columns() | child.required_columns()
+
+        parent_required = parent.required_columns()[0]
         child_output_set = child.schema().to_name_set()
-        if child_output_set.issubset(required_set):
+        if child_output_set.issubset(parent_required):
             return None
-        logger.debug(f"Pruning Columns: {child_output_set - required_set} in projection logical plan")
-        new_grandchildren = [self._create_pruning_child(gc, required_set) for gc in child._children()]
-        return parent.copy_with_new_children([child.copy_with_new_children(new_grandchildren)])
+        new_grandchildren = []
+        need_new_parent = False
+        for i, (in_map, child_req_cols) in enumerate(zip(child.input_mapping(), child.required_columns())):
+            required_from_grandchild = {
+                in_map[parent_col] for parent_col in parent_required if parent_col in in_map
+            } | child_req_cols
+
+            current_grandchild_ids = child._children()[i].schema().to_name_set()
+            logger.debug(
+                f"Pruning Columns: {current_grandchild_ids - required_from_grandchild} in projection logical plan from child {i}"
+            )
+            if len(current_grandchild_ids - required_from_grandchild) != 0:
+                need_new_parent = True
+            new_grandchild = self._create_pruning_child(child._children()[i], required_from_grandchild)
+            new_grandchildren.append(new_grandchild)
+        if need_new_parent:
+            return parent.copy_with_new_children([child.copy_with_new_children(new_grandchildren)])
+        else:
+            return None
 
     def _create_pruning_child(self, child: LogicalPlan, parent_name_set: set[str]) -> LogicalPlan:
         child_ids = child.schema().to_name_set()
+        assert (
+            len(parent_name_set - child_ids) == 0
+        ), f"trying to prune columns that aren't produced by child {parent_name_set} vs {child_ids}"
         if child_ids.issubset(parent_name_set):
             return child
+
         return Projection(
             child,
             projection=ExpressionList([e.to_column_expression() for e in child.schema() if e.name in parent_name_set]),
