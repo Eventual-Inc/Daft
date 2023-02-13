@@ -227,13 +227,12 @@ class vPartition:
         fields = schema.fields
         tiles = {}
         for f in fields.values():
+            # Coerce the column data into a list or PyArrow array depending on the provided schema
             col_name = f.name
             col_type = f.dtype
-
-            # Coerce the column data into a list or PyArrow array
             col_data: list | pa.Array
             if ExpressionType.is_py(col_type):
-                col_data = data[col_name]
+                col_data = list(data[col_name])
             elif isinstance(data[col_name], pa.Array):
                 col_data = data[col_name]
             else:

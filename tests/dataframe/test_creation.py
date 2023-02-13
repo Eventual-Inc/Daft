@@ -130,6 +130,9 @@ def test_load_pydict_types():
         "np_string": np.array([None, "foo", "bar"], dtype=np.object_),
         "np_object": np.array([None, MyObj(), MyObj()], dtype=np.object_),
         "np_nested": np.ones((3, 3)),
+        # Arrow arrays
+        "pa_int": pa.array([1, 2, 3]),
+        "pa_nested": pa.array([[1, 2, 3], [1, 2], [1]]),
     }
     daft_df = DataFrame.from_pydict(data)
 
@@ -150,6 +153,8 @@ def test_load_pydict_types():
         "np_string": ExpressionType.string(),
         "np_object": ExpressionType.from_py_type(MyObj),
         "np_nested": ExpressionType.from_py_type(np.ndarray),
+        "pa_int": ExpressionType.integer(),
+        "pa_nested": ExpressionType.from_py_type(list),
     }
 
     assert collected_data.keys() == data.keys() == expected.keys()
