@@ -115,6 +115,7 @@ def test_create_dataframe_pydict_bad_columns() -> None:
 
 def test_load_pydict_types():
     data = {
+        # Lists
         "arrow_int": [None, 2, 3],
         "arrow_float": [None, 1.0, 3.0],
         "arrow_mixed_numbers": [None, 1.0, 3],
@@ -124,6 +125,11 @@ def test_load_pydict_types():
         "py_objs": [None, MyObj(), MyObj()],
         "heterogenous_py_objs": [None, MyObj(), MyObj2()],
         "numpy_arrays": [np.array([1]), np.array([2]), np.array([3])],
+        # Numpy arrays
+        "np_int": np.array([1, 2, 3], dtype=np.int64),
+        "np_string": np.array([None, "foo", "bar"], dtype=np.object_),
+        "np_object": np.array([None, MyObj(), MyObj()], dtype=np.object_),
+        "np_nested": np.ones((3, 3)),
     }
     daft_df = DataFrame.from_pydict(data)
 
@@ -140,6 +146,10 @@ def test_load_pydict_types():
         "py_objs": ExpressionType.from_py_type(MyObj),
         "heterogenous_py_objs": ExpressionType.python_object(),
         "numpy_arrays": ExpressionType.from_py_type(np.ndarray),
+        "np_int": ExpressionType.integer(),
+        "np_string": ExpressionType.string(),
+        "np_object": ExpressionType.from_py_type(MyObj),
+        "np_nested": ExpressionType.from_py_type(np.ndarray),
     }
 
     assert collected_data.keys() == data.keys() == expected.keys()

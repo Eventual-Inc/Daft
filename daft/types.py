@@ -4,6 +4,7 @@ import datetime
 from dataclasses import dataclass
 from enum import Enum
 
+import numpy as np
 import pyarrow as pa
 
 
@@ -71,6 +72,44 @@ class ExpressionType:
         if datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
             return ExpressionType.python_object()
         return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
+
+    @staticmethod
+    def from_numpy_type(datatype: np.dtype) -> ExpressionType:
+        return ExpressionType.from_arrow_type(pa.from_numpy_dtype(datatype))
+
+    @staticmethod
+    def _infer_type_from_list(data: list) -> ExpressionType:
+        found_types = {type(o) for o in data} - {type(None)}
+        if len(found_types) == 0:
+            return ExpressionType.null()
+        elif len(found_types) == 1:
+            return ExpressionType.from_py_type(found_types.pop())
+        elif found_types == {int, float}:
+            return ExpressionType.float()
+        return ExpressionType.python_object()
+
+    @staticmethod
+    def infer_type(data: list | np.ndarray) -> ExpressionType:
+        """Infers an ExpressionType from the provided collection of data
+
+        Args:
+            data (list | np.ndarray): provided collection of data
+
+        Returns:
+            ExpressionType: Inferred ExpressionType
+        """
+        if isinstance(data, list):
+            return ExpressionType._infer_type_from_list(data)
+        elif isinstance(data, np.ndarray):
+            # TODO: change this logic once we support nested types
+            if len(data.shape) > 1:
+                return ExpressionType._infer_type_from_list(list(data))
+            elif data.dtype == np.object:
+                return ExpressionType._infer_type_from_list(list(data))
+            else:
+                return ExpressionType.from_numpy_type(data.dtype)
+        else:
+            raise ValueError(f"Expected inferred data to be of type list or np.ndarray, but received {type(data)}")
 
     def to_arrow_type(self) -> pa.DataType:
         assert not ExpressionType.is_py(self), f"Cannot convert {self} to an Arrow type"

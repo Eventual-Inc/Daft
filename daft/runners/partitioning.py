@@ -221,7 +221,7 @@ class vPartition:
         return vPartition(columns=tiles, partition_id=partition_id)
 
     @classmethod
-    def from_pydict(cls, data: dict[str, list[Any]], schema: Schema, partition_id: PartID) -> vPartition:
+    def from_pydict(cls, data: dict[str, list[Any] | np.ndarray], schema: Schema, partition_id: PartID) -> vPartition:
         fields = schema.fields
         tiles = {}
         for f in fields.values():
