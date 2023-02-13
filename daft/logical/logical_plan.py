@@ -54,7 +54,11 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         return None
 
     @abstractmethod
-    def required_columns(self) -> set[str]:
+    def required_columns(self) -> list[set[str]]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def input_mapping(self) -> list[dict[str, str]]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -243,8 +247,11 @@ class TabularFilesScan(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper(columns_pruned=len(self._columns) - len(self.schema()), source_info=self._source_info)
 
-    def required_columns(self) -> set[str]:
-        return {self._filepaths_column_name} | self._predicate.required_columns()
+    def required_columns(self) -> list[set[str]]:
+        return [{self._filepaths_column_name} | self._predicate.required_columns()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [dict()]
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -300,8 +307,11 @@ class InMemoryScan(UnaryNode):
             and self.schema() == other.schema()
         )
 
-    def required_columns(self) -> set[str]:
-        return set()
+    def required_columns(self) -> list[set[str]]:
+        return [set()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [dict()]
 
     def rebuild(self) -> LogicalPlan:
         # if we are rebuilding, this will be cached when this is ran
@@ -348,8 +358,11 @@ class FileWrite(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper()
 
-    def required_columns(self) -> set[str]:
-        return self._partition_cols.required_columns()
+    def required_columns(self) -> list[set[str]]:
+        return [self._partition_cols.required_columns()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [dict()]
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -394,8 +407,11 @@ class Filter(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper(predicate=self._predicate)
 
-    def required_columns(self) -> set[str]:
-        return self._predicate.required_columns()
+    def required_columns(self) -> list[set[str]]:
+        return [self._predicate.required_columns()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [{name: name for name in self.schema().column_names()}]
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, Filter) and self.schema() == other.schema() and self._predicate == other._predicate
@@ -426,8 +442,11 @@ class Projection(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper(output=self._projection.exprs)
 
-    def required_columns(self) -> set[str]:
-        return self._projection.required_columns()
+    def required_columns(self) -> list[set[str]]:
+        return [self._projection.required_columns()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [self._projection.input_mapping()]
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -466,8 +485,11 @@ class Sort(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper(sort_by=self._sort_by, desc=self._descending)
 
-    def required_columns(self) -> set[str]:
-        return self._sort_by.required_columns()
+    def required_columns(self) -> list[set[str]]:
+        return [self._sort_by.required_columns()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [{name: name for name in self.schema().column_names()}]
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -527,8 +549,12 @@ class Explode(MapPartition[ExplodeOp]):
     def __repr__(self) -> str:
         return self._repr_helper()
 
-    def required_columns(self) -> set[str]:
-        return self._map_partition_op.explode_columns.required_columns()
+    def required_columns(self) -> list[set[str]]:
+        return [self._map_partition_op.explode_columns.required_columns()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        explode_columns = self._map_partition_op.explode_columns.input_mapping().keys()
+        return [{name: name for name in self.schema().column_names() if name not in explode_columns}]
 
     def rebuild(self) -> LogicalPlan:
         return Explode(
@@ -554,8 +580,11 @@ class LocalLimit(UnaryNode):
         assert len(new_children) == 1
         return LocalLimit(new_children[0], self._num)
 
-    def required_columns(self) -> set[str]:
-        return set()
+    def required_columns(self) -> list[set[str]]:
+        return [set()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [{name: name for name in self.schema().column_names()}]
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, LocalLimit) and self.schema() == other.schema() and self._num == self._num
@@ -577,8 +606,11 @@ class GlobalLimit(UnaryNode):
         assert len(new_children) == 1
         return GlobalLimit(new_children[0], self._num)
 
-    def required_columns(self) -> set[str]:
-        return set()
+    def required_columns(self) -> list[set[str]]:
+        return [set()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [{name: name for name in self.schema().column_names()}]
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, GlobalLimit) and self.schema() == other.schema() and self._num == self._num
@@ -600,10 +632,13 @@ class LocalCount(UnaryNode):
         assert len(new_children) == 1
         return LocalCount(new_children[0])
 
-    def required_columns(self) -> set[str]:
+    def required_columns(self) -> list[set[str]]:
         # HACK: Arbitrarily return the first column in the child to ensure that
         # at least one column is computed by the optimizer
-        return {self._children()[0].schema().column_names()[0]}
+        return [{self._children()[0].schema().column_names()[0]}]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return []
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, LocalCount) and self.schema() == other.schema()
@@ -659,8 +694,11 @@ class Repartition(UnaryNode):
             scheme=self._scheme,
         )
 
-    def required_columns(self) -> set[str]:
-        return self._partition_by.required_columns()
+    def required_columns(self) -> list[set[str]]:
+        return [self._partition_by.required_columns()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [{name: name for name in self.schema().column_names()}]
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -702,8 +740,11 @@ class Coalesce(UnaryNode):
             num_partitions=self.num_partitions(),
         )
 
-    def required_columns(self) -> set[str]:
-        return set()
+    def required_columns(self) -> list[set[str]]:
+        return [set()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [{name: name for name in self.schema().column_names()}]
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -749,14 +790,20 @@ class LocalAggregate(UnaryNode):
         assert len(new_children) == 1
         return LocalAggregate(new_children[0], agg=self._agg, group_by=self._group_by)
 
-    def required_columns(self) -> set[str]:
-        return self._required_cols
+    def required_columns(self) -> list[set[str]]:
+        return [self._required_cols]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        if self._group_by is not None:
+            return [self._group_by.input_mapping()]
+        else:
+            return []
 
     def _local_eq(self, other: Any) -> bool:
         return (
             isinstance(other, LocalAggregate)
             and self.schema() == other.schema()
-            and self._agg == other._agg
+            and all(l[0].is_eq(r[0]) and l[1] == r[1] for l, r in zip(self._agg, other._agg))
             and self._group_by == other._group_by
         )
 
@@ -787,8 +834,11 @@ class LocalDistinct(UnaryNode):
         assert len(new_children) == 1
         return LocalDistinct(new_children[0], group_by=self._group_by)
 
-    def required_columns(self) -> set[str]:
-        return self._group_by.required_columns()
+    def required_columns(self) -> list[set[str]]:
+        return [self._group_by.required_columns()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [self._group_by.input_mapping()]
 
     def _local_eq(self, other: Any) -> bool:
         return (
@@ -814,7 +864,10 @@ class HTTPRequest(LogicalPlan):
     def __repr__(self) -> str:
         return self._repr_helper()
 
-    def required_columns(self) -> set[str]:
+    def required_columns(self) -> list[set[str]]:
+        raise NotImplementedError()
+
+    def input_mapping(self) -> list[dict[str, str]]:
         raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
@@ -842,7 +895,10 @@ class HTTPResponse(UnaryNode):
     def __repr__(self) -> str:
         return self._repr_helper()
 
-    def required_columns(self) -> set[str]:
+    def required_columns(self) -> list[set[str]]:
+        raise NotImplementedError()
+
+    def input_mapping(self) -> list[dict[str, str]]:
         raise NotImplementedError()
 
     def _local_eq(self, other: Any) -> bool:
@@ -942,8 +998,11 @@ class Join(BinaryNode):
         assert len(new_children) == 2
         return Join(new_children[0], new_children[1], left_on=self._left_on, right_on=self._right_on, how=self._how)
 
-    def required_columns(self) -> set[str]:
-        return self._left_on.required_columns() | self._right_on.required_columns()
+    def required_columns(self) -> list[set[str]]:
+        return [self._left_on.required_columns(), self._right_on.required_columns()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [self._left_columns.input_mapping(), self._right_columns.input_mapping()]
 
     def _local_eq(self, other: Any) -> bool:
         return (
