@@ -221,17 +221,24 @@ class vPartition:
         return vPartition(columns=tiles, partition_id=partition_id)
 
     @classmethod
-    def from_pydict(cls, data: dict[str, list[Any] | np.ndarray], schema: Schema, partition_id: PartID) -> vPartition:
+    def from_pydict(
+        cls, data: dict[str, list[Any] | np.ndarray | pa.Array], schema: Schema, partition_id: PartID
+    ) -> vPartition:
         fields = schema.fields
         tiles = {}
         for f in fields.values():
             col_name = f.name
             col_type = f.dtype
-            col_data = (
-                data[col_name]
-                if ExpressionType.is_py(col_type)
-                else pa.array(data[col_name], type=col_type.to_arrow_type())
-            )
+
+            # Coerce the column data into a list or PyArrow array
+            col_data: list | pa.Array
+            if ExpressionType.is_py(col_type):
+                col_data = data[col_name]
+            elif isinstance(data[col_name], pa.Array):
+                col_data = data[col_name]
+            else:
+                col_data = pa.array(data[col_name], type=col_type.to_arrow_type())
+
             block = DataBlock.make_block(col_data)
             tiles[col_name] = PyListTile(column_name=col_name, partition_id=partition_id, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)

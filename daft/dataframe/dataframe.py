@@ -4,9 +4,6 @@ import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
 
-import numpy as np
-import pandas
-
 from daft import resource_request
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -37,6 +34,9 @@ from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
     from ray.data.dataset import Dataset as RayDataset
+    import numpy as np
+    import pandas
+    import pyarrow as pa
 
 from daft.logical.field import Field
 from daft.logical.schema import Schema
@@ -255,7 +255,7 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_pydict(cls, data: dict[str, list | np.ndarray]) -> DataFrame:
+    def from_pydict(cls, data: dict[str, list | np.ndarray | pa.Array]) -> DataFrame:
         """Creates a DataFrame from a Python dictionary
 
         Example:
@@ -263,7 +263,7 @@ class DataFrame:
 
         Args:
             data: Key -> Sequence[item] of data. Each Key is created as a column, and must have a value that is
-                a Python list or Numpy array. Values must be equal in length across all keys.
+                a Python list, Numpy array or PyArrow array. Values must be equal in length across all keys.
 
         Returns:
             DataFrame: DataFrame created from dictionary of columns

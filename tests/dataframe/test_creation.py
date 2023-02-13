@@ -110,7 +110,7 @@ def test_create_dataframe_pydict_ragged_col_lens() -> None:
 def test_create_dataframe_pydict_bad_columns() -> None:
     with pytest.raises(ValueError) as e:
         DataFrame.from_pydict({"foo": "somestring"})
-    assert "Expected all columns to be of type list" in str(e.value)
+    assert "Expected inferred data to be of type list, np.ndarray or pa.Array" in str(e.value)
 
 
 def test_load_pydict_types():

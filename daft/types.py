@@ -4,7 +4,12 @@ import datetime
 from dataclasses import dataclass
 from enum import Enum
 
-import numpy as np
+_NUMPY_AVAILABLE = True
+try:
+    import numpy as np
+except ImportError:
+    _NUMPY_AVAILABLE = False
+
 import pyarrow as pa
 
 
@@ -89,7 +94,7 @@ class ExpressionType:
         return ExpressionType.python_object()
 
     @staticmethod
-    def infer_type(data: list | np.ndarray) -> ExpressionType:
+    def infer_type(data: list | np.ndarray | pa.Array) -> ExpressionType:
         """Infers an ExpressionType from the provided collection of data
 
         Args:
@@ -100,7 +105,7 @@ class ExpressionType:
         """
         if isinstance(data, list):
             return ExpressionType._infer_type_from_list(data)
-        elif isinstance(data, np.ndarray):
+        elif _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
             # TODO: change this logic once we support nested types
             if len(data.shape) > 1:
                 return ExpressionType._infer_type_from_list(list(data))
@@ -108,8 +113,12 @@ class ExpressionType:
                 return ExpressionType._infer_type_from_list(list(data))
             else:
                 return ExpressionType.from_numpy_type(data.dtype)
+        elif isinstance(data, pa.Array):
+            return ExpressionType.from_arrow_type(data.type)
         else:
-            raise ValueError(f"Expected inferred data to be of type list or np.ndarray, but received {type(data)}")
+            raise ValueError(
+                f"Expected inferred data to be of type list, np.ndarray or pa.Array, but received {type(data)}"
+            )
 
     def to_arrow_type(self) -> pa.DataType:
         assert not ExpressionType.is_py(self), f"Cannot convert {self} to an Arrow type"
