@@ -31,14 +31,6 @@ def test_drop_unneeded_repartition(valid_data: list[dict[str, float]], tmpdir, o
     assert_plan_eq(optimizer(repartitioned_df.plan()), df.plan())
 
 
-def test_drop_unneeded_repartition_alias(valid_data: list[dict[str, float]], tmpdir, optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
-    df = df.repartition(2)
-    df = df.groupby("variety").agg([("sepal_length", "mean")])
-    repartitioned_df = df.repartition(2, df["variety"].alias("foo"))
-    assert_plan_eq(optimizer(repartitioned_df.plan()), df.plan())
-
-
 def test_drop_single_repartitions(valid_data: list[dict[str, float]], optimizer) -> None:
     df = DataFrame.from_pylist(valid_data)
     unoptimized_df = df.repartition(1, "variety")

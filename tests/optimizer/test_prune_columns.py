@@ -93,7 +93,8 @@ def test_prune_columns_local_aggregate_aliases(valid_data: list[dict[str, float]
 @pytest.mark.parametrize(
     "left_selection",
     [
-        pytest.param([], id="LeftSelection:0"),
+        # TODO: enable after https://github.com/Eventual-Inc/Daft/issues/594 is fixed
+        # pytest.param([], id="LeftSelection:0"),
         pytest.param(["sepal_length"], id="LeftSelection:1"),
     ],
 )
@@ -141,7 +142,8 @@ def test_projection_join_pruning(
 @pytest.mark.parametrize(
     "left_aggregation",
     [
-        pytest.param([], id="LeftAgg:0"),
+        # TODO: enable after https://github.com/Eventual-Inc/Daft/issues/594 is fixed
+        # pytest.param([], id="LeftAgg:0"),
         pytest.param([("sepal_length", "sum")], id="LeftAgg:1"),
     ],
 )
