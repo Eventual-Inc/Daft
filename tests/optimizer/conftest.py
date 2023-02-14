@@ -4,6 +4,8 @@ from typing import Any
 
 import pytest
 
+from daft.logical.logical_plan import LogicalPlan
+
 
 @pytest.fixture(scope="function")
 def valid_data() -> list[dict[str, Any]]:
@@ -13,3 +15,9 @@ def valid_data() -> list[dict[str, Any]]:
         {"sepal_length": 4.7, "sepal_width": 3.2, "petal_length": 1.3, "petal_width": 0.2, "variety": "Setosa"},
     ]
     return items
+
+
+def assert_plan_eq(received: LogicalPlan, expected: LogicalPlan):
+    assert received.is_eq(
+        expected
+    ), f"Expected:\n{expected.pretty_print()}\n\n--------\n\nReceived:\n{received.pretty_print()}"

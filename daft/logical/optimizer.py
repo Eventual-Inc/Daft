@@ -246,7 +246,7 @@ class CombineFilters(Rule[LogicalPlan]):
     def _combine_filters(self, parent: Filter, child: Filter) -> Filter:
         """Filter-Filter-* -> <New Combined Filter>-*"""
         logger.debug(f"combining {parent} into {child}")
-        new_predicate = parent._predicate.union(child._predicate, rename_dup="copyname.")
+        new_predicate = parent._predicate.union(child._predicate, rename_dup="copy.")
         grand_child = child._children()[0]
         return Filter(grand_child, new_predicate)
 
