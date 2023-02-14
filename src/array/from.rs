@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::datatypes::{
-    BooleanArray, DaftDataType, DaftNumericType, DataType, Field, Utf8Array, Utf8Type,
+    BinaryArray, BooleanArray, DaftDataType, DaftNumericType, DataType, Field, Utf8Array, Utf8Type,
 };
 
 use crate::array::DataArray;
@@ -62,6 +62,18 @@ impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
         let (name, slice) = item;
         let arrow_array = arrow2::array::Utf8Array::<i64>::from_slice(slice);
         DataArray::new(Field::new(name, DataType::Utf8).into(), arrow_array.arced()).unwrap()
+    }
+}
+
+impl From<(&str, &[u8])> for BinaryArray {
+    fn from(item: (&str, &[u8])) -> Self {
+        let (name, slice) = item;
+        let arrow_array = arrow2::array::BinaryArray::<i64>::from_slice([slice]);
+        DataArray::new(
+            Field::new(name, DataType::Binary).into(),
+            arrow_array.arced(),
+        )
+        .unwrap()
     }
 }
 

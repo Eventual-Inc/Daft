@@ -49,10 +49,7 @@ impl Expr {
 
         match self {
             Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
-            Cast(expr, dtype) => Ok(Field::new(
-                expr.to_field(schema)?.name.as_str(),
-                dtype.clone(),
-            )),
+            Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
             Column(name) => Ok(schema.get_field(name).cloned()?),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
 
@@ -71,13 +68,32 @@ impl Expr {
                     Operator::TrueDivide => {
                         Field::new(left.to_field(schema)?.name.as_str(), DataType::Float64)
                     }
-                    _ => Field::new(
-                        left.to_field(schema)?.name.as_str(),
-                        try_get_supertype(&left.get_type(schema)?, &right.get_type(schema)?)?,
-                    ),
+                    _ => {
+                        let left_field = left.to_field(schema)?;
+                        let right_field = right.to_field(schema)?;
+                        Field::new(
+                            left_field.name.as_str(),
+                            try_get_supertype(&left_field.dtype, &right_field.dtype)?,
+                        )
+                    }
                 };
                 Ok(result)
             }
+        }
+    }
+
+    pub fn name(&self) -> DaftResult<&str> {
+        use Expr::*;
+        match self {
+            Alias(.., name) => Ok(name.as_ref()),
+            Cast(expr, ..) => expr.name(),
+            Column(name) => Ok(name.as_ref()),
+            Literal(..) => Ok("literal"),
+            BinaryOp {
+                op: _,
+                left,
+                right: _,
+            } => left.name(),
         }
     }
 

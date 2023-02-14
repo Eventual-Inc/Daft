@@ -35,13 +35,13 @@ impl Display for LiteralValue {
         match self {
             Null => write!(f, "Null"),
             Boolean(val) => write!(f, "{val}"),
-            Utf8(val) => write!(f, "{val}"),
+            Utf8(val) => write!(f, "\"{val}\""),
             Binary(val) => write!(f, "Binary[{}]", val.len()),
             Int32(val) => write!(f, "{val}"),
             UInt32(val) => write!(f, "{val}"),
             Int64(val) => write!(f, "{val}"),
             UInt64(val) => write!(f, "{val}"),
-            Float64(val) => write!(f, "{val}"),
+            Float64(val) => write!(f, "{val:.1}"),
         }
     }
 }
@@ -67,15 +67,15 @@ impl LiteralValue {
         use crate::datatypes::*;
         use LiteralValue::*;
         let result = match self {
-            Null => NullArray::full_null("lit", 1).into_series(),
-            Boolean(val) => BooleanArray::from(("lit", [*val].as_slice())).into_series(),
-            Utf8(val) => Utf8Array::from(("lit", [val.as_str()].as_slice())).into_series(),
-            Binary(_val) => panic!("Binary not supported yey"),
-            Int32(val) => Int32Array::from(("lit", [*val].as_slice())).into_series(),
-            UInt32(val) => UInt32Array::from(("lit", [*val].as_slice())).into_series(),
-            Int64(val) => Int64Array::from(("lit", [*val].as_slice())).into_series(),
-            UInt64(val) => UInt64Array::from(("lit", [*val].as_slice())).into_series(),
-            Float64(val) => Float64Array::from(("lit", [*val].as_slice())).into_series(),
+            Null => NullArray::full_null("literal", 1).into_series(),
+            Boolean(val) => BooleanArray::from(("literal", [*val].as_slice())).into_series(),
+            Utf8(val) => Utf8Array::from(("literal", [val.as_str()].as_slice())).into_series(),
+            Binary(val) => BinaryArray::from(("literal", val.as_slice())).into_series(),
+            Int32(val) => Int32Array::from(("literal", [*val].as_slice())).into_series(),
+            UInt32(val) => UInt32Array::from(("literal", [*val].as_slice())).into_series(),
+            Int64(val) => Int64Array::from(("literal", [*val].as_slice())).into_series(),
+            UInt64(val) => UInt64Array::from(("literal", [*val].as_slice())).into_series(),
+            Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
         };
         result
     }
@@ -106,6 +106,12 @@ macro_rules! make_literal {
             }
         }
     };
+}
+
+impl<'a> Literal for &'a [u8] {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::Binary(self.to_vec()))
+    }
 }
 
 make_literal!(bool, Boolean);

@@ -42,6 +42,9 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
                 .expect("could not transform Python string to Rust Unicode"),
         )
         .into())
+    } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
+        let bytes = pybytes.as_bytes();
+        Ok(dsl::lit(bytes).into())
     } else if item.is_none() {
         Ok(dsl::null_lit().into())
     } else {
@@ -122,6 +125,10 @@ impl PyExpr {
             CompareOp::Gt => Ok(binary_op(Operator::Gt, &self.expr, &other.expr).into()),
             CompareOp::Ge => Ok(binary_op(Operator::GtEq, &self.expr, &other.expr).into()),
         }
+    }
+
+    pub fn name(&self) -> PyResult<&str> {
+        Ok(self.expr.name()?)
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
