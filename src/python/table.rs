@@ -1,3 +1,4 @@
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::dsl;
@@ -25,7 +26,13 @@ impl PyTable {
         Ok(format!("{}", self.table))
     }
 
-    pub fn head(&self, num: usize) -> PyResult<Self> {
+    pub fn head(&self, num: i64) -> PyResult<Self> {
+        if num < 0 {
+            return Err(PyValueError::new_err(format!(
+                "Can not head table with negative number: {num}"
+            )));
+        }
+        let num = num as usize;
         Ok(self.table.head(num)?.into())
     }
 

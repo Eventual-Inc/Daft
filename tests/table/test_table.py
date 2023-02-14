@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pyarrow as pa
+import pytest
 
 from daft.daft import PyTable
 
@@ -33,3 +34,7 @@ def test_table_head() -> None:
     assert headed.column_names() == ["a", "b"]
     pa_headed = pa.Table.from_batches([headed.to_arrow_record_batch()])
     assert pa_table == pa_headed
+
+    # negative slice
+    with pytest.raises(ValueError, match="negative number"):
+        headed = daft_table.head(-1)
