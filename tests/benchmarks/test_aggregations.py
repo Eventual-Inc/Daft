@@ -6,10 +6,14 @@ import pytest
 from daft import DataFrame
 
 
-@pytest.mark.aggregations
-@pytest.fixture(scope="module")
-def gen_aranged_df(num_samples=1_000_000) -> DataFrame:
-    return DataFrame.from_pydict({"x": np.arange(num_samples, dtype=np.int32)}).collect()
+@pytest.fixture(scope="module", params=[(1, 64), (8, 8), (64, 1)])
+def gen_aranged_df(request) -> DataFrame:
+    num_partitions, mibs_per_partition = request.param
+
+    total_mibs = num_partitions * mibs_per_partition
+    num_samples = int((total_mibs * 1024 * 1024) / 4)
+
+    return DataFrame.from_pydict({"x": np.arange(num_samples, dtype=np.int32)}).repartition(num_partitions).collect()
 
 
 @pytest.mark.benchmark(group="aggregations")
@@ -18,8 +22,8 @@ def test_single_int32_column_sum(gen_aranged_df, benchmark) -> None:
         return gen_aranged_df.sum("x").collect()
 
     result = benchmark(bench_sum)
-    total_count = 1_000_000 - 1
-    total_sum = total_count * (total_count + 1) / 2
+    total_count = len(gen_aranged_df)
+    total_sum = total_count * (total_count - 1) / 2
     assert (result.to_pandas()["x"] == total_sum).all()
 
 
@@ -29,6 +33,6 @@ def test_single_int32_column_mean(gen_aranged_df, benchmark) -> None:
         return gen_aranged_df.mean("x").collect()
 
     result = benchmark(bench_mean)
-    total_count = 1_000_000 - 1
-    total_mean = total_count / 2.0
+    total_count = len(gen_aranged_df)
+    total_mean = (total_count - 1) / 2.0
     assert (result.to_pandas()["x"] == total_mean).all()
