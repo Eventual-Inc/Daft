@@ -26,11 +26,11 @@ impl PyTable {
     }
 
     pub fn head(&self, num: usize) -> PyResult<Self> {
-        return Ok(self.table.head(num)?.into());
+        Ok(self.table.head(num)?.into())
     }
 
     pub fn __len__(&self) -> PyResult<usize> {
-        return Ok(self.table.len());
+        Ok(self.table.len())
     }
 
     pub fn column_names(&self) -> PyResult<Vec<String>> {

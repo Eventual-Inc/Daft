@@ -1,6 +1,5 @@
 use std::{
     fmt::{Display, Formatter, Result},
-    iter,
     sync::Arc,
 };
 
