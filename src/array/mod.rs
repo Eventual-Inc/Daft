@@ -81,6 +81,11 @@ where
         let with_bitmap = self.data.with_validity(Some(Bitmap::from(validity)));
         DataArray::new(self.field.clone(), with_bitmap.into())
     }
+
+    pub fn head(&self, num: usize) -> DaftResult<Self> {
+        let sliced = self.data.slice(0, num);
+        Self::new(self.field.clone(), Arc::from(sliced))
+    }
 }
 
 impl<T: DaftDataType + 'static> BaseArray for DataArray<T> {

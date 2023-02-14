@@ -1,5 +1,6 @@
 use std::{
     fmt::{Display, Formatter, Result},
+    iter,
     sync::Arc,
 };
 
@@ -44,6 +45,10 @@ impl Schema {
             None => Err(DaftError::NotFound(name.into())),
             Some(val) => Ok(val),
         }
+    }
+
+    pub fn names(&self) -> DaftResult<Vec<String>> {
+        return Ok(self.fields.keys().cloned().collect());
     }
 }
 

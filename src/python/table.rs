@@ -25,6 +25,18 @@ impl PyTable {
         Ok(format!("{}", self.table))
     }
 
+    pub fn head(&self, num: usize) -> PyResult<Self> {
+        return Ok(self.table.head(num)?.into());
+    }
+
+    pub fn __len__(&self) -> PyResult<usize> {
+        return Ok(self.table.len());
+    }
+
+    pub fn column_names(&self) -> PyResult<Vec<String>> {
+        Ok(self.table.column_names()?)
+    }
+
     #[staticmethod]
     pub fn from_arrow_record_batches(record_batches: Vec<&PyAny>) -> PyResult<Self> {
         let table = ffi::record_batches_to_table(record_batches.as_slice())?;

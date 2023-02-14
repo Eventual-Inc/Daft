@@ -57,6 +57,11 @@ impl Table {
     pub fn num_columns(&self) -> usize {
         self.columns.len()
     }
+
+    pub fn column_names(&self) -> DaftResult<Vec<String>> {
+        self.schema.names()
+    }
+
     pub fn len(&self) -> usize {
         if self.num_columns() == 0 {
             0
@@ -64,7 +69,22 @@ impl Table {
             self.get_column_by_index(0).unwrap().len()
         }
     }
-    //pub fn head(&self, num: usize) -> DaftResult<Table>;
+
+    pub fn head(&self, num: usize) -> DaftResult<Table> {
+        if num >= self.len() {
+            return Ok(Table {
+                schema: self.schema.clone(),
+                columns: self.columns.clone(),
+            });
+        }
+
+        let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.head(num)).collect();
+        Ok(Table {
+            schema: self.schema.clone(),
+            columns: new_series?,
+        })
+    }
+
     //pub fn sample(&self, num: usize) -> DaftResult<Table>;
     //pub fn filter(&self, predicate: &[&Expr]) -> DaftResult<Table>;
     //pub fn sort(&self, sort_keys: &[&Expr], descending: &[bool]) -> DaftResult<Table>;
