@@ -600,23 +600,21 @@ class vPartition:
 
         for lk, rk in zip(left_key_ids, right_key_ids):
             if lk != rk:
-                if rk in result_columns:
-                    target_name = f"right.{rk}"
-                else:
-                    target_name = k
-                assert target_name not in result_columns
-                result_columns[target_name] = PyListTile(
-                    column_name=target_name, partition_id=self.partition_id, block=result_columns[lk].block
+                while rk in result_columns:
+                    rk = f"right.{rk}"
+
+                assert rk not in result_columns
+                result_columns[rk] = PyListTile(
+                    column_name=rk, partition_id=self.partition_id, block=result_columns[lk].block
                 )
 
         for k in right_nonjoin_ids:
-            if k in result_columns:
-                target_name = f"right.{k}"
-            else:
-                target_name = k
-            assert target_name not in result_columns
-            result_columns[target_name] = PyListTile(
-                column_name=target_name, partition_id=self.partition_id, block=joined_blocks[joined_block_idx]
+
+            while k in result_columns:
+                k = f"right.{k}"
+            assert k not in result_columns
+            result_columns[k] = PyListTile(
+                column_name=k, partition_id=self.partition_id, block=joined_blocks[joined_block_idx]
             )
             joined_block_idx += 1
 
