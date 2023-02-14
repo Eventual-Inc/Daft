@@ -956,9 +956,9 @@ class Join(BinaryNode):
             raise NotImplementedError()
         elif how == JoinType.INNER:
             num_partitions = max(left.num_partitions(), right.num_partitions())
-            right_id_set = self._right_on.to_name_set()
+            right_drop_set = {r.name() for l, r in zip(left_on, right_on) if l.name() == r.name()}
             left_columns = left.schema().to_column_expressions()
-            right_columns = ExpressionList([col(f.name) for f in right.schema() if f.name not in right_id_set])
+            right_columns = ExpressionList([col(f.name) for f in right.schema() if f.name not in right_drop_set])
             unioned_expressions = left_columns.union(right_columns, rename_dup="right.")
             self._left_columns = left_columns
             self._right_columns = ExpressionList(unioned_expressions.exprs[len(self._left_columns.exprs) :])

@@ -277,14 +277,13 @@ JOIN_DATA = {
 JOIN_DATA_PARTITIONING = [1, 3, 7, 8]
 
 
-@pytest.mark.skip(reason="Issue: #442")
 @pytest.mark.parametrize("repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in JOIN_DATA_PARTITIONING])
 def test_self_join(repartition_nparts):
     daft_df = DataFrame.from_pydict(JOIN_DATA).repartition(repartition_nparts)
-    daft_df = daft_df.with_column("Test_1", col("Test_0") - 1).with_column("key", col("Test_0"))
-    daft_df_right = daft_df.with_column("key", col("Test_1"))
-    daft_df = daft_df.join(daft_df_right, [col("Bins"), col("Area"), col("key")])
-    daft_df = daft_df.exclude("key")
+    daft_df = daft_df.with_column("Test_1", col("Test_0") - 1)
+    daft_df = daft_df.join(
+        daft_df, left_on=[col("Bins"), col("Area"), col("Test_0")], right_on=[col("Bins"), col("Area"), col("Test_1")]
+    )
     daft_pd_df = daft_df.to_pandas()
 
     pd_df = pd.DataFrame.from_dict(JOIN_DATA)
@@ -294,11 +293,12 @@ def test_self_join(repartition_nparts):
         pd_df,
         left_on=["Bins", "Area", "Test_0"],
         right_on=["Bins", "Area", "Test_1"],
-        suffixes=("_L", "_R"),
+        suffixes=("", "_R"),
     )
+    pd_df = pd_df.rename({"Test_0_R": "right.Test_0", "Data_R": "right.Data", "Test_1_R": "right.Test_1"}, axis=1)
     #   Area  Bins  Test_0_L    Data_L  Test_1_L  Test_0_R    Data_R  Test_1_R
     # 0    A   110         0 -0.433937        -1         1 -0.160552         0
     # 1    A   160         0  0.744434        -1         1  1.754213         0
     # 2    A   160         1  1.754213         0         2  0.000850         1
     # 3    C    40         0  0.342243        -1         1  1.070599         0
-    assert_df_equals(daft_pd_df, pd_df, sort_key="Data_L")
+    assert_df_equals(daft_pd_df, pd_df, sort_key="Data")

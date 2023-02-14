@@ -568,6 +568,9 @@ class vPartition:
         left_key_ids = list(left_key_part.columns.keys())
 
         right_key_part = right.eval_expression_list(right_on)
+
+        right_key_ids = list(right_key_part.columns.keys())
+
         left_key_list = [left_key_part.columns[le.name()].block for le in left_on]
         right_key_list = [right_key_part.columns[re.name()].block for re in right_on]
 
@@ -585,21 +588,39 @@ class vPartition:
         joined_block_idx = 0
         result_columns = {}
         for k in left_key_ids:
+            assert k not in result_columns
             result_columns[k] = left_key_part.columns[k].replace_block(block=joined_blocks[joined_block_idx])
+
             joined_block_idx += 1
 
         for k in left_nonjoin_ids:
+            assert k not in result_columns
             result_columns[k] = self.columns[k].replace_block(block=joined_blocks[joined_block_idx])
             joined_block_idx += 1
 
+        for lk, rk in zip(left_key_ids, right_key_ids):
+            if lk != rk:
+                while rk in result_columns:
+                    rk = f"right.{rk}"
+
+                assert rk not in result_columns
+                result_columns[rk] = PyListTile(
+                    column_name=rk, partition_id=self.partition_id, block=result_columns[lk].block
+                )
+
         for k in right_nonjoin_ids:
-            result_columns[k] = right.columns[k].replace_block(block=joined_blocks[joined_block_idx])
+
+            while k in result_columns:
+                k = f"right.{k}"
+            assert k not in result_columns
+            result_columns[k] = PyListTile(
+                column_name=k, partition_id=self.partition_id, block=joined_blocks[joined_block_idx]
+            )
             joined_block_idx += 1
 
         assert joined_block_idx == len(result_keys)
-
-        output = vPartition(columns=result_columns, partition_id=self.partition_id)
-        return output.eval_expression_list(output_projection)
+        output_ordering = output_projection.to_column_expressions()
+        return vPartition(columns=result_columns, partition_id=self.partition_id).eval_expression_list(output_ordering)
 
     def _to_file(
         self,
