@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import pathlib
-
 import pytest
 
 from daft import col
@@ -213,13 +210,8 @@ def test_local_aggregate_join_prune(
     assert_plan_eq(optimizer(df_unoptimized.plan()), df_optimized.plan())
 
 
-def test_projection_on_scan(valid_data: list[dict[str, float]], tmpdir, optimizer):
-    json_path = pathlib.Path(tmpdir) / "mydata.csv"
-    with open(json_path, "w") as f:
-        for data in valid_data:
-            f.write(json.dumps(data))
-            f.write("\n")
-    df = DataFrame.read_json(str(json_path))
+def test_projection_on_scan(valid_data_json_path, optimizer):
+    df = DataFrame.read_json(valid_data_json_path)
     df = df.with_column("sepal_length", col("sepal_length") + 1)
 
     # Projection cannot be pushed down into TabularFileScan

@@ -289,6 +289,13 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
         self.register_fn(Projection, TabularFilesScan, self._push_down_projections_into_scan)
 
     def _push_down_projections_into_scan(self, parent: Projection, child: TabularFilesScan) -> LogicalPlan | None:
+        """Pushes projections into a scan as required columns
+        Projection-TabularFilesScan-* -> <TabularFilesScan with selected columns>-*
+
+        If the projection has some non-column expressions, we keep it around but can still push
+        the required columns down to the scan:
+        Projection-TabularFilesScan-* -> Projection-<TabularFilesScan with selected columns>-*
+        """
         required_columns = parent._projection.required_columns()
         scan_columns = child.schema()
         if required_columns == scan_columns.to_name_set():
