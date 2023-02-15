@@ -1,6 +1,6 @@
 use crate::{
-    array::DataArray,
-    datatypes::{BooleanArray, DaftNumericType, Utf8Array},
+    array::{BaseArray, DataArray},
+    datatypes::{BooleanArray, DaftIntegerType, DaftNumericType, Int64Array, Utf8Array},
     error::DaftResult,
 };
 
@@ -23,6 +23,15 @@ where
         } else {
             None
         }
+    }
+
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        Self::try_from((self.name(), result))
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
@@ -52,6 +61,15 @@ impl Utf8Array {
         }
     }
 
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        Self::try_from((self.name(), result))
+    }
+
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         let val = self.get(idx);
         match val {
@@ -77,6 +95,15 @@ impl BooleanArray {
         } else {
             None
         }
+    }
+
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        Self::try_from((self.name(), result))
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {

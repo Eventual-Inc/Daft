@@ -4,6 +4,7 @@ import pyarrow as pa
 
 from daft.daft import PyTable as _PyTable
 from daft.expressions2 import Expression
+from daft.series import Series
 
 
 class Table:
@@ -42,6 +43,10 @@ class Table:
 
     def head(self, num: int) -> Table:
         return Table._from_pytable(self._table.head(num))
+
+    def take(self, indices: Series) -> Table:
+        assert isinstance(indices, Series)
+        return Table._from_pytable(self._table.take(indices._series))
 
     def column_names(self) -> list[str]:
         return self._table.column_names()

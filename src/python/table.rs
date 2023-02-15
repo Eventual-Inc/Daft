@@ -7,6 +7,8 @@ use crate::table;
 
 use crate::python::expr::PyExpr;
 
+use super::series::PySeries;
+
 #[pyclass]
 pub struct PyTable {
     pub table: table::Table,
@@ -20,6 +22,10 @@ impl PyTable {
             .table
             .eval_expression_list(converted_exprs.as_slice())?
             .into())
+    }
+
+    pub fn take(&self, idx: &PySeries) -> PyResult<Self> {
+        Ok(self.table.take(&idx.series)?.into())
     }
 
     pub fn __repr__(&self) -> PyResult<String> {

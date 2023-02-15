@@ -1,7 +1,8 @@
 use std::fmt::{Display, Formatter, Result};
 use std::sync::Arc;
 
-use crate::datatypes::Field;
+use crate::array::DataArray;
+use crate::datatypes::{DaftIntegerType, DaftNumericType, Field};
 use crate::dsl::Expr;
 use crate::error::{DaftError, DaftResult};
 use crate::schema::Schema;
@@ -85,11 +86,16 @@ impl Table {
         })
     }
 
-    //pub fn sample(&self, num: usize) -> DaftResult<Table>;
-    //pub fn filter(&self, predicate: &[&Expr]) -> DaftResult<Table>;
+    // pub fn filter(&self, predicate: &[&Expr]) -> DaftResult<Table>;
     //pub fn sort(&self, sort_keys: &[&Expr], descending: &[bool]) -> DaftResult<Table>;
     //pub fn argsort(&self, sort_keys: &[&Expr], descending: &[bool]) -> DaftResult<Series>;
-    //pub fn take(&self, idx: &Series) -> DaftResult<Table>;
+    pub fn take(&self, idx: &Series) -> DaftResult<Table> {
+        let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
+        Ok(Table {
+            schema: self.schema.clone(),
+            columns: new_series?,
+        })
+    }
     //pub fn concat(tables: &[&Table]) -> DaftResult<Table>;
 
     pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<Series> {
