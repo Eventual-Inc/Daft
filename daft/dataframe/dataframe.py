@@ -252,7 +252,8 @@ class DataFrame:
             if not isinstance(row, dict):
                 raise ValueError(f"Expected list of dictionaries of {{column_name: value}}, received: {type(row)}")
             headers.update(row.keys())
-        return cls.from_pydict(data={header: [row.get(header, None) for row in data] for header in headers})
+        headers_ordered = sorted(list(headers))
+        return cls.from_pydict(data={header: [row.get(header, None) for row in data] for header in headers_ordered})
 
     @classmethod
     @DataframePublicAPI

@@ -1,5 +1,6 @@
 .vscode
 
+.coverage
 .env
 venv
 .venv

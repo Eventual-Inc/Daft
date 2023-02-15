@@ -31,6 +31,8 @@ class TreeNode(Generic[TreeNodeType]):
         root = cast(TreeNodeType, self)
         continue_looping = True
         made_change = False
+
+        # Apply rule to self and its children
         while continue_looping:
             for child in root._children():
                 fn = rule.dispatch_fn(root, child)
@@ -45,6 +47,8 @@ class TreeNode(Generic[TreeNodeType]):
                     break
             else:
                 continue_looping = False
+
+        # Recursively apply_and_trickle_down to children
         n_children = len(root._children())
         for i in range(n_children):
             maybe_new_child = root._registered_children[i].apply_and_trickle_down(rule)
