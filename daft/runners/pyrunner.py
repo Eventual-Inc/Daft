@@ -3,6 +3,7 @@ from __future__ import annotations
 import multiprocessing
 from concurrent import futures
 from dataclasses import dataclass
+from typing import Iterable
 
 import psutil
 
@@ -211,11 +212,6 @@ class PyRunner(PyRunnerBase):
         self.num_gpus = cuda_device_count()
         self.bytes_memory = psutil.virtual_memory().total
 
-        self.thread_pool = futures.ThreadPoolExecutor()
-        self._inflight_tasks: dict[str, ExecutionStep] = dict()
-        self._inflight_tasks_resources: dict[str, ResourceRequest] = dict()
-        self._future_to_task: dict[futures.Future, str] = dict()
-
     def run(self, logplan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         logplan = self.optimize(logplan)
         psets = {
@@ -226,70 +222,77 @@ class PyRunner(PyRunnerBase):
         plan = physical_plan_factory.get_materializing_physical_plan(logplan, psets)
         result_pset = LocalPartitionSet({})
 
+        inflight_tasks: dict[str, ExecutionStep] = dict()
+        inflight_tasks_resources: dict[str, ResourceRequest] = dict()
+        future_to_task: dict[futures.Future, str] = dict()
+
         next_step = None
-        try:
-            while True:
-                # Get the next task to dispatch.
-                if next_step is None:
-                    next_step = next(plan)
-
-                # Try dispatching tasks (up to resource limits) until there are no more tasks to dispatch.
-                while next_step is not None and self._can_admit_task(next_step.resource_request):
-
-                    # If this task is a no-op, just run it locally immediately.
-                    while len(next_step.instructions) == 0:
-                        assert isinstance(next_step, SingleOutputExecutionStep)
-                        [partition] = next_step.inputs
-                        next_step.result = PyMaterializedResult(partition)
-                        next_step = next(plan)
-                        # for mypy; we executed a task serially, so there should be a next task available
-                        assert next_step is not None
-
-                    # Submit the task for execution.
-                    future = self.thread_pool.submit(self.build_partitions, next_step.instructions, *next_step.inputs)
-                    # Register the inflight task and resources used.
-                    self._future_to_task[future] = next_step.id()
-                    self._inflight_tasks[next_step.id()] = next_step
-                    self._inflight_tasks_resources[next_step.id()] = next_step.resource_request
-
+        with futures.ThreadPoolExecutor() as thread_pool:
+            try:
+                while True:
                     # Get the next task to dispatch.
-                    next_step = next(plan)
+                    if next_step is None:
+                        next_step = next(plan)
 
-                if len(self._future_to_task) == 0:
-                    assert next_step is not None, "Scheduler deadlocked - should never happen"
-                    assert not self._can_admit_task(next_step.resource_request)
-                    raise RuntimeError(
-                        f"Unable to schedule task {next_step} due to insufficient resources. "
-                        + f"System has: num_cpus={self.num_cpus}, num_gpus={self.num_gpus}, bytes_memory={self.bytes_memory}"
-                    )
+                    # Try dispatching tasks (up to resource limits) until there are no more tasks to dispatch.
+                    while next_step is not None and self._can_admit_task(
+                        next_step.resource_request, inflight_tasks_resources.values()
+                    ):
 
-                # Await at least task and process the results.
-                done_set, _ = futures.wait(list(self._future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
-                for done in done_set:
-                    done_id = self._future_to_task.pop(done)
-                    del self._inflight_tasks_resources[done_id]
-                    done_task = self._inflight_tasks.pop(done_id)
+                        # If this task is a no-op, just run it locally immediately.
+                        while len(next_step.instructions) == 0:
+                            assert isinstance(next_step, SingleOutputExecutionStep)
+                            [partition] = next_step.inputs
+                            next_step.result = PyMaterializedResult(partition)
+                            next_step = next(plan)
+                            # for mypy; we executed a task serially, so there should be a next task available
+                            assert next_step is not None
 
-                    partitions = done.result()
+                        # Submit the task for execution.
+                        future = thread_pool.submit(self.build_partitions, next_step.instructions, *next_step.inputs)
+                        # Register the inflight task and resources used.
+                        future_to_task[future] = next_step.id()
+                        inflight_tasks[next_step.id()] = next_step
+                        inflight_tasks_resources[next_step.id()] = next_step.resource_request
 
-                    if isinstance(done_task, MultiOutputExecutionStep):
-                        done_task.results = [PyMaterializedResult(partition) for partition in partitions]
-                    elif isinstance(done_task, SingleOutputExecutionStep):
-                        [partition] = partitions
-                        done_task.result = PyMaterializedResult(partition)
-                    else:
-                        raise TypeError(f"Could not type match input {done_task}")
+                        # Get the next task to dispatch.
+                        next_step = next(plan)
 
-        except StopIteration as e:
-            for i, partition in enumerate(e.value):
-                result_pset.set_partition(i, partition)
+                    if len(future_to_task) == 0:
+                        assert next_step is not None, "Scheduler deadlocked - should never happen"
+                        assert not self._can_admit_task(next_step.resource_request, inflight_tasks_resources.values())
+                        raise RuntimeError(
+                            f"Unable to schedule task {next_step} due to insufficient resources. "
+                            + f"System has: num_cpus={self.num_cpus}, num_gpus={self.num_gpus}, bytes_memory={self.bytes_memory}"
+                        )
 
-        pset_entry = self.put_partition_set_into_cache(result_pset)
-        return pset_entry
+                    # Await at least task and process the results.
+                    done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
+                    for done in done_set:
+                        done_id = future_to_task.pop(done)
+                        del inflight_tasks_resources[done_id]
+                        done_task = inflight_tasks.pop(done_id)
 
-    def _can_admit_task(self, resource_request: ResourceRequest) -> bool:
+                        partitions = done.result()
 
-        total_inflight_resources: ResourceRequest = sum(self._inflight_tasks_resources.values(), ResourceRequest())
+                        if isinstance(done_task, MultiOutputExecutionStep):
+                            done_task.results = [PyMaterializedResult(partition) for partition in partitions]
+                        elif isinstance(done_task, SingleOutputExecutionStep):
+                            [partition] = partitions
+                            done_task.result = PyMaterializedResult(partition)
+                        else:
+                            raise TypeError(f"Could not type match input {done_task}")
+
+            except StopIteration as e:
+                for i, partition in enumerate(e.value):
+                    result_pset.set_partition(i, partition)
+
+            pset_entry = self.put_partition_set_into_cache(result_pset)
+            return pset_entry
+
+    def _can_admit_task(self, resource_request: ResourceRequest, inflight_resources: Iterable[ResourceRequest]) -> bool:
+
+        total_inflight_resources: ResourceRequest = sum(inflight_resources, ResourceRequest())
         cpus_okay = (total_inflight_resources.num_cpus or 0) + (resource_request.num_cpus or 0) <= self.num_cpus
         gpus_okay = (total_inflight_resources.num_gpus or 0) + (resource_request.num_gpus or 0) <= self.num_gpus
         memory_okay = (total_inflight_resources.memory_bytes or 0) + (
