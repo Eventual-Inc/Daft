@@ -1,5 +1,4 @@
-use crate::array::{BaseArray, DataArray};
-use crate::datatypes::{DaftIntegerType, DaftNumericType};
+use crate::array::BaseArray;
 use crate::{
     error::DaftResult, series::Series, with_match_comparable_daft_types,
     with_match_integer_daft_types,

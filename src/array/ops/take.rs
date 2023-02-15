@@ -1,6 +1,6 @@
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BooleanArray, DaftIntegerType, DaftNumericType, Int64Array, Utf8Array},
+    datatypes::{BooleanArray, DaftIntegerType, DaftNumericType, Utf8Array},
     error::DaftResult,
 };
 

@@ -1,8 +1,7 @@
 use std::fmt::{Display, Formatter, Result};
 use std::sync::Arc;
 
-use crate::array::DataArray;
-use crate::datatypes::{DaftIntegerType, DaftNumericType, Field};
+use crate::datatypes::Field;
 use crate::dsl::Expr;
 use crate::error::{DaftError, DaftResult};
 use crate::schema::Schema;
