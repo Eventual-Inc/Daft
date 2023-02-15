@@ -9,7 +9,7 @@ import pytest
 from daft import DataFrame
 
 
-@pytest.fixture(scope="module", params=[(1, 64), (8, 8), (64, 1)])
+@pytest.fixture(scope="module", params=[(1, 64), (8, 8), (64, 1)], ids=["1x64mib", "8x8mib", "64x1mib"])
 def gen_simple_csvs(request) -> str:
     """Creates some CSVs in a directory. Returns the name of the directory."""
 

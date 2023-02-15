@@ -6,7 +6,7 @@ import pytest
 from daft import DataFrame
 
 
-@pytest.fixture(scope="module", params=[(1, 64), (8, 8), (64, 1)])
+@pytest.fixture(scope="module", params=[(1, 64), (8, 8), (64, 1)], ids=["1x64mib", "8x8mib", "64x1mib"])
 def gen_aranged_df(request) -> DataFrame:
     num_partitions, mibs_per_partition = request.param
 

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import multiprocessing
+from concurrent import futures
 from dataclasses import dataclass
+from typing import Iterable
 
 import psutil
 
 from daft.execution import physical_plan_factory
 from daft.execution.execution_step import (
     ExecutionStep,
+    Instruction,
     MaterializedResult,
     MultiOutputExecutionStep,
     SingleOutputExecutionStep,
@@ -135,6 +138,10 @@ class PyRunner(Runner):
             ]
         )
 
+        self.num_cpus = multiprocessing.cpu_count()
+        self.num_gpus = cuda_device_count()
+        self.bytes_memory = psutil.virtual_memory().total
+
     def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
         # From PyRunner
         return self._optimizer.optimize(plan)
@@ -142,60 +149,110 @@ class PyRunner(Runner):
     def partition_set_factory(self) -> PartitionSetFactory:
         return LocalPartitionSetFactory()
 
-    def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
-        plan = self.optimize(plan)
-
+    def run(self, logplan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
+        logplan = self.optimize(logplan)
         psets = {
             key: entry.value.values()
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()
             if entry.value is not None
         }
-        phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
-
+        plan = physical_plan_factory.get_materializing_physical_plan(logplan, psets)
         result_pset = LocalPartitionSet({})
 
-        with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
+        inflight_tasks: dict[str, ExecutionStep] = dict()
+        inflight_tasks_resources: dict[str, ResourceRequest] = dict()
+        future_to_task: dict[futures.Future, str] = dict()
+
+        next_step = None
+        with futures.ThreadPoolExecutor() as thread_pool, profiler(
+            "profile_PyRunner.run_{datetime.now().isoformat()}.json"
+        ):
             try:
                 while True:
-                    next_step = next(phys_plan)
-                    assert next_step is not None, "Got a None ExecutionStep in singlethreaded mode"
-                    self._check_resource_requests(next_step.resource_request)
-                    self._build_partitions(next_step)
+                    # Get the next task to dispatch.
+                    if next_step is None:
+                        next_step = next(plan)
+
+                    # Try dispatching tasks (up to resource limits) until there are no more tasks to dispatch.
+                    while next_step is not None and self._can_admit_task(
+                        next_step.resource_request, inflight_tasks_resources.values()
+                    ):
+
+                        # If this task is a no-op, just run it locally immediately.
+                        if len(next_step.instructions) == 0:
+                            assert isinstance(next_step, SingleOutputExecutionStep)
+                            [partition] = next_step.inputs
+                            next_step.result = PyMaterializedResult(partition)
+
+                        else:
+                            # Submit the task for execution.
+                            future = thread_pool.submit(
+                                self.build_partitions, next_step.instructions, *next_step.inputs
+                            )
+                            # Register the inflight task and resources used.
+                            future_to_task[future] = next_step.id()
+                            inflight_tasks[next_step.id()] = next_step
+                            inflight_tasks_resources[next_step.id()] = next_step.resource_request
+
+                        # Get the next task to dispatch.
+                        next_step = next(plan)
+
+                    # Await at least task and process the results.
+                    assert len(future_to_task) > 0, f"Scheduler deadlocked; should never happen. next_step={next_step}"
+                    done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
+                    for done in done_set:
+                        done_id = future_to_task.pop(done)
+                        del inflight_tasks_resources[done_id]
+                        done_task = inflight_tasks.pop(done_id)
+
+                        partitions = done.result()
+
+                        if isinstance(done_task, MultiOutputExecutionStep):
+                            done_task.results = [PyMaterializedResult(partition) for partition in partitions]
+                        elif isinstance(done_task, SingleOutputExecutionStep):
+                            [partition] = partitions
+                            done_task.result = PyMaterializedResult(partition)
+                        else:
+                            raise TypeError(f"Could not type match input {done_task}")
+
             except StopIteration as e:
                 for i, partition in enumerate(e.value):
                     result_pset.set_partition(i, partition)
 
-        pset_entry = self.put_partition_set_into_cache(result_pset)
-        return pset_entry
+            pset_entry = self.put_partition_set_into_cache(result_pset)
+            return pset_entry
 
-    def _check_resource_requests(self, resource_request: ResourceRequest | None) -> None:
+    def _check_resource_requests(self, resource_request: ResourceRequest) -> None:
         """Validates that the requested ResourceRequest is possible to run locally"""
-        if resource_request is None:
-            return
-        if resource_request.num_cpus is not None and resource_request.num_cpus > multiprocessing.cpu_count():
+
+        if resource_request.num_cpus is not None and resource_request.num_cpus > self.num_cpus:
+            raise RuntimeError(f"Requested {resource_request.num_cpus} CPUs but found only {self.num_cpus} available")
+        if resource_request.num_gpus is not None and resource_request.num_gpus > self.num_gpus:
+            raise RuntimeError(f"Requested {resource_request.num_gpus} GPUs but found only {self.num_gpus} available")
+        if resource_request.memory_bytes is not None and resource_request.memory_bytes > self.bytes_memory:
             raise RuntimeError(
-                f"Requested {resource_request.num_cpus} CPUs but found only {multiprocessing.cpu_count()} available"
-            )
-        if resource_request.num_gpus is not None and resource_request.num_gpus > cuda_device_count():
-            raise RuntimeError(
-                f"Requested {resource_request.num_gpus} GPUs but found only {cuda_device_count()} available"
-            )
-        if resource_request.memory_bytes is not None and resource_request.memory_bytes > psutil.virtual_memory().total:
-            raise RuntimeError(
-                f"Requested {resource_request.memory_bytes} bytes of memory but found only {psutil.virtual_memory().total} available"
+                f"Requested {resource_request.memory_bytes} bytes of memory but found only {self.bytes_memory} available"
             )
 
-    def _build_partitions(self, partspec: ExecutionStep[vPartition]) -> None:
-        partitions = partspec.inputs
-        for instruction in partspec.instructions:
+    def _can_admit_task(self, resource_request: ResourceRequest, inflight_resources: Iterable[ResourceRequest]) -> bool:
+        self._check_resource_requests(resource_request)
+
+        total_inflight_resources: ResourceRequest = sum(inflight_resources, ResourceRequest())
+        cpus_okay = (total_inflight_resources.num_cpus or 0) + (resource_request.num_cpus or 0) <= self.num_cpus
+        gpus_okay = (total_inflight_resources.num_gpus or 0) + (resource_request.num_gpus or 0) <= self.num_gpus
+        memory_okay = (total_inflight_resources.memory_bytes or 0) + (
+            resource_request.memory_bytes or 0
+        ) <= self.bytes_memory
+
+        return all((cpus_okay, gpus_okay, memory_okay))
+
+    @staticmethod
+    def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) -> list[vPartition]:
+        partitions = list(inputs)
+        for instruction in instruction_stack:
             partitions = instruction.run(partitions)
-        if isinstance(partspec, MultiOutputExecutionStep):
-            partspec.results = [PyMaterializedResult(partition) for partition in partitions]
-        elif isinstance(partspec, SingleOutputExecutionStep):
-            [partition] = partitions
-            partspec.result = PyMaterializedResult(partition)
-        else:
-            raise TypeError(f"Cannot typematch input {partspec}")
+
+        return partitions
 
 
 @dataclass(frozen=True)

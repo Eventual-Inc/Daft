@@ -46,12 +46,12 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
     def schema(self) -> Schema:
         return self._schema
 
-    def resource_request(self) -> ResourceRequest | None:
+    def resource_request(self) -> ResourceRequest:
         """Returns a custom ResourceRequest if one has been attached to this LogicalPlan
 
         Implementations should override this if they allow for customized ResourceRequests.
         """
-        return None
+        return ResourceRequest()
 
     @abstractmethod
     def required_columns(self) -> list[set[str]]:
@@ -428,7 +428,10 @@ class Projection(UnaryNode):
     """Which columns to keep"""
 
     def __init__(
-        self, input: LogicalPlan, projection: ExpressionList, custom_resource_request: ResourceRequest | None
+        self,
+        input: LogicalPlan,
+        projection: ExpressionList,
+        custom_resource_request: ResourceRequest = ResourceRequest(),
     ) -> None:
         schema = projection.to_schema(input.schema())
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.ROW)
@@ -436,7 +439,7 @@ class Projection(UnaryNode):
         self._projection = projection
         self._custom_resource_request = custom_resource_request
 
-    def resource_request(self) -> ResourceRequest | None:
+    def resource_request(self) -> ResourceRequest:
         return self._custom_resource_request
 
     def __repr__(self) -> str:
