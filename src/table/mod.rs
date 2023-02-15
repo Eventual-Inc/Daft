@@ -133,6 +133,17 @@ impl Table {
             .iter()
             .map(|s| s.field().clone())
             .collect::<Vec<Field>>();
+        use std::collections::HashSet;
+        let mut seen: HashSet<String> = HashSet::new();
+        for field in fields.iter() {
+            let name = &field.name;
+            if seen.contains(name) {
+                return Err(DaftError::ValueError(format!(
+                    "Duplicate name found when evaluating expressions: {name}"
+                )));
+            }
+            seen.insert(name.clone());
+        }
         let schema = Schema::new(fields);
         Table::new(schema, result_series)
     }

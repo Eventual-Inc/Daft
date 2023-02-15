@@ -3,6 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 
 from daft.daft import PyTable as _PyTable
+from daft.expressions2 import Expression
 
 
 class Table:
@@ -30,6 +31,14 @@ class Table:
 
     def to_arrow(self) -> pa.Table:
         return pa.Table.from_batches([self._table.to_arrow_record_batch()])
+
+    def to_pydict(self) -> dict[str, list]:
+        return self.to_arrow().to_pydict()
+
+    def eval_expression_list(self, exprs: list[Expression]) -> Table:
+        assert all(isinstance(e, Expression) for e in exprs)
+        pyexprs = [e._expr for e in exprs]
+        return Table._from_pytable(self._table.eval_expression_list(pyexprs))
 
     def head(self, num: int) -> Table:
         return Table._from_pytable(self._table.head(num))
