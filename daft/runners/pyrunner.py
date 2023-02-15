@@ -255,6 +255,14 @@ class PyRunner(PyRunnerBase):
                     # Get the next task to dispatch.
                     next_step = next(plan)
 
+                if len(self._future_to_task) == 0:
+                    assert next_step is not None, "Scheduler deadlocked - should never happen"
+                    assert not self._can_admit_task(next_step.resource_request)
+                    raise RuntimeError(
+                        f"Unable to schedule task {next_step} due to insufficient resources. "
+                        + f"System has: num_cpus={self.num_cpus}, num_gpus={self.num_gpus}, bytes_memory={self.bytes_memory}"
+                    )
+
                 # Await at least task and process the results.
                 done_set, _ = futures.wait(list(self._future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
                 for done in done_set:
