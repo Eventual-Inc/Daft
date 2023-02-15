@@ -267,7 +267,7 @@ class PyRunner(PyRunnerBase):
 
     def _can_admit_task(self, resource_request: ResourceRequest) -> bool:
 
-        total_inflight_resources: ResourceRequest = sum(self._inflight_tasks_resources.values())  # type: ignore
+        total_inflight_resources: ResourceRequest = sum(self._inflight_tasks_resources.values(), ResourceRequest())
         cpus_okay = (total_inflight_resources.num_cpus or 0) + (resource_request.num_cpus or 0) <= self.num_cpus
         gpus_okay = (total_inflight_resources.num_gpus or 0) + (resource_request.num_gpus or 0) <= self.num_gpus
         memory_okay = (total_inflight_resources.memory_bytes or 0) + (
