@@ -242,7 +242,8 @@ class PyRunner(PyRunnerBase):
                         [partition] = next_step.inputs
                         next_step.result = PyMaterializedResult(partition)
                         next_step = next(plan)
-                        assert next_step is not None  # for mypy only
+                        # for mypy; we executed a task serially, so there should be a next task available
+                        assert next_step is not None
 
                     # Submit the task for execution.
                     future = self.thread_pool.submit(self.build_partitions, next_step.instructions, *next_step.inputs)
