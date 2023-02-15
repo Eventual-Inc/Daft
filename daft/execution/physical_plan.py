@@ -107,7 +107,6 @@ def file_write(
     yield from (
         step.add_instruction(
             execution_step.WriteFile(partition_id=index, logplan=write_info),
-            resource_request=None,
         )
         if isinstance(step, ExecutionStepBuilder)
         else step
@@ -118,7 +117,7 @@ def file_write(
 def pipeline_instruction(
     child_plan: InProgressPhysicalPlan[PartitionT],
     pipeable_instruction: Instruction,
-    resource_request: execution_step.ResourceRequest | None,
+    resource_request: execution_step.ResourceRequest,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Apply an instruction to the results of `child_plan`."""
 
@@ -155,7 +154,7 @@ def join(
 
             join_step = ExecutionStepBuilder[PartitionT](
                 inputs=[next_left.result.partition(), next_right.result.partition()]
-            ).add_instruction(instruction=execution_step.Join(join), resource_request=None)
+            ).add_instruction(instruction=execution_step.Join(join))
             yield join_step
 
         # Exhausted all ready inputs; execute a single child step to get more join inputs.
@@ -201,7 +200,6 @@ def local_limit(
         else:
             maybe_new_limit = yield step.add_instruction(
                 execution_step.LocalLimit(limit),
-                resource_request=None,
             )
             if maybe_new_limit is not None:
                 limit = maybe_new_limit
@@ -238,7 +236,7 @@ def global_limit(
             limit = remaining_rows and min(remaining_rows, result.metadata().num_rows)
 
             global_limit_step = ExecutionStepBuilder[PartitionT](inputs=[result.partition()]).add_instruction(
-                instruction=execution_step.LocalLimit(limit), resource_request=None
+                instruction=execution_step.LocalLimit(limit),
             )
             yield global_limit_step
             remaining_partitions -= 1
@@ -258,7 +256,6 @@ def global_limit(
                 yield from (
                     ExecutionStepBuilder[PartitionT](inputs=[result.partition()]).add_instruction(
                         instruction=execution_step.LocalLimit(0),
-                        resource_request=None,
                     )
                     for _ in range(remaining_partitions)
                 )
@@ -321,7 +318,6 @@ def coalesce(
                     inputs=[_.partition() for _ in ready_to_coalesce]
                 ).add_instruction(
                     instruction=execution_step.ReduceMerge(),
-                    resource_request=None,
                 )
                 [materializations.popleft() for _ in range(num_partitions_to_merge)]
                 merges_per_result.popleft()
@@ -378,7 +374,6 @@ def reduce(
         yield ExecutionStepBuilder[PartitionT](
             inputs=[result.partition() for result in (_.popleft() for _ in inputs_to_reduce)],
             instructions=[reduce_instruction],
-            resource_request=None,
         )
 
 
@@ -405,7 +400,6 @@ def sort(
             ExecutionStepBuilder[PartitionT](inputs=[source.result.partition()])
             .add_instruction(
                 instruction=execution_step.Sample(sort_by=sort_info._sort_by),
-                resource_request=None,
             )
             .build_materialization_request_single()
         )
@@ -431,7 +425,6 @@ def sort(
                 sort_by=sort_info._sort_by,
                 descending=sort_info._descending,
             ),
-            resource_request=None,
         )
         .build_materialization_request_single()
     )
@@ -451,7 +444,6 @@ def sort(
                 sort_by=sort_info._sort_by,
                 descending=sort_info._descending,
             ),
-            resource_request=None,
         )
         for source_partition in (
             source.result.partition() for source in consume_deque(source_materializations) if source.result is not None

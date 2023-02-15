@@ -35,7 +35,7 @@ class ExecutionStep(Generic[PartitionT]):
 
     inputs: list[PartitionT]
     instructions: list[Instruction]
-    resource_request: ResourceRequest | None
+    resource_request: ResourceRequest
     num_results: int
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
@@ -61,11 +61,11 @@ class ExecutionStepBuilder(Generic[PartitionT]):
         self,
         inputs: list[PartitionT],
         instructions: list[Instruction] | None = None,
-        resource_request: ResourceRequest | None = None,
+        resource_request: ResourceRequest = ResourceRequest(),
     ) -> None:
         self.inputs = inputs
-        self.instructions: list[Instruction] = [] if instructions is None else instructions
-        self.resource_request: ResourceRequest | None = resource_request
+        self.instructions: list[Instruction] = instructions if instructions is not None else list()
+        self.resource_request: ResourceRequest = resource_request
 
     def __copy__(self) -> ExecutionStepBuilder[PartitionT]:
         return ExecutionStepBuilder[PartitionT](
@@ -77,7 +77,7 @@ class ExecutionStepBuilder(Generic[PartitionT]):
     def add_instruction(
         self,
         instruction: Instruction,
-        resource_request: ResourceRequest | None,
+        resource_request: ResourceRequest = ResourceRequest(),
     ) -> ExecutionStepBuilder[PartitionT]:
         """Append an instruction to this ExecutionStep's pipeline."""
         self.instructions.append(instruction)
@@ -93,7 +93,9 @@ class ExecutionStepBuilder(Generic[PartitionT]):
             inputs=self.inputs,
             instructions=self.instructions,
             num_results=1,
-            resource_request=self.resource_request,
+            resource_request=ResourceRequest.max_resources(
+                [self.resource_request, ResourceRequest(num_cpus=1)],
+            ),
         )
 
     def build_materialization_request_multi(self, num_results: int) -> MultiOutputExecutionStep[PartitionT]:
@@ -106,7 +108,9 @@ class ExecutionStepBuilder(Generic[PartitionT]):
             inputs=self.inputs,
             instructions=self.instructions,
             num_results=num_results,
-            resource_request=self.resource_request,
+            resource_request=ResourceRequest.max_resources(
+                [self.resource_request, ResourceRequest(num_cpus=1)],
+            ),
         )
 
     def __str__(self) -> str:

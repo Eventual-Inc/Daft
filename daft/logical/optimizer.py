@@ -215,7 +215,6 @@ class PruneColumns(Rule[LogicalPlan]):
         return Projection(
             child,
             projection=ExpressionList([e.to_column_expression() for e in child.schema() if e.name in parent_name_set]),
-            custom_resource_request=None,
         )
 
 

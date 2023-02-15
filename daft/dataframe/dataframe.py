@@ -21,6 +21,7 @@ from daft.expressions import Expression, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.schema import ExpressionList
+from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionSet,
@@ -676,7 +677,8 @@ class DataFrame:
         """
         assert len(columns) > 0
         projection = logical_plan.Projection(
-            self._plan, self.__column_input_to_expression(columns), custom_resource_request=None
+            self._plan,
+            self.__column_input_to_expression(columns),
         )
         return DataFrame(projection)
 
@@ -719,7 +721,7 @@ class DataFrame:
         """
         names_to_skip = set(names)
         el = ExpressionList([col(e.name) for e in self._plan.schema() if e.name not in names_to_skip])
-        return DataFrame(logical_plan.Projection(self._plan, el, custom_resource_request=None))
+        return DataFrame(logical_plan.Projection(self._plan, el))
 
     @DataframePublicAPI
     def where(self, predicate: Expression) -> DataFrame:
@@ -739,7 +741,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def with_column(
-        self, column_name: str, expr: Expression, resource_request: resource_request.ResourceRequest | None = None
+        self, column_name: str, expr: Expression, resource_request: resource_request.ResourceRequest = ResourceRequest()
     ) -> DataFrame:
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -1057,7 +1059,7 @@ class DataFrame:
 
         final_op: logical_plan.LogicalPlan
         if need_final_projection:
-            final_op = logical_plan.Projection(gagg_op, final_schema, custom_resource_request=None)
+            final_op = logical_plan.Projection(gagg_op, final_schema)
         else:
             final_op = gagg_op
 
