@@ -26,6 +26,11 @@ class Table:
         return Table._from_pytable(pyt)
 
     @staticmethod
+    def empty() -> Table:
+        pyt = _PyTable.empty()
+        return Table._from_pytable(pyt)
+
+    @staticmethod
     def from_pydict(data: dict) -> Table:
         pya_table = pa.Table.from_pydict(data)
         return Table.from_arrow(pya_table)
@@ -50,6 +55,9 @@ class Table:
 
     def column_names(self) -> list[str]:
         return self._table.column_names()
+
+    def get_column(self, name: str) -> Series:
+        return Series._from_pyseries(self._table.get_column(name))
 
     def __len__(self) -> int:
         return len(self._table)

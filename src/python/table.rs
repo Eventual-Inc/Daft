@@ -50,6 +50,27 @@ impl PyTable {
         Ok(self.table.column_names()?)
     }
 
+    pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
+        Ok(self.table.get_column(name)?.into())
+    }
+
+    pub fn get_column_by_index(&self, idx: i64) -> PyResult<PySeries> {
+        if idx < 0 {
+            return Err(PyValueError::new_err(format!(
+                "Invalid index, negative numbers not supported: {idx}"
+            )));
+        }
+        let idx = idx as usize;
+        if idx >= self.table.len() {
+            return Err(PyValueError::new_err(format!(
+                "Invalid index, out of bounds: {idx} out of {}",
+                self.table.len()
+            )));
+        }
+
+        Ok(self.table.get_column_by_index(idx)?.into())
+    }
+
     #[staticmethod]
     pub fn from_arrow_record_batches(record_batches: Vec<&PyAny>) -> PyResult<Self> {
         let table = ffi::record_batches_to_table(record_batches.as_slice())?;
@@ -61,6 +82,11 @@ impl PyTable {
             let pyarrow = py.import("pyarrow")?;
             ffi::table_to_record_batch(&self.table, py, pyarrow)
         })
+    }
+
+    #[staticmethod]
+    pub fn empty() -> PyResult<Self> {
+        Ok(table::Table::empty()?.into())
     }
 }
 

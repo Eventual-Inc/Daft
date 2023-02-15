@@ -48,6 +48,10 @@ impl Table {
         })
     }
 
+    pub fn empty() -> DaftResult<Self> {
+        Self::new(Schema::empty(), vec![])
+    }
+
     pub fn from_columns(columns: Vec<Series>) -> DaftResult<Self> {
         let fields = columns.iter().map(|s| s.field().clone()).collect();
         let schema = Schema::new(fields);
