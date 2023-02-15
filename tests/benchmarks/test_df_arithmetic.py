@@ -11,8 +11,8 @@ from daft import DataFrame
 def gen_aranged_df(num_samples=1_000_000) -> DataFrame:
     return DataFrame.from_pydict(
         {
-            "i": ((np.arange(num_samples, dtype=np.int64) * 9582398353) % 100).tolist(),
-            "j": ((np.arange(num_samples, dtype=np.int64) * 847892347987) % 100).tolist(),
+            "i": ((np.arange(num_samples, dtype=np.int64) * 9582398353) % 100),
+            "j": ((np.arange(num_samples, dtype=np.int64) * 847892347987) % 100),
         }
     ).collect()
 
