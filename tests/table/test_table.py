@@ -81,14 +81,14 @@ def test_table_eval_expressions_conflict() -> None:
         daft_table.eval_expression_list(exprs)
 
 
-@pytest.mark.parametrize("dtype", daft_int_types)
-def test_table_take(dtype) -> None:
+@pytest.mark.parametrize("idx_dtype", daft_int_types)
+def test_table_take_int(idx_dtype) -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
     daft_table = Table.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
-    indices = Series.from_pylist([0, 1]).cast(dtype)
+    indices = Series.from_pylist([0, 1]).cast(idx_dtype)
 
     taken = daft_table.take(indices)
     assert len(taken) == 2
@@ -96,7 +96,7 @@ def test_table_take(dtype) -> None:
 
     assert taken.to_pydict() == {"a": [1, 2], "b": [5, 6]}
 
-    indices = Series.from_pylist([3, 2]).cast(dtype)
+    indices = Series.from_pylist([3, 2]).cast(idx_dtype)
 
     taken = daft_table.take(indices)
     assert len(taken) == 2
@@ -104,10 +104,74 @@ def test_table_take(dtype) -> None:
 
     assert taken.to_pydict() == {"a": [4, 3], "b": [8, 7]}
 
-    indices = Series.from_pylist([3, 2, 2, 2, 3]).cast(dtype)
+    indices = Series.from_pylist([3, 2, 2, 2, 3]).cast(idx_dtype)
 
     taken = daft_table.take(indices)
     assert len(taken) == 5
     assert taken.column_names() == ["a", "b"]
 
     assert taken.to_pydict() == {"a": [4, 3, 3, 3, 4], "b": [8, 7, 7, 7, 8]}
+
+
+@pytest.mark.parametrize("idx_dtype", daft_int_types)
+def test_table_take_str(idx_dtype) -> None:
+    pa_table = pa.Table.from_pydict({"a": ["1", "2", "3", "4"], "b": ["5", "6", "7", "8"]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    indices = Series.from_pylist([0, 1]).cast(idx_dtype)
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 2
+    assert taken.column_names() == ["a", "b"]
+
+    assert taken.to_pydict() == {"a": ["1", "2"], "b": ["5", "6"]}
+
+    indices = Series.from_pylist([3, 2]).cast(idx_dtype)
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 2
+    assert taken.column_names() == ["a", "b"]
+
+    assert taken.to_pydict() == {"a": ["4", "3"], "b": ["8", "7"]}
+
+    indices = Series.from_pylist([3, 2, 2, 2, 3]).cast(idx_dtype)
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 5
+    assert taken.column_names() == ["a", "b"]
+
+    assert taken.to_pydict() == {"a": ["4", "3", "3", "3", "4"], "b": ["8", "7", "7", "7", "8"]}
+
+
+@pytest.mark.parametrize("idx_dtype", daft_int_types)
+def test_table_take_bool(idx_dtype) -> None:
+    pa_table = pa.Table.from_pydict({"a": [False, True, False, True], "b": [True, False, True, False]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    indices = Series.from_pylist([0, 1]).cast(idx_dtype)
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 2
+    assert taken.column_names() == ["a", "b"]
+
+    assert taken.to_pydict() == {"a": [False, True], "b": [True, False]}
+
+    indices = Series.from_pylist([3, 2]).cast(idx_dtype)
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 2
+    assert taken.column_names() == ["a", "b"]
+
+    assert taken.to_pydict() == {"a": [True, False], "b": [False, True]}
+
+    indices = Series.from_pylist([3, 2, 2, 2, 3]).cast(idx_dtype)
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 5
+    assert taken.column_names() == ["a", "b"]
+
+    assert taken.to_pydict() == {"a": [True, False, False, False, True], "b": [False, True, True, True, False]}
