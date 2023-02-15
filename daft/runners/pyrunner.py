@@ -114,7 +114,7 @@ class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
     ...
 
 
-class PyRunnerBase(Runner):
+class PyRunner(Runner):
     def __init__(self) -> None:
         super().__init__()
         self._optimizer = RuleRunner(
@@ -138,79 +138,16 @@ class PyRunnerBase(Runner):
             ]
         )
 
+        self.num_cpus = multiprocessing.cpu_count()
+        self.num_gpus = cuda_device_count()
+        self.bytes_memory = psutil.virtual_memory().total
+
     def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
         # From PyRunner
         return self._optimizer.optimize(plan)
 
     def partition_set_factory(self) -> PartitionSetFactory:
         return LocalPartitionSetFactory()
-
-    def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
-        plan = self.optimize(plan)
-
-        psets = {
-            key: entry.value.values()
-            for key, entry in self._part_set_cache._uuid_to_partition_set.items()
-            if entry.value is not None
-        }
-        phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
-
-        result_pset = LocalPartitionSet({})
-
-        with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-            try:
-                while True:
-                    next_step = next(phys_plan)
-                    assert next_step is not None, "Got a None ExecutionStep in singlethreaded mode"
-                    self._check_resource_requests(next_step.resource_request)
-                    self._build_partitions(next_step)
-            except StopIteration as e:
-                for i, partition in enumerate(e.value):
-                    result_pset.set_partition(i, partition)
-
-        pset_entry = self.put_partition_set_into_cache(result_pset)
-        return pset_entry
-
-    def _check_resource_requests(self, resource_request: ResourceRequest | None) -> None:
-        """Validates that the requested ResourceRequest is possible to run locally"""
-        if resource_request is None:
-            return
-        if resource_request.num_cpus is not None and resource_request.num_cpus > multiprocessing.cpu_count():
-            raise RuntimeError(
-                f"Requested {resource_request.num_cpus} CPUs but found only {multiprocessing.cpu_count()} available"
-            )
-        if resource_request.num_gpus is not None and resource_request.num_gpus > cuda_device_count():
-            raise RuntimeError(
-                f"Requested {resource_request.num_gpus} GPUs but found only {cuda_device_count()} available"
-            )
-        if resource_request.memory_bytes is not None and resource_request.memory_bytes > psutil.virtual_memory().total:
-            raise RuntimeError(
-                f"Requested {resource_request.memory_bytes} bytes of memory but found only {psutil.virtual_memory().total} available"
-            )
-
-    def _build_partitions(self, partspec: ExecutionStep[vPartition]) -> None:
-        partitions = partspec.inputs
-        for instruction in partspec.instructions:
-            partitions = instruction.run(partitions)
-        if isinstance(partspec, MultiOutputExecutionStep):
-            partspec.results = [PyMaterializedResult(partition) for partition in partitions]
-        elif isinstance(partspec, SingleOutputExecutionStep):
-            [partition] = partitions
-            partspec.result = PyMaterializedResult(partition)
-        else:
-            raise TypeError(f"Cannot typematch input {partspec}")
-
-
-class PyRunnerOld(PyRunnerBase):
-    pass
-
-
-class PyRunner(PyRunnerBase):
-    def __init__(self) -> None:
-        super().__init__()
-        self.num_cpus = multiprocessing.cpu_count()
-        self.num_gpus = cuda_device_count()
-        self.bytes_memory = psutil.virtual_memory().total
 
     def run(self, logplan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         logplan = self.optimize(logplan)
@@ -227,7 +164,9 @@ class PyRunner(PyRunnerBase):
         future_to_task: dict[futures.Future, str] = dict()
 
         next_step = None
-        with futures.ThreadPoolExecutor() as thread_pool:
+        with futures.ThreadPoolExecutor() as thread_pool, profiler(
+            "profile_PyRunner.run_{datetime.now().isoformat()}.json"
+        ):
             try:
                 while True:
                     # Get the next task to dispatch.
@@ -258,15 +197,8 @@ class PyRunner(PyRunnerBase):
                         # Get the next task to dispatch.
                         next_step = next(plan)
 
-                    if len(future_to_task) == 0:
-                        assert next_step is not None, "Scheduler deadlocked - should never happen"
-                        assert not self._can_admit_task(next_step.resource_request, inflight_tasks_resources.values())
-                        raise RuntimeError(
-                            f"Unable to schedule task {next_step} due to insufficient resources. "
-                            + f"System has: num_cpus={self.num_cpus}, num_gpus={self.num_gpus}, bytes_memory={self.bytes_memory}"
-                        )
-
                     # Await at least task and process the results.
+                    assert len(future_to_task) > 0, f"Scheduler deadlocked; should never happen. next_step={next_step}"
                     done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
                     for done in done_set:
                         done_id = future_to_task.pop(done)
@@ -290,7 +222,20 @@ class PyRunner(PyRunnerBase):
             pset_entry = self.put_partition_set_into_cache(result_pset)
             return pset_entry
 
+    def _check_resource_requests(self, resource_request: ResourceRequest) -> None:
+        """Validates that the requested ResourceRequest is possible to run locally"""
+
+        if resource_request.num_cpus is not None and resource_request.num_cpus > self.num_cpus:
+            raise RuntimeError(f"Requested {resource_request.num_cpus} CPUs but found only {self.num_cpus} available")
+        if resource_request.num_gpus is not None and resource_request.num_gpus > self.num_gpus:
+            raise RuntimeError(f"Requested {resource_request.num_gpus} GPUs but found only {self.num_gpus} available")
+        if resource_request.memory_bytes is not None and resource_request.memory_bytes > self.bytes_memory:
+            raise RuntimeError(
+                f"Requested {resource_request.memory_bytes} bytes of memory but found only {self.bytes_memory} available"
+            )
+
     def _can_admit_task(self, resource_request: ResourceRequest, inflight_resources: Iterable[ResourceRequest]) -> bool:
+        self._check_resource_requests(resource_request)
 
         total_inflight_resources: ResourceRequest = sum(inflight_resources, ResourceRequest())
         cpus_okay = (total_inflight_resources.num_cpus or 0) + (resource_request.num_cpus or 0) <= self.num_cpus
