@@ -240,20 +240,20 @@ class PyRunner(PyRunnerBase):
                     ):
 
                         # If this task is a no-op, just run it locally immediately.
-                        while len(next_step.instructions) == 0:
+                        if len(next_step.instructions) == 0:
                             assert isinstance(next_step, SingleOutputExecutionStep)
                             [partition] = next_step.inputs
                             next_step.result = PyMaterializedResult(partition)
-                            next_step = next(plan)
-                            # for mypy; we executed a task serially, so there should be a next task available
-                            assert next_step is not None
 
-                        # Submit the task for execution.
-                        future = thread_pool.submit(self.build_partitions, next_step.instructions, *next_step.inputs)
-                        # Register the inflight task and resources used.
-                        future_to_task[future] = next_step.id()
-                        inflight_tasks[next_step.id()] = next_step
-                        inflight_tasks_resources[next_step.id()] = next_step.resource_request
+                        else:
+                            # Submit the task for execution.
+                            future = thread_pool.submit(
+                                self.build_partitions, next_step.instructions, *next_step.inputs
+                            )
+                            # Register the inflight task and resources used.
+                            future_to_task[future] = next_step.id()
+                            inflight_tasks[next_step.id()] = next_step
+                            inflight_tasks_resources[next_step.id()] = next_step.resource_request
 
                         # Get the next task to dispatch.
                         next_step = next(plan)
