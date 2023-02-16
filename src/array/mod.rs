@@ -17,6 +17,8 @@ pub trait BaseArray: Any + Send + Sync {
 
     fn name(&self) -> &str;
 
+    fn rename(&self, name: &str) -> Box<dyn BaseArray>;
+
     fn field(&self) -> &Field;
 
     fn len(&self) -> usize;
@@ -103,6 +105,10 @@ impl<T: DaftDataType + 'static> BaseArray for DataArray<T> {
 
     fn name(&self) -> &str {
         self.field.name.as_str()
+    }
+
+    fn rename(&self, name: &str) -> Box<dyn BaseArray> {
+        Box::new(Self::new(Arc::new(self.field.rename(name)), self.data.clone()).unwrap())
     }
 
     fn field(&self) -> &Field {

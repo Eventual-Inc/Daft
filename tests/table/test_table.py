@@ -181,3 +181,44 @@ def test_table_take_bool(idx_dtype) -> None:
     assert taken.column_names() == ["a", "b"]
 
     assert taken.to_pydict() == {"a": [True, False, False, False, True], "b": [False, True, True, True, False]}
+
+
+import operator as ops
+
+OPS = [ops.add, ops.sub, ops.mul, ops.truediv, ops.mod, ops.lt, ops.le, ops.eq, ops.ne, ops.ge, ops.gt]
+
+
+@pytest.mark.parametrize("data_dtype, op", itertools.product(daft_numeric_types, OPS))
+def test_table_numeric_expressions(data_dtype, op) -> None:
+
+    a, b = [5, 6, 7, 8], [1, 2, 3, 4]
+    pa_table = pa.Table.from_pydict({"a": a, "b": b})
+
+    daft_table = Table.from_arrow(pa_table)
+    daft_table = daft_table.eval_expression_list(
+        [op(col("a").cast(data_dtype), col("b").cast(data_dtype)).alias("result")]
+    )
+
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["result"]
+    pyresult = [op(l, r) for l, r in zip(a, b)]
+    assert daft_table.get_column("result").to_pylist() == pyresult
+
+
+@pytest.mark.parametrize("data_dtype, op", itertools.product(daft_numeric_types, OPS))
+def test_table_numeric_expressions_with_nulls(data_dtype, op) -> None:
+
+    a, b = [5, 6, None, 8, None], [1, 2, 3, None, None]
+    pa_table = pa.Table.from_pydict({"a": a, "b": b})
+
+    daft_table = Table.from_arrow(pa_table)
+    daft_table = daft_table.eval_expression_list(
+        [op(col("a").cast(data_dtype), col("b").cast(data_dtype)).alias("result")]
+    )
+
+    assert len(daft_table) == 5
+    assert daft_table.column_names() == ["result"]
+    pyresult = [op(l, r) for l, r in zip(a[:2], b[:2])]
+    assert daft_table.get_column("result").to_pylist()[:2] == pyresult
+
+    assert daft_table.get_column("result").to_pylist()[2:] == [None, None, None]

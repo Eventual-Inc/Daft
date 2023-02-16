@@ -58,8 +58,8 @@ def test_arithmetic_numbers_left_scalar(l_dtype, r_dtype) -> None:
     div = (l / r).to_pylist()
     assert div == [1.0, 0.25, 1.0, 0.2, None, None]
 
-    # mod = (l % r).to_pylist()
-    # assert mod == [0, 1, 0, 1, None, None]
+    mod = (l % r).to_pylist()
+    assert mod == [0, 1, 0, 1, None, None]
 
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))

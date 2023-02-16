@@ -113,12 +113,14 @@ impl Table {
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         use crate::dsl::Expr::*;
         match expr {
-            Alias(child, _name) => self.eval_expression(child),
+            Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
             Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             Column(name) => self.get_column(name),
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
+                use crate::array::ops::DaftCompare;
+                use crate::array::BaseArray;
                 use crate::dsl::Operator::*;
                 match op {
                     Plus => lhs + rhs,
@@ -126,6 +128,12 @@ impl Table {
                     TrueDivide => lhs / rhs,
                     Multiply => lhs * rhs,
                     Modulus => lhs % rhs,
+                    Lt => Ok(lhs.lt(&rhs)?.into_series()),
+                    LtEq => Ok(lhs.lte(&rhs)?.into_series()),
+                    Eq => Ok(lhs.equal(&rhs)?.into_series()),
+                    NotEq => Ok(lhs.not_equal(&rhs)?.into_series()),
+                    GtEq => Ok(lhs.gte(&rhs)?.into_series()),
+                    Gt => Ok(lhs.gt(&rhs)?.into_series()),
                     _ => panic!("{op:?} not supported"),
                 }
             }
