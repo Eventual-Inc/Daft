@@ -1,3 +1,4 @@
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::dsl;
@@ -5,6 +6,8 @@ use crate::ffi;
 use crate::table;
 
 use crate::python::expr::PyExpr;
+
+use super::series::PySeries;
 
 #[pyclass]
 pub struct PyTable {
@@ -21,8 +24,51 @@ impl PyTable {
             .into())
     }
 
+    pub fn take(&self, idx: &PySeries) -> PyResult<Self> {
+        Ok(self.table.take(&idx.series)?.into())
+    }
+
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.table))
+    }
+
+    pub fn head(&self, num: i64) -> PyResult<Self> {
+        if num < 0 {
+            return Err(PyValueError::new_err(format!(
+                "Can not head table with negative number: {num}"
+            )));
+        }
+        let num = num as usize;
+        Ok(self.table.head(num)?.into())
+    }
+
+    pub fn __len__(&self) -> PyResult<usize> {
+        Ok(self.table.len())
+    }
+
+    pub fn column_names(&self) -> PyResult<Vec<String>> {
+        Ok(self.table.column_names()?)
+    }
+
+    pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
+        Ok(self.table.get_column(name)?.into())
+    }
+
+    pub fn get_column_by_index(&self, idx: i64) -> PyResult<PySeries> {
+        if idx < 0 {
+            return Err(PyValueError::new_err(format!(
+                "Invalid index, negative numbers not supported: {idx}"
+            )));
+        }
+        let idx = idx as usize;
+        if idx >= self.table.len() {
+            return Err(PyValueError::new_err(format!(
+                "Invalid index, out of bounds: {idx} out of {}",
+                self.table.len()
+            )));
+        }
+
+        Ok(self.table.get_column_by_index(idx)?.into())
     }
 
     #[staticmethod]
@@ -36,6 +82,11 @@ impl PyTable {
             let pyarrow = py.import("pyarrow")?;
             ffi::table_to_record_batch(&self.table, py, pyarrow)
         })
+    }
+
+    #[staticmethod]
+    pub fn empty() -> PyResult<Self> {
+        Ok(table::Table::empty()?.into())
     }
 }
 

@@ -45,6 +45,10 @@ impl Schema {
             Some(val) => Ok(val),
         }
     }
+
+    pub fn names(&self) -> DaftResult<Vec<String>> {
+        return Ok(self.fields.keys().cloned().collect());
+    }
 }
 
 impl Display for Schema {

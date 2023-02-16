@@ -66,7 +66,7 @@ impl Div for &Series {
 impl Div for Series {
     type Output = DaftResult<Series>;
     fn div(self, rhs: Self) -> Self::Output {
-        (&self).add(&rhs)
+        (&self).div(&rhs)
     }
 }
 

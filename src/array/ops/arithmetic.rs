@@ -86,7 +86,6 @@ impl Add for &Utf8Array {
         Ok(Utf8Array::from((self.name(), result)))
     }
 }
-
 impl<T> Sub for &DataArray<T>
 where
     T: DaftNumericType,
@@ -114,12 +113,72 @@ impl Div for &Float64Array {
     }
 }
 
+pub fn binary_with_nulls<T, F>(
+    lhs: &PrimitiveArray<T>,
+    rhs: &PrimitiveArray<T>,
+    op: F,
+) -> PrimitiveArray<T>
+where
+    T: arrow2::types::NativeType,
+    F: Fn(T, T) -> T,
+{
+    if lhs.len() != rhs.len() {
+        panic!("expected same length")
+    }
+    let values = lhs.iter().zip(rhs.iter()).map(|(l, r)| match (l, r) {
+        (None, _) => None,
+        (_, None) => None,
+        (Some(l), Some(r)) => Some(op(*l, *r)),
+    });
+    unsafe { PrimitiveArray::<T>::from_trusted_len_iter_unchecked(values) }
+}
+
+fn rem_with_nulls<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArray<T>
+where
+    T: arrow2::types::NativeType + std::ops::Rem<Output = T>,
+{
+    binary_with_nulls(lhs, rhs, |a, b| a % b)
+}
+
 impl<T> Rem for &DataArray<T>
 where
     T: DaftNumericType,
 {
     type Output = DaftResult<DataArray<T>>;
     fn rem(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::rem, |l, r| l % r)
+        if rhs.data().null_count() == 0 {
+            arithmetic_helper(self, rhs, basic::rem, |l, r| l % r)
+        } else {
+            match (self.len(), rhs.len()) {
+                (a, b) if a == b => Ok(DataArray::from((
+                    self.name(),
+                    Box::new(rem_with_nulls(self.downcast(), rhs.downcast())),
+                ))),
+                // broadcast right path
+                (_, 1) => {
+                    let opt_rhs = rhs.get(0);
+                    Ok(match opt_rhs {
+                        None => DataArray::full_null(self.name(), self.len()),
+                        Some(rhs) => self.apply(|lhs| lhs % rhs),
+                    })
+                }
+                (1, _) => {
+                    let opt_lhs = self.get(0);
+                    Ok(match opt_lhs {
+                        None => DataArray::full_null(rhs.name(), rhs.len()),
+                        Some(lhs) => {
+                            let values_iter = rhs.downcast().iter().map(|v| v.map(|v| lhs % *v));
+                            let arrow_array = unsafe {
+                                PrimitiveArray::from_trusted_len_iter_unchecked(values_iter)
+                            };
+                            DataArray::from((self.name(), Box::new(arrow_array)))
+                        }
+                    })
+                }
+                (a, b) => Err(DaftError::ValueError(format!(
+                    "Cannot apply operation on arrays of different lengths: {a} vs {b}"
+                ))),
+            }
+        }
     }
 }

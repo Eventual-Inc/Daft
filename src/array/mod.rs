@@ -17,6 +17,8 @@ pub trait BaseArray: Any + Send + Sync {
 
     fn name(&self) -> &str;
 
+    fn rename(&self, name: &str) -> Box<dyn BaseArray>;
+
     fn field(&self) -> &Field;
 
     fn len(&self) -> usize;
@@ -81,6 +83,11 @@ where
         let with_bitmap = self.data.with_validity(Some(Bitmap::from(validity)));
         DataArray::new(self.field.clone(), with_bitmap.into())
     }
+
+    pub fn head(&self, num: usize) -> DaftResult<Self> {
+        let sliced = self.data.slice(0, num);
+        Self::new(self.field.clone(), Arc::from(sliced))
+    }
 }
 
 impl<T: DaftDataType + 'static> BaseArray for DataArray<T> {
@@ -98,6 +105,10 @@ impl<T: DaftDataType + 'static> BaseArray for DataArray<T> {
 
     fn name(&self) -> &str {
         self.field.name.as_str()
+    }
+
+    fn rename(&self, name: &str) -> Box<dyn BaseArray> {
+        Box::new(Self::new(Arc::new(self.field.rename(name)), self.data.clone()).unwrap())
     }
 
     fn field(&self) -> &Field {

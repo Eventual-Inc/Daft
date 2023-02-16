@@ -148,6 +148,21 @@ impl DaftNumericType for Float64Type {
     type Native = f64;
 }
 
+pub trait DaftIntegerType: DaftNumericType
+where
+    Self::Native: arrow2::types::Index,
+{
+}
+
+impl DaftIntegerType for UInt8Type {}
+impl DaftIntegerType for UInt16Type {}
+impl DaftIntegerType for UInt32Type {}
+impl DaftIntegerType for UInt64Type {}
+impl DaftIntegerType for Int8Type {}
+impl DaftIntegerType for Int16Type {}
+impl DaftIntegerType for Int32Type {}
+impl DaftIntegerType for Int64Type {}
+
 pub type NullArray = DataArray<NullType>;
 pub type BooleanArray = DataArray<BooleanType>;
 pub type Int8Array = DataArray<Int8Type>;

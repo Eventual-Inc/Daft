@@ -37,3 +37,6 @@ git-fetch-with-cli = true
 edition = "2021"
 name = "daft"
 version = "0.0.22"
+
+[profile.dev]
+overflow-checks = false
