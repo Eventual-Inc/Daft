@@ -78,7 +78,7 @@ def file_read(
                         logplan=scan_info,
                         index=i,
                     ),
-                    resource_request=ResourceRequest(memory_bytes=file_sizes_bytes[i]),
+                    resource_request=ResourceRequest(num_cpus=0.2, memory_bytes=file_sizes_bytes[i]),
                 )
                 yield file_read_step
                 output_partition_index += 1
