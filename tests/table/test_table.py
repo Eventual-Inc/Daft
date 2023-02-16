@@ -207,7 +207,6 @@ def test_table_numeric_expressions(data_dtype, op) -> None:
 
 @pytest.mark.parametrize("data_dtype, op", itertools.product(daft_numeric_types, OPS))
 def test_table_numeric_expressions_with_nulls(data_dtype, op) -> None:
-
     a, b = [5, 6, None, 8, None], [1, 2, 3, None, None]
     pa_table = pa.Table.from_pydict({"a": a, "b": b})
 

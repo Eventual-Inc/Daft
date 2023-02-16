@@ -86,7 +86,6 @@ impl Add for &Utf8Array {
         Ok(Utf8Array::from((self.name(), result)))
     }
 }
-
 impl<T> Sub for &DataArray<T>
 where
     T: DaftNumericType,
