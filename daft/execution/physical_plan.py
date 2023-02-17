@@ -153,7 +153,10 @@ def join(
             assert next_right.result is not None  # for mypy only; guaranteed by while condition
 
             join_step = ExecutionStepBuilder[PartitionT](
-                inputs=[next_left.result.partition(), next_right.result.partition()]
+                inputs=[next_left.result.partition(), next_right.result.partition()],
+                resource_request=ResourceRequest(
+                    memory_bytes=2 * (next_left.result.metadata().size_bytes + next_right.result.metadata().size_bytes)
+                ),
             ).add_instruction(instruction=execution_step.Join(join))
             yield join_step
 
@@ -235,7 +238,10 @@ def global_limit(
 
             limit = remaining_rows and min(remaining_rows, result.metadata().num_rows)
 
-            global_limit_step = ExecutionStepBuilder[PartitionT](inputs=[result.partition()]).add_instruction(
+            global_limit_step = ExecutionStepBuilder[PartitionT](
+                inputs=[result.partition()],
+                resource_request=ResourceRequest(memory_bytes=2 * result.metadata().size_bytes),
+            ).add_instruction(
                 instruction=execution_step.LocalLimit(limit),
             )
             yield global_limit_step
@@ -254,7 +260,10 @@ def global_limit(
                         result_to_cancel.cancel()
 
                 yield from (
-                    ExecutionStepBuilder[PartitionT](inputs=[result.partition()]).add_instruction(
+                    ExecutionStepBuilder[PartitionT](
+                        inputs=[result.partition()],
+                        resource_request=ResourceRequest(memory_bytes=result.metadata().size_bytes),
+                    ).add_instruction(
                         instruction=execution_step.LocalLimit(0),
                     )
                     for _ in range(remaining_partitions)
@@ -315,7 +324,10 @@ def coalesce(
             if len(ready_to_coalesce) == num_partitions_to_merge:
                 # Coalesce the partition and emit it.
                 merge_step = ExecutionStepBuilder[PartitionT](
-                    inputs=[_.partition() for _ in ready_to_coalesce]
+                    inputs=[_.partition() for _ in ready_to_coalesce],
+                    resource_request=ResourceRequest(
+                        memory_bytes=2 * sum(_.metadata().size_bytes for _ in ready_to_coalesce),
+                    ),
                 ).add_instruction(
                     instruction=execution_step.ReduceMerge(),
                 )
@@ -371,9 +383,13 @@ def reduce(
 
     # Yield all the reduces in order.
     while len(inputs_to_reduce[0]) > 0:
+        batch = [_.popleft() for _ in inputs_to_reduce]
         yield ExecutionStepBuilder[PartitionT](
-            inputs=[result.partition() for result in (_.popleft() for _ in inputs_to_reduce)],
+            inputs=[result.partition() for result in batch],
             instructions=[reduce_instruction],
+            resource_request=ResourceRequest(
+                memory_bytes=2 * sum(result.metadata().size_bytes for result in batch),
+            ),
         )
 
 
@@ -438,15 +454,20 @@ def sort(
 
     # Create a range fanout plan.
     range_fanout_plan = (
-        ExecutionStepBuilder[PartitionT](inputs=[boundaries_partition, source_partition]).add_instruction(
+        ExecutionStepBuilder[PartitionT](
+            inputs=[boundaries_partition, source_result.partition()],
+            resource_request=ResourceRequest(
+                memory_bytes=2 * source_result.metadata().size_bytes,
+            ),
+        ).add_instruction(
             instruction=execution_step.FanoutRange[PartitionT](
                 num_outputs=sort_info.num_partitions(),
                 sort_by=sort_info._sort_by,
                 descending=sort_info._descending,
             ),
         )
-        for source_partition in (
-            source.result.partition() for source in consume_deque(source_materializations) if source.result is not None
+        for source_result in (
+            source.result for source in consume_deque(source_materializations) if source.result is not None
         )
     )
 
