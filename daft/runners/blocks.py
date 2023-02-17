@@ -7,6 +7,7 @@ import math
 import operator
 import random
 from abc import abstractmethod
+from collections import deque
 from functools import partial
 from typing import (
     TYPE_CHECKING,
@@ -102,6 +103,11 @@ class DataBlock(Generic[ArrType]):
     @abstractmethod
     def is_scalar(self) -> bool:
         """Returns True if this DataBlock holds a scalar value"""
+        raise NotImplementedError()
+
+    @abstractmethod
+    def size_bytes(self) -> int:
+        """Returns the total size of this DataBlock in bytes."""
         raise NotImplementedError()
 
     @abstractmethod
@@ -413,6 +419,26 @@ class PyListDataBlock(DataBlock[List[T]]):
                 yield self.data
         yield from self.data
 
+    def size_bytes(self) -> int:
+        size = self.__sizeof__()
+        seen = set()
+        to_process: deque[Any] = deque(self.data)
+        while len(to_process) > 0:
+            obj = to_process.popleft()
+            if id(obj) in seen:
+                continue
+            size += obj.__sizeof__()
+            seen.add(id(obj))
+
+            if isinstance(obj, dict):
+                for item in obj.items():
+                    to_process.append(item)
+            elif isinstance(obj, (tuple, list, set, frozenset, deque)):
+                for item in obj:
+                    to_process.append(item)
+
+        return size
+
     def to_numpy(self):
         if self.is_scalar():
             return self.data
@@ -523,6 +549,9 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             return ArrowDataBlock, (self._make_empty().data,)
         else:
             return ArrowDataBlock, (self.data,)
+
+    def size_bytes(self) -> int:
+        return self.__sizeof__() + self.data.__sizeof__()
 
     def to_numpy(self):
         if isinstance(self.data, pa.Scalar):
