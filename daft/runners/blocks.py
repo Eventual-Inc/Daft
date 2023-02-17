@@ -420,9 +420,11 @@ class PyListDataBlock(DataBlock[List[T]]):
         yield from self.data
 
     def size_bytes(self) -> int:
-        size = self.__sizeof__()
+        size = 0
         seen = set()
-        to_process: deque[Any] = deque(self.data)
+        # Estimate the total size from the first 100 items.
+        sample = self.data[:100]
+        to_process: deque[Any] = deque(sample)
         while len(to_process) > 0:
             obj = to_process.popleft()
             if id(obj) in seen:
@@ -436,6 +438,8 @@ class PyListDataBlock(DataBlock[List[T]]):
             elif isinstance(obj, (tuple, list, set, frozenset, deque)):
                 for item in obj:
                     to_process.append(item)
+
+        size = int(size * len(self.data) / len(sample))
 
         return size
 
