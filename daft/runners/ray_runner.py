@@ -182,12 +182,16 @@ def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
     return options
 
 
-def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def build_partitions(
+    instruction_stack: list[Instruction], *inputs: vPartition
+) -> list[list[PartitionMetadata] | vPartition]:
     partitions = list(inputs)
     for instruction in instruction_stack:
         partitions = instruction.run(partitions)
 
-    return partitions if len(partitions) > 1 else partitions[0]
+    metadatas = [p.metadata() for p in partitions]
+
+    return [metadatas, *partitions]
 
 
 # Give the same function different names to aid in profiling data distribution.
@@ -196,22 +200,28 @@ def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) 
 @ray.remote
 def single_partition_pipeline(
     instruction_stack: list[Instruction], *inputs: vPartition
-) -> vPartition | list[vPartition]:
+) -> list[list[PartitionMetadata] | vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote
-def fanout_pipeline(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def fanout_pipeline(
+    instruction_stack: list[Instruction], *inputs: vPartition
+) -> list[list[PartitionMetadata] | vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def reduce_pipeline(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def reduce_pipeline(
+    instruction_stack: list[Instruction], *inputs: vPartition
+) -> list[list[PartitionMetadata] | vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def reduce_and_fanout(instruction_stack: list[Instruction], *inputs: vPartition) -> vPartition | list[vPartition]:
+def reduce_and_fanout(
+    instruction_stack: list[Instruction], *inputs: vPartition
+) -> list[list[PartitionMetadata] | vPartition]:
     return build_partitions(instruction_stack, *inputs)
 
 
@@ -346,7 +356,7 @@ class SchedulerActor:
 def _build_partitions(task: ExecutionStep[ray.ObjectRef]) -> list[ray.ObjectRef]:
     """Run a ExecutionStep and return the resulting list of partitions."""
     ray_options: dict[str, Any] = {
-        "num_returns": task.num_results,
+        "num_returns": task.num_results + 1,
     }
 
     if task.resource_request is not None:
@@ -360,16 +370,13 @@ def _build_partitions(task: ExecutionStep[ray.ObjectRef]) -> list[ray.ObjectRef]
         )
 
     build_remote = build_remote.options(**ray_options)
-    partitions = build_remote.remote(task.instructions, *task.inputs)
-    # Handle ray bug that ignores list interpretation when num_returns=1
-    if task.num_results == 1:
-        partitions = [partitions]
+    [metadatas_ref, *partitions] = build_remote.remote(task.instructions, *task.inputs)
 
     if isinstance(task, MultiOutputExecutionStep):
-        task.results = [RayMaterializedResult(partition) for partition in partitions]
+        task.results = [RayMaterializedResult(partition, metadatas_ref, i) for i, partition in enumerate(partitions)]
     elif isinstance(task, SingleOutputExecutionStep):
         [partition] = partitions
-        task.result = RayMaterializedResult(partition)
+        task.result = RayMaterializedResult(partition, metadatas_ref, 0)
     else:
         raise TypeError(f"Could not type match input {task}")
 
@@ -456,6 +463,8 @@ class RayRunner(Runner):
 @dataclass(frozen=True)
 class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
     _partition: ray.ObjectRef
+    _metadatas: ray.ObjectRef | None = None
+    _metadata_index: int | None = None
 
     def partition(self) -> ray.ObjectRef:
         return self._partition
@@ -464,7 +473,10 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
         return ray.get(self._partition)
 
     def metadata(self) -> PartitionMetadata:
-        return ray.get(get_meta.remote(self._partition))
+        if self._metadatas is not None and self._metadata_index is not None:
+            return ray.get(self._metadatas)[self._metadata_index]
+        else:
+            return ray.get(get_meta.remote(self._partition))
 
     def cancel(self) -> None:
         return ray.cancel(self._partition)
