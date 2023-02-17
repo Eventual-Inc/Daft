@@ -176,7 +176,7 @@ def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
     if resource_request.num_cpus is not None:
         # Ray worker pool will thrash if a request comes in for fractional cpus,
         # so we floor the request to at least 1 cpu here.
-        options["num_cpus"] = min(1, resource_request.num_cpus)
+        options["num_cpus"] = max(1, resource_request.num_cpus)
     if resource_request.num_gpus is not None:
         options["num_gpus"] = resource_request.num_gpus
     if resource_request.memory_bytes is not None:
