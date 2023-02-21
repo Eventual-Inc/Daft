@@ -1,0 +1,88 @@
+Daft 0.0.23 Release Notes
+=========================
+
+The Daft 0.0.23 release has some amazing highlights:
+
+* Our Dynamic runners are now the default runners thanks to @xcharleslin
+* Our first PR from @Asrst - added DataFrame.count_rows to get the length of a DataFrame!
+
+
+New Features
+------------
+
+DataFrame.count_rows()
+^^^^^^^^^^^^^^^^^^^^^^
+
+Adds an API to count the number of rows on a DataFrame, and a ``len`` method. Thanks to @Asrst for the PR!
+
+See: `#553 <https://github.com/Eventual-Inc/Daft/pull/553>`_
+
+Dynamic Runners as default runners
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Our Dynamic Ray and Py runners are now the default runners, giving us much faster execution times!
+
+See: `#564 <https://github.com/Eventual-Inc/Daft/pull/564>`_
+
+Enhancements
+------------
+
+* Unit testing for dataframe accessor methods `#557 <https://github.com/Eventual-Inc/Daft/pull/557>`_
+* Add multithreading to .url.download\(\) `#601 <https://github.com/Eventual-Inc/Daft/pull/601>`_
+* Add multithreading to PyRunner `#599 <https://github.com/Eventual-Inc/Daft/pull/599>`_
+* Rust Expressions / Table integration into Python `#598 <https://github.com/Eventual-Inc/Daft/pull/598>`_
+* Join microbenchmarks `#597 <https://github.com/Eventual-Inc/Daft/pull/597>`_
+* Microbenchmarks: Add csv read. Parameterize aggregations. `#595 <https://github.com/Eventual-Inc/Daft/pull/595>`_
+* Allow for creation of DataFrames from numpy/Pyarrow arrays in .from\_pydict `#587 <https://github.com/Eventual-Inc/Daft/pull/587>`_
+* Refactor code to retrieve visualization logic from a registry `#583 <https://github.com/Eventual-Inc/Daft/pull/583>`_
+* Propagate file size metadata to ResourceRequests. `#577 <https://github.com/Eventual-Inc/Daft/pull/577>`_
+* Run code coverage per process to get better ray coverage `#566 <https://github.com/Eventual-Inc/Daft/pull/566>`_
+* Fix style CI isort issue `#563 <https://github.com/Eventual-Inc/Daft/pull/563>`_
+* \[rust\] PyDataTypes and casting operators `#562 <https://github.com/Eventual-Inc/Daft/pull/562>`_
+* Better testing and validation of DataFrame.from\_py\* constructors `#558 <https://github.com/Eventual-Inc/Daft/pull/558>`_
+* Naming and class refactors for physical plan `#538 <https://github.com/Eventual-Inc/Daft/pull/538>`_
+* \[rust\] Series including kernels for comparisons, arithmetic and broadcasting, etc `#531 <https://github.com/Eventual-Inc/Daft/pull/531>`_
+* Refactor @udf to use type annotations `#560 <https://github.com/Eventual-Inc/Daft/pull/560>`_
+
+
+Bug Fixes
+---------
+
+* Fix @udf type inference for class-based stateful UDFs `#573 <https://github.com/Eventual-Inc/Daft/pull/573>`_
+* Fix join bug with empty PyArrow chunked arrays `#606 <https://github.com/Eventual-Inc/Daft/pull/606>`_
+* Drop numpy split for pylist block and enhance pretty printing for explain\(\) `#604 <https://github.com/Eventual-Inc/Daft/pull/604>`_
+* Fixes Joins when we have duplicate names from each source `#592 <https://github.com/Eventual-Inc/Daft/pull/592>`_
+* Optimizer tests `#590 <https://github.com/Eventual-Inc/Daft/pull/590>`_
+* Fixes Join Optimizer Bug `#589 <https://github.com/Eventual-Inc/Daft/pull/589>`_
+* Fix reading CSV/JSON errors from https `#581 <https://github.com/Eventual-Inc/Daft/pull/581>`_
+* DynamicRayRunner: Worker thrashing fixes `#554 <https://github.com/Eventual-Inc/Daft/pull/554>`_
+
+
+Documentation
+-------------
+
+* Cleanup RTD docs build `#586 <https://github.com/Eventual-Inc/Daft/pull/586>`_
+* Cleanup UDF docs `#585 <https://github.com/Eventual-Inc/Daft/pull/585>`_
+* Fix readthedocs yaml to do maturin develop `#584 <https://github.com/Eventual-Inc/Daft/pull/584>`_
+* Fix HTML link in changelog `#576 <https://github.com/Eventual-Inc/Daft/pull/576>`_
+* Fix tutorial notebooks `#575 <https://github.com/Eventual-Inc/Daft/pull/575>`_
+* Cleanup static assets only used in landing page `#570 <https://github.com/Eventual-Inc/Daft/pull/570>`_
+* Remove github pages publishing workflow `#569 <https://github.com/Eventual-Inc/Daft/pull/569>`_
+* Fix links to point to correct subdomain `#568 <https://github.com/Eventual-Inc/Daft/pull/568>`_
+* Docs refactor `#567 <https://github.com/Eventual-Inc/Daft/pull/567>`_
+
+
+Closed Issues
+-------------
+
+* Fix self-joins wrongly omitting columns `#442 <https://github.com/Eventual-Inc/Daft/issues/442>`_
+* Raise exception instead of  `ARROW_CHECK` when running C++ kernels `#266 <https://github.com/Eventual-Inc/Daft/issues/266>`_
+* Stack based scheduling for dynamic runtime `#352 <https://github.com/Eventual-Inc/Daft/issues/352>`_
+* Doc versioning on getdaft.io `#255 <https://github.com/Eventual-Inc/Daft/issues/255>`_
+* AssertionError: too many colons found - when trying to read from http links `#579 <https://github.com/Eventual-Inc/Daft/issues/579>`_
+* Colab notebook broken link `#574 <https://github.com/Eventual-Inc/Daft/issues/574>`_
+* More flexible UDF input types using type annotation `#559 <https://github.com/Eventual-Inc/Daft/issues/559>`_
+* NameError: name '\_X5ix\_PYCCOLO\_TRACING\_ENABLED' is not defined with @polars\_udf `#514 <https://github.com/Eventual-Inc/Daft/issues/514>`_
+* M1 Mac installation issue -ImportError: dlopen `#513 <https://github.com/Eventual-Inc/Daft/issues/513>`_
+* DataFrame.from\_pylist error message `#507 <https://github.com/Eventual-Inc/Daft/issues/507>`_
+* Get length of dataframe `#358 <https://github.com/Eventual-Inc/Daft/issues/358>`_
