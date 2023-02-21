@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import itertools
 from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum, IntEnum
 from pprint import pformat
 from typing import Any, Generic, TypeVar
@@ -178,6 +178,12 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         for k, v in fields_to_print.items():
             if isinstance(v, ExpressionList):
                 v = v.exprs
+            elif isinstance(v, Schema):
+                v = v.to_column_expressions().exprs
+            elif isinstance(v, PartitionSpec):
+                v = asdict(v)
+                if isinstance(v["by"], ExpressionList):
+                    v["by"] = v["by"].exprs
             reduced_types[k] = v
         to_render: list[str] = [f"{self.__class__.__name__}\n"]
         space = "    "
