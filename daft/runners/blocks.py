@@ -453,7 +453,7 @@ class PyListDataBlock(DataBlock[List[T]]):
 
     def _split(self, pivots: np.ndarray) -> Sequence[list[T]]:
         if len(pivots) == 0:
-            return self.data
+            return [self.data]
 
         result = [self.data[s:e] for s, e in zip(pivots, pivots[1:])]
         result.append(self.data[pivots[-1] :])
