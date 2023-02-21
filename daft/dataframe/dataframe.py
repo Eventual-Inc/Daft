@@ -257,7 +257,7 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_pydict(cls, data: dict[str, list | np.ndarray | pa.Array]) -> DataFrame:
+    def from_pydict(cls, data: dict[str, list | np.ndarray | pa.Array | pa.ChunkedArray]) -> DataFrame:
         """Creates a DataFrame from a Python dictionary
 
         Example:
@@ -844,7 +844,6 @@ class DataFrame:
             scheme = logical_plan.PartitionScheme.RANDOM
             exprs: ExpressionList = ExpressionList([])
         else:
-            assert len(partition_by) == 1
             scheme = logical_plan.PartitionScheme.HASH
             exprs = self.__column_input_to_expression(partition_by)
 

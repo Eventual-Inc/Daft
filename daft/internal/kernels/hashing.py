@@ -14,6 +14,8 @@ def hash_chunked_array(arr, seed=None):
         assert isinstance(seed, pa.ChunkedArray)
         assert len(seed) == len(arr)
         for chunk in arr.chunks:
+            if len(chunk) == 0:
+                continue
             result_chunks.append(
                 kernels.hash_pyarrow_array(chunk, pa, seed=seed.slice(offset, len(chunk)).combine_chunks())
             )

@@ -113,7 +113,7 @@ class ExpressionType:
                 return ExpressionType._infer_type_from_list(list(data))
             else:
                 return ExpressionType.from_numpy_type(data.dtype)
-        elif isinstance(data, pa.Array):
+        elif isinstance(data, pa.Array) or isinstance(data, pa.ChunkedArray):
             return ExpressionType.from_arrow_type(data.type)
         else:
             raise ValueError(
