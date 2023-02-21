@@ -452,7 +452,12 @@ class PyListDataBlock(DataBlock[List[T]]):
         return PyListDataBlock(data=[])
 
     def _split(self, pivots: np.ndarray) -> Sequence[list[T]]:
-        return [list(chunk) for chunk in np.split(self.data, pivots)[1:]]
+        if len(pivots) == 0:
+            return self.data
+
+        result = [self.data[s:e] for s,e in zip(pivots, pivots[1:])]
+        result.append(self.data[pivots[-1]:])
+        return result
 
     @staticmethod
     def _merge_blocks(blocks: list[DataBlock[list[T]]]) -> DataBlock[list[T]]:
