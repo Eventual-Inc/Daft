@@ -455,8 +455,8 @@ class PyListDataBlock(DataBlock[List[T]]):
         if len(pivots) == 0:
             return self.data
 
-        result = [self.data[s:e] for s,e in zip(pivots, pivots[1:])]
-        result.append(self.data[pivots[-1]:])
+        result = [self.data[s:e] for s, e in zip(pivots, pivots[1:])]
+        result.append(self.data[pivots[-1] :])
         return result
 
     @staticmethod
