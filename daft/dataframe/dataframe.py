@@ -4,7 +4,6 @@ import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
 
-from daft import resource_request
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.dataframe.preview import DataFramePreview
@@ -742,7 +741,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def with_column(
-        self, column_name: str, expr: Expression, resource_request: resource_request.ResourceRequest = ResourceRequest()
+        self, column_name: str, expr: Expression, resource_request: ResourceRequest = ResourceRequest()
     ) -> DataFrame:
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -753,11 +752,14 @@ class DataFrame:
         Args:
             column_name (str): name of new column
             expr (Expression): expression of the new column.
-            resource_request (resource_request.ResourceRequest): a custom resource request for the execution of this operation
+            resource_request (ResourceRequest): a custom resource request for the execution of this operation
 
         Returns:
             DataFrame: DataFrame with new column.
         """
+        if not isinstance(resource_request, ResourceRequest):
+            raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
+
         prev_schema_as_cols = self._plan.schema().to_column_expressions()
         projection = logical_plan.Projection(
             self._plan,
