@@ -17,6 +17,7 @@ class _RunnerConfig:
 @dataclasses.dataclass(frozen=True)
 class _PyRunnerConfig(_RunnerConfig):
     name = "py"
+    use_thread_pool: bool | None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -36,22 +37,23 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     1. PyRunner: set DAFT_RUNNER=py
     2. RayRunner: set DAFT_RUNNER=ray and optionally DAFT_RAY_ADDRESS=ray://...
     """
-    if "DAFT_RUNNER" in os.environ:
-        runner = os.environ["DAFT_RUNNER"]
-        if runner.upper() == "RAY":
-            tasks_per_core_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_TASKS_PER_CORE")
-            refs_per_core_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_REFS_PER_CORE")
-            batch_dispatch_env = os.getenv("DAFT_DEVELOPER_RAY_BATCH_DISPATCH_COEFF")
-            return _RayRunnerConfig(
-                address=os.getenv("DAFT_RAY_ADDRESS"),
-                max_tasks_per_core=float(tasks_per_core_env) if tasks_per_core_env else None,
-                max_refs_per_core=float(refs_per_core_env) if refs_per_core_env else None,
-                batch_dispatch_coeff=float(batch_dispatch_env) if batch_dispatch_env else None,
-            )
-        elif runner.upper() == "PY":
-            return _PyRunnerConfig()
-        raise ValueError(f"Unsupported DAFT_RUNNER variable: {os.environ['DAFT_RUNNER']}")
-    return _PyRunnerConfig()
+    runner = os.getenv("DAFT_RUNNER") or "PY"
+    if runner.upper() == "RAY":
+        tasks_per_core_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_TASKS_PER_CORE")
+        refs_per_core_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_REFS_PER_CORE")
+        batch_dispatch_env = os.getenv("DAFT_DEVELOPER_RAY_BATCH_DISPATCH_COEFF")
+        return _RayRunnerConfig(
+            address=os.getenv("DAFT_RAY_ADDRESS"),
+            max_tasks_per_core=float(tasks_per_core_env) if tasks_per_core_env else None,
+            max_refs_per_core=float(refs_per_core_env) if refs_per_core_env else None,
+            batch_dispatch_coeff=float(batch_dispatch_env) if batch_dispatch_env else None,
+        )
+    elif runner.upper() == "PY":
+        use_thread_pool_env = os.getenv("DAFT_DEVELOPER_USE_THREAD_POOL")
+        use_thread_pool = bool(int(use_thread_pool_env)) if use_thread_pool_env is not None else None
+        print(f"use_thread_pool={use_thread_pool}")
+        return _PyRunnerConfig(use_thread_pool=use_thread_pool)
+    raise ValueError(f"Unsupported DAFT_RUNNER variable: {runner}")
 
 
 # Global Runner singleton, initialized when accessed through the DaftContext
@@ -84,7 +86,8 @@ class DaftContext:
             from daft.runners.pyrunner import PyRunner
 
             logger.info("Using PyRunner")
-            _RUNNER = PyRunner()
+            assert isinstance(self.runner_config, _PyRunnerConfig)
+            _RUNNER = PyRunner(use_thread_pool=self.runner_config.use_thread_pool)
 
         else:
             raise NotImplementedError(f"Runner config implemented: {self.runner_config.name}")
@@ -142,7 +145,7 @@ def set_runner_ray(
     return _DaftContext
 
 
-def set_runner_py() -> DaftContext:
+def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     """Set the runner for executing Daft dataframes to your local Python interpreter - this is the default behavior.
 
     Alternatively, users can set this behavior via an environment variable: DAFT_RUNNER=py
@@ -155,7 +158,7 @@ def set_runner_py() -> DaftContext:
         raise RuntimeError("Cannot set runner more than once")
     _DaftContext = dataclasses.replace(
         _DaftContext,
-        runner_config=_PyRunnerConfig(),
+        runner_config=_PyRunnerConfig(use_thread_pool=use_thread_pool),
         disallow_set_runner=True,
     )
     return _DaftContext

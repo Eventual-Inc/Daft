@@ -7,7 +7,7 @@ from typing import Iterable
 
 import psutil
 
-from daft.execution import physical_plan_factory
+from daft.execution import physical_plan, physical_plan_factory
 from daft.execution.execution_step import (
     ExecutionStep,
     Instruction,
@@ -115,8 +115,10 @@ class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
 
 
 class PyRunner(Runner):
-    def __init__(self) -> None:
+    def __init__(self, use_thread_pool: bool | None) -> None:
         super().__init__()
+        self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
+
         self._optimizer = RuleRunner(
             [
                 RuleBatch(
@@ -157,16 +159,28 @@ class PyRunner(Runner):
             if entry.value is not None
         }
         plan = physical_plan_factory.get_materializing_physical_plan(logplan, psets)
-        result_pset = LocalPartitionSet({})
 
+        with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
+            if self._use_thread_pool:
+                partitions = self._run_in_thread_pool(plan)
+            else:
+                partitions = self._run_in_main_thread(plan)
+
+            result_pset = LocalPartitionSet({})
+            for i, partition in enumerate(partitions):
+                result_pset.set_partition(i, partition)
+
+            pset_entry = self.put_partition_set_into_cache(result_pset)
+            return pset_entry
+
+    def _run_in_thread_pool(self, plan: physical_plan.MaterializedPhysicalPlan) -> list[vPartition]:
         inflight_tasks: dict[str, ExecutionStep] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
 
+        result = []
         next_step = None
-        with futures.ThreadPoolExecutor() as thread_pool, profiler(
-            "profile_PyRunner.run_{datetime.now().isoformat()}.json"
-        ):
+        with futures.ThreadPoolExecutor() as thread_pool:
             try:
                 while True:
                     # Get the next task to dispatch.
@@ -198,7 +212,9 @@ class PyRunner(Runner):
                         next_step = next(plan)
 
                     # Await at least task and process the results.
-                    assert len(future_to_task) > 0, f"Scheduler deadlocked; should never happen. next_step={next_step}"
+                    assert (
+                        len(future_to_task) > 0
+                    ), f"Scheduler deadlocked! This should never happen. Please file an issue."
                     done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
                     for done in done_set:
                         done_id = future_to_task.pop(done)
@@ -216,11 +232,35 @@ class PyRunner(Runner):
                             raise TypeError(f"Could not type match input {done_task}")
 
             except StopIteration as e:
-                for i, partition in enumerate(e.value):
-                    result_pset.set_partition(i, partition)
+                result = e.value
 
-            pset_entry = self.put_partition_set_into_cache(result_pset)
-            return pset_entry
+        return result
+
+    def _run_in_main_thread(self, plan: physical_plan.MaterializedPhysicalPlan) -> list[vPartition]:
+        result = []
+
+        try:
+            while True:
+                next_step = next(plan)
+                assert (
+                    next_step is not None
+                ), "Scheduler deadlocked in singlethreaded mode! This should never happen. Please file an issue."
+
+                self._check_resource_requests(next_step.resource_request)
+                partitions = self.build_partitions(next_step.instructions, *next_step.inputs)
+
+                if isinstance(next_step, MultiOutputExecutionStep):
+                    next_step.results = [PyMaterializedResult(partition) for partition in partitions]
+                elif isinstance(next_step, SingleOutputExecutionStep):
+                    [partition] = partitions
+                    next_step.result = PyMaterializedResult(partition)
+                else:
+                    raise TypeError(f"Could not type match input {next_step}")
+
+        except StopIteration as e:
+            result = e.value
+
+        return result
 
     def _check_resource_requests(self, resource_request: ResourceRequest) -> None:
         """Validates that the requested ResourceRequest is possible to run locally"""
