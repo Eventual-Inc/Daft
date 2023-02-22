@@ -229,7 +229,7 @@ class vPartition:
 
     @classmethod
     def from_pydict(
-        cls, data: dict[str, list[Any] | np.ndarray | pa.Array], schema: Schema, partition_id: PartID
+        cls, data: dict[str, list[Any] | np.ndarray | pa.Array | pa.ChunkedArray], schema: Schema, partition_id: PartID
     ) -> vPartition:
         fields = schema.fields
         tiles = {}
@@ -240,7 +240,7 @@ class vPartition:
             col_data: list | pa.Array
             if ExpressionType.is_py(col_type):
                 col_data = list(data[col_name])
-            elif isinstance(data[col_name], pa.Array):
+            elif isinstance(data[col_name], pa.Array) or isinstance(data[col_name], pa.ChunkedArray):
                 col_data = data[col_name]
             else:
                 col_data = pa.array(data[col_name], type=col_type.to_arrow_type())
