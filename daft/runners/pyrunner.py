@@ -237,7 +237,6 @@ class PyRunner(Runner):
         return result
 
     def _run_in_main_thread(self, plan: physical_plan.MaterializedPhysicalPlan) -> list[vPartition]:
-
         result = []
 
         try:
