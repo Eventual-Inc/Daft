@@ -99,6 +99,9 @@ class PyListTile:
     def apply(self, func: Callable[[DataBlock], DataBlock]) -> PyListTile:
         return dataclasses.replace(self, block=func(self.block))
 
+    def size_bytes(self) -> int:
+        return self.block.size_bytes()
+
     def split_by_index(
         self,
         num_partitions: int,
@@ -140,6 +143,7 @@ class PyListTile:
 @dataclass(frozen=True)
 class PartitionMetadata:
     num_rows: int
+    size_bytes: int
 
 
 @dataclass(frozen=True)
@@ -165,7 +169,10 @@ class vPartition:
         return len(next(iter(self.columns.values())))
 
     def metadata(self) -> PartitionMetadata:
-        return PartitionMetadata(num_rows=len(self))
+        return PartitionMetadata(
+            num_rows=len(self),
+            size_bytes=sum(tile.size_bytes() for tile in self.columns.values()),
+        )
 
     def get_schema(self) -> Schema:
         """Generates column expressions that represent the vPartition's schema"""

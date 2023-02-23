@@ -6,6 +6,7 @@ import functools
 import math
 import operator
 import random
+import statistics
 from abc import abstractmethod
 from functools import partial
 from typing import (
@@ -30,6 +31,7 @@ except ImportError:
     _POLARS_AVAILABLE = False
 
 import numpy as np
+import pickle5
 import pyarrow as pa
 import pyarrow.compute as pac
 from pandas.core.reshape.merge import get_join_indexers
@@ -102,6 +104,11 @@ class DataBlock(Generic[ArrType]):
     @abstractmethod
     def is_scalar(self) -> bool:
         """Returns True if this DataBlock holds a scalar value"""
+        raise NotImplementedError()
+
+    @abstractmethod
+    def size_bytes(self) -> int:
+        """Returns the total size of this DataBlock in bytes."""
         raise NotImplementedError()
 
     @abstractmethod
@@ -413,6 +420,31 @@ class PyListDataBlock(DataBlock[List[T]]):
                 yield self.data
         yield from self.data
 
+    def size_bytes(self) -> int:
+        if self.is_scalar():
+            return len(pickle5.dumps(self.data))
+
+        if len(self.data) == 0:
+            return 0
+
+        # self.data is a non-empty vector.
+
+        # Sample 10% of the items (but at least 10 items) to determine total size.
+        sample_quantity = len(self.data) // 10
+        if sample_quantity < 10:
+            sample_quantity = min(len(self.data), 10)
+
+        samples = random.sample(self.data, sample_quantity)
+        sample_sizes = [len(pickle5.dumps(sample)) for sample in samples]
+
+        if sample_quantity == len(self.data):
+            return sum(sample_sizes)
+
+        mean, stdev = statistics.mean(sample_sizes), statistics.stdev(sample_sizes)
+        one_item_size_estimate = int(mean + stdev)
+
+        return one_item_size_estimate * len(self.data)
+
     def to_numpy(self):
         if self.is_scalar():
             return self.data
@@ -528,6 +560,9 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             return ArrowDataBlock, (self._make_empty().data,)
         else:
             return ArrowDataBlock, (self.data,)
+
+    def size_bytes(self) -> int:
+        return self.__sizeof__() + self.data.__sizeof__()
 
     def to_numpy(self):
         if isinstance(self.data, pa.Scalar):
