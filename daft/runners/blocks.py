@@ -7,6 +7,7 @@ import math
 import operator
 import random
 import statistics
+import sys
 from abc import abstractmethod
 from functools import partial
 from typing import (
@@ -24,6 +25,11 @@ from typing import (
     cast,
 )
 
+if sys.version_info < (3, 8):
+    import pickle5 as pickle
+else:
+    import pickle
+
 _POLARS_AVAILABLE = True
 try:
     import polars as pl
@@ -31,7 +37,6 @@ except ImportError:
     _POLARS_AVAILABLE = False
 
 import numpy as np
-import pickle5
 import pyarrow as pa
 import pyarrow.compute as pac
 from pandas.core.reshape.merge import get_join_indexers
@@ -422,7 +427,7 @@ class PyListDataBlock(DataBlock[List[T]]):
 
     def size_bytes(self) -> int:
         if self.is_scalar():
-            return len(pickle5.dumps(self.data))
+            return len(pickle.dumps(self.data))
 
         if len(self.data) == 0:
             return 0
@@ -435,7 +440,7 @@ class PyListDataBlock(DataBlock[List[T]]):
             sample_quantity = min(len(self.data), 10)
 
         samples = random.sample(self.data, sample_quantity)
-        sample_sizes = [len(pickle5.dumps(sample)) for sample in samples]
+        sample_sizes = [len(pickle.dumps(sample)) for sample in samples]
 
         if sample_quantity == len(self.data):
             return sum(sample_sizes)
