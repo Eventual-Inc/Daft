@@ -53,6 +53,11 @@ class Table:
         assert isinstance(indices, Series)
         return Table._from_pytable(self._table.take(indices._series))
 
+    def filter(self, exprs: list[Expression]) -> Table:
+        assert all(isinstance(e, Expression) for e in exprs)
+        pyexprs = [e._expr for e in exprs]
+        return Table._from_pytable(self._table.filter(pyexprs))
+
     def column_names(self) -> list[str]:
         return self._table.column_names()
 

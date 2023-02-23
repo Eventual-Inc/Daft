@@ -28,6 +28,11 @@ impl PyTable {
         Ok(self.table.take(&idx.series)?.into())
     }
 
+    pub fn filter(&self, exprs: Vec<PyExpr>) -> PyResult<Self> {
+        let converted_exprs: Vec<dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
+        Ok(self.table.filter(converted_exprs.as_slice())?.into())
+    }
+
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.table))
     }

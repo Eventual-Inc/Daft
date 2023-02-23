@@ -4,7 +4,7 @@ use arrow2::array::new_null_array;
 
 use crate::{
     array::DataArray,
-    datatypes::{DaftDataType, Field},
+    datatypes::{BooleanArray, DaftDataType, Field},
 };
 
 impl<T> DataArray<T>

@@ -1,3 +1,5 @@
+use std::process::Output;
+
 use num_traits::{NumCast, ToPrimitive};
 
 use crate::{
@@ -6,7 +8,9 @@ use crate::{
     error::{DaftError, DaftResult},
 };
 
-use super::DaftCompare;
+use std::ops::Not;
+
+use super::{DaftCompare, DaftLogical};
 use arrow2::{compute::comparison, scalar::PrimitiveScalar};
 
 fn arrow_bitmap_validity(
@@ -532,6 +536,67 @@ impl DaftCompare<bool> for BooleanArray {
             comparison::boolean::gt_eq_scalar(self.downcast(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
+    }
+}
+
+impl Not for &BooleanArray {
+    type Output = DaftResult<BooleanArray>;
+    fn not(self) -> Self::Output {
+        let new_bitmap = self.downcast().values().not();
+        let arrow_array = arrow2::array::BooleanArray::new(
+            arrow2::datatypes::DataType::Boolean,
+            new_bitmap,
+            self.downcast().validity().cloned(),
+        );
+        Ok(BooleanArray::from((self.name(), arrow_array)))
+    }
+}
+
+impl DaftLogical<bool> for BooleanArray {
+    type Output = DaftResult<BooleanArray>;
+    fn and(&self, rhs: bool) -> Self::Output {
+        let validity = self.downcast().validity();
+        if rhs {
+            return Ok(self.clone());
+        } else {
+            use arrow2::{array, bitmap::Bitmap, datatypes::DataType};
+            let arrow_array = array::BooleanArray::new(
+                DataType::Boolean,
+                Bitmap::new_zeroed(self.len()),
+                validity.cloned(),
+            );
+            return Ok(BooleanArray::from((self.name(), arrow_array)));
+        }
+    }
+
+    fn or(&self, rhs: bool) -> Self::Output {
+        let validity = self.downcast().validity();
+        if rhs {
+            use arrow2::{array, bitmap::Bitmap, datatypes::DataType};
+            let arrow_array = array::BooleanArray::new(
+                DataType::Boolean,
+                Bitmap::new_zeroed(self.len()).not(),
+                validity.cloned(),
+            );
+            return Ok(BooleanArray::from((self.name(), arrow_array)));
+        } else {
+            return Ok(self.clone());
+        }
+    }
+
+    fn xor(&self, rhs: bool) -> Self::Output {
+        let validity = self.downcast().validity();
+        if rhs {
+            use arrow2::{array, datatypes::DataType};
+            let arrow_array = array::BooleanArray::new(
+                DataType::Boolean,
+                self.downcast().values().not(),
+                validity.cloned(),
+            );
+            return Ok(BooleanArray::from((self.name(), arrow_array)));
+        } else {
+            return Ok(self.clone());
+        }
     }
 }
 

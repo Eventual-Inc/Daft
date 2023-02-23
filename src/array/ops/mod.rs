@@ -5,6 +5,7 @@ mod broadcast;
 mod cast;
 mod comparison;
 mod downcast;
+mod filter;
 mod full;
 mod len;
 mod take;
@@ -29,4 +30,17 @@ pub trait DaftCompare<Rhs> {
 
     /// Less than or equal
     fn lte(&self, rhs: Rhs) -> Self::Output;
+}
+
+pub trait DaftLogical<Rhs> {
+    type Output;
+
+    /// and.
+    fn and(&self, rhs: Rhs) -> Self::Output;
+
+    /// or.
+    fn or(&self, rhs: Rhs) -> Self::Output;
+
+    /// xor.
+    fn xor(&self, rhs: Rhs) -> Self::Output;
 }

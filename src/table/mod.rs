@@ -1,12 +1,13 @@
-use std::fmt::{Display, Formatter, Result};
+use std::fmt::{format, Display, Formatter, Result};
 use std::sync::Arc;
 
-use crate::datatypes::Field;
+use crate::datatypes::{BooleanArray, BooleanType, DataType, Field};
 use crate::dsl::Expr;
 use crate::error::{DaftError, DaftResult};
 use crate::schema::Schema;
 use crate::series::Series;
 
+#[derive(Clone)]
 pub struct Table {
     schema: Arc<Schema>,
     columns: Vec<Series>,
@@ -89,7 +90,38 @@ impl Table {
         })
     }
 
-    // pub fn filter(&self, predicate: &[&Expr]) -> DaftResult<Table>;
+    pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Table> {
+        if predicate.len() == 0 {
+            Ok(self.clone())
+        } else if predicate.len() == 1 {
+            let mask = self.eval_expression(predicate.get(0).unwrap())?;
+            self.mask_filter(&mask)
+        } else {
+            let mut expr = predicate.get(0).unwrap().and(predicate.get(1).unwrap());
+            for i in 2..predicate.len() {
+                let next = predicate.get(i).unwrap();
+                expr = (&expr).and(next);
+            }
+            let mask = self.eval_expression(&expr)?;
+            self.mask_filter(&mask)
+        }
+    }
+
+    pub fn mask_filter(&self, mask: &Series) -> DaftResult<Table> {
+        if *mask.data_type() != DataType::Boolean {
+            return Err(DaftError::ValueError(format!(
+                "We can only mask_filter a Table with Boolean Series, got {}",
+                mask.data_type()
+            )));
+        }
+
+        let mask = mask.downcast::<BooleanType>().unwrap();
+        let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.filter(mask)).collect();
+        Ok(Table {
+            schema: self.schema.clone(),
+            columns: new_series?,
+        })
+    }
     //pub fn sort(&self, sort_keys: &[&Expr], descending: &[bool]) -> DaftResult<Table>;
     //pub fn argsort(&self, sort_keys: &[&Expr], descending: &[bool]) -> DaftResult<Series>;
     pub fn take(&self, idx: &Series) -> DaftResult<Table> {
@@ -134,6 +166,7 @@ impl Table {
                     NotEq => Ok(lhs.not_equal(&rhs)?.into_series()),
                     GtEq => Ok(lhs.gte(&rhs)?.into_series()),
                     Gt => Ok(lhs.gt(&rhs)?.into_series()),
+                    // And => Ok(lhs.gt(&rhs)?.into_series()),
                     _ => panic!("{op:?} not supported"),
                 }
             }

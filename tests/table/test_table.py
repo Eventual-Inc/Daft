@@ -221,3 +221,18 @@ def test_table_numeric_expressions_with_nulls(data_dtype, op) -> None:
     assert daft_table.get_column("result").to_pylist()[:2] == pyresult
 
     assert daft_table.get_column("result").to_pylist()[2:] == [None, None, None]
+
+
+def test_table_filter() -> None:
+    pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    exprs = [col("a") < col("b"), col("a") < 5]
+    new_table = daft_table.filter(exprs)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+    result = new_table.to_pydict()
+    assert result["a"] == [1, 2, 3, 4]
+    assert result["b"] == [5, 6, 7, 8]
