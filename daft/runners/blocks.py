@@ -421,8 +421,13 @@ class PyListDataBlock(DataBlock[List[T]]):
         yield from self.data
 
     def size_bytes(self) -> int:
+        if self.is_scalar():
+            return len(pickle5.dumps(self.data))
+
         if len(self.data) == 0:
             return 0
+
+        # self.data is a non-empty vector.
 
         # Sample 10% of the items (but at least 10 items) to determine total size.
         sample_quantity = len(self.data) // 10
@@ -431,6 +436,9 @@ class PyListDataBlock(DataBlock[List[T]]):
 
         samples = random.sample(self.data, sample_quantity)
         sample_sizes = [len(pickle5.dumps(sample)) for sample in samples]
+
+        if sample_quantity == len(self.data):
+            return sum(sample_sizes)
 
         mean, stdev = statistics.mean(sample_sizes), statistics.stdev(sample_sizes)
         one_item_size_estimate = int(mean + stdev)
