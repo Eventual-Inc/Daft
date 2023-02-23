@@ -51,7 +51,6 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     elif runner.upper() == "PY":
         use_thread_pool_env = os.getenv("DAFT_DEVELOPER_USE_THREAD_POOL")
         use_thread_pool = bool(int(use_thread_pool_env)) if use_thread_pool_env is not None else None
-        print(f"use_thread_pool={use_thread_pool}")
         return _PyRunnerConfig(use_thread_pool=use_thread_pool)
     raise ValueError(f"Unsupported DAFT_RUNNER variable: {runner}")
 
