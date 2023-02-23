@@ -841,11 +841,18 @@ class BaseMethodAccessor:
 
 
 class UrlMethodAccessor(BaseMethodAccessor):
-    def download(self) -> UdfExpression:
-        """Treats each string as a URL, and downloads the bytes contents as a bytes column"""
+    def download(self, max_worker_threads: int = 8) -> UdfExpression:
+        """Treats each string as a URL, and downloads the bytes contents as a bytes column
+
+        Args:
+            max_worker_threads: The maximum number of threads to use for downloading URLs, defaults to 8
+
+        Returns:
+            UdfExpression: a BYTES expression which is the bytes contents of the URL, or None if an error occured during download
+        """
         from daft.udf_library import url_udfs
 
-        return url_udfs.download_udf(self._expr)
+        return url_udfs.download_udf(self._expr, max_worker_threads=max_worker_threads)
 
 
 class StringMethodAccessor(BaseMethodAccessor):

@@ -133,6 +133,8 @@ def test_load_pydict_types():
         # Arrow arrays
         "pa_int": pa.array([1, 2, 3]),
         "pa_nested": pa.array([[1, 2, 3], [1, 2], [1]]),
+        "pa_int_chunked": pa.chunked_array([pa.array([1, 2, 3])]),
+        "pa_nested_chunked": pa.chunked_array([pa.array([[1, 2, 3], [1, 2], [1]])]),
     }
     daft_df = DataFrame.from_pydict(data)
 
@@ -155,6 +157,8 @@ def test_load_pydict_types():
         "np_nested": ExpressionType.from_py_type(np.ndarray),
         "pa_int": ExpressionType.integer(),
         "pa_nested": ExpressionType.from_py_type(list),
+        "pa_int_chunked": ExpressionType.integer(),
+        "pa_nested_chunked": ExpressionType.from_py_type(list),
     }
 
     assert collected_data.keys() == data.keys() == expected.keys()
