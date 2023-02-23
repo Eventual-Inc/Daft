@@ -89,13 +89,17 @@ class ExecutionStepBuilder(Generic[PartitionT]):
 
         Returns a "frozen" version of this ExecutionStep that cannot have instructions added.
         """
+        resource_request_final_cpu = ResourceRequest(
+            num_cpus=self.resource_request.num_cpus or 1,
+            num_gpus=self.resource_request.num_gpus,
+            memory_bytes=self.resource_request.memory_bytes,
+        )
+
         return SingleOutputExecutionStep[PartitionT](
             inputs=self.inputs,
             instructions=self.instructions,
             num_results=1,
-            resource_request=ResourceRequest.max_resources(
-                [self.resource_request, ResourceRequest(num_cpus=1)],
-            ),
+            resource_request=resource_request_final_cpu,
         )
 
     def build_materialization_request_multi(self, num_results: int) -> MultiOutputExecutionStep[PartitionT]:
@@ -104,13 +108,16 @@ class ExecutionStepBuilder(Generic[PartitionT]):
         Same as build_materialization_request_single, except the output of this ExecutionStep is a list of partitions.
         This is intended for execution steps that do a fanout.
         """
+        resource_request_final_cpu = ResourceRequest(
+            num_cpus=self.resource_request.num_cpus or 1,
+            num_gpus=self.resource_request.num_gpus,
+            memory_bytes=self.resource_request.memory_bytes,
+        )
         return MultiOutputExecutionStep[PartitionT](
             inputs=self.inputs,
             instructions=self.instructions,
             num_results=num_results,
-            resource_request=ResourceRequest.max_resources(
-                [self.resource_request, ResourceRequest(num_cpus=1)],
-            ),
+            resource_request=resource_request_final_cpu,
         )
 
     def __str__(self) -> str:
