@@ -151,7 +151,7 @@ impl Table {
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
-                use crate::array::ops::DaftCompare;
+                use crate::array::ops::{DaftCompare, DaftLogical};
                 use crate::array::BaseArray;
                 use crate::dsl::Operator::*;
                 match op {
@@ -166,7 +166,9 @@ impl Table {
                     NotEq => Ok(lhs.not_equal(&rhs)?.into_series()),
                     GtEq => Ok(lhs.gte(&rhs)?.into_series()),
                     Gt => Ok(lhs.gt(&rhs)?.into_series()),
-                    // And => Ok(lhs.gt(&rhs)?.into_series()),
+                    And => Ok(lhs.and(&rhs)?.into_series()),
+                    Or => Ok(lhs.or(&rhs)?.into_series()),
+                    Xor => Ok(lhs.xor(&rhs)?.into_series()),
                     _ => panic!("{op:?} not supported"),
                 }
             }
