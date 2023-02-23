@@ -6,8 +6,8 @@ import functools
 import math
 import operator
 import random
+import statistics
 from abc import abstractmethod
-from collections import deque
 from functools import partial
 from typing import (
     TYPE_CHECKING,
@@ -31,6 +31,7 @@ except ImportError:
     _POLARS_AVAILABLE = False
 
 import numpy as np
+import pickle5
 import pyarrow as pa
 import pyarrow.compute as pac
 from pandas.core.reshape.merge import get_join_indexers
@@ -420,28 +421,21 @@ class PyListDataBlock(DataBlock[List[T]]):
         yield from self.data
 
     def size_bytes(self) -> int:
-        size = 0
-        seen = set()
-        # Estimate the total size from the first 100 items.
-        sample = self.data[:100]
-        to_process: deque[Any] = deque(sample)
-        while len(to_process) > 0:
-            obj = to_process.popleft()
-            if id(obj) in seen:
-                continue
-            size += obj.__sizeof__()
-            seen.add(id(obj))
+        if len(self.data) == 0:
+            return 0
 
-            if isinstance(obj, dict):
-                for item in obj.items():
-                    to_process.append(item)
-            elif isinstance(obj, (tuple, list, set, frozenset, deque)):
-                for item in obj:
-                    to_process.append(item)
+        # Sample 10% of the items (but at least 10 items) to determine total size.
+        sample_quantity = len(self.data) // 10
+        if sample_quantity < 10:
+            sample_quantity = min(len(self.data), 10)
 
-        size = int(size * len(self.data) / len(sample))
+        samples = random.sample(self.data, sample_quantity)
+        sample_sizes = [len(pickle5.dumps(sample)) for sample in samples]
 
-        return size
+        mean, stdev = statistics.mean(sample_sizes), statistics.stdev(sample_sizes)
+        one_item_size_estimate = int(mean + stdev)
+
+        return one_item_size_estimate * len(self.data)
 
     def to_numpy(self):
         if self.is_scalar():
