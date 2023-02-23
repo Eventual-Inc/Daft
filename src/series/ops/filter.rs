@@ -1,5 +1,4 @@
 use crate::{
-    apply_method_all_arrow_series,
     datatypes::BooleanArray,
     error::{DaftError, DaftResult},
     series::Series,

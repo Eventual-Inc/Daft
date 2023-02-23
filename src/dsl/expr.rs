@@ -45,7 +45,7 @@ impl Expr {
     }
 
     pub fn and(&self, other: &Self) -> Self {
-        return binary_op(Operator::And, self, other);
+        binary_op(Operator::And, self, other)
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {

@@ -1,7 +1,7 @@
-use std::fmt::{format, Display, Formatter, Result};
+use std::fmt::{Display, Formatter, Result};
 use std::sync::Arc;
 
-use crate::datatypes::{BooleanArray, BooleanType, DataType, Field};
+use crate::datatypes::{BooleanType, DataType, Field};
 use crate::dsl::Expr;
 use crate::error::{DaftError, DaftResult};
 use crate::schema::Schema;
@@ -91,7 +91,7 @@ impl Table {
     }
 
     pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Table> {
-        if predicate.len() == 0 {
+        if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
             let mask = self.eval_expression(predicate.get(0).unwrap())?;
@@ -100,7 +100,7 @@ impl Table {
             let mut expr = predicate.get(0).unwrap().and(predicate.get(1).unwrap());
             for i in 2..predicate.len() {
                 let next = predicate.get(i).unwrap();
-                expr = (&expr).and(next);
+                expr = expr.and(next);
             }
             let mask = self.eval_expression(&expr)?;
             self.mask_filter(&mask)

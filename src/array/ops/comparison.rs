@@ -1,5 +1,3 @@
-use std::process::Output;
-
 use num_traits::{NumCast, ToPrimitive};
 
 use crate::{
@@ -677,7 +675,7 @@ impl DaftLogical<bool> for BooleanArray {
     fn and(&self, rhs: bool) -> Self::Output {
         let validity = self.downcast().validity();
         if rhs {
-            return Ok(self.clone());
+            Ok(self.clone())
         } else {
             use arrow2::{array, bitmap::Bitmap, datatypes::DataType};
             let arrow_array = array::BooleanArray::new(
@@ -700,7 +698,7 @@ impl DaftLogical<bool> for BooleanArray {
             );
             return Ok(BooleanArray::from((self.name(), arrow_array)));
         } else {
-            return Ok(self.clone());
+            Ok(self.clone())
         }
     }
 
@@ -708,7 +706,7 @@ impl DaftLogical<bool> for BooleanArray {
         if rhs {
             self.not()
         } else {
-            return Ok(self.clone());
+            Ok(self.clone())
         }
     }
 }
