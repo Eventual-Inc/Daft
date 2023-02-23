@@ -504,8 +504,8 @@ class Sort(UnaryNode):
         return (
             isinstance(other, Sort)
             and self.schema() == other.schema()
-            and self._sort_by == self._sort_by
-            and self._descending == self._descending
+            and self._sort_by == other._sort_by
+            and self._descending == other._descending
         )
 
     def rebuild(self) -> LogicalPlan:
@@ -596,7 +596,7 @@ class LocalLimit(UnaryNode):
         return [{name: name for name in self.schema().column_names()}]
 
     def _local_eq(self, other: Any) -> bool:
-        return isinstance(other, LocalLimit) and self.schema() == other.schema() and self._num == self._num
+        return isinstance(other, LocalLimit) and self.schema() == other.schema() and self._num == other._num
 
     def rebuild(self) -> LogicalPlan:
         return LocalLimit(input=self._children()[0].rebuild(), num=self._num)
@@ -622,7 +622,7 @@ class GlobalLimit(UnaryNode):
         return [{name: name for name in self.schema().column_names()}]
 
     def _local_eq(self, other: Any) -> bool:
-        return isinstance(other, GlobalLimit) and self.schema() == other.schema() and self._num == self._num
+        return isinstance(other, GlobalLimit) and self.schema() == other.schema() and self._num == other._num
 
     def rebuild(self) -> LogicalPlan:
         return GlobalLimit(input=self._children()[0].rebuild(), num=self._num)
