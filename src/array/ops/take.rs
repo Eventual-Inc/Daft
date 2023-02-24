@@ -1,6 +1,6 @@
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BooleanArray, DaftIntegerType, DaftNumericType, Utf8Array},
+    datatypes::{BooleanArray, DaftIntegerType, DaftNumericType, NullArray, Utf8Array},
     error::DaftResult,
 };
 
@@ -112,5 +112,31 @@ impl BooleanArray {
             None => Ok("None".to_string()),
             Some(v) => Ok(format!("{v}")),
         }
+    }
+}
+
+impl NullArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<()> {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        None
+    }
+
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        Self::try_from((self.name(), result))
+    }
+
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        Ok("None".to_string())
     }
 }

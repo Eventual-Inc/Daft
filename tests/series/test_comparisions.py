@@ -228,11 +228,19 @@ def test_comparisons_boolean_array() -> None:
     gt = (l > r).to_pylist()
     assert gt == [False, False, None, None, None]
 
+    _and = (l & r).to_pylist()
+    assert _and == [False, False, None, None, None]
+
+    _or = (l | r).to_pylist()
+    assert _or == [True, False, None, None, None]
+
+    _xor = (l ^ r).to_pylist()
+    assert _xor == [True, False, None, None, None]
+
 
 def test_comparisons_boolean_array_right_scalar() -> None:
     l_arrow = pa.array([False, True, None])
     r_arrow = pa.array([True])
-    # lt, eq, lt, None
 
     l = Series.from_arrow(l_arrow)
     r = Series.from_arrow(r_arrow)
@@ -255,8 +263,77 @@ def test_comparisons_boolean_array_right_scalar() -> None:
     gt = (l > r).to_pylist()
     assert gt == [False, False, None]
 
+    _and = (l & r).to_pylist()
+    assert _and == [False, True, None]
 
-def test_comparisons_boolean_array_right_scalar() -> None:
+    _or = (l | r).to_pylist()
+    assert _or == [True, True, None]
+
+    _xor = (l ^ r).to_pylist()
+    assert _xor == [True, False, None]
+
+    r_arrow = pa.array([False])
+    r = Series.from_arrow(r_arrow)
+
+    lt = (l < r).to_pylist()
+    assert lt == [False, False, None]
+
+    le = (l <= r).to_pylist()
+    assert le == [True, False, None]
+
+    eq = (l == r).to_pylist()
+    assert eq == [True, False, None]
+
+    neq = (l != r).to_pylist()
+    assert neq == [False, True, None]
+
+    ge = (l >= r).to_pylist()
+    assert ge == [True, True, None]
+
+    gt = (l > r).to_pylist()
+    assert gt == [False, True, None]
+
+    _and = (l & r).to_pylist()
+    assert _and == [False, False, None]
+
+    _or = (l | r).to_pylist()
+    assert _or == [False, True, None]
+
+    _xor = (l ^ r).to_pylist()
+    assert _xor == [False, True, None]
+
+    r_arrow = pa.array([None], type=pa.bool_())
+    r = Series.from_arrow(r_arrow)
+
+    lt = (l < r).to_pylist()
+    assert lt == [None, None, None]
+
+    le = (l <= r).to_pylist()
+    assert le == [None, None, None]
+
+    eq = (l == r).to_pylist()
+    assert eq == [None, None, None]
+
+    neq = (l != r).to_pylist()
+    assert neq == [None, None, None]
+
+    ge = (l >= r).to_pylist()
+    assert ge == [None, None, None]
+
+    gt = (l > r).to_pylist()
+    assert gt == [None, None, None]
+
+    _and = (l & r).to_pylist()
+    assert _and == [None, None, None]
+
+    _or = (l | r).to_pylist()
+    assert _or == [None, None, None]
+
+    _xor = (l ^ r).to_pylist()
+    assert _xor == [None, None, None]
+
+
+def test_comparisons_boolean_array_left_scalar() -> None:
     l_arrow = pa.array([True])
     r_arrow = pa.array([False, True, None])
     # lt, eq, lt, None
@@ -281,6 +358,15 @@ def test_comparisons_boolean_array_right_scalar() -> None:
 
     gt = (l > r).to_pylist()
     assert gt == [True, False, None]
+
+    _and = (l & r).to_pylist()
+    assert _and == [False, True, None]
+
+    _or = (l | r).to_pylist()
+    assert _or == [True, True, None]
+
+    _xor = (l ^ r).to_pylist()
+    assert _xor == [True, False, None]
 
 
 def test_comparisons_bad_right_value() -> None:
@@ -307,10 +393,19 @@ def test_comparisons_bad_right_value() -> None:
     with pytest.raises(ValueError, match="another Series"):
         l > r
 
+    with pytest.raises(ValueError, match="another Series"):
+        l & r
 
-def test_arithmetic_numbers_array_mismatch_length() -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
-    r_arrow = pa.array([1, 4, 1, 5, None])
+    with pytest.raises(ValueError, match="another Series"):
+        l | r
+
+    with pytest.raises(ValueError, match="another Series"):
+        l ^ r
+
+
+def test_boolean_array_mismatch_length() -> None:
+    l_arrow = pa.array([False, True, None, None])
+    r_arrow = pa.array([False, True, False, True, None])
 
     l = Series.from_arrow(l_arrow)
     r = Series.from_arrow(r_arrow)
@@ -332,3 +427,38 @@ def test_arithmetic_numbers_array_mismatch_length() -> None:
 
     with pytest.raises(ValueError, match="different length"):
         l >= r
+
+    with pytest.raises(ValueError, match="different length"):
+        l & r
+
+    with pytest.raises(ValueError, match="different length"):
+        l | r
+
+    with pytest.raises(ValueError, match="different length"):
+        l ^ r
+
+
+def test_logical_ops_with_non_boolean() -> None:
+    l_arrow = pa.array([False, True, None, None])
+    r_arrow = pa.array([1, 2, 3, 4])
+
+    l = Series.from_arrow(l_arrow)
+    r = Series.from_arrow(r_arrow)
+
+    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+        l & r
+
+    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+        l | r
+
+    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+        l ^ r
+
+    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+        r & l
+
+    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+        r | l
+
+    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+        r ^ l

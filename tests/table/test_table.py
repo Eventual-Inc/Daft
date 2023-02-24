@@ -6,7 +6,7 @@ import pyarrow as pa
 import pytest
 
 from daft.datatype import DataType
-from daft.expressions2 import col
+from daft.expressions2 import col, lit
 from daft.series import Series
 from daft.table import Table
 
@@ -183,6 +183,22 @@ def test_table_take_bool(idx_dtype) -> None:
     assert taken.to_pydict() == {"a": [True, False, False, False, True], "b": [False, True, True, True, False]}
 
 
+@pytest.mark.parametrize("idx_dtype", daft_int_types)
+def test_table_take_null(idx_dtype) -> None:
+    pa_table = pa.Table.from_pydict({"a": [None, None, None, None], "b": [None, None, None, None]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    indices = Series.from_pylist([0, 1]).cast(idx_dtype)
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 2
+    assert taken.column_names() == ["a", "b"]
+
+    assert taken.to_pydict() == {"a": [None, None], "b": [None, None]}
+
+
 import operator as ops
 
 OPS = [ops.add, ops.sub, ops.mul, ops.truediv, ops.mod, ops.lt, ops.le, ops.eq, ops.ne, ops.ge, ops.gt]
@@ -221,3 +237,84 @@ def test_table_numeric_expressions_with_nulls(data_dtype, op) -> None:
     assert daft_table.get_column("result").to_pylist()[:2] == pyresult
 
     assert daft_table.get_column("result").to_pylist()[2:] == [None, None, None]
+
+
+def test_table_filter_all_pass() -> None:
+    pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    exprs = [col("a") < col("b"), col("a") < 5]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 4
+    assert new_table.column_names() == ["a", "b"]
+    result = new_table.to_pydict()
+    assert result["a"] == [1, 2, 3, 4]
+    assert result["b"] == [5, 6, 7, 8]
+
+    exprs = [lit(True), lit(True)]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 4
+    assert new_table.column_names() == ["a", "b"]
+    result = new_table.to_pydict()
+    assert result["a"] == [1, 2, 3, 4]
+    assert result["b"] == [5, 6, 7, 8]
+
+
+def test_table_filter_some_pass() -> None:
+    pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    exprs = [((col("a") * 4) < col("b")) | (col("b") == 8)]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 2
+    assert new_table.column_names() == ["a", "b"]
+    result = new_table.to_pydict()
+    assert result["a"] == [1, 4]
+    assert result["b"] == [5, 8]
+
+    exprs = [(col("b") / col("a")) >= 3]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 2
+    assert new_table.column_names() == ["a", "b"]
+    result = new_table.to_pydict()
+    assert result["a"] == [1, 2]
+    assert result["b"] == [5, 6]
+
+
+def test_table_filter_none_pass() -> None:
+    pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    exprs = [col("a") < col("b"), col("a") > 5]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 0
+    assert new_table.column_names() == ["a", "b"]
+    result = new_table.to_pydict()
+    assert result["a"] == []
+    assert result["b"] == []
+
+    exprs = [col("a") < col("b"), lit(False)]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 0
+    assert new_table.column_names() == ["a", "b"]
+    result = new_table.to_pydict()
+    assert result["a"] == []
+    assert result["b"] == []
+
+
+def test_table_filter_bad_expression() -> None:
+    pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    exprs = [col("a") + 1]
+
+    with pytest.raises(ValueError, match="Boolean Series"):
+        daft_table.filter(exprs)
