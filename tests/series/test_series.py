@@ -46,6 +46,16 @@ def test_series_pylist_round_trip(dtype) -> None:
     assert words["None"] == 2
 
 
+def test_series_pylist_round_trip_null() -> None:
+    data = pa.array([None, None])
+
+    s = Series.from_arrow(data)
+
+    words = Counter(repr(s).split())
+    assert s.name() in words
+    assert words["None"] == 2
+
+
 @pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types + arrow_string_types)
 def test_series_filter(dtype) -> None:
     data = pa.array([1, 2, 3, None, 5, None])
@@ -56,6 +66,17 @@ def test_series_filter(dtype) -> None:
 
     result = s.filter(mask).to_pylist()
     expected = [val for val, keep in zip(s.to_pylist(), pymask) if keep]
+    assert result == expected
+
+
+def test_series_filter_on_null() -> None:
+
+    s = Series.from_pylist([None, None, None, None, None, None])
+    pymask = [False, True, None, True, False, False]
+    mask = Series.from_pylist(pymask)
+
+    result = s.filter(mask).to_pylist()
+    expected = [None, None]
     assert result == expected
 
 

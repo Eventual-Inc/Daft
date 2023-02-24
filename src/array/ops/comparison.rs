@@ -2,7 +2,7 @@ use num_traits::{NumCast, ToPrimitive};
 
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BooleanArray, DaftNumericType, Utf8Array},
+    datatypes::{BooleanArray, DaftNumericType, NullArray, Utf8Array},
     error::{DaftError, DaftResult},
 };
 
@@ -668,6 +668,33 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
             ))),
         }
     }
+}
+
+macro_rules! null_array_comparision_method {
+    ($func_name:ident) => {
+        fn $func_name(&self, rhs: &NullArray) -> Self::Output {
+            match (self.len(), rhs.len()) {
+                (x, y) if x == y => Ok(BooleanArray::full_null(self.name(), x)),
+                (l_size, 1) => Ok(BooleanArray::full_null(self.name(), l_size)),
+                (1, r_size) => Ok(BooleanArray::full_null(self.name(), r_size)),
+                (l, r) => Err(DaftError::ValueError(format!(
+                    "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                    self.name(),
+                    rhs.name()
+                ))),
+            }
+        }
+    };
+}
+
+impl DaftCompare<&NullArray> for NullArray {
+    type Output = DaftResult<BooleanArray>;
+    null_array_comparision_method!(equal);
+    null_array_comparision_method!(not_equal);
+    null_array_comparision_method!(lt);
+    null_array_comparision_method!(lte);
+    null_array_comparision_method!(gt);
+    null_array_comparision_method!(gte);
 }
 
 impl DaftLogical<bool> for BooleanArray {
