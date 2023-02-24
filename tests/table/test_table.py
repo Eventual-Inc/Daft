@@ -246,6 +246,29 @@ def test_table_filter_all_pass() -> None:
     assert result["b"] == [5, 6, 7, 8]
 
 
+def test_table_filter_some_pass() -> None:
+    pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    exprs = [((col("a") * 4) < col("b")) | (col("b") == 8)]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 2
+    assert new_table.column_names() == ["a", "b"]
+    result = new_table.to_pydict()
+    assert result["a"] == [1, 4]
+    assert result["b"] == [5, 8]
+
+    exprs = [(col("b") / col("a")) >= 3]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 2
+    assert new_table.column_names() == ["a", "b"]
+    result = new_table.to_pydict()
+    assert result["a"] == [1, 2]
+    assert result["b"] == [5, 6]
+
+
 def test_table_filter_none_pass() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
     daft_table = Table.from_arrow(pa_table)
