@@ -46,6 +46,38 @@ def test_series_pylist_round_trip(dtype) -> None:
     assert words["None"] == 2
 
 
+@pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types + arrow_string_types)
+def test_series_filter(dtype) -> None:
+    data = pa.array([1, 2, 3, None, 5, None])
+
+    s = Series.from_arrow(data.cast(dtype))
+    pymask = [False, True, None, True, False, False]
+    mask = Series.from_pylist(pymask)
+
+    result = s.filter(mask).to_pylist()
+    expected = [val for val, keep in zip(s.to_pylist(), pymask) if keep]
+    assert result == expected
+
+
+@pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types + arrow_string_types)
+def test_series_filter_broadcast(dtype) -> None:
+    data = pa.array([1, 2, 3, None, 5, None])
+
+    s = Series.from_arrow(data.cast(dtype))
+
+    mask = Series.from_pylist([False])
+    result = s.filter(mask).to_pylist()
+    assert result == []
+
+    mask = Series.from_pylist([None]).cast(DataType.bool())
+    result = s.filter(mask).to_pylist()
+    assert result == []
+
+    mask = Series.from_pylist([True])
+    result = s.filter(mask).to_pylist()
+    assert result == s.to_pylist()
+
+
 @pytest.mark.parametrize("source_dtype, dest_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
 def test_series_casting_numeric(source_dtype, dest_dtype) -> None:
     data = pa.array([1, 2, 3, None, 5, None])

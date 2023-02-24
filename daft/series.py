@@ -60,6 +60,13 @@ class Series:
             raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         return self._series.to_arrow().to_pylist()
 
+    def filter(self, mask: Series) -> Series:
+        if self._series is None:
+            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
+        if not isinstance(mask, Series):
+            raise ValueError(f"expected another Series but got {type(mask)}")
+        return Series._from_pyseries(self._series.filter(mask._series))
+
     def __repr__(self) -> str:
         return repr(self._series)
 
