@@ -8,6 +8,7 @@ pub mod cast;
 pub mod comparision;
 pub mod downcast;
 pub mod filter;
+pub mod full;
 pub mod take;
 
 fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)> {

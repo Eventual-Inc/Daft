@@ -14,7 +14,7 @@ impl Series {
                 if Some(true) == mask.get(0) {
                     Ok(self.clone())
                 } else {
-                    Ok(BooleanArray::empty(self.name()).into_series())
+                    Series::empty(self.name(), self.data_type())
                 }
             }
             (n, m) if n == m => {
