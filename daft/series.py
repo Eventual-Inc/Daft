@@ -74,6 +74,24 @@ class Series:
             raise ValueError(f"expected another Series but got {type(idx)}")
         return Series._from_pyseries(self._series.take(idx._series))
 
+    def argsort(self, descending: bool = False) -> Series:
+        if self._series is None:
+            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
+
+        if not isinstance(descending, bool):
+            raise ValueError(f"expected `descending` to be bool, got {type(descending)}")
+
+        return Series._from_pyseries(self._series.argsort(descending))
+
+    def sort(self, descending: bool = False) -> Series:
+        if self._series is None:
+            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
+
+        if not isinstance(descending, bool):
+            raise ValueError(f"expected `descending` to be bool, got {type(descending)}")
+
+        return Series._from_pyseries(self._series.sort(descending))
+
     def __repr__(self) -> str:
         return repr(self._series)
 

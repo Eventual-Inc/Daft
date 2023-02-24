@@ -91,6 +91,14 @@ impl PySeries {
         Ok(self.series.filter(mask.series.downcast().unwrap())?.into())
     }
 
+    pub fn sort(&self, descending: bool) -> PyResult<Self> {
+        Ok(self.series.sort(descending)?.into())
+    }
+
+    pub fn argsort(&self, descending: bool) -> PyResult<Self> {
+        Ok(self.series.argsort(descending)?.into())
+    }
+
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
         use crate::array::ops::DaftCompare;
         match op {
