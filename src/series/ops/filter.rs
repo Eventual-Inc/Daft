@@ -12,7 +12,7 @@ impl Series {
         match (self.len(), mask.len()) {
             (_, 1) => {
                 if Some(true) == mask.get(0) {
-                    return Ok(self.clone());
+                    Ok(self.clone())
                 } else {
                     Ok(BooleanArray::empty(self.name()).into_series())
                 }
