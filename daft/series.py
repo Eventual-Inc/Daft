@@ -67,6 +67,13 @@ class Series:
             raise ValueError(f"expected another Series but got {type(mask)}")
         return Series._from_pyseries(self._series.filter(mask._series))
 
+    def take(self, idx: Series) -> Series:
+        if self._series is None:
+            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
+        if not isinstance(idx, Series):
+            raise ValueError(f"expected another Series but got {type(idx)}")
+        return Series._from_pyseries(self._series.take(idx._series))
+
     def __repr__(self) -> str:
         return repr(self._series)
 
@@ -74,6 +81,11 @@ class Series:
         raise ValueError(
             "Series don't have a truth value." "If you reached this error using `and` / `or`, use `&` / `|` instead."
         )
+
+    def __len__(self) -> int:
+        if self._series is None:
+            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
+        return len(self._series)
 
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):

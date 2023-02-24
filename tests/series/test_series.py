@@ -168,3 +168,20 @@ def test_series_casting_to_string(source_dtype, dest_dtype) -> None:
         assert t.to_pylist() == ["1.0", "2.0", "3.0", None, "5.0", None]
     else:
         assert t.to_pylist() == ["1", "2", "3", None, "5", None]
+
+
+@pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types + arrow_string_types)
+def test_series_take_numeric(dtype) -> None:
+    data = pa.array([1, 2, 3, None, 5, None])
+
+    s = Series.from_arrow(data.cast(dtype))
+    pyidx = [2, 0, None, 5]
+    idx = Series.from_pylist(pyidx)
+
+    result = s.take(idx)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 4
+
+    original_data = s.to_pylist()
+    expected = [original_data[i] if i is not None else None for i in pyidx]
+    assert result.to_pylist() == expected

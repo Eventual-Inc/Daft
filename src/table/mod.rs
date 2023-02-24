@@ -123,7 +123,10 @@ impl Table {
         })
     }
     //pub fn sort(&self, sort_keys: &[&Expr], descending: &[bool]) -> DaftResult<Table>;
-    //pub fn argsort(&self, sort_keys: &[&Expr], descending: &[bool]) -> DaftResult<Series>;
+    // pub fn argsort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Series> {
+    //     arrow2::compute::sort
+    // }
+
     pub fn take(&self, idx: &Series) -> DaftResult<Table> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
         Ok(Table {

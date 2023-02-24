@@ -8,6 +8,7 @@ mod downcast;
 mod filter;
 mod full;
 mod len;
+mod sort;
 mod take;
 
 pub trait DaftCompare<Rhs> {
