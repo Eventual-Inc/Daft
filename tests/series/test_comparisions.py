@@ -228,6 +228,15 @@ def test_comparisons_boolean_array() -> None:
     gt = (l > r).to_pylist()
     assert gt == [False, False, None, None, None]
 
+    _and = (l & r).to_pylist()
+    assert _and == [False, False, None, None, None]
+
+    _or = (l | r).to_pylist()
+    assert _or == [True, False, None, None, None]
+
+    _xor = (l ^ r).to_pylist()
+    assert _xor == [True, False, None, None, None]
+
 
 def test_comparisons_boolean_array_right_scalar() -> None:
     l_arrow = pa.array([False, True, None])
@@ -255,8 +264,17 @@ def test_comparisons_boolean_array_right_scalar() -> None:
     gt = (l > r).to_pylist()
     assert gt == [False, False, None]
 
+    _and = (l & r).to_pylist()
+    assert _and == [False, True, None]
 
-def test_comparisons_boolean_array_right_scalar() -> None:
+    _or = (l | r).to_pylist()
+    assert _or == [True, True, None]
+
+    _xor = (l ^ r).to_pylist()
+    assert _xor == [True, False, None]
+
+
+def test_comparisons_boolean_array_left_scalar() -> None:
     l_arrow = pa.array([True])
     r_arrow = pa.array([False, True, None])
     # lt, eq, lt, None
@@ -281,6 +299,15 @@ def test_comparisons_boolean_array_right_scalar() -> None:
 
     gt = (l > r).to_pylist()
     assert gt == [True, False, None]
+
+    _and = (l & r).to_pylist()
+    assert _and == [False, True, None]
+
+    _or = (l | r).to_pylist()
+    assert _or == [True, True, None]
+
+    _xor = (l ^ r).to_pylist()
+    assert _xor == [True, False, None]
 
 
 def test_comparisons_bad_right_value() -> None:
@@ -307,10 +334,19 @@ def test_comparisons_bad_right_value() -> None:
     with pytest.raises(ValueError, match="another Series"):
         l > r
 
+    with pytest.raises(ValueError, match="another Series"):
+        l & r
+
+    with pytest.raises(ValueError, match="another Series"):
+        l | r
+
+    with pytest.raises(ValueError, match="another Series"):
+        l ^ r
+
 
 def test_arithmetic_numbers_array_mismatch_length() -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
-    r_arrow = pa.array([1, 4, 1, 5, None])
+    l_arrow = pa.array([False, True, None, None])
+    r_arrow = pa.array([False, True, False, True, None])
 
     l = Series.from_arrow(l_arrow)
     r = Series.from_arrow(r_arrow)
@@ -332,3 +368,12 @@ def test_arithmetic_numbers_array_mismatch_length() -> None:
 
     with pytest.raises(ValueError, match="different length"):
         l >= r
+
+    with pytest.raises(ValueError, match="different length"):
+        l & r
+
+    with pytest.raises(ValueError, match="different length"):
+        l | r
+
+    with pytest.raises(ValueError, match="different length"):
+        l ^ r
