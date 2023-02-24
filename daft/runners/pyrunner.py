@@ -161,10 +161,7 @@ class PyRunner(Runner):
         plan = physical_plan_factory.get_materializing_physical_plan(logplan, psets)
 
         with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-            if self._use_thread_pool:
-                partitions = self._run_in_thread_pool(plan)
-            else:
-                partitions = self._run_in_main_thread(plan)
+            partitions = self._physical_plan_to_partitions(plan)
 
             result_pset = LocalPartitionSet({})
             for i, partition in enumerate(partitions):
@@ -173,7 +170,7 @@ class PyRunner(Runner):
             pset_entry = self.put_partition_set_into_cache(result_pset)
             return pset_entry
 
-    def _run_in_thread_pool(self, plan: physical_plan.MaterializedPhysicalPlan) -> list[vPartition]:
+    def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> list[vPartition]:
         inflight_tasks: dict[str, ExecutionStep] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
@@ -192,11 +189,19 @@ class PyRunner(Runner):
                         next_step.resource_request, inflight_tasks_resources.values()
                     ):
 
-                        # If this task is a no-op, just run it locally immediately.
-                        if len(next_step.instructions) == 0:
-                            assert isinstance(next_step, SingleOutputExecutionStep)
-                            [partition] = next_step.inputs
-                            next_step.result = PyMaterializedResult(partition)
+                        # Run the task in the main thread, instead of the thread pool, in certain conditions:
+                        # - Threading is disabled in runner config.
+                        # - Task is a no-op.
+                        # - Task requires GPU.
+                        if (
+                            not self._use_thread_pool
+                            or len(next_step.instructions) == 0
+                            or (
+                                next_step.resource_request.num_gpus is not None
+                                and next_step.resource_request.num_gpus > 0
+                            )
+                        ):
+                            self._run_task_synchronously(next_step)
 
                         else:
                             # Submit the task for execution.
@@ -236,31 +241,17 @@ class PyRunner(Runner):
 
         return result
 
-    def _run_in_main_thread(self, plan: physical_plan.MaterializedPhysicalPlan) -> list[vPartition]:
-        result = []
+    def _run_task_synchronously(self, task: physical_plan.ExecutionStep) -> None:
 
-        try:
-            while True:
-                next_step = next(plan)
-                assert (
-                    next_step is not None
-                ), "Scheduler deadlocked in singlethreaded mode! This should never happen. Please file an issue."
+        partitions = self.build_partitions(task.instructions, *task.inputs)
 
-                self._check_resource_requests(next_step.resource_request)
-                partitions = self.build_partitions(next_step.instructions, *next_step.inputs)
-
-                if isinstance(next_step, MultiOutputExecutionStep):
-                    next_step.results = [PyMaterializedResult(partition) for partition in partitions]
-                elif isinstance(next_step, SingleOutputExecutionStep):
-                    [partition] = partitions
-                    next_step.result = PyMaterializedResult(partition)
-                else:
-                    raise TypeError(f"Could not type match input {next_step}")
-
-        except StopIteration as e:
-            result = e.value
-
-        return result
+        if isinstance(task, MultiOutputExecutionStep):
+            task.results = [PyMaterializedResult(partition) for partition in partitions]
+        elif isinstance(task, SingleOutputExecutionStep):
+            [partition] = partitions
+            task.result = PyMaterializedResult(partition)
+        else:
+            raise TypeError(f"Could not type match input {task}")
 
     def _check_resource_requests(self, resource_request: ResourceRequest) -> None:
         """Validates that the requested ResourceRequest is possible to run locally"""
