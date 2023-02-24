@@ -110,7 +110,7 @@ impl Table {
     pub fn mask_filter(&self, mask: &Series) -> DaftResult<Table> {
         if *mask.data_type() != DataType::Boolean {
             return Err(DaftError::ValueError(format!(
-                "We can only mask_filter a Table with Boolean Series, got {}",
+                "We can only mask a Table with a Boolean Series, but we got {}",
                 mask.data_type()
             )));
         }
