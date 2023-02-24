@@ -188,35 +188,32 @@ class DataFrame:
         return [expr.to_column_expression() for expr in self.__plan.schema()]
 
     @DataframePublicAPI
-    def show(self, n: int | None = None) -> DataFrameDisplay:
+    def show(self, n: int = 8) -> DataFrameDisplay:
         """Executes enough of the DataFrame in order to display the first ``n`` rows
 
         .. NOTE::
             This call is **blocking** and will execute the DataFrame when called
 
         Args:
-            n: number of rows to show. Defaults to None which indicates showing the entire Dataframe.
+            n: number of rows to show. Defaults to 8.
 
         Returns:
             DataFrameDisplay: object that has a rich tabular display
         """
         df = self
-        if n is not None:
-            df = df.limit(n)
-
-        df.collect(num_preview_rows=n)
-        result = df._result
-        assert result is not None
-
-        # If showing all rows, then we can use the resulting DataFramePreview's dataframe_num_rows since no limit was applied
-        dataframe_num_rows = df._preview.dataframe_num_rows if n is None else None
+        df = df.limit(n)
+        df.collect(num_preview_rows=None)
+        collected_preview = df._preview
+        assert collected_preview is not None
 
         preview = DataFramePreview(
-            preview_partition=df._preview.preview_partition,
-            dataframe_num_rows=dataframe_num_rows,
+            preview_partition=collected_preview.preview_partition,
+            # Override dataframe_num_rows=None, because we do not know
+            # the size of the entire (un-limited) dataframe when showing
+            dataframe_num_rows=None,
         )
 
-        return DataFrameDisplay(preview, df.schema())
+        return DataFrameDisplay(preview, self.schema())
 
     @DataframePublicAPI
     def __repr__(self) -> str:
@@ -1171,7 +1168,7 @@ class DataFrame:
             result.wait()
 
     @DataframePublicAPI
-    def collect(self, num_preview_rows: int | None = 10) -> DataFrame:
+    def collect(self, num_preview_rows: int | None = 8) -> DataFrame:
         """Executes the entire DataFrame and materializes the results
 
         .. NOTE::
@@ -1189,10 +1186,11 @@ class DataFrame:
         dataframe_len = len(self._result)
         requested_rows = dataframe_len if num_preview_rows is None else num_preview_rows
 
-        # Build a DataFramePreview and cache it if we need to
-        if self._preview.preview_partition is None or len(self._preview.preview_partition) < requested_rows:
-
-            # Add a limit onto self and materialize limited data
+        # Build a DataFramePreview and cache it if necessary
+        preview_partition_invalid = (
+            self._preview.preview_partition is None or len(self._preview.preview_partition) < requested_rows
+        )
+        if preview_partition_invalid:
             preview_df = self
             if num_preview_rows is not None:
                 preview_df = preview_df.limit(num_preview_rows)
