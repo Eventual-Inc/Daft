@@ -121,7 +121,7 @@ impl NullArray {
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
-        return None;
+        None
     }
 
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
