@@ -24,7 +24,7 @@ where
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let options = arrow2::compute::sort::SortOptions {
-            descending: descending,
+            descending,
             nulls_first: descending,
         };
         let arrow_array = self.downcast();
@@ -41,7 +41,7 @@ where
 
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
-            descending: descending,
+            descending,
             nulls_first: descending,
         };
 
@@ -76,7 +76,7 @@ impl Float32Array {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let options = arrow2::compute::sort::SortOptions {
-            descending: descending,
+            descending,
             nulls_first: descending,
         };
         let arrow_array = self.downcast();
@@ -93,7 +93,7 @@ impl Float32Array {
 
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
-            descending: descending,
+            descending,
             nulls_first: descending,
         };
 
@@ -117,7 +117,7 @@ impl Float64Array {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let options = arrow2::compute::sort::SortOptions {
-            descending: descending,
+            descending,
             nulls_first: descending,
         };
         let arrow_array = self.downcast();
@@ -134,7 +134,7 @@ impl Float64Array {
 
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
-            descending: descending,
+            descending,
             nulls_first: descending,
         };
 
@@ -157,7 +157,7 @@ impl NullArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        DataArray::<I>::arange(self.name(), 0 as i64, self.len() as i64, 1)
+        DataArray::<I>::arange(self.name(), 0_i64, self.len() as i64, 1)
     }
 
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
@@ -172,7 +172,7 @@ impl BooleanArray {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let options = arrow2::compute::sort::SortOptions {
-            descending: descending,
+            descending,
             nulls_first: descending,
         };
 
@@ -184,7 +184,7 @@ impl BooleanArray {
 
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
-            descending: descending,
+            descending,
             nulls_first: descending,
         };
 
@@ -201,7 +201,7 @@ impl Utf8Array {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let options = arrow2::compute::sort::SortOptions {
-            descending: descending,
+            descending,
             nulls_first: descending,
         };
 
@@ -213,7 +213,7 @@ impl Utf8Array {
 
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
-            descending: descending,
+            descending,
             nulls_first: descending,
         };
 
