@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pathlib
 import warnings
 from dataclasses import dataclass
 from typing import (
@@ -362,7 +363,7 @@ class DataFrame:
         cls,
         path: str,
         has_headers: bool = True,
-        column_names: list[str] | None = None,
+        column_names: Optional[List[str]] = None,
         delimiter: str = ",",
     ) -> DataFrame:
         """Creates a DataFrame from CSV file(s)
@@ -528,7 +529,10 @@ class DataFrame:
 
     @DataframePublicAPI
     def write_parquet(
-        self, root_dir: str, compression: str = "snappy", partition_cols: Optional[List[ColumnInputType]] = None
+        self,
+        root_dir: Union[str, pathlib.Path],
+        compression: str = "snappy",
+        partition_cols: Optional[List[ColumnInputType]] = None,
     ) -> DataFrame:
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written
 
@@ -573,7 +577,9 @@ class DataFrame:
         return DataFrame(write_df._plan)
 
     @DataframePublicAPI
-    def write_csv(self, root_dir: str, partition_cols: Optional[List[ColumnInputType]] = None) -> DataFrame:
+    def write_csv(
+        self, root_dir: Union[str, pathlib.Path], partition_cols: Optional[List[ColumnInputType]] = None
+    ) -> DataFrame:
         """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written
 
         Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
@@ -1242,7 +1248,7 @@ class DataFrame:
         raise RuntimeError(message)
 
     @DataframePublicAPI
-    def to_pandas(self) -> pandas.DataFrame:
+    def to_pandas(self) -> "pandas.DataFrame":
         """Converts the current DataFrame to a pandas DataFrame.
         If results have not computed yet, collect will be called.
 
@@ -1260,7 +1266,7 @@ class DataFrame:
         return pd_df
 
     @DataframePublicAPI
-    def to_pydict(self) -> dict[str, list[Any]]:
+    def to_pydict(self) -> Dict[str, List[Any]]:
         """Converts the current DataFrame to a python dictionary. The dictionary contains Python lists of Python objects for each column.
 
         If results have not computed yet, collect will be called.
