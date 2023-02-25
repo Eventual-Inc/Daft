@@ -551,6 +551,24 @@ class PyListDataBlock(DataBlock[List[T]]):
 ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
 
 
+def _reconstruct_arrow_data_block(
+    buffers: dict[int, pa.Buffer], array_metadata: list[dict[str, Any]]
+) -> ArrowDataBlock:
+    chunks = [
+        pa.Array.from_buffers(
+            type=arr["type"],
+            length=arr["length"],
+            buffers=[buffers[buf_id] if buf_id is not None else None for buf_id in arr["buffer_ids"]],
+            null_count=arr["null_count"],
+            offset=arr["offset"],
+            children=arr["children"],
+        )
+        for arr in array_metadata
+    ]
+    data = pa.chunked_array(chunks)
+    return ArrowDataBlock(data)
+
+
 class ArrowDataBlock(DataBlock[ArrowArrType]):
     def __init__(self, data: ArrowArrType) -> None:
         assert not pa.types.is_nested(
@@ -564,21 +582,19 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         elif len(self.data) == 0:
             return ArrowDataBlock, (self._make_empty().data,)
         else:
-            # NOTE: Pickling PyArrow ChunkedArrays serializes all underlying buffers, independently for each chunk
-            # Sometimes chunks may reference a buffer much larger than required (e.g. after a zero-copy slice)
-            # Other times, chunks may reference buffers shared with other chunks (e.g. after a Parquet read)
-            # This may result in unnecessarily creating copies of serialized large/shared buffers.
-            #
-            # We use the heuristic `chunk.get_total_buffer_size() > (chunk.nbytes * 1.1)` for determining if the chunk
-            # has unnecessarily large buffers, and if so we make a copy of the chunk to re-allocate these buffers.
-            new_chunks = [
-                # pa.concat_arrays makes a copy of the arrays, and seems to be the only user-facing API for doing so
-                # See: https://arrow.apache.org/docs/python/generated/pyarrow.concat_arrays.html#pyarrow.concat_arrays
-                pa.concat_arrays([chunk]) if chunk.get_total_buffer_size() > (chunk.nbytes * 1.1) else chunk
+            buffers = {buf.address: buf for chunk in self.data.chunks for buf in chunk.buffers() if buf is not None}
+            array_metadata = [
+                {
+                    "type": chunk.type,
+                    "length": len(chunk),
+                    "buffer_ids": [buf.address if buf is not None else None for buf in chunk.buffers()],
+                    "null_count": chunk.null_count,
+                    "offset": chunk.offset,
+                    "children": None,  # hardcoded to None, since we do not support nested types yet
+                }
                 for chunk in self.data.chunks
             ]
-            data = pa.chunked_array(new_chunks)
-            return ArrowDataBlock, (data,)
+            return _reconstruct_arrow_data_block, (buffers, array_metadata)
 
     def size_bytes(self) -> int:
         return self.__sizeof__() + self.data.__sizeof__()
