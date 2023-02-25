@@ -43,6 +43,9 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
             return isinstance(value, origin_T)
 
         # T is a higher order type, like `typing.Union`
+        if T is Any:
+            return True
+
         if origin_T is Union:
             union_types = get_args(T)
             return any(isinstance_helper(value, union_type) for union_type in union_types)
