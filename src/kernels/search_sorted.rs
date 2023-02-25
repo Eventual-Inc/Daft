@@ -185,14 +185,12 @@ fn build_is_valid(array: &dyn Array) -> IsValid {
 
 #[allow(clippy::eq_op)]
 #[inline]
-fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
-    use std::cmp::Ordering::*;
-    if (*l < *r) || (*r != *r && *l == *l) {
-        Less
-    } else if (*l > *r) || (*l != *l && *r == *r) {
-        Greater
-    } else {
-        Equal
+pub fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
+    match (l.is_nan(), r.is_nan()) {
+        (false, false) => unsafe { l.partial_cmp(r).unwrap_unchecked() },
+        (true, true) => Ordering::Equal,
+        (true, false) => Ordering::Greater,
+        (false, true) => Ordering::Less,
     }
 }
 

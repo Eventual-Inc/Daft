@@ -1,6 +1,7 @@
 mod apply;
 mod arange;
 mod arithmetic;
+mod arrow2;
 mod broadcast;
 mod cast;
 mod comparison;
