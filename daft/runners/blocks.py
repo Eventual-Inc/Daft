@@ -554,6 +554,9 @@ ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
 def _reconstruct_arrow_data_block(
     buffers: dict[int, pa.Buffer], array_metadata: list[dict[str, Any]]
 ) -> ArrowDataBlock:
+    """Helper to reconstruct an ArrowDataBlock from a collection of buffers and PyArrow Array metadata that
+    make up a ChunkedArray.
+    """
     chunks = [
         pa.Array.from_buffers(
             type=arr["type"],
@@ -582,6 +585,8 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         elif len(self.data) == 0:
             return ArrowDataBlock, (self._make_empty().data,)
         else:
+            # ChunkedArray is serialized as a tuple of buffers and array metadata to avoid multiple
+            # copies of the same buffers if they are referenced by more than one array.
             buffers = {buf.address: buf for chunk in self.data.chunks for buf in chunk.buffers() if buf is not None}
             array_metadata = [
                 {
