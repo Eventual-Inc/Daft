@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import pathlib
 from abc import abstractmethod
 from dataclasses import asdict, dataclass
 from enum import Enum, IntEnum
@@ -336,7 +337,7 @@ class FileWrite(UnaryNode):
     def __init__(
         self,
         input: LogicalPlan,
-        root_dir: str,
+        root_dir: str | pathlib.Path,
         storage_type: StorageType,
         partition_cols: ExpressionList | None = None,
         compression: str | None = None,
