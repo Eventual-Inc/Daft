@@ -84,8 +84,8 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         self.resource_request = ResourceRequest.max_resources([self.resource_request, resource_request])
         return self
 
-    def build_materialization_request_single(self) -> SingleOutputPartitionTask[PartitionT]:
-        """Create an SingleOutputPartitionTask from this PartitionTaskBuilder.
+    def finalize_partition_task_single_output(self) -> SingleOutputPartitionTask[PartitionT]:
+        """Create a SingleOutputPartitionTask from this PartitionTaskBuilder.
 
         Returns a "frozen" version of this PartitionTask that cannot have instructions added.
         """
@@ -102,10 +102,10 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             resource_request=resource_request_final_cpu,
         )
 
-    def build_materialization_request_multi(self, num_results: int) -> MultiOutputPartitionTask[PartitionT]:
-        """Create an MultiOutputPartitionTask from this PartitionTaskBuilder.
+    def finalize_partition_task_multi_output(self, num_results: int) -> MultiOutputPartitionTask[PartitionT]:
+        """Create a MultiOutputPartitionTask from this PartitionTaskBuilder.
 
-        Same as build_materialization_request_single, except the output of this PartitionTask is a list of partitions.
+        Same as finalize_partition_task_single_output, except the output of this PartitionTask is a list of partitions.
         This is intended for execution steps that do a fanout.
         """
         resource_request_final_cpu = ResourceRequest(

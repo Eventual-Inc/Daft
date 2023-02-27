@@ -89,7 +89,7 @@ def file_read(
         try:
             child_step = next(child_plan)
             if isinstance(child_step, PartitionTaskBuilder):
-                child_step = child_step.build_materialization_request_single()
+                child_step = child_step.finalize_partition_task_single_output()
                 materializations.append(child_step)
             yield child_step
 
@@ -172,7 +172,7 @@ def join(
         try:
             step = next(next_plan)
             if isinstance(step, PartitionTaskBuilder):
-                step = step.build_materialization_request_single()
+                step = step.finalize_partition_task_single_output()
                 next_requests.append(step)
             yield step
 
@@ -282,7 +282,7 @@ def global_limit(
             child_step = child_plan.send(remaining_rows) if started else next(child_plan)
             started = True
             if isinstance(child_step, PartitionTaskBuilder):
-                child_step = child_step.build_materialization_request_single()
+                child_step = child_step.finalize_partition_task_single_output()
                 materializations.append(child_step)
             yield child_step
 
@@ -342,7 +342,7 @@ def coalesce(
         try:
             child_step = next(child_plan)
             if isinstance(child_step, PartitionTaskBuilder):
-                child_step = child_step.build_materialization_request_single()
+                child_step = child_step.finalize_partition_task_single_output()
                 materializations.append(child_step)
             yield child_step
 
@@ -371,7 +371,7 @@ def reduce(
     # Dispatch all fanouts.
     for step in fanout_plan:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.build_materialization_request_multi(num_partitions)
+            step = step.finalize_partition_task_multi_output(num_partitions)
             materializations.append(step)
         yield step
 
@@ -405,7 +405,7 @@ def sort(
     source_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     for step in child_plan:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.build_materialization_request_single()
+            step = step.finalize_partition_task_single_output()
             source_materializations.append(step)
         yield step
 
@@ -419,7 +419,7 @@ def sort(
             .add_instruction(
                 instruction=execution_step.Sample(sort_by=sort_info._sort_by),
             )
-            .build_materialization_request_single()
+            .finalize_partition_task_single_output()
         )
         sample_materializations.append(sample)
         yield sample
@@ -444,7 +444,7 @@ def sort(
                 descending=sort_info._descending,
             ),
         )
-        .build_materialization_request_single()
+        .finalize_partition_task_single_output()
     )
     yield boundaries
 
@@ -496,7 +496,7 @@ def materialize(
 
     for step in child_plan:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.build_materialization_request_single()
+            step = step.finalize_partition_task_single_output()
             materializations.append(step)
         assert isinstance(step, (PartitionTask, type(None)))
 
