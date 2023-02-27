@@ -1281,7 +1281,7 @@ class DataFrame:
         return result.to_pydict()
 
     @DataframePublicAPI
-    def to_ray_dataset(self) -> RayDataset:
+    def to_ray_dataset(self) -> "RayDataset":
         """Converts the current DataFrame to a Ray Dataset which is useful for running distributed ML model training in Ray
 
         .. NOTE::
