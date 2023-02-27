@@ -44,6 +44,10 @@ impl Expr {
         Expr::Cast(self.clone().into(), dtype.clone())
     }
 
+    pub fn and(&self, other: &Self) -> Self {
+        binary_op(Operator::And, self, other)
+    }
+
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use Expr::*;
 

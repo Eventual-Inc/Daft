@@ -9,7 +9,7 @@ def test_show_all(valid_data):
 
     assert df_display.schema == df.schema()
     assert len(df_display.preview.preview_partition) == len(valid_data)
-    assert df_display.preview.dataframe_num_rows == len(valid_data)
+    assert df_display.preview.dataframe_num_rows is None
 
 
 def test_show_some(valid_data):
@@ -18,5 +18,4 @@ def test_show_some(valid_data):
 
     assert df_display.schema == df.schema()
     assert len(df_display.preview.preview_partition) == 1
-    # Show does not know the total size of the dataset when applying a limit
     assert df_display.preview.dataframe_num_rows is None

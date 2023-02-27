@@ -1,8 +1,12 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use pyo3::{prelude::*, pyclass::CompareOp};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 
-use crate::{array::BaseArray, ffi, series};
+use crate::{
+    array::{ops::DaftLogical, BaseArray},
+    datatypes::DataType,
+    ffi, series,
+};
 
 use super::datatype::PyDataType;
 
@@ -59,6 +63,28 @@ impl PySeries {
 
     pub fn __mod__(&self, other: &Self) -> PyResult<Self> {
         Ok((&self.series).rem(&other.series)?.into())
+    }
+
+    pub fn __and__(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.series.and(&other.series)?.into_series().into())
+    }
+
+    pub fn __or__(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.series.or(&other.series)?.into_series().into())
+    }
+
+    pub fn __xor__(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.series.xor(&other.series)?.into_series().into())
+    }
+
+    pub fn filter(&self, mask: &Self) -> PyResult<Self> {
+        if mask.series.data_type() != &DataType::Boolean {
+            return Err(PyValueError::new_err(format!(
+                "We can only filter a Series with Boolean Series, got {}",
+                mask.series.data_type()
+            )));
+        }
+        Ok(self.series.filter(mask.series.downcast().unwrap())?.into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {

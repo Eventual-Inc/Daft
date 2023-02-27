@@ -7,6 +7,8 @@ pub mod broadcast;
 pub mod cast;
 pub mod comparision;
 pub mod downcast;
+pub mod filter;
+pub mod full;
 pub mod take;
 
 fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)> {
@@ -82,6 +84,7 @@ macro_rules! with_match_comparable_daft_types {(
     use $crate::datatypes::*;
 
     match $key_type {
+        Null => __with_ty__! { NullType },
         Boolean => __with_ty__! { BooleanType },
         Int8 => __with_ty__! { Int8Type },
         Int16 => __with_ty__! { Int16Type },

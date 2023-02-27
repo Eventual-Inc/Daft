@@ -564,7 +564,21 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
         elif len(self.data) == 0:
             return ArrowDataBlock, (self._make_empty().data,)
         else:
-            return ArrowDataBlock, (self.data,)
+            # NOTE: Pickling PyArrow ChunkedArrays serializes all underlying buffers, independently for each chunk
+            # Sometimes chunks may reference a buffer much larger than required (e.g. after a zero-copy slice)
+            # Other times, chunks may reference buffers shared with other chunks (e.g. after a Parquet read)
+            # This may result in unnecessarily creating copies of serialized large/shared buffers.
+            #
+            # We use the heuristic `chunk.get_total_buffer_size() > (chunk.nbytes * 1.1)` for determining if the chunk
+            # has unnecessarily large buffers, and if so we make a copy of the chunk to re-allocate these buffers.
+            new_chunks = [
+                # pa.concat_arrays makes a copy of the arrays, and seems to be the only user-facing API for doing so
+                # See: https://arrow.apache.org/docs/python/generated/pyarrow.concat_arrays.html#pyarrow.concat_arrays
+                pa.concat_arrays([chunk]) if chunk.get_total_buffer_size() > (chunk.nbytes * 1.1) else chunk
+                for chunk in self.data.chunks
+            ]
+            data = pa.chunked_array(new_chunks)
+            return ArrowDataBlock, (data,)
 
     def size_bytes(self) -> int:
         return self.__sizeof__() + self.data.__sizeof__()
