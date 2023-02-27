@@ -190,7 +190,7 @@ def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
         pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
     ],
 )
-def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
+def test_max_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
     """max across groups"""
     daft_df = (
         daft_df.repartition(repartition_nparts)

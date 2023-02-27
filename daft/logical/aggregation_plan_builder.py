@@ -98,7 +98,6 @@ class AggregationPlanBuilder:
         self,
         result_colname: ColName,
         expr: Expression,
-        op_name: str,
         local_op: AggregationOp,
         global_op: AggregationOp,
     ) -> None:
@@ -108,48 +107,48 @@ class AggregationPlanBuilder:
         2. Shuffle
         3. Aggregate using global_op on the intermediate column to produce result column
         """
-        intermediate_colname = f"_local_{op_name}({result_colname})"
+        intermediate_colname = f"{result_colname}:_local_{local_op}"
         self._preshuffle_aggs[intermediate_colname] = (expr, local_op)
         self._postshuffle_aggs[result_colname] = (col(intermediate_colname), global_op)
 
     def add_sum(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
         self._add_single_partition_shortcut_agg(result_colname, Expression._sum(expr), "sum")
-        self._add_2phase_agg(result_colname, Expression._sum(expr), "sum", "sum", "sum")
+        self._add_2phase_agg(result_colname, Expression._sum(expr), "sum", "sum")
         return self
 
     def add_min(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
         self._add_single_partition_shortcut_agg(result_colname, Expression._min(expr), "min")
-        self._add_2phase_agg(result_colname, Expression._min(expr), "min", "min", "min")
+        self._add_2phase_agg(result_colname, Expression._min(expr), "min", "min")
         return self
 
     def add_max(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
         self._add_single_partition_shortcut_agg(result_colname, Expression._max(expr), "max")
-        self._add_2phase_agg(result_colname, Expression._max(expr), "max", "max", "max")
+        self._add_2phase_agg(result_colname, Expression._max(expr), "max", "max")
         return self
 
     def add_count(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
         self._add_single_partition_shortcut_agg(result_colname, Expression._count(expr), "count")
-        self._add_2phase_agg(result_colname, Expression._count(expr), "count", "count", "sum")
+        self._add_2phase_agg(result_colname, Expression._count(expr), "count", "sum")
         return self
 
     def add_list(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
         self._add_single_partition_shortcut_agg(result_colname, Expression._list(expr), "list")
-        self._add_2phase_agg(result_colname, Expression._list(expr), "list", "list", "concat")
+        self._add_2phase_agg(result_colname, Expression._list(expr), "list", "concat")
         return self
 
     def add_concat(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
         self._add_single_partition_shortcut_agg(result_colname, Expression._concat(expr), "concat")
-        self._add_2phase_agg(result_colname, Expression._concat(expr), "concat", "concat", "concat")
+        self._add_2phase_agg(result_colname, Expression._concat(expr), "concat", "concat")
         return self
 
     def add_mean(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
         self._add_single_partition_shortcut_agg(result_colname, Expression._mean(expr), "mean")
 
         # Calculate intermediate sum and count
-        intermediate_sum_colname = f"_mean_intermediate_sum({result_colname})"
-        intermediate_count_colname = f"_mean_intermediate_count({result_colname})"
-        self._add_2phase_agg(intermediate_sum_colname, Expression._sum(expr), "sum", "sum", "sum")
-        self._add_2phase_agg(intermediate_count_colname, Expression._count(expr), "count", "count", "sum")
+        intermediate_sum_colname = f"{result_colname}:_sum_for_mean"
+        intermediate_count_colname = f"{result_colname}:_count_for_mean"
+        self._add_2phase_agg(intermediate_sum_colname, Expression._sum(expr), "sum", "sum")
+        self._add_2phase_agg(intermediate_count_colname, Expression._count(expr), "count", "sum")
 
         # Run projection to get mean using intermediate sun and count
         # HACK: we add 0.0 because our current PyArrow-based type system returns an integer when dividing two integers
