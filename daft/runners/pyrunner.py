@@ -9,11 +9,11 @@ import psutil
 
 from daft.execution import physical_plan, physical_plan_factory
 from daft.execution.execution_step import (
-    ExecutionStep,
     Instruction,
     MaterializedResult,
-    MultiOutputExecutionStep,
-    SingleOutputExecutionStep,
+    MultiOutputPartitionTask,
+    PartitionTask,
+    SingleOutputPartitionTask,
 )
 from daft.execution.logical_op_runners import LogicalPartitionOpRunner
 from daft.filesystem import glob_path_with_stats
@@ -171,7 +171,7 @@ class PyRunner(Runner):
             return pset_entry
 
     def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> list[vPartition]:
-        inflight_tasks: dict[str, ExecutionStep] = dict()
+        inflight_tasks: dict[str, PartitionTask] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
 
@@ -228,9 +228,9 @@ class PyRunner(Runner):
 
                         partitions = done.result()
 
-                        if isinstance(done_task, MultiOutputExecutionStep):
+                        if isinstance(done_task, MultiOutputPartitionTask):
                             done_task.results = [PyMaterializedResult(partition) for partition in partitions]
-                        elif isinstance(done_task, SingleOutputExecutionStep):
+                        elif isinstance(done_task, SingleOutputPartitionTask):
                             [partition] = partitions
                             done_task.result = PyMaterializedResult(partition)
                         else:
@@ -241,13 +241,13 @@ class PyRunner(Runner):
 
         return result
 
-    def _run_task_synchronously(self, task: physical_plan.ExecutionStep) -> None:
+    def _run_task_synchronously(self, task: physical_plan.PartitionTask) -> None:
 
         partitions = self.build_partitions(task.instructions, *task.inputs)
 
-        if isinstance(task, MultiOutputExecutionStep):
+        if isinstance(task, MultiOutputPartitionTask):
             task.results = [PyMaterializedResult(partition) for partition in partitions]
-        elif isinstance(task, SingleOutputExecutionStep):
+        elif isinstance(task, SingleOutputPartitionTask):
             [partition] = partitions
             task.result = PyMaterializedResult(partition)
         else:

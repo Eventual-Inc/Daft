@@ -6,9 +6,9 @@ Conceptually, a physical plan decides what steps, and the order of steps, to run
 Physical plans are closely related to logical plans. A logical plan describes "what you want", and a physical plan figures out "what to do" to get it.
 They are not exact analogues, especially due to the ability of a physical plan to dynamically decide what to do next.
 
-Physical plans are implemented here as an iterator of ExecutionStep | None.
+Physical plans are implemented here as an iterator of PartitionTask | None.
 When a physical plan returns None, it means it cannot tell you what the next step is,
-because it is waiting for the result of a previous ExecutionStep to can decide what to do next.
+because it is waiting for the result of a previous PartitionTask to can decide what to do next.
 """
 
 from __future__ import annotations
@@ -19,11 +19,11 @@ from typing import Generator, Iterator, List, TypeVar, Union
 
 from daft.execution import execution_step
 from daft.execution.execution_step import (
-    ExecutionStep,
-    ExecutionStepBuilder,
     Instruction,
+    PartitionTask,
+    PartitionTaskBuilder,
     ReduceInstruction,
-    SingleOutputExecutionStep,
+    SingleOutputPartitionTask,
 )
 from daft.logical import logical_plan
 from daft.resource_request import ResourceRequest
@@ -32,12 +32,12 @@ PartitionT = TypeVar("PartitionT")
 T = TypeVar("T")
 
 
-# A PhysicalPlan that is still being built - may yield both ExecutionStepBuilders and ExecutionSteps.
-InProgressPhysicalPlan = Iterator[Union[None, ExecutionStep[PartitionT], ExecutionStepBuilder[PartitionT]]]
+# A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
+InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionTaskBuilder[PartitionT]]]
 
-# A PhysicalPlan that is complete and will only yield ExecutionSteps.
+# A PhysicalPlan that is complete and will only yield PartitionTasks.
 MaterializedPhysicalPlan = Generator[
-    Union[None, ExecutionStep[PartitionT]],
+    Union[None, PartitionTask[PartitionT]],
     None,
     List[PartitionT],
 ]
@@ -45,7 +45,7 @@ MaterializedPhysicalPlan = Generator[
 
 def partition_read(partitions: Iterator[PartitionT]) -> InProgressPhysicalPlan[PartitionT]:
     """Instantiate a (no-op) physical plan from existing partitions."""
-    yield from (ExecutionStepBuilder[PartitionT](inputs=[partition]) for partition in partitions)
+    yield from (PartitionTaskBuilder[PartitionT](inputs=[partition]) for partition in partitions)
 
 
 def file_read(
@@ -57,7 +57,7 @@ def file_read(
     Yield a plan to read those filenames.
     """
 
-    materializations: deque[SingleOutputExecutionStep[PartitionT]] = deque()
+    materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     output_partition_index = 0
 
     while True:
@@ -72,7 +72,7 @@ def file_read(
             # Emit one partition for each file (NOTE: hardcoded for now).
             for i in range(vpartition.metadata().num_rows):
 
-                file_read_step = ExecutionStepBuilder[PartitionT](inputs=[result.partition()]).add_instruction(
+                file_read_step = PartitionTaskBuilder[PartitionT](inputs=[result.partition()]).add_instruction(
                     instruction=execution_step.ReadFile(
                         partition_id=output_partition_index,
                         logplan=scan_info,
@@ -88,7 +88,7 @@ def file_read(
         # Materialize a single dependency.
         try:
             child_step = next(child_plan)
-            if isinstance(child_step, ExecutionStepBuilder):
+            if isinstance(child_step, PartitionTaskBuilder):
                 child_step = child_step.build_materialization_request_single()
                 materializations.append(child_step)
             yield child_step
@@ -110,7 +110,7 @@ def file_write(
         step.add_instruction(
             execution_step.WriteFile(partition_id=index, logplan=write_info),
         )
-        if isinstance(step, ExecutionStepBuilder)
+        if isinstance(step, PartitionTaskBuilder)
         else step
         for index, step in enumerate_open_executions(child_plan)
     )
@@ -124,7 +124,7 @@ def pipeline_instruction(
     """Apply an instruction to the results of `child_plan`."""
 
     yield from (
-        step.add_instruction(pipeable_instruction, resource_request) if isinstance(step, ExecutionStepBuilder) else step
+        step.add_instruction(pipeable_instruction, resource_request) if isinstance(step, PartitionTaskBuilder) else step
         for step in child_plan
     )
 
@@ -138,8 +138,8 @@ def join(
 
     # Materialize the steps from the left and right sources to get partitions.
     # As the materializations complete, emit new steps to join each left and right partition.
-    left_requests: deque[SingleOutputExecutionStep[PartitionT]] = deque()
-    right_requests: deque[SingleOutputExecutionStep[PartitionT]] = deque()
+    left_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    right_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
     while True:
         # Emit new join steps if we have left and right partitions ready.
@@ -154,7 +154,7 @@ def join(
             assert next_left.result is not None  # for mypy only; guaranteed by while condition
             assert next_right.result is not None  # for mypy only; guaranteed by while condition
 
-            join_step = ExecutionStepBuilder[PartitionT](
+            join_step = PartitionTaskBuilder[PartitionT](
                 inputs=[next_left.result.partition(), next_right.result.partition()],
                 resource_request=ResourceRequest(
                     memory_bytes=2 * (next_left.result.metadata().size_bytes + next_right.result.metadata().size_bytes)
@@ -171,7 +171,7 @@ def join(
 
         try:
             step = next(next_plan)
-            if isinstance(step, ExecutionStepBuilder):
+            if isinstance(step, PartitionTaskBuilder):
                 step = step.build_materialization_request_single()
                 next_requests.append(step)
             yield step
@@ -190,17 +190,17 @@ def join(
 def local_limit(
     child_plan: InProgressPhysicalPlan[PartitionT],
     limit: int,
-) -> Generator[None | ExecutionStep[PartitionT] | ExecutionStepBuilder[PartitionT], int, None]:
+) -> Generator[None | PartitionTask[PartitionT] | PartitionTaskBuilder[PartitionT], int, None]:
     """Apply a limit instruction to each partition in the child_plan.
 
     limit:
         The value of the limit to apply to each partition.
 
-    Yields: ExecutionStep with the limit applied.
+    Yields: PartitionTask with the limit applied.
     Send back: A new value to the limit (optional). This allows you to update the limit after each partition if desired.
     """
     for step in child_plan:
-        if not isinstance(step, ExecutionStepBuilder):
+        if not isinstance(step, PartitionTaskBuilder):
             yield step
         else:
             maybe_new_limit = yield step.add_instruction(
@@ -220,7 +220,7 @@ def global_limit(
     assert remaining_rows >= 0, f"Invalid value for limit: {remaining_rows}"
     remaining_partitions = global_limit.num_partitions()
 
-    materializations: deque[SingleOutputExecutionStep[PartitionT]] = deque()
+    materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
     # To dynamically schedule the global limit, we need to apply an appropriate limit to each child partition.
     # We don't know their exact sizes since they are pending execution, so we will have to iteratively execute them,
@@ -240,7 +240,7 @@ def global_limit(
 
             limit = remaining_rows and min(remaining_rows, result.metadata().num_rows)
 
-            global_limit_step = ExecutionStepBuilder[PartitionT](
+            global_limit_step = PartitionTaskBuilder[PartitionT](
                 inputs=[result.partition()],
                 resource_request=ResourceRequest(memory_bytes=2 * result.metadata().size_bytes),
             ).add_instruction(
@@ -262,7 +262,7 @@ def global_limit(
                         result_to_cancel.cancel()
 
                 yield from (
-                    ExecutionStepBuilder[PartitionT](
+                    PartitionTaskBuilder[PartitionT](
                         inputs=[result.partition()],
                         resource_request=ResourceRequest(memory_bytes=result.metadata().size_bytes),
                     ).add_instruction(
@@ -281,7 +281,7 @@ def global_limit(
         try:
             child_step = child_plan.send(remaining_rows) if started else next(child_plan)
             started = True
-            if isinstance(child_step, ExecutionStepBuilder):
+            if isinstance(child_step, PartitionTaskBuilder):
                 child_step = child_step.build_materialization_request_single()
                 materializations.append(child_step)
             yield child_step
@@ -311,7 +311,7 @@ def coalesce(
     # For each output partition, the number of input partitions to merge in.
     merges_per_result = deque([stop - start for start, stop in zip(starts, stops)])
 
-    materializations: deque[SingleOutputExecutionStep[PartitionT]] = deque()
+    materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
     while True:
 
@@ -325,7 +325,7 @@ def coalesce(
             ]
             if len(ready_to_coalesce) == num_partitions_to_merge:
                 # Coalesce the partition and emit it.
-                merge_step = ExecutionStepBuilder[PartitionT](
+                merge_step = PartitionTaskBuilder[PartitionT](
                     inputs=[_.partition() for _ in ready_to_coalesce],
                     resource_request=ResourceRequest(
                         memory_bytes=2 * sum(_.metadata().size_bytes for _ in ready_to_coalesce),
@@ -341,7 +341,7 @@ def coalesce(
         # Materialize a single dependency.
         try:
             child_step = next(child_plan)
-            if isinstance(child_step, ExecutionStepBuilder):
+            if isinstance(child_step, PartitionTaskBuilder):
                 child_step = child_step.build_materialization_request_single()
                 materializations.append(child_step)
             yield child_step
@@ -370,7 +370,7 @@ def reduce(
 
     # Dispatch all fanouts.
     for step in fanout_plan:
-        if isinstance(step, ExecutionStepBuilder):
+        if isinstance(step, PartitionTaskBuilder):
             step = step.build_materialization_request_multi(num_partitions)
             materializations.append(step)
         yield step
@@ -386,7 +386,7 @@ def reduce(
     # Yield all the reduces in order.
     while len(inputs_to_reduce[0]) > 0:
         batch = [_.popleft() for _ in inputs_to_reduce]
-        yield ExecutionStepBuilder[PartitionT](
+        yield PartitionTaskBuilder[PartitionT](
             inputs=[result.partition() for result in batch],
             instructions=[reduce_instruction],
             resource_request=ResourceRequest(
@@ -402,20 +402,20 @@ def sort(
     """Sort the result of `child_plan` according to `sort_info`."""
 
     # First, materialize the child plan.
-    source_materializations: deque[SingleOutputExecutionStep[PartitionT]] = deque()
+    source_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     for step in child_plan:
-        if isinstance(step, ExecutionStepBuilder):
+        if isinstance(step, PartitionTaskBuilder):
             step = step.build_materialization_request_single()
             source_materializations.append(step)
         yield step
 
     # Sample all partitions (to be used for calculating sort boundaries).
-    sample_materializations: deque[SingleOutputExecutionStep[PartitionT]] = deque()
+    sample_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     for source in source_materializations:
         while source.result is None:
             yield None
         sample = (
-            ExecutionStepBuilder[PartitionT](inputs=[source.result.partition()])
+            PartitionTaskBuilder[PartitionT](inputs=[source.result.partition()])
             .add_instruction(
                 instruction=execution_step.Sample(sort_by=sort_info._sort_by),
             )
@@ -430,7 +430,7 @@ def sort(
 
     # Reduce the samples to get sort boundaries.
     boundaries = (
-        ExecutionStepBuilder[PartitionT](
+        PartitionTaskBuilder[PartitionT](
             inputs=[
                 sample.result.partition()
                 for sample in consume_deque(sample_materializations)
@@ -456,7 +456,7 @@ def sort(
 
     # Create a range fanout plan.
     range_fanout_plan = (
-        ExecutionStepBuilder[PartitionT](
+        PartitionTaskBuilder[PartitionT](
             inputs=[boundaries_partition, source_result.partition()],
             resource_request=ResourceRequest(
                 memory_bytes=2 * source_result.metadata().size_bytes,
@@ -495,10 +495,10 @@ def materialize(
     materializations = list()
 
     for step in child_plan:
-        if isinstance(step, ExecutionStepBuilder):
+        if isinstance(step, PartitionTaskBuilder):
             step = step.build_materialization_request_single()
             materializations.append(step)
-        assert isinstance(step, (ExecutionStep, type(None)))
+        assert isinstance(step, (PartitionTask, type(None)))
 
         yield step
 
@@ -510,14 +510,14 @@ def materialize(
 
 def enumerate_open_executions(
     schedule: InProgressPhysicalPlan[PartitionT],
-) -> Iterator[tuple[int, None | ExecutionStep[PartitionT] | ExecutionStepBuilder[PartitionT]]]:
-    """Helper. Like enumerate() on an iterator, but only counts up if the result is an ExecutionStepBuilder.
+) -> Iterator[tuple[int, None | PartitionTask[PartitionT] | PartitionTaskBuilder[PartitionT]]]:
+    """Helper. Like enumerate() on an iterator, but only counts up if the result is an PartitionTaskBuilder.
 
-    Intended for counting the number of ExecutionStepBuilders returned by the iterator.
+    Intended for counting the number of PartitionTaskBuilders returned by the iterator.
     """
     index = 0
     for item in schedule:
-        if isinstance(item, ExecutionStepBuilder):
+        if isinstance(item, PartitionTaskBuilder):
             yield index, item
             index += 1
         else:

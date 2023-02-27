@@ -17,13 +17,13 @@ except ImportError:
 
 from daft.execution import physical_plan_factory
 from daft.execution.execution_step import (
-    ExecutionStep,
     FanoutInstruction,
     Instruction,
     MaterializedResult,
-    MultiOutputExecutionStep,
+    MultiOutputPartitionTask,
+    PartitionTask,
     ReduceInstruction,
-    SingleOutputExecutionStep,
+    SingleOutputPartitionTask,
 )
 from daft.filesystem import glob_path_with_stats
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
@@ -282,7 +282,7 @@ class SchedulerActor:
         cores = int(ray.cluster_resources()["CPU"])
         batch_dispatch_size = int(cores * self.batch_dispatch_coeff) or 1
 
-        inflight_tasks: dict[str, ExecutionStep[ray.ObjectRef]] = dict()
+        inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
 
         result_partitions = None
@@ -308,7 +308,7 @@ class SchedulerActor:
 
                             # If this task is a no-op, just run it locally immediately.
                             while next_step is not None and len(next_step.instructions) == 0:
-                                assert isinstance(next_step, SingleOutputExecutionStep)
+                                assert isinstance(next_step, SingleOutputPartitionTask)
                                 [partition] = next_step.inputs
                                 next_step.result = RayMaterializedResult(partition)
                                 next_step = next(phys_plan)
@@ -345,9 +345,9 @@ class SchedulerActor:
 
                     # Mark the entire task associated with the result as done.
                     task = inflight_tasks[task_id]
-                    if isinstance(task, SingleOutputExecutionStep):
+                    if isinstance(task, SingleOutputPartitionTask):
                         del inflight_ref_to_task[ready]
-                    elif isinstance(task, MultiOutputExecutionStep):
+                    elif isinstance(task, MultiOutputPartitionTask):
                         assert task.results is not None
                         for result in task.results:
                             del inflight_ref_to_task[result.partition()]
@@ -355,8 +355,8 @@ class SchedulerActor:
                     del inflight_tasks[task_id]
 
 
-def _build_partitions(task: ExecutionStep[ray.ObjectRef]) -> list[ray.ObjectRef]:
-    """Run a ExecutionStep and return the resulting list of partitions."""
+def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]:
+    """Run a PartitionTask and return the resulting list of partitions."""
     ray_options: dict[str, Any] = {
         "num_returns": task.num_results + 1,
     }
@@ -374,9 +374,9 @@ def _build_partitions(task: ExecutionStep[ray.ObjectRef]) -> list[ray.ObjectRef]
     build_remote = build_remote.options(**ray_options)
     [metadatas_ref, *partitions] = build_remote.remote(task.instructions, *task.inputs)
 
-    if isinstance(task, MultiOutputExecutionStep):
+    if isinstance(task, MultiOutputPartitionTask):
         task.results = [RayMaterializedResult(partition, metadatas_ref, i) for i, partition in enumerate(partitions)]
-    elif isinstance(task, SingleOutputExecutionStep):
+    elif isinstance(task, SingleOutputPartitionTask):
         [partition] = partitions
         task.result = RayMaterializedResult(partition, metadatas_ref, 0)
     else:
