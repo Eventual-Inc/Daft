@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import io
+import pathlib
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -632,7 +633,7 @@ class vPartition:
     def _to_file(
         self,
         file_format: str,
-        root_path: str,
+        root_path: str | pathlib.Path,
         partition_cols: ExpressionList | None = None,
         compression: str | None = None,
     ) -> list[str]:
@@ -678,12 +679,18 @@ class vPartition:
         return visited_paths
 
     def to_parquet(
-        self, root_path: str, partition_cols: ExpressionList | None = None, compression: str | None = None
+        self,
+        root_path: str | pathlib.Path,
+        partition_cols: ExpressionList | None = None,
+        compression: str | None = None,
     ) -> list[str]:
         return self._to_file("parquet", root_path=root_path, partition_cols=partition_cols, compression=compression)
 
     def to_csv(
-        self, root_path: str, partition_cols: ExpressionList | None = None, compression: str | None = None
+        self,
+        root_path: str | pathlib.Path,
+        partition_cols: ExpressionList | None = None,
+        compression: str | None = None,
     ) -> list[str]:
         return self._to_file("csv", root_path=root_path, partition_cols=partition_cols, compression=compression)
 

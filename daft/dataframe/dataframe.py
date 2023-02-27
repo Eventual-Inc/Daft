@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+import pathlib
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Iterable, TypeVar, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -44,6 +56,7 @@ from daft.logical.schema import Schema
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
+InputListType = Union[list, "np.ndarray", "pa.Array", "pa.ChunkedArray"]
 
 
 def _get_tabular_files_scan(
@@ -231,7 +244,7 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_pylist(cls, data: list[dict[str, Any]]) -> DataFrame:
+    def from_pylist(cls, data: List[Dict[str, Any]]) -> DataFrame:
         """Creates a DataFrame from a list of dictionaries
 
         Example:
@@ -253,7 +266,7 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_pydict(cls, data: dict[str, list | np.ndarray | pa.Array | pa.ChunkedArray]) -> DataFrame:
+    def from_pydict(cls, data: Dict[str, InputListType]) -> DataFrame:
         """Creates a DataFrame from a Python dictionary
 
         Example:
@@ -347,7 +360,7 @@ class DataFrame:
         cls,
         path: str,
         has_headers: bool = True,
-        column_names: list[str] | None = None,
+        column_names: Optional[List[str]] = None,
         delimiter: str = ",",
     ) -> DataFrame:
         """Creates a DataFrame from CSV file(s)
@@ -513,7 +526,10 @@ class DataFrame:
 
     @DataframePublicAPI
     def write_parquet(
-        self, root_dir: str, compression: str = "snappy", partition_cols: list[ColumnInputType] | None = None
+        self,
+        root_dir: Union[str, pathlib.Path],
+        compression: str = "snappy",
+        partition_cols: Optional[List[ColumnInputType]] = None,
     ) -> DataFrame:
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written
 
@@ -558,7 +574,9 @@ class DataFrame:
         return DataFrame(write_df._plan)
 
     @DataframePublicAPI
-    def write_csv(self, root_dir: str, partition_cols: list[ColumnInputType] | None = None) -> DataFrame:
+    def write_csv(
+        self, root_dir: Union[str, pathlib.Path], partition_cols: Optional[List[ColumnInputType]] = None
+    ) -> DataFrame:
         """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written
 
         Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
@@ -766,7 +784,9 @@ class DataFrame:
         return DataFrame(projection)
 
     @DataframePublicAPI
-    def sort(self, by: ColumnInputType | list[ColumnInputType], desc: bool | list[bool] = False) -> DataFrame:
+    def sort(
+        self, by: Union[ColumnInputType, List[ColumnInputType]], desc: Union[bool, List[bool]] = False
+    ) -> DataFrame:
         """Sorts DataFrame globally
 
         Example:
@@ -853,9 +873,9 @@ class DataFrame:
     def join(
         self,
         other: DataFrame,
-        on: list[ColumnInputType] | ColumnInputType | None = None,
-        left_on: list[ColumnInputType] | ColumnInputType | None = None,
-        right_on: list[ColumnInputType] | ColumnInputType | None = None,
+        on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
+        left_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
+        right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         how: str = "inner",
     ) -> DataFrame:
         """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``
@@ -1125,7 +1145,7 @@ class DataFrame:
         return self._agg([(c, "count") for c in cols])
 
     @DataframePublicAPI
-    def agg(self, to_agg: list[tuple[ColumnInputType, str]]) -> DataFrame:
+    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
         """Perform aggregations on this DataFrame. Allows for mixed aggregations for multiple columns
         Will return a single row that aggregated the entire DataFrame.
 
@@ -1168,7 +1188,7 @@ class DataFrame:
             result.wait()
 
     @DataframePublicAPI
-    def collect(self, num_preview_rows: int | None = 8) -> DataFrame:
+    def collect(self, num_preview_rows: Optional[int] = 8) -> DataFrame:
         """Executes the entire DataFrame and materializes the results
 
         .. NOTE::
@@ -1226,7 +1246,7 @@ class DataFrame:
         raise RuntimeError(message)
 
     @DataframePublicAPI
-    def to_pandas(self) -> pandas.DataFrame:
+    def to_pandas(self) -> "pandas.DataFrame":
         """Converts the current DataFrame to a pandas DataFrame.
         If results have not computed yet, collect will be called.
 
@@ -1244,7 +1264,7 @@ class DataFrame:
         return pd_df
 
     @DataframePublicAPI
-    def to_pydict(self) -> dict[str, list[Any]]:
+    def to_pydict(self) -> Dict[str, List[Any]]:
         """Converts the current DataFrame to a python dictionary. The dictionary contains Python lists of Python objects for each column.
 
         If results have not computed yet, collect will be called.
@@ -1261,7 +1281,7 @@ class DataFrame:
         return result.to_pydict()
 
     @DataframePublicAPI
-    def to_ray_dataset(self) -> RayDataset:
+    def to_ray_dataset(self) -> "RayDataset":
         """Converts the current DataFrame to a Ray Dataset which is useful for running distributed ML model training in Ray
 
         .. NOTE::
