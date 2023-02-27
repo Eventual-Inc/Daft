@@ -17,4 +17,4 @@ By default, if no address is specified Daft will spin up a Ray cluster locally o
 
     daft.context.set_runner_ray(address="ray://url-to-mycluster")
 
-For more information about the ``address`` keyword argument, please see the `Ray documentation on initialization <https://docs.ray.io/en/latest/ray-core/package-ref.html#ray-init>`_.
+For more information about the ``address`` keyword argument, please see the `Ray documentation on initialization <https://docs.ray.io/en/latest/ray-core/api/doc/ray.init.html>`_.
