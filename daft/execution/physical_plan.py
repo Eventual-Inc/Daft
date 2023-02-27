@@ -182,9 +182,48 @@ def join(
                 return
 
 
+def tail(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    global_limit: logical_plan.GlobalLimit,
+) -> InProgressPhysicalPlan[PartitionT]:
+
+    assert global_limit._tail
+
+    # Materialize the child plan.
+    materializations: deque[SingleOutputExecutionStep[PartitionT]] = deque()
+
+    for step in child_plan:
+        if isinstance(step, ExecutionStepBuilder):
+            step = step.build_materialization_request_single()
+            materializations.append(step)
+
+        yield step
+
+    while any(_.result is None for _ in materializations):
+        yield None
+
+    # Apply the rolling limit in reverse order.
+    result_steps: deque[ExecutionStepBuilder[PartitionT]] = deque()
+    remaining_limit = global_limit._num
+    while len(materializations) > 0:
+        result = materializations.pop().result
+        assert result is not None
+        this_limit = min(result.metadata().num_rows, remaining_limit)
+        remaining_limit -= this_limit
+        result_steps.appendleft(
+            ExecutionStepBuilder[PartitionT](
+                inputs=[result.partition()],
+                instructions=[execution_step.LocalLimit(this_limit, tail=True)],
+            )
+        )
+    while len(result_steps) > 0:
+        yield result_steps.popleft()
+
+
 def local_limit(
     child_plan: InProgressPhysicalPlan[PartitionT],
     limit: int,
+    tail: bool = False,
 ) -> Generator[None | ExecutionStep[PartitionT] | ExecutionStepBuilder[PartitionT], int, None]:
     """Apply a limit instruction to each partition in the child_plan.
 
@@ -199,7 +238,7 @@ def local_limit(
             yield step
         else:
             maybe_new_limit = yield step.add_instruction(
-                execution_step.LocalLimit(limit),
+                execution_step.LocalLimit(limit, tail=tail),
             )
             if maybe_new_limit is not None:
                 limit = maybe_new_limit

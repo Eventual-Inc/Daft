@@ -235,6 +235,13 @@ class DataBlock(Generic[ArrType]):
             return DataBlock.make_block(self.data)
         return DataBlock.make_block(self.data[:num])
 
+    def tail(self, num: int) -> DataBlock[ArrType]:
+        if self.is_scalar():
+            return DataBlock.make_block(self.data)
+        if num == 0:
+            return DataBlock.make_block(self.data[:num])
+        return DataBlock.make_block(self.data[-num:])
+
     def filter(self, mask: DataBlock[ArrowArrType]) -> DataBlock[ArrType]:
         """Filters elements of the Datablock using the provided mask"""
         assert not self.is_scalar(), "Cannot filter scalar DataBlock"

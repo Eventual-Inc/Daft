@@ -795,7 +795,7 @@ class DataFrame:
         return DataFrame(sort)
 
     @DataframePublicAPI
-    def limit(self, num: int) -> DataFrame:
+    def limit(self, num: int, tail: bool = False) -> DataFrame:
         """Limits the rows in the DataFrame to the first ``N`` rows, similar to a SQL ``LIMIT``
 
         Example:
@@ -807,8 +807,8 @@ class DataFrame:
         Returns:
             DataFrame: Limited DataFrame
         """
-        local_limit = logical_plan.LocalLimit(self._plan, num=num)
-        global_limit = logical_plan.GlobalLimit(local_limit, num=num)
+        local_limit = logical_plan.LocalLimit(self._plan, num=num, tail=tail)
+        global_limit = logical_plan.GlobalLimit(local_limit, num=num, tail=tail)
         return DataFrame(global_limit)
 
     @DataframePublicAPI

@@ -396,6 +396,10 @@ class vPartition:
         # TODO make optimization for when num=0
         return self.for_each_column_block(partial(DataBlock.head, num=num))
 
+    def tail(self, num: int) -> vPartition:
+        # TODO make optimization for when num=0
+        return self.for_each_column_block(partial(DataBlock.tail, num=num))
+
     def sample(self, num: int) -> vPartition:
         if len(self) <= num:
             return self

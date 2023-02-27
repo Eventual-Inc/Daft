@@ -267,13 +267,17 @@ class LocalCount(Instruction):
 @dataclass(frozen=True)
 class LocalLimit(Instruction):
     limit: int
+    tail: bool = False
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         return self._limit(inputs)
 
     def _limit(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
-        return [input.head(self.limit)]
+        if self.tail:
+            return [input.tail(self.limit)]
+        else:
+            return [input.head(self.limit)]
 
 
 @dataclass(frozen=True)

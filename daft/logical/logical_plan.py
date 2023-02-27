@@ -577,17 +577,18 @@ class Explode(MapPartition[ExplodeOp]):
 
 
 class LocalLimit(UnaryNode):
-    def __init__(self, input: LogicalPlan, num: int) -> None:
+    def __init__(self, input: LogicalPlan, num: int, tail: bool) -> None:
         super().__init__(input.schema(), partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
         self._num = num
+        self._tail = tail
 
     def __repr__(self) -> str:
         return self._repr_helper(num=self._num)
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1
-        return LocalLimit(new_children[0], self._num)
+        return LocalLimit(new_children[0], self._num, self._tail)
 
     def required_columns(self) -> list[set[str]]:
         return [set()]
@@ -599,21 +600,22 @@ class LocalLimit(UnaryNode):
         return isinstance(other, LocalLimit) and self.schema() == other.schema() and self._num == self._num
 
     def rebuild(self) -> LogicalPlan:
-        return LocalLimit(input=self._children()[0].rebuild(), num=self._num)
+        return LocalLimit(input=self._children()[0].rebuild(), num=self._num, tail=self._tail)
 
 
 class GlobalLimit(UnaryNode):
-    def __init__(self, input: LogicalPlan, num: int) -> None:
+    def __init__(self, input: LogicalPlan, num: int, tail: bool) -> None:
         super().__init__(input.schema(), partition_spec=input.partition_spec(), op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._num = num
+        self._tail = tail
 
     def __repr__(self) -> str:
         return self._repr_helper(num=self._num)
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1
-        return GlobalLimit(new_children[0], self._num)
+        return GlobalLimit(new_children[0], self._num, self._tail)
 
     def required_columns(self) -> list[set[str]]:
         return [set()]
@@ -625,7 +627,7 @@ class GlobalLimit(UnaryNode):
         return isinstance(other, GlobalLimit) and self.schema() == other.schema() and self._num == self._num
 
     def rebuild(self) -> LogicalPlan:
-        return GlobalLimit(input=self._children()[0].rebuild(), num=self._num)
+        return GlobalLimit(input=self._children()[0].rebuild(), num=self._num, tail=self._tail)
 
 
 class LocalCount(UnaryNode):

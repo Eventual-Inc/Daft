@@ -83,9 +83,11 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
 
         elif isinstance(node, logical_plan.LocalLimit):
             # Note that the GlobalLimit physical plan also dynamically dispatches its own LocalLimit instructions.
-            return physical_plan.local_limit(child_plan, node._num)
+            return physical_plan.local_limit(child_plan, node._num, node._tail)
 
         elif isinstance(node, logical_plan.GlobalLimit):
+            if node._tail:
+                return physical_plan.tail(child_plan, node)
             return physical_plan.global_limit(child_plan, node)
 
         elif isinstance(node, logical_plan.Repartition):
