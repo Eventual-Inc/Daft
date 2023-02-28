@@ -1,4 +1,4 @@
-from __future__ import annotations
+# isort: dont-add-import: from __future__ import annotations
 
 import pathlib
 import warnings
@@ -11,6 +11,7 @@ from typing import (
     Iterable,
     List,
     Optional,
+    Set,
     Tuple,
     TypeVar,
     Union,
@@ -125,7 +126,7 @@ class DataFrame:
             raise ValueError(f"Expected DataFrame to be constructed with a LogicalPlan, received: {plan}")
 
         self.__plan = plan
-        self._result_cache: PartitionCacheEntry | None = None
+        self._result_cache: Optional[PartitionCacheEntry] = None
         self._preview = DataFramePreview(preview_partition=None, dataframe_num_rows=None)
 
     @property
@@ -136,7 +137,7 @@ class DataFrame:
             return logical_plan.InMemoryScan(self._result_cache, self.__plan.schema(), self.__plan.partition_spec())
 
     @property
-    def _result(self) -> PartitionSet | None:
+    def _result(self) -> Optional[PartitionSet]:
         if self._result_cache is None:
             return None
         else:
@@ -183,7 +184,7 @@ class DataFrame:
         return self.__plan.schema()
 
     @property
-    def column_names(self) -> list[str]:
+    def column_names(self) -> List[str]:
         """Returns column names of DataFrame as a list of strings.
 
         Returns:
@@ -192,7 +193,7 @@ class DataFrame:
         return self.__plan.schema().column_names()
 
     @property
-    def columns(self) -> list[Expression]:
+    def columns(self) -> List[Expression]:
         """Returns column of DataFrame as a list of Expressions.
 
         Returns:
@@ -201,7 +202,7 @@ class DataFrame:
         return [expr.to_column_expression() for expr in self.__plan.schema()]
 
     @DataframePublicAPI
-    def show(self, n: int = 8) -> DataFrameDisplay:
+    def show(self, n: int = 8) -> "DataFrameDisplay":
         """Executes enough of the DataFrame in order to display the first ``n`` rows
 
         .. NOTE::
@@ -244,7 +245,7 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_pylist(cls, data: List[Dict[str, Any]]) -> DataFrame:
+    def from_pylist(cls, data: List[Dict[str, Any]]) -> "DataFrame":
         """Creates a DataFrame from a list of dictionaries
 
         Example:
@@ -256,7 +257,7 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame created from list of dictionaries
         """
-        headers: set[str] = set()
+        headers: Set[str] = set()
         for row in data:
             if not isinstance(row, dict):
                 raise ValueError(f"Expected list of dictionaries of {{column_name: value}}, received: {type(row)}")
@@ -266,7 +267,7 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_pydict(cls, data: Dict[str, InputListType]) -> DataFrame:
+    def from_pydict(cls, data: Dict[str, InputListType]) -> "DataFrame":
         """Creates a DataFrame from a Python dictionary
 
         Example:
@@ -285,7 +286,7 @@ class DataFrame:
                 f"Expected all columns to be of the same length, but received columns with lengths: {column_lengths}"
             )
 
-        column_types: dict[str, ExpressionType] = {header: ExpressionType.infer_type(data[header]) for header in data}
+        column_types: Dict[str, ExpressionType] = {header: ExpressionType.infer_type(data[header]) for header in data}
         schema = Schema([Field(header, expr_type) for header, expr_type in column_types.items()])
         data_vpartition = vPartition.from_pydict(
             data={header: arr for header, arr in data.items()}, schema=schema, partition_id=0
@@ -302,7 +303,7 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_json(cls, *args, **kwargs) -> DataFrame:
+    def from_json(cls, *args, **kwargs) -> "DataFrame":
         warnings.warn(f"DataFrame.from_json will be deprecated in 0.1.0 in favor of DataFrame.read_json")
         return cls.read_json(*args, **kwargs)
 
@@ -311,7 +312,7 @@ class DataFrame:
     def read_json(
         cls,
         path: str,
-    ) -> DataFrame:
+    ) -> "DataFrame":
         """Creates a DataFrame from line-delimited JSON file(s)
 
         Example:
@@ -350,7 +351,7 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_csv(cls, *args, **kwargs) -> DataFrame:
+    def from_csv(cls, *args, **kwargs) -> "DataFrame":
         warnings.warn(f"DataFrame.from_csv will be deprecated in 0.1.0 in favor of DataFrame.read_csv")
         return cls.read_csv(*args, **kwargs)
 
@@ -362,7 +363,7 @@ class DataFrame:
         has_headers: bool = True,
         column_names: Optional[List[str]] = None,
         delimiter: str = ",",
-    ) -> DataFrame:
+    ) -> "DataFrame":
         """Creates a DataFrame from CSV file(s)
 
         Example:
@@ -413,13 +414,13 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_parquet(cls, *args, **kwargs) -> DataFrame:
+    def from_parquet(cls, *args, **kwargs) -> "DataFrame":
         warnings.warn(f"DataFrame.from_parquet will be deprecated in 0.1.0 in favor of DataFrame.read_parquet")
         return cls.read_parquet(*args, **kwargs)
 
     @classmethod
     @DataframePublicAPI
-    def read_parquet(cls, path: str) -> DataFrame:
+    def read_parquet(cls, path: str) -> "DataFrame":
         """Creates a DataFrame from Parquet file(s)
 
         Example:
@@ -458,7 +459,7 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_files(cls, path: str) -> DataFrame:
+    def from_files(cls, path: str) -> "DataFrame":
         """Creates a DataFrame of file paths and other metadata from a glob path
 
         Example:
@@ -480,7 +481,7 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_glob_path(cls, path: str) -> DataFrame:
+    def from_glob_path(cls, path: str) -> "DataFrame":
         """Creates a DataFrame of file paths and other metadata from a glob path
 
         This method supports wildcards:
@@ -530,7 +531,7 @@ class DataFrame:
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
         partition_cols: Optional[List[ColumnInputType]] = None,
-    ) -> DataFrame:
+    ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written
 
         Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
@@ -551,7 +552,7 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
-        cols: ExpressionList | None = None
+        cols: Optional[ExpressionList] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
@@ -576,7 +577,7 @@ class DataFrame:
     @DataframePublicAPI
     def write_csv(
         self, root_dir: Union[str, pathlib.Path], partition_cols: Optional[List[ColumnInputType]] = None
-    ) -> DataFrame:
+    ) -> "DataFrame":
         """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written
 
         Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
@@ -594,7 +595,7 @@ class DataFrame:
         Returns:
             DataFrame: The filenames that were written out as strings.
         """
-        cols: ExpressionList | None = None
+        cols: Optional[ExpressionList] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
@@ -623,9 +624,9 @@ class DataFrame:
         expressions = [col(c) if isinstance(c, str) else c for c in columns]
         return ExpressionList(expressions)
 
-    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> Expression | DataFrame:
+    def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)"""
-        result: Expression | None
+        result: Optional[Expression]
 
         if isinstance(item, int):
             schema = self._plan.schema()
@@ -667,7 +668,7 @@ class DataFrame:
             raise ValueError(f"unknown indexing type: {type(item)}")
 
     @DataframePublicAPI
-    def select(self, *columns: ColumnInputType) -> DataFrame:
+    def select(self, *columns: ColumnInputType) -> "DataFrame":
         """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``
 
         Example:
@@ -698,7 +699,7 @@ class DataFrame:
         return DataFrame(projection)
 
     @DataframePublicAPI
-    def distinct(self) -> DataFrame:
+    def distinct(self) -> "DataFrame":
         """Computes unique rows, dropping duplicates
 
         Example:
@@ -720,7 +721,7 @@ class DataFrame:
         return DataFrame(plan)
 
     @DataframePublicAPI
-    def exclude(self, *names: str) -> DataFrame:
+    def exclude(self, *names: str) -> "DataFrame":
         """Drops columns from the current DataFrame by name
 
         This is equivalent of performing a select with all the columns but the ones excluded.
@@ -739,7 +740,7 @@ class DataFrame:
         return DataFrame(logical_plan.Projection(self._plan, el))
 
     @DataframePublicAPI
-    def where(self, predicate: Expression) -> DataFrame:
+    def where(self, predicate: Expression) -> "DataFrame":
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
         Example:
@@ -757,7 +758,7 @@ class DataFrame:
     @DataframePublicAPI
     def with_column(
         self, column_name: str, expr: Expression, resource_request: ResourceRequest = ResourceRequest()
-    ) -> DataFrame:
+    ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
 
@@ -786,7 +787,7 @@ class DataFrame:
     @DataframePublicAPI
     def sort(
         self, by: Union[ColumnInputType, List[ColumnInputType]], desc: Union[bool, List[bool]] = False
-    ) -> DataFrame:
+    ) -> "DataFrame":
         """Sorts DataFrame globally
 
         Example:
@@ -812,7 +813,7 @@ class DataFrame:
         return DataFrame(sort)
 
     @DataframePublicAPI
-    def limit(self, num: int) -> DataFrame:
+    def limit(self, num: int) -> "DataFrame":
         """Limits the rows in the DataFrame to the first ``N`` rows, similar to a SQL ``LIMIT``
 
         Example:
@@ -842,7 +843,7 @@ class DataFrame:
         return num_rows
 
     @DataframePublicAPI
-    def repartition(self, num: int, *partition_by: ColumnInputType) -> DataFrame:
+    def repartition(self, num: int, *partition_by: ColumnInputType) -> "DataFrame":
         """Repartitions DataFrame to ``num`` partitions
 
         If columns are passed in, then DataFrame will be repartitioned by those, otherwise
@@ -872,12 +873,12 @@ class DataFrame:
     @DataframePublicAPI
     def join(
         self,
-        other: DataFrame,
+        other: "DataFrame",
         on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         left_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         how: str = "inner",
-    ) -> DataFrame:
+    ) -> "DataFrame":
         """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``
 
         .. NOTE::
@@ -916,7 +917,7 @@ class DataFrame:
         return DataFrame(join_op)
 
     @DataframePublicAPI
-    def explode(self, *columns: ColumnInputType) -> DataFrame:
+    def explode(self, *columns: ColumnInputType) -> "DataFrame":
         """Explodes a List column, where every element in each row's List becomes its own row, and all
         other columns in the DataFrame are duplicated across rows
 
@@ -963,7 +964,7 @@ class DataFrame:
         )
         return DataFrame(explode_op)
 
-    def _agg(self, to_agg: list[tuple[ColumnInputType, str]], group_by: ExpressionList | None = None) -> DataFrame:
+    def _agg(self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionList] = None) -> "DataFrame":
         assert len(to_agg) > 0, "no columns to aggregate."
         exprs_to_agg = self.__column_input_to_expression(tuple(e for e, _ in to_agg))
         ops = [op for _, op in to_agg]
@@ -1007,9 +1008,9 @@ class DataFrame:
 
         finalizer_ops_funcs = {"mean": lambda x, y: (x + 0.0) / (y + 0.0)}
 
-        first_phase_ops: list[tuple[Expression, str]] = []
-        second_phase_ops: list[tuple[Expression, str]] = []
-        finalizer_phase_ops: list[Expression] = []
+        first_phase_ops: List[Tuple[Expression, str]] = []
+        second_phase_ops: List[Tuple[Expression, str]] = []
+        finalizer_phase_ops: List[Expression] = []
         need_final_projection = False
         for e, op in zip(exprs_to_agg, ops):
             assert op in intermediate_ops
@@ -1085,7 +1086,7 @@ class DataFrame:
         return DataFrame(final_op)
 
     @DataframePublicAPI
-    def sum(self, *cols: ColumnInputType) -> DataFrame:
+    def sum(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global sum on the DataFrame
 
         Args:
@@ -1097,7 +1098,7 @@ class DataFrame:
         return self._agg([(c, "sum") for c in cols])
 
     @DataframePublicAPI
-    def mean(self, *cols: ColumnInputType) -> DataFrame:
+    def mean(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global mean on the DataFrame
 
         Args:
@@ -1109,7 +1110,7 @@ class DataFrame:
         return self._agg([(c, "mean") for c in cols])
 
     @DataframePublicAPI
-    def min(self, *cols: ColumnInputType) -> DataFrame:
+    def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global min on the DataFrame
 
         Args:
@@ -1121,7 +1122,7 @@ class DataFrame:
         return self._agg([(c, "min") for c in cols])
 
     @DataframePublicAPI
-    def max(self, *cols: ColumnInputType) -> DataFrame:
+    def max(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global max on the DataFrame
 
         Args:
@@ -1133,7 +1134,7 @@ class DataFrame:
         return self._agg([(c, "max") for c in cols])
 
     @DataframePublicAPI
-    def count(self, *cols: ColumnInputType) -> DataFrame:
+    def count(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global count on the DataFrame
 
         Args:
@@ -1145,7 +1146,7 @@ class DataFrame:
         return self._agg([(c, "count") for c in cols])
 
     @DataframePublicAPI
-    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> DataFrame:
+    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> "DataFrame":
         """Perform aggregations on this DataFrame. Allows for mixed aggregations for multiple columns
         Will return a single row that aggregated the entire DataFrame.
 
@@ -1167,7 +1168,7 @@ class DataFrame:
         return self._agg(to_agg, group_by=None)
 
     @DataframePublicAPI
-    def groupby(self, *group_by: ColumnInputType) -> GroupedDataFrame:
+    def groupby(self, *group_by: ColumnInputType) -> "GroupedDataFrame":
         """Performs a GroupBy on the DataFrame for aggregation
 
         Args:
@@ -1188,7 +1189,7 @@ class DataFrame:
             result.wait()
 
     @DataframePublicAPI
-    def collect(self, num_preview_rows: Optional[int] = 8) -> DataFrame:
+    def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
         """Executes the entire DataFrame and materializes the results
 
         .. NOTE::
@@ -1309,11 +1310,11 @@ class GroupedDataFrame:
             if e.resolve_type(self.df._plan.schema()) == ExpressionType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
-    def __getitem__(self, item: slice | int | str | Iterable[str | int]) -> Expression | DataFrame:
+    def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression"""
         return self.df.__getitem__(item)
 
-    def sum(self, *cols: ColumnInputType) -> DataFrame:
+    def sum(self, *cols: ColumnInputType) -> "DataFrame":
         """Perform grouped sum on this GroupedDataFrame.
 
         Args:
@@ -1324,7 +1325,7 @@ class GroupedDataFrame:
         """
         return self.df._agg([(c, "sum") for c in cols], group_by=self.group_by)
 
-    def mean(self, *cols: ColumnInputType) -> DataFrame:
+    def mean(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped mean on this GroupedDataFrame.
 
         Args:
@@ -1336,7 +1337,7 @@ class GroupedDataFrame:
 
         return self.df._agg([(c, "mean") for c in cols], group_by=self.group_by)
 
-    def min(self, *cols: ColumnInputType) -> DataFrame:
+    def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Perform grouped min on this GroupedDataFrame.
 
         Args:
@@ -1347,7 +1348,7 @@ class GroupedDataFrame:
         """
         return self.df._agg([(c, "min") for c in cols], group_by=self.group_by)
 
-    def max(self, *cols: ColumnInputType) -> DataFrame:
+    def max(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped max on this GroupedDataFrame.
 
         Args:
@@ -1359,7 +1360,7 @@ class GroupedDataFrame:
 
         return self.df._agg([(c, "max") for c in cols], group_by=self.group_by)
 
-    def count(self) -> DataFrame:
+    def count(self) -> "DataFrame":
         """Performs grouped count on this GroupedDataFrame.
 
         Returns:
@@ -1370,7 +1371,7 @@ class GroupedDataFrame:
             [(c, "count") for c in self.df.column_names if c not in self.group_by.names], group_by=self.group_by
         )
 
-    def agg(self, to_agg: list[tuple[ColumnInputType, str]]) -> DataFrame:
+    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> "DataFrame":
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
 
         Example:
