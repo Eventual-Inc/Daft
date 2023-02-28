@@ -966,7 +966,7 @@ class DataFrame:
         return DataFrame(explode_op)
 
     def _agg(self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionList] = None) -> "DataFrame":
-        exprs_to_agg: list[tuple[Expression, str]] = list(
+        exprs_to_agg: List[Tuple[Expression, str]] = list(
             zip(self.__column_input_to_expression([c for c, _ in to_agg]), [op for _, op in to_agg])
         )
         builder = AggregationPlanBuilder(self._plan, group_by=group_by)
