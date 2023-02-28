@@ -265,7 +265,7 @@ class SchedulerActor:
         # Theoretically, this should be 1.0: we should batch enough tasks for all the cores in a single dispatch;
         # otherwise, we begin dispatching downstream dependencies (that are not immediately executable)
         # before saturating all the cores (and their pipelines).
-        self.batch_dispatch_coeff = batch_dispatch_coeff if batch_dispatch_coeff is not None else 0.0
+        self.batch_dispatch_coeff = batch_dispatch_coeff if batch_dispatch_coeff is not None else 1.0
 
     def remote_run_plan(
         self,

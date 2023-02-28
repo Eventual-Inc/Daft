@@ -77,9 +77,9 @@ def file_read(
                         logplan=scan_info,
                         index=i,
                     ),
-                    # We set the memory request to be 5x filesize for now.
-                    # This might still not be enough depending on the reader, but it's better than 1x.
-                    resource_request=ResourceRequest(num_cpus=0.5, memory_bytes=file_sizes_bytes[i] * 5),
+                    # Set the filesize as the memory request.
+                    # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
+                    resource_request=ResourceRequest(memory_bytes=file_sizes_bytes[i]),
                 )
                 yield file_read_step
                 output_partition_index += 1
@@ -151,8 +151,7 @@ def join(
             join_step = PartitionTaskBuilder[PartitionT](
                 inputs=[next_left.partition(), next_right.partition()],
                 resource_request=ResourceRequest(
-                    memory_bytes=2
-                    * (next_left.partition_metadata().size_bytes + next_right.partition_metadata().size_bytes)
+                    memory_bytes=next_left.partition_metadata().size_bytes + next_right.partition_metadata().size_bytes
                 ),
             ).add_instruction(instruction=execution_step.Join(join))
             yield join_step
@@ -236,7 +235,7 @@ def global_limit(
 
             global_limit_step = PartitionTaskBuilder[PartitionT](
                 inputs=[done_task.partition()],
-                resource_request=ResourceRequest(memory_bytes=2 * done_task.partition_metadata().size_bytes),
+                resource_request=ResourceRequest(memory_bytes=done_task.partition_metadata().size_bytes),
             ).add_instruction(
                 instruction=execution_step.LocalLimit(limit),
             )
@@ -315,7 +314,7 @@ def coalesce(
             merge_step = PartitionTaskBuilder[PartitionT](
                 inputs=[_.partition() for _ in ready_to_coalesce],
                 resource_request=ResourceRequest(
-                    memory_bytes=2 * sum(_.partition_metadata().size_bytes for _ in ready_to_coalesce),
+                    memory_bytes=sum(_.partition_metadata().size_bytes for _ in ready_to_coalesce),
                 ),
             ).add_instruction(
                 instruction=execution_step.ReduceMerge(),
@@ -379,7 +378,7 @@ def reduce(
             inputs=partition_batch,
             instructions=[reduce_instruction],
             resource_request=ResourceRequest(
-                memory_bytes=2 * sum(metadata.size_bytes for metadata in metadata_batch),
+                memory_bytes=sum(metadata.size_bytes for metadata in metadata_batch),
             ),
         )
 
@@ -442,7 +441,7 @@ def sort(
         PartitionTaskBuilder[PartitionT](
             inputs=[boundaries.partition(), source.partition()],
             resource_request=ResourceRequest(
-                memory_bytes=2 * source.partition_metadata().size_bytes,
+                memory_bytes=source.partition_metadata().size_bytes,
             ),
         ).add_instruction(
             instruction=execution_step.FanoutRange[PartitionT](
