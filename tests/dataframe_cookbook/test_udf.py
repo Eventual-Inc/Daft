@@ -29,7 +29,7 @@ class MyObj:
 ###
 
 
-@udf(return_type=int)
+@udf(return_dtype=int, input_columns={"x": np.ndarray})
 def multiply_np(x: np.ndarray, num=2):
     return x * num
 
@@ -62,7 +62,7 @@ class MyModel:
         return data
 
 
-@udf(return_type=int)
+@udf(return_dtype=int, input_columns={"x": np.ndarray})
 class RunModelNumpy:
     def __init__(self) -> None:
         self._model = MyModel()
@@ -118,7 +118,7 @@ def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_column_type(
         daft_df._result,
         "string_key",
-        object,  # no return_type specified for .apply, column has PY[object] type
+        object,  # no return_dtype specified for .apply, column has PY[object] type
     )
 
     # Running .str expressions will fail on PyObj columns
@@ -129,9 +129,9 @@ def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
         daft_df_fail.to_pandas()
 
     # However, if we specify the return type then the blocks will be casted correctly to string types
-    daft_df_pass = daft_df.with_column("string_key", col("string_key").apply(lambda x: x, return_type=str)).with_column(
-        "string_key_starts_with_1", col("string_key").str.startswith("1")
-    )
+    daft_df_pass = daft_df.with_column(
+        "string_key", col("string_key").apply(lambda x: x, return_dtype=str)
+    ).with_column("string_key_starts_with_1", col("string_key").str.startswith("1"))
     service_requests_csv_pd_df["string_key_starts_with_1"] = service_requests_csv_pd_df["string_key"].str.startswith(
         "1"
     )

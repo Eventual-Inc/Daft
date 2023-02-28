@@ -17,7 +17,19 @@ class MyObj:
         self._x = x
 
 
-@udf(return_type=int)
+@udf(
+    return_dtype=int,
+    input_columns={
+        "arg_untyped": list,
+        "arg_list": list,
+        "arg_typing_list": List,
+        "arg_typing_list_int": List[int],
+        "arg_numpy_array": np.ndarray,
+        "arg_polars_series": pl.Series,
+        "arg_pandas_series": pd.Series,
+        "arg_pyarrow_array": pa.Array,
+    },
+)
 def my_udf(
     # Test different arg containers
     arg_untyped,
@@ -132,7 +144,7 @@ def test_udf_typing_kwargs():
 ###
 
 
-@udf(return_type=int)
+@udf(return_dtype=int, input_columns={"b": np.ndarray})
 class MyUDF:
     def __init__(self):
         self._a = 1
@@ -153,8 +165,8 @@ def test_class_udf():
 ###
 
 
-@udf(return_type=int, type_hints={"a": np.ndarray})
-def my_udf_type_hints(a: list):
+@udf(return_dtype=int, input_columns={"a": np.ndarray})
+def my_udf_type_hints(a):
     assert isinstance(a, np.ndarray)
     return a
 
@@ -181,11 +193,11 @@ def test_udf_new_typing_annotations():
         return arg_list_int
 
     with pytest.raises(TypeError):
-        udf(my_udf_new_typing_annotations, return_type=int)
+        udf(my_udf_new_typing_annotations, return_dtype=int)
 
     my_udf_new_typing_annotations_udf = udf(
         my_udf_new_typing_annotations,
-        return_type=int,
+        return_dtype=int,
         type_hints={"arg_list_int": List[int], "arg_numpy_array_int": np.ndarray},
     )
     df = DataFrame.from_pydict({"a": [1, 2, 3]})

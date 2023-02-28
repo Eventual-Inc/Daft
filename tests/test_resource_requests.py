@@ -20,7 +20,7 @@ def no_gpu_available() -> bool:
 DATA = {"id": [i for i in range(100)]}
 
 
-@udf(return_type=int)
+@udf(return_dtype=int, input_columns={"c": list})
 def my_udf(c):
     return [1] * len(c)
 
@@ -77,7 +77,7 @@ def test_requesting_too_much_memory():
 ###
 
 
-@udf(return_type=int)
+@udf(return_dtype=int, input_columns={"c": list})
 def assert_resources(c, num_cpus=None, num_gpus=None, memory=None):
     assigned_resources = ray.get_runtime_context().get_assigned_resources()
 
@@ -141,7 +141,7 @@ def test_with_column_folded_rayrunner():
 ###
 
 
-@udf(return_type=int)
+@udf(return_dtype=int, input_columns={"c": list})
 def assert_num_cuda_visible_devices(c, num_gpus: int = 0):
     cuda_visible_devices = os.getenv("CUDA_VISIBLE_DEVICES")
     # Env var not set: program is free to use any number of GPUs

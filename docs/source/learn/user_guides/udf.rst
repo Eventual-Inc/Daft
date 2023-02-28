@@ -3,149 +3,136 @@ User-Defined Functions (UDF)
 
 A key piece of functionality in DaFt is the ability to flexibly define custom functions that can run on any data in your dataframe. This guide walks you through the different types of UDFs that DaFt allows you to run.
 
-Inline UDFs
------------
-
-For the simplest use-cases, Daft allows users to run a function on each row of a column.
-
-In the following example, we have a user-defined ``Video`` type.
+Let's first create a dataframe that will be used as a running example throughout this tutorial!
 
 .. code:: python
 
-    class Video:
+    from daft import DataFrame
 
-        def num_frames(self) -> int:
-            return ...
+    df = DataFrame.from_pydict({
+        # the `image` column contains images represented as 2D numpy arrays
+        "image": [np.ones((128, 128)) for i in range(16)],
+        # the `crop` column contains a box to crop from our image, represented as a list of integers: [x1, x2, y1, y2]
+        "crop": [[0, 1, 0, 1] for i in range(16)],
+    })
 
-        def get_frame(self, frame_index: int) -> Image:
-            return ...
+Per-column per-row functions using ``Expression.apply``
+-------------------------------------------------------
 
-        def clip(self, start: float, end: float) -> Video:
-            return ...
+You can use ``Expression.apply`` to run a Python function on every row in a column.
 
-Given a Dataframe ``df`` with a column ``"videos"`` containing ``Video`` objects, we can run extract each video's number of frames using the ``.as_py(UserClass).user_method(...)`` inline UDF idiom.
-
-.. code:: python
-
-    # Treat each item in column "videos" as an Video object, and run .num_frames() on it
-    df.with_column("num_frames", col("videos").as_py(Video).num_frames())
-
-To run a more complicated function such as a function to "get the last frame of every video", we can use a ``.apply`` function which takes any user-provided Python function and maps it over the column.
+For example, the following example creates a new ``"flattened_image"`` column by calling ``.flatten()`` on every object in the ``"image"`` column.
 
 .. code:: python
 
-    def get_last_frame(video) -> Image:
-        return video.get_frame(video.num_frames() - 1)
+    df.with_column(
+        "flattened_image",
+        df["image"].apply(lambda img: img.flatten(), return_type=np.ndarray)
+    )
 
-    # Run get_last_frame on each item in column "videos"
-    df.with_column("last_frame", col("videos").apply(get_last_frame))
+Note here that we use the ``return_type`` keyword argument to specify that our returned column type is of type ``np.ndarray``, so the new ``"flattened_image"``
+column will have type ``PY[np.ndarray]``!
 
+Multi-column per-partition functions using ``@udf``
+---------------------------------------------------
 
-Stateless UDFs
---------------
+``Expression.apply`` is great for convenience, but has two main limitations:
 
-Inline UDFs are great for convenience, but have two main limitations:
-
-1. They can only run on single columns
-2. They can only run on single items at a time
+1. It can only run on single columns
+2. It can only run on single items at a time
 
 Daft provides the ``@udf`` decorator for defining your own UDFs that process multiple columns or multiple rows at a time.
 
-For example, let's try writing a function that will clip Videos in a column, based on a start/end timestamps in another column.
+For example, let's try writing a function that will multiply all our images in our ``"image"`` column by its corresponding value in the ``"norm"`` column:
 
 .. code:: python
 
     from daft import udf
 
-    @udf(return_type=Video)
-    def clip_video_udf(
-        videos,
-        timestamps_start,
-        timestamps_end,
-    ):
-        return [
-            video.clip(start, end)
-            for video, start, end in
-            zip(videos, timestamps_start, timestamps_end)
-        ]
+    @udf(return_dtype=np.ndarray, input_columns={"images": list, "norm": list})
+    def crop_images(images, crops, padding=0):
+        cropped = []
+        for img, crop in zip(images, crops):
+            x1, x2, y1, y2 = crop
+            cropped_img = img[x1:x2 + padding, y1:y2 + padding]
+            cropped.append(cropped_img)
+        return cropped
 
     df = df.with_column(
-        "clipped_videos",
-        clip_video_udf(col("videos"), col("clip_start"), col("clip_end")),
+        "cropped",
+        crop_images(df["image"], df["crop"], padding=1),
     )
 
-Some important things to note:
+There's a few things happening here, let's break it down:
+
+1. ``crop_images`` is a normal Python function. It takes as input:
+    a. A list of images: ``images``
+    b. A list of cropping boxes: ``crops``
+    c. An integer indicating how much padding to apply to the right and bottom of the cropping: ``padding``
+2. To allow Daft to pass column data into the ``images`` and ``crops`` arguments, we decorate the function with ``@udf``
+    a. ``return_dtype`` defines the returned data type. In this case, we return a column containing numpy arrays (``np.ndarray``)
+    b. The keys in ``input_columns`` defines which input parameters should be columns (in this case ``images`` and ``crops``)
+    c. The values in ``input_columns`` defines what container type Daft should pass columns in as, in this case just a ``list``.
+3. We can create a new column in our DataFrame by applying our UDF on the ``"image"`` and ``"crop"`` columns inside of a ``df.with_column`` call.
 
 Input Types
 ^^^^^^^^^^^
 
-The inputs to our UDF in the above example (``videos``, ``timestamps_start`` and ``timestamps_end``) are provided to our functions as Python lists by default.
+In the above example, we indicated that the ``images`` and ``crops`` input parameters should be passed in as a ``list``. Daft supports other
+array container types as well:
 
-However, if your application can benefit from more efficient datastructures, you may choose to have Daft pass in other datastructures instead such as a Numpy array. You can do so simply by type-annotating your function parameters with the appropriate type:
-
-.. code:: python
-
-    import numpy as np
-
-    @udf(return_type=Video)
-    def clip_video_udf(
-        videos,
-        timestamps_start: np.ndarray,
-        timestamps_end: np.ndarray,
-    ):
-        ...
-
-If you don't provide any type annotations, then Daft just passes in a normal Python list!
-
-Other supported input types and their type annotations are:
-
-* Python list: ``list`` or ``typing.List``
-* Numpy array: ``numpy.ndarray``
-* Pandas series: ``pandas.Series``
-* Polars series: ``polars.Series``
-* PyArrow array: ``pyarrow.Array``
-
-.. WARNING::
-    Type annotation can be finicky in Python, depending on the version of Python you are using and if you are using typing
-    functionality from future Python versions with ``from __future__ import annotations``.
-
-    Daft will throw an error if it cannot infer types from your annotations, and you may choose to provide your types
-    explicitly as a dictionary of input parameter name to its type in the ``@udf(type_hints=...)`` keyword argument.
+1. Numpy Arrays (``np.ndarray``)
+2. Pandas Series (``pd.Series``)
+3. Polars Series (``polars.Series``)
+4. PyArrow Arrays (``pa.Array``) or (``pa.ChunkedArray``)
+5. Python lists (``list`` or ``typing.List``)
 
 .. NOTE::
+    Certain array formats have some restrictions around the type of data that they can handle:
 
-    Numpy arrays and Pandas series cannot properly represent Nulls - they will cast Nulls to NaNs! If you need to represent Nulls,
-    use Polars series or PyArrow arrays instead.
+    1. **Null Handling**: In Pandas and Numpy, nulls are represented as NaNs for numeric types, and Nones for non-numeric types.
+    Additionally, the existence of nulls will trigger a type casting from integer to float arrays. If null handling is important to
+    your use-case, we recommend using one of the other available options.
+
+    2. **Python Objects**: PyArrow array formats cannot support object-type columns.
+
+    We recommend using Python lists if performance is not a major consideration, and using the arrow-native formats such as
+    PyArrow arrays and Polars series if performance is important.
 
 Return Types
 ^^^^^^^^^^^^
 
-You can define the return type of the UDF by passing in the ``return_type=`` keyword argument to the ``@udf`` decorator. This will inform Daft what the type of the resulting column from your UDF is.
+The ``return_dtype`` argument specifies what type of column your UDF will return. For user convenience, you may specify a Python
+type such as ``str``, ``int``, ``float``, ``bool`` and ``datetime.date``, which will be converted into a Daft dtype for you.
 
-Inside of your function itself, you can return data in any of the options that are supported as input types (lists, numpy arrays, pandas series, polars series or PyArrow arrays).
+Python types that are not recognized as Daft types will be represented as a Daft Python object dtype. For example, if you specify
+``return_dtype=np.ndarray``, then your returned column will have type ``PY[np.ndarray]``.
 
+Your UDF function itself needs to return a batch of columnar data, and can do so as any one of the following array types:
+
+1. Numpy Arrays (``np.ndarray``)
+2. Pandas Series (``pd.Series``)
+3. Polars Series (``polars.Series``)
+4. PyArrow Arrays (``pa.Array``) or (``pa.ChunkedArray``)
+5. Python lists (``list`` or ``typing.List``)
 
 Stateful UDFs
 -------------
 
-For many Machine Learning applications, we often have expensive initialization steps for our UDFs such as downloading models and loading models into GPU memory. Ideally we would like to do these initialization steps once, and share the cost of running them across multiple invocations of the UDF.
-
-Daft provides an API for Stateful UDFs to do this. Stateful UDFs are just like Stateless UDFs, except that they are represented by Classes instead of Functions. Stateful UDF classes define any expensive initialization steps in their __init__ methods, and run on any columns or data in the __call__ method.
-
-For example, to download and run a model on a column of images:
+UDFs can also be created on Classes, which allow for initialization on some expensive state that can be shared
+between invocations of the class, for example downloading data or creating a model.
 
 .. code:: python
 
-    @udf(return_type=int)
-    class ClassifyImages:
+    @udf(return_dtype=int, input_columns={"features_col": np.ndarray})
+    class RunModel:
 
         def __init__(self):
-            # Run any expensive initializations
-            self._model = get_model()
+            # Perform expensive initializations
+            self._model = create_model()
 
-        def __call__(self, images: np.ndarray):
-            # Run model on columnes
-            return self._model(images)
+        def __call__(self, features_col):
+            return self._model(features_col)
 
 Running Stateful UDFs are exactly the same as running their Stateless cousins.
 
@@ -159,15 +146,11 @@ Resource Requests
 
 Sometimes, you may want to request for specific resources for your UDF. For example, some UDFs need one GPU to run as they will load a model onto the GPU.
 
-As of Daft v0.0.22, resource requests are no longer in UDF definition. Instead, custom resources can be requested when you call ``.with_column``:
+Custom resources can be requested when you call ``.with_column``:
 
 .. code:: python
 
     from daft.resource_request import ResourceRequest
-
-    @udf(return_type=int)
-    def func():
-        model = get_model().cuda()
 
     # Runs the UDF `func` with the specified resource requests
     df = df.with_column(
