@@ -42,6 +42,14 @@ class PartitionTask(Generic[PartitionT]):
     def id(self) -> str:
         return f"{self.__class__.__name__}_{self._id}"
 
+    def ready(self) -> bool:
+        """Whether the PartitionT result of this task is available."""
+        raise NotImplementedError()
+
+    def cancel(self) -> None:
+        """If possible, cancel the execution of this PartitionTask."""
+        raise NotImplementedError()
+
     def __str__(self) -> str:
         return (
             f"{self.id()}\n"
@@ -131,23 +139,80 @@ class PartitionTaskBuilder(Generic[PartitionT]):
 
 @dataclass
 class SingleOutputPartitionTask(PartitionTask[PartitionT]):
-    """A PartitionTask that is ready to run. More instructions cannot be added.
+    """A PartitionTask that is ready to run. More instructions cannot be added."""
 
-    result: When available, the partition created from run the PartitionTask.
-    """
+    # When available, the partition created from running the PartitionTask.
+    _result: None | MaterializedResult[PartitionT] = None
 
-    result: None | MaterializedResult[PartitionT] = None
+    def set_result(self, value: MaterializedResult[PartitionT]) -> None:
+        assert self._result is None, f"Cannot set result twice. Result is already {self._result}"
+        self._result = value
+
+    def ready(self) -> bool:
+        return self._result is not None
+
+    def cancel(self) -> None:
+        # Currently only implemented for Ray tasks.
+        if self._result is not None:
+            self._result.cancel()
+
+    def result(self) -> PartitionT:
+        """Get the PartitionT resulting from running this PartitionTask."""
+        assert self._result is not None
+        return self._result.partition()
+
+    def result_metadata(self) -> PartitionMetadata:
+        """Get the metadata of the result partition.
+
+        (Avoids retrieving the actual partition itself if possible.)
+        """
+        assert self._result is not None
+        return self._result.metadata()
+
+    def result_vpartition(self) -> vPartition:
+        """Get the raw vPartition of the result."""
+        assert self._result is not None
+        return self._result.vpartition()
 
 
 @dataclass
 class MultiOutputPartitionTask(PartitionTask[PartitionT]):
     """A PartitionTask that is ready to run. More instructions cannot be added.
     This PartitionTask will return a list of any number of partitions.
-
-    results: When available, the partitions created from run the PartitionTask.
     """
 
-    results: None | list[MaterializedResult[PartitionT]] = None
+    # When available, the partitions created from running the PartitionTask.
+    _results: None | list[MaterializedResult[PartitionT]] = None
+
+    def set_results(self, value: list[MaterializedResult[PartitionT]]) -> None:
+        assert self._results is None, f"Cannot set result twice. Result is already {self._results}"
+        self._results = value
+
+    def ready(self) -> bool:
+        return self._results is not None
+
+    def cancel(self) -> None:
+        if self._results is not None:
+            for result in self._results:
+                result.cancel()
+
+    def result(self, index: int) -> PartitionT:
+        """Get the PartitionT resulting from running this PartitionTask."""
+        assert self._results is not None
+        return self._results[index].partition()
+
+    def result_metadata(self, index: int) -> PartitionMetadata:
+        """Get the metadata of the result partition.
+
+        (Avoids retrieving the actual partition itself if possible.)
+        """
+        assert self._results is not None
+        return self._results[index].metadata()
+
+    def result_vpartition(self, index: int) -> vPartition:
+        """Get the raw vPartition of the result."""
+        assert self._results is not None
+        return self._results[index].vpartition()
 
 
 class MaterializedResult(Protocol[PartitionT]):
