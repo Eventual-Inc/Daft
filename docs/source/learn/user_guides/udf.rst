@@ -43,13 +43,13 @@ Multi-column per-partition functions using ``@udf``
 
 Daft provides the ``@udf`` decorator for defining your own UDFs that process multiple columns or multiple rows at a time.
 
-For example, let's try writing a function that will multiply all our images in our ``"image"`` column by its corresponding value in the ``"norm"`` column:
+For example, let's try writing a function that will crop all our images in the ``"image"`` column by its corresponding value in the ``"crop"`` column:
 
 .. code:: python
 
     from daft import udf
 
-    @udf(return_dtype=np.ndarray, input_columns={"images": list, "norm": list})
+    @udf(return_dtype=np.ndarray, input_columns={"images": list, "crops": list})
     def crop_images(images, crops, padding=0):
         cropped = []
         for img, crop in zip(images, crops):
@@ -93,7 +93,6 @@ array container types as well:
     1. **Null Handling**: In Pandas and Numpy, nulls are represented as NaNs for numeric types, and Nones for non-numeric types.
     Additionally, the existence of nulls will trigger a type casting from integer to float arrays. If null handling is important to
     your use-case, we recommend using one of the other available options.
-
     2. **Python Objects**: PyArrow array formats cannot support object-type columns.
 
     We recommend using Python lists if performance is not a major consideration, and using the arrow-native formats such as
@@ -138,7 +137,7 @@ Running Stateful UDFs are exactly the same as running their Stateless cousins.
 
 .. code:: python
 
-    df = df.with_column("image_classifications", ClassifyImages(col("images")))
+    df = df.with_column("image_classifications", RunModel(df["images"]))
 
 
 Resource Requests
@@ -155,7 +154,7 @@ Custom resources can be requested when you call ``.with_column``:
     # Runs the UDF `func` with the specified resource requests
     df = df.with_column(
         "image_classifications",
-        func(df["images"]),
+        RunModel(df["images"]),
         resource_request=ResourceRequest(num_gpus=1, num_cpus=8),
     )
 
