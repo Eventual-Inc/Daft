@@ -25,6 +25,10 @@ def DataframePublicAPI(func: Callable[..., Any]) -> Callable[..., Any]:
     return _wrap
 
 
+class APITypeError(TypeError):
+    pass
+
+
 def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
 
     signature = inspect.signature(func)
@@ -74,7 +78,7 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
             inspect.Parameter.KEYWORD_ONLY,
         ):
             if not isinstance_helper(value, param_type):
-                raise TypeError(
+                raise APITypeError(
                     f"{func.__qualname__} received wrong input type.\n"
                     f"Required:\n\t{name} = <{param_type}>\n"
                     f"Given:\n\t{name} = <{type(value).__name__}>"
@@ -83,7 +87,7 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
         elif param_kind == inspect.Parameter.VAR_POSITIONAL:
             for i, item in enumerate(value):
                 if not isinstance_helper(item, param_type):
-                    raise TypeError(
+                    raise APITypeError(
                         f"{func.__qualname__} received wrong input type.\n"
                         f"Required:\n\t{name} = <{param_type}>, ...\n"
                         f"Given:\n\t{name} = <{type(item).__name__}> (in position {i})"
@@ -92,7 +96,7 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
         elif param_kind == inspect.Parameter.VAR_KEYWORD:
             for key, item in value.items():
                 if not isinstance_helper(item, param_type):
-                    raise TypeError(
+                    raise APITypeError(
                         f"{func.__qualname__} received wrong input type.\n"
                         f"Required:\n\t{key} = <{param_type}>\n"
                         f"Given:\n\t{key} = <{type(item).__name__}>"
