@@ -80,7 +80,7 @@ def file_read(
                     ),
                     # Set the filesize as the memory request.
                     # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
-                    resource_request=ResourceRequest(num_cpus=0.5, memory_bytes=file_sizes_bytes[i]),
+                    resource_request=ResourceRequest(memory_bytes=file_sizes_bytes[i]),
                 )
                 yield file_read_step
                 output_partition_index += 1
