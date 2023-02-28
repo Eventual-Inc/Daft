@@ -8,13 +8,7 @@ from typing import Iterable
 import psutil
 
 from daft.execution import physical_plan, physical_plan_factory
-from daft.execution.execution_step import (
-    ExecutionStep,
-    Instruction,
-    MaterializedResult,
-    MultiOutputExecutionStep,
-    SingleOutputExecutionStep,
-)
+from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
 from daft.execution.logical_op_runners import LogicalPartitionOpRunner
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
@@ -171,7 +165,7 @@ class PyRunner(Runner):
             return pset_entry
 
     def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> list[vPartition]:
-        inflight_tasks: dict[str, ExecutionStep] = dict()
+        inflight_tasks: dict[str, PartitionTask] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
 
@@ -201,7 +195,8 @@ class PyRunner(Runner):
                                 and next_step.resource_request.num_gpus > 0
                             )
                         ):
-                            self._run_task_synchronously(next_step)
+                            partitions = self.build_partitions(next_step.instructions, *next_step.inputs)
+                            next_step.set_result([PyMaterializedResult(partition) for partition in partitions])
 
                         else:
                             # Submit the task for execution.
@@ -227,31 +222,12 @@ class PyRunner(Runner):
                         done_task = inflight_tasks.pop(done_id)
 
                         partitions = done.result()
-
-                        if isinstance(done_task, MultiOutputExecutionStep):
-                            done_task.results = [PyMaterializedResult(partition) for partition in partitions]
-                        elif isinstance(done_task, SingleOutputExecutionStep):
-                            [partition] = partitions
-                            done_task.result = PyMaterializedResult(partition)
-                        else:
-                            raise TypeError(f"Could not type match input {done_task}")
+                        done_task.set_result([PyMaterializedResult(partition) for partition in partitions])
 
             except StopIteration as e:
                 result = e.value
 
         return result
-
-    def _run_task_synchronously(self, task: physical_plan.ExecutionStep) -> None:
-
-        partitions = self.build_partitions(task.instructions, *task.inputs)
-
-        if isinstance(task, MultiOutputExecutionStep):
-            task.results = [PyMaterializedResult(partition) for partition in partitions]
-        elif isinstance(task, SingleOutputExecutionStep):
-            [partition] = partitions
-            task.result = PyMaterializedResult(partition)
-        else:
-            raise TypeError(f"Could not type match input {task}")
 
     def _check_resource_requests(self, resource_request: ResourceRequest) -> None:
         """Validates that the requested ResourceRequest is possible to run locally"""

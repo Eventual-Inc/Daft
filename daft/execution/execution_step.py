@@ -24,13 +24,13 @@ ID_GEN = itertools.count()
 
 
 @dataclass
-class ExecutionStep(Generic[PartitionT]):
-    """An ExecutionStep describes a task that will run to create a partition.
+class PartitionTask(Generic[PartitionT]):
+    """A PartitionTask describes a task that will run to create a partition.
 
     The partition will be created by running a function pipeline (`instructions`) over some input partition(s) (`inputs`).
     Each function takes an entire set of inputs and produces a new set of partitions to pass into the next function.
 
-    This class should not be instantiated directly. To create the appropriate ExecutionStep for your use-case, use the ExecutionStepBuilder.
+    This class should not be instantiated directly. To create the appropriate PartitionTask for your use-case, use the PartitionTaskBuilder.
     """
 
     inputs: list[PartitionT]
@@ -41,6 +41,18 @@ class ExecutionStep(Generic[PartitionT]):
 
     def id(self) -> str:
         return f"{self.__class__.__name__}_{self._id}"
+
+    def done(self) -> bool:
+        """Whether the PartitionT result of this task is available."""
+        raise NotImplementedError()
+
+    def cancel(self) -> None:
+        """If possible, cancel the execution of this PartitionTask."""
+        raise NotImplementedError()
+
+    def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
+        """Set the result of this Task. For use by the Task executor."""
+        raise NotImplementedError
 
     def __str__(self) -> str:
         return (
@@ -54,8 +66,8 @@ class ExecutionStep(Generic[PartitionT]):
         return self.__str__()
 
 
-class ExecutionStepBuilder(Generic[PartitionT]):
-    """Builds an ExecutionStep by adding instructions to its pipeline."""
+class PartitionTaskBuilder(Generic[PartitionT]):
+    """Builds a PartitionTask by adding instructions to its pipeline."""
 
     def __init__(
         self,
@@ -67,8 +79,8 @@ class ExecutionStepBuilder(Generic[PartitionT]):
         self.instructions: list[Instruction] = instructions if instructions is not None else list()
         self.resource_request: ResourceRequest = resource_request
 
-    def __copy__(self) -> ExecutionStepBuilder[PartitionT]:
-        return ExecutionStepBuilder[PartitionT](
+    def __copy__(self) -> PartitionTaskBuilder[PartitionT]:
+        return PartitionTaskBuilder[PartitionT](
             inputs=self.inputs.copy(),
             instructions=self.instructions.copy(),
             resource_request=self.resource_request,  # ResourceRequest is immutable (dataclass with frozen=True)
@@ -78,16 +90,16 @@ class ExecutionStepBuilder(Generic[PartitionT]):
         self,
         instruction: Instruction,
         resource_request: ResourceRequest = ResourceRequest(),
-    ) -> ExecutionStepBuilder[PartitionT]:
-        """Append an instruction to this ExecutionStep's pipeline."""
+    ) -> PartitionTaskBuilder[PartitionT]:
+        """Append an instruction to this PartitionTask's pipeline."""
         self.instructions.append(instruction)
         self.resource_request = ResourceRequest.max_resources([self.resource_request, resource_request])
         return self
 
-    def build_materialization_request_single(self) -> SingleOutputExecutionStep[PartitionT]:
-        """Create an SingleOutputExecutionStep from this ExecutionStepBuilder.
+    def finalize_partition_task_single_output(self) -> SingleOutputPartitionTask[PartitionT]:
+        """Create a SingleOutputPartitionTask from this PartitionTaskBuilder.
 
-        Returns a "frozen" version of this ExecutionStep that cannot have instructions added.
+        Returns a "frozen" version of this PartitionTask that cannot have instructions added.
         """
         resource_request_final_cpu = ResourceRequest(
             num_cpus=self.resource_request.num_cpus or 1,
@@ -95,17 +107,17 @@ class ExecutionStepBuilder(Generic[PartitionT]):
             memory_bytes=self.resource_request.memory_bytes,
         )
 
-        return SingleOutputExecutionStep[PartitionT](
+        return SingleOutputPartitionTask[PartitionT](
             inputs=self.inputs,
             instructions=self.instructions,
             num_results=1,
             resource_request=resource_request_final_cpu,
         )
 
-    def build_materialization_request_multi(self, num_results: int) -> MultiOutputExecutionStep[PartitionT]:
-        """Create an MultiOutputExecutionStep from this ExecutionStepBuilder.
+    def finalize_partition_task_multi_output(self, num_results: int) -> MultiOutputPartitionTask[PartitionT]:
+        """Create a MultiOutputPartitionTask from this PartitionTaskBuilder.
 
-        Same as build_materialization_request_single, except the output of this ExecutionStep is a list of partitions.
+        Same as finalize_partition_task_single_output, except the output of this PartitionTask is a list of partitions.
         This is intended for execution steps that do a fanout.
         """
         resource_request_final_cpu = ResourceRequest(
@@ -113,7 +125,7 @@ class ExecutionStepBuilder(Generic[PartitionT]):
             num_gpus=self.resource_request.num_gpus,
             memory_bytes=self.resource_request.memory_bytes,
         )
-        return MultiOutputExecutionStep[PartitionT](
+        return MultiOutputPartitionTask[PartitionT](
             inputs=self.inputs,
             instructions=self.instructions,
             num_results=num_results,
@@ -122,7 +134,7 @@ class ExecutionStepBuilder(Generic[PartitionT]):
 
     def __str__(self) -> str:
         return (
-            f"ExecutionStepBuilder\n"
+            f"PartitionTaskBuilder\n"
             f"  Inputs: {self.inputs}\n"
             f"  Resource Request: {self.resource_request}\n"
             f"  Instructions: {[i.__class__.__name__ for i in self.instructions]}"
@@ -130,28 +142,86 @@ class ExecutionStepBuilder(Generic[PartitionT]):
 
 
 @dataclass
-class SingleOutputExecutionStep(ExecutionStep[PartitionT]):
-    """An ExecutionStep that is ready to run. More instructions cannot be added.
+class SingleOutputPartitionTask(PartitionTask[PartitionT]):
+    """A PartitionTask that is ready to run. More instructions cannot be added."""
 
-    result: When available, the partition created from run the ExecutionStep.
-    """
+    # When available, the partition created from running the PartitionTask.
+    _result: None | MaterializedResult[PartitionT] = None
 
-    result: None | MaterializedResult[PartitionT] = None
+    def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
+        assert self._result is None, f"Cannot set result twice. Result is already {self._result}"
+        [partition] = result
+        self._result = partition
+
+    def done(self) -> bool:
+        return self._result is not None
+
+    def cancel(self) -> None:
+        # Currently only implemented for Ray tasks.
+        if self._result is not None:
+            self._result.cancel()
+
+    def partition(self) -> PartitionT:
+        """Get the PartitionT resulting from running this PartitionTask."""
+        assert self._result is not None
+        return self._result.partition()
+
+    def partition_metadata(self) -> PartitionMetadata:
+        """Get the metadata of the result partition.
+
+        (Avoids retrieving the actual partition itself if possible.)
+        """
+        assert self._result is not None
+        return self._result.metadata()
+
+    def vpartition(self) -> vPartition:
+        """Get the raw vPartition of the result."""
+        assert self._result is not None
+        return self._result.vpartition()
 
 
 @dataclass
-class MultiOutputExecutionStep(ExecutionStep[PartitionT]):
-    """An ExecutionStep that is ready to run. More instructions cannot be added.
-    This ExecutionStep will return a list of any number of partitions.
-
-    results: When available, the partitions created from run the ExecutionStep.
+class MultiOutputPartitionTask(PartitionTask[PartitionT]):
+    """A PartitionTask that is ready to run. More instructions cannot be added.
+    This PartitionTask will return a list of any number of partitions.
     """
 
-    results: None | list[MaterializedResult[PartitionT]] = None
+    # When available, the partitions created from running the PartitionTask.
+    _results: None | list[MaterializedResult[PartitionT]] = None
+
+    def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
+        assert self._results is None, f"Cannot set result twice. Result is already {self._results}"
+        self._results = result
+
+    def done(self) -> bool:
+        return self._results is not None
+
+    def cancel(self) -> None:
+        if self._results is not None:
+            for result in self._results:
+                result.cancel()
+
+    def partitions(self) -> list[PartitionT]:
+        """Get the PartitionTs resulting from running this PartitionTask."""
+        assert self._results is not None
+        return [result.partition() for result in self._results]
+
+    def partition_metadatas(self) -> list[PartitionMetadata]:
+        """Get the metadata of the result partitions.
+
+        (Avoids retrieving the actual partition itself if possible.)
+        """
+        assert self._results is not None
+        return [result.metadata() for result in self._results]
+
+    def vpartition(self, index: int) -> vPartition:
+        """Get the raw vPartition of the result."""
+        assert self._results is not None
+        return self._results[index].vpartition()
 
 
 class MaterializedResult(Protocol[PartitionT]):
-    """A protocol for accessing the result partition of a ExecutionStep.
+    """A protocol for accessing the result partition of a PartitionTask.
 
     Different Runners can fill in their own implementation here.
     """
@@ -169,7 +239,7 @@ class MaterializedResult(Protocol[PartitionT]):
         ...
 
     def cancel(self) -> None:
-        """If possible, cancel execution of this ExecutionStep."""
+        """If possible, cancel execution of this PartitionTask."""
         ...
 
     def _noop(self, _: PartitionT) -> None:
