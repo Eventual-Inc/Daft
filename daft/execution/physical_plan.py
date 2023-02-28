@@ -157,7 +157,7 @@ def join(
             join_step = ExecutionStepBuilder[PartitionT](
                 inputs=[next_left.result.partition(), next_right.result.partition()],
                 resource_request=ResourceRequest(
-                    memory_bytes=2 * (next_left.result.metadata().size_bytes + next_right.result.metadata().size_bytes)
+                    memory_bytes=(next_left.result.metadata().size_bytes + next_right.result.metadata().size_bytes)
                 ),
             ).add_instruction(instruction=execution_step.Join(join))
             yield join_step
@@ -242,7 +242,7 @@ def global_limit(
 
             global_limit_step = ExecutionStepBuilder[PartitionT](
                 inputs=[result.partition()],
-                resource_request=ResourceRequest(memory_bytes=2 * result.metadata().size_bytes),
+                resource_request=ResourceRequest(memory_bytes=result.metadata().size_bytes),
             ).add_instruction(
                 instruction=execution_step.LocalLimit(limit),
             )
@@ -328,7 +328,7 @@ def coalesce(
                 merge_step = ExecutionStepBuilder[PartitionT](
                     inputs=[_.partition() for _ in ready_to_coalesce],
                     resource_request=ResourceRequest(
-                        memory_bytes=2 * sum(_.metadata().size_bytes for _ in ready_to_coalesce),
+                        memory_bytes=sum(_.metadata().size_bytes for _ in ready_to_coalesce),
                     ),
                 ).add_instruction(
                     instruction=execution_step.ReduceMerge(),
@@ -390,7 +390,7 @@ def reduce(
             inputs=[result.partition() for result in batch],
             instructions=[reduce_instruction],
             resource_request=ResourceRequest(
-                memory_bytes=2 * sum(result.metadata().size_bytes for result in batch),
+                memory_bytes=sum(result.metadata().size_bytes for result in batch),
             ),
         )
 
@@ -459,7 +459,7 @@ def sort(
         ExecutionStepBuilder[PartitionT](
             inputs=[boundaries_partition, source_result.partition()],
             resource_request=ResourceRequest(
-                memory_bytes=2 * source_result.metadata().size_bytes,
+                memory_bytes=source_result.metadata().size_bytes,
             ),
         ).add_instruction(
             instruction=execution_step.FanoutRange[PartitionT](
