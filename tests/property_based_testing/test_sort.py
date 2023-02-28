@@ -199,7 +199,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
             ExpressionType.float(): lambda e, other: e + other,
             ExpressionType.logical(): lambda e, other: e & other,
             ExpressionType.from_py_type(UserObject): lambda e, other: e.apply(
-                lambda x: x.add(other) if x is not None else None, return_type=UserObject
+                lambda x: x.add(other) if x is not None else None, return_dtype=UserObject
             ),
             # No meaningful binary operations supported for these yet
             ExpressionType.date(): lambda e, other: e.dt.year(),

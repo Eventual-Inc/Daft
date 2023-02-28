@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from typing import List
 
 import numpy as np
@@ -161,52 +160,29 @@ def test_class_udf():
 
 
 ###
-# Tests for type_hints=... kwarg
+# Test bad UDF invocations
 ###
 
 
-@udf(return_dtype=int, input_columns={"a": np.ndarray})
-def my_udf_type_hints(a):
-    assert isinstance(a, np.ndarray)
-    return a
+@udf(return_dtype=int, input_columns={"is_a_col": list})
+def udf_one_col(is_a_col: list, not_a_col: int):
+    assert isinstance(is_a_col, list)
+    assert isinstance(not_a_col, int)
+    return is_a_col
 
 
-def test_udf_type_hints_override():
+def test_bad_udf_invocations():
     df = DataFrame.from_pydict({"a": [1, 2, 3]})
-    df = df.with_column("newcol", my_udf_type_hints(df["a"]))
-    data = df.to_pydict()
-    assert data["newcol"] == [1, 2, 3]
 
+    # Cannot call UDF on non-expression when parameter is specified in input_columns
+    with pytest.raises(ValueError):
+        df = df.with_column("b", udf_one_col(1, 1))
 
-@pytest.mark.skipif(
-    sys.version_info > (3, 8), reason="Requires python3.8 or lower which does not support advanced type annotations"
-)
-def test_udf_new_typing_annotations():
-    """Test behavior on unsupported advanced type annotations, using `type_hints` as the workaround"""
+    # Cannot call UDF on expression column when parameter is not specified in input_columns
+    with pytest.raises(ValueError):
+        df = df.with_column("b", udf_one_col(df["a"], df["a"]))
 
-    def my_udf_new_typing_annotations(
-        arg_list_int: list[int],
-        arg_numpy_array_int: np.ndarray[int],
-    ):
-        assert isinstance(arg_list_int, list)
-        assert isinstance(arg_numpy_array_int, np.ndarray)
-        return arg_list_int
-
-    with pytest.raises(TypeError):
-        udf(my_udf_new_typing_annotations, return_dtype=int)
-
-    my_udf_new_typing_annotations_udf = udf(
-        my_udf_new_typing_annotations,
-        return_dtype=int,
-        type_hints={"arg_list_int": List[int], "arg_numpy_array_int": np.ndarray},
-    )
-    df = DataFrame.from_pydict({"a": [1, 2, 3]})
-    df = df.with_column(
-        "newcol",
-        my_udf_new_typing_annotations_udf(
-            arg_list_int=df["a"],
-            arg_numpy_array_int=df["a"],
-        ),
-    )
-    data = df.to_pydict()
-    assert data["newcol"] == [1, 2, 3]
+    # Calling UDF on df["a"] expression will transform it into a list at runtime for
+    # `is_a_col`, but not transform the expression for `not_a_col`
+    df = df.with_column("b", udf_one_col(df["a"], 1))
+    df.collect()

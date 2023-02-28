@@ -27,7 +27,7 @@ For example, the following example creates a new ``"flattened_image"`` column by
 
     df.with_column(
         "flattened_image",
-        df["image"].apply(lambda img: img.flatten(), return_type=np.ndarray)
+        df["image"].apply(lambda img: img.flatten(), return_dtype=np.ndarray)
     )
 
 Note here that we use the ``return_type`` keyword argument to specify that our returned column type is of type ``np.ndarray``, so the new ``"flattened_image"``

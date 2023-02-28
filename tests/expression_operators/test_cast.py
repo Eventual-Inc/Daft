@@ -158,7 +158,7 @@ def test_cast_py(before, method_to_run, to_type, expected):
         df = df.with_column(
             "before",
             df["before"].apply(
-                lambda obj: getattr(obj, method_to_run)() if obj is not None else None, return_type=object
+                lambda obj: getattr(obj, method_to_run)() if obj is not None else None, return_dtype=object
             ),
         )
 

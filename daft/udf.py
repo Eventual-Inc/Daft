@@ -85,8 +85,12 @@ class UdfInputType(enum.Enum):
         raise ValueError(f"UDF input array type {hint} is not supported")
 
 
-def _convert_argument(arg: DataBlock, input_type: UdfInputType, partition_length: int) -> Any:
+def _convert_argument(arg: DataBlock, input_type: UdfInputType | None, partition_length: int) -> Any:
     """Converts a UDF argument input to the appropriate user-facing container type"""
+    if input_type is None:
+        assert arg.is_scalar(), f"Not a column type, this DataBlock should be a scalar literal"
+        return next(arg.iter_py())
+
     if arg.is_scalar():
         return next(arg.iter_py())
     if input_type == UdfInputType.LIST:
@@ -263,15 +267,15 @@ def udf(
         def wrapped_func(*args, **kwargs):
 
             # Validate that arguments specified in input_columns receive Expressions as input
-            for arg_name, arg in zip(ordered_func_arg_names, args):
+            arg_names_and_args = list(zip(ordered_func_arg_names, args)) + list(kwargs.items())
+            for arg_name, arg in arg_names_and_args:
                 if arg_name in input_types and not isinstance(arg, Expression):
                     raise ValueError(
-                        f"Argument {arg_name} is an input_column expects an Expression but received instead: {arg}"
+                        f"Argument `{arg_name}` is an input_column expects an Expression but received instead: {arg}"
                     )
-            for kwarg_name, kwarg in kwargs.items():
-                if kwarg_name in input_types and not isinstance(kwarg, Expression):
+                if arg_name not in input_types and isinstance(arg, Expression):
                     raise ValueError(
-                        f"Keyword argument {kwarg_name} is an input_column and expects an Expression, but received instead: {kwarg}"
+                        f"Argument `{arg_name}` is not an input_column but received an Expression as input: {arg}"
                     )
 
             @functools.wraps(func)
@@ -293,13 +297,11 @@ def udf(
 
                 # Convert DataBlock arguments to the correct type
                 converted_args = tuple(
-                    _convert_argument(arg, input_types[arg_name], partition_length) if arg_name in input_types else arg
+                    _convert_argument(arg, input_types.get(arg_name), partition_length)
                     for arg_name, arg in zip(ordered_func_arg_names, args)
                 )
                 converted_kwargs = {
-                    kwarg_name: _convert_argument(arg, input_types[kwarg_name], partition_length)
-                    if kwarg_name in input_types
-                    else arg
+                    kwarg_name: _convert_argument(arg, input_types.get(kwarg_name), partition_length)
                     for kwarg_name, arg in kwargs.items()
                 }
 
