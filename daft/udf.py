@@ -13,7 +13,7 @@ else:
     from typing import get_origin
 
 from daft.execution.operators import ExpressionType
-from daft.expressions import UdfExpression
+from daft.expressions import Expression, UdfExpression
 from daft.runners.blocks import DataBlock
 
 _POLARS_AVAILABLE = True
@@ -85,27 +85,24 @@ class UdfInputType(enum.Enum):
         raise ValueError(f"UDF input array type {hint} is not supported")
 
 
-def _convert_argument(arg: Any, input_type: UdfInputType, partition_length: int) -> Any:
+def _convert_argument(arg: DataBlock, input_type: UdfInputType, partition_length: int) -> Any:
     """Converts a UDF argument input to the appropriate user-facing container type"""
-    if isinstance(arg, DataBlock) and arg.is_scalar():
+    if arg.is_scalar():
         return next(arg.iter_py())
-    elif isinstance(arg, DataBlock):
-        if input_type == UdfInputType.LIST:
-            arg_iterator = arg.iter_py()
-            return [next(arg_iterator) for _ in range(partition_length)]
-        elif input_type == UdfInputType.NUMPY:
-            return arg.to_numpy()
-        elif input_type == UdfInputType.PANDAS:
-            return pd.Series(arg.to_numpy())
-        elif input_type == UdfInputType.PYARROW:
-            return arg.to_arrow().combine_chunks()
-        elif input_type == UdfInputType.PYARROW_CHUNKED:
-            return arg.to_arrow()
-        elif input_type == UdfInputType.POLARS:
-            return arg.to_polars()
-        else:
-            raise NotImplementedError(f"Unsupported UDF input type {input_type}")
-    return arg
+    if input_type == UdfInputType.LIST:
+        arg_iterator = arg.iter_py()
+        return [next(arg_iterator) for _ in range(partition_length)]
+    elif input_type == UdfInputType.NUMPY:
+        return arg.to_numpy()
+    elif input_type == UdfInputType.PANDAS:
+        return pd.Series(arg.to_numpy())
+    elif input_type == UdfInputType.PYARROW:
+        return arg.to_arrow().combine_chunks()
+    elif input_type == UdfInputType.PYARROW_CHUNKED:
+        return arg.to_arrow()
+    elif input_type == UdfInputType.POLARS:
+        return arg.to_polars()
+    raise NotImplementedError(f"Unsupported UDF input type {input_type}")
 
 
 def udf(
@@ -264,6 +261,19 @@ def udf(
 
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
+
+            # Validate that arguments specified in input_columns receive Expressions as input
+            for arg_name, arg in zip(ordered_func_arg_names, args):
+                if arg_name in input_types and not isinstance(arg, Expression):
+                    raise ValueError(
+                        f"Argument {arg_name} is an input_column expects an Expression but received instead: {arg}"
+                    )
+            for kwarg_name, kwarg in kwargs.items():
+                if kwarg_name in input_types and not isinstance(kwarg, Expression):
+                    raise ValueError(
+                        f"Keyword argument {kwarg_name} is an input_column and expects an Expression, but received instead: {kwarg}"
+                    )
+
             @functools.wraps(func)
             def pre_process_data_block_func(*args, **kwargs):
                 # TODO: The initialization of stateful UDFs is currently done on the execution on every partition here,
