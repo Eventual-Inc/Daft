@@ -114,6 +114,7 @@ def glob_path_with_stats(path: str, source_info: SourceInfo | None) -> list[List
         globbed_data = fs.glob(path, detail=True)
 
         for path, details in globbed_data.items():
+            path = _ensure_path_protocol(protocol, path)
             filepaths_to_infos[path]["size"] = details["size"]
             filepaths_to_infos[path]["type"] = details["type"]
 
@@ -128,6 +129,7 @@ def glob_path_with_stats(path: str, source_info: SourceInfo | None) -> list[List
 
         for file_info in files_info:
             path = file_info["name"]
+            path = _ensure_path_protocol(protocol, path)
             filepaths_to_infos[path]["size"] = file_info["size"]
             filepaths_to_infos[path]["type"] = file_info["type"]
 
