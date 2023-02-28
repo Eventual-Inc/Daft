@@ -368,7 +368,7 @@ def reduce(
         yield None
 
     inputs_to_reduce = [deque(_.partitions()) for _ in materializations]
-    metadatas = [deque(_.metadatas()) for _ in materializations]
+    metadatas = [deque(_.partition_metadatas()) for _ in materializations]
     del materializations
 
     # Yield all the reduces in order.
