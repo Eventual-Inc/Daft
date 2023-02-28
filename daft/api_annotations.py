@@ -3,7 +3,7 @@ from __future__ import annotations
 import functools
 import inspect
 import sys
-from typing import Any, Callable, Union
+from typing import Any, Callable, ForwardRef, Union
 
 if sys.version_info < (3, 8):
     from typing_extensions import get_args, get_origin
@@ -33,6 +33,15 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
 
     def isinstance_helper(value: Any, T: Any) -> bool:
         """Like builtins.isinstance, but also accepts typing.* types."""
+
+        if T is Any:
+            return True
+
+        # T is an unresolved annotation.
+        # We cannot typecheck these, so just treat them as Any.
+        if isinstance(T, (str, ForwardRef)):
+            return True
+
         # T is a simple type, like `int`
         if isinstance(T, type):
             return isinstance(value, T)
@@ -43,15 +52,12 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
             return isinstance(value, origin_T)
 
         # T is a higher order type, like `typing.Union`
-        if T is Any:
-            return True
-
         if origin_T is Union:
             union_types = get_args(T)
             return any(isinstance_helper(value, union_type) for union_type in union_types)
 
         raise NotImplementedError(
-            f"Unexpected error: Type checking is not implemented for type {origin_T}. " "Sorry! Please file an issue."
+            f"Unexpected error: Type checking is not implemented for type {T}. Sorry! Please file an issue."
         )
 
     for name, value in arguments.items():
