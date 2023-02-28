@@ -50,6 +50,10 @@ class PartitionTask(Generic[PartitionT]):
         """If possible, cancel the execution of this PartitionTask."""
         raise NotImplementedError()
 
+    def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
+        """Set the result of this Task. For use by the Task executor."""
+        raise NotImplementedError
+
     def __str__(self) -> str:
         return (
             f"{self.id()}\n"
@@ -144,9 +148,10 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
     # When available, the partition created from running the PartitionTask.
     _result: None | MaterializedResult[PartitionT] = None
 
-    def set_result(self, value: MaterializedResult[PartitionT]) -> None:
+    def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
         assert self._result is None, f"Cannot set result twice. Result is already {self._result}"
-        self._result = value
+        [partition] = result
+        self._result = partition
 
     def done(self) -> bool:
         return self._result is not None
@@ -184,9 +189,9 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
     # When available, the partitions created from running the PartitionTask.
     _results: None | list[MaterializedResult[PartitionT]] = None
 
-    def set_results(self, value: list[MaterializedResult[PartitionT]]) -> None:
+    def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
         assert self._results is None, f"Cannot set result twice. Result is already {self._results}"
-        self._results = value
+        self._results = result
 
     def done(self) -> bool:
         return self._results is not None
