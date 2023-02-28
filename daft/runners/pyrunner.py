@@ -7,6 +7,7 @@ from typing import Iterable
 
 import psutil
 
+from daft.datasources import SourceInfo
 from daft.execution import physical_plan, physical_plan_factory
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
 from daft.execution.logical_op_runners import LogicalPartitionOpRunner
@@ -80,8 +81,9 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
     def glob_paths_details(
         self,
         source_path: str,
+        source_info: SourceInfo | None = None,
     ) -> tuple[LocalPartitionSet, Schema]:
-        files_info = glob_path_with_stats(source_path)
+        files_info = glob_path_with_stats(source_path, source_info)
 
         if len(files_info) == 0:
             raise FileNotFoundError(f"No files found at {source_path}")
@@ -95,6 +97,7 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
                         self.FS_LISTING_PATH_COLUMN_NAME: [f.path for f in files_info],
                         self.FS_LISTING_SIZE_COLUMN_NAME: [f.size for f in files_info],
                         self.FS_LISTING_TYPE_COLUMN_NAME: [f.type for f in files_info],
+                        self.FS_LISTING_ROWS_COLUMN_NAME: [f.rows for f in files_info],
                     },
                     schema=schema,
                     partition_id=0,

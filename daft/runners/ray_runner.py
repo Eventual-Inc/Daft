@@ -15,6 +15,7 @@ except ImportError:
     )
     raise
 
+from daft.datasources import SourceInfo
 from daft.execution import physical_plan_factory
 from daft.execution.execution_step import (
     FanoutInstruction,
@@ -65,10 +66,12 @@ from daft.logical.schema import Schema
 
 
 @ray.remote
-def _glob_path_into_details_vpartitions(path: str, schema: Schema) -> list[tuple[PartID, vPartition]]:
+def _glob_path_into_details_vpartitions(
+    path: str, schema: Schema, source_info: SourceInfo | None
+) -> list[tuple[PartID, vPartition]]:
     assert len(schema) == 3
     listing_path_name, listing_size_name, listing_type_name = ["path", "size", "type"]
-    listing_infos = glob_path_with_stats(path)
+    listing_infos = glob_path_with_stats(path, source_info)
     if len(listing_infos) == 0:
         raise FileNotFoundError(f"No files found at {path}")
 
@@ -163,9 +166,10 @@ class RayPartitionSetFactory(PartitionSetFactory[ray.ObjectRef]):
     def glob_paths_details(
         self,
         source_path: str,
+        source_info: SourceInfo | None = None,
     ) -> tuple[RayPartitionSet, Schema]:
         schema = self._get_listing_paths_details_schema()
-        partition_refs = ray.get(_glob_path_into_details_vpartitions.remote(source_path, schema))
+        partition_refs = ray.get(_glob_path_into_details_vpartitions.remote(source_path, schema, source_info))
         return RayPartitionSet({part_id: part for part_id, part in partition_refs}), schema
 
 

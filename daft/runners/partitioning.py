@@ -17,6 +17,7 @@ from pyarrow import csv
 from pyarrow import dataset as pada
 from pyarrow import json, parquet
 
+from daft.datasources import SourceInfo
 from daft.execution.operators import OperatorEnum
 from daft.expressions import Expression, ExpressionExecutor, ExpressionList
 from daft.filesystem import get_filesystem_from_path
@@ -825,6 +826,7 @@ class PartitionSetFactory(Generic[PartitionT]):
     FS_LISTING_PATH_COLUMN_NAME = "path"
     FS_LISTING_SIZE_COLUMN_NAME = "size"
     FS_LISTING_TYPE_COLUMN_NAME = "type"
+    FS_LISTING_ROWS_COLUMN_NAME = "rows"
 
     def _get_listing_paths_schema(self) -> Schema:
         """Construct the schema for a DataFrame of path listing"""
@@ -841,6 +843,7 @@ class PartitionSetFactory(Generic[PartitionT]):
                 Field(self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
                 Field(self.FS_LISTING_SIZE_COLUMN_NAME, ExpressionType.integer()),
                 Field(self.FS_LISTING_TYPE_COLUMN_NAME, ExpressionType.string()),
+                Field(self.FS_LISTING_ROWS_COLUMN_NAME, ExpressionType.integer()),
             ]
         )
 
@@ -848,6 +851,7 @@ class PartitionSetFactory(Generic[PartitionT]):
     def glob_paths_details(
         self,
         source_path: str,
+        source_info: SourceInfo | None = None,
     ) -> tuple[PartitionSet[PartitionT], Schema]:
         """Globs the specified filepath to construct a PartitionSet of file and dir metadata
 
