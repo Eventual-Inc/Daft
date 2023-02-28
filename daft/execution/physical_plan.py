@@ -78,9 +78,9 @@ def file_read(
                         logplan=scan_info,
                         index=i,
                     ),
-                    # We set the memory request to be 5x filesize for now.
-                    # This might still not be enough depending on the reader, but it's better than 1x.
-                    resource_request=ResourceRequest(num_cpus=0.5, memory_bytes=file_sizes_bytes[i] * 5),
+                    # Set the filesize as the memory request.
+                    # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
+                    resource_request=ResourceRequest(num_cpus=0.5, memory_bytes=file_sizes_bytes[i]),
                 )
                 yield file_read_step
                 output_partition_index += 1
