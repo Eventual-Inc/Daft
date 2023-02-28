@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
 
+from daft.api_annotations import APITypeError
 from daft.dataframe import DataFrame
 from daft.types import ExpressionType
 
@@ -42,6 +43,11 @@ def test_load_missing(read_method):
 def test_error_thrown_create_dataframe_constructor(data) -> None:
     with pytest.raises(ValueError):
         DataFrame(data)
+
+
+def test_wrong_input_type():
+    with pytest.raises(APITypeError):
+        DataFrame.from_pydict("invalid input")
 
 
 ###
