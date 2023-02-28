@@ -62,17 +62,16 @@ def file_read(
 
     while True:
         # Check if any inputs finished executing.
-        while len(materializations) > 0 and materializations[0].result is not None:
-            result = materializations.popleft().result
-            assert result is not None  # for mypy only
+        while len(materializations) > 0 and materializations[0].done():
+            done_task = materializations.popleft()
 
-            vpartition = result.vpartition()
+            vpartition = done_task.vpartition()
             file_sizes_bytes = vpartition.to_pydict()["size"]
 
             # Emit one partition for each file (NOTE: hardcoded for now).
             for i in range(vpartition.metadata().num_rows):
 
-                file_read_step = PartitionTaskBuilder[PartitionT](inputs=[result.partition()]).add_instruction(
+                file_read_step = PartitionTaskBuilder[PartitionT](inputs=[done_task.partition()]).add_instruction(
                     instruction=execution_step.ReadFile(
                         partition_id=output_partition_index,
                         logplan=scan_info,
@@ -144,20 +143,16 @@ def join(
     while True:
         # Emit new join steps if we have left and right partitions ready.
         while (
-            len(left_requests) > 0
-            and len(right_requests) > 0
-            and left_requests[0].result is not None
-            and right_requests[0].result is not None
+            len(left_requests) > 0 and len(right_requests) > 0 and left_requests[0].done() and right_requests[0].done()
         ):
             next_left = left_requests.popleft()
             next_right = right_requests.popleft()
-            assert next_left.result is not None  # for mypy only; guaranteed by while condition
-            assert next_right.result is not None  # for mypy only; guaranteed by while condition
 
             join_step = PartitionTaskBuilder[PartitionT](
-                inputs=[next_left.result.partition(), next_right.result.partition()],
+                inputs=[next_left.partition(), next_right.partition()],
                 resource_request=ResourceRequest(
-                    memory_bytes=2 * (next_left.result.metadata().size_bytes + next_right.result.metadata().size_bytes)
+                    memory_bytes=2
+                    * (next_left.partition_metadata().size_bytes + next_right.partition_metadata().size_bytes)
                 ),
             ).add_instruction(instruction=execution_step.Join(join))
             yield join_step
@@ -234,15 +229,14 @@ def global_limit(
     while True:
         # Check if any inputs finished executing.
         # Apply and deduct the rolling global limit.
-        while len(materializations) > 0 and materializations[0].result is not None:
-            result = materializations.popleft().result
-            assert result is not None  # for mypy only
+        while len(materializations) > 0 and materializations[0].done():
+            done_task = materializations.popleft()
 
-            limit = remaining_rows and min(remaining_rows, result.metadata().num_rows)
+            limit = remaining_rows and min(remaining_rows, done_task.partition_metadata().num_rows)
 
             global_limit_step = PartitionTaskBuilder[PartitionT](
-                inputs=[result.partition()],
-                resource_request=ResourceRequest(memory_bytes=2 * result.metadata().size_bytes),
+                inputs=[done_task.partition()],
+                resource_request=ResourceRequest(memory_bytes=2 * done_task.partition_metadata().size_bytes),
             ).add_instruction(
                 instruction=execution_step.LocalLimit(limit),
             )
@@ -256,15 +250,13 @@ def global_limit(
                 # we can just reuse an existing computed partition.
 
                 # Cancel all remaining results; we won't need them.
-                for _ in range(len(materializations)):
-                    result_to_cancel = materializations.pop().result
-                    if result_to_cancel is not None:
-                        result_to_cancel.cancel()
+                while len(materializations) > 0:
+                    materializations.pop().cancel()
 
                 yield from (
                     PartitionTaskBuilder[PartitionT](
-                        inputs=[result.partition()],
-                        resource_request=ResourceRequest(memory_bytes=result.metadata().size_bytes),
+                        inputs=[done_task.partition()],
+                        resource_request=ResourceRequest(memory_bytes=done_task.partition_metadata().size_bytes),
                     ).add_instruction(
                         instruction=execution_step.LocalLimit(0),
                     )
@@ -317,25 +309,20 @@ def coalesce(
 
         # See if we can emit a coalesced partition.
         num_partitions_to_merge = merges_per_result[0]
-        if len(materializations) >= num_partitions_to_merge:
-            ready_to_coalesce = [
-                materializations[i].result
-                for i in range(num_partitions_to_merge)
-                if materializations[i].result is not None
-            ]
-            if len(ready_to_coalesce) == num_partitions_to_merge:
-                # Coalesce the partition and emit it.
-                merge_step = PartitionTaskBuilder[PartitionT](
-                    inputs=[_.partition() for _ in ready_to_coalesce],
-                    resource_request=ResourceRequest(
-                        memory_bytes=2 * sum(_.metadata().size_bytes for _ in ready_to_coalesce),
-                    ),
-                ).add_instruction(
-                    instruction=execution_step.ReduceMerge(),
-                )
-                [materializations.popleft() for _ in range(num_partitions_to_merge)]
-                merges_per_result.popleft()
-                yield merge_step
+        ready_to_coalesce = [task for task in list(materializations)[:num_partitions_to_merge] if task.done()]
+        if len(ready_to_coalesce) == num_partitions_to_merge:
+            # Coalesce the partition and emit it.
+            merge_step = PartitionTaskBuilder[PartitionT](
+                inputs=[_.partition() for _ in ready_to_coalesce],
+                resource_request=ResourceRequest(
+                    memory_bytes=2 * sum(_.partition_metadata().size_bytes for _ in ready_to_coalesce),
+                ),
+            ).add_instruction(
+                instruction=execution_step.ReduceMerge(),
+            )
+            [materializations.popleft() for _ in range(num_partitions_to_merge)]
+            merges_per_result.popleft()
+            yield merge_step
 
         # Cannot emit a coalesced partition.
         # Materialize a single dependency.
@@ -377,20 +364,22 @@ def reduce(
 
     # All fanouts dispatched. Wait for all of them to materialize
     # (since we need all of them to emit even a single reduce).
-    while any(_.results is None for _ in materializations):
+    while any(not _.done() for _ in materializations):
         yield None
 
-    inputs_to_reduce = [deque(_.results) for _ in materializations if _.results is not None]
+    inputs_to_reduce = [deque(_.partitions()) for _ in materializations]
+    metadatas = [deque(_.metadatas()) for _ in materializations]
     del materializations
 
     # Yield all the reduces in order.
     while len(inputs_to_reduce[0]) > 0:
-        batch = [_.popleft() for _ in inputs_to_reduce]
+        partition_batch = [_.popleft() for _ in inputs_to_reduce]
+        metadata_batch = [_.popleft() for _ in metadatas]
         yield PartitionTaskBuilder[PartitionT](
-            inputs=[result.partition() for result in batch],
+            inputs=partition_batch,
             instructions=[reduce_instruction],
             resource_request=ResourceRequest(
-                memory_bytes=2 * sum(result.metadata().size_bytes for result in batch),
+                memory_bytes=2 * sum(metadata.size_bytes for metadata in metadata_batch),
             ),
         )
 
@@ -412,10 +401,10 @@ def sort(
     # Sample all partitions (to be used for calculating sort boundaries).
     sample_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     for source in source_materializations:
-        while source.result is None:
+        while not source.done():
             yield None
         sample = (
-            PartitionTaskBuilder[PartitionT](inputs=[source.result.partition()])
+            PartitionTaskBuilder[PartitionT](inputs=[source.partition()])
             .add_instruction(
                 instruction=execution_step.Sample(sort_by=sort_info._sort_by),
             )
@@ -425,17 +414,13 @@ def sort(
         yield sample
 
     # Wait for samples to materialize.
-    while any(_.result is None for _ in sample_materializations):
+    while any(not _.done() for _ in sample_materializations):
         yield None
 
     # Reduce the samples to get sort boundaries.
     boundaries = (
         PartitionTaskBuilder[PartitionT](
-            inputs=[
-                sample.result.partition()
-                for sample in consume_deque(sample_materializations)
-                if sample.result is not None  # for mypy only; guaranteed to be not None by while loop
-            ]
+            inputs=[sample.partition() for sample in consume_deque(sample_materializations)]
         )
         .add_instruction(
             execution_step.ReduceToQuantiles(
@@ -449,17 +434,15 @@ def sort(
     yield boundaries
 
     # Wait for boundaries to materialize.
-    while boundaries.result is None:
+    while not boundaries.done():
         yield None
-
-    boundaries_partition = boundaries.result.partition()
 
     # Create a range fanout plan.
     range_fanout_plan = (
         PartitionTaskBuilder[PartitionT](
-            inputs=[boundaries_partition, source_result.partition()],
+            inputs=[boundaries.partition(), source.partition()],
             resource_request=ResourceRequest(
-                memory_bytes=2 * source_result.metadata().size_bytes,
+                memory_bytes=2 * source.partition_metadata().size_bytes,
             ),
         ).add_instruction(
             instruction=execution_step.FanoutRange[PartitionT](
@@ -468,9 +451,7 @@ def sort(
                 descending=sort_info._descending,
             ),
         )
-        for source_result in (
-            source.result for source in consume_deque(source_materializations) if source.result is not None
-        )
+        for source in consume_deque(source_materializations)
     )
 
     # Execute a sorting reduce on it.
@@ -502,10 +483,10 @@ def materialize(
 
         yield step
 
-    while any(_.result is None for _ in materializations):
+    while any(not _.done() for _ in materializations):
         yield None
 
-    return [_.result.partition() for _ in materializations]
+    return [_.partition() for _ in materializations]
 
 
 def enumerate_open_executions(

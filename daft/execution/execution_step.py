@@ -42,7 +42,7 @@ class PartitionTask(Generic[PartitionT]):
     def id(self) -> str:
         return f"{self.__class__.__name__}_{self._id}"
 
-    def ready(self) -> bool:
+    def done(self) -> bool:
         """Whether the PartitionT result of this task is available."""
         raise NotImplementedError()
 
@@ -148,7 +148,7 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         assert self._result is None, f"Cannot set result twice. Result is already {self._result}"
         self._result = value
 
-    def ready(self) -> bool:
+    def done(self) -> bool:
         return self._result is not None
 
     def cancel(self) -> None:
@@ -156,12 +156,12 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         if self._result is not None:
             self._result.cancel()
 
-    def result(self) -> PartitionT:
+    def partition(self) -> PartitionT:
         """Get the PartitionT resulting from running this PartitionTask."""
         assert self._result is not None
         return self._result.partition()
 
-    def result_metadata(self) -> PartitionMetadata:
+    def partition_metadata(self) -> PartitionMetadata:
         """Get the metadata of the result partition.
 
         (Avoids retrieving the actual partition itself if possible.)
@@ -169,7 +169,7 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         assert self._result is not None
         return self._result.metadata()
 
-    def result_vpartition(self) -> vPartition:
+    def vpartition(self) -> vPartition:
         """Get the raw vPartition of the result."""
         assert self._result is not None
         return self._result.vpartition()
@@ -188,7 +188,7 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
         assert self._results is None, f"Cannot set result twice. Result is already {self._results}"
         self._results = value
 
-    def ready(self) -> bool:
+    def done(self) -> bool:
         return self._results is not None
 
     def cancel(self) -> None:
@@ -196,20 +196,20 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
             for result in self._results:
                 result.cancel()
 
-    def result(self, index: int) -> PartitionT:
-        """Get the PartitionT resulting from running this PartitionTask."""
+    def partitions(self) -> list[PartitionT]:
+        """Get the PartitionTs resulting from running this PartitionTask."""
         assert self._results is not None
-        return self._results[index].partition()
+        return [result.partition() for result in self._results]
 
-    def result_metadata(self, index: int) -> PartitionMetadata:
-        """Get the metadata of the result partition.
+    def partition_metadatas(self) -> list[PartitionMetadata]:
+        """Get the metadata of the result partitions.
 
         (Avoids retrieving the actual partition itself if possible.)
         """
         assert self._results is not None
-        return self._results[index].metadata()
+        return [result.metadata() for result in self._results]
 
-    def result_vpartition(self, index: int) -> vPartition:
+    def vpartition(self, index: int) -> vPartition:
         """Get the raw vPartition of the result."""
         assert self._results is not None
         return self._results[index].vpartition()
