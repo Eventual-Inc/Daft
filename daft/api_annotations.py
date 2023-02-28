@@ -6,9 +6,9 @@ import sys
 from typing import Any, Callable, Union
 
 if sys.version_info < (3, 8):
-    from typing_extensions import get_args, get_origin, get_type_hints
+    from typing_extensions import get_args, get_origin
 else:
-    from typing import get_args, get_origin, get_type_hints
+    from typing import get_args, get_origin
 
 from daft.analytics import time_df_method
 
@@ -29,7 +29,7 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
 
     signature = inspect.signature(func)
     arguments = signature.bind(*args, **kwargs).arguments
-    type_hints = get_type_hints(func)
+    type_hints = func.__annotations__
 
     def isinstance_helper(value: Any, T: Any) -> bool:
         """Like builtins.isinstance, but also accepts typing.* types."""
