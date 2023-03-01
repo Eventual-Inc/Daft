@@ -27,7 +27,7 @@ PyYAML
 ray[data, default]
 s3fs
 Sphinx <= 5
-sphinx-book-theme>=0.3.3
+sphinx-book-theme>=0.3.3,<1.0.0
 sphinx-reredirects>=0.1.1
 uvicorn
 viztracer
