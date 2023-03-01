@@ -226,3 +226,21 @@ def test_sum_groupby_sorted(daft_df, sort_desc, service_requests_csv_pd_df, repa
     ).reset_index()
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, assert_ordering=True)
+
+
+@parametrize_service_requests_csv_repartition
+@pytest.mark.parametrize(
+    "keys",
+    [
+        pytest.param(["Borough"], id="NumGroupSortKeys:1"),
+        pytest.param(["Borough", "Complaint Type"], id="NumGroupSortKeys:2"),
+    ],
+)
+def test_sorted_groupby_first(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
+    """Test running a .first() aggregation after a sorted order-maintaining groupby"""
+    daft_df = daft_df.repartition(repartition_nparts).sort("Unique Key").groupby(*[col(k) for k in keys]).first()
+    service_requests_csv_pd_df = (
+        service_requests_csv_pd_df.sort_values("Unique Key").groupby(keys).head(1)
+    ).reset_index(drop=True)
+    daft_pd_df = daft_df.to_pandas()
+    assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="Unique Key")

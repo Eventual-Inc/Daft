@@ -50,6 +50,19 @@ class ExpressionOperator:
         return res
 
 
+_IdentityTM = frozenset(
+    {
+        (ExpressionType.integer(),): ExpressionType.integer(),
+        (ExpressionType.float(),): ExpressionType.float(),
+        (ExpressionType.string(),): ExpressionType.string(),
+        (ExpressionType.bytes(),): ExpressionType.bytes(),
+        (ExpressionType.logical(),): ExpressionType.logical(),
+        (ExpressionType.date(),): ExpressionType.date(),
+        (ExpressionType.null(),): ExpressionType.null(),
+    }.items()
+)
+
+
 _UnaryNumericalTM = frozenset(
     {
         (ExpressionType.integer(),): ExpressionType.integer(),
@@ -231,6 +244,7 @@ class OperatorEnum(Enum):
     CONCAT = _UOp(name="concat", symbol="concat", type_matrix=_ConcatTM)
     MIN = _ComparibleUop(name="min", symbol="min")
     MAX = _ComparibleUop(name="max", symbol="max")
+    FIRST = _UOp(name="first", symbol="first", type_matrix=_IdentityTM)
 
     COUNT = _UOp(name="count", symbol="count", type_matrix=_CountLogicalTM)
 

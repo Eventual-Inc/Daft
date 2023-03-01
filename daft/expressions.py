@@ -264,6 +264,7 @@ class Expression(TreeNode["Expression"]):
     _min = partialmethod(_unary_op, OperatorEnum.MIN)
     _max = partialmethod(_unary_op, OperatorEnum.MAX)
     _explode = partialmethod(_unary_op, OperatorEnum.EXPLODE)
+    _first = partialmethod(_unary_op, OperatorEnum.FIRST)
 
     # Logical
     def __invert__(self) -> Expression:

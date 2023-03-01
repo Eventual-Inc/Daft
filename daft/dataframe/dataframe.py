@@ -983,6 +983,8 @@ class DataFrame:
                 builder.add_list(expr.name(), expr)
             elif op == "mean":
                 builder.add_mean(expr.name(), expr)
+            elif op == "first":
+                builder.add_first(expr.name(), expr)
             else:
                 raise NotImplementedError(f"LogicalPlan construction for operation not implemented: {op}")
         return DataFrame(builder.build())
@@ -1271,6 +1273,11 @@ class GroupedDataFrame:
 
         return self.df._agg(
             [(c, "count") for c in self.df.column_names if c not in self.group_by.names], group_by=self.group_by
+        )
+
+    def first(self) -> "DataFrame":
+        return self.df._agg(
+            [(c, "first") for c in self.df.column_names if c not in self.group_by.names], group_by=self.group_by
         )
 
     def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> "DataFrame":

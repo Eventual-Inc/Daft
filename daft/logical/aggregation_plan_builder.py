@@ -159,3 +159,8 @@ class AggregationPlanBuilder:
         self._final_projection_excludes.add(intermediate_count_colname)
 
         return self
+
+    def add_first(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
+        self._add_single_partition_shortcut_agg(result_colname, Expression._first(expr), "first")
+        self._add_2phase_agg(result_colname, Expression._first(expr), "first", "first")
+        return self

@@ -776,6 +776,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             if len(self) == 0:
                 return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
             return ArrowDataBlock(data=pa.chunked_array([[pac.max(self.data).as_py()]], type=self.data.type))
+        elif op == "first":
+            if len(self) == 0:
+                return ArrowDataBlock(data=pa.chunked_array([[]], type=self.data.type))
+            return ArrowDataBlock(data=pac.take(self.data, [0]))
         else:
             raise NotImplementedError(op)
 
@@ -832,6 +836,9 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             elif op == "count":
                 exprs.append(pl.col(an).is_not_null().sum().alias(an))
                 agg_expected_arrow_type.append(pa.int64())
+            elif op == "first":
+                exprs.append(pl.col(an).first())
+                agg_expected_arrow_type.append(arr.type)
             else:
                 raise NotImplementedError()
         if len(agg_names) == 0:
@@ -1031,6 +1038,7 @@ class ArrowEvaluator(OperatorEvaluator["ArrowDataBlock"]):
     MAX = ArrowDataBlock.identity
     COUNT = ArrowDataBlock.identity
     EXPLODE = ArrowDataBlock.identity
+    FIRST = ArrowDataBlock.identity
 
 
 ArrowDataBlock.evaluator = ArrowEvaluator
@@ -1146,6 +1154,7 @@ class PyListEvaluator(OperatorEvaluator["PyListDataBlock"]):
     MAX = PyListDataBlock.identity
     COUNT = PyListDataBlock.identity
     EXPLODE = PyListDataBlock.identity
+    FIRST = PyListDataBlock.identity
 
     # Unary operations that should never run on a PyListDataBlock because they are represented by
     # Arrow primitives and should always be housed in an ArrowDataBlock
