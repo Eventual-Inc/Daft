@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import math
 from collections import Counter
 
 import pyarrow as pa
@@ -185,3 +186,67 @@ def test_series_take_numeric(dtype) -> None:
     original_data = s.to_pylist()
     expected = [original_data[i] if i is not None else None for i in pyidx]
     assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize("dtype", arrow_float_types)
+def test_series_float_sorting(dtype) -> None:
+    data = pa.array([5.0, 4.0, 1.0, None, 2.0, None, float("nan"), -float("nan"), float("inf"), -float("inf")])
+    sorted_order = [-float("inf"), 1.0, 2.0, 4.0, 5.0, float("inf"), -float("nan"), float("nan"), None, None]
+    s = Series.from_arrow(data.cast(dtype))
+    s_sorted = s.sort()
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert all([(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(s_sorted.to_pylist(), sorted_order)])
+
+    s_argsorted = s.argsort()
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert all([(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(taken.to_pylist(), sorted_order)])
+
+    ## Descending
+    s_sorted = s.sort(descending=True)
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert all(
+        [(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(s_sorted.to_pylist(), sorted_order[::-1])]
+    )
+
+    s_argsorted = s.argsort(descending=True)
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert all([(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(taken.to_pylist(), sorted_order[::-1])])
+
+
+@pytest.mark.parametrize("dtype", arrow_int_types)
+def test_series_int_sorting(dtype) -> None:
+    data = pa.array([5, 4, 1, None, 2, None])
+    sorted_order = [1, 2, 4, 5, None, None]
+    s = Series.from_arrow(data.cast(dtype))
+    s_sorted = s.sort()
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order
+
+    s_argsorted = s.argsort()
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order
+
+    ## Descending
+    s_sorted = s.sort(descending=True)
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order[::-1]
+
+    s_argsorted = s.argsort(descending=True)
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order[::-1]
