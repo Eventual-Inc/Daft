@@ -250,3 +250,63 @@ def test_series_int_sorting(dtype) -> None:
     taken = s.take(s_argsorted)
     assert len(taken) == len(s)
     assert taken.to_pylist() == sorted_order[::-1]
+
+
+def test_series_string_sorting() -> None:
+    data = pa.array(["hi", "bye", "thai", None, "2", None, "h", "by"])
+    sorted_order = ["2", "by", "bye", "h", "hi", "thai", None, None]
+    s = Series.from_arrow(data)
+    s_sorted = s.sort()
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order
+
+    s_argsorted = s.argsort()
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order
+
+    ## Descending
+    s_sorted = s.sort(descending=True)
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order[::-1]
+
+    s_argsorted = s.argsort(descending=True)
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order[::-1]
+
+
+def test_series_boolean_sorting() -> None:
+    data = pa.array([True, False, True, None, False])
+    sorted_order = [False, False, True, True, None]
+    s = Series.from_arrow(data)
+    s_sorted = s.sort()
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order
+
+    s_argsorted = s.argsort()
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order
+
+    ## Descending
+    s_sorted = s.sort(descending=True)
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order[::-1]
+
+    s_argsorted = s.argsort(descending=True)
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order[::-1]
