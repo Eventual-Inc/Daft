@@ -143,7 +143,13 @@ class PyListTile:
 
 
 @dataclass(frozen=True)
-class PartitionMetadata:
+class PartialPartitionMetadata:
+    num_rows: None | int
+    size_bytes: None | int
+
+
+@dataclass(frozen=True)
+class PartitionMetadata(PartialPartitionMetadata):
     num_rows: int
     size_bytes: int
 
