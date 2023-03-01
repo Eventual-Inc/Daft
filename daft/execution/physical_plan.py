@@ -77,9 +77,9 @@ def file_read(
                         logplan=scan_info,
                         index=i,
                     ),
-                    # Set the filesize as the memory request.
-                    # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
-                    resource_request=ResourceRequest(memory_bytes=file_sizes_bytes[i]),
+                    # We set the memory request to be 5x filesize for now.
+                    # This might still not be enough depending on the reader, but it's better than 1x.
+                    resource_request=ResourceRequest(num_cpus=0.5, memory_bytes=file_sizes_bytes[i] * 5),
                 )
                 yield file_read_step
                 output_partition_index += 1
@@ -308,20 +308,25 @@ def coalesce(
 
         # See if we can emit a coalesced partition.
         num_partitions_to_merge = merges_per_result[0]
-        ready_to_coalesce = [task for task in list(materializations)[:num_partitions_to_merge] if task.done()]
-        if len(ready_to_coalesce) == num_partitions_to_merge:
-            # Coalesce the partition and emit it.
-            merge_step = PartitionTaskBuilder[PartitionT](
-                inputs=[_.partition() for _ in ready_to_coalesce],
-                resource_request=ResourceRequest(
-                    memory_bytes=sum(_.partition_metadata().size_bytes for _ in ready_to_coalesce),
-                ),
-            ).add_instruction(
-                instruction=execution_step.ReduceMerge(),
-            )
-            [materializations.popleft() for _ in range(num_partitions_to_merge)]
-            merges_per_result.popleft()
-            yield merge_step
+        if len(materializations) >= num_partitions_to_merge:
+            ready_to_coalesce = [
+                materializations[i].result
+                for i in range(num_partitions_to_merge)
+                if materializations[i].result is not None
+            ]
+            if len(ready_to_coalesce) == num_partitions_to_merge:
+                # Coalesce the partition and emit it.
+                merge_step = ExecutionStepBuilder[PartitionT](
+                    inputs=[_.partition() for _ in ready_to_coalesce],
+                    resource_request=ResourceRequest(
+                        memory_bytes=2 * sum(_.metadata().size_bytes for _ in ready_to_coalesce),
+                    ),
+                ).add_instruction(
+                    instruction=execution_step.ReduceMerge(),
+                )
+                [materializations.popleft() for _ in range(num_partitions_to_merge)]
+                merges_per_result.popleft()
+                yield merge_step
 
         # Cannot emit a coalesced partition.
         # Materialize a single dependency.
