@@ -69,7 +69,7 @@ from daft.logical.schema import Schema
 def _glob_path_into_details_vpartitions(
     path: str, schema: Schema, source_info: SourceInfo | None
 ) -> list[tuple[PartID, vPartition]]:
-    assert len(schema) == 3
+    assert len(schema) == 4
     listing_path_name, listing_size_name, listing_type_name = ["path", "size", "type"]
     listing_infos = glob_path_with_stats(path, source_info)
     if len(listing_infos) == 0:
