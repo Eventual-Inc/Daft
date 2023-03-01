@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
 if sys.version_info < (3, 8):
@@ -11,8 +13,11 @@ else:
 
 from typing import Any
 
+import pyarrow as pa
 from fsspec import AbstractFileSystem, get_filesystem_class
 from loguru import logger
+
+from daft.datasources import ParquetSourceInfo, SourceInfo
 
 
 @dataclasses.dataclass(frozen=True)
@@ -20,6 +25,7 @@ class ListingInfo:
     path: str
     size: int
     type: Literal["file"] | Literal["directory"]
+    rows: int | None = None
 
 
 def _get_s3fs_kwargs() -> dict[str, Any]:
@@ -97,31 +103,52 @@ def _path_is_glob(path: str) -> bool:
     return any([char in path for char in ["*", "?", "["]])
 
 
-def glob_path_with_stats(path: str) -> list[ListingInfo]:
+def glob_path_with_stats(path: str, source_info: SourceInfo | None) -> list[ListingInfo]:
     """Glob a path, returning a list ListingInfo."""
     fs = get_filesystem_from_path(path)
     protocol = get_protocol_from_path(path)
 
+    filepaths_to_infos: dict[str, dict[str, Any]] = defaultdict(dict)
+
     if _path_is_glob(path):
         globbed_data = fs.glob(path, detail=True)
-        return [
-            ListingInfo(path=_ensure_path_protocol(protocol, path), size=details["size"], type=details["type"])
-            for path, details in globbed_data.items()
-        ]
 
-    if fs.isfile(path):
+        for path, details in globbed_data.items():
+            path = _ensure_path_protocol(protocol, path)
+            filepaths_to_infos[path]["size"] = details["size"]
+            filepaths_to_infos[path]["type"] = details["type"]
+
+    elif fs.isfile(path):
         file_info = fs.info(path)
-        return [
-            ListingInfo(
-                path=_ensure_path_protocol(protocol, file_info["name"]), size=file_info["size"], type=file_info["type"]
-            )
-        ]
+
+        filepaths_to_infos[path]["size"] = file_info["size"]
+        filepaths_to_infos[path]["type"] = file_info["type"]
+
     elif fs.isdir(path):
         files_info = fs.ls(path, detail=True)
-        return [
-            ListingInfo(
-                path=_ensure_path_protocol(protocol, file_info["name"]), size=file_info["size"], type=file_info["type"]
-            )
-            for file_info in files_info
-        ]
-    raise FileNotFoundError(f"File or directory not found: {path}")
+
+        for file_info in files_info:
+            path = file_info["name"]
+            path = _ensure_path_protocol(protocol, path)
+            filepaths_to_infos[path]["size"] = file_info["size"]
+            filepaths_to_infos[path]["type"] = file_info["type"]
+
+    else:
+        raise FileNotFoundError(f"File or directory not found: {path}")
+
+    # Set number of rows if available.
+    if isinstance(source_info, ParquetSourceInfo):
+        parquet_metadatas = ThreadPoolExecutor().map(_get_parquet_metadata_single, filepaths_to_infos.keys())
+        for path, parquet_metadata in zip(filepaths_to_infos.keys(), parquet_metadatas):
+            filepaths_to_infos[path]["rows"] = parquet_metadata.num_rows
+
+    return [
+        ListingInfo(path=_ensure_path_protocol(protocol, path), **infos) for path, infos in filepaths_to_infos.items()
+    ]
+
+
+def _get_parquet_metadata_single(path: str) -> pa.parquet.FileMetadata:
+    """Get the Parquet metadata for a given Parquet file."""
+    fs = get_filesystem_from_path(path)
+    with fs.open(path) as f:
+        return pa.parquet.ParquetFile(f).metadata

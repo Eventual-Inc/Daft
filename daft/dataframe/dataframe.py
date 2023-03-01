@@ -67,7 +67,7 @@ def _get_tabular_files_scan(
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
     # Glob the path and return as a DataFrame with a column containing the filepaths
     partition_set_factory = get_context().runner().partition_set_factory()
-    partition_set, filepaths_schema = partition_set_factory.glob_paths_details(path)
+    partition_set, filepaths_schema = partition_set_factory.glob_paths_details(path, source_info)
     cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
     filepath_plan = logical_plan.InMemoryScan(
         cache_entry=cache_entry,
