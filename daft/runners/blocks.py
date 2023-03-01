@@ -564,17 +564,7 @@ def _should_truncate_chunk(arr: pa.Array) -> bool:
 
     # If the total size of the buffer is larger than the actual nbytes usage (+ some extra), the buffers
     # are likely containing extra data and we should truncate this array.
-    return arr.get_total_buffer_size() > (arr.nbytes * (1.1))
-
-
-def _get_arrow_array_total_buffer_size(arr: pa.Array) -> int:
-    """Returns the total size of buffers backing this Array"""
-    size = 0
-    for buf in arr.buffers():
-        if buf is None:
-            continue
-        size += buf.size()
-    return size
+    return arr.get_total_buffer_size() > (arr.nbytes * 1.1)
 
 
 def _get_arrow_array_estimated_nbytes(arr: pa.Array) -> float:
