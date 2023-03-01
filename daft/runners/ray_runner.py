@@ -284,7 +284,7 @@ class SchedulerActor:
 
         # Note: For autoscaling clusters, we will probably want to query cores dynamically.
         # Keep in mind this call takes about 0.3ms.
-        cores = int(ray.cluster_resources()["CPU"])
+        cores = int(ray.cluster_resources()["CPU"]) - 1  # One core is reserved by the scheduler actor.
         batch_dispatch_size = int(cores * self.batch_dispatch_coeff) or 1
 
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
