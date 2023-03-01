@@ -79,7 +79,7 @@ def _get_tabular_files_scan(
     # Sample the first 10 filepaths and infer the schema
     schema_df = filepath_df.limit(10).select(
         col(partition_set_factory.FS_LISTING_PATH_COLUMN_NAME)
-        .apply(get_schema, return_type=ExpressionList)
+        .apply(get_schema, return_dtype=ExpressionList)
         .alias("schema")
     )
     schema_df.collect()

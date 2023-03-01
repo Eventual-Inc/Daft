@@ -26,7 +26,7 @@ def test_python_dict(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
 
 
-@udf(return_type=dict)
+@udf(return_dtype=dict, input_columns={"dicts": list})
 def rename_key(dicts):
     new_dicts = []
     for d in dicts:
@@ -48,7 +48,7 @@ def test_python_dict_udf(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
 
 
-@udf(return_type=dict)
+@udf(return_dtype=dict, input_columns={"dicts": list})
 def merge_dicts(dicts, to_merge):
     new_dicts = []
     for d in dicts:
@@ -77,7 +77,7 @@ def test_python_chained_expression_calls(repartition_nparts):
     daft_df = (
         DataFrame.from_pydict(data)
         .repartition(repartition_nparts)
-        .with_column("foo_starts_with_1", col("dicts").apply(lambda d: d["foo"], return_type=str).str.startswith("1"))
+        .with_column("foo_starts_with_1", col("dicts").apply(lambda d: d["foo"], return_dtype=str).str.startswith("1"))
     )
     pd_df = pd.DataFrame.from_dict(data)
     pd_df["foo_starts_with_1"] = pd.Series([d["foo"] for d in pd_df["dicts"]]).str.startswith("1")
@@ -142,17 +142,17 @@ def test_pyobj_add(repartition_nparts, op):
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")
 
 
-@udf(return_type=int)
+@udf(return_dtype=int, input_columns={"features": list})
 def get_length(features):
     return [len(feature) for feature in features]
 
 
-@udf(return_type=np.ndarray)
+@udf(return_dtype=np.ndarray, input_columns={"features": list})
 def zeroes(features):
     return [np.zeros(feature.shape) for feature in features]
 
 
-@udf(return_type=np.ndarray)
+@udf(return_dtype=np.ndarray, input_columns={"lengths": list})
 def make_features(lengths):
     return [np.ones(length) for length in lengths]
 

@@ -384,33 +384,36 @@ class Expression(TreeNode["Expression"]):
         """
         return AsPyExpression(self, ExpressionType.from_py_type(type_))
 
-    def apply(self, func: Callable, return_type: type | None = None) -> Expression:
+    def apply(self, func: Callable, return_dtype: type | None = None, return_type: Any = None) -> Expression:
         """Apply a function on a given expression
 
         Example:
             >>> def f(x_val: str) -> int:
             >>>     return int(x_val) if x_val.isnumeric() else 0
             >>>
-            >>> col("x").apply(f, return_type=int)
+            >>> col("x").apply(f, return_dtype=int)
 
         Args:
             func (Callable): Function to run per value of the expression
-            return_type (Optional[Type], optional): Return type of the function that was ran. This defaults to None and Daft will infer the return_type
+            return_dtype (Optional[Type], optional): Return type of the function that was ran. This defaults to None and Daft will infer the return_dtype
                 from the function's type annotations if available.
 
         Returns:
             Expression: New expression after having run the function on the expression
         """
+        if return_type is not None:
+            raise ValueError(f"The `return_type` keyword argument is deprecated, please use `return_dtype` instead.")
+
         inferred_type = get_type_hints(func).get("return", None)
-        return_type = inferred_type if inferred_type is not None else return_type
-        if return_type is None:
+        return_dtype = inferred_type if inferred_type is not None else return_dtype
+        if return_dtype is None:
             warnings.warn(
-                f"Supplied function {func} was not annotated with a return type and no `return_type` keyword argument specified in `.apply`."
-                "It is highly recommended to specify a return_type for Daft to perform optimizations and for access to vectorized expression operators."
+                f"Supplied function {func} was not annotated with a return type and no `return_dtype` keyword argument specified in `.apply`."
+                "It is highly recommended to specify a return_dtype for Daft to perform optimizations and for access to vectorized expression operators."
             )
 
         expression_type = (
-            ExpressionType.from_py_type(return_type) if return_type is not None else ExpressionType.python_object()
+            ExpressionType.from_py_type(return_dtype) if return_dtype is not None else ExpressionType.python_object()
         )
 
         def apply_func(f, data):

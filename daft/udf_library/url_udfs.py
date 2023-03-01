@@ -46,4 +46,4 @@ def _download_udf(urls: list[str | None], max_worker_threads: int = 8) -> list[b
 
 # HACK: Workaround for Ray pickling issues if we use the @polars_udf decorator instead.
 # There may be some issues around runtime imports and Ray pickling of decorated functions
-download_udf = udf(_download_udf, return_type=bytes, type_hints={"urls": List[Optional[str]]})
+download_udf = udf(_download_udf, return_dtype=bytes, input_columns={"urls": List[Optional[str]]})
