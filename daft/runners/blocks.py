@@ -551,6 +551,34 @@ class PyListDataBlock(DataBlock[List[T]]):
 ArrowArrType = Union[pa.ChunkedArray, pa.Scalar]
 
 
+def _should_truncate_chunk(arr: pa.Array) -> bool:
+    """Uses some heuristics to determine whether an Array chunk in a ChunkedArray needs
+    to be truncated, so as to truncate the buffer(s) that it references during serialization.
+    """
+    # PyArrow version 7.0.0 introduced a fix for ARROW-15153 which provides the .nbytes and .get_total_buffer_size() APIs
+    # that we need to understand whether a chunk should be copied. In lower versions of PyArrow, we will just naively copy.
+    #
+    # See: https://github.com/apache/arrow/commit/658bec37aa5cbdd53b5e4cdc81b8ba3962e67f11
+    if int(pa.__version__.split(".")[0]) < 7:
+        return True
+
+    # If the total size of the buffer is larger than the actual nbytes usage (+ some extra), the buffers
+    # are likely containing extra data and we should truncate this array.
+    return arr.get_total_buffer_size() > (arr.nbytes * 1.1)
+
+
+def _get_arrow_array_estimated_nbytes(arr: pa.Array) -> float:
+    """Returns the estimated number of bytes required to represent all elements of this Array
+
+    Unfortunately, `pa.Array.nbytes` was only introduced in Arrow>=7.0.0, and prior to that its behavior was
+    actually the behavior of the API `pa.Array.get_total_buffer_size()` that was introduced in Arrow 7.0.0.
+
+    To ensure consistent behavior across Arrow versions, we implement our own estimated_nbytes API here. This is
+    a very
+    """
+    return ((arr.type.bit_width) / 8) * len(arr)
+
+
 class ArrowDataBlock(DataBlock[ArrowArrType]):
     def __init__(self, data: ArrowArrType) -> None:
         assert not pa.types.is_nested(
@@ -568,13 +596,10 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             # Sometimes chunks may reference a buffer much larger than required (e.g. after a zero-copy slice)
             # Other times, chunks may reference buffers shared with other chunks (e.g. after a Parquet read)
             # This may result in unnecessarily creating copies of serialized large/shared buffers.
-            #
-            # We use the heuristic `chunk.get_total_buffer_size() > (chunk.nbytes * 1.1)` for determining if the chunk
-            # has unnecessarily large buffers, and if so we make a copy of the chunk to re-allocate these buffers.
             new_chunks = [
                 # pa.concat_arrays makes a copy of the arrays, and seems to be the only user-facing API for doing so
                 # See: https://arrow.apache.org/docs/python/generated/pyarrow.concat_arrays.html#pyarrow.concat_arrays
-                pa.concat_arrays([chunk]) if chunk.get_total_buffer_size() > (chunk.nbytes * 1.1) else chunk
+                pa.concat_arrays([chunk]) if _should_truncate_chunk(chunk) else chunk
                 for chunk in self.data.chunks
             ]
             data = pa.chunked_array(new_chunks)
