@@ -78,6 +78,26 @@ jobs:
         name: wheels
         path: dist
 
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.23.0
+      if: failure()
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: Release: Building Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
 
   publish:
     name: Publish wheels to PYPI and Anaconda
@@ -131,3 +151,23 @@ jobs:
         # https://anaconda.org/daft/getdaft
         # The tokens were originally generated at anaconda.org
         upload_wheels
+
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.23.0
+      if: failure()
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: Release: Uploading Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
