@@ -425,15 +425,15 @@ class RayRunner(Runner):
             ]
         )
 
-        if isinstance(self.ray_context, ray._private.worker.RayContext):
-            # Run scheduler in main thread if this is a local Ray cluster.
-            self.scheduler = Scheduler(
+        if isinstance(self.ray_context, ray.client_builder.ClientContext):
+            # Run scheduler remotely if the cluster is connected remotely.
+            self.scheduler_actor = SchedulerActor.remote(  # type: ignore
                 max_tasks_per_core=max_tasks_per_core,
                 max_refs_per_core=max_refs_per_core,
                 batch_dispatch_coeff=batch_dispatch_coeff,
             )
         else:
-            self.scheduler_actor = SchedulerActor.remote(  # type: ignore
+            self.scheduler = Scheduler(
                 max_tasks_per_core=max_tasks_per_core,
                 max_refs_per_core=max_refs_per_core,
                 batch_dispatch_coeff=batch_dispatch_coeff,
@@ -449,17 +449,17 @@ class RayRunner(Runner):
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()
             if entry.value is not None
         }
-        if isinstance(self.ray_context, ray._private.worker.RayContext):
-            partitions = self.scheduler.run_plan(
-                plan=plan,
-                psets=psets,
-            )
-        else:
+        if isinstance(self.ray_context, ray.client_builder.ClientContext):
             partitions = ray.get(
                 self.scheduler_actor.run_plan.remote(
                     plan=plan,
                     psets=psets,
                 )
+            )
+        else:
+            partitions = self.scheduler.run_plan(
+                plan=plan,
+                psets=psets,
             )
 
         for i, partition in enumerate(partitions):
