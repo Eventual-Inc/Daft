@@ -27,6 +27,7 @@ from daft.execution.execution_step import (
 )
 from daft.logical import logical_plan
 from daft.resource_request import ResourceRequest
+from daft.runners.partitioning import PartialPartitionMetadata
 
 PartitionT = TypeVar("PartitionT")
 T = TypeVar("T")
@@ -43,9 +44,18 @@ MaterializedPhysicalPlan = Generator[
 ]
 
 
-def partition_read(partitions: Iterator[PartitionT]) -> InProgressPhysicalPlan[PartitionT]:
+def partition_read(
+    partitions: Iterator[PartitionT], metadatas: Iterator[PartialPartitionMetadata] | None = None
+) -> InProgressPhysicalPlan[PartitionT]:
     """Instantiate a (no-op) physical plan from existing partitions."""
-    yield from (PartitionTaskBuilder[PartitionT](inputs=[partition]) for partition in partitions)
+    if metadatas is None:
+        # Iterator of empty metadatas.
+        metadatas = (PartialPartitionMetadata(num_rows=None, size_bytes=None) for _ in iter(int, 1))
+
+    yield from (
+        PartitionTaskBuilder[PartitionT](inputs=[partition], partial_metadatas=[metadata])
+        for partition, metadata in zip(partitions, metadatas)
+    )
 
 
 def file_read(
@@ -67,15 +77,20 @@ def file_read(
 
             vpartition = done_task.vpartition()
             file_sizes_bytes = vpartition.to_pydict()["size"]
+            file_rows = vpartition.to_pydict()["rows"]
 
             # Emit one partition for each file (NOTE: hardcoded for now).
             for i in range(vpartition.metadata().num_rows):
 
-                file_read_step = PartitionTaskBuilder[PartitionT](inputs=[done_task.partition()]).add_instruction(
+                file_read_step = PartitionTaskBuilder[PartitionT](
+                    inputs=[done_task.partition()],
+                    partial_metadatas=[done_task.partition_metadata()],
+                ).add_instruction(
                     instruction=execution_step.ReadFile(
                         partition_id=output_partition_index,
                         logplan=scan_info,
                         index=i,
+                        num_rows=file_rows[i],
                     ),
                     # Set the filesize as the memory request.
                     # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
@@ -150,6 +165,7 @@ def join(
 
             join_step = PartitionTaskBuilder[PartitionT](
                 inputs=[next_left.partition(), next_right.partition()],
+                partial_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
                 resource_request=ResourceRequest(
                     memory_bytes=next_left.partition_metadata().size_bytes + next_right.partition_metadata().size_bytes
                 ),
@@ -235,6 +251,7 @@ def global_limit(
 
             global_limit_step = PartitionTaskBuilder[PartitionT](
                 inputs=[done_task.partition()],
+                partial_metadatas=[done_task.partition_metadata()],
                 resource_request=ResourceRequest(memory_bytes=done_task.partition_metadata().size_bytes),
             ).add_instruction(
                 instruction=execution_step.LocalLimit(limit),
@@ -255,6 +272,7 @@ def global_limit(
                 yield from (
                     PartitionTaskBuilder[PartitionT](
                         inputs=[done_task.partition()],
+                        partial_metadatas=[done_task.partition_metadata()],
                         resource_request=ResourceRequest(memory_bytes=done_task.partition_metadata().size_bytes),
                     ).add_instruction(
                         instruction=execution_step.LocalLimit(0),
@@ -313,6 +331,7 @@ def coalesce(
             # Coalesce the partition and emit it.
             merge_step = PartitionTaskBuilder[PartitionT](
                 inputs=[_.partition() for _ in ready_to_coalesce],
+                partial_metadatas=[_.partition_metadata() for _ in ready_to_coalesce],
                 resource_request=ResourceRequest(
                     memory_bytes=sum(_.partition_metadata().size_bytes for _ in ready_to_coalesce),
                 ),
@@ -376,6 +395,7 @@ def reduce(
         metadata_batch = [_.popleft() for _ in metadatas]
         yield PartitionTaskBuilder[PartitionT](
             inputs=partition_batch,
+            partial_metadatas=metadata_batch,
             instructions=[reduce_instruction],
             resource_request=ResourceRequest(
                 memory_bytes=sum(metadata.size_bytes for metadata in metadata_batch),
@@ -402,13 +422,18 @@ def sort(
     for source in source_materializations:
         while not source.done():
             yield None
+
         sample = (
-            PartitionTaskBuilder[PartitionT](inputs=[source.partition()])
+            PartitionTaskBuilder[PartitionT](
+                inputs=[source.partition()],
+                partial_metadatas=None,
+            )
             .add_instruction(
                 instruction=execution_step.Sample(sort_by=sort_info._sort_by),
             )
             .finalize_partition_task_single_output()
         )
+
         sample_materializations.append(sample)
         yield sample
 
@@ -419,7 +444,8 @@ def sort(
     # Reduce the samples to get sort boundaries.
     boundaries = (
         PartitionTaskBuilder[PartitionT](
-            inputs=[sample.partition() for sample in consume_deque(sample_materializations)]
+            inputs=[sample.partition() for sample in consume_deque(sample_materializations)],
+            partial_metadatas=None,
         )
         .add_instruction(
             execution_step.ReduceToQuantiles(
@@ -440,6 +466,7 @@ def sort(
     range_fanout_plan = (
         PartitionTaskBuilder[PartitionT](
             inputs=[boundaries.partition(), source.partition()],
+            partial_metadatas=[boundaries.partition_metadata(), source.partition_metadata()],
             resource_request=ResourceRequest(
                 memory_bytes=source.partition_metadata().size_bytes,
             ),

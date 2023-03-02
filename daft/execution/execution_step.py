@@ -76,12 +76,15 @@ class PartitionTaskBuilder(Generic[PartitionT]):
     def __init__(
         self,
         inputs: list[PartitionT],
-        partial_metadatas: list[PartialPartitionMetadata],
+        partial_metadatas: list[PartialPartitionMetadata] | None,
         instructions: list[Instruction] | None = None,
         resource_request: ResourceRequest = ResourceRequest(),
     ) -> None:
         self.inputs = inputs
-        self.partial_metadatas = partial_metadatas
+        if partial_metadatas is not None:
+            self.partial_metadatas = partial_metadatas
+        else:
+            self.partial_metadatas = [PartialPartitionMetadata(num_rows=None, size_bytes=None) for _ in self.inputs]
         self.instructions: list[Instruction] = instructions if instructions is not None else list()
         self.resource_request: ResourceRequest = resource_request
 
