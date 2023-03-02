@@ -291,10 +291,11 @@ def global_limit(
             child_step = child_plan.send(remaining_rows) if started else next(child_plan)
             started = True
             if isinstance(child_step, PartitionTaskBuilder):
-                # If this is the very next partition to apply the global limit on,
+                # If this is the very next partition to apply a nonvacuous global limit on,
                 # see if it has any row metadata already.
+                # If so, we can deterministically apply and deduct the rolling limit without materializing.
                 [partial_meta] = child_step.partial_metadatas
-                if len(materializations) == 0 and partial_meta.num_rows is not None:
+                if len(materializations) == 0 and remaining_rows > 0 and partial_meta.num_rows is not None:
                     limit = min(remaining_rows, partial_meta.num_rows)
                     child_step = child_step.add_instruction(instruction=execution_step.LocalLimit(limit))
                     remaining_partitions -= 1
