@@ -87,9 +87,6 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         self.resource_request: ResourceRequest = resource_request
         self.instructions: list[Instruction] = list()
 
-    def __copy__(self) -> PartitionTaskBuilder[PartitionT]:
-        assert False, f"Cannot copy a PartitionTaskBuilder. {self}"
-
     def add_instruction(
         self,
         instruction: Instruction,
