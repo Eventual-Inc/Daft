@@ -23,13 +23,11 @@ impl Series {
                     Ok(downcasted.filter(mask)?.into_series())
                 })
             }
-            _ => {
-                return Err(DaftError::ValueError(format!(
-                    "Lengths for filter do not match, Series {} vs mask {}",
-                    self.len(),
-                    mask.len()
-                )));
-            }
+            _ => Err(DaftError::ValueError(format!(
+                "Lengths for filter do not match, Series {} vs mask {}",
+                self.len(),
+                mask.len()
+            ))),
         }
     }
 }

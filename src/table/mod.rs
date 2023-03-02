@@ -142,7 +142,7 @@ impl Table {
             )));
         }
         self.eval_expression(sort_keys.get(0).unwrap())?
-            .argsort(*descending.get(0).unwrap())
+            .argsort(*descending.first().unwrap())
     }
 
     pub fn take(&self, idx: &Series) -> DaftResult<Table> {

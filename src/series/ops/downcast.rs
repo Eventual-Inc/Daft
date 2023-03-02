@@ -13,11 +13,11 @@ impl Series {
         if self.data_type().eq(&T::get_dtype()) {
             Ok(self.array().as_any().downcast_ref().unwrap())
         } else {
-            return Err(DaftError::SchemaMismatch(format!(
+            Err(DaftError::SchemaMismatch(format!(
                 "{:?} not {:?}",
                 self.data_type(),
                 T::get_dtype()
-            )));
+            )))
         }
     }
 
