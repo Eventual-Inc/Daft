@@ -72,7 +72,7 @@ from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.expressions import col, lit
 from daft.series import Series
-from daft.udf import polars_udf, udf
+from daft.udf import udf
 from daft.viz import register_viz_hook
 
-__all__ = ["DataFrame", "col", "DataType", "lit", "udf", "polars_udf", "Series", "register_viz_hook"]
+__all__ = ["DataFrame", "col", "DataType", "lit", "udf", "Series", "register_viz_hook"]
