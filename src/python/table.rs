@@ -33,6 +33,22 @@ impl PyTable {
         Ok(self.table.filter(converted_exprs.as_slice())?.into())
     }
 
+    pub fn sort(&self, sort_keys: Vec<PyExpr>, descending: Vec<bool>) -> PyResult<Self> {
+        let converted_exprs: Vec<dsl::Expr> = sort_keys.into_iter().map(|e| e.into()).collect();
+        Ok(self
+            .table
+            .sort(converted_exprs.as_slice(), descending.as_slice())?
+            .into())
+    }
+
+    pub fn argsort(&self, sort_keys: Vec<PyExpr>, descending: Vec<bool>) -> PyResult<PySeries> {
+        let converted_exprs: Vec<dsl::Expr> = sort_keys.into_iter().map(|e| e.into()).collect();
+        Ok(self
+            .table
+            .argsort(converted_exprs.as_slice(), descending.as_slice())?
+            .into())
+    }
+
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.table))
     }
