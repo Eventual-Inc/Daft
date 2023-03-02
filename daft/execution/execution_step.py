@@ -77,7 +77,6 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         self,
         inputs: list[PartitionT],
         partial_metadatas: list[PartialPartitionMetadata] | None,
-        instructions: list[Instruction] | None = None,
         resource_request: ResourceRequest = ResourceRequest(),
     ) -> None:
         self.inputs = inputs
@@ -85,16 +84,11 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             self.partial_metadatas = partial_metadatas
         else:
             self.partial_metadatas = [PartialPartitionMetadata(num_rows=None, size_bytes=None) for _ in self.inputs]
-        self.instructions: list[Instruction] = instructions if instructions is not None else list()
         self.resource_request: ResourceRequest = resource_request
+        self.instructions: list[Instruction] = list()
 
     def __copy__(self) -> PartitionTaskBuilder[PartitionT]:
-        return PartitionTaskBuilder[PartitionT](
-            inputs=self.inputs.copy(),
-            partial_metadatas=self.partial_metadatas.copy(),
-            instructions=self.instructions.copy(),
-            resource_request=self.resource_request,  # ResourceRequest is immutable (dataclass with frozen=True)
-        )
+        assert False, f"Cannot copy a PartitionTaskBuilder. {self}"
 
     def add_instruction(
         self,

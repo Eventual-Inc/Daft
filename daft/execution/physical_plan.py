@@ -406,11 +406,10 @@ def reduce(
         yield PartitionTaskBuilder[PartitionT](
             inputs=partition_batch,
             partial_metadatas=metadata_batch,
-            instructions=[reduce_instruction],
             resource_request=ResourceRequest(
                 memory_bytes=sum(metadata.size_bytes for metadata in metadata_batch),
             ),
-        )
+        ).add_instruction(reduce_instruction)
 
 
 def sort(
