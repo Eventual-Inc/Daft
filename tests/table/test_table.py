@@ -22,6 +22,7 @@ daft_int_types = [
 ]
 
 daft_numeric_types = daft_int_types + [DataType.float32(), DataType.float64()]
+daft_string_types = [DataType.string()]
 
 
 def test_from_arrow_round_trip() -> None:
@@ -318,3 +319,61 @@ def test_table_filter_bad_expression() -> None:
 
     with pytest.raises(ValueError, match="Boolean Series"):
         daft_table.filter(exprs)
+
+
+@pytest.mark.parametrize(
+    "sort_dtype, value_dtype, first_col",
+    itertools.product(daft_numeric_types + daft_string_types, daft_numeric_types + daft_string_types, [False, True]),
+)
+def test_table_single_col_sorting(sort_dtype, value_dtype, first_col) -> None:
+    pa_table = pa.Table.from_pydict({"a": [None, 4, 2, 1, 5], "b": [0, 1, 2, 3, None]})
+
+    argsort_order = Series.from_pylist([3, 2, 1, 4, 0])
+
+    daft_table = Table.from_arrow(pa_table)
+
+    if first_col:
+        daft_table = daft_table.eval_expression_list([col("a").cast(sort_dtype), col("b").cast(value_dtype)])
+    else:
+        daft_table = daft_table.eval_expression_list([col("b").cast(value_dtype), col("a").cast(sort_dtype)])
+
+    assert len(daft_table) == 5
+    if first_col:
+        assert daft_table.column_names() == ["a", "b"]
+    else:
+        assert daft_table.column_names() == ["b", "a"]
+
+    sorted_table = daft_table.sort([col("a")])
+
+    assert len(sorted_table) == 5
+
+    if first_col:
+        assert sorted_table.column_names() == ["a", "b"]
+    else:
+        assert sorted_table.column_names() == ["b", "a"]
+
+    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+
+    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()
+    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()
+
+    assert daft_table.argsort([col("a")]).to_pylist() == argsort_order.to_pylist()
+
+    # Descending
+
+    sorted_table = daft_table.sort([col("a")], descending=True)
+
+    assert len(sorted_table) == 5
+    if first_col:
+        assert sorted_table.column_names() == ["a", "b"]
+    else:
+        assert sorted_table.column_names() == ["b", "a"]
+
+    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+
+    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()[::-1]
+    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()[::-1]
+
+    assert daft_table.argsort([col("a")], descending=True).to_pylist() == argsort_order.to_pylist()[::-1]

@@ -122,10 +122,28 @@ impl Table {
             columns: new_series?,
         })
     }
-    //pub fn sort(&self, sort_keys: &[&Expr], descending: &[bool]) -> DaftResult<Table>;
-    // pub fn argsort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Series> {
-    //     arrow2::compute::sort
-    // }
+    pub fn sort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Table> {
+        let argsort = self.argsort(sort_keys, descending)?;
+        self.take(&argsort)
+    }
+
+    pub fn argsort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Series> {
+        if sort_keys.len() != descending.len() {
+            return Err(DaftError::ValueError(format!(
+                "sort_keys and descending length must match, got {} vs {}",
+                sort_keys.len(),
+                descending.len()
+            )));
+        }
+        if sort_keys.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "sort_keys length must be 1. We only support sorting by 1 column currently, got {}",
+                sort_keys.len()
+            )));
+        }
+        self.eval_expression(sort_keys.get(0).unwrap())?
+            .argsort(*descending.get(0).unwrap())
+    }
 
     pub fn take(&self, idx: &Series) -> DaftResult<Table> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();

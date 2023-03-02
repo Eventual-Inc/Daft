@@ -58,6 +58,40 @@ class Table:
         pyexprs = [e._expr for e in exprs]
         return Table._from_pytable(self._table.filter(pyexprs))
 
+    def sort(self, sort_keys: list[Expression], descending: bool | list[bool] | None = None) -> Table:
+        assert all(isinstance(e, Expression) for e in sort_keys)
+        pyexprs = [e._expr for e in sort_keys]
+        if descending is None:
+            descending = [False for _ in pyexprs]
+        elif isinstance(descending, bool):
+            descending = [descending for _ in pyexprs]
+        elif isinstance(descending, list):
+            if len(descending) != len(sort_keys):
+                raise ValueError(
+                    f"Expected length of `descending` to be the same length as `sort_keys` since a list was passed in,"
+                    f"got {len(descending)} instead of {len(sort_keys)}"
+                )
+        else:
+            raise ValueError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
+        return Table._from_pytable(self._table.sort(pyexprs, descending))
+
+    def argsort(self, sort_keys: list[Expression], descending: bool | list[bool] | None = None) -> Series:
+        assert all(isinstance(e, Expression) for e in sort_keys)
+        pyexprs = [e._expr for e in sort_keys]
+        if descending is None:
+            descending = [False for _ in pyexprs]
+        elif isinstance(descending, bool):
+            descending = [descending for _ in pyexprs]
+        elif isinstance(descending, list):
+            if len(descending) != len(sort_keys):
+                raise ValueError(
+                    f"Expected length of `descending` to be the same length as `sort_keys` since a list was passed in,"
+                    f"got {len(descending)} instead of {len(sort_keys)}"
+                )
+        else:
+            raise ValueError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
+        return Series._from_pyseries(self._table.argsort(pyexprs, descending))
+
     def column_names(self) -> list[str]:
         return self._table.column_names()
 
