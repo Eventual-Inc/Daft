@@ -291,8 +291,17 @@ def global_limit(
             child_step = child_plan.send(remaining_rows) if started else next(child_plan)
             started = True
             if isinstance(child_step, PartitionTaskBuilder):
-                child_step = child_step.finalize_partition_task_single_output()
-                materializations.append(child_step)
+                # If this is the very next partition to apply the global limit on,
+                # see if it has any row metadata already.
+                [partial_meta] = child_step.partial_metadatas
+                if len(materializations) == 0 and partial_meta.num_rows is not None:
+                    limit = min(remaining_rows, partial_meta.num_rows)
+                    child_step = child_step.add_instruction(instruction=execution_step.LocalLimit(limit))
+                    remaining_partitions -= 1
+                    remaining_rows -= limit
+                else:
+                    child_step = child_step.finalize_partition_task_single_output()
+                    materializations.append(child_step)
             yield child_step
 
         except StopIteration:
