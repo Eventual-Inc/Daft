@@ -237,8 +237,7 @@ def get_meta(partition: vPartition) -> PartitionMetadata:
     return partition.metadata()
 
 
-@ray.remote(num_cpus=1)
-class SchedulerActor:
+class Scheduler:
     def __init__(
         self,
         max_tasks_per_core: float | None,
@@ -272,7 +271,9 @@ class SchedulerActor:
         # before saturating all the cores (and their pipelines).
         self.batch_dispatch_coeff = batch_dispatch_coeff if batch_dispatch_coeff is not None else 1.0
 
-    def remote_run_plan(
+        self.reserved_cores = 0
+
+    def run_plan(
         self,
         plan: logical_plan.LogicalPlan,
         psets: dict[str, ray.ObjectRef],
@@ -284,7 +285,7 @@ class SchedulerActor:
 
         # Note: For autoscaling clusters, we will probably want to query cores dynamically.
         # Keep in mind this call takes about 0.3ms.
-        cores = int(ray.cluster_resources()["CPU"]) - 1  # One core is reserved by the scheduler actor.
+        cores = int(ray.cluster_resources()["CPU"]) - self.reserved_cores
         batch_dispatch_size = int(cores * self.batch_dispatch_coeff) or 1
 
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
@@ -360,6 +361,13 @@ class SchedulerActor:
                     del inflight_tasks[task_id]
 
 
+@ray.remote(num_cpus=1)
+class SchedulerActor(Scheduler):
+    def __init__(self, *n, **kw) -> None:
+        super().__init__(*n, **kw)
+        self.reserved_cores = 1
+
+
 def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]:
     """Run a PartitionTask and return the resulting list of partitions."""
     ray_options: dict[str, Any] = {
@@ -394,9 +402,8 @@ class RayRunner(Runner):
     ) -> None:
         super().__init__()
         if ray.is_initialized():
-            logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context")
-        else:
-            ray.init(address=address)
+            logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context.")
+        self.ray_context = ray.init(address=address, ignore_reinit_error=True)
         self._optimizer = RuleRunner(
             [
                 RuleBatch(
@@ -418,11 +425,19 @@ class RayRunner(Runner):
             ]
         )
 
-        self.scheduler_actor = SchedulerActor.remote(  # type: ignore
-            max_tasks_per_core=max_tasks_per_core,
-            max_refs_per_core=max_refs_per_core,
-            batch_dispatch_coeff=batch_dispatch_coeff,
-        )
+        if isinstance(self.ray_context, ray.client_builder.ClientContext):
+            # Run scheduler remotely if the cluster is connected remotely.
+            self.scheduler_actor = SchedulerActor.remote(  # type: ignore
+                max_tasks_per_core=max_tasks_per_core,
+                max_refs_per_core=max_refs_per_core,
+                batch_dispatch_coeff=batch_dispatch_coeff,
+            )
+        else:
+            self.scheduler = Scheduler(
+                max_tasks_per_core=max_tasks_per_core,
+                max_refs_per_core=max_refs_per_core,
+                batch_dispatch_coeff=batch_dispatch_coeff,
+            )
 
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         result_pset = RayPartitionSet({})
@@ -434,12 +449,18 @@ class RayRunner(Runner):
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()
             if entry.value is not None
         }
-        partitions = ray.get(
-            self.scheduler_actor.remote_run_plan.remote(
+        if isinstance(self.ray_context, ray.client_builder.ClientContext):
+            partitions = ray.get(
+                self.scheduler_actor.run_plan.remote(
+                    plan=plan,
+                    psets=psets,
+                )
+            )
+        else:
+            partitions = self.scheduler.run_plan(
                 plan=plan,
                 psets=psets,
             )
-        )
 
         for i, partition in enumerate(partitions):
             result_pset.set_partition(i, partition)
