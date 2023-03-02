@@ -1,6 +1,7 @@
 mod apply;
 mod arange;
 mod arithmetic;
+mod arrow2;
 mod broadcast;
 mod cast;
 mod comparison;
@@ -8,6 +9,7 @@ mod downcast;
 mod filter;
 mod full;
 mod len;
+mod sort;
 mod take;
 
 pub trait DaftCompare<Rhs> {

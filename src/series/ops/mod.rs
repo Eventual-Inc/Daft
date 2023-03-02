@@ -9,6 +9,7 @@ pub mod comparision;
 pub mod downcast;
 pub mod filter;
 pub mod full;
+pub mod sort;
 pub mod take;
 
 fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)> {
@@ -119,6 +120,6 @@ macro_rules! with_match_integer_daft_types {(
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
-        _ => panic!("{:?} not implemented", $key_type)
+        _ => panic!("Only Integer Types are supported, {:?} not implemented", $key_type)
     }
 })}

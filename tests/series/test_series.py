@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import math
 from collections import Counter
 
 import pyarrow as pa
@@ -168,3 +169,144 @@ def test_series_casting_to_string(source_dtype, dest_dtype) -> None:
         assert t.to_pylist() == ["1.0", "2.0", "3.0", None, "5.0", None]
     else:
         assert t.to_pylist() == ["1", "2", "3", None, "5", None]
+
+
+@pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types + arrow_string_types)
+def test_series_take_numeric(dtype) -> None:
+    data = pa.array([1, 2, 3, None, 5, None])
+
+    s = Series.from_arrow(data.cast(dtype))
+    pyidx = [2, 0, None, 5]
+    idx = Series.from_pylist(pyidx)
+
+    result = s.take(idx)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 4
+
+    original_data = s.to_pylist()
+    expected = [original_data[i] if i is not None else None for i in pyidx]
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize("dtype", arrow_float_types)
+def test_series_float_sorting(dtype) -> None:
+    data = pa.array([5.0, 4.0, 1.0, None, 2.0, None, float("nan"), -float("nan"), float("inf"), -float("inf")])
+    sorted_order = [-float("inf"), 1.0, 2.0, 4.0, 5.0, float("inf"), -float("nan"), float("nan"), None, None]
+    s = Series.from_arrow(data.cast(dtype))
+    s_sorted = s.sort()
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert all([(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(s_sorted.to_pylist(), sorted_order)])
+
+    s_argsorted = s.argsort()
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert all([(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(taken.to_pylist(), sorted_order)])
+
+    ## Descending
+    s_sorted = s.sort(descending=True)
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert all(
+        [(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(s_sorted.to_pylist(), sorted_order[::-1])]
+    )
+
+    s_argsorted = s.argsort(descending=True)
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert all([(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(taken.to_pylist(), sorted_order[::-1])])
+
+
+@pytest.mark.parametrize("dtype", arrow_int_types)
+def test_series_int_sorting(dtype) -> None:
+    data = pa.array([5, 4, 1, None, 2, None])
+    sorted_order = [1, 2, 4, 5, None, None]
+    s = Series.from_arrow(data.cast(dtype))
+    s_sorted = s.sort()
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order
+
+    s_argsorted = s.argsort()
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order
+
+    ## Descending
+    s_sorted = s.sort(descending=True)
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order[::-1]
+
+    s_argsorted = s.argsort(descending=True)
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order[::-1]
+
+
+def test_series_string_sorting() -> None:
+    data = pa.array(["hi", "bye", "thai", None, "2", None, "h", "by"])
+    sorted_order = ["2", "by", "bye", "h", "hi", "thai", None, None]
+    s = Series.from_arrow(data)
+    s_sorted = s.sort()
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order
+
+    s_argsorted = s.argsort()
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order
+
+    ## Descending
+    s_sorted = s.sort(descending=True)
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order[::-1]
+
+    s_argsorted = s.argsort(descending=True)
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order[::-1]
+
+
+def test_series_boolean_sorting() -> None:
+    data = pa.array([True, False, True, None, False])
+    sorted_order = [False, False, True, True, None]
+    s = Series.from_arrow(data)
+    s_sorted = s.sort()
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order
+
+    s_argsorted = s.argsort()
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order
+
+    ## Descending
+    s_sorted = s.sort(descending=True)
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order[::-1]
+
+    s_argsorted = s.argsort(descending=True)
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order[::-1]

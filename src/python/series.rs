@@ -77,6 +77,10 @@ impl PySeries {
         Ok(self.series.xor(&other.series)?.into_series().into())
     }
 
+    pub fn take(&self, idx: &Self) -> PyResult<Self> {
+        Ok(self.series.take(&idx.series)?.into())
+    }
+
     pub fn filter(&self, mask: &Self) -> PyResult<Self> {
         if mask.series.data_type() != &DataType::Boolean {
             return Err(PyValueError::new_err(format!(
@@ -85,6 +89,14 @@ impl PySeries {
             )));
         }
         Ok(self.series.filter(mask.series.downcast().unwrap())?.into())
+    }
+
+    pub fn sort(&self, descending: bool) -> PyResult<Self> {
+        Ok(self.series.sort(descending)?.into())
+    }
+
+    pub fn argsort(&self, descending: bool) -> PyResult<Self> {
+        Ok(self.series.argsort(descending)?.into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
@@ -105,6 +117,10 @@ impl PySeries {
 
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.series))
+    }
+
+    pub fn __len__(&self) -> PyResult<usize> {
+        Ok(self.series.len())
     }
 
     pub fn name(&self) -> PyResult<String> {
