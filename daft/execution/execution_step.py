@@ -16,7 +16,11 @@ from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
-from daft.runners.partitioning import PartitionMetadata, vPartition
+from daft.runners.partitioning import (
+    PartialPartitionMetadata,
+    PartitionMetadata,
+    vPartition,
+)
 from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, SortOp
 
 PartitionT = TypeVar("PartitionT")
@@ -72,19 +76,16 @@ class PartitionTaskBuilder(Generic[PartitionT]):
     def __init__(
         self,
         inputs: list[PartitionT],
-        instructions: list[Instruction] | None = None,
+        partial_metadatas: list[PartialPartitionMetadata] | None,
         resource_request: ResourceRequest = ResourceRequest(),
     ) -> None:
         self.inputs = inputs
-        self.instructions: list[Instruction] = instructions if instructions is not None else list()
+        if partial_metadatas is not None:
+            self.partial_metadatas = partial_metadatas
+        else:
+            self.partial_metadatas = [PartialPartitionMetadata(num_rows=None, size_bytes=None) for _ in self.inputs]
         self.resource_request: ResourceRequest = resource_request
-
-    def __copy__(self) -> PartitionTaskBuilder[PartitionT]:
-        return PartitionTaskBuilder[PartitionT](
-            inputs=self.inputs.copy(),
-            instructions=self.instructions.copy(),
-            resource_request=self.resource_request,  # ResourceRequest is immutable (dataclass with frozen=True)
-        )
+        self.instructions: list[Instruction] = list()
 
     def add_instruction(
         self,
@@ -93,6 +94,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
     ) -> PartitionTaskBuilder[PartitionT]:
         """Append an instruction to this PartitionTask's pipeline."""
         self.instructions.append(instruction)
+        self.partial_metadatas = instruction.run_partial_metadata(self.partial_metadatas)
         self.resource_request = ResourceRequest.max_resources([self.resource_request, resource_request])
         return self
 
@@ -259,7 +261,14 @@ class Instruction(Protocol):
     """
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
-        # (Dispatching a descriptively named helper here will aid profiling.)
+        """Run the Instruction over the input partitions.
+
+        Note: Dispatching a descriptively named helper here will aid profiling.
+        """
+        ...
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        """Calculate any possible metadata about the result partition that can be derived ahead of time."""
         ...
 
 
@@ -268,6 +277,7 @@ class ReadFile(Instruction):
     partition_id: int
     index: int | None
     logplan: logical_plan.TabularFilesScan
+    num_rows: int | None
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         return self._read_file(inputs)
@@ -282,6 +292,15 @@ class ReadFile(Instruction):
             index=self.index,
         )
         return [partition]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        assert len(input_metadatas) == 1
+        return [
+            PartialPartitionMetadata(
+                num_rows=self.num_rows,
+                size_bytes=None,
+            )
+        ]
 
 
 @dataclass(frozen=True)
@@ -301,6 +320,15 @@ class WriteFile(Instruction):
         )
         return [partition]
 
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        assert len(input_metadatas) == 1
+        return [
+            PartialPartitionMetadata(
+                num_rows=1,  # We currently write one file per partition.
+                size_bytes=None,
+            )
+        ]
+
 
 @dataclass(frozen=True)
 class Filter(Instruction):
@@ -313,6 +341,16 @@ class Filter(Instruction):
         [input] = inputs
         return [input.filter(self.predicate)]
 
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # Can't derive anything.
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+            for _ in input_metadatas
+        ]
+
 
 @dataclass(frozen=True)
 class Project(Instruction):
@@ -324,6 +362,15 @@ class Project(Instruction):
     def _project(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         return [input.eval_expression_list(self.projection)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        return [
+            PartialPartitionMetadata(
+                num_rows=input_meta.num_rows,
+                size_bytes=None,
+            )
+            for input_meta in input_metadatas
+        ]
 
 
 @dataclass(frozen=True)
@@ -340,6 +387,15 @@ class LocalCount(Instruction):
         )
         return [partition]
 
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        return [
+            PartialPartitionMetadata(
+                num_rows=1,
+                size_bytes=104,  # An empirical value, but will likely remain small.
+            )
+            for _ in input_metadatas
+        ]
+
 
 @dataclass(frozen=True)
 class LocalLimit(Instruction):
@@ -352,6 +408,15 @@ class LocalLimit(Instruction):
         [input] = inputs
         return [input.head(self.limit)]
 
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        return [
+            PartialPartitionMetadata(
+                num_rows=(min(self.limit, input_meta.num_rows) if input_meta.num_rows is not None else None),
+                size_bytes=None,
+            )
+            for input_meta in input_metadatas
+        ]
+
 
 @dataclass(frozen=True)
 class MapPartition(Instruction):
@@ -363,6 +428,16 @@ class MapPartition(Instruction):
     def _map_partition(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         return [self.map_op.run(input)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # Can't derive anything.
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+            for _ in input_metadatas
+        ]
 
 
 @dataclass(frozen=True)
@@ -382,6 +457,16 @@ class Sample(Instruction):
         )
         return [result]
 
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # Can't derive anything due to null filter in sample.
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+            for _ in input_metadatas
+        ]
+
 
 @dataclass(frozen=True)
 class Aggregate(Instruction):
@@ -394,6 +479,16 @@ class Aggregate(Instruction):
     def _aggregate(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         return [input.agg(self.to_agg, self.group_by)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # Can't derive anything.
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+            for _ in input_metadatas
+        ]
 
 
 @dataclass(frozen=True)
@@ -414,6 +509,16 @@ class Join(Instruction):
         )
         return [result]
 
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # Can't derive anything.
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+            for _ in input_metadatas
+        ]
+
 
 class ReduceInstruction(Instruction):
     ...
@@ -426,6 +531,16 @@ class ReduceMerge(ReduceInstruction):
 
     def _reduce_merge(self, inputs: list[vPartition]) -> list[vPartition]:
         return [vPartition.merge_partitions(inputs, verify_partition_id=False)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        input_rows = [_.num_rows for _ in input_metadatas]
+        input_sizes = [_.size_bytes for _ in input_metadatas]
+        return [
+            PartialPartitionMetadata(
+                num_rows=sum(input_rows) if all(_ is not None for _ in input_rows) else None,
+                size_bytes=sum(input_sizes) if all(_ is not None for _ in input_sizes) else None,
+            )
+        ]
 
 
 @dataclass(frozen=True)
@@ -443,6 +558,16 @@ class ReduceMergeAndSort(ReduceInstruction):
             descending=self.descending,
         )
         return [partition]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        input_rows = [_.num_rows for _ in input_metadatas]
+        input_sizes = [_.size_bytes for _ in input_metadatas]
+        return [
+            PartialPartitionMetadata(
+                num_rows=sum(input_rows) if all(_ is not None for _ in input_rows) else None,
+                size_bytes=sum(input_sizes) if all(_ is not None for _ in input_sizes) else None,
+            )
+        ]
 
 
 @dataclass(frozen=True)
@@ -463,10 +588,28 @@ class ReduceToQuantiles(ReduceInstruction):
         result = merged_sorted.quantiles(self.num_quantiles)
         return [result]
 
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        return [
+            PartialPartitionMetadata(
+                num_rows=self.num_quantiles,
+                size_bytes=None,
+            )
+        ]
+
 
 @dataclass(frozen=True)
 class FanoutInstruction(Instruction):
     num_outputs: int
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # Can't derive anything.
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+            for _ in range(self.num_outputs)
+        ]
 
 
 @dataclass(frozen=True)

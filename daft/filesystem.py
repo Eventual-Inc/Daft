@@ -49,6 +49,8 @@ def _get_s3fs_kwargs() -> dict[str, Any]:
         )
         kwargs["anon"] = True
 
+    # kwargs["default_fill_cache"] = False
+
     return kwargs
 
 
