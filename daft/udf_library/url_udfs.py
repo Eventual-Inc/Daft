@@ -4,8 +4,6 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional
 
-from loguru import logger
-
 from daft import filesystem
 from daft.udf import udf
 
@@ -28,8 +26,12 @@ def _download(path: str | None) -> bytes | None:
     return fs.cat_file(path)
 
 
-def _download_udf(urls: list[str | None], max_worker_threads: int = 8) -> list[bytes | None]:
+@udf(return_dtype=bytes, input_columns={"urls": List[Optional[str]]})
+def download_udf(urls: list[str | None], max_worker_threads: int = 8) -> list[bytes | None]:
     """Downloads the contents of the supplied URLs."""
+
+    from loguru import logger
+
     results: list[bytes | None] = []
 
     executor = ThreadPoolExecutor(max_workers=max_worker_threads, initializer=_worker_thread_initializer)
@@ -42,8 +44,3 @@ def _download_udf(urls: list[str | None], max_worker_threads: int = 8) -> list[b
             logger.error(f"Encountered error during download from URL {urls[future_to_idx[future]]}: {str(e)}")
 
     return results
-
-
-# HACK: Workaround for Ray pickling issues if we use the @polars_udf decorator instead.
-# There may be some issues around runtime imports and Ray pickling of decorated functions
-download_udf = udf(_download_udf, return_dtype=bytes, input_columns={"urls": List[Optional[str]]})
