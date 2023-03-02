@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import enum
 import functools
 import inspect
 import logging
+import pathlib
 import sys
-from typing import Any, Callable, List, Sequence, Union
+import tempfile
+from typing import Any, Callable, Iterator, List, Sequence, Union
 
 if sys.version_info < (3, 8):
     from typing_extensions import get_origin
@@ -14,6 +17,7 @@ else:
 
 from daft.execution.operators import ExpressionType
 from daft.expressions import Expression, UdfExpression
+from daft.internal.filelock import SimpleUnixFileLock
 from daft.runners.blocks import DataBlock
 
 _POLARS_AVAILABLE = True
@@ -40,8 +44,34 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-StatefulUDF = type  # stateful UDFs are provided as Python Classes
+
 StatelessUDF = Callable[..., Sequence]
+
+
+class StatefulUDF:
+    def __call__(self, *args, **kwargs):
+        pass
+
+    @contextlib.contextmanager
+    def mutex(
+        self,
+        timeout_seconds: int = -1,
+        tmpdir: str | None = None,
+    ) -> Iterator[SimpleUnixFileLock]:
+        """Grabs a node-level mutex to ensure that race conditions do not occur across instances of running UDFs
+
+        Args:
+            timeout_seconds (int, optional): Time in seconds before timing out. Defaults to -1, which indicates to wait forever.
+            tmpdir (str, optional): Location on disk to use for file-locks. Defaults to None which will pick the value from tempfile.gettempdir()
+        """
+        if tmpdir is None:
+            tmpdir = tempfile.gettempdir()
+        with SimpleUnixFileLock(
+            str(pathlib.Path(tmpdir) / f"{self.__class__.__name__}.lock"), timeout_seconds=timeout_seconds
+        ) as lock:
+            yield lock
+
+
 UDF = Union[StatefulUDF, StatelessUDF]
 
 
@@ -51,7 +81,9 @@ logger = logging.getLogger(__name__)
 def _initialize_func(func):
     """Initializes a function if it is a class, otherwise noop"""
     try:
-        return func() if isinstance(func, type) else func
+        if isinstance(func, type):
+            return func()
+        return func
     except:
         logger.error(f"Encountered error when initializing user-defined function {func.__name__}")
         raise
@@ -253,7 +285,7 @@ def udf(
 
     def udf_decorator(func: UDF) -> Callable:
 
-        call_method = func.__call__ if isinstance(func, type) else func
+        call_method = func.__call__ if isinstance(func, type) or isinstance(func, StatefulUDF) else func
         input_types = {
             arg_name: UdfInputType.from_type_hint(type_hint) for arg_name, type_hint in input_columns.items()
         }

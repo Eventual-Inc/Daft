@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import List
 
 import numpy as np
@@ -8,7 +9,8 @@ import polars as pl
 import pyarrow as pa
 import pytest
 
-from daft import DataFrame, udf
+from daft import DataFrame, StatefulUDF, udf
+from daft.resource_request import ResourceRequest
 
 
 class MyObj:
@@ -186,3 +188,32 @@ def test_bad_udf_invocations():
     # `is_a_col`, but not transform the expression for `not_a_col`
     df = df.with_column("b", udf_one_col(df["a"], 1))
     df.collect()
+
+
+###
+# Test UDF mutex initializations
+###
+
+
+@udf(return_dtype=int, input_columns={"x": list})
+class MyMutexUDF(StatefulUDF):
+    def __init__(self):
+
+        with self.mutex():
+            time.sleep(0.5)
+
+    def __call__(self, x):
+        return x
+
+
+def test_mutex_udf_initialization():
+
+    df = DataFrame.from_pydict({"a": list(range(10))}).repartition(2)
+    df = df.with_column("b", MyMutexUDF(df["a"]), resource_request=ResourceRequest(num_cpus=0.5))
+
+    start = time.time()
+    df.collect()
+    elapsed = time.time() - start
+
+    # If mutex works, the initializations for MyMutexUDF should happen serially and elapsed time should be about 1 second
+    assert elapsed == 1
