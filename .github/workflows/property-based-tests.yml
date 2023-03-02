@@ -62,3 +62,23 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft_runner }}
         HYPOTHESIS_MAX_EXAMPLES: 10000
+
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.23.0
+      if: failure()
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [NIGHTLY] Property-Based Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
