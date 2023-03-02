@@ -198,7 +198,6 @@ def test_bad_udf_invocations():
 @udf(return_dtype=int, input_columns={"x": list})
 class MyMutexUDF(StatefulUDF):
     def __init__(self):
-
         with self.mutex():
             time.sleep(0.5)
 
@@ -207,7 +206,6 @@ class MyMutexUDF(StatefulUDF):
 
 
 def test_mutex_udf_initialization():
-
     df = DataFrame.from_pydict({"a": list(range(10))}).repartition(2)
     df = df.with_column("b", MyMutexUDF(df["a"]), resource_request=ResourceRequest(num_cpus=0.5))
 
@@ -215,5 +213,5 @@ def test_mutex_udf_initialization():
     df.collect()
     elapsed = time.time() - start
 
-    # If mutex works, the initializations for MyMutexUDF should happen serially and elapsed time should be about 1 second
-    assert elapsed == 1
+    # If mutex works, the initializations for MyMutexUDF should happen serially and elapsed time should be more than 0.5 + 0.5 seconds
+    assert elapsed > 1.0

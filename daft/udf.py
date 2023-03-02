@@ -10,6 +10,8 @@ import sys
 import tempfile
 from typing import Any, Callable, Iterator, List, Sequence, Union
 
+import filelock
+
 if sys.version_info < (3, 8):
     from typing_extensions import get_origin
 else:
@@ -17,7 +19,6 @@ else:
 
 from daft.execution.operators import ExpressionType
 from daft.expressions import Expression, UdfExpression
-from daft.internal.filelock import SimpleUnixFileLock
 from daft.runners.blocks import DataBlock
 
 _POLARS_AVAILABLE = True
@@ -57,7 +58,7 @@ class StatefulUDF:
         self,
         timeout_seconds: int = -1,
         tmpdir: str | None = None,
-    ) -> Iterator[SimpleUnixFileLock]:
+    ) -> Iterator[None]:
         """Grabs a node-level mutex to ensure that race conditions do not occur across instances of running UDFs
 
         Args:
@@ -66,10 +67,8 @@ class StatefulUDF:
         """
         if tmpdir is None:
             tmpdir = tempfile.gettempdir()
-        with SimpleUnixFileLock(
-            str(pathlib.Path(tmpdir) / f"{self.__class__.__name__}.lock"), timeout_seconds=timeout_seconds
-        ) as lock:
-            yield lock
+        with filelock.FileLock(str(pathlib.Path(tmpdir) / f"{self.__class__.__name__}.lock"), timeout=timeout_seconds):
+            yield None
 
 
 UDF = Union[StatefulUDF, StatelessUDF]
