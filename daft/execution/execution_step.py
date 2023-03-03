@@ -386,10 +386,8 @@ class LocalCount(Instruction):
 
     def _count(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
-        partition = vPartition.from_pydict(
-            {"count": [len(input)]},
-            schema=self.logplan._schema,
-        )
+        partition = vPartition.from_pydict({"count": [len(input)]})
+        assert partition.schema() == self.logplan.schema()
         return [partition]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:

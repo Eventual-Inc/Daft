@@ -233,8 +233,11 @@ class vPartition:
 
     @classmethod
     def from_pydict(
-        cls, data: dict[str, list[Any] | np.ndarray | pa.Array | pa.ChunkedArray], schema: Schema
+        cls,
+        data: dict[str, list[Any] | np.ndarray | pa.Array | pa.ChunkedArray],
     ) -> vPartition:
+        column_types = {header: ExpressionType.infer_type(data[header]) for header in data}
+        schema = Schema([Field(header, expr_type) for header, expr_type in column_types.items()])
         fields = schema.fields
         tiles = {}
         for f in fields.values():

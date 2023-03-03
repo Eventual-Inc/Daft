@@ -88,22 +88,26 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
         if len(files_info) == 0:
             raise FileNotFoundError(f"No files found at {source_path}")
 
+        partition = vPartition.from_pydict(
+            data={
+                self.FS_LISTING_PATH_COLUMN_NAME: [f.path for f in files_info],
+                self.FS_LISTING_SIZE_COLUMN_NAME: [f.size for f in files_info],
+                self.FS_LISTING_TYPE_COLUMN_NAME: [f.type for f in files_info],
+                self.FS_LISTING_ROWS_COLUMN_NAME: [f.rows for f in files_info],
+            },
+        )
+
+        # Make sure that the schema is consistent with what we expect
         schema = self._get_listing_paths_details_schema()
+        assert partition.schema() == schema
+
         pset = LocalPartitionSet(
             {
                 # Hardcoded to 1 partition
-                0: vPartition.from_pydict(
-                    data={
-                        self.FS_LISTING_PATH_COLUMN_NAME: [f.path for f in files_info],
-                        self.FS_LISTING_SIZE_COLUMN_NAME: [f.size for f in files_info],
-                        self.FS_LISTING_TYPE_COLUMN_NAME: [f.type for f in files_info],
-                        self.FS_LISTING_ROWS_COLUMN_NAME: [f.rows for f in files_info],
-                    },
-                    schema=schema,
-                ),
+                0: partition,
             }
         )
-        return pset, schema
+        return pset, partition.schema()
 
 
 class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):

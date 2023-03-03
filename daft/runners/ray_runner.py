@@ -69,8 +69,6 @@ from daft.logical.schema import Schema
 def _glob_path_into_details_vpartitions(
     path: str, schema: Schema, source_info: SourceInfo | None
 ) -> list[tuple[PartID, vPartition]]:
-    assert len(schema) == 4
-    listing_path_name, listing_size_name, listing_type_name, listing_rows_name = ["path", "size", "type", "rows"]
     listing_infos = glob_path_with_stats(path, source_info)
     if len(listing_infos) == 0:
         raise FileNotFoundError(f"No files found at {path}")
@@ -78,13 +76,14 @@ def _glob_path_into_details_vpartitions(
     # Hardcoded to 1 partition
     partition = vPartition.from_pydict(
         {
-            listing_path_name: [file_info.path for file_info in listing_infos],
-            listing_size_name: [file_info.size for file_info in listing_infos],
-            listing_type_name: [file_info.type for file_info in listing_infos],
-            listing_rows_name: [file_info.rows for file_info in listing_infos],
+            "path": [file_info.path for file_info in listing_infos],
+            "size": [file_info.size for file_info in listing_infos],
+            "type": [file_info.type for file_info in listing_infos],
+            "rows": [file_info.rows for file_info in listing_infos],
         },
-        schema=schema,
     )
+    assert partition.schema() == schema, f"Constructed partition must have schema: {schema}"
+
     partition_ref = ray.put(partition)
     partition_refs = [(0, partition_ref)]
 
