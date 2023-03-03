@@ -13,6 +13,7 @@ type ExprRef = Arc<Expr>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Expr {
     Alias(ExprRef, Arc<str>),
+    Agg(AggExpr),
     BinaryOp {
         op: Operator,
         left: ExprRef,
@@ -21,6 +22,11 @@ pub enum Expr {
     Cast(ExprRef, DataType),
     Column(Arc<str>),
     Literal(lit::LiteralValue),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AggExpr {
+    Mean(ExprRef),
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
@@ -53,6 +59,7 @@ impl Expr {
 
         match self {
             Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
+            Agg(_agg_expr) => todo!(),
             Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
             Column(name) => Ok(schema.get_field(name).cloned()?),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
@@ -90,6 +97,7 @@ impl Expr {
         use Expr::*;
         match self {
             Alias(.., name) => Ok(name.as_ref()),
+            Agg(_agg_expr) => todo!(),
             Cast(expr, ..) => expr.name(),
             Column(name) => Ok(name.as_ref()),
             Literal(..) => Ok("literal"),
@@ -112,6 +120,7 @@ impl Display for Expr {
         use Expr::*;
         match self {
             Alias(expr, name) => write!(f, "{expr} AS {name}"),
+            Agg(_agg_expr) => todo!(),
             BinaryOp { op, left, right } => {
                 let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
                     Alias(e, _) => write!(f, "{e}"),
