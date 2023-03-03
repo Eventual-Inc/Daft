@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fmt::{Display, Formatter, Result},
     sync::Arc,
 };
@@ -48,6 +49,23 @@ impl Schema {
 
     pub fn names(&self) -> DaftResult<Vec<String>> {
         return Ok(self.fields.keys().cloned().collect());
+    }
+
+    pub fn union(&self, other: &Schema) -> DaftResult<Schema> {
+        let self_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
+        let other_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
+        match self_keys.difference(&other_keys).count() {
+            0 => {
+                let mut fields = IndexMap::new();
+                for (k, v) in self.fields.iter().chain(other.fields.iter()) {
+                    fields.insert(k.clone(), v.clone());
+                }
+                Ok(Schema { fields })
+            }
+            _ => Err(DaftError::ValueError(
+                "Cannot union two schemas with overlapping keys".to_string(),
+            )),
+        }
     }
 }
 

@@ -25,16 +25,8 @@ impl PySchema {
     }
 
     pub fn union(&self, other: &PySchema) -> PyResult<PySchema> {
-        let fields: Vec<datatypes::Field> = self
-            .schema
-            .fields
-            .values()
-            .cloned()
-            .chain(other.schema.fields.values().cloned())
-            .collect();
-        let new_schema = schema::Schema::new(fields);
         let new_pyschema = PySchema {
-            schema: new_schema.into(),
+            schema: self.schema.union(&other.schema)?.into(),
         };
         Ok(new_pyschema)
     }
