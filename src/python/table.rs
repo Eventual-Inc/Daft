@@ -7,6 +7,7 @@ use crate::table;
 
 use crate::python::expr::PyExpr;
 
+use super::schema::PySchema;
 use super::series::PySeries;
 
 #[pyclass]
@@ -16,6 +17,12 @@ pub struct PyTable {
 
 #[pymethods]
 impl PyTable {
+    pub fn schema(&self) -> PyResult<PySchema> {
+        Ok(PySchema {
+            schema: self.table.schema.clone(),
+        })
+    }
+
     pub fn eval_expression_list(&self, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let converted_exprs: Vec<dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
         Ok(self

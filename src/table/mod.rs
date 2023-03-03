@@ -1,15 +1,14 @@
 use std::fmt::{Display, Formatter, Result};
-use std::sync::Arc;
 
 use crate::datatypes::{BooleanType, DataType, Field};
 use crate::dsl::Expr;
 use crate::error::{DaftError, DaftResult};
-use crate::schema::Schema;
+use crate::schema::{Schema, SchemaRef};
 use crate::series::Series;
 
 #[derive(Clone)]
 pub struct Table {
-    schema: Arc<Schema>,
+    pub schema: SchemaRef,
     columns: Vec<Series>,
 }
 

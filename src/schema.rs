@@ -10,7 +10,7 @@ use crate::{
     error::{DaftError, DaftResult},
 };
 
-type SchemaRef = Arc<Schema>;
+pub type SchemaRef = Arc<Schema>;
 
 pub struct Schema {
     pub fields: indexmap::IndexMap<String, Field>,
