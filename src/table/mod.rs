@@ -145,6 +145,7 @@ impl Table {
         use crate::dsl::Expr::*;
         match expr {
             Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
+            Agg(_agg_expr) => todo!(),
             Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             Column(name) => self.get_column(name),
             BinaryOp { op, left, right } => {
