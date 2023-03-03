@@ -21,7 +21,7 @@ class LogicalPartitionOpRunner:
     # TODO(charles): move to ExecutionStep
 
     def _handle_tabular_files_scan(
-        self, inputs: dict[int, vPartition], scan: TabularFilesScan, partition_id: int, index: int | None = None
+        self, inputs: dict[int, vPartition], scan: TabularFilesScan, index: int | None = None
     ) -> vPartition:
         child_id = scan._children()[0].id()
         prev_partition = inputs[child_id]
@@ -44,11 +44,10 @@ class LogicalPartitionOpRunner:
 
         if scan._source_info.scan_type() == StorageType.CSV:
             assert isinstance(scan._source_info, CSVSourceInfo)
-            return vPartition.merge_partitions(
+            return vPartition.concat(
                 [
                     vPartition.from_csv(
                         path=fp,
-                        partition_id=partition_id,
                         csv_options=vPartitionParseCSVOptions(
                             delimiter=scan._source_info.delimiter,
                             has_headers=scan._source_info.has_headers,
@@ -63,11 +62,10 @@ class LogicalPartitionOpRunner:
             )
         elif scan._source_info.scan_type() == StorageType.JSON:
             assert isinstance(scan._source_info, JSONSourceInfo)
-            return vPartition.merge_partitions(
+            return vPartition.concat(
                 [
                     vPartition.from_json(
                         path=fp,
-                        partition_id=partition_id,
                         schema_options=schema_options,
                         read_options=read_options,
                     )
@@ -76,11 +74,10 @@ class LogicalPartitionOpRunner:
             )
         elif scan._source_info.scan_type() == StorageType.PARQUET:
             assert isinstance(scan._source_info, ParquetSourceInfo)
-            return vPartition.merge_partitions(
+            return vPartition.concat(
                 [
                     vPartition.from_parquet(
                         path=fp,
-                        partition_id=partition_id,
                         schema_options=schema_options,
                         read_options=read_options,
                     )
@@ -90,7 +87,7 @@ class LogicalPartitionOpRunner:
         else:
             raise NotImplementedError(f"PyRunner has not implemented scan: {scan._source_info.scan_type()}")
 
-    def _handle_file_write(self, inputs: dict[int, vPartition], file_write: FileWrite, partition_id: int) -> vPartition:
+    def _handle_file_write(self, inputs: dict[int, vPartition], file_write: FileWrite) -> vPartition:
         child_id = file_write._children()[0].id()
         assert file_write._storage_type == StorageType.PARQUET or file_write._storage_type == StorageType.CSV
         if file_write._storage_type == StorageType.PARQUET:
@@ -113,10 +110,6 @@ class LogicalPartitionOpRunner:
         assert col_name is not None
         columns[col_name] = PyListTile(
             col_name,
-            partition_id=partition_id,
             block=DataBlock.make_block(file_names),
         )
-        return vPartition(
-            columns,
-            partition_id=partition_id,
-        )
+        return vPartition(columns)

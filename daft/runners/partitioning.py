@@ -92,7 +92,6 @@ def _limit_num_rows(buf: IO, num_rows: int) -> IO:
 @dataclass(frozen=True)
 class PyListTile:
     column_name: str
-    partition_id: PartID
     block: DataBlock
 
     def __len__(self) -> int:
@@ -119,20 +118,18 @@ class PyListTile:
             argsorted_targets=argsorted_target_partition_indices,
         )
         assert len(new_blocks) == num_partitions
-        return [dataclasses.replace(self, block=nb, partition_id=i) for i, nb in enumerate(new_blocks)]
+        return [dataclasses.replace(self, block=nb) for i, nb in enumerate(new_blocks)]
 
     @classmethod
-    def merge_tiles(cls, to_merge: list[PyListTile], verify_partition_id: bool = True) -> PyListTile:
+    def merge_tiles(cls, to_merge: list[PyListTile]) -> PyListTile:
         assert len(to_merge) > 0
 
         if len(to_merge) == 1:
             return to_merge[0]
 
-        partition_id = to_merge[0].partition_id
         column_name = to_merge[0].column_name
         # first perform sanity check
         for part in to_merge[1:]:
-            assert not verify_partition_id or part.partition_id == partition_id
             assert part.column_name == column_name
 
         merged_block = DataBlock.merge_blocks([t.block for t in to_merge])
@@ -153,17 +150,21 @@ class PartitionMetadata(PartialPartitionMetadata):
     num_rows: int
     size_bytes: int
 
+    @classmethod
+    def from_table(cls, table: vPartition) -> PartitionMetadata:
+        return PartitionMetadata(
+            num_rows=len(table),
+            size_bytes=table.size_bytes(),
+        )
+
 
 @dataclass(frozen=True)
 class vPartition:
     columns: dict[str, PyListTile]
-    partition_id: PartID
 
     def __post_init__(self) -> None:
         size = None
         for name, tile in self.columns.items():
-            if tile.partition_id != self.partition_id:
-                raise ValueError(f"mismatch of partition id: {tile.partition_id} vs {self.partition_id}")
             if len(tile) != 0 and size is None:
                 size = len(tile)
             if len(tile) != 0 and len(tile) != size:
@@ -176,13 +177,10 @@ class vPartition:
             return 0
         return len(next(iter(self.columns.values())))
 
-    def metadata(self) -> PartitionMetadata:
-        return PartitionMetadata(
-            num_rows=len(self),
-            size_bytes=sum(tile.size_bytes() for tile in self.columns.values()),
-        )
+    def size_bytes(self) -> int:
+        return sum(tile.size_bytes() for tile in self.columns.values())
 
-    def get_schema(self) -> Schema:
+    def schema(self) -> Schema:
         """Generates column expressions that represent the vPartition's schema"""
         fields = []
         for _, tile in self.columns.items():
@@ -203,8 +201,6 @@ class vPartition:
         return Schema(fields)
 
     def eval_expression(self, expr: Expression) -> PyListTile:
-        # Avoid recomputing expressions that have been computed before
-
         expr_name = expr.name()
 
         assert expr_name is not None
@@ -218,26 +214,26 @@ class vPartition:
         result = exec.eval(expr, required_blocks)
         expr_name = expr.name()
         assert expr_name is not None
-        return PyListTile(column_name=expr_name, partition_id=self.partition_id, block=result)
+        return PyListTile(column_name=expr_name, block=result)
 
     def eval_expression_list(self, exprs: ExpressionList) -> vPartition:
         tile_list = [self.eval_expression(e) for e in exprs]
         new_columns = {t.column_name: t for t in tile_list}
-        return vPartition(columns=new_columns, partition_id=self.partition_id)
+        return vPartition(columns=new_columns)
 
     @classmethod
-    def from_arrow_table(cls, table: pa.Table, partition_id: PartID) -> vPartition:
+    def from_arrow_table(cls, table: pa.Table) -> vPartition:
         names = table.column_names
         tiles = {}
         for i, name in enumerate(names):
             arr = table[i]
             block: DataBlock[ArrowArrType] = DataBlock.make_block(arr)
-            tiles[name] = PyListTile(column_name=name, partition_id=partition_id, block=block)
-        return vPartition(columns=tiles, partition_id=partition_id)
+            tiles[name] = PyListTile(column_name=name, block=block)
+        return vPartition(columns=tiles)
 
     @classmethod
     def from_pydict(
-        cls, data: dict[str, list[Any] | np.ndarray | pa.Array | pa.ChunkedArray], schema: Schema, partition_id: PartID
+        cls, data: dict[str, list[Any] | np.ndarray | pa.Array | pa.ChunkedArray], schema: Schema
     ) -> vPartition:
         fields = schema.fields
         tiles = {}
@@ -254,14 +250,13 @@ class vPartition:
                 col_data = pa.array(data[col_name], type=col_type.to_arrow_type())
 
             block = DataBlock.make_block(col_data)
-            tiles[col_name] = PyListTile(column_name=col_name, partition_id=partition_id, block=block)
-        return vPartition(columns=tiles, partition_id=partition_id)
+            tiles[col_name] = PyListTile(column_name=col_name, block=block)
+        return vPartition(columns=tiles)
 
     @classmethod
     def from_csv(
         cls,
         path: str,
-        partition_id: PartID,
         csv_options: vPartitionParseCSVOptions = vPartitionParseCSVOptions(),
         schema_options: vPartitionSchemaInferenceOptions = vPartitionSchemaInferenceOptions(),
         read_options: vPartitionReadOptions = vPartitionReadOptions(),
@@ -270,7 +265,6 @@ class vPartition:
 
         Args:
             path: FSSpec compatible path to the CSV file.
-            partition_id: Partition ID to assign to the vPartition.
             csv_options: Options for parsing the CSV file.
             schema_options: Options for inferring the schema from the CSV file.
             read_options: Options for building a vPartition.
@@ -306,13 +300,12 @@ class vPartition:
                 convert_options=csv.ConvertOptions(include_columns=read_options.column_names),
             )
 
-        return vPartition.from_arrow_table(table, partition_id=partition_id)
+        return vPartition.from_arrow_table(table)
 
     @classmethod
     def from_json(
         cls,
         path: str,
-        partition_id: PartID,
         schema_options: vPartitionSchemaInferenceOptions = vPartitionSchemaInferenceOptions(),
         read_options: vPartitionReadOptions = vPartitionReadOptions(),
     ) -> vPartition:
@@ -333,13 +326,12 @@ class vPartition:
         if read_options.column_names is not None:
             table = table.select(read_options.column_names)
 
-        return vPartition.from_arrow_table(table, partition_id=partition_id)
+        return vPartition.from_arrow_table(table)
 
     @classmethod
     def from_parquet(
         cls,
         path: str,
-        partition_id: PartID,
         schema_options: vPartitionSchemaInferenceOptions = vPartitionSchemaInferenceOptions(),
         read_options: vPartitionReadOptions = vPartitionReadOptions(),
     ) -> vPartition:
@@ -380,7 +372,7 @@ class vPartition:
                     columns=read_options.column_names,
                 )
 
-        return vPartition.from_arrow_table(table, partition_id=partition_id)
+        return vPartition.from_arrow_table(table)
 
     def to_pydict(self) -> dict[str, list[Any]]:
         output_schema = [(tile.column_name, id) for id, tile in self.columns.items()]
@@ -470,7 +462,7 @@ class vPartition:
             agged = {}
             for op, (col_name, tile) in zip(ops, evaled_expressions.columns.items()):
                 agged[col_name] = tile.apply(func=partial(tile.block.__class__.agg, op=op))
-            return vPartition(partition_id=self.partition_id, columns=agged)
+            return vPartition(columns=agged)
         else:
             grouped_blocked = self.eval_expression_list(group_by)
             assert len(evaled_expressions.columns) == len(ops)
@@ -486,7 +478,7 @@ class vPartition:
 
             for block, (col_name, tile) in zip(acols, evaled_expressions.columns.items()):
                 new_columns[col_name] = dataclasses.replace(tile, block=block)
-            return vPartition(partition_id=self.partition_id, columns=new_columns)
+            return vPartition(columns=new_columns)
 
     def split_by_hash(self, exprs: ExpressionList, num_partitions: int) -> list[vPartition]:
         values_to_hash = self.eval_expression_list(exprs)
@@ -520,7 +512,7 @@ class vPartition:
             for part_id, nt in enumerate(new_tiles):
                 new_partition_to_columns[part_id][name] = nt
 
-        return [vPartition(partition_id=i, columns=columns) for i, columns in enumerate(new_partition_to_columns)]
+        return [vPartition(columns=columns) for columns in new_partition_to_columns]
 
     def quantiles(self, num: int) -> vPartition:
         self_size = len(self)
@@ -536,7 +528,6 @@ class vPartition:
         exploded_col_names = {tile.column_name for tile in partition_to_explode.columns.values()}
         partition_to_repeat = vPartition(
             {name: tile for name, tile in self.columns.items() if name not in exploded_col_names},
-            partition_id=self.partition_id,
         )
 
         exploded_cols = {}
@@ -556,7 +547,6 @@ class vPartition:
 
             exploded_cols[name] = PyListTile(
                 column_name=name,
-                partition_id=tile.partition_id,
                 block=exploded_block,
             )
         assert found_list_lengths is not None, "At least one column must be specified to explode"
@@ -567,7 +557,6 @@ class vPartition:
                     **exploded_cols,
                     **partition_to_repeat.columns,
                 },
-                partition_id=self.partition_id,
             )
 
         # Use the `found_list_lengths` to generate an array of indices to take from other columns (e.g. [0, 0, 1, 1, 1, 2, ...])
@@ -579,7 +568,7 @@ class vPartition:
         take_indices = take_indices - 1
 
         repeated_partition = partition_to_repeat.take(DataBlock.make_block(take_indices))
-        return vPartition({**exploded_cols, **repeated_partition.columns}, partition_id=self.partition_id)
+        return vPartition({**exploded_cols, **repeated_partition.columns})
 
     def join(
         self,
@@ -630,23 +619,19 @@ class vPartition:
                     rk = f"right.{rk}"
 
                 assert rk not in result_columns
-                result_columns[rk] = PyListTile(
-                    column_name=rk, partition_id=self.partition_id, block=result_columns[lk].block
-                )
+                result_columns[rk] = PyListTile(column_name=rk, block=result_columns[lk].block)
 
         for k in right_nonjoin_ids:
 
             while k in result_columns:
                 k = f"right.{k}"
             assert k not in result_columns
-            result_columns[k] = PyListTile(
-                column_name=k, partition_id=self.partition_id, block=joined_blocks[joined_block_idx]
-            )
+            result_columns[k] = PyListTile(column_name=k, block=joined_blocks[joined_block_idx])
             joined_block_idx += 1
 
         assert joined_block_idx == len(result_keys)
         output_ordering = output_projection.to_column_expressions()
-        return vPartition(columns=result_columns, partition_id=self.partition_id).eval_expression_list(output_ordering)
+        return vPartition(columns=result_columns).eval_expression_list(output_ordering)
 
     def _to_file(
         self,
@@ -713,25 +698,21 @@ class vPartition:
         return self._to_file("csv", root_path=root_path, partition_cols=partition_cols, compression=compression)
 
     @classmethod
-    def merge_partitions(cls, to_merge: list[vPartition], verify_partition_id: bool = True) -> vPartition:
+    def concat(cls, to_merge: list[vPartition]):
         assert len(to_merge) > 0
 
         if len(to_merge) == 1:
             return to_merge[0]
 
-        pid = to_merge[0].partition_id
         col_names = set(to_merge[0].columns.keys())
         # first perform sanity check
         for part in to_merge[1:]:
-            assert not verify_partition_id or part.partition_id == pid
             assert set(part.columns.keys()) == col_names
 
         new_columns = {}
         for col_name in to_merge[0].columns.keys():
-            new_columns[col_name] = PyListTile.merge_tiles(
-                [vp.columns[col_name] for vp in to_merge], verify_partition_id=verify_partition_id
-            )
-        return dataclasses.replace(to_merge[0], columns=new_columns)
+            new_columns[col_name] = PyListTile.merge_tiles([vp.columns[col_name] for vp in to_merge])
+        return vPartition(columns=new_columns)
 
 
 PartitionT = TypeVar("PartitionT")

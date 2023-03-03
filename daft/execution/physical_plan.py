@@ -80,7 +80,7 @@ def file_read(
             file_rows = vpartition.to_pydict()["rows"]
 
             # Emit one partition for each file (NOTE: hardcoded for now).
-            for i in range(vpartition.metadata().num_rows):
+            for i in range(len(vpartition)):
 
                 file_read_step = PartitionTaskBuilder[PartitionT](
                     inputs=[done_task.partition()],
@@ -498,6 +498,17 @@ def sort(
             descending=sort_info._descending,
         ),
     )
+
+
+def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], node: logical_plan.Repartition):
+    """Splits the results of `child_plan` randomly into a list of `node.num_partitions()` number of partitions"""
+    seed = 0
+    for step in child_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            instruction = execution_step.FanoutRandom(node.num_partitions(), seed)
+            step = step.add_instruction(instruction)
+        yield step
+        seed += 1
 
 
 def materialize(
