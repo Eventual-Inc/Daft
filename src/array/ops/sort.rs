@@ -21,10 +21,6 @@ where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let options = arrow2::compute::sort::SortOptions {
-            descending,
-            nulls_first: descending,
-        };
         let arrow_array = self.downcast();
 
         let result =
@@ -32,7 +28,7 @@ where
                 I::Native,
                 T::Native,
                 _,
-            >(arrow_array, ord::total_cmp, &options, None);
+            >(arrow_array, ord::total_cmp, descending);
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -100,10 +96,6 @@ impl Float32Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let options = arrow2::compute::sort::SortOptions {
-            descending,
-            nulls_first: descending,
-        };
         let arrow_array = self.downcast();
 
         let result =
@@ -111,7 +103,7 @@ impl Float32Array {
                 I::Native,
                 f32,
                 _,
-            >(arrow_array, cmp_float::<f32>, &options, None);
+            >(arrow_array, cmp_float::<f32>, descending);
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -141,10 +133,6 @@ impl Float64Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let options = arrow2::compute::sort::SortOptions {
-            descending,
-            nulls_first: descending,
-        };
         let arrow_array = self.downcast();
 
         let result =
@@ -152,7 +140,7 @@ impl Float64Array {
                 I::Native,
                 f64,
                 _,
-            >(arrow_array, cmp_float::<f64>, &options, None);
+            >(arrow_array, cmp_float::<f64>, descending);
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
