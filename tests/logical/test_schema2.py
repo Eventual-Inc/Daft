@@ -81,7 +81,7 @@ def test_to_col_expr():
         assert sce.name() == ece.name()
 
 
-def test_union_err():
+def test_union():
     schema = TABLE.schema()
     with pytest.raises(ValueError):
         schema.union(schema)
