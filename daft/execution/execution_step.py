@@ -278,7 +278,6 @@ class ReadFile(Instruction):
         partition = daft.runners.pyrunner.LocalLogicalPartitionOpRunner()._handle_tabular_files_scan(
             inputs={self.logplan._filepaths_child.id(): filepaths_partition},
             scan=self.logplan,
-            partition_id=self.partition_id,
             index=self.index,
         )
         return [partition]
@@ -297,7 +296,6 @@ class WriteFile(Instruction):
         partition = daft.runners.pyrunner.LocalLogicalPartitionOpRunner()._handle_file_write(
             inputs={self.logplan._children()[0].id(): input},
             file_write=self.logplan,
-            partition_id=self.partition_id,
         )
         return [partition]
 
@@ -336,7 +334,8 @@ class LocalCount(Instruction):
     def _count(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
         partition = vPartition.from_pydict(
-            {"count": [len(input)]}, schema=self.logplan._schema, partition_id=input.partition_id
+            {"count": [len(input)]},
+            schema=self.logplan._schema,
         )
         return [partition]
 
@@ -425,7 +424,7 @@ class ReduceMerge(ReduceInstruction):
         return self._reduce_merge(inputs)
 
     def _reduce_merge(self, inputs: list[vPartition]) -> list[vPartition]:
-        return [vPartition.merge_partitions(inputs, verify_partition_id=False)]
+        return [vPartition.concat(inputs)]
 
 
 @dataclass(frozen=True)
@@ -455,7 +454,7 @@ class ReduceToQuantiles(ReduceInstruction):
         return self._reduce_to_quantiles(inputs)
 
     def _reduce_to_quantiles(self, inputs: list[vPartition]) -> list[vPartition]:
-        merged = vPartition.merge_partitions(inputs, verify_partition_id=False)
+        merged = vPartition.concat(inputs)
 
         # Skip evaluation of expressions by converting to Column Expression, since evaluation was done in Sample
         merged_sorted = merged.sort(self.sort_by.to_column_expressions(), descending=self.descending)
@@ -471,6 +470,8 @@ class FanoutInstruction(Instruction):
 
 @dataclass(frozen=True)
 class FanoutRandom(FanoutInstruction):
+    seed: int
+
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         return self._fanout_random(inputs)
 
@@ -479,6 +480,7 @@ class FanoutRandom(FanoutInstruction):
         partitions_with_ids = RepartitionRandomOp.map_fn(
             input=input,
             output_partitions=self.num_outputs,
+            seed=self.seed,
         )
         return [partition for _, partition in sorted(partitions_with_ids.items())]
 

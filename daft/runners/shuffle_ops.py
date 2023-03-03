@@ -33,12 +33,7 @@ class ShuffleOp:
 
 class RepartitionRandomOp(ShuffleOp):
     @staticmethod
-    def map_fn(input: vPartition, output_partitions: int, seed: int | None = None) -> dict[PartID, vPartition]:
-        if seed is None:
-            seed = input.partition_id
-        else:
-            seed += input.partition_id
-
+    def map_fn(input: vPartition, output_partitions: int, seed: int = 0) -> dict[PartID, vPartition]:
         rng = np.random.default_rng(seed=seed)
         target_idx: DataBlock[ArrowArrType] = DataBlock.make_block(
             data=rng.integers(low=0, high=output_partitions, size=len(input))
@@ -48,7 +43,7 @@ class RepartitionRandomOp(ShuffleOp):
 
     @staticmethod
     def reduce_fn(mapped_outputs: list[vPartition]) -> vPartition:
-        return vPartition.merge_partitions(mapped_outputs)
+        return vPartition.concat(mapped_outputs)
 
 
 class RepartitionHashOp(ShuffleOp):
@@ -62,7 +57,7 @@ class RepartitionHashOp(ShuffleOp):
 
     @staticmethod
     def reduce_fn(mapped_outputs: list[vPartition]) -> vPartition:
-        return vPartition.merge_partitions(mapped_outputs)
+        return vPartition.concat(mapped_outputs)
 
 
 class SortOp(ShuffleOp):
@@ -91,4 +86,4 @@ class SortOp(ShuffleOp):
     ) -> vPartition:
         assert exprs is not None and descending is not None
         assert len(exprs) == len(descending)
-        return vPartition.merge_partitions(mapped_outputs).sort(exprs, descending=descending)
+        return vPartition.concat(mapped_outputs).sort(exprs, descending=descending)

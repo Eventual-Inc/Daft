@@ -464,6 +464,17 @@ def sort(
     )
 
 
+def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], node: logical_plan.Repartition):
+    """Splits the results of `child_plan` randomly into a list of `node.num_partitions()` number of partitions"""
+    seed = 0
+    for step in child_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            instruction = execution_step.FanoutRandom(node.num_partitions(), seed)
+            step = step.add_instruction(instruction)
+        yield step
+        seed += 1
+
+
 def materialize(
     child_plan: InProgressPhysicalPlan[PartitionT],
 ) -> MaterializedPhysicalPlan:

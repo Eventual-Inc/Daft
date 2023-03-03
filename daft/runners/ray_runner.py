@@ -84,7 +84,6 @@ def _glob_path_into_details_vpartitions(
             listing_rows_name: [file_info.rows for file_info in listing_infos],
         },
         schema=schema,
-        partition_id=0,
     )
     partition_ref = ray.put(partition)
     partition_refs = [(0, partition_ref)]
@@ -122,7 +121,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         assert ids_and_partitions[0][0] == 0
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         all_partitions = ray.get([part for id, part in ids_and_partitions])
-        return vPartition.merge_partitions(all_partitions, verify_partition_id=False)
+        return vPartition.concat(all_partitions)
 
     def to_ray_dataset(self) -> RayDataset:
         if not _RAY_FROM_ARROW_REFS_AVAILABLE:

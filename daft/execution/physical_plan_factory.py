@@ -89,24 +89,22 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             return physical_plan.global_limit(child_plan, node)
 
         elif isinstance(node, logical_plan.Repartition):
-            # Translate PartitionScheme to the appropriate fanout instruction.
-            fanout_instruction: execution_step.FanoutInstruction
+            # Do the fanout.
+            fanout_plan: physical_plan.InProgressPhysicalPlan
             if node._scheme == PartitionScheme.RANDOM:
-                fanout_instruction = execution_step.FanoutRandom(num_outputs=node.num_partitions())
+                fanout_plan = physical_plan.fanout_random(child_plan, node)
             elif node._scheme == PartitionScheme.HASH:
                 fanout_instruction = execution_step.FanoutHash(
                     num_outputs=node.num_partitions(),
                     partition_by=node._partition_by,
                 )
+                fanout_plan = physical_plan.pipeline_instruction(
+                    child_plan,
+                    fanout_instruction,
+                    node.resource_request(),
+                )
             else:
                 raise RuntimeError(f"Unimplemented partitioning scheme {node._scheme}")
-
-            # Do the fanout.
-            fanout_plan = physical_plan.pipeline_instruction(
-                child_plan=child_plan,
-                pipeable_instruction=fanout_instruction,
-                resource_request=node.resource_request(),
-            )
 
             # Do the reduce.
             return physical_plan.reduce(

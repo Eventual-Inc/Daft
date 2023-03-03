@@ -49,7 +49,7 @@ class LocalPartitionSet(PartitionSet[vPartition]):
         ids_and_partitions = self.items()
         assert ids_and_partitions[0][0] == 0
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
-        return vPartition.merge_partitions([part for id, part in ids_and_partitions], verify_partition_id=False)
+        return vPartition.concat([part for id, part in ids_and_partitions])
 
     def get_partition(self, idx: PartID) -> vPartition:
         return self._partitions[idx]
@@ -100,7 +100,6 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
                         self.FS_LISTING_ROWS_COLUMN_NAME: [f.rows for f in files_info],
                     },
                     schema=schema,
-                    partition_id=0,
                 ),
             }
         )

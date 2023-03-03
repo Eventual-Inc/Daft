@@ -289,9 +289,7 @@ class DataFrame:
 
         column_types: Dict[str, ExpressionType] = {header: ExpressionType.infer_type(data[header]) for header in data}
         schema = Schema([Field(header, expr_type) for header, expr_type in column_types.items()])
-        data_vpartition = vPartition.from_pydict(
-            data={header: arr for header, arr in data.items()}, schema=schema, partition_id=0
-        )
+        data_vpartition = vPartition.from_pydict(data={header: arr for header, arr in data.items()}, schema=schema)
         result_pset = LocalPartitionSet({0: data_vpartition})
 
         cache_entry = get_context().runner().put_partition_set_into_cache(result_pset)
@@ -332,7 +330,6 @@ class DataFrame:
         def get_schema(filepath: str) -> Schema:
             return vPartition.from_json(
                 filepath,
-                partition_id=0,
                 schema_options=vPartitionSchemaInferenceOptions(
                     schema=None,
                     inference_column_names=None,  # has no effect on inferring schema from JSON
@@ -386,7 +383,6 @@ class DataFrame:
         def get_schema(filepath: str) -> Schema:
             return vPartition.from_csv(
                 path=filepath,
-                partition_id=0,
                 csv_options=vPartitionParseCSVOptions(
                     delimiter=delimiter,
                     has_headers=has_headers,
@@ -440,7 +436,6 @@ class DataFrame:
         def get_schema(filepath: str) -> Schema:
             return vPartition.from_parquet(
                 filepath,
-                partition_id=0,
                 schema_options=vPartitionSchemaInferenceOptions(
                     schema=None,
                     inference_column_names=None,  # has no effect on schema inferencing Parquet
