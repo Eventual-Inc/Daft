@@ -354,20 +354,31 @@ class vPartition:
         fs = get_filesystem_from_path(path)
 
         with fs.open(path) as f:
+            pqf = parquet.ParquetFile(f)
             # If no rows required, we manually construct an empty table with the right schema
             if read_options.num_rows == 0:
-                arrow_schema = parquet.ParquetFile(f).metadata.schema.to_arrow_schema()
+                arrow_schema = pqf.metadata.schema.to_arrow_schema()
                 table = pa.Table.from_arrays(
                     [pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema
                 )
+            elif read_options.num_rows is not None:
+                # Read the file by rowgroup.
+                tables = []
+                rows_read = 0
+                for i in range(pqf.metadata.num_row_groups):
+                    tables.append(pqf.read_row_group(i, columns=read_options.column_names))
+                    rows_read += len(tables[i])
+                    if rows_read >= read_options.num_rows:
+                        break
+
+                table = pa.concat_tables(tables)
+                table = table.slice(length=read_options.num_rows)
+
             else:
                 table = parquet.read_table(
                     f,
                     columns=read_options.column_names,
                 )
-                # PyArrow API does not provide a way to limit the number of rows read from a Parquet file
-                if read_options.num_rows is not None:
-                    table = table.slice(length=read_options.num_rows)
 
         return vPartition.from_arrow_table(table, partition_id=partition_id)
 

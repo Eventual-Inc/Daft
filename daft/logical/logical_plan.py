@@ -216,6 +216,7 @@ class TabularFilesScan(UnaryNode):
         filepaths_child: LogicalPlan,
         filepaths_column_name: str,
         num_partitions: int | None = None,
+        limit_rows: int | None = None,
     ) -> None:
         if num_partitions is None:
             num_partitions = filepaths_child.num_partitions()
@@ -235,6 +236,7 @@ class TabularFilesScan(UnaryNode):
         self._column_names = columns
         self._columns = self._schema
         self._source_info = source_info
+        self._limit_rows = limit_rows
 
         # TabularFilesScan has a single child node that provides the filepaths to read from.
         assert (

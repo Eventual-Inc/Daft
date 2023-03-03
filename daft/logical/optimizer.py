@@ -308,6 +308,28 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
         super().__init__()
         # self.register_fn(Filter, TabularFilesScan, self._push_down_predicates_into_scan)
         self.register_fn(Projection, TabularFilesScan, self._push_down_projections_into_scan)
+        self.register_fn(LocalLimit, TabularFilesScan, self._push_down_local_limit_into_scan)
+
+    def _push_down_local_limit_into_scan(self, parent: LocalLimit, child: TabularFilesScan) -> LogicalPlan | None:
+        """Pushes LocalLimit into the limit_rows option of a TabularFilesScan.
+
+        LocalLimit(n)-TabularFilesScan-* -> TabularFilesScan(limit_rows=n)-*
+        """
+        if child._limit_rows is not None:
+            new_limit_rows = min(child._limit_rows, parent._num)
+        else:
+            new_limit_rows = parent._num
+
+        new_scan = TabularFilesScan(
+            schema=child._schema,
+            predicate=child._predicate,
+            columns=child._column_names,
+            source_info=child._source_info,
+            filepaths_child=child._filepaths_child,
+            filepaths_column_name=child._filepaths_column_name,
+            limit_rows=new_limit_rows,
+        )
+        return new_scan
 
     def _push_down_projections_into_scan(self, parent: Projection, child: TabularFilesScan) -> LogicalPlan | None:
         """Pushes Projections into a scan as selected columns. Retains the Projection if there are non-column expressions.

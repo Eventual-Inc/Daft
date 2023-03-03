@@ -277,7 +277,7 @@ class ReadFile(Instruction):
     partition_id: int
     index: int | None
     logplan: logical_plan.TabularFilesScan
-    num_rows: int | None
+    file_rows: int | None
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
         return self._read_file(inputs)
@@ -295,9 +295,15 @@ class ReadFile(Instruction):
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         assert len(input_metadatas) == 1
+
+        num_rows = self.file_rows
+        # Only take the file read limit into account if we know how big the file is to begin with.
+        if num_rows is not None and self.logplan._limit_rows is not None:
+            num_rows = min(num_rows, self.logplan._limit_rows)
+
         return [
             PartialPartitionMetadata(
-                num_rows=self.num_rows,
+                num_rows=num_rows,
                 size_bytes=None,
             )
         ]

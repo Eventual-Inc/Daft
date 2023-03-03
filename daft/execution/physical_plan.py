@@ -90,7 +90,7 @@ def file_read(
                         partition_id=output_partition_index,
                         logplan=scan_info,
                         index=i,
-                        num_rows=file_rows[i],
+                        file_rows=file_rows[i],
                     ),
                     # Set the filesize as the memory request.
                     # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)

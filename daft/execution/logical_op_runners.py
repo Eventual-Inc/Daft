@@ -38,7 +38,7 @@ class LogicalPartitionOpRunner:
         schema = scan._schema
         schema_options = vPartitionSchemaInferenceOptions(schema=schema)
         read_options = vPartitionReadOptions(
-            num_rows=None,  # read all rows
+            num_rows=scan._limit_rows,
             column_names=scan._column_names,  # read only specified columns
         )
 
