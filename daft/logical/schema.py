@@ -1,23 +1,23 @@
 from __future__ import annotations
 
-from typing import Iterator, TypeVar
+from typing import Iterator
 
-from daft.expressions import Expression, ExpressionList, col
-
-ExpressionType = TypeVar("ExpressionType", bound=Expression)
-
+from daft.expressions import ExpressionList, col
 from daft.logical.field import Field
+from daft.types import ExpressionType
 
 
 class Schema:
     fields: dict[str, Field]
 
-    def __init__(self, fields: list[Field]) -> None:
-        self.fields = {}
-        for field in fields:
-            assert isinstance(field, Field), f"expect {Field}, got {type(field)}"
-            assert field.name not in self.fields
-            self.fields[field.name] = field
+    def __init__(self) -> None:
+        raise NotImplementedError(f"Initializing a schema with __init__ is not supported")
+
+    @classmethod
+    def _from_name_and_types(self, fields: list[tuple[str, ExpressionType]]) -> Schema:
+        s = Schema.__new__(Schema)
+        s.fields = {name: Field(name=name, dtype=dtype) for name, dtype in fields}
+        return s
 
     def __getitem__(self, key: str) -> Field:
         if key not in self.fields:
@@ -59,4 +59,4 @@ class Schema:
             assert f.name not in seen
             seen[f.name] = f
 
-        return Schema([f for f in seen.values()])
+        return Schema._from_name_and_types([(f.name, f.dtype) for f in seen.values()])
