@@ -48,13 +48,20 @@ class Schema:
 
     @classmethod
     def _from_field_name_and_types(self, fields: list[tuple[str, DataType]]) -> Schema:
+        assert isinstance(fields, list), f"Expected a list of field tuples, received: {fields}"
+        for field in fields:
+            assert isinstance(field, tuple), f"Expected a tuple, received: {field}"
+            assert len(field) == 2, f"Expected a tuple of length 2, received: {field}"
+            name, dtype = field
+            assert isinstance(name, str), f"Expected a string name, received: {name}"
+            assert isinstance(dtype, DataType), f"Expected a DataType dtype, received: {dtype}"
+
         s = Schema.__new__(Schema)
         s._schema = _PySchema.from_field_name_and_types([(name, dtype._dtype) for name, dtype in fields])
         return s
 
     def __getitem__(self, key: str) -> Field:
-        if not isinstance(key, str):
-            raise ValueError(f"Expected str for key, but received: {type(key)}")
+        assert isinstance(key, str), f"Expected str for key, but received: {type(key)}"
         if key not in self._schema.names():
             raise ValueError(f"{key} was not found in Schema of fields {self._schema.field_names()}")
         pyfield = self._schema[key]
