@@ -4,6 +4,7 @@ import pyarrow as pa
 
 from daft.daft import PyTable as _PyTable
 from daft.expressions2 import Expression
+from daft.logical.schema2 import Schema
 from daft.series import Series
 
 
@@ -34,6 +35,9 @@ class Table:
     def from_pydict(data: dict) -> Table:
         pya_table = pa.Table.from_pydict(data)
         return Table.from_arrow(pya_table)
+
+    def schema(self) -> Schema:
+        return Schema._from_pyschema(self._table.schema())
 
     def to_arrow(self) -> pa.Table:
         return pa.Table.from_batches([self._table.to_arrow_record_batch()])
