@@ -246,11 +246,22 @@ class vPartition:
             col_type = f.dtype
             col_data: list | pa.Array
             if ExpressionType.is_py(col_type):
-                col_data = list(data[col_name])
-            elif isinstance(data[col_name], pa.Array) or isinstance(data[col_name], pa.ChunkedArray):
-                col_data = data[col_name]
+                col_array = data[col_name]
+                if isinstance(col_array, list):
+                    col_data = col_array
+                elif isinstance(col_array, pa.Array) or isinstance(col_array, pa.ChunkedArray):
+                    col_data = col_array.to_pylist()
+                elif isinstance(col_array, np.ndarray):
+                    col_data = list(col_array)
+                else:
+                    raise NotImplementedError(
+                        f"Unable to coerce {type(col_array)} into a Daft DataFrame for column: {col_name}"
+                    )
             else:
-                col_data = pa.array(data[col_name], type=col_type.to_arrow_type())
+                if isinstance(data[col_name], pa.Array) or isinstance(data[col_name], pa.ChunkedArray):
+                    col_data = data[col_name]
+                else:
+                    col_data = pa.array(data[col_name], type=col_type.to_arrow_type())
 
             block = DataBlock.make_block(col_data)
             tiles[col_name] = PyListTile(column_name=col_name, block=block)

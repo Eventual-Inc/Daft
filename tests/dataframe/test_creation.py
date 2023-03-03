@@ -169,7 +169,9 @@ def test_load_pydict_types():
 
     assert collected_data.keys() == data.keys() == expected.keys()
     for colname, expected_schema_type in expected.items():
-        assert daft_df.schema()[colname].dtype == expected_schema_type
+        assert (
+            daft_df.schema()[colname].dtype == expected_schema_type
+        ), f"{colname} expected {expected_schema_type} but received {daft_df.schema()[colname].dtype}"
 
 
 ###

@@ -76,13 +76,13 @@ def _glob_path_into_details_vpartitions(
     # Hardcoded to 1 partition
     partition = vPartition.from_pydict(
         {
-            "path": [file_info.path for file_info in listing_infos],
-            "size": [file_info.size for file_info in listing_infos],
-            "type": [file_info.type for file_info in listing_infos],
-            "rows": [file_info.rows for file_info in listing_infos],
+            "path": pa.array([file_info.path for file_info in listing_infos], type=pa.string()),
+            "size": pa.array([file_info.size for file_info in listing_infos], type=pa.int64()),
+            "type": pa.array([file_info.type for file_info in listing_infos], type=pa.string()),
+            "rows": pa.array([file_info.rows for file_info in listing_infos], type=pa.int64()),
         },
     )
-    assert partition.schema() == schema, f"Constructed partition must have schema: {schema}"
+    assert partition.schema() == schema, f"Schema should be expected: {schema}, but received: {partition.schema()}"
 
     partition_ref = ray.put(partition)
     partition_refs = [(0, partition_ref)]
