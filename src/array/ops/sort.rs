@@ -5,17 +5,12 @@ use crate::{
         Utf8Array,
     },
     error::DaftResult,
-    kernels::search_sorted::{build_compare_with_nan, build_compare_with_nulls, cmp_float},
-    series::Series,
+    kernels::search_sorted::{cmp_float},
 };
 
 use crate::array::BaseArray;
 use arrow2::{
-    array::ord::{self, build_compare, DynComparator},
-    compute::{
-        merge_sort::build_comparator_impl,
-        sort::{self, SortOptions},
-    },
+    array::ord::{self},
 };
 
 impl<T> DataArray<T>
