@@ -16,12 +16,12 @@ from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
+from daft.runners.blocks import DataBlock
 from daft.runners.partitioning import (
     PartialPartitionMetadata,
     PartitionMetadata,
     vPartition,
 )
-from daft.runners.shuffle_ops import RepartitionHashOp, RepartitionRandomOp, SortOp
 
 PartitionT = TypeVar("PartitionT")
 ID_GEN = itertools.count()
@@ -555,11 +555,7 @@ class ReduceMergeAndSort(ReduceInstruction):
         return self._reduce_merge_and_sort(inputs)
 
     def _reduce_merge_and_sort(self, inputs: list[vPartition]) -> list[vPartition]:
-        partition = SortOp.reduce_fn(
-            mapped_outputs=inputs,
-            exprs=self.sort_by,
-            descending=self.descending,
-        )
+        partition = vPartition.concat(inputs).sort(self.sort_by, descending=self.descending)
         return [partition]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
@@ -624,12 +620,13 @@ class FanoutRandom(FanoutInstruction):
 
     def _fanout_random(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
-        partitions_with_ids = RepartitionRandomOp.map_fn(
-            input=input,
-            output_partitions=self.num_outputs,
-            seed=self.seed,
-        )
-        return [partition for _, partition in sorted(partitions_with_ids.items())]
+
+        import numpy as np
+
+        rng = np.random.default_rng(seed=self.seed)
+        target_idx = DataBlock.make_block(data=rng.integers(low=0, high=self.num_outputs, size=len(input)))
+        new_parts = input.split_by_index(num_partitions=self.num_outputs, target_partition_indices=target_idx)
+        return new_parts
 
 
 @dataclass(frozen=True)
@@ -641,12 +638,7 @@ class FanoutHash(FanoutInstruction):
 
     def _fanout_hash(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
-        partitions_with_ids = RepartitionHashOp.map_fn(
-            input=input,
-            output_partitions=self.num_outputs,
-            exprs=self.partition_by,
-        )
-        return [partition for i, partition in sorted(partitions_with_ids.items())]
+        return input.split_by_hash(self.partition_by, num_partitions=self.num_outputs)
 
 
 @dataclass(frozen=True)
@@ -659,12 +651,9 @@ class FanoutRange(FanoutInstruction, Generic[PartitionT]):
 
     def _fanout_range(self, inputs: list[vPartition]) -> list[vPartition]:
         [boundaries, input] = inputs
-
-        partitions_with_ids = SortOp.map_fn(
-            input=input,
-            output_partitions=self.num_outputs,
-            exprs=self.sort_by,
-            boundaries=boundaries,
-            descending=self.descending,
-        )
-        return [partition for _, partition in sorted(partitions_with_ids.items())]
+        if self.num_outputs == 1:
+            return [input]
+        sort_keys = input.eval_expression_list(self.sort_by)
+        target_idx = boundaries.search_sorted(sort_keys, input_reversed=self.descending)
+        new_parts = input.split_by_index(num_partitions=self.num_outputs, target_partition_indices=target_idx)
+        return new_parts
