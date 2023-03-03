@@ -49,6 +49,8 @@ class Schema:
         return s
 
     def __getitem__(self, key: str) -> Field:
+        if not isinstance(key, str):
+            raise ValueError(f"Expected str for key, but received: {type(key)}")
         if key not in self._schema.names():
             raise ValueError(f"{key} was not found in Schema of fields {self._schema.field_names()}")
         pyfield = self._schema[key]
