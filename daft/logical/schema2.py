@@ -62,7 +62,7 @@ class Schema:
 
     def __iter__(self) -> Iterator[Field]:
         col_names = self.column_names()
-        return (self[name] for name in col_names)
+        yield from (self[name] for name in col_names)
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, Schema) and self._schema.eq(other._schema)
