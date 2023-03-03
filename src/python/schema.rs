@@ -23,6 +23,25 @@ impl PySchema {
     pub fn names(&self) -> PyResult<Vec<String>> {
         Ok(self.schema.names()?)
     }
+
+    pub fn union(&self, other: &PySchema) -> PyResult<PySchema> {
+        let fields: Vec<datatypes::Field> = self
+            .schema
+            .fields
+            .values()
+            .cloned()
+            .chain(other.schema.fields.values().cloned())
+            .collect();
+        let new_schema = schema::Schema::new(fields);
+        let new_pyschema = PySchema {
+            schema: new_schema.into(),
+        };
+        Ok(new_pyschema)
+    }
+
+    pub fn eq(&self, other: &PySchema) -> PyResult<bool> {
+        Ok(self.schema.fields.eq(&other.schema.fields))
+    }
 }
 
 #[pymethods]
@@ -33,6 +52,10 @@ impl PyField {
 
     pub fn dtype(&self) -> PyResult<datatype::PyDataType> {
         Ok(self.field.dtype.clone().into())
+    }
+
+    pub fn eq(&self, other: &PyField) -> PyResult<bool> {
+        Ok(self.field.eq(&other.field))
     }
 }
 
