@@ -174,7 +174,7 @@ class vPartition:
     def size_bytes(self) -> int:
         return sum(tile.size_bytes() for tile in self.columns.values())
 
-    def get_schema(self) -> Schema:
+    def schema(self) -> Schema:
         """Generates column expressions that represent the vPartition's schema"""
         fields = []
         for _, tile in self.columns.items():
