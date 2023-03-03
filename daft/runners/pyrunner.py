@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 import psutil
+import pyarrow as pa
 
 from daft.datasources import SourceInfo
 from daft.execution import physical_plan, physical_plan_factory
@@ -88,22 +89,26 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
         if len(files_info) == 0:
             raise FileNotFoundError(f"No files found at {source_path}")
 
+        partition = vPartition.from_pydict(
+            {
+                "path": pa.array([file_info.path for file_info in files_info], type=pa.string()),
+                "size": pa.array([file_info.size for file_info in files_info], type=pa.int64()),
+                "type": pa.array([file_info.type for file_info in files_info], type=pa.string()),
+                "rows": pa.array([file_info.rows for file_info in files_info], type=pa.int64()),
+            },
+        )
+
+        # Make sure that the schema is consistent with what we expect
         schema = self._get_listing_paths_details_schema()
+        assert partition.schema() == schema, f"Schema should be expected: {schema}, but received: {partition.schema()}"
+
         pset = LocalPartitionSet(
             {
                 # Hardcoded to 1 partition
-                0: vPartition.from_pydict(
-                    data={
-                        self.FS_LISTING_PATH_COLUMN_NAME: [f.path for f in files_info],
-                        self.FS_LISTING_SIZE_COLUMN_NAME: [f.size for f in files_info],
-                        self.FS_LISTING_TYPE_COLUMN_NAME: [f.type for f in files_info],
-                        self.FS_LISTING_ROWS_COLUMN_NAME: [f.rows for f in files_info],
-                    },
-                    schema=schema,
-                ),
+                0: partition,
             }
         )
-        return pset, schema
+        return pset, partition.schema()
 
 
 class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):

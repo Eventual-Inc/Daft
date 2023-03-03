@@ -52,7 +52,6 @@ if TYPE_CHECKING:
     import pandas
     import pyarrow as pa
 
-from daft.logical.field import Field
 from daft.logical.schema import Schema
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
@@ -287,16 +286,14 @@ class DataFrame:
                 f"Expected all columns to be of the same length, but received columns with lengths: {column_lengths}"
             )
 
-        column_types: Dict[str, ExpressionType] = {header: ExpressionType.infer_type(data[header]) for header in data}
-        schema = Schema([Field(header, expr_type) for header, expr_type in column_types.items()])
-        data_vpartition = vPartition.from_pydict(data={header: arr for header, arr in data.items()}, schema=schema)
+        data_vpartition = vPartition.from_pydict(data)
         result_pset = LocalPartitionSet({0: data_vpartition})
 
         cache_entry = get_context().runner().put_partition_set_into_cache(result_pset)
 
         plan = logical_plan.InMemoryScan(
             cache_entry=cache_entry,
-            schema=schema,
+            schema=data_vpartition.schema(),
         )
         return cls(plan)
 
