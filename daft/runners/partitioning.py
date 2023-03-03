@@ -144,6 +144,13 @@ class PartitionMetadata:
     num_rows: int
     size_bytes: int
 
+    @classmethod
+    def from_table(cls, table: vPartition) -> PartitionMetadata:
+        return PartitionMetadata(
+            num_rows=len(table),
+            size_bytes=table.size_bytes(),
+        )
+
 
 @dataclass(frozen=True)
 class vPartition:
@@ -164,11 +171,8 @@ class vPartition:
             return 0
         return len(next(iter(self.columns.values())))
 
-    def metadata(self) -> PartitionMetadata:
-        return PartitionMetadata(
-            num_rows=len(self),
-            size_bytes=sum(tile.size_bytes() for tile in self.columns.values()),
-        )
+    def size_bytes(self) -> int:
+        return sum(tile.size_bytes() for tile in self.columns.values())
 
     def get_schema(self) -> Schema:
         """Generates column expressions that represent the vPartition's schema"""

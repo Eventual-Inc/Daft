@@ -69,7 +69,7 @@ def file_read(
             file_sizes_bytes = vpartition.to_pydict()["size"]
 
             # Emit one partition for each file (NOTE: hardcoded for now).
-            for i in range(vpartition.metadata().num_rows):
+            for i in range(len(vpartition)):
 
                 file_read_step = PartitionTaskBuilder[PartitionT](inputs=[done_task.partition()]).add_instruction(
                     instruction=execution_step.ReadFile(

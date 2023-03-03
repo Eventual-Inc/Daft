@@ -195,7 +195,7 @@ def build_partitions(
     for instruction in instruction_stack:
         partitions = instruction.run(partitions)
 
-    metadatas = [p.metadata() for p in partitions]
+    metadatas = [PartitionMetadata.from_table(p) for p in partitions]
 
     return [metadatas, *partitions]
 
@@ -233,7 +233,7 @@ def reduce_and_fanout(
 
 @ray.remote
 def get_meta(partition: vPartition) -> PartitionMetadata:
-    return partition.metadata()
+    return PartitionMetadata.from_table(partition)
 
 
 @ray.remote(num_cpus=1)

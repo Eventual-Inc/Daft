@@ -275,7 +275,7 @@ class PyMaterializedResult(MaterializedResult[vPartition]):
         return self._partition
 
     def metadata(self) -> PartitionMetadata:
-        return self._partition.metadata()
+        return PartitionMetadata.from_table(self._partition)
 
     def cancel(self) -> None:
         return None
