@@ -5,13 +5,11 @@ use crate::{
         Utf8Array,
     },
     error::DaftResult,
-    kernels::search_sorted::{cmp_float},
+    kernels::search_sorted::cmp_float,
 };
 
 use crate::array::BaseArray;
-use arrow2::{
-    array::ord::{self},
-};
+use arrow2::array::ord::{self};
 
 impl<T> DataArray<T>
 where
