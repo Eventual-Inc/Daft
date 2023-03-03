@@ -13,7 +13,6 @@ from daft.errors import ExpressionTypeError
 from daft.execution.operators import OperatorEnum
 from daft.expressions import CallExpression, Expression, ExpressionList, col
 from daft.internal.treenode import TreeNode
-from daft.logical.field import Field
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
@@ -229,7 +228,9 @@ class TabularFilesScan(UnaryNode):
             self._predicate = ExpressionList([])
 
         if columns is not None:
-            self._output_schema = Schema([schema[col] for col in columns])
+            self._output_schema = Schema._from_field_name_and_types(
+                [(schema[col].name, schema[col].dtype) for col in columns]
+            )
         else:
             self._output_schema = schema
 
@@ -359,7 +360,7 @@ class FileWrite(UnaryNode):
                 field.dtype
             ), f"we can currently only write out primitive types, got: {field}"
 
-        schema = Schema([Field("file_path", ExpressionType.from_py_type(str))])
+        schema = Schema._from_field_name_and_types([("file_path", ExpressionType.from_py_type(str))])
 
         super().__init__(schema, input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
@@ -633,7 +634,7 @@ class GlobalLimit(UnaryNode):
 
 class LocalCount(UnaryNode):
     def __init__(self, input: LogicalPlan) -> None:
-        schema = Schema([Field("count", ExpressionType.integer())])
+        schema = Schema._from_field_name_and_types([("count", ExpressionType.integer())])
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
 

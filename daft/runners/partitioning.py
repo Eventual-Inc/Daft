@@ -198,7 +198,7 @@ class vPartition:
                     col_type = ExpressionType.python_object()
             field = Field(col_name, col_type)
             fields.append(field)
-        return Schema(fields)
+        return Schema._from_field_name_and_types([(f.name, f.dtype) for f in fields])
 
     def eval_expression(self, expr: Expression) -> PyListTile:
         expr_name = expr.name()
@@ -237,7 +237,7 @@ class vPartition:
         data: dict[str, list[Any] | np.ndarray | pa.Array | pa.ChunkedArray],
     ) -> vPartition:
         column_types = {header: ExpressionType.infer_type(data[header]) for header in data}
-        schema = Schema([Field(header, expr_type) for header, expr_type in column_types.items()])
+        schema = Schema._from_field_name_and_types(list(column_types.items()))
         fields = schema.fields
         tiles = {}
         for f in fields.values():
@@ -842,20 +842,20 @@ class PartitionSetFactory(Generic[PartitionT]):
 
     def _get_listing_paths_schema(self) -> Schema:
         """Construct the schema for a DataFrame of path listing"""
-        return Schema(
+        return Schema._from_field_name_and_types(
             [
-                Field(self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
+                (self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
             ]
         )
 
     def _get_listing_paths_details_schema(self) -> Schema:
         """Construct the schema for a DataFrame of detailed path listing"""
-        return Schema(
+        return Schema._from_field_name_and_types(
             [
-                Field(self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
-                Field(self.FS_LISTING_SIZE_COLUMN_NAME, ExpressionType.integer()),
-                Field(self.FS_LISTING_TYPE_COLUMN_NAME, ExpressionType.string()),
-                Field(self.FS_LISTING_ROWS_COLUMN_NAME, ExpressionType.integer()),
+                (self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
+                (self.FS_LISTING_SIZE_COLUMN_NAME, ExpressionType.integer()),
+                (self.FS_LISTING_TYPE_COLUMN_NAME, ExpressionType.string()),
+                (self.FS_LISTING_ROWS_COLUMN_NAME, ExpressionType.integer()),
             ]
         )
 

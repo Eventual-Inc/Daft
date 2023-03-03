@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Iterator, TypeVar
+from typing import Iterator
 
 from daft.daft import PyField as _PyField
 from daft.daft import PySchema as _PySchema
 from daft.datatype import DataType
 from daft.expressions2 import Expression, col
-
-ExpressionType = TypeVar("ExpressionType", bound=Expression)
 
 
 class Field:
@@ -46,6 +44,12 @@ class Schema:
     def _from_pyschema(schema: _PySchema) -> Schema:
         s = Schema.__new__(Schema)
         s._schema = schema
+        return s
+
+    @classmethod
+    def _from_field_name_and_types(self, fields: list[tuple[str, DataType]]) -> Schema:
+        s = Schema.__new__(Schema)
+        s._schema = _PySchema.from_field_name_and_types([(name, dtype._dtype) for name, dtype in fields])
         return s
 
     def __getitem__(self, key: str) -> Field:
