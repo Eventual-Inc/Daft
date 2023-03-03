@@ -1,5 +1,3 @@
-use std::cmp::Ordering;
-
 use crate::{
     array::DataArray,
     datatypes::{
@@ -7,11 +5,18 @@ use crate::{
         Utf8Array,
     },
     error::DaftResult,
+    kernels::search_sorted::{build_compare_with_nan, build_compare_with_nulls, cmp_float},
+    series::Series,
 };
 
 use crate::array::BaseArray;
-use arrow2::array::ord;
-use num_traits::Float;
+use arrow2::{
+    array::ord::{self, build_compare, DynComparator},
+    compute::{
+        merge_sort::build_comparator_impl,
+        sort::{self, SortOptions},
+    },
+};
 
 impl<T> DataArray<T>
 where
@@ -39,6 +44,44 @@ where
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
 
+    // pub fn argsort_multikey<I>(&self, descending: bool, others: &[Series]) -> DaftResult<DataArray<I>>
+    // where
+    //     I: DaftIntegerType,
+    //     <I as DaftNumericType>::Native: arrow2::types::Index,
+    // {
+    //     let options = arrow2::compute::sort::SortOptions {
+    //         descending,
+    //         nulls_first: descending,
+    //     };
+    //     let arrow_array = self.downcast();
+
+    //     let options = SortOptions {
+    //         descending: descending,
+    //         nulls_first: descending
+    //     };
+
+    //     let mut compare: Vec<_> = Vec::with_capacity(others.len());
+    //     for s in others.iter() {
+    //         compare.push(build_compare_with_nulls(s.array().data(), s.array().data(), descending)?);
+    //     }
+
+    //     let result =
+    //         crate::array::ops::arrow2::sort::primitive::indices::indices_sorted_unstable_by::<
+    //             I::Native,
+    //             T::Native,
+    //             _,
+    //         >(arrow_array, |l, r| {
+    //             match ord::total_cmp(l, r) {
+    //                 std::cmp::Ordering::Equal => {
+    //                     for st
+    //                 }
+    //                 v => v
+    //             }
+    //         }, &options, None);
+
+    //     Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+    // }
+
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
             descending,
@@ -55,17 +98,6 @@ where
         );
 
         Ok(DataArray::<T>::from((self.name(), Box::new(result))))
-    }
-}
-
-#[allow(clippy::eq_op)]
-#[inline]
-pub fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
-    match (l.is_nan(), r.is_nan()) {
-        (false, false) => unsafe { l.partial_cmp(r).unwrap_unchecked() },
-        (true, true) => Ordering::Equal,
-        (true, false) => Ordering::Greater,
-        (false, true) => Ordering::Less,
     }
 }
 

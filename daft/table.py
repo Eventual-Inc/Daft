@@ -7,6 +7,12 @@ from daft.expressions2 import Expression, ExpressionsProjection
 from daft.logical.schema2 import Schema
 from daft.series import Series
 
+_NUMPY_AVAILABLE = True
+try:
+    import numpy as np
+except ImportError:
+    _NUMPY_AVAILABLE = False
+
 
 class Table:
     _table: _PyTable
@@ -33,8 +39,19 @@ class Table:
 
     @staticmethod
     def from_pydict(data: dict) -> Table:
-        pya_table = pa.Table.from_pydict(data)
-        return Table.from_arrow(pya_table)
+        series_dict = dict()
+        for k, v in data.items():
+            if isinstance(v, list):
+                series = Series.from_pylist(v)
+            elif isinstance(v, np.ndarray):
+                series = Series.from_numpy(v)
+            elif isinstance(v, Series):
+                series = v
+            else:
+                series = Series.from_arrow(pa.array(v))
+            series_dict[k] = series._series
+
+        return Table._from_pytable(_PyTable.from_pylist_series(series_dict))
 
     def schema(self) -> Schema:
         return Schema._from_pyschema(self._table.schema())

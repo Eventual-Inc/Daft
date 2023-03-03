@@ -33,8 +33,8 @@ impl Series {
         self.data_array.name()
     }
 
-    pub fn rename(&self, name: &str) -> Self {
-        Self::new(Arc::from(self.data_array.rename(name)))
+    pub fn rename<S: AsRef<str>>(&self, name: S) -> Self {
+        Self::new(Arc::from(self.data_array.rename(name.as_ref())))
     }
 
     pub fn len(&self) -> usize {

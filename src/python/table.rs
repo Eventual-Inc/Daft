@@ -1,11 +1,16 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
+use crate::datatypes::Field;
 use crate::dsl;
 use crate::ffi;
+use crate::schema::Schema;
+use crate::series::Series;
 use crate::table;
 
 use crate::python::expr::PyExpr;
+use crate::table::Table;
 
 use super::schema::PySchema;
 use super::series::PySeries;
@@ -103,6 +108,25 @@ impl PyTable {
     pub fn from_arrow_record_batches(record_batches: Vec<&PyAny>) -> PyResult<Self> {
         let table = ffi::record_batches_to_table(record_batches.as_slice())?;
         Ok(PyTable { table })
+    }
+
+    #[staticmethod]
+    pub fn from_pylist_series(dict: &PyDict) -> PyResult<Self> {
+        let mut fields: Vec<Field> = Vec::new();
+        let mut columns: Vec<Series> = Vec::new();
+        fields.reserve(dict.len());
+        columns.reserve(dict.len());
+
+        for (k, v) in dict.iter() {
+            let name = k.extract::<String>()?;
+            let series = v.extract::<PySeries>()?.series;
+            fields.push(Field::new(name.clone(), series.data_type().clone()));
+            columns.push(series.rename(name));
+        }
+
+        Ok(PyTable {
+            table: Table::new(Schema::new(fields), columns)?,
+        })
     }
 
     pub fn to_arrow_record_batch(&self) -> PyResult<PyObject> {
