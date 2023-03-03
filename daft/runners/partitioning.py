@@ -456,16 +456,6 @@ class vPartition:
         idx = self.argsort(sort_keys=sort_keys, descending=descending)
         return self.take(idx)
 
-    def search_sorted(self, keys: vPartition, input_reversed: list[bool] | None = None) -> DataBlock:
-        assert self.columns.keys() == keys.columns.keys()
-        col_names = list(self.columns.keys())
-        idx = DataBlock.search_sorted(
-            [self.columns[k].block for k in col_names],
-            [keys.columns[k].block for k in col_names],
-            input_reversed=input_reversed,
-        )
-        return idx
-
     def take(self, indices: DataBlock) -> vPartition:
         return self.for_each_column_block(partial(DataBlock.take, indices=indices))
 
@@ -493,6 +483,21 @@ class vPartition:
             for block, (col_name, tile) in zip(acols, evaled_expressions.columns.items()):
                 new_columns[col_name] = dataclasses.replace(tile, block=block)
             return vPartition(columns=new_columns)
+
+    def search_sorted(self, sort_keys: vPartition, descending: list[bool]) -> DataBlock:
+        assert sort_keys.columns.keys() == self.columns.keys(), "Sort keys must have same columns as boundaries"
+        assert len(descending) == len(self.columns.keys()), "Ordering list must have same length as columns"
+        return DataBlock.search_sorted(
+            [self.columns[k].block for k in self.columns.keys()],
+            [sort_keys.columns[k].block for k in self.columns.keys()],
+            input_reversed=descending,
+        )
+
+    def split_random(self, num_partitions: int, seed: int) -> list[vPartition]:
+        rng = np.random.default_rng(seed=seed)
+        target_idx = DataBlock.make_block(data=rng.integers(low=0, high=num_partitions, size=len(self)))
+        new_parts = self.split_by_index(num_partitions=num_partitions, target_partition_indices=target_idx)
+        return new_parts
 
     def split_by_hash(self, exprs: ExpressionList, num_partitions: int) -> list[vPartition]:
         values_to_hash = self.eval_expression_list(exprs)

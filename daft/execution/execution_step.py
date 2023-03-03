@@ -16,7 +16,6 @@ from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
-from daft.runners.blocks import DataBlock
 from daft.runners.partitioning import (
     PartialPartitionMetadata,
     PartitionMetadata,
@@ -620,13 +619,7 @@ class FanoutRandom(FanoutInstruction):
 
     def _fanout_random(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
-
-        import numpy as np
-
-        rng = np.random.default_rng(seed=self.seed)
-        target_idx = DataBlock.make_block(data=rng.integers(low=0, high=self.num_outputs, size=len(input)))
-        new_parts = input.split_by_index(num_partitions=self.num_outputs, target_partition_indices=target_idx)
-        return new_parts
+        return input.split_random(num_partitions=self.num_outputs, seed=self.seed)
 
 
 @dataclass(frozen=True)
@@ -654,6 +647,5 @@ class FanoutRange(FanoutInstruction, Generic[PartitionT]):
         if self.num_outputs == 1:
             return [input]
         sort_keys = input.eval_expression_list(self.sort_by)
-        target_idx = boundaries.search_sorted(sort_keys, input_reversed=self.descending)
-        new_parts = input.split_by_index(num_partitions=self.num_outputs, target_partition_indices=target_idx)
-        return new_parts
+        target_partition_indices = boundaries.search_sorted(sort_keys, self.descending)
+        return input.split_by_index(num_partitions=self.num_outputs, target_partition_indices=target_partition_indices)
