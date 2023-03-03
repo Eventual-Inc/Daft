@@ -1048,7 +1048,7 @@ class ExpressionList(Iterable[Expression]):
         from daft.logical.schema import Schema
 
         fields = [e.to_field(input_schema) for e in self.exprs]
-        return Schema._from_name_and_types([(f.name, f.dtype) for f in fields])
+        return Schema._from_field_name_and_types([(f.name, f.dtype) for f in fields])
 
     def union(
         self, other: ExpressionList, rename_dup: str | None = None, other_override: bool = False

@@ -14,7 +14,7 @@ class Schema:
         raise NotImplementedError(f"Initializing a schema with __init__ is not supported")
 
     @classmethod
-    def _from_name_and_types(self, fields: list[tuple[str, ExpressionType]]) -> Schema:
+    def _from_field_name_and_types(self, fields: list[tuple[str, ExpressionType]]) -> Schema:
         s = Schema.__new__(Schema)
         s.fields = {name: Field(name=name, dtype=dtype) for name, dtype in fields}
         return s
@@ -59,4 +59,4 @@ class Schema:
             assert f.name not in seen
             seen[f.name] = f
 
-        return Schema._from_name_and_types([(f.name, f.dtype) for f in seen.values()])
+        return Schema._from_field_name_and_types([(f.name, f.dtype) for f in seen.values()])

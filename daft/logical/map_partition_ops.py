@@ -32,7 +32,7 @@ class ExplodeOp(MapPartitionOp):
             else:
                 output_fields.append(f)
 
-        self.output_schema = Schema._from_name_and_types([(f.name, f.dtype) for f in output_fields])
+        self.output_schema = Schema._from_field_name_and_types([(f.name, f.dtype) for f in output_fields])
         self.explode_columns = explode_columns
 
         for c in self.explode_columns:

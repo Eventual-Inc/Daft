@@ -228,7 +228,7 @@ class TabularFilesScan(UnaryNode):
             self._predicate = ExpressionList([])
 
         if columns is not None:
-            self._output_schema = Schema._from_name_and_types(
+            self._output_schema = Schema._from_field_name_and_types(
                 [(schema[col].name, schema[col].dtype) for col in columns]
             )
         else:
@@ -360,7 +360,7 @@ class FileWrite(UnaryNode):
                 field.dtype
             ), f"we can currently only write out primitive types, got: {field}"
 
-        schema = Schema._from_name_and_types([("file_path", ExpressionType.from_py_type(str))])
+        schema = Schema._from_field_name_and_types([("file_path", ExpressionType.from_py_type(str))])
 
         super().__init__(schema, input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
@@ -634,7 +634,7 @@ class GlobalLimit(UnaryNode):
 
 class LocalCount(UnaryNode):
     def __init__(self, input: LogicalPlan) -> None:
-        schema = Schema._from_name_and_types([("count", ExpressionType.integer())])
+        schema = Schema._from_field_name_and_types([("count", ExpressionType.integer())])
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
 

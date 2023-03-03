@@ -4,6 +4,7 @@ import pytest
 
 from daft.datatype import DataType
 from daft.expressions2 import col
+from daft.logical.schema2 import Schema
 from daft.table import Table
 
 DATA = {
@@ -92,3 +93,14 @@ def test_union():
 
     assert unioned_schema.column_names() == list(DATA.keys()) + list(new_data.keys())
     assert list(unioned_schema) == list(schema) + list(new_table.schema())
+
+
+def test_from_field_name_and_types():
+    schema = Schema._from_field_name_and_types([("foo", DataType.int16())])
+    assert schema["foo"].name == "foo"
+    assert schema["foo"].dtype == DataType.int16()
+
+
+def test_from_empty_field_name_and_types():
+    schema = Schema._from_field_name_and_types([])
+    assert len(schema) == 0

@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use pyo3::prelude::*;
 
+use super::datatype::PyDataType;
 use crate::datatypes;
 use crate::python::datatype;
 use crate::schema;
@@ -25,14 +28,26 @@ impl PySchema {
     }
 
     pub fn union(&self, other: &PySchema) -> PyResult<PySchema> {
-        let new_pyschema = PySchema {
-            schema: self.schema.union(&other.schema)?.into(),
-        };
-        Ok(new_pyschema)
+        let new_schema = Arc::new(self.schema.union(&other.schema)?);
+        Ok(new_schema.into())
     }
 
     pub fn eq(&self, other: &PySchema) -> PyResult<bool> {
         Ok(self.schema.fields.eq(&other.schema.fields))
+    }
+
+    #[staticmethod]
+    pub fn from_field_name_and_types(
+        names_and_types: Vec<(String, PyDataType)>,
+    ) -> PyResult<PySchema> {
+        let fields = names_and_types
+            .iter()
+            .map(|(name, pydtype)| datatypes::Field::new(name, pydtype.clone().into()))
+            .collect();
+        let schema = schema::Schema::new(fields);
+        Ok(PySchema {
+            schema: schema.into(),
+        })
     }
 }
 
@@ -52,7 +67,25 @@ impl PyField {
 }
 
 impl From<datatypes::Field> for PyField {
-    fn from(item: datatypes::Field) -> Self {
-        PyField { field: item }
+    fn from(field: datatypes::Field) -> Self {
+        PyField { field }
+    }
+}
+
+impl From<PyField> for datatypes::Field {
+    fn from(item: PyField) -> Self {
+        item.field
+    }
+}
+
+impl From<schema::SchemaRef> for PySchema {
+    fn from(schema: schema::SchemaRef) -> Self {
+        PySchema { schema }
+    }
+}
+
+impl From<PySchema> for schema::SchemaRef {
+    fn from(item: PySchema) -> Self {
+        item.schema
     }
 }

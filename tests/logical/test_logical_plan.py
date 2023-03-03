@@ -11,7 +11,7 @@ from daft.types import ExpressionType
 
 @pytest.fixture(scope="function")
 def schema():
-    return Schema._from_name_and_types(
+    return Schema._from_field_name_and_types(
         list(
             map(
                 lambda col_name: (col_name, ExpressionType.from_py_type(int)),
