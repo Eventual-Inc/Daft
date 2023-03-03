@@ -197,15 +197,15 @@ pub fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
 fn compare_f32(left: &dyn Array, right: &dyn Array) -> DynComparator {
     let left = left
         .as_any()
-        .downcast_ref::<PrimitiveArray<f64>>()
+        .downcast_ref::<PrimitiveArray<f32>>()
         .unwrap()
         .clone();
     let right = right
         .as_any()
-        .downcast_ref::<PrimitiveArray<f64>>()
+        .downcast_ref::<PrimitiveArray<f32>>()
         .unwrap()
         .clone();
-    Box::new(move |i, j| cmp_float::<f64>(&left.value(i), &right.value(j)))
+    Box::new(move |i, j| cmp_float::<f32>(&left.value(i), &right.value(j)))
 }
 
 fn compare_f64(left: &dyn Array, right: &dyn Array) -> DynComparator {
