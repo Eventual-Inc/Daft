@@ -92,7 +92,6 @@ def _limit_num_rows(buf: IO, num_rows: int) -> IO:
 @dataclass(frozen=True)
 class PyListTile:
     column_name: str
-    partition_id: PartID
     block: DataBlock
 
     def __len__(self) -> int:
@@ -119,7 +118,7 @@ class PyListTile:
             argsorted_targets=argsorted_target_partition_indices,
         )
         assert len(new_blocks) == num_partitions
-        return [dataclasses.replace(self, block=nb, partition_id=i) for i, nb in enumerate(new_blocks)]
+        return [dataclasses.replace(self, block=nb) for i, nb in enumerate(new_blocks)]
 
     @classmethod
     def merge_tiles(cls, to_merge: list[PyListTile], verify_partition_id: bool = True) -> PyListTile:
@@ -128,11 +127,9 @@ class PyListTile:
         if len(to_merge) == 1:
             return to_merge[0]
 
-        partition_id = to_merge[0].partition_id
         column_name = to_merge[0].column_name
         # first perform sanity check
         for part in to_merge[1:]:
-            assert not verify_partition_id or part.partition_id == partition_id
             assert part.column_name == column_name
 
         merged_block = DataBlock.merge_blocks([t.block for t in to_merge])
@@ -156,8 +153,6 @@ class vPartition:
     def __post_init__(self) -> None:
         size = None
         for name, tile in self.columns.items():
-            if tile.partition_id != self.partition_id:
-                raise ValueError(f"mismatch of partition id: {tile.partition_id} vs {self.partition_id}")
             if len(tile) != 0 and size is None:
                 size = len(tile)
             if len(tile) != 0 and len(tile) != size:
@@ -212,7 +207,7 @@ class vPartition:
         result = exec.eval(expr, required_blocks)
         expr_name = expr.name()
         assert expr_name is not None
-        return PyListTile(column_name=expr_name, partition_id=self.partition_id, block=result)
+        return PyListTile(column_name=expr_name, block=result)
 
     def eval_expression_list(self, exprs: ExpressionList) -> vPartition:
         tile_list = [self.eval_expression(e) for e in exprs]
@@ -226,7 +221,7 @@ class vPartition:
         for i, name in enumerate(names):
             arr = table[i]
             block: DataBlock[ArrowArrType] = DataBlock.make_block(arr)
-            tiles[name] = PyListTile(column_name=name, partition_id=partition_id, block=block)
+            tiles[name] = PyListTile(column_name=name, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
     @classmethod
@@ -248,7 +243,7 @@ class vPartition:
                 col_data = pa.array(data[col_name], type=col_type.to_arrow_type())
 
             block = DataBlock.make_block(col_data)
-            tiles[col_name] = PyListTile(column_name=col_name, partition_id=partition_id, block=block)
+            tiles[col_name] = PyListTile(column_name=col_name, block=block)
         return vPartition(columns=tiles, partition_id=partition_id)
 
     @classmethod
@@ -539,7 +534,6 @@ class vPartition:
 
             exploded_cols[name] = PyListTile(
                 column_name=name,
-                partition_id=tile.partition_id,
                 block=exploded_block,
             )
         assert found_list_lengths is not None, "At least one column must be specified to explode"
@@ -613,18 +607,14 @@ class vPartition:
                     rk = f"right.{rk}"
 
                 assert rk not in result_columns
-                result_columns[rk] = PyListTile(
-                    column_name=rk, partition_id=self.partition_id, block=result_columns[lk].block
-                )
+                result_columns[rk] = PyListTile(column_name=rk, block=result_columns[lk].block)
 
         for k in right_nonjoin_ids:
 
             while k in result_columns:
                 k = f"right.{k}"
             assert k not in result_columns
-            result_columns[k] = PyListTile(
-                column_name=k, partition_id=self.partition_id, block=joined_blocks[joined_block_idx]
-            )
+            result_columns[k] = PyListTile(column_name=k, block=joined_blocks[joined_block_idx])
             joined_block_idx += 1
 
         assert joined_block_idx == len(result_keys)

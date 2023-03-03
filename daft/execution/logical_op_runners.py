@@ -113,7 +113,6 @@ class LogicalPartitionOpRunner:
         assert col_name is not None
         columns[col_name] = PyListTile(
             col_name,
-            partition_id=partition_id,
             block=DataBlock.make_block(file_names),
         )
         return vPartition(

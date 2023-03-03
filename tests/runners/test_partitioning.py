@@ -15,10 +15,9 @@ def test_vpartition_eval_expression() -> None:
     tiles = {}
     for c in expr.required_columns():
         block = DataBlock.make_block(np.ones(10))
-        tiles[c] = PyListTile(column_name=c, partition_id=0, block=block)
+        tiles[c] = PyListTile(column_name=c, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     result_tile = part.eval_expression(expr=expr)
-    assert result_tile.partition_id == 0
     assert result_tile.column_name == expr.name()
     assert result_tile.block == DataBlock.make_block(np.ones(10) * 2)
 
@@ -34,7 +33,7 @@ def test_vpartition_eval_expression_list() -> None:
     tiles = {}
     for c in expr.required_columns():
         block = DataBlock.make_block(np.ones(10))
-        tiles[c] = PyListTile(column_name=c, partition_id=0, block=block)
+        tiles[c] = PyListTile(column_name=c, block=block)
     part = vPartition(columns=tiles, partition_id=0)
     assert len(part) == 10
 
@@ -55,7 +54,7 @@ def test_vpartition_to_arrow_table() -> None:
     tiles = {}
     for i in range(4):
         block = DataBlock.make_block(np.ones(10) * i)
-        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", partition_id=0, block=block)
+        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", block=block)
     part = vPartition(columns=tiles, partition_id=0)
     arrow_table = pa.Table.from_pandas(part.to_pandas())
     assert arrow_table.column_names == [f"col_{i}" for i in range(4)]
@@ -71,34 +70,13 @@ def test_vpartition_from_arrow_table() -> None:
     for i, (col_name, tile) in enumerate(vpart.columns.items()):
         assert tile.block == DataBlock.make_block(data=np.ones(10) * i)
         assert tile.column_name == col_name
-        assert tile.partition_id == 0
 
 
 def test_vpartition_uneven_tiles() -> None:
     tiles = {}
     for i in range(4):
         block = DataBlock.make_block(np.ones(10 + i) * i)
-        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", partition_id=0, block=block)
-
-    with pytest.raises(ValueError):
-        part = vPartition(columns=tiles, partition_id=0)
-
-
-def test_vpartition_not_same_partition() -> None:
-    tiles = {}
-    for i in range(4):
-        block = DataBlock.make_block(np.ones(10) * i)
-        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", partition_id=i, block=block)
-
-    with pytest.raises(ValueError):
-        part = vPartition(columns=tiles, partition_id=0)
-
-
-def test_vpartition_wrong_col_id() -> None:
-    tiles = {}
-    for i in range(4):
-        block = DataBlock.make_block(np.ones(10) * i)
-        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", partition_id=i + i, block=block)
+        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", block=block)
 
     with pytest.raises(ValueError):
         part = vPartition(columns=tiles, partition_id=0)
@@ -108,7 +86,7 @@ def test_vpartition_head() -> None:
     tiles = {}
     for i in range(4):
         block = DataBlock.make_block(np.ones(10) * i)
-        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", partition_id=0, block=block)
+        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", block=block)
     part = vPartition(columns=tiles, partition_id=0)
     part = part.head(3)
     arrow_table = pa.Table.from_pandas(part.to_pandas())
@@ -122,7 +100,7 @@ def test_vpartition_sample() -> None:
     tiles = {}
     for i in range(4):
         block = DataBlock.make_block(np.ones(10) * i)
-        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", partition_id=0, block=block)
+        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", block=block)
     part = vPartition(columns=tiles, partition_id=0)
     part = part.sample(3)
     arrow_table = pa.Table.from_pandas(part.to_pandas())
@@ -140,7 +118,7 @@ def test_vpartition_filter() -> None:
     tiles = {}
     for i in range(4):
         block = DataBlock.make_block(np.arange(0, 10, 1))
-        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", partition_id=0, block=block)
+        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", block=block)
 
     part = vPartition(columns=tiles, partition_id=0)
     part = part.filter(ExpressionList([expr]))
@@ -162,7 +140,7 @@ def test_vpartition_sort() -> None:
         else:
             block = DataBlock.make_block(np.arange(0, 10, 1))
 
-        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", partition_id=0, block=block)
+        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", block=block)
     part = vPartition(columns=tiles, partition_id=0)
     part = part.sort(ExpressionList([expr]))
     arrow_table = pa.Table.from_pandas(part.to_pandas())
@@ -185,7 +163,7 @@ def test_vpartition_sort_desc() -> None:
         else:
             block = DataBlock.make_block(np.arange(0, 10, 1))
 
-        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", partition_id=0, block=block)
+        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", block=block)
     part = vPartition(columns=tiles, partition_id=0)
     part = part.sort(ExpressionList([expr]), descending=[True])
     arrow_table = pa.Table.from_pandas(part.to_pandas())
@@ -202,7 +180,7 @@ def test_split_by_index_even(n) -> None:
     tiles = {}
     for i in range(0, 4):
         block = DataBlock.make_block(np.arange(0, 100, 1))
-        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", partition_id=0, block=block)
+        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", block=block)
     part = vPartition(columns=tiles, partition_id=0)
     new_parts = part.split_by_index(n, DataBlock.make_block(data=np.arange(0, 100, 1) % n))
     assert len(new_parts) == n
@@ -227,7 +205,7 @@ def test_hash_partition(n) -> None:
     for i in range(4):
         block = DataBlock.make_block(np.arange(0, 2 * n, 1) % n)
 
-        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", partition_id=0, block=block)
+        tiles[f"col_{i}"] = PyListTile(column_name=f"col_{i}", block=block)
 
     part = vPartition(columns=tiles, partition_id=0)
     new_parts = part.split_by_hash(ExpressionList([col("col_0")]), n)
@@ -247,7 +225,7 @@ def test_hash_partition(n) -> None:
 
 def test_partition_quantiles_small_sample_large_partitions():
     data = [1, 2, 3]
-    partition = vPartition({"foo": PyListTile("foo", 1, ArrowDataBlock(pa.chunked_array([data])))}, 1)
+    partition = vPartition({"foo": PyListTile("foo", ArrowDataBlock(pa.chunked_array([data])))}, 1)
     quantiled_partition = partition.quantiles(10)
     quantile_boundaries = quantiled_partition.columns["foo"].block.data.to_pylist()
     assert sorted(quantile_boundaries) == quantile_boundaries, "quantile boundaries should be in sorted order"
