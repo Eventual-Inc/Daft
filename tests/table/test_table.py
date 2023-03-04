@@ -462,12 +462,11 @@ def test_table_multiple_col_sorting(sort_dtype, value_dtype, data) -> None:
 def test_table_boolean_multiple_col_sorting(second_dtype, data) -> None:
     a, b, a_desc, b_desc, expected = data
     pa_table = pa.Table.from_pydict({"a": a, "b": b})
-
     argsort_order = Series.from_pylist(expected)
 
     daft_table = Table.from_arrow(pa_table)
 
-    daft_table = daft_table.eval_expression_list([col("a").cast(DataType.bool()), col("b").cast(second_dtype)])
+    daft_table = daft_table.eval_expression_list([col("a"), col("b").cast(second_dtype)])
 
     assert len(daft_table) == 5
     assert daft_table.column_names() == ["a", "b"]
