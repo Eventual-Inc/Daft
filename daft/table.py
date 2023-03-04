@@ -164,6 +164,9 @@ class Table:
     def split_by_index(self, num_partitions: int, target_partition_indices: Series) -> list[Table]:
         raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
 
+    def split_random(self, num_partitions: int, seed: int) -> list[Table]:
+        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+
     def quantiles(self, num: int) -> Table:
         raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
 
@@ -201,5 +204,5 @@ class Table:
             raise ValueError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return Series._from_pyseries(self._table.argsort(pyexprs, descending))
 
-    def search_sorted(self, keys: Table, input_reversed: list[bool] | None = None) -> Series:
+    def search_sorted(self, sort_keys: Table, descending: list[bool]) -> Series:
         raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
