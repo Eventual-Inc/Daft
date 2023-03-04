@@ -177,8 +177,6 @@ class ExpressionsProjection(Iterable[Expression]):
         # Check invariants
         seen: set[str] = set()
         for e in exprs:
-            if e.name() is None:
-                raise ValueError("Expressions must all have names")
             if e.name() in seen:
                 raise ValueError("Expressions must all have unique names")
             seen.add(e.name())
