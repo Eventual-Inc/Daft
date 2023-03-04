@@ -3,7 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 
 from daft.daft import PyTable as _PyTable
-from daft.expressions2 import Expression
+from daft.expressions2 import Expression, ExpressionsProjection
 from daft.logical.schema2 import Schema
 from daft.series import Series
 
@@ -45,7 +45,7 @@ class Table:
     def to_pydict(self) -> dict[str, list]:
         return self.to_arrow().to_pydict()
 
-    def eval_expression_list(self, exprs: list[Expression]) -> Table:
+    def eval_expression_list(self, exprs: ExpressionsProjection) -> Table:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]
         return Table._from_pytable(self._table.eval_expression_list(pyexprs))
@@ -57,12 +57,12 @@ class Table:
         assert isinstance(indices, Series)
         return Table._from_pytable(self._table.take(indices._series))
 
-    def filter(self, exprs: list[Expression]) -> Table:
+    def filter(self, exprs: ExpressionsProjection) -> Table:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]
         return Table._from_pytable(self._table.filter(pyexprs))
 
-    def sort(self, sort_keys: list[Expression], descending: bool | list[bool] | None = None) -> Table:
+    def sort(self, sort_keys: ExpressionsProjection, descending: bool | list[bool] | None = None) -> Table:
         assert all(isinstance(e, Expression) for e in sort_keys)
         pyexprs = [e._expr for e in sort_keys]
         if descending is None:
@@ -79,7 +79,7 @@ class Table:
             raise ValueError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return Table._from_pytable(self._table.sort(pyexprs, descending))
 
-    def argsort(self, sort_keys: list[Expression], descending: bool | list[bool] | None = None) -> Series:
+    def argsort(self, sort_keys: ExpressionsProjection, descending: bool | list[bool] | None = None) -> Series:
         assert all(isinstance(e, Expression) for e in sort_keys)
         pyexprs = [e._expr for e in sort_keys]
         if descending is None:

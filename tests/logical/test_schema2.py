@@ -28,12 +28,6 @@ def test_schema_column_names():
     assert schema.column_names() == list(DATA.keys())
 
 
-def test_schema_bad_type_getitem():
-    schema = TABLE.schema()
-    with pytest.raises(ValueError):
-        schema[1]
-
-
 def test_schema_field_types():
     schema = TABLE.schema()
     for key in EXPECTED_TYPES:

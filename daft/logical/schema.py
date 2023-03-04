@@ -60,3 +60,7 @@ class Schema:
             seen[f.name] = f
 
         return Schema._from_field_name_and_types([(f.name, f.dtype) for f in seen.values()])
+
+    def resolve_expressions(self, exprs: ExpressionList) -> Schema:
+        fields = [e.to_field(self) for e in exprs]
+        return Schema._from_field_name_and_types([(f.name, f.dtype) for f in fields])

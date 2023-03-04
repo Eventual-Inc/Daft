@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Iterable, Iterator
+
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
@@ -150,3 +152,99 @@ class Expression:
 
     def __repr__(self) -> str:
         return repr(self._expr)
+
+    def _input_mapping(self) -> str | None:
+        raise NotImplementedError(
+            "[RUST-INT] Implement for checking if expression is a no-op and returning the input name it maps to if so"
+        )
+
+    def _is_eq(self, other: Expression) -> bool:
+        raise NotImplementedError("[RUST-INT] Implement for checking equality of Expressions")
+
+    def _required_columns(self) -> set[str]:
+        raise NotImplementedError("[RUST-INT] Implement for getting required columns in an Expression")
+
+
+class ExpressionsProjection(Iterable[Expression]):
+    """A collection of Expressions that can be projected onto a Table to produce another Table
+
+    Invariants:
+        1. All Expressions have names
+        2. All Expressions have unique names
+    """
+
+    def __init__(self, exprs: list[Expression]) -> None:
+        # Check invariants
+        seen: set[str] = set()
+        for e in exprs:
+            if e.name() in seen:
+                raise ValueError("Expressions must all have unique names")
+            seen.add(e.name())
+
+        self.exprs = {e.name(): e for e in exprs}
+
+    def __len__(self) -> int:
+        return len(self.exprs)
+
+    def __iter__(self) -> Iterator[Expression]:
+        return iter(self.exprs.values())
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ExpressionsProjection):
+            return False
+
+        return len(self.exprs) == len(other.exprs) and all(
+            (s.name() == o.name()) and (s._is_eq(o)) for s, o in zip(self.exprs.values(), other.exprs.values())
+        )
+
+    def required_columns(self) -> set[str]:
+        """Column names required to run this ExpressionsProjection"""
+        result: set[str] = set()
+        for e in self.exprs.values():
+            result |= e._required_columns()
+        return result
+
+    def union(self, other: ExpressionsProjection, rename_dup: str | None = None) -> ExpressionsProjection:
+        """Unions two Expressions. Output naming conflicts are handled with keyword arguments.
+
+        Args:
+            other (ExpressionList): other ExpressionList to union with this one
+            rename_dup (Optional[str], optional): when conflicts in naming happen, append this string to the conflicting column in `other`. Defaults to None.
+        """
+        unioned: dict[str, Expression] = {}
+        for expr in list(self) + list(other):
+            name = expr.name()
+
+            # Handle naming conflicts
+            if name in unioned:
+                if rename_dup is not None:
+                    while name in unioned:
+                        name = f"{rename_dup}{name}"
+                    expr = expr.alias(name)
+                else:
+                    raise ValueError(
+                        f"Duplicate name found with different expression. name: {name}, seen: {unioned[name]}, current: {expr}"
+                    )
+
+            unioned[name] = expr
+        return ExpressionsProjection(list(unioned.values()))
+
+    def to_name_set(self) -> set[str]:
+        return {e.name() for e in self}
+
+    def input_mapping(self) -> dict[str, str]:
+        """Returns a map of {output_name: input_name} for all expressions that are just no-ops/aliases of an existing input"""
+        result = {}
+        for e in self:
+            input_map = e._input_mapping()
+            if input_map is not None:
+                result[e.name()] = input_map
+        return result
+
+    def to_column_expressions(self) -> ExpressionsProjection:
+        return ExpressionsProjection([col(e.name()) for e in self])
+
+    def get_expression_by_name(self, name: str) -> Expression:
+        if name not in self.exprs:
+            raise ValueError(f"{name} not found in ExpressionsProjection")
+        return self.exprs[name]

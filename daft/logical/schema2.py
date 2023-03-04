@@ -5,7 +5,7 @@ from typing import Iterator
 from daft.daft import PyField as _PyField
 from daft.daft import PySchema as _PySchema
 from daft.datatype import DataType
-from daft.expressions2 import Expression, col
+from daft.expressions2 import ExpressionsProjection, col
 
 
 class Field:
@@ -48,13 +48,20 @@ class Schema:
 
     @classmethod
     def _from_field_name_and_types(self, fields: list[tuple[str, DataType]]) -> Schema:
+        assert isinstance(fields, list), f"Expected a list of field tuples, received: {fields}"
+        for field in fields:
+            assert isinstance(field, tuple), f"Expected a tuple, received: {field}"
+            assert len(field) == 2, f"Expected a tuple of length 2, received: {field}"
+            name, dtype = field
+            assert isinstance(name, str), f"Expected a string name, received: {name}"
+            assert isinstance(dtype, DataType), f"Expected a DataType dtype, received: {dtype}"
+
         s = Schema.__new__(Schema)
         s._schema = _PySchema.from_field_name_and_types([(name, dtype._dtype) for name, dtype in fields])
         return s
 
     def __getitem__(self, key: str) -> Field:
-        if not isinstance(key, str):
-            raise ValueError(f"Expected str for key, but received: {type(key)}")
+        assert isinstance(key, str), f"Expected str for key, but received: {type(key)}"
         if key not in self._schema.names():
             raise ValueError(f"{key} was not found in Schema of fields {self._schema.field_names()}")
         pyfield = self._schema[key]
@@ -79,8 +86,14 @@ class Schema:
     def __repr__(self) -> str:
         return repr([(field.name, field.dtype) for field in self])
 
-    def to_column_expressions(self) -> list[Expression]:
-        return [col(f.name) for f in self]
+    def to_column_expressions(self) -> ExpressionsProjection:
+        return ExpressionsProjection([col(f.name) for f in self])
+
+    def resolve_expressions(self, expressions: ExpressionsProjection) -> Schema:
+        """Create a new Schema by resolving the Expressions against an existing Schema"""
+        raise NotImplementedError(
+            "[RUST-INT] Requires an API for construction of a new Schema from resolving Expressions against an existing one"
+        )
 
     def union(self, other: Schema) -> Schema:
         if not isinstance(other, Schema):
