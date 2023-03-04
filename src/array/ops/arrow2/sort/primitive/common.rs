@@ -1,3 +1,4 @@
+use arrow2::array::ord::DynComparator;
 /// Adapted from https://github.com/jorgecarleitao/arrow2/blob/main/src/compute/sort/common.rs
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
@@ -201,6 +202,35 @@ where
     } else {
         indices_slice.sort_unstable_by(|a, b| cmp(b, a));
     }
+    let data_type = I::PRIMITIVE.into();
+    PrimitiveArray::<I>::new(data_type, indices.into(), None)
+}
+
+pub fn multi_column_idx_sort<I, F>(
+    first_col_validity: Option<&Bitmap>,
+    overall_cmp: F,
+    others_cmp: &DynComparator,
+    length: usize,
+    first_col_desc: bool,
+) -> PrimitiveArray<I>
+where
+    I: Index,
+    F: Fn(&I, &I) -> std::cmp::Ordering,
+{
+    let (mut indices, start_idx, end_idx) =
+        generate_initial_indices::<I>(first_col_validity, length, first_col_desc);
+    let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
+
+    indices_slice.sort_unstable_by(|a, b| overall_cmp(a, b));
+    if start_idx > 0 {
+        let preslice_indices = &mut indices.as_mut_slice()[..start_idx];
+        preslice_indices.sort_unstable_by(|a, b| others_cmp(a.to_usize(), b.to_usize()));
+    }
+    if end_idx < length {
+        let postslice_indices = &mut indices.as_mut_slice()[end_idx..];
+        postslice_indices.sort_unstable_by(|a, b| others_cmp(a.to_usize(), b.to_usize()));
+    }
+
     let data_type = I::PRIMITIVE.into();
     PrimitiveArray::<I>::new(data_type, indices.into(), None)
 }

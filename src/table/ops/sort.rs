@@ -29,7 +29,7 @@ impl Table {
                 .argsort(*descending.first().unwrap())
         } else {
             let expr_result = self.eval_expression_list(sort_keys)?;
-            multi_series_argsort(expr_result.columns.as_slice(), descending)
+            Series::argsort_multikey(expr_result.columns.as_slice(), descending)
         }
     }
 }
@@ -42,20 +42,6 @@ fn multi_series_argsort(sort_keys: &[Series], descending: &[bool]) -> DaftResult
             descending.len()
         )));
     }
-    let sort_columns: Vec<_> = sort_keys
-        .iter()
-        .zip(descending.iter())
-        .map(|(series, desc)| SortColumn {
-            values: series.array().data(),
-            options: Some(SortOptions {
-                descending: *desc,
-                nulls_first: *desc,
-            }),
-        })
-        .collect();
 
-    let result =
-        lexsort_to_indices_impl::<u64>(sort_columns.as_slice(), None, &build_compare_with_nan)?;
-
-    Ok(UInt64Array::from((sort_keys.first().unwrap().name(), Box::new(result))).into_series())
+    Series::argsort_multikey(sort_keys, descending)
 }

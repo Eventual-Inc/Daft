@@ -77,7 +77,7 @@ impl Display for Series {
         }
 
         for i in 0..tail_rows {
-            let row = vec![self.str_value(i).unwrap()];
+            let row = vec![self.str_value(self.len() - tail_rows - 1 + i).unwrap()];
             table.add_row(row.into());
         }
 

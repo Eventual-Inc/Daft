@@ -244,7 +244,7 @@ impl Display for Table {
             let row = self
                 .columns
                 .iter()
-                .map(|s| s.str_value(self.len() - i - 1))
+                .map(|s| s.str_value(self.len() - tail_rows - 1 + i))
                 .collect::<DaftResult<Vec<String>>>()
                 .unwrap();
             table.add_row(row.into());

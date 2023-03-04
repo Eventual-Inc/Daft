@@ -5,11 +5,39 @@ use crate::{
         Utf8Array,
     },
     error::DaftResult,
-    kernels::search_sorted::cmp_float,
+    kernels::search_sorted::{build_compare_with_nulls, cmp_float},
+    series::Series,
 };
 
 use crate::array::BaseArray;
-use arrow2::array::ord::{self};
+use arrow2::{
+    array::ord::{self, DynComparator},
+    types::Index,
+};
+
+use super::arrow2::sort::primitive::common::{idx_sort, multi_column_idx_sort};
+
+fn build_multi_array_compare(arrays: &[Series], descending: &[bool]) -> DaftResult<DynComparator> {
+    let mut cmp_list = Vec::with_capacity(arrays.len());
+    for (s, desc) in arrays.iter().zip(descending.iter()) {
+        cmp_list.push(build_compare_with_nulls(
+            s.array().data(),
+            s.array().data(),
+            *desc,
+        )?);
+    }
+
+    let combined_comparator = Box::new(move |a_idx: usize, b_idx: usize| -> std::cmp::Ordering {
+        for comparator in cmp_list.iter() {
+            match comparator(a_idx, b_idx) {
+                std::cmp::Ordering::Equal => continue,
+                other => return other,
+            }
+        }
+        std::cmp::Ordering::Equal
+    });
+    Ok(combined_comparator)
+}
 
 impl<T> DataArray<T>
 where
@@ -33,43 +61,60 @@ where
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
 
-    // pub fn argsort_multikey<I>(&self, descending: bool, others: &[Series]) -> DaftResult<DataArray<I>>
-    // where
-    //     I: DaftIntegerType,
-    //     <I as DaftNumericType>::Native: arrow2::types::Index,
-    // {
-    //     let options = arrow2::compute::sort::SortOptions {
-    //         descending,
-    //         nulls_first: descending,
-    //     };
-    //     let arrow_array = self.downcast();
+    pub fn argsort_multikey<I>(
+        &self,
+        others: &[Series],
+        descending: &[bool],
+    ) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let arrow_array = self.downcast();
+        let first_desc = *descending.first().unwrap();
 
-    //     let options = SortOptions {
-    //         descending: descending,
-    //         nulls_first: descending
-    //     };
+        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
 
-    //     let mut compare: Vec<_> = Vec::with_capacity(others.len());
-    //     for s in others.iter() {
-    //         compare.push(build_compare_with_nulls(s.array().data(), s.array().data(), descending)?);
-    //     }
+        let values = arrow_array.values().as_slice();
 
-    //     let result =
-    //         crate::array::ops::arrow2::sort::primitive::indices::indices_sorted_unstable_by::<
-    //             I::Native,
-    //             T::Native,
-    //             _,
-    //         >(arrow_array, |l, r| {
-    //             match ord::total_cmp(l, r) {
-    //                 std::cmp::Ordering::Equal => {
-    //                     for st
-    //                 }
-    //                 v => v
-    //             }
-    //         }, &options, None);
+        let result = if first_desc {
+            multi_column_idx_sort(
+                arrow_array.validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_unchecked(a) };
+                    let r = unsafe { values.get_unchecked(b) };
+                    match ord::total_cmp(r, l) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                arrow_array.len(),
+                first_desc,
+            )
+        } else {
+            multi_column_idx_sort(
+                arrow_array.validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_unchecked(a) };
+                    let r = unsafe { values.get_unchecked(b) };
+                    match ord::total_cmp(l, r) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                arrow_array.len(),
+                first_desc,
+            )
+        };
 
-    //     Ok(DataArray::<I>::from((self.name(), Box::new(result))))
-    // }
+        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+    }
 
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
@@ -104,6 +149,61 @@ impl Float32Array {
                 f32,
                 _,
             >(arrow_array, cmp_float::<f32>, descending);
+
+        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+    }
+
+    pub fn argsort_multikey<I>(
+        &self,
+        others: &[Series],
+        descending: &[bool],
+    ) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let arrow_array = self.downcast();
+        let first_desc = *descending.first().unwrap();
+
+        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+
+        let values = arrow_array.values().as_slice();
+
+        let result = if first_desc {
+            multi_column_idx_sort(
+                arrow_array.validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_unchecked(a) };
+                    let r = unsafe { values.get_unchecked(b) };
+                    match cmp_float::<f32>(r, l) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                arrow_array.len(),
+                first_desc,
+            )
+        } else {
+            multi_column_idx_sort(
+                arrow_array.validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_unchecked(a) };
+                    let r = unsafe { values.get_unchecked(b) };
+                    match cmp_float::<f32>(l, r) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                arrow_array.len(),
+                first_desc,
+            )
+        };
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -145,6 +245,61 @@ impl Float64Array {
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
 
+    pub fn argsort_multikey<I>(
+        &self,
+        others: &[Series],
+        descending: &[bool],
+    ) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let arrow_array = self.downcast();
+        let first_desc = *descending.first().unwrap();
+
+        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+
+        let values = arrow_array.values().as_slice();
+
+        let result = if first_desc {
+            multi_column_idx_sort(
+                arrow_array.validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_unchecked(a) };
+                    let r = unsafe { values.get_unchecked(b) };
+                    match cmp_float::<f64>(r, l) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                arrow_array.len(),
+                first_desc,
+            )
+        } else {
+            multi_column_idx_sort(
+                arrow_array.validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_unchecked(a) };
+                    let r = unsafe { values.get_unchecked(b) };
+                    match cmp_float::<f64>(l, r) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                arrow_array.len(),
+                first_desc,
+            )
+        };
+
+        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+    }
+
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
             descending,
@@ -173,6 +328,34 @@ impl NullArray {
         DataArray::<I>::arange(self.name(), 0_i64, self.len() as i64, 1)
     }
 
+    pub fn argsort_multikey<I>(
+        &self,
+        others: &[Series],
+        descending: &[bool],
+    ) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let first_desc = *descending.first().unwrap();
+
+        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+
+        let result = multi_column_idx_sort(
+            self.data().validity(),
+            |a: &I::Native, b: &I::Native| {
+                let a = a.to_usize();
+                let b = b.to_usize();
+                others_cmp(a, b)
+            },
+            &others_cmp,
+            self.len(),
+            first_desc,
+        );
+
+        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+    }
+
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
         Ok(self.clone())
     }
@@ -191,6 +374,65 @@ impl BooleanArray {
 
         let result =
             arrow2::compute::sort::sort_to_indices::<I::Native>(self.data(), &options, None)?;
+
+        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+    }
+
+    pub fn argsort_multikey<I>(
+        &self,
+        others: &[Series],
+        descending: &[bool],
+    ) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let first_desc = *descending.first().unwrap();
+
+        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+
+        let values = self
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::BooleanArray>()
+            .unwrap()
+            .values();
+
+        let result = if first_desc {
+            multi_column_idx_sort(
+                self.data().validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_bit_unchecked(a) };
+                    let r = unsafe { values.get_bit_unchecked(b) };
+                    match r.cmp(&l) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                self.len(),
+                first_desc,
+            )
+        } else {
+            multi_column_idx_sort(
+                self.data().validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_bit_unchecked(a) };
+                    let r = unsafe { values.get_bit_unchecked(b) };
+                    match l.cmp(&r) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                self.len(),
+                first_desc,
+            )
+        };
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -220,6 +462,66 @@ impl Utf8Array {
 
         let result =
             arrow2::compute::sort::sort_to_indices::<I::Native>(self.data(), &options, None)?;
+
+        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+    }
+
+    pub fn argsort_multikey<I>(
+        &self,
+        others: &[Series],
+        descending: &[bool],
+    ) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let first_desc = *descending.first().unwrap();
+
+        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+
+        let arrow_array = self
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+            .unwrap();
+
+        let values = arrow_array.values();
+
+        let result = if first_desc {
+            multi_column_idx_sort(
+                arrow_array.validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_unchecked(a) };
+                    let r = unsafe { values.get_unchecked(b) };
+                    match r.cmp(l) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                arrow_array.len(),
+                first_desc,
+            )
+        } else {
+            multi_column_idx_sort(
+                arrow_array.validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_unchecked(a) };
+                    let r = unsafe { values.get_unchecked(b) };
+                    match l.cmp(r) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                arrow_array.len(),
+                first_desc,
+            )
+        };
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
