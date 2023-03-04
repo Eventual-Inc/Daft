@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, iter::zip};
 
 use arrow2::{
-    array::ord::build_compare,
+    array::ord::{build_compare, DynComparator},
     array::Array,
     array::{PrimitiveArray, Utf8Array},
     datatypes::{DataType, PhysicalType},
@@ -194,39 +194,50 @@ pub fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
     }
 }
 
-fn build_compare_with_nan<'a>(
-    left: &'a dyn Array,
-    right: &'a dyn Array,
-) -> Result<Box<dyn Fn(usize, usize) -> Ordering + Sync + Send + 'a>> {
+fn compare_f32(left: &dyn Array, right: &dyn Array) -> DynComparator {
+    let left = left
+        .as_any()
+        .downcast_ref::<PrimitiveArray<f32>>()
+        .unwrap()
+        .clone();
+    let right = right
+        .as_any()
+        .downcast_ref::<PrimitiveArray<f32>>()
+        .unwrap()
+        .clone();
+    Box::new(move |i, j| cmp_float::<f32>(&left.value(i), &right.value(j)))
+}
+
+fn compare_f64(left: &dyn Array, right: &dyn Array) -> DynComparator {
+    let left = left
+        .as_any()
+        .downcast_ref::<PrimitiveArray<f64>>()
+        .unwrap()
+        .clone();
+    let right = right
+        .as_any()
+        .downcast_ref::<PrimitiveArray<f64>>()
+        .unwrap()
+        .clone();
+    Box::new(move |i, j| cmp_float::<f64>(&left.value(i), &right.value(j)))
+}
+
+pub fn build_compare_with_nan(left: &dyn Array, right: &dyn Array) -> Result<DynComparator> {
     if (left.data_type() == &DataType::Float32) && (right.data_type() == &DataType::Float32) {
-        let left: &PrimitiveArray<f32> = unsafe { left.as_any().downcast_ref().unwrap_unchecked() };
-        let right: &PrimitiveArray<f32> =
-            unsafe { right.as_any().downcast_ref().unwrap_unchecked() };
-        Ok(Box::new(move |l, r| {
-            let lv = unsafe { left.value_unchecked(l) };
-            let rv = unsafe { right.value_unchecked(r) };
-            cmp_float::<f32>(&lv, &rv)
-        }))
+        Ok(compare_f32(left, right))
     } else if (left.data_type() == &DataType::Float64) && (right.data_type() == &DataType::Float64)
     {
-        let left: &PrimitiveArray<f64> = unsafe { left.as_any().downcast_ref().unwrap_unchecked() };
-        let right: &PrimitiveArray<f64> =
-            unsafe { right.as_any().downcast_ref().unwrap_unchecked() };
-        return Ok(Box::new(move |l, r| {
-            let lv = unsafe { left.value_unchecked(l) };
-            let rv = unsafe { right.value_unchecked(r) };
-            cmp_float::<f64>(&lv, &rv)
-        }));
+        Ok(compare_f64(left, right))
     } else {
         return build_compare(left, right);
     }
 }
 
-fn build_compare_with_nulls<'a>(
-    left: &'a dyn Array,
-    right: &'a dyn Array,
+pub fn build_compare_with_nulls(
+    left: &dyn Array,
+    right: &dyn Array,
     reversed: bool,
-) -> Result<Box<dyn Fn(usize, usize) -> Ordering + Sync + Send + 'a>> {
+) -> Result<DynComparator> {
     let comparator = build_compare_with_nan(left, right)?;
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);

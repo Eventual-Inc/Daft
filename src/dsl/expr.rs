@@ -176,6 +176,7 @@ impl Display for Operator {
 }
 
 impl Operator {
+    #![allow(dead_code)]
     pub(crate) fn is_comparison(&self) -> bool {
         matches!(
             self,

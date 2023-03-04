@@ -11,6 +11,7 @@ use crate::{
 use super::datatype::PyDataType;
 
 #[pyclass]
+#[derive(Clone)]
 pub struct PySeries {
     pub series: series::Series,
 }

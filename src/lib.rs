@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod array;
 mod datatypes;
 mod dsl;

@@ -11,7 +11,7 @@ use arrow2::{
 };
 pub use dtype::DataType;
 pub use field::Field;
-use num_traits::{Bounded, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
+use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 pub use time_unit::TimeUnit;
 
 /// Trait to wrap DataType Enum
@@ -162,6 +162,15 @@ impl DaftIntegerType for Int8Type {}
 impl DaftIntegerType for Int16Type {}
 impl DaftIntegerType for Int32Type {}
 impl DaftIntegerType for Int64Type {}
+
+pub trait DaftFloatType: DaftNumericType
+where
+    Self::Native: Float,
+{
+}
+
+impl DaftFloatType for Float32Type {}
+impl DaftFloatType for Float64Type {}
 
 pub type NullArray = DataArray<NullType>;
 pub type BooleanArray = DataArray<BooleanType>;

@@ -5,6 +5,12 @@ import pyarrow as pa
 from daft.daft import PySeries
 from daft.datatype import DataType
 
+_NUMPY_AVAILABLE = True
+try:
+    import numpy as np
+except ImportError:
+    _NUMPY_AVAILABLE = False
+
 
 class Series:
     _series: PySeries | None
@@ -31,6 +37,13 @@ class Series:
     def from_pylist(data: list, name: str = "list_series") -> Series:
         if not isinstance(data, list):
             raise ValueError(f"expected a python list, got {type(data)}")
+        arrow_array = pa.array(data)
+        return Series.from_arrow(arrow_array, name=name)
+
+    @staticmethod
+    def from_numpy(data: np.ndarray, name: str = "numpy_series") -> Series:
+        if not isinstance(data, np.ndarray):
+            raise ValueError(f"expected a numpy ndarray, got {type(data)}")
         arrow_array = pa.array(data)
         return Series.from_arrow(arrow_array, name=name)
 
