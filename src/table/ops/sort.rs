@@ -1,11 +1,6 @@
-use arrow2::compute::sort::{lexsort_to_indices_impl, SortColumn, SortOptions};
-
 use crate::{
-    array::BaseArray,
-    datatypes::UInt64Array,
     dsl::Expr,
     error::{DaftError, DaftResult},
-    kernels::search_sorted::build_compare_with_nan,
     series::Series,
     table::Table,
 };

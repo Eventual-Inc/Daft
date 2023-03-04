@@ -15,7 +15,7 @@ use arrow2::{
     types::Index,
 };
 
-use super::arrow2::sort::primitive::common::{idx_sort, multi_column_idx_sort};
+use super::arrow2::sort::primitive::common::multi_column_idx_sort;
 
 fn build_multi_array_compare(arrays: &[Series], descending: &[bool]) -> DaftResult<DynComparator> {
     let mut cmp_list = Vec::with_capacity(arrays.len());
