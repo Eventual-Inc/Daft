@@ -88,7 +88,7 @@ class Table:
         return Table._from_pytable(_PyTable.from_pylist_series(series_dict))
 
     @classmethod
-    def concat(cls, to_merge: list[Table]):
+    def concat(cls, to_merge: list[Table]) -> Table:
         raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
 
     ###
@@ -158,15 +158,6 @@ class Table:
     def agg(self, to_agg: list[tuple[Expression, str]], group_by: ExpressionsProjection | None = None) -> Table:
         raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
 
-    def split_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
-
-    def split_by_index(self, num_partitions: int, target_partition_indices: Series) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
-
-    def split_random(self, num_partitions: int, seed: int) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
-
     def quantiles(self, num: int) -> Table:
         raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
 
@@ -181,6 +172,15 @@ class Table:
         output_projection: ExpressionsProjection,
         how: str = "inner",
     ) -> Table:
+        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+
+    def split_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Table]:
+        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+
+    def split_by_index(self, num_partitions: int, target_partition_indices: Series) -> list[Table]:
+        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+
+    def split_random(self, num_partitions: int, seed: int) -> list[Table]:
         raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
 
     ###
