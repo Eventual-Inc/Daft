@@ -28,15 +28,3 @@ impl Table {
         }
     }
 }
-
-fn multi_series_argsort(sort_keys: &[Series], descending: &[bool]) -> DaftResult<Series> {
-    if sort_keys.len() != descending.len() {
-        return Err(DaftError::ValueError(format!(
-            "sort_keys and descending length must match, got {} vs {}",
-            sort_keys.len(),
-            descending.len()
-        )));
-    }
-
-    Series::argsort_multikey(sort_keys, descending)
-}
