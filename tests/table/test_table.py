@@ -377,3 +377,69 @@ def test_table_single_col_sorting(sort_dtype, value_dtype, first_col) -> None:
     assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()[::-1]
 
     assert daft_table.argsort([col("a")], descending=True).to_pylist() == argsort_order.to_pylist()[::-1]
+
+
+@pytest.mark.parametrize(
+    "sort_dtype, value_dtype, data",
+    itertools.product(
+        daft_numeric_types + daft_string_types,
+        daft_numeric_types + daft_string_types,
+        [
+            ([None, 4, 2, 1, 5], [0, 1, 2, 3, None], False, False, [3, 2, 1, 4, 0]),
+            ([None, 4, 2, 1, 5], [0, 1, 2, 3, None], False, True, [3, 2, 1, 4, 0]),
+            ([1, 1, 1, 1, 1], [None, 3, 1, 2, 0], False, False, [4, 2, 3, 1, 0]),
+            ([1, 1, 1, 1, 1], [None, 3, 1, 2, 0], True, False, [4, 2, 3, 1, 0]),
+            ([None, None, None, None, None], [None, 3, 1, 2, 0], False, False, [4, 2, 3, 1, 0]),
+            ([None, None, None, None, None], [None, 3, 1, 2, 0], True, False, [4, 2, 3, 1, 0]),
+            ([None, 4, 2, 1, 5], [None, None, None, None, None], False, False, [3, 2, 1, 4, 0]),
+            ([None, 4, 2, 1, 5], [None, None, None, None, None], False, True, [3, 2, 1, 4, 0]),
+        ],
+    ),
+)
+def test_table_mulitple_col_sorting(sort_dtype, value_dtype, data) -> None:
+    a, b, a_desc, b_desc, expected = data
+    pa_table = pa.Table.from_pydict({"a": a, "b": b})
+
+    argsort_order = Series.from_pylist(expected)
+
+    daft_table = Table.from_arrow(pa_table)
+
+    daft_table = daft_table.eval_expression_list([col("a").cast(sort_dtype), col("b").cast(value_dtype)])
+
+    assert len(daft_table) == 5
+    assert daft_table.column_names() == ["a", "b"]
+
+    sorted_table = daft_table.sort([col("a"), col("b")], descending=[a_desc, b_desc])
+
+    assert len(sorted_table) == 5
+
+    assert sorted_table.column_names() == ["a", "b"]
+
+    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+
+    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()
+    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()
+
+    assert (
+        daft_table.argsort([col("a"), col("b")], descending=[a_desc, b_desc]).to_pylist() == argsort_order.to_pylist()
+    )
+
+    # Descending
+
+    sorted_table = daft_table.sort([col("a"), col("b")], descending=[not a_desc, not b_desc])
+
+    assert len(sorted_table) == 5
+
+    assert sorted_table.column_names() == ["a", "b"]
+
+    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+
+    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()[::-1]
+    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()[::-1]
+
+    assert (
+        daft_table.argsort([col("a"), col("b")], descending=[not a_desc, not b_desc]).to_pylist()
+        == argsort_order.to_pylist()[::-1]
+    )
