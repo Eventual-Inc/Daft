@@ -405,7 +405,7 @@ class Filter(UnaryNode):
         self._register_child(input)
 
         self._predicate = predicate
-        predicate_schema = predicate.to_schema(input.schema())
+        predicate_schema = input.schema().resolve_expressions(predicate)
 
         for i, resolved_field in enumerate(predicate_schema.fields.values()):
             resolved_type = resolved_field.dtype
@@ -443,7 +443,7 @@ class Projection(UnaryNode):
         projection: ExpressionList,
         custom_resource_request: ResourceRequest = ResourceRequest(),
     ) -> None:
-        schema = projection.to_schema(input.schema())
+        schema = input.schema().resolve_expressions(projection)
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.ROW)
         self._register_child(input)
         self._projection = projection
@@ -786,10 +786,10 @@ class LocalAggregate(UnaryNode):
 
         if group_by is not None:
             group_and_agg_cols = ExpressionList(group_by.exprs + [e for e, _ in agg])
-            schema = group_and_agg_cols.to_schema(input.schema())
+            schema = input.schema().resolve_expressions(group_and_agg_cols)
             required_cols = required_cols | set(group_by.required_columns())
         else:
-            schema = cols_to_agg.to_schema(input.schema())
+            schema = input.schema().resolve_expressions(cols_to_agg)
 
         self._required_cols = required_cols
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
@@ -836,7 +836,7 @@ class LocalDistinct(UnaryNode):
     ) -> None:
 
         self._group_by = group_by
-        schema = group_by.to_schema(input.schema())
+        schema = input.schema().resolve_expressions(group_by)
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
 
@@ -976,8 +976,10 @@ class Join(BinaryNode):
             self._left_columns = left_columns
             self._right_columns = ExpressionList(unioned_expressions.exprs[len(self._left_columns.exprs) :])
             self._output_projection = unioned_expressions
-            output_schema = self._left_columns.to_schema(left.schema()).union(
-                self._right_columns.to_schema(right.schema())
+            output_schema = (
+                left.schema()
+                .resolve_expressions(self._left_columns)
+                .union(right.schema().resolve_expressions(self._right_columns))
             )
 
         left_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._left_on)

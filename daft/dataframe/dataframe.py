@@ -769,10 +769,13 @@ class DataFrame:
         if not isinstance(resource_request, ResourceRequest):
             raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
 
-        prev_schema_as_cols = self._plan.schema().to_column_expressions()
+        prev_schema_as_cols = ExpressionList(
+            [e for e in self._plan.schema().to_column_expressions() if e.name() != column_name]
+        )
+        new_schema = prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]))
         projection = logical_plan.Projection(
             self._plan,
-            prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]), other_override=True),
+            new_schema,
             custom_resource_request=resource_request,
         )
         return DataFrame(projection)

@@ -5,7 +5,7 @@ from typing import Iterator
 from daft.daft import PyField as _PyField
 from daft.daft import PySchema as _PySchema
 from daft.datatype import DataType
-from daft.expressions2 import Expression, col
+from daft.expressions2 import ExpressionsProjection, col
 
 
 class Field:
@@ -86,8 +86,14 @@ class Schema:
     def __repr__(self) -> str:
         return repr([(field.name, field.dtype) for field in self])
 
-    def to_column_expressions(self) -> list[Expression]:
-        return [col(f.name) for f in self]
+    def to_column_expressions(self) -> ExpressionsProjection:
+        return ExpressionsProjection([col(f.name) for f in self])
+
+    def resolve_expressions(self, expressions: ExpressionsProjection) -> Schema:
+        """Create a new Schema by resolving the Expressions against an existing Schema"""
+        raise NotImplementedError(
+            "[RUST-INT] Requires an API for construction of a new Schema from resolving Expressions against an existing one"
+        )
 
     def union(self, other: Schema) -> Schema:
         if not isinstance(other, Schema):

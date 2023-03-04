@@ -1044,15 +1044,7 @@ class ExpressionList(Iterable[Expression]):
             result |= e.required_columns()
         return result
 
-    def to_schema(self, input_schema: Schema) -> Schema:
-        from daft.logical.schema import Schema
-
-        fields = [e.to_field(input_schema) for e in self.exprs]
-        return Schema._from_field_name_and_types([(f.name, f.dtype) for f in fields])
-
-    def union(
-        self, other: ExpressionList, rename_dup: str | None = None, other_override: bool = False
-    ) -> ExpressionList:
+    def union(self, other: ExpressionList, rename_dup: str | None = None) -> ExpressionList:
         """Unions two schemas together
 
         Note: only one of rename_dup or other_override can be specified as the behavior when resolving naming conflicts.
@@ -1060,9 +1052,7 @@ class ExpressionList(Iterable[Expression]):
         Args:
             other (ExpressionList): other ExpressionList to union with this one
             rename_dup (Optional[str], optional): when conflicts in naming happen, append this string to the conflicting column in `other`. Defaults to None.
-            other_override (bool, optional): when conflicts in naming happen, use the `other` column instead of `self`. Defaults to False.
         """
-        assert not ((rename_dup is not None) and other_override), "Only can specify one of rename_dup or other_override"
         deduped = self.exprs.copy()
         seen: dict[str, Expression] = {}
         for e in self.exprs:
@@ -1080,9 +1070,6 @@ class ExpressionList(Iterable[Expression]):
                     while name in seen:
                         name = f"{rename_dup}{name}"
                     e = cast(Expression, e.alias(name))
-                elif other_override:
-                    # Allow this expression in `other` to override the existing expressions
-                    deduped = [current_expr for current_expr in deduped if current_expr.name() != name]
                 else:
                     raise ValueError(
                         f"Duplicate name found with different expression. name: {name}, seen: {seen[name]}, current: {e}"
