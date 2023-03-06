@@ -26,7 +26,7 @@ class ExplodeOp(MapPartitionOp):
         self.input_schema = input_schema
         output_fields = []
         explode_schema = input_schema.resolve_expressions(explode_columns)
-        for f in input_schema.fields.values():
+        for f in input_schema:
             if f.name in explode_schema.column_names():
                 output_fields.append(explode_schema[f.name])
             else:

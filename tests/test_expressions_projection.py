@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from daft.expressions2 import ExpressionsProjection, col
+from daft.expressions2 import Expression, ExpressionsProjection, col
 
 
 def test_expressions_projection_error_dup_name():
@@ -138,3 +138,20 @@ def test_get_expression_by_name():
     exprs = [col("x")]
     ep = ExpressionsProjection(exprs)
     assert ep.get_expression_by_name("x").name() == "x"
+
+
+def test_expressions_projection_indexing():
+    exprs = [
+        col("x"),
+        col("y") + 1,
+        col("z").alias("a"),
+    ]
+    ep = ExpressionsProjection(exprs)
+    assert isinstance(ep[0], Expression)
+    assert ep[0].name() == "x"
+    assert isinstance(ep[:2], list)
+    assert [e.name() for e in ep[:2]] == ["x", "y"]
+
+    # TODO: [RUST-INT] enable once we have Expression._is_eq
+    # assert ep[0]._is_eq(col("x"))
+    # assert all([result._is_eq(expected) for result, expected in zip(ep[:2], list(col("x"), col("y") + 1))])

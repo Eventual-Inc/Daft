@@ -238,9 +238,8 @@ class vPartition:
     ) -> vPartition:
         column_types = {header: ExpressionType.infer_type(data[header]) for header in data}
         schema = Schema._from_field_name_and_types(list(column_types.items()))
-        fields = schema.fields
         tiles = {}
-        for f in fields.values():
+        for f in schema:
             # Coerce the column data into a list or PyArrow array depending on the provided schema
             col_name = f.name
             col_type = f.dtype
@@ -401,7 +400,7 @@ class vPartition:
 
     def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
         if schema is not None:
-            output_schema = [f.name for f in schema.fields.values()]
+            output_schema = [f.name for f in schema]
         else:
             output_schema = [tile for tile in self.columns.keys()]
 

@@ -16,6 +16,7 @@ from typing import (
     TypeVar,
     cast,
     get_type_hints,
+    overload,
 )
 
 import numpy as np
@@ -1011,36 +1012,47 @@ import copy
 
 class ExpressionList(Iterable[Expression]):
     def __init__(self, exprs: list[Expression]) -> None:
-        self.exprs = copy.deepcopy(exprs)
+        self._exprs = copy.deepcopy(exprs)
         self.names: list[str] = []
         name_set = set()
         for i, e in enumerate(exprs):
             assert isinstance(e, Expression), f"expect Expression got {type(e)}"
             e_name = e.name()
             if e_name is None:
-                e_name = "col_{i}"
+                e_name = f"col_{i}"
             if e_name in name_set:
                 raise ValueError(f"duplicate name found {e_name}")
             self.names.append(e_name)
             name_set.add(e_name)
 
     def __len__(self) -> int:
-        return len(self.exprs)
+        return len(self._exprs)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ExpressionList):
             return False
 
-        return len(self.exprs) == len(other.exprs) and all(
-            (s.name() == o.name()) and (s.is_eq(o)) for s, o in zip(self.exprs, other.exprs)
+        return len(self._exprs) == len(other._exprs) and all(
+            (s.name() == o.name()) and (s.is_eq(o)) for s, o in zip(self._exprs, other._exprs)
         )
 
     def __iter__(self) -> Iterator[Expression]:
-        return iter(self.exprs)
+        return iter(self._exprs)
+
+    @overload
+    def __getitem__(self, idx: slice) -> list[Expression]:
+        ...
+
+    @overload
+    def __getitem__(self, idx: int) -> Expression:
+        ...
+
+    def __getitem__(self, idx: int | slice) -> Expression | list[Expression]:
+        return self._exprs[idx]
 
     def required_columns(self) -> set[str]:
         result = set()
-        for e in self.exprs:
+        for e in self._exprs:
             result |= e.required_columns()
         return result
 
@@ -1053,9 +1065,9 @@ class ExpressionList(Iterable[Expression]):
             other (ExpressionList): other ExpressionList to union with this one
             rename_dup (Optional[str], optional): when conflicts in naming happen, append this string to the conflicting column in `other`. Defaults to None.
         """
-        deduped = self.exprs.copy()
+        deduped = self._exprs.copy()
         seen: dict[str, Expression] = {}
-        for e in self.exprs:
+        for e in self._exprs:
             name = e.name()
             if name is not None:
                 seen[name] = e
@@ -1090,17 +1102,17 @@ class ExpressionList(Iterable[Expression]):
     def input_mapping(self) -> dict[str, str]:
         """Returns a map of {output_name: input_name} for all expressions that are just no-ops/aliases of an existing input"""
         result = {}
-        for e in self.exprs:
+        for e in self._exprs:
             input_map = e._input_mapping()
             if input_map is not None:
                 result[e.name()] = input_map
         return result
 
     def to_column_expressions(self) -> ExpressionList:
-        return ExpressionList([e.to_column_expression() for e in self.exprs])
+        return ExpressionList([e.to_column_expression() for e in self._exprs])
 
     def get_expression_by_name(self, name: str) -> Expression:
         for i, n in enumerate(self.names):
             if n == name:
-                return self.exprs[i]
+                return self._exprs[i]
         raise ValueError(f"{name} not found in ExpressionList")

@@ -177,13 +177,13 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         reduced_types = {}
         for k, v in fields_to_print.items():
             if isinstance(v, ExpressionList):
-                v = v.exprs
+                v = list(v)
             elif isinstance(v, Schema):
-                v = v.to_column_expressions().exprs
+                v = list(v.to_column_expressions())
             elif isinstance(v, PartitionSpec):
                 v = asdict(v)
                 if isinstance(v["by"], ExpressionList):
-                    v["by"] = v["by"].exprs
+                    v["by"] = list(v["by"])
             reduced_types[k] = v
         to_render: list[str] = [f"{self.__class__.__name__}\n"]
         space = "    "
@@ -407,11 +407,11 @@ class Filter(UnaryNode):
         self._predicate = predicate
         predicate_schema = input.schema().resolve_expressions(predicate)
 
-        for i, resolved_field in enumerate(predicate_schema.fields.values()):
+        for resolved_field, predicate_expr in zip(predicate_schema, predicate):
             resolved_type = resolved_field.dtype
             if resolved_type != ExpressionType.logical():
                 raise ValueError(
-                    f"Expected expression {self._predicate.exprs[i]} to resolve to type LOGICAL, but received: {resolved_type}"
+                    f"Expected expression {predicate_expr} to resolve to type LOGICAL, but received: {resolved_type}"
                 )
 
     def __repr__(self) -> str:
@@ -453,7 +453,7 @@ class Projection(UnaryNode):
         return self._custom_resource_request
 
     def __repr__(self) -> str:
-        return self._repr_helper(output=self._projection.exprs)
+        return self._repr_helper(output=list(self._projection))
 
     def required_columns(self) -> list[set[str]]:
         return [self._projection.required_columns()]
@@ -785,7 +785,7 @@ class LocalAggregate(UnaryNode):
         required_cols = set(cols_to_agg.required_columns())
 
         if group_by is not None:
-            group_and_agg_cols = ExpressionList(group_by.exprs + [e for e, _ in agg])
+            group_and_agg_cols = ExpressionList(list(group_by) + [e for e, _ in agg])
             schema = input.schema().resolve_expressions(group_and_agg_cols)
             required_cols = required_cols | set(group_by.required_columns())
         else:
@@ -974,7 +974,7 @@ class Join(BinaryNode):
             right_columns = ExpressionList([col(f.name) for f in right.schema() if f.name not in right_drop_set])
             unioned_expressions = left_columns.union(right_columns, rename_dup="right.")
             self._left_columns = left_columns
-            self._right_columns = ExpressionList(unioned_expressions.exprs[len(self._left_columns.exprs) :])
+            self._right_columns = ExpressionList(list(unioned_expressions)[len(self._left_columns) :])
             self._output_projection = unioned_expressions
             output_schema = (
                 left.schema()
