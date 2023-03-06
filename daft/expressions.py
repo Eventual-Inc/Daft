@@ -44,7 +44,7 @@ from daft.runners.blocks import (
     PyListDataBlock,
     zip_blocks_as_py,
 )
-from daft.types import ExpressionType, PrimitiveExpressionType
+from daft.types import DatatypeInference, ExpressionType, PrimitiveExpressionType
 
 if TYPE_CHECKING:
     from daft.logical.schema import Schema
@@ -384,7 +384,7 @@ class Expression(TreeNode["Expression"]):
         Returns:
             AsPyExpression: A special Expression that records any method calls that a user runs on it, applying the method call to each item in the expression.
         """
-        return AsPyExpression(self, ExpressionType._infer_from_py_type(type_))
+        return AsPyExpression(self, DatatypeInference.infer_from_py_type(type_))
 
     def apply(self, func: Callable, return_dtype: ExpressionType | None = None, return_type: Any = None) -> Expression:
         """Apply a function on a given expression
@@ -418,13 +418,13 @@ class Expression(TreeNode["Expression"]):
                 )
                 expression_type = ExpressionType.python(object)
             else:
-                expression_type = ExpressionType._infer_from_py_type(inferred_type)
+                expression_type = DatatypeInference.infer_from_py_type(inferred_type)
         elif not isinstance(return_dtype, ExpressionType):
             warnings.warn(
                 "Type inference from a Python type will be deprecated in Daft v0.1. "
                 "Please construct a Daft datatype and pass that into `return_dtype` instead of a Python type."
             )
-            expression_type = ExpressionType._infer_from_py_type(return_dtype)
+            expression_type = DatatypeInference.infer_from_py_type(return_dtype)
         else:
             expression_type = return_dtype
 
@@ -600,7 +600,7 @@ class LiteralExpression(Expression):
         self._value = value
 
     def _resolve_type(self, schema: Schema) -> ExpressionType:
-        return ExpressionType._infer_type([self._value])
+        return DatatypeInference._infer_type_from_list([self._value])
 
     def name(self) -> str:
         return "lit"

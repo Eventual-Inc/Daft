@@ -13,9 +13,9 @@ if sys.version_info < (3, 8):
 else:
     from typing import get_origin
 
-from daft.execution.operators import ExpressionType
 from daft.expressions import Expression, UdfExpression
 from daft.runners.blocks import DataBlock
+from daft.types import DatatypeInference, ExpressionType
 
 _POLARS_AVAILABLE = True
 try:
@@ -349,7 +349,7 @@ def udf(
             "Type inference from a Python type will be deprecated in Daft v0.1. "
             "Please construct a Daft datatype and pass that into `return_dtype` instead of a Python type."
         )
-        return_dtype = ExpressionType._infer_from_py_type(return_dtype)
+        return_dtype = DatatypeInference.infer_from_py_type(return_dtype)
 
     def _udf(f: _PythonFunction) -> UDF:
         return UDF(

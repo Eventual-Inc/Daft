@@ -8,7 +8,7 @@ import pyarrow as pa
 from daft.daft import PyDataType
 
 if TYPE_CHECKING:
-    import numpy as np
+    pass
 
 
 class DataType:
@@ -116,24 +116,8 @@ class DataType:
             raise NotImplementedError(f"we cant convert arrow type: {arrow_type} to a daft type")
 
     @staticmethod
-    def _infer_from_py_type(t: type) -> DataType:
-        """Infers an ExpressionType from a Python type"""
-        raise NotImplementedError(
-            "[RUST-INT] implement type inference from a given Python type, e.g. str -> DataType.string() and np.ndarray -> DataType.python(np.ndarray)"
-        )
-
-    @staticmethod
-    def _infer_type(data: list | np.ndarray | pa.Array) -> DataType:
-        raise NotImplementedError(
-            "[RUST-INT] implement type inference from a given array which can be a `list`, `np.ndarray` or `pa.Array`"
-        )
-
-    @staticmethod
     def python(py_class: type) -> DataType:
         raise NotImplementedError("[RUST-INT] implement Python types for DataType")
-
-    def _is_nested(self) -> builtins.bool:
-        raise NotImplementedError("[RUST-INT] implement nested DataTypes")
 
     def _is_python_type(self) -> builtins.bool:
         raise NotImplementedError("[RUST-INT] implement Python types for DataType")

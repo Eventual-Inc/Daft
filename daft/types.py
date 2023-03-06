@@ -13,6 +13,53 @@ except ImportError:
 import pyarrow as pa
 
 
+class DatatypeInference:
+    @staticmethod
+    def infer_from_py_type(t: type) -> ExpressionType:
+        if t in _PY_TYPE_TO_EXPRESSION_TYPE:
+            return _PY_TYPE_TO_EXPRESSION_TYPE[t]
+        return ExpressionType.python(t)
+
+    @staticmethod
+    def infer_type(data: list | np.ndarray | pa.Array) -> ExpressionType:
+        """Infers an ExpressionType from the provided collection of data
+
+        Args:
+            data (list | np.ndarray): provided collection of data
+
+        Returns:
+            ExpressionType: Inferred ExpressionType
+        """
+        if isinstance(data, list):
+            return DatatypeInference._infer_type_from_list(data)
+        elif _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
+            # TODO: change this logic once we support nested types
+            if len(data.shape) > 1:
+                return DatatypeInference._infer_type_from_list(list(data))
+            elif data.dtype == np.object:
+                return DatatypeInference._infer_type_from_list(list(data))
+            else:
+                return ExpressionType.from_arrow_type(pa.from_numpy_dtype(data.dtype))
+        elif isinstance(data, pa.Array) or isinstance(data, pa.ChunkedArray):
+            return ExpressionType.from_arrow_type(data.type)
+        else:
+            raise ValueError(
+                f"Expected inferred data to be of type list, np.ndarray or pa.Array, but received {type(data)}"
+            )
+
+    @staticmethod
+    def _infer_type_from_list(data: list) -> ExpressionType:
+        found_types = {type(o) for o in data} - {type(None)}
+        if len(found_types) == 0:
+            return ExpressionType.null()
+        elif len(found_types) == 1:
+            t = found_types.pop()
+            return DatatypeInference.infer_from_py_type(t)
+        elif found_types == {int, float}:
+            return ExpressionType.float()
+        return ExpressionType.python_object()
+
+
 class ExpressionType:
     @staticmethod
     def unknown() -> ExpressionType:
@@ -70,49 +117,6 @@ class ExpressionType:
         if datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
             return ExpressionType.python_object()
         return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
-
-    @staticmethod
-    def from_numpy_type(datatype: np.dtype) -> ExpressionType:
-        return ExpressionType.from_arrow_type(pa.from_numpy_dtype(datatype))
-
-    @staticmethod
-    def _infer_type_from_list(data: list) -> ExpressionType:
-        found_types = {type(o) for o in data} - {type(None)}
-        if len(found_types) == 0:
-            return ExpressionType.null()
-        elif len(found_types) == 1:
-            t = found_types.pop()
-            return ExpressionType._infer_from_py_type(t)
-        elif found_types == {int, float}:
-            return ExpressionType.float()
-        return ExpressionType.python_object()
-
-    @staticmethod
-    def _infer_type(data: list | np.ndarray | pa.Array) -> ExpressionType:
-        """Infers an ExpressionType from the provided collection of data
-
-        Args:
-            data (list | np.ndarray): provided collection of data
-
-        Returns:
-            ExpressionType: Inferred ExpressionType
-        """
-        if isinstance(data, list):
-            return ExpressionType._infer_type_from_list(data)
-        elif _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
-            # TODO: change this logic once we support nested types
-            if len(data.shape) > 1:
-                return ExpressionType._infer_type_from_list(list(data))
-            elif data.dtype == np.object:
-                return ExpressionType._infer_type_from_list(list(data))
-            else:
-                return ExpressionType.from_numpy_type(data.dtype)
-        elif isinstance(data, pa.Array) or isinstance(data, pa.ChunkedArray):
-            return ExpressionType.from_arrow_type(data.type)
-        else:
-            raise ValueError(
-                f"Expected inferred data to be of type list, np.ndarray or pa.Array, but received {type(data)}"
-            )
 
     def to_arrow_type(self) -> pa.DataType:
         assert not self._is_python_type(), f"Cannot convert {self} to an Arrow type"
