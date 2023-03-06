@@ -200,11 +200,12 @@ class Expression(TreeNode["Expression"]):
         return other_expr._binary_op(operator, self)
 
     @abstractmethod
-    def resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
         raise NotImplementedError()
 
     def to_field(self, schema: Schema) -> Field:
-        return Field(name=self.name(), dtype=self.resolve_type(schema))
+        # NOTE: not needed in new expressions - this is only used internally in schema.py
+        return Field(name=self.name(), dtype=self._resolve_type(schema))
 
     def name(self) -> str:
         for child in self._children():
@@ -598,7 +599,7 @@ class LiteralExpression(Expression):
         super().__init__()
         self._value = value
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
         return ExpressionType._infer_type([self._value])
 
     def name(self) -> str:
@@ -621,8 +622,8 @@ class CallExpression(Expression):
         self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         self._operator = operator
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
-        args_resolved_types = tuple(arg.resolve_type(schema) for arg in self._args)
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
+        args_resolved_types = tuple(arg._resolve_type(schema) for arg in self._args)
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
         ret_type = self._operator.value.get_return_type(args_resolved_types_non_none)
         if ret_type == ExpressionType.unknown():
@@ -682,7 +683,7 @@ class UdfExpression(Expression):
     def _kwargs(self) -> dict[str, Expression]:
         return {kw: self._children()[i] for kw, i in self._kwargs_ids.items()}
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
         return self._func_ret_type
 
     def _display_str(self) -> str:
@@ -716,7 +717,7 @@ class ColumnExpression(Expression):
             raise TypeError(f"Expected name to be type str, is {type(name)}")
         self._name = name
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
         return schema[self.name()].dtype
 
     def _display_str(self) -> str:
@@ -748,8 +749,8 @@ class AliasExpression(Expression):
         self._register_child(expr)
         self._name = name
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
-        return self._expr.resolve_type(schema)
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
+        return self._expr._resolve_type(schema)
 
     def _input_mapping(self) -> str | None:
         return self._children()[0]._input_mapping()
@@ -837,7 +838,7 @@ class AsPyExpression(Expression):
     def _expr(self) -> Expression:
         return self._children()[0]
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
         return self._type
 
     def _is_eq_local(self, other: Expression) -> bool:

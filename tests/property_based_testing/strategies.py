@@ -57,7 +57,7 @@ _default_strategies = {
     ExpressionType.logical(): _strat_boolean,
     ExpressionType.bytes(): _strat_byte,
     ExpressionType.date(): _strat_date,
-    ExpressionType.python(UserObject): _strat_user_object,
+    ExpressionType.from_py_type(UserObject): _strat_user_object,
     ExpressionType.null(): none(),
 }
 
@@ -81,7 +81,7 @@ all_dtypes = sampled_from(
         ExpressionType.logical(),
         ExpressionType.bytes(),
         ExpressionType.date(),
-        ExpressionType.python(UserObject),
+        ExpressionType.from_py_type(UserObject),
     ]
 )
 

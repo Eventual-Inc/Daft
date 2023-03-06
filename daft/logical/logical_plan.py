@@ -483,10 +483,10 @@ class Sort(UnaryNode):
         self._register_child(input)
         self._sort_by = sort_by
 
-        for e in self._sort_by:
-            dtype = e.resolve_type(input.schema())
-            if dtype in {ExpressionType.null(), ExpressionType.bytes(), ExpressionType.logical()}:
-                raise ExpressionTypeError(f"Cannot sort on expression {e} with type: {dtype}")
+        resolved_sort_by_schema = input.schema().resolve_expressions(self._sort_by)
+        for f, sort_by_expr in zip(resolved_sort_by_schema, self._sort_by):
+            if f.dtype in {ExpressionType.null(), ExpressionType.bytes(), ExpressionType.logical()}:
+                raise ExpressionTypeError(f"Cannot sort on expression {sort_by_expr} with type: {f.dtype}")
 
         if isinstance(descending, bool):
             self._descending = [descending for _ in self._sort_by]
@@ -949,13 +949,11 @@ class Join(BinaryNode):
         self._left_on = left_on
         self._right_on = right_on
 
-        for e in self._left_on:
-            if e.resolve_type(left.schema()) == ExpressionType.null():
-                raise ExpressionTypeError(f"Cannot join on null type expression: {e}")
-
-        for e in self._right_on:
-            if e.resolve_type(right.schema()) == ExpressionType.null():
-                raise ExpressionTypeError(f"Cannot join on null type expression: {e}")
+        for schema, exprs in ((left.schema(), self._left_on), (right.schema(), self._right_on)):
+            resolved_schema = schema.resolve_expressions(exprs)
+            for f, expr in zip(resolved_schema, exprs):
+                if f.dtype == ExpressionType.null():
+                    raise ExpressionTypeError(f"Cannot join on null type expression: {expr}")
 
         self._how = how
         output_schema: Schema
