@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import builtins
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
 from daft.daft import PyDataType
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 class DataType:
@@ -110,6 +114,12 @@ class DataType:
             return DataType.null()
         else:
             raise NotImplementedError(f"we cant convert arrow type: {arrow_type} to a daft type")
+
+    @staticmethod
+    def _infer_type(data: list | np.ndarray | pa.Array) -> DataType:
+        raise NotImplementedError(
+            "[RUST-INT] implement type inference from a given array which can be a `list`, `np.ndarray` or `pa.Array`"
+        )
 
     @staticmethod
     def python(py_class: type) -> DataType:

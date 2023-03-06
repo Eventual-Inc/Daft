@@ -358,7 +358,7 @@ class FileWrite(UnaryNode):
         for field in input.schema():
             assert not field.dtype._is_python_type(), f"we can currently only write out primitive types, got: {field}"
 
-        schema = Schema._from_field_name_and_types([("file_path", ExpressionType.from_py_type(str))])
+        schema = Schema._from_field_name_and_types([("file_path", ExpressionType.string())])
 
         super().__init__(schema, input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)

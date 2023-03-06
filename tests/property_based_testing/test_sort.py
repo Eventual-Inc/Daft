@@ -176,7 +176,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         if col_daft_type == ExpressionType.logical():
             self.df = self.df.where(self.df[col_name_to_filter])
         # Python object columns return another PY column after equality, so we have to cast to bool
-        elif col_daft_type == ExpressionType.from_py_type(UserObject):
+        elif col_daft_type == ExpressionType.python(UserObject):
             filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
             self.df = self.df.where((self.df[col_name_to_filter] == filter_value).cast(bool))
         # Reject if filtering on a null column - not a meaningful operation
@@ -198,7 +198,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
             ExpressionType.integer(): lambda e, other: e + other,
             ExpressionType.float(): lambda e, other: e + other,
             ExpressionType.logical(): lambda e, other: e & other,
-            ExpressionType.from_py_type(UserObject): lambda e, other: e.apply(
+            ExpressionType.python(UserObject): lambda e, other: e.apply(
                 lambda x: x.add(other) if x is not None else None, return_dtype=UserObject
             ),
             # No meaningful binary operations supported for these yet

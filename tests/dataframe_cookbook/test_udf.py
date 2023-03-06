@@ -48,7 +48,7 @@ def test_single_return_udf(daft_df, service_requests_csv_pd_df, repartition_npar
     assert_df_column_type(
         daft_df._result,
         "unique_key_multiply_2",
-        int,
+        ExpressionType.integer(),
     )
 
 
@@ -83,7 +83,7 @@ def test_dependency_injection_udf(daft_df, service_requests_csv_pd_df, repartiti
     assert_df_column_type(
         daft_df._result,
         "model_results",
-        int,
+        ExpressionType.integer(),
     )
 
 
@@ -102,7 +102,7 @@ def test_apply_type_inference(daft_df):
     assert_df_column_type(
         daft_df._result,
         "string_key",
-        str,
+        ExpressionType.string(),
     )
 
 
@@ -118,7 +118,7 @@ def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_column_type(
         daft_df._result,
         "string_key",
-        object,  # no return_dtype specified for .apply, column has PY[object] type
+        ExpressionType.python(object),  # no return_dtype specified for .apply, column has PY[object] type
     )
 
     # Running .str expressions will fail on PyObj columns
@@ -145,10 +145,10 @@ def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_column_type(
         daft_df_pass._result,
         "string_key",
-        str,
+        ExpressionType.string(),
     )
     assert_df_column_type(
         daft_df_pass._result,
         "string_key_starts_with_1",
-        bool,
+        ExpressionType.logical(),
     )

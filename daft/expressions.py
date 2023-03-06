@@ -15,7 +15,6 @@ from typing import (
     Tuple,
     TypeVar,
     cast,
-    get_type_hints,
     overload,
 )
 
@@ -366,7 +365,7 @@ class Expression(TreeNode["Expression"]):
         """
         return AliasExpression(self, name)
 
-    def as_py(self, type_: type) -> AsPyExpression:
+    def as_py(self, type_: ExpressionType) -> AsPyExpression:
         """Treats every value on the given expression as an object of the specified type. Users can then call
         methods on this object, which will be translated into a method call on every value on the Expression.
 
@@ -383,9 +382,9 @@ class Expression(TreeNode["Expression"]):
         Returns:
             AsPyExpression: A special Expression that records any method calls that a user runs on it, applying the method call to each item in the expression.
         """
-        return AsPyExpression(self, ExpressionType.from_py_type(type_))
+        return AsPyExpression(self, type_)
 
-    def apply(self, func: Callable, return_dtype: type | None = None, return_type: Any = None) -> Expression:
+    def apply(self, func: Callable, return_dtype: ExpressionType | None = None, return_type: Any = None) -> Expression:
         """Apply a function on a given expression
 
         Example:
@@ -396,8 +395,8 @@ class Expression(TreeNode["Expression"]):
 
         Args:
             func (Callable): Function to run per value of the expression
-            return_dtype (Optional[Type], optional): Return type of the function that was ran. This defaults to None and Daft will infer the return_dtype
-                from the function's type annotations if available.
+            return_dtype (Optional[Type], optional): Return type of the function that was ran. This defaults to None which assumes the return
+                type to be an arbitrary Python object.
 
         Returns:
             Expression: New expression after having run the function on the expression
@@ -405,17 +404,13 @@ class Expression(TreeNode["Expression"]):
         if return_type is not None:
             raise ValueError(f"The `return_type` keyword argument is deprecated, please use `return_dtype` instead.")
 
-        inferred_type = get_type_hints(func).get("return", None)
-        return_dtype = inferred_type if inferred_type is not None else return_dtype
         if return_dtype is None:
             warnings.warn(
                 f"Supplied function {func} was not annotated with a return type and no `return_dtype` keyword argument specified in `.apply`."
                 "It is highly recommended to specify a return_dtype for Daft to perform optimizations and for access to vectorized expression operators."
             )
 
-        expression_type = (
-            ExpressionType.from_py_type(return_dtype) if return_dtype is not None else ExpressionType.python_object()
-        )
+        expression_type = return_dtype if return_dtype is not None else ExpressionType.python(object)
 
         def apply_func(f, data):
             if data.is_scalar():
@@ -589,7 +584,7 @@ class LiteralExpression(Expression):
         self._value = value
 
     def resolve_type(self, schema: Schema) -> ExpressionType:
-        return ExpressionType.from_py_type(type(self._value))
+        return ExpressionType._infer_type([self._value])
 
     def name(self) -> str:
         return "lit"

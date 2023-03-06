@@ -49,12 +49,12 @@ logger = logging.getLogger(__name__)
 
 
 class UDF:
-    def __init__(self, f: _PythonFunction, input_columns: dict[str, type], return_dtype: type):
+    def __init__(self, f: _PythonFunction, input_columns: dict[str, type], return_dtype: ExpressionType):
         self._f = f
         self._input_types = {
             arg_name: UdfInputType.from_type_hint(type_hint) for arg_name, type_hint in input_columns.items()
         }
-        self._func_ret_type = ExpressionType.from_py_type(return_dtype)
+        self._func_ret_type = return_dtype
 
         # Get function argument names, excluding `self` if it is a class method
         call_method = f.__call__ if isinstance(f, type) else f
@@ -206,7 +206,7 @@ class UdfInputType(enum.Enum):
 
 def udf(
     *,
-    return_dtype: type,
+    return_dtype: ExpressionType,
     input_columns: dict[str, type],
     **kwargs,
 ) -> Callable:
