@@ -5,6 +5,7 @@ import functools
 import inspect
 import logging
 import sys
+import warnings
 from typing import Any, Callable, List, Sequence, Union
 
 if sys.version_info < (3, 8):
@@ -342,6 +343,13 @@ def udf(
         raise ValueError(f"The `return_type` keyword argument has been deprecated and renamed to return_dtype.")
     if "type_hints" in kwargs:
         raise ValueError(f"The `type_hints` keyword argument has been deprecated and renamed to input_columns.")
+
+    if not isinstance(return_dtype, ExpressionType):
+        warnings.warn(
+            "Type inference from a Python type will be deprecated in Daft v0.1. "
+            "Please construct a Daft datatype and pass that into `return_dtype` instead of a Python type."
+        )
+        return_dtype = ExpressionType._infer_from_py_type(return_dtype)
 
     def _udf(f: _PythonFunction) -> UDF:
         return UDF(

@@ -51,6 +51,13 @@ class ExpressionType:
         return _TYPE_REGISTRY["null"]
 
     @staticmethod
+    def _infer_from_py_type(t: type) -> ExpressionType:
+        """Infers an ExpressionType from a Python type"""
+        if t in _PY_TYPE_TO_EXPRESSION_TYPE:
+            return _PY_TYPE_TO_EXPRESSION_TYPE[t]
+        return ExpressionType.python(t)
+
+    @staticmethod
     def python(obj_type: type) -> ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
         if unable to find the appropriate type. ExpressionTypes.Python is never returned.
@@ -78,9 +85,7 @@ class ExpressionType:
             return ExpressionType.null()
         elif len(found_types) == 1:
             t = found_types.pop()
-            if t in _PY_TYPE_TO_EXPRESSION_TYPE:
-                return _PY_TYPE_TO_EXPRESSION_TYPE[t]
-            return ExpressionType.python(t)
+            return ExpressionType._infer_from_py_type(t)
         elif found_types == {int, float}:
             return ExpressionType.float()
         return ExpressionType.python_object()
