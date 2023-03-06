@@ -51,20 +51,25 @@ class ExpressionType:
         return _TYPE_REGISTRY["null"]
 
     @staticmethod
+    def _infer_from_py_type(t: type) -> ExpressionType:
+        """Infers an ExpressionType from a Python type"""
+        if t in _PY_TYPE_TO_EXPRESSION_TYPE:
+            return _PY_TYPE_TO_EXPRESSION_TYPE[t]
+        return ExpressionType.python(t)
+
+    @staticmethod
     def python(obj_type: type) -> ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
         if unable to find the appropriate type. ExpressionTypes.Python is never returned.
         """
-        if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
-            return PythonExpressionType(obj_type)
-        return _PY_TYPE_TO_EXPRESSION_TYPE[obj_type]
+        return PythonExpressionType(obj_type)
 
     @staticmethod
     def from_arrow_type(datatype: pa.DataType) -> ExpressionType:
         if pa.types.is_list(datatype):
-            return PythonExpressionType(list)
+            return ExpressionType.python(list)
         elif pa.types.is_struct(datatype):
-            return PythonExpressionType(dict)
+            return ExpressionType.python(dict)
         if datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
             return ExpressionType.python_object()
         return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
@@ -79,13 +84,14 @@ class ExpressionType:
         if len(found_types) == 0:
             return ExpressionType.null()
         elif len(found_types) == 1:
-            return ExpressionType.python(found_types.pop())
+            t = found_types.pop()
+            return ExpressionType._infer_from_py_type(t)
         elif found_types == {int, float}:
             return ExpressionType.float()
         return ExpressionType.python_object()
 
     @staticmethod
-    def infer_type(data: list | np.ndarray | pa.Array) -> ExpressionType:
+    def _infer_type(data: list | np.ndarray | pa.Array) -> ExpressionType:
         """Infers an ExpressionType from the provided collection of data
 
         Args:
@@ -161,7 +167,7 @@ _TYPE_REGISTRY: dict[str, ExpressionType] = {
     "date": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.DATE),
     "bytes": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.BYTES),
     "null": PrimitiveExpressionType(PrimitiveExpressionType.TypeEnum.NULL),
-    "pyobj": PythonExpressionType(object),
+    "pyobj": ExpressionType.python(object),
 }
 
 

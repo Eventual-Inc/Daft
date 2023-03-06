@@ -19,7 +19,7 @@ from tests.conftest import assert_df_equals
 def test_python_dict(repartition_nparts):
     data = {"id": [i for i in range(10)], "dicts": [{"foo": i} for i in range(10)]}
     daft_df = DataFrame.from_pydict(data).repartition(repartition_nparts)
-    assert daft_df.schema()["id"].dtype == ExpressionType.python(int)
+    assert daft_df.schema()["id"].dtype == ExpressionType.integer()
     assert daft_df.schema()["dicts"].dtype == ExpressionType.python(dict)
     pd_df = pd.DataFrame.from_dict(data)
     daft_pd_df = daft_df.to_pandas()
@@ -94,7 +94,7 @@ def test_python_chained_expression_calls(repartition_nparts):
 def test_load_pydict_with_obj(repartition_nparts):
     data = {"id": [i for i in range(10)], "features": [np.ones(i) for i in range(10)]}
     daft_df = DataFrame.from_pydict(data).repartition(repartition_nparts)
-    assert daft_df.schema()["id"].dtype == ExpressionType.python(int)
+    assert daft_df.schema()["id"].dtype == ExpressionType.integer()
     assert daft_df.schema()["features"].dtype == ExpressionType.python(np.ndarray)
     pd_df = pd.DataFrame.from_dict(data)
     daft_pd_df = daft_df.to_pandas()

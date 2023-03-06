@@ -8,7 +8,7 @@ import pytest
 from daft.dataframe import DataFrame
 from daft.expressions import col
 from daft.filesystem import get_filesystem_from_path
-from daft.types import PythonExpressionType
+from daft.types import ExpressionType
 from tests.assets.assets import (
     IRIS_CSV,
     SERVICE_REQUESTS_PARQUET,
@@ -74,8 +74,8 @@ def test_load_json(tmp_path: pathlib.Path):
     pd_df.to_json(json_file, lines=True, orient="records")
     daft_df = DataFrame.read_json(str(json_file))
 
-    assert daft_df.schema()["dicts"].dtype == PythonExpressionType(dict)
-    assert daft_df.schema()["lists"].dtype == PythonExpressionType(list)
+    assert daft_df.schema()["dicts"].dtype == ExpressionType.python(dict)
+    assert daft_df.schema()["lists"].dtype == ExpressionType.python(list)
 
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, assert_ordering=True)
