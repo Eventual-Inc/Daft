@@ -50,7 +50,7 @@ def _stringify_vpartition(
     data_stringified: dict[str, Iterable[str]] = {}
     for colname in daft_schema.column_names():
         field = daft_schema[colname]
-        if ExpressionType.is_py(field.dtype):
+        if field.dtype._is_python_type():
             data_stringified[colname] = [
                 custom_stringify_object(val, max_col_width, max_lines) for val in data[colname]
             ]

@@ -1087,7 +1087,7 @@ _PY_TO_PRIMITIVE_CAST_FUNCS: dict[ExpressionType, Callable] = {
 
 
 def pylist_cast(to: ExpressionType, pylist_block: PyListDataBlock) -> DataBlock:
-    if ExpressionType.is_primitive(to):
+    if not to._is_python_type():
         assert isinstance(to, PrimitiveExpressionType)
         arrow_type = to.to_arrow_type()
 

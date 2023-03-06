@@ -4,7 +4,6 @@ from abc import abstractmethod
 
 from daft.logical.schema import ExpressionList, Schema
 from daft.runners.partitioning import vPartition
-from daft.types import ExpressionType
 
 
 class MapPartitionOp:
@@ -38,7 +37,7 @@ class ExplodeOp(MapPartitionOp):
         for c in self.explode_columns:
             resolved_type = c.resolve_type(self.input_schema)
             # TODO(jay): Will have to change this after introducing nested types
-            if ExpressionType.is_primitive(resolved_type):
+            if not resolved_type._is_python_type():
                 raise ValueError(
                     f"Expected expression {c} to resolve to an explodable type such as PY, but received: {resolved_type}"
                 )
