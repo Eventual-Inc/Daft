@@ -383,7 +383,7 @@ class Expression(TreeNode["Expression"]):
         Returns:
             AsPyExpression: A special Expression that records any method calls that a user runs on it, applying the method call to each item in the expression.
         """
-        return AsPyExpression(self, ExpressionType.python(type_))
+        return AsPyExpression(self, ExpressionType.from_py_type(type_))
 
     def apply(self, func: Callable, return_dtype: type | None = None, return_type: Any = None) -> Expression:
         """Apply a function on a given expression
@@ -414,7 +414,7 @@ class Expression(TreeNode["Expression"]):
             )
 
         expression_type = (
-            ExpressionType.python(return_dtype) if return_dtype is not None else ExpressionType.python_object()
+            ExpressionType.from_py_type(return_dtype) if return_dtype is not None else ExpressionType.python_object()
         )
 
         def apply_func(f, data):
@@ -589,7 +589,7 @@ class LiteralExpression(Expression):
         self._value = value
 
     def resolve_type(self, schema: Schema) -> ExpressionType:
-        return ExpressionType.python(type(self._value))
+        return ExpressionType.from_py_type(type(self._value))
 
     def name(self) -> str:
         return "lit"

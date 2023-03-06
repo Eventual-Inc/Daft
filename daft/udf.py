@@ -54,7 +54,7 @@ class UDF:
         self._input_types = {
             arg_name: UdfInputType.from_type_hint(type_hint) for arg_name, type_hint in input_columns.items()
         }
-        self._func_ret_type = ExpressionType.python(return_dtype)
+        self._func_ret_type = ExpressionType.from_py_type(return_dtype)
 
         # Get function argument names, excluding `self` if it is a class method
         call_method = f.__call__ if isinstance(f, type) else f

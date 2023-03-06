@@ -51,13 +51,20 @@ class ExpressionType:
         return _TYPE_REGISTRY["null"]
 
     @staticmethod
-    def python(obj_type: type) -> ExpressionType:
+    def from_py_type(obj_type: type) -> ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
         if unable to find the appropriate type. ExpressionTypes.Python is never returned.
         """
         if obj_type not in _PY_TYPE_TO_EXPRESSION_TYPE:
-            return PythonExpressionType(obj_type)
+            return ExpressionType.python(obj_type)
         return _PY_TYPE_TO_EXPRESSION_TYPE[obj_type]
+
+    @staticmethod
+    def python(obj_type: type) -> ExpressionType:
+        """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
+        if unable to find the appropriate type. ExpressionTypes.Python is never returned.
+        """
+        return PythonExpressionType(obj_type)
 
     @staticmethod
     def from_arrow_type(datatype: pa.DataType) -> ExpressionType:
@@ -79,7 +86,7 @@ class ExpressionType:
         if len(found_types) == 0:
             return ExpressionType.null()
         elif len(found_types) == 1:
-            return ExpressionType.python(found_types.pop())
+            return ExpressionType.from_py_type(found_types.pop())
         elif found_types == {int, float}:
             return ExpressionType.float()
         return ExpressionType.python_object()

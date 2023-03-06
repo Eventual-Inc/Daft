@@ -37,7 +37,7 @@ def assert_df_column_type(
     type_: type,
 ):
     """Asserts that all tiles for a given column is of the implementation, given a type"""
-    et = ExpressionType.python(type_)
+    et = ExpressionType.from_py_type(type_)
     vpart = partition_set._get_merged_vpartition()
     blocks = [tile.block for tile in vpart.columns.values() if tile.column_name == colname]
     assert len(blocks) == 1, f"cannot find block with provided colname {colname}"
