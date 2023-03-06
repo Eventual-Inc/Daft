@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Generic, TypeVar
 
+from daft import table_io
 from daft.datasources import (
     CSVSourceInfo,
     JSONSourceInfo,
@@ -13,11 +14,11 @@ from daft.datasources import (
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     PartitionSet,
-    vPartition,
     vPartitionParseCSVOptions,
     vPartitionReadOptions,
     vPartitionSchemaInferenceOptions,
 )
+from daft.table import Table
 from daft.types import ExpressionType
 
 PartitionT = TypeVar("PartitionT")
@@ -78,10 +79,10 @@ def sample_schema(
 ) -> Schema:
     """Helper method that samples a schema from the specified source"""
 
-    sampled_partition: vPartition
+    sampled_partition: Table
     if source_info.scan_type() == StorageType.CSV:
         assert isinstance(source_info, CSVSourceInfo)
-        sampled_partition = vPartition.from_csv(
+        sampled_partition = table_io.read_csv(
             path=filepath,
             csv_options=vPartitionParseCSVOptions(
                 delimiter=source_info.delimiter,
@@ -97,23 +98,21 @@ def sample_schema(
         )
     elif source_info.scan_type() == StorageType.JSON:
         assert isinstance(source_info, JSONSourceInfo)
-        sampled_partition = vPartition.from_json(
+        sampled_partition = table_io.read_json(
             path=filepath,
             read_options=vPartitionReadOptions(
                 num_rows=100,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns
             ),
-            schema_options=schema_inference_options,
         )
     elif source_info.scan_type() == StorageType.PARQUET:
         assert isinstance(source_info, ParquetSourceInfo)
-        sampled_partition = vPartition.from_parquet(
+        sampled_partition = table_io.read_parquet(
             path=filepath,
             read_options=vPartitionReadOptions(
                 num_rows=100,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns
             ),
-            schema_options=schema_inference_options,
         )
     else:
         raise NotImplementedError(f"Schema inference for {source_info} not implemented")

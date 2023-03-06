@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from daft.runners.partitioning import vPartition
+from daft.table import Table
 
 
 @dataclass(frozen=True)
 class DataFramePreview:
     """A class containing all the metadata/data required to preview a dataframe."""
 
-    preview_partition: vPartition | None
+    preview_partition: Table | None
     dataframe_num_rows: int | None
