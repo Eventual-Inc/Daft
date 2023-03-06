@@ -625,7 +625,7 @@ class DataFrame:
             schema = self._plan.schema()
             if item < -len(schema) or item >= len(schema):
                 raise ValueError(f"{item} out of bounds for {schema}")
-            result = schema.to_column_expressions().exprs[item]
+            result = schema.to_column_expressions()[item]
             assert result is not None
             return result
         elif isinstance(item, str):
@@ -646,7 +646,7 @@ class DataFrame:
                 elif isinstance(it, int):
                     if it < -len(schema) or it >= len(schema):
                         raise ValueError(f"{it} out of bounds for {schema}")
-                    result = col_exprs.exprs[it]
+                    result = col_exprs[it]
                     assert result is not None
                     columns.append(result)
                 else:
@@ -655,7 +655,7 @@ class DataFrame:
         elif isinstance(item, slice):
             schema = self._plan.schema()
             columns_exprs: ExpressionList = schema.to_column_expressions()
-            selected_columns = columns_exprs.exprs[item]
+            selected_columns = columns_exprs[item]
             return self.select(*selected_columns)
         else:
             raise ValueError(f"unknown indexing type: {type(item)}")
