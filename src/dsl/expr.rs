@@ -26,7 +26,7 @@ pub enum Expr {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AggExpr {
-    Mean(ExprRef),
+    Sum(ExprRef),
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
