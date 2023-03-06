@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter, Result};
 use std::sync::Arc;
 
 use crate::datatypes::{BooleanType, DataType, Field};
-use crate::dsl::Expr;
+use crate::dsl::{AggExpr, Expr};
 use crate::error::{DaftError, DaftResult};
 use crate::schema::Schema;
 use crate::series::Series;
@@ -145,11 +145,18 @@ impl Table {
         Ok(self.columns.get(idx).unwrap().clone())
     }
 
+    fn eval_agg_expression(&self, agg_expr: &AggExpr) -> DaftResult<Series> {
+        use crate::dsl::AggExpr::*;
+        match agg_expr {
+            Sum(expr) => self.eval_expression(expr),
+        }
+    }
+
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         use crate::dsl::Expr::*;
         match expr {
             Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
-            Agg(_agg_expr) => todo!(),
+            Agg(agg_expr) => self.eval_agg_expression(agg_expr),
             Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             Column(name) => self.get_column(name),
             BinaryOp { op, left, right } => {
@@ -265,6 +272,7 @@ mod test {
     use crate::array::BaseArray;
     use crate::datatypes::{DataType, Int64Array};
     use crate::dsl::col;
+    use crate::dsl::{AggExpr, Expr};
     use crate::schema::Schema;
     use crate::table::Table;
     use crate::{datatypes::Float64Array, error::DaftResult};
@@ -285,6 +293,19 @@ mod test {
         let e2 = (col("a") + col("b")).cast(&DataType::Int64);
         let result = table.eval_expression(&e2)?;
         assert_eq!(*result.data_type(), DataType::Int64);
+        assert_eq!(result.len(), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sum_expression() -> DaftResult<()> {
+        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice())).into_series();
+        let schema = Schema::new(vec![a.field().clone().rename("a")]);
+        let table = Table::new(schema, vec![a])?;
+        let e1 = Expr::Agg(AggExpr::Sum(col("a").into()));
+        let result = table.eval_expression(&e1)?;
+        assert_eq!(*result.data_type(), DataType::Float64);
         assert_eq!(result.len(), 3);
 
         Ok(())
