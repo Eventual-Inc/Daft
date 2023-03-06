@@ -19,13 +19,8 @@ from tests.conftest import assert_df_equals
 def test_python_dict(repartition_nparts):
     data = {"id": [i for i in range(10)], "dicts": [{"foo": i} for i in range(10)]}
     daft_df = DataFrame.from_pydict(data).repartition(repartition_nparts)
-<<<<<<< HEAD
     assert daft_df.schema()["id"].dtype == ExpressionType.integer()
     assert daft_df.schema()["dicts"].dtype == ExpressionType.python(dict)
-=======
-    assert daft_df.schema()["id"].dtype == ExpressionType.from_py_type(int)
-    assert daft_df.schema()["dicts"].dtype == ExpressionType.from_py_type(dict)
->>>>>>> dfe04d8 (Refactor from_py_type)
     pd_df = pd.DataFrame.from_dict(data)
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="id")

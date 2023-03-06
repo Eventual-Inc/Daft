@@ -31,7 +31,7 @@ def test_vpartition_eval_expression_list() -> None:
         list_of_expr.append(expr)
     expr_list = ExpressionList(list_of_expr)
     tiles = {}
-    for c in expr.required_columns():
+    for c in expr._required_columns():
         block = DataBlock.make_block(np.ones(10))
         tiles[c] = PyListTile(column_name=c, block=block)
     part = vPartition(columns=tiles)

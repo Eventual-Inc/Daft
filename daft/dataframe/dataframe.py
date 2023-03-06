@@ -1203,8 +1203,9 @@ class GroupedDataFrame:
     group_by: ExpressionList
 
     def __post_init__(self):
-        for e in self.group_by:
-            if e.resolve_type(self.df._plan.schema()) == ExpressionType.null():
+        resolved_groupby_schema = self.df._plan.schema().resolve_expressions(self.group_by)
+        for field, e in zip(resolved_groupby_schema, self.group_by):
+            if field.dtype == ExpressionType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
