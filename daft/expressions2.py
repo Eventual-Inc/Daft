@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, overload
 
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
@@ -181,26 +181,39 @@ class ExpressionsProjection(Iterable[Expression]):
                 raise ValueError("Expressions must all have unique names")
             seen.add(e.name())
 
-        self.exprs = {e.name(): e for e in exprs}
+        self._output_name_to_exprs = {e.name(): e for e in exprs}
 
     def __len__(self) -> int:
-        return len(self.exprs)
+        return len(self._output_name_to_exprs)
 
     def __iter__(self) -> Iterator[Expression]:
-        return iter(self.exprs.values())
+        return iter(self._output_name_to_exprs.values())
+
+    @overload
+    def __getitem__(self, idx: slice) -> list[Expression]:
+        ...
+
+    @overload
+    def __getitem__(self, idx: int) -> Expression:
+        ...
+
+    def __getitem__(self, idx: int | slice) -> Expression | list[Expression]:
+        # Relies on the fact that Python dictionaries are ordered
+        return list(self._output_name_to_exprs.values())[idx]
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ExpressionsProjection):
             return False
 
-        return len(self.exprs) == len(other.exprs) and all(
-            (s.name() == o.name()) and (s._is_eq(o)) for s, o in zip(self.exprs.values(), other.exprs.values())
+        return len(self._output_name_to_exprs) == len(other._output_name_to_exprs) and all(
+            (s.name() == o.name()) and (s._is_eq(o))
+            for s, o in zip(self._output_name_to_exprs.values(), other._output_name_to_exprs.values())
         )
 
     def required_columns(self) -> set[str]:
         """Column names required to run this ExpressionsProjection"""
         result: set[str] = set()
-        for e in self.exprs.values():
+        for e in self._output_name_to_exprs.values():
             result |= e._required_columns()
         return result
 
@@ -245,6 +258,6 @@ class ExpressionsProjection(Iterable[Expression]):
         return ExpressionsProjection([col(e.name()) for e in self])
 
     def get_expression_by_name(self, name: str) -> Expression:
-        if name not in self.exprs:
+        if name not in self._output_name_to_exprs:
             raise ValueError(f"{name} not found in ExpressionsProjection")
-        return self.exprs[name]
+        return self._output_name_to_exprs[name]
