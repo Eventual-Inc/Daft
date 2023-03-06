@@ -49,7 +49,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
         can_push_down = []
         can_not_push_down = []
         for pred in filter_predicate:
-            required_names = {e for e in pred.required_columns()}
+            required_names = {e for e in pred._required_columns()}
             if all(name in child_input_mapping for name in required_names):
                 pred = copy.deepcopy(pred)
                 for name in required_names:
@@ -97,7 +97,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
         left_push_down = []
         right_push_down = []
         for pred in filter_predicate:
-            required_names = pred.required_columns()
+            required_names = pred._required_columns()
             if all(name in left_input_mapping for name in required_names):
                 pred = copy.deepcopy(pred)
                 for name in required_names:
@@ -337,7 +337,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
         Projection-TabularFilesScan-* -> <TabularFilesScan with selected columns>-*
         Projection-TabularFilesScan-* -> Projection-<TabularFilesScan with selected columns>-*
         """
-        required_columns = parent._projection.required_columns()
+        required_columns = parent._projection._required_columns()
         scan_columns = child.schema()
         if required_columns == scan_columns.to_name_set():
             return None
@@ -366,7 +366,7 @@ class FoldProjections(Rule[LogicalPlan]):
 
         Projection-Projection-* -> <Projection with combined expressions and resource requests>-*
         """
-        required_columns = parent._projection.required_columns()
+        required_columns = parent._projection._required_columns()
 
         parent_projection = parent._projection
         child_projection = child._projection
@@ -386,7 +386,7 @@ class FoldProjections(Rule[LogicalPlan]):
                     e = child_projection.get_expression_by_name(name)
                 else:
                     e = copy.deepcopy(e)
-                    to_replace = e.required_columns()
+                    to_replace = e._required_columns()
                     for name in to_replace:
                         e = e._replace_column_with_expression(col(name), child_projection.get_expression_by_name(name))
                 new_exprs.append(e)

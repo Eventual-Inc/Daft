@@ -205,7 +205,7 @@ class vPartition:
 
         assert expr_name is not None
 
-        required_cols = expr.required_columns()
+        required_cols = expr._required_columns()
         required_blocks = {}
         for name in required_cols:
             block = self.columns[name].block

@@ -222,10 +222,10 @@ class Expression(TreeNode["Expression"]):
             raise ValueError("we can only convert expressions to ColumnExpressions if they have a name")
         return ColumnExpression(name)
 
-    def required_columns(self) -> set[str]:
+    def _required_columns(self) -> set[str]:
         to_rtn: set[str] = set()
         for child in self._children():
-            to_rtn |= child.required_columns()
+            to_rtn |= child._required_columns()
         return to_rtn
 
     def _replace_column_with_expression(self, col_expr: ColumnExpression, new_expr: Expression) -> Expression:
@@ -450,7 +450,7 @@ class Expression(TreeNode["Expression"]):
     def _is_eq_local(self, other: Expression) -> bool:
         raise NotImplementedError()
 
-    def is_eq(self, other: Expression) -> bool:
+    def _is_eq(self, other: Expression) -> bool:
         if self is other:
             return True
 
@@ -461,7 +461,7 @@ class Expression(TreeNode["Expression"]):
             return False
 
         for s, o in zip(self._children(), other._children()):
-            if not s.is_eq(o):
+            if not s._is_eq(o):
                 return False
 
         return True
@@ -733,7 +733,7 @@ class ColumnExpression(Expression):
         assert self._name is not None
         return self._name
 
-    def required_columns(self) -> set[str]:
+    def _required_columns(self) -> set[str]:
         return {self.name()}
 
     def _is_eq_local(self, other: Expression) -> bool:
@@ -1043,7 +1043,7 @@ class ExpressionList(Iterable[Expression]):
             return False
 
         return len(self._exprs) == len(other._exprs) and all(
-            (s.name() == o.name()) and (s.is_eq(o)) for s, o in zip(self._exprs, other._exprs)
+            (s.name() == o.name()) and (s._is_eq(o)) for s, o in zip(self._exprs, other._exprs)
         )
 
     def __iter__(self) -> Iterator[Expression]:
@@ -1060,10 +1060,10 @@ class ExpressionList(Iterable[Expression]):
     def __getitem__(self, idx: int | slice) -> Expression | list[Expression]:
         return self._exprs[idx]
 
-    def required_columns(self) -> set[str]:
+    def _required_columns(self) -> set[str]:
         result = set()
         for e in self._exprs:
-            result |= e.required_columns()
+            result |= e._required_columns()
         return result
 
     def union(self, other: ExpressionList, rename_dup: str | None = None) -> ExpressionList:

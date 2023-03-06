@@ -13,7 +13,7 @@ from daft.runners.partitioning import PyListTile, vPartition
 def test_vpartition_eval_expression() -> None:
     expr = (col("a") + col("b")).alias("c")
     tiles = {}
-    for c in expr.required_columns():
+    for c in expr._required_columns():
         block = DataBlock.make_block(np.ones(10))
         tiles[c] = PyListTile(column_name=c, block=block)
     part = vPartition(columns=tiles)
