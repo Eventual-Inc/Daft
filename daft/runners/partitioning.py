@@ -244,7 +244,7 @@ class vPartition:
             col_name = f.name
             col_type = f.dtype
             col_data: list | pa.Array
-            if ExpressionType.is_py(col_type):
+            if col_type._is_python_type():
                 col_array = data[col_name]
                 if isinstance(col_array, list):
                     col_data = col_array

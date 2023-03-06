@@ -39,12 +39,12 @@ class ExpressionOperator:
 
     def get_return_type(self, args: tuple[ExpressionType, ...]) -> ExpressionType | None:
         # Treat all Python types as a PY[object] for the purposes of typing
-        args = tuple([ExpressionType.python_object() if ExpressionType.is_py(a) else a for a in args])
+        args = tuple([ExpressionType.python_object() if a._is_python_type() else a for a in args])
 
         res = self._type_matrix_dict().get(args, ExpressionType.unknown())
 
         # For Python types, we return another Python type instead of unknown
-        if res == ExpressionType.unknown() and any([ExpressionType.is_py(arg) for arg in args]):
+        if res == ExpressionType.unknown() and any([arg._is_python_type() for arg in args]):
             return ExpressionType.python_object()
 
         return res

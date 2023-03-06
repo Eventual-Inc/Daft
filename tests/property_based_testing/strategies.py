@@ -57,7 +57,7 @@ _default_strategies = {
     ExpressionType.logical(): _strat_boolean,
     ExpressionType.bytes(): _strat_byte,
     ExpressionType.date(): _strat_date,
-    ExpressionType.from_py_type(UserObject): _strat_user_object,
+    ExpressionType.python(UserObject): _strat_user_object,
     ExpressionType.null(): none(),
 }
 
@@ -81,7 +81,7 @@ all_dtypes = sampled_from(
         ExpressionType.logical(),
         ExpressionType.bytes(),
         ExpressionType.date(),
-        ExpressionType.from_py_type(UserObject),
+        ExpressionType.python(UserObject),
     ]
 )
 
@@ -136,7 +136,7 @@ def column(
     )
 
     # Convert sampled data to appropriate underlying format
-    if ExpressionType.is_py(daft_type):
+    if daft_type._is_python_type():
         return col_data
     return pa.array(col_data, type=daft_type.to_arrow_type())
 

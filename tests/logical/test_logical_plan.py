@@ -14,7 +14,7 @@ def schema():
     return Schema._from_field_name_and_types(
         list(
             map(
-                lambda col_name: (col_name, ExpressionType.from_py_type(int)),
+                lambda col_name: (col_name, ExpressionType.python(int)),
                 ["a", "b", "c"],
             )
         )

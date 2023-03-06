@@ -15,15 +15,6 @@ import pyarrow as pa
 
 class ExpressionType:
     @staticmethod
-    def is_primitive(t: ExpressionType) -> bool:
-        return isinstance(t, PrimitiveExpressionType)
-
-    @staticmethod
-    def is_py(t: ExpressionType) -> bool:
-        assert isinstance(t, ExpressionType), f"method must be called on an ExpressionType but got {type(t)}"
-        return isinstance(t, PythonExpressionType)
-
-    @staticmethod
     def unknown() -> ExpressionType:
         return _TYPE_REGISTRY["unknown"]
 
@@ -60,7 +51,7 @@ class ExpressionType:
         return _TYPE_REGISTRY["null"]
 
     @staticmethod
-    def from_py_type(obj_type: type) -> ExpressionType:
+    def python(obj_type: type) -> ExpressionType:
         """Gets the appropriate ExpressionType from a Python object, or _TYPE_REGISTRY["unknown"]
         if unable to find the appropriate type. ExpressionTypes.Python is never returned.
         """
@@ -88,7 +79,7 @@ class ExpressionType:
         if len(found_types) == 0:
             return ExpressionType.null()
         elif len(found_types) == 1:
-            return ExpressionType.from_py_type(found_types.pop())
+            return ExpressionType.python(found_types.pop())
         elif found_types == {int, float}:
             return ExpressionType.float()
         return ExpressionType.python_object()
@@ -121,8 +112,11 @@ class ExpressionType:
             )
 
     def to_arrow_type(self) -> pa.DataType:
-        assert not ExpressionType.is_py(self), f"Cannot convert {self} to an Arrow type"
+        assert not self._is_python_type(), f"Cannot convert {self} to an Arrow type"
         return _EXPRESSION_TYPE_TO_PYARROW_TYPE[self]
+
+    def _is_python_type(self) -> bool:
+        raise NotImplementedError("Subclass to implement")
 
 
 @dataclass(frozen=True, eq=True)
@@ -143,6 +137,9 @@ class PrimitiveExpressionType(ExpressionType):
     def __repr__(self) -> str:
         return self.enum.name
 
+    def _is_python_type(self) -> bool:
+        return False
+
 
 @dataclass(frozen=True, eq=True)
 class PythonExpressionType(ExpressionType):
@@ -150,6 +147,9 @@ class PythonExpressionType(ExpressionType):
 
     def __repr__(self) -> str:
         return f"PY[{self.python_cls.__name__}]"
+
+    def _is_python_type(self) -> bool:
+        return True
 
 
 _TYPE_REGISTRY: dict[str, ExpressionType] = {

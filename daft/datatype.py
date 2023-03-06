@@ -111,6 +111,16 @@ class DataType:
         else:
             raise NotImplementedError(f"we cant convert arrow type: {arrow_type} to a daft type")
 
+    @staticmethod
+    def python(py_class: type) -> DataType:
+        raise NotImplementedError("[RUST-INT] implement Python types for DataType")
+
+    def _is_nested(self) -> builtins.bool:
+        raise NotImplementedError("[RUST-INT] implement nested DataTypes")
+
+    def _is_python_type(self) -> builtins.bool:
+        raise NotImplementedError("[RUST-INT] implement Python types for DataType")
+
     def __repr__(self) -> str:
         return f"DataType({self._dtype})"
 
