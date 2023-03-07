@@ -11,8 +11,8 @@ from typing import Any, Generic, TypeVar
 from daft.datasources import SourceInfo, StorageType
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
-from daft.execution.operators import OperatorEnum
-from daft.expressions import CallExpression, Expression, ExpressionList, col
+from daft.expressions import Expression, ExpressionsProjection, col
+from daft.expressions.testing import expr_structurally_equal
 from daft.internal.treenode import TreeNode
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
@@ -177,13 +177,13 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         fields_to_print["partitioning"] = self.partition_spec()
         reduced_types = {}
         for k, v in fields_to_print.items():
-            if isinstance(v, ExpressionList):
+            if isinstance(v, ExpressionsProjection):
                 v = list(v)
             elif isinstance(v, Schema):
                 v = list(v.to_column_expressions())
             elif isinstance(v, PartitionSpec):
                 v = asdict(v)
-                if isinstance(v["by"], ExpressionList):
+                if isinstance(v["by"], ExpressionsProjection):
                     v["by"] = list(v["by"])
             reduced_types[k] = v
         to_render: list[str] = [f"{self.__class__.__name__}\n"]
@@ -211,7 +211,7 @@ class TabularFilesScan(UnaryNode):
         *,
         schema: Schema,
         source_info: SourceInfo,
-        predicate: ExpressionList | None = None,
+        predicate: ExpressionsProjection | None = None,
         columns: list[str] | None = None,
         filepaths_child: LogicalPlan,
         filepaths_column_name: str,
@@ -226,7 +226,7 @@ class TabularFilesScan(UnaryNode):
         if predicate is not None:
             self._predicate = predicate
         else:
-            self._predicate = ExpressionList([])
+            self._predicate = ExpressionsProjection([])
 
         if columns is not None:
             self._output_schema = Schema._from_field_name_and_types(
@@ -259,7 +259,7 @@ class TabularFilesScan(UnaryNode):
         return self._repr_helper(columns_pruned=len(self._columns) - len(self.schema()), source_info=self._source_info)
 
     def required_columns(self) -> list[set[str]]:
-        return [{self._filepaths_column_name} | self._predicate._required_columns()]
+        return [{self._filepaths_column_name} | self._predicate.required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [dict()]
@@ -343,7 +343,7 @@ class FileWrite(UnaryNode):
         input: LogicalPlan,
         root_dir: str | pathlib.Path,
         storage_type: StorageType,
-        partition_cols: ExpressionList | None = None,
+        partition_cols: ExpressionsProjection | None = None,
         compression: str | None = None,
     ) -> None:
         assert (
@@ -355,7 +355,7 @@ class FileWrite(UnaryNode):
         if partition_cols is not None:
             self._partition_cols = partition_cols
         else:
-            self._partition_cols = ExpressionList([])
+            self._partition_cols = ExpressionsProjection([])
         for field in input.schema():
             assert not field.dtype._is_python_type(), f"we can currently only write out primitive types, got: {field}"
 
@@ -368,7 +368,7 @@ class FileWrite(UnaryNode):
         return self._repr_helper()
 
     def required_columns(self) -> list[set[str]]:
-        return [self._partition_cols._required_columns()]
+        return [self._partition_cols.required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [dict()]
@@ -399,7 +399,7 @@ class FileWrite(UnaryNode):
 class Filter(UnaryNode):
     """Which rows to keep"""
 
-    def __init__(self, input: LogicalPlan, predicate: ExpressionList) -> None:
+    def __init__(self, input: LogicalPlan, predicate: ExpressionsProjection) -> None:
         super().__init__(input.schema(), partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
 
@@ -417,7 +417,7 @@ class Filter(UnaryNode):
         return self._repr_helper(predicate=self._predicate)
 
     def required_columns(self) -> list[set[str]]:
-        return [self._predicate._required_columns()]
+        return [self._predicate.required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [{name: name for name in self.schema().column_names()}]
@@ -439,7 +439,7 @@ class Projection(UnaryNode):
     def __init__(
         self,
         input: LogicalPlan,
-        projection: ExpressionList,
+        projection: ExpressionsProjection,
         custom_resource_request: ResourceRequest = ResourceRequest(),
     ) -> None:
         schema = input.schema().resolve_expressions(projection)
@@ -455,7 +455,7 @@ class Projection(UnaryNode):
         return self._repr_helper(output=list(self._projection))
 
     def required_columns(self) -> list[set[str]]:
-        return [self._projection._required_columns()]
+        return [self._projection.required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [self._projection.input_mapping()]
@@ -478,7 +478,9 @@ class Projection(UnaryNode):
 
 
 class Sort(UnaryNode):
-    def __init__(self, input: LogicalPlan, sort_by: ExpressionList, descending: list[bool] | bool = False) -> None:
+    def __init__(
+        self, input: LogicalPlan, sort_by: ExpressionsProjection, descending: list[bool] | bool = False
+    ) -> None:
         pspec = PartitionSpec(scheme=PartitionScheme.RANGE, num_partitions=input.num_partitions(), by=sort_by)
         super().__init__(input.schema(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
@@ -498,7 +500,7 @@ class Sort(UnaryNode):
         return self._repr_helper(sort_by=self._sort_by, desc=self._descending)
 
     def required_columns(self) -> list[set[str]]:
-        return [self._sort_by._required_columns()]
+        return [self._sort_by.required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [{name: name for name in self.schema().column_names()}]
@@ -547,11 +549,7 @@ class MapPartition(UnaryNode, Generic[TMapPartitionOp]):
 
 
 class Explode(MapPartition[ExplodeOp]):
-    def __init__(self, input: LogicalPlan, explode_expressions: ExpressionList):
-        assert [
-            isinstance(e, CallExpression) and e._operator == OperatorEnum.EXPLODE for e in explode_expressions
-        ], "Expressions supplied to Explode LogicalPlan must be a CallExpression with OperatorEnum.EXPLODE"
-
+    def __init__(self, input: LogicalPlan, explode_expressions: ExpressionsProjection):
         map_partition_op = ExplodeOp(input.schema(), explode_columns=explode_expressions)
         super().__init__(
             input,
@@ -562,7 +560,7 @@ class Explode(MapPartition[ExplodeOp]):
         return self._repr_helper()
 
     def required_columns(self) -> list[set[str]]:
-        return [self._map_partition_op.explode_columns._required_columns()]
+        return [self._map_partition_op.explode_columns.required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         explode_columns = self._map_partition_op.explode_columns.input_mapping().keys()
@@ -673,12 +671,12 @@ class PartitionScheme(Enum):
 class PartitionSpec:
     scheme: PartitionScheme
     num_partitions: int
-    by: ExpressionList | None = None
+    by: ExpressionsProjection | None = None
 
 
 class Repartition(UnaryNode):
     def __init__(
-        self, input: LogicalPlan, partition_by: ExpressionList, num_partitions: int, scheme: PartitionScheme
+        self, input: LogicalPlan, partition_by: ExpressionsProjection, num_partitions: int, scheme: PartitionScheme
     ) -> None:
         pspec = PartitionSpec(
             scheme=scheme,
@@ -707,7 +705,7 @@ class Repartition(UnaryNode):
         )
 
     def required_columns(self) -> list[set[str]]:
-        return [self._partition_by._required_columns()]
+        return [self._partition_by.required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [{name: name for name in self.schema().column_names()}]
@@ -777,16 +775,16 @@ class LocalAggregate(UnaryNode):
         self,
         input: LogicalPlan,
         agg: list[tuple[Expression, str]],
-        group_by: ExpressionList | None = None,
+        group_by: ExpressionsProjection | None = None,
     ) -> None:
-        cols_to_agg = ExpressionList([e for e, _ in agg])
+        cols_to_agg = ExpressionsProjection([e for e, _ in agg])
         self._group_by = group_by
-        required_cols = set(cols_to_agg._required_columns())
+        required_cols = set(cols_to_agg.required_columns())
 
         if group_by is not None:
-            group_and_agg_cols = ExpressionList(list(group_by) + [e for e, _ in agg])
+            group_and_agg_cols = ExpressionsProjection(list(group_by) + [e for e, _ in agg])
             schema = input.schema().resolve_expressions(group_and_agg_cols)
-            required_cols = required_cols | set(group_by._required_columns())
+            required_cols = required_cols | set(group_by.required_columns())
         else:
             schema = input.schema().resolve_expressions(cols_to_agg)
 
@@ -815,7 +813,7 @@ class LocalAggregate(UnaryNode):
         return (
             isinstance(other, LocalAggregate)
             and self.schema() == other.schema()
-            and all(l[0]._is_eq(r[0]) and l[1] == r[1] for l, r in zip(self._agg, other._agg))
+            and all(expr_structurally_equal(l[0], (r[0])) and l[1] == r[1] for l, r in zip(self._agg, other._agg))
             and self._group_by == other._group_by
         )
 
@@ -831,7 +829,7 @@ class LocalDistinct(UnaryNode):
     def __init__(
         self,
         input: LogicalPlan,
-        group_by: ExpressionList,
+        group_by: ExpressionsProjection,
     ) -> None:
 
         self._group_by = group_by
@@ -847,7 +845,7 @@ class LocalDistinct(UnaryNode):
         return LocalDistinct(new_children[0], group_by=self._group_by)
 
     def required_columns(self) -> list[set[str]]:
-        return [self._group_by._required_columns()]
+        return [self._group_by.required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [self._group_by.input_mapping()]
@@ -937,8 +935,8 @@ class Join(BinaryNode):
         self,
         left: LogicalPlan,
         right: LogicalPlan,
-        left_on: ExpressionList,
-        right_on: ExpressionList,
+        left_on: ExpressionsProjection,
+        right_on: ExpressionsProjection,
         how: JoinType = JoinType.INNER,
     ) -> None:
         assert len(left_on) == len(right_on), "left_on and right_on must match size"
@@ -968,10 +966,10 @@ class Join(BinaryNode):
             num_partitions = max(left.num_partitions(), right.num_partitions())
             right_drop_set = {r.name() for l, r in zip(left_on, right_on) if l.name() == r.name()}
             left_columns = left.schema().to_column_expressions()
-            right_columns = ExpressionList([col(f.name) for f in right.schema() if f.name not in right_drop_set])
+            right_columns = ExpressionsProjection([col(f.name) for f in right.schema() if f.name not in right_drop_set])
             unioned_expressions = left_columns.union(right_columns, rename_dup="right.")
             self._left_columns = left_columns
-            self._right_columns = ExpressionList(list(unioned_expressions)[len(self._left_columns) :])
+            self._right_columns = ExpressionsProjection(list(unioned_expressions)[len(self._left_columns) :])
             self._output_projection = unioned_expressions
             output_schema = (
                 left.schema()
@@ -1011,7 +1009,7 @@ class Join(BinaryNode):
         return Join(new_children[0], new_children[1], left_on=self._left_on, right_on=self._right_on, how=self._how)
 
     def required_columns(self) -> list[set[str]]:
-        return [self._left_on._required_columns(), self._right_on._required_columns()]
+        return [self._left_on.required_columns(), self._right_on.required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [self._left_columns.input_mapping(), self._right_columns.input_mapping()]

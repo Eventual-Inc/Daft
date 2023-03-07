@@ -28,11 +28,10 @@ from daft.datasources import (
 )
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
-from daft.expressions import Expression, col
+from daft.expressions import Expression, ExpressionsProjection, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
-from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartitionCacheEntry,
@@ -489,7 +488,7 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
-        cols: Optional[ExpressionList] = None
+        cols: Optional[ExpressionsProjection] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
@@ -532,7 +531,7 @@ class DataFrame:
         Returns:
             DataFrame: The filenames that were written out as strings.
         """
-        cols: Optional[ExpressionList] = None
+        cols: Optional[ExpressionsProjection] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
@@ -557,9 +556,9 @@ class DataFrame:
     # DataFrame operations
     ###
 
-    def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> ExpressionList:
+    def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> ExpressionsProjection:
         expressions = [col(c) if isinstance(c, str) else c for c in columns]
-        return ExpressionList(expressions)
+        return ExpressionsProjection(expressions)
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)"""
@@ -594,7 +593,7 @@ class DataFrame:
             return self.select(*columns)
         elif isinstance(item, slice):
             schema = self._plan.schema()
-            columns_exprs: ExpressionList = schema.to_column_expressions()
+            columns_exprs: ExpressionsProjection = schema.to_column_expressions()
             selected_columns = columns_exprs[item]
             return self.select(*selected_columns)
         else:
@@ -669,7 +668,7 @@ class DataFrame:
             DataFrame: DataFrame with some columns excluded.
         """
         names_to_skip = set(names)
-        el = ExpressionList([col(e.name) for e in self._plan.schema() if e.name not in names_to_skip])
+        el = ExpressionsProjection([col(e.name) for e in self._plan.schema() if e.name not in names_to_skip])
         return DataFrame(logical_plan.Projection(self._plan, el))
 
     @DataframePublicAPI
@@ -685,7 +684,7 @@ class DataFrame:
         Returns:
             DataFrame: Filtered DataFrame.
         """
-        plan = logical_plan.Filter(self._plan, ExpressionList([predicate]))
+        plan = logical_plan.Filter(self._plan, ExpressionsProjection([predicate]))
         return DataFrame(plan)
 
     @DataframePublicAPI
@@ -709,10 +708,10 @@ class DataFrame:
         if not isinstance(resource_request, ResourceRequest):
             raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
 
-        prev_schema_as_cols = ExpressionList(
+        prev_schema_as_cols = ExpressionsProjection(
             [e for e in self._plan.schema().to_column_expressions() if e.name() != column_name]
         )
-        new_schema = prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]))
+        new_schema = prev_schema_as_cols.union(ExpressionsProjection([expr.alias(column_name)]))
         projection = logical_plan.Projection(
             self._plan,
             new_schema,
@@ -774,7 +773,7 @@ class DataFrame:
         """
         local_count_op = logical_plan.LocalCount(self._plan)
         coalease_op = logical_plan.Coalesce(local_count_op, 1)
-        local_sum_op = logical_plan.LocalAggregate(coalease_op, [(Expression._sum(col("count")), "sum")])
+        local_sum_op = logical_plan.LocalAggregate(coalease_op, [(col("count").agg.sum(), "sum")])
         num_rows = DataFrame(local_sum_op).to_pydict()["count"][0]
         return num_rows
 
@@ -798,7 +797,7 @@ class DataFrame:
         """
         if len(partition_by) == 0:
             scheme = logical_plan.PartitionScheme.RANDOM
-            exprs: ExpressionList = ExpressionList([])
+            exprs: ExpressionsProjection = ExpressionsProjection([])
         else:
             scheme = logical_plan.PartitionScheme.HASH
             exprs = self.__column_input_to_expression(partition_by)
@@ -896,11 +895,13 @@ class DataFrame:
         exprs_to_explode = self.__column_input_to_expression(columns)
         explode_op = logical_plan.Explode(
             self._plan,
-            ExpressionList([e._explode() for e in exprs_to_explode]),
+            ExpressionsProjection([e._explode() for e in exprs_to_explode]),
         )
         return DataFrame(explode_op)
 
-    def _agg(self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionList] = None) -> "DataFrame":
+    def _agg(
+        self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionsProjection] = None
+    ) -> "DataFrame":
         exprs_to_agg: List[Tuple[Expression, str]] = list(
             zip(self.__column_input_to_expression([c for c, _ in to_agg]), [op for _, op in to_agg])
         )
@@ -1140,7 +1141,7 @@ class DataFrame:
 @dataclass
 class GroupedDataFrame:
     df: DataFrame
-    group_by: ExpressionList
+    group_by: ExpressionsProjection
 
     def __post_init__(self):
         resolved_groupby_schema = self.df._plan.schema().resolve_expressions(self.group_by)

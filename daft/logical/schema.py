@@ -5,7 +5,7 @@ from typing import Iterator
 from daft.daft import PyField as _PyField
 from daft.daft import PySchema as _PySchema
 from daft.datatype import DataType
-from daft.expressions2 import ExpressionsProjection, col
+from daft.expressions import ExpressionsProjection, col
 
 
 class Field:

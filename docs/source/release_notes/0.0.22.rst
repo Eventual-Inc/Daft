@@ -15,7 +15,7 @@ Enhancements
 * Performance improvements for distributed Ray clusters. `#537 <https://github.com/Eventual-Inc/Daft/pull/537>`_
 * Add resource request to dynamic runners `#530 <https://github.com/Eventual-Inc/Daft/pull/530>`_
 * Refactor resource requests out of Expressions `#528 <https://github.com/Eventual-Inc/Daft/pull/528>`_
-* Introduce Schema and Fields for logical plan schema rather than use ExpressionList `#516 <https://github.com/Eventual-Inc/Daft/pull/516>`_
+* Introduce Schema and Fields for logical plan schema rather than use ExpressionsProjection `#516 <https://github.com/Eventual-Inc/Daft/pull/516>`_
 * Refactor Expressions to drop column ids `#508 <https://github.com/Eventual-Inc/Daft/pull/508>`_
 * DynamicRayRunner: increase inflight tasks; fix spread condition `#494 <https://github.com/Eventual-Inc/Daft/pull/494>`_
 * Add DataFrame.from\_glob\_path, deprecating DataFrame.from\_files `#492 <https://github.com/Eventual-Inc/Daft/pull/492>`_

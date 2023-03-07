@@ -22,7 +22,7 @@ from daft.logical.logical_plan import (
     TabularFilesScan,
     UnaryNode,
 )
-from daft.logical.schema import ExpressionList
+from daft.logical.schema import ExpressionsProjection
 
 
 class PushDownPredicates(Rule[LogicalPlan]):
@@ -61,7 +61,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
             return None
         logger.debug(f"Pushing down Filter predicate {can_push_down} into {child}")
         pushed_down_filter = Projection(
-            input=Filter(grandchild, predicate=ExpressionList(can_push_down)),
+            input=Filter(grandchild, predicate=ExpressionsProjection(can_push_down)),
             projection=child._projection,
             custom_resource_request=child.resource_request(),
         )
@@ -69,7 +69,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
         if len(can_not_push_down) == 0:
             return pushed_down_filter
         else:
-            return Filter(pushed_down_filter, ExpressionList(can_not_push_down))
+            return Filter(pushed_down_filter, ExpressionsProjection(can_not_push_down))
 
     def _filter_through_unary_node(self, parent: Filter, child: UnaryNode) -> LogicalPlan | None:
         """Pushes Filter through "supported" UnaryNodes (see: self._supported_unary_nodes)
@@ -117,16 +117,16 @@ class PushDownPredicates(Rule[LogicalPlan]):
 
         if len(left_push_down) > 0:
             logger.debug(f"Pushing down Filter predicate left side: {left_push_down} into Join")
-            left = Filter(left, predicate=ExpressionList(left_push_down))
+            left = Filter(left, predicate=ExpressionsProjection(left_push_down))
         if len(right_push_down) > 0:
             logger.debug(f"Pushing down Filter predicate right side: {right_push_down} into Join")
-            right = Filter(right, predicate=ExpressionList(right_push_down))
+            right = Filter(right, predicate=ExpressionsProjection(right_push_down))
 
         new_join = child.copy_with_new_children([left, right])
         if len(can_not_push_down) == 0:
             return new_join
         else:
-            return Filter(new_join, ExpressionList(can_not_push_down))
+            return Filter(new_join, ExpressionsProjection(can_not_push_down))
 
     @property
     def _supported_unary_nodes(self) -> set[type[UnaryNode]]:
@@ -164,7 +164,7 @@ class PruneColumns(Rule[LogicalPlan]):
             [
                 Projection(
                     grandchild,
-                    projection=ExpressionList(new_child_exprs),
+                    projection=ExpressionsProjection(new_child_exprs),
                     custom_resource_request=child.resource_request(),
                 )
             ]
@@ -247,7 +247,7 @@ class PruneColumns(Rule[LogicalPlan]):
 
         return Projection(
             child,
-            projection=ExpressionList([col(f.name) for f in child.schema() if f.name in parent_name_set]),
+            projection=ExpressionsProjection([col(f.name) for f in child.schema() if f.name in parent_name_set]),
         )
 
 
@@ -337,7 +337,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
         Projection-TabularFilesScan-* -> <TabularFilesScan with selected columns>-*
         Projection-TabularFilesScan-* -> Projection-<TabularFilesScan with selected columns>-*
         """
-        required_columns = parent._projection._required_columns()
+        required_columns = parent._projection.required_columns()
         scan_columns = child.schema()
         if required_columns == scan_columns.to_name_set():
             return None
@@ -366,7 +366,7 @@ class FoldProjections(Rule[LogicalPlan]):
 
         Projection-Projection-* -> <Projection with combined expressions and resource requests>-*
         """
-        required_columns = parent._projection._required_columns()
+        required_columns = parent._projection.required_columns()
 
         parent_projection = parent._projection
         child_projection = child._projection
@@ -392,7 +392,7 @@ class FoldProjections(Rule[LogicalPlan]):
                 new_exprs.append(e)
             return Projection(
                 grandchild,
-                ExpressionList(new_exprs),
+                ExpressionsProjection(new_exprs),
                 custom_resource_request=resource_request.ResourceRequest.max_resources(
                     [parent.resource_request(), child.resource_request()]
                 ),

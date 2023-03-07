@@ -7,7 +7,7 @@ from daft.experimental.serving.backend import (
 from daft.experimental.serving.definitions import Endpoint
 from daft.experimental.serving.env import DaftEnv
 from daft.logical.logical_plan import HTTPResponse, LogicalPlan
-from daft.logical.schema import ExpressionList
+from daft.logical.schema import ExpressionsProjection
 
 
 class HTTPEndpoint:
@@ -15,7 +15,7 @@ class HTTPEndpoint:
 
     def __init__(
         self,
-        request_schema: ExpressionList,
+        request_schema: ExpressionsProjection,
         backend: AbstractEndpointBackend | None = None,
         custom_env: DaftEnv | None = None,
     ):

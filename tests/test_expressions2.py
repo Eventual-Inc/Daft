@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from daft.datatype import DataType
-from daft.expressions2 import lit
+from daft.expressions import lit
 from daft.table import Table
 
 

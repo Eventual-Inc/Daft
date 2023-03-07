@@ -14,7 +14,7 @@ import daft
 from daft.expressions import Expression, col
 from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
-from daft.logical.schema import ExpressionList
+from daft.logical.schema import ExpressionsProjection
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartialPartitionMetadata, PartitionMetadata
 from daft.table import Table
@@ -332,7 +332,7 @@ class WriteFile(Instruction):
 
 @dataclass(frozen=True)
 class Filter(Instruction):
-    predicate: ExpressionList
+    predicate: ExpressionsProjection
 
     def run(self, inputs: list[Table]) -> list[Table]:
         return self._filter(inputs)
@@ -354,7 +354,7 @@ class Filter(Instruction):
 
 @dataclass(frozen=True)
 class Project(Instruction):
-    projection: ExpressionList
+    projection: ExpressionsProjection
 
     def run(self, inputs: list[Table]) -> list[Table]:
         return self._project(inputs)
@@ -441,7 +441,7 @@ class MapPartition(Instruction):
 
 @dataclass(frozen=True)
 class Sample(Instruction):
-    sort_by: ExpressionList
+    sort_by: ExpressionsProjection
     num_samples: int = 20
 
     def run(self, inputs: list[Table]) -> list[Table]:
@@ -452,7 +452,7 @@ class Sample(Instruction):
         result = (
             input.sample(self.num_samples)
             .eval_expression_list(self.sort_by)
-            .filter(ExpressionList([~col(e.name()).is_null() for e in self.sort_by]))
+            .filter(ExpressionsProjection([~col(e.name()).is_null() for e in self.sort_by]))
         )
         return [result]
 
@@ -470,7 +470,7 @@ class Sample(Instruction):
 @dataclass(frozen=True)
 class Aggregate(Instruction):
     to_agg: list[tuple[Expression, str]]
-    group_by: ExpressionList | None
+    group_by: ExpressionsProjection | None
 
     def run(self, inputs: list[Table]) -> list[Table]:
         return self._aggregate(inputs)
@@ -544,7 +544,7 @@ class ReduceMerge(ReduceInstruction):
 
 @dataclass(frozen=True)
 class ReduceMergeAndSort(ReduceInstruction):
-    sort_by: ExpressionList
+    sort_by: ExpressionsProjection
     descending: list[bool]
 
     def run(self, inputs: list[Table]) -> list[Table]:
@@ -568,7 +568,7 @@ class ReduceMergeAndSort(ReduceInstruction):
 @dataclass(frozen=True)
 class ReduceToQuantiles(ReduceInstruction):
     num_quantiles: int
-    sort_by: ExpressionList
+    sort_by: ExpressionsProjection
     descending: list[bool]
 
     def run(self, inputs: list[Table]) -> list[Table]:
@@ -621,7 +621,7 @@ class FanoutRandom(FanoutInstruction):
 
 @dataclass(frozen=True)
 class FanoutHash(FanoutInstruction):
-    partition_by: ExpressionList
+    partition_by: ExpressionsProjection
 
     def run(self, inputs: list[Table]) -> list[Table]:
         return self._fanout_hash(inputs)
@@ -633,7 +633,7 @@ class FanoutHash(FanoutInstruction):
 
 @dataclass(frozen=True)
 class FanoutRange(FanoutInstruction, Generic[PartitionT]):
-    sort_by: ExpressionList
+    sort_by: ExpressionsProjection
     descending: list[bool]
 
     def run(self, inputs: list[Table]) -> list[Table]:

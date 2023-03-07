@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pathlib
 
-from daft.expressions2 import ExpressionsProjection
+from daft.expressions import ExpressionsProjection
 from daft.runners.partitioning import (
     vPartitionParseCSVOptions,
     vPartitionReadOptions,

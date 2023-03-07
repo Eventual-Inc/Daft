@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from daft.expressions import Expression, col, lit
 from daft.logical import logical_plan
-from daft.logical.schema import ExpressionList
+from daft.logical.schema import ExpressionsProjection
 
 AggregationOp = str
 ColName = str
@@ -14,7 +14,7 @@ class AggregationPlanBuilder:
     See: `AggregationPlanBuilder.build()` for the high level logic on how this LogicalPlan is put together
     """
 
-    def __init__(self, plan: logical_plan.LogicalPlan, group_by: ExpressionList | None):
+    def __init__(self, plan: logical_plan.LogicalPlan, group_by: ExpressionsProjection | None):
         self._plan = plan
         self.group_by = group_by
 
@@ -74,11 +74,13 @@ class AggregationPlanBuilder:
         postshuffle_projection_plan: logical_plan.LogicalPlan
         if self._final_projection_includes or self._final_projection_excludes:
             final_expressions = postshuffle_agg_plan.schema().to_column_expressions()
-            final_expressions = ExpressionList(
+            final_expressions = ExpressionsProjection(
                 [e for e in final_expressions if e.name() not in self._final_projection_excludes]
             )
             final_expressions = final_expressions.union(
-                ExpressionList([expr.alias(colname) for colname, expr in self._final_projection_includes.items()])
+                ExpressionsProjection(
+                    [expr.alias(colname) for colname, expr in self._final_projection_includes.items()]
+                )
             )
             postshuffle_projection_plan = logical_plan.Projection(postshuffle_agg_plan, final_expressions)
         else:
@@ -112,43 +114,43 @@ class AggregationPlanBuilder:
         self._postshuffle_aggs[result_colname] = (col(intermediate_colname), global_op)
 
     def add_sum(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._sum(expr), "sum")
-        self._add_2phase_agg(result_colname, Expression._sum(expr), "sum", "sum")
+        self._add_single_partition_shortcut_agg(result_colname, expr.agg.sum(), "sum")
+        self._add_2phase_agg(result_colname, expr.agg.sum(), "sum", "sum")
         return self
 
     def add_min(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._min(expr), "min")
-        self._add_2phase_agg(result_colname, Expression._min(expr), "min", "min")
+        self._add_single_partition_shortcut_agg(result_colname, expr.agg.min(), "min")
+        self._add_2phase_agg(result_colname, expr.agg.min(), "min", "min")
         return self
 
     def add_max(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._max(expr), "max")
-        self._add_2phase_agg(result_colname, Expression._max(expr), "max", "max")
+        self._add_single_partition_shortcut_agg(result_colname, expr.agg.max(), "max")
+        self._add_2phase_agg(result_colname, expr.agg.max(), "max", "max")
         return self
 
     def add_count(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._count(expr), "count")
-        self._add_2phase_agg(result_colname, Expression._count(expr), "count", "sum")
+        self._add_single_partition_shortcut_agg(result_colname, expr.agg.count(), "count")
+        self._add_2phase_agg(result_colname, expr.agg.count(), "count", "sum")
         return self
 
     def add_list(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._list(expr), "list")
-        self._add_2phase_agg(result_colname, Expression._list(expr), "list", "concat")
+        self._add_single_partition_shortcut_agg(result_colname, expr.agg.list(), "list")
+        self._add_2phase_agg(result_colname, expr.agg.list(), "list", "concat")
         return self
 
     def add_concat(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._concat(expr), "concat")
-        self._add_2phase_agg(result_colname, Expression._concat(expr), "concat", "concat")
+        self._add_single_partition_shortcut_agg(result_colname, expr.agg.concat(), "concat")
+        self._add_2phase_agg(result_colname, expr.agg.concat(), "concat", "concat")
         return self
 
     def add_mean(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._mean(expr), "mean")
+        self._add_single_partition_shortcut_agg(result_colname, expr.agg.mean(), "mean")
 
         # Calculate intermediate sum and count
         intermediate_sum_colname = f"{result_colname}:_sum_for_mean"
         intermediate_count_colname = f"{result_colname}:_count_for_mean"
-        self._add_2phase_agg(intermediate_sum_colname, Expression._sum(expr), "sum", "sum")
-        self._add_2phase_agg(intermediate_count_colname, Expression._count(expr), "count", "sum")
+        self._add_2phase_agg(intermediate_sum_colname, expr.agg.sum(), "sum", "sum")
+        self._add_2phase_agg(intermediate_count_colname, expr.agg.count(), "count", "sum")
 
         # Run projection to get mean using intermediate sun and count
         # HACK: we add 0.0 because our current PyArrow-based type system returns an integer when dividing two integers

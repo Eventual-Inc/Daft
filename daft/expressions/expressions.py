@@ -7,7 +7,7 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
 from daft.datatype import DataType
-from daft.expressions2.testing import expr_structurally_equal
+from daft.expressions.testing import expr_structurally_equal
 
 
 def lit(value: object) -> Expression:
@@ -326,7 +326,7 @@ class ExpressionsProjection(Iterable[Expression]):
         """Unions two Expressions. Output naming conflicts are handled with keyword arguments.
 
         Args:
-            other (ExpressionList): other ExpressionList to union with this one
+            other (ExpressionsProjection): other ExpressionsProjection to union with this one
             rename_dup (Optional[str], optional): when conflicts in naming happen, append this string to the conflicting column in `other`. Defaults to None.
         """
         unioned: dict[str, Expression] = {}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from daft.expressions2 import Expression
+    from daft.expressions import Expression
 
 
 def expr_structurally_equal(e1: Expression, e2: Expression) -> bool:

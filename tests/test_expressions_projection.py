@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from daft.expressions2 import Expression, ExpressionsProjection, col
+from daft.expressions import Expression, ExpressionsProjection, col
 
 
 def test_expressions_projection_error_dup_name():
