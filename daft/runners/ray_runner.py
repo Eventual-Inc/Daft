@@ -45,7 +45,6 @@ from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionMetadata,
     PartitionSet,
-    PartitionSetFactory,
     vPartition,
 )
 from daft.runners.profiler import profiler

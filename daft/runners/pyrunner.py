@@ -8,7 +8,7 @@ from typing import Iterable
 import psutil
 import pyarrow as pa
 
-from daft.datasources import SourceInfo
+from daft.datasources import CSVSourceInfo, SourceInfo, StorageType
 from daft.execution import physical_plan, physical_plan_factory
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
 from daft.execution.logical_op_runners import LogicalPartitionOpRunner
@@ -27,13 +27,16 @@ from daft.logical.optimizer import (
 )
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
+from daft.runners import runner_io
 from daft.runners.partitioning import (
     PartID,
     PartitionCacheEntry,
     PartitionMetadata,
     PartitionSet,
-    PartitionSetFactory,
     vPartition,
+    vPartitionParseCSVOptions,
+    vPartitionReadOptions,
+    vPartitionSchemaInferenceOptions,
 )
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
@@ -78,12 +81,12 @@ class LocalPartitionSet(PartitionSet[vPartition]):
         pass
 
 
-class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
+class PyRunnerIO(runner_io.RunnerIO[vPartition]):
     def glob_paths_details(
         self,
         source_path: str,
         source_info: SourceInfo | None = None,
-    ) -> tuple[LocalPartitionSet, Schema]:
+    ) -> LocalPartitionSet:
         files_info = glob_path_with_stats(source_path, source_info)
 
         if len(files_info) == 0:
@@ -99,8 +102,9 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
         )
 
         # Make sure that the schema is consistent with what we expect
-        schema = self._get_listing_paths_details_schema()
-        assert partition.schema() == schema, f"Schema should be expected: {schema}, but received: {partition.schema()}"
+        assert (
+            partition.schema() == PyRunnerIO.FS_LISTING_SCHEMA
+        ), f"Schema should be expected: {PyRunnerIO.FS_LISTING_SCHEMA}, but received: {partition.schema()}"
 
         pset = LocalPartitionSet(
             {
@@ -108,7 +112,59 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
                 0: partition,
             }
         )
-        return pset, partition.schema()
+        return pset
+
+    def get_schema(self, listing_details_partitions: PartitionSet[vPartition], source_info: SourceInfo) -> Schema:
+        # Hardcoded: sample only the first file in the first partition
+        nonempty_partitions = [
+            p
+            for p, p_len in zip(listing_details_partitions.values(), listing_details_partitions.len_of_partitions())
+            if p_len > 0
+        ]
+        if len(nonempty_partitions) == 0:
+            raise ValueError("No files to get schema from")
+        filepath = listing_details_partitions.items()[0][1].to_pydict()[PyRunnerIO.FS_LISTING_PATH_COLUMN_NAME][0]
+
+        sampled_partition: vPartition
+        if source_info.scan_type() == StorageType.CSV:
+            assert isinstance(source_info, CSVSourceInfo)
+            sampled_partition = vPartition.from_csv(
+                path=filepath,
+                csv_options=vPartitionParseCSVOptions(
+                    delimiter=source_info.delimiter,
+                    has_headers=source_info.has_headers,
+                    skip_rows_before_header=0,
+                    skip_rows_after_header=0,
+                ),
+                schema_options=vPartitionSchemaInferenceOptions(
+                    schema=None,
+                    inference_column_names=None,  # TODO: pass in user-provided column names
+                ),
+                read_options=vPartitionReadOptions(
+                    num_rows=100,  # sample 100 rows for schema inference
+                    column_names=None,  # read all columns
+                ),
+            )
+        elif source_info.scan_type() == StorageType.JSON:
+            sampled_partition = vPartition.from_json(
+                path=filepath,
+                read_options=vPartitionReadOptions(
+                    num_rows=100,  # sample 100 rows for schema inference
+                    column_names=None,  # read all columns
+                ),
+            )
+        elif source_info.scan_type() == StorageType.PARQUET:
+            sampled_partition = vPartition.from_parquet(
+                path=filepath,
+                read_options=vPartitionReadOptions(
+                    num_rows=100,  # sample 100 rows for schema inference
+                    column_names=None,  # read all columns
+                ),
+            )
+        else:
+            raise NotImplementedError(f"Schema inference for {source_info} not implemented")
+
+        return sampled_partition.schema()
 
 
 class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
@@ -149,8 +205,8 @@ class PyRunner(Runner):
         # From PyRunner
         return self._optimizer.optimize(plan)
 
-    def partition_set_factory(self) -> PartitionSetFactory:
-        return LocalPartitionSetFactory()
+    def runner_io(self) -> PyRunnerIO:
+        return PyRunnerIO()
 
     def run(self, logplan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         logplan = self.optimize(logplan)
