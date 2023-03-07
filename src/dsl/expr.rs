@@ -55,15 +55,17 @@ impl Expr {
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
+        use AggExpr::*;
         use Expr::*;
 
         match self {
             Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
-            Agg(_agg_expr) => todo!(),
+            Agg(agg_expr) => match agg_expr {
+                Sum(expr) => expr.to_field(schema),
+            },
             Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
             Column(name) => Ok(schema.get_field(name).cloned()?),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
-
             BinaryOp { op, left, right } => {
                 let result = match op {
                     Operator::Lt
@@ -94,10 +96,13 @@ impl Expr {
     }
 
     pub fn name(&self) -> DaftResult<&str> {
+        use AggExpr::*;
         use Expr::*;
         match self {
             Alias(.., name) => Ok(name.as_ref()),
-            Agg(_agg_expr) => todo!(),
+            Agg(agg_expr) => match agg_expr {
+                Sum(expr) => expr.name(),
+            },
             Cast(expr, ..) => expr.name(),
             Column(name) => Ok(name.as_ref()),
             Literal(..) => Ok("literal"),
@@ -117,10 +122,13 @@ impl Expr {
 impl Display for Expr {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
+        use AggExpr::*;
         use Expr::*;
         match self {
             Alias(expr, name) => write!(f, "{expr} AS {name}"),
-            Agg(_agg_expr) => todo!(),
+            Agg(agg_expr) => match agg_expr {
+                Sum(expr) => write!(f, "sum({expr})"),
+            },
             BinaryOp { op, left, right } => {
                 let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
                     Alias(e, _) => write!(f, "{e}"),
