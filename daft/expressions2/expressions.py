@@ -154,6 +154,10 @@ class Expression:
         expr = self._expr.cast(dtype._dtype)
         return Expression._from_pyexpr(expr)
 
+    def sum(self) -> Expression:
+        expr = self._expr.sum()
+        return Expression._from_pyexpr(expr)
+
     def name(self) -> str:
         return self._expr.name()
 
