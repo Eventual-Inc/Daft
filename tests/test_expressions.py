@@ -12,7 +12,7 @@ def test_column_expression_creation() -> None:
 
 def test_col_expr_add() -> None:
     id = col("id")
-    assert id.is_column()
+    assert id._is_column()
     new_id = id + 1
     assert new_id.has_call()
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from daft.expressions2 import Expression
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from daft.expressions2 import Expression
 
 
 def expr_structurally_equal(e1: Expression, e2: Expression) -> bool:

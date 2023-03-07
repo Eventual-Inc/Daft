@@ -6,6 +6,7 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
 from daft.datatype import DataType
+from daft.expressions2.testing import expr_structurally_equal
 
 
 def lit(value: object) -> Expression:
@@ -22,8 +23,14 @@ class Expression:
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
 
+    @property
+    def agg(self) -> ExpressionAggNamespace:
+        ns = ExpressionAggNamespace.__new__(ExpressionAggNamespace)
+        ns._expr = self._expr
+        return ns
+
     @staticmethod
-    def _from_pyexpr(pyexpr) -> Expression:
+    def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)
         expr._expr = pyexpr
         return expr
@@ -158,11 +165,50 @@ class Expression:
             "[RUST-INT] Implement for checking if expression is a no-op and returning the input name it maps to if so"
         )
 
-    def _is_eq(self, other: Expression) -> bool:
-        raise NotImplementedError("[RUST-INT] Implement for checking equality of Expressions")
-
     def _required_columns(self) -> set[str]:
         raise NotImplementedError("[RUST-INT] Implement for getting required columns in an Expression")
+
+    def _is_column(self) -> bool:
+        raise NotImplementedError("[RUST-INT] Implement for checking if this Expression is a Column")
+
+    def _replace_column_with_expression(self, column: str, new_expr: Expression) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement replacing a Column with an Expression - used in optimizer")
+
+
+class ExpressionNamespace:
+    _expr: _PyExpr
+
+    def __init__(self) -> None:
+        raise NotImplementedError("We do not support creating a ExpressionNamespace via __init__ ")
+
+    @staticmethod
+    def _from_pyexpr(pyexpr: _PyExpr) -> ExpressionNamespace:
+        expr = ExpressionNamespace.__new__(ExpressionNamespace)
+        expr._expr = pyexpr
+        return expr
+
+
+class ExpressionAggNamespace(ExpressionNamespace):
+    def sum(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def mean(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def min(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def max(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def count(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def list(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def concat(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
 
 
 class ExpressionsProjection(Iterable[Expression]):
@@ -206,7 +252,7 @@ class ExpressionsProjection(Iterable[Expression]):
             return False
 
         return len(self._output_name_to_exprs) == len(other._output_name_to_exprs) and all(
-            (s.name() == o.name()) and (s._is_eq(o))
+            (s.name() == o.name()) and expr_structurally_equal(s, o)
             for s, o in zip(self._output_name_to_exprs.values(), other._output_name_to_exprs.values())
         )
 

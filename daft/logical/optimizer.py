@@ -53,7 +53,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
             if all(name in child_input_mapping for name in required_names):
                 pred = copy.deepcopy(pred)
                 for name in required_names:
-                    pred = pred._replace_column_with_expression(col(name), col(child_input_mapping[name]))
+                    pred = pred._replace_column_with_expression(name, col(child_input_mapping[name]))
                 can_push_down.append(pred)
             else:
                 can_not_push_down.append(pred)
@@ -101,12 +101,12 @@ class PushDownPredicates(Rule[LogicalPlan]):
             if all(name in left_input_mapping for name in required_names):
                 pred = copy.deepcopy(pred)
                 for name in required_names:
-                    pred = pred._replace_column_with_expression(col(name), col(left_input_mapping[name]))
+                    pred = pred._replace_column_with_expression(name, col(left_input_mapping[name]))
                 left_push_down.append(pred)
             elif all(name in right_input_mapping for name in required_names):
                 pred = copy.deepcopy(pred)
                 for name in required_names:
-                    pred = pred._replace_column_with_expression(col(name), col(right_input_mapping[name]))
+                    pred = pred._replace_column_with_expression(name, col(right_input_mapping[name]))
                 right_push_down.append(pred)
             else:
                 can_not_push_down.append(pred)
@@ -350,7 +350,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             filepaths_child=child._filepaths_child,
             filepaths_column_name=child._filepaths_column_name,
         )
-        if any(not e.is_column() for e in parent._projection):
+        if any(not e._is_column() for e in parent._projection):
             return parent.copy_with_new_children([new_scan])
         else:
             return new_scan
@@ -380,7 +380,7 @@ class FoldProjections(Rule[LogicalPlan]):
 
             new_exprs = []
             for e in parent_projection:
-                if e.is_column():
+                if e._is_column():
                     name = e.name()
                     assert name is not None
                     e = child_projection.get_expression_by_name(name)
@@ -388,7 +388,7 @@ class FoldProjections(Rule[LogicalPlan]):
                     e = copy.deepcopy(e)
                     to_replace = e._required_columns()
                     for name in to_replace:
-                        e = e._replace_column_with_expression(col(name), child_projection.get_expression_by_name(name))
+                        e = e._replace_column_with_expression(name, child_projection.get_expression_by_name(name))
                 new_exprs.append(e)
             return Projection(
                 grandchild,
@@ -414,7 +414,7 @@ class DropProjections(Rule[LogicalPlan]):
         parent_projection = parent._projection
         child_output = child.schema()
         if (
-            all(expr.is_column() for expr in parent_projection)
+            all(expr._is_column() for expr in parent_projection)
             and len(parent_projection) == len(child_output)
             and all(p.name() == c.name for p, c in zip(parent_projection, child_output))
         ):

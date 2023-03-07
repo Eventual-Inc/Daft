@@ -214,7 +214,7 @@ class Expression(TreeNode["Expression"]):
                 return name
         raise ValueError("name should not be None")
 
-    def is_column(self) -> bool:
+    def _is_column(self) -> bool:
         return isinstance(self, ColumnExpression)
 
     def to_column_expression(self) -> ColumnExpression:
@@ -229,15 +229,15 @@ class Expression(TreeNode["Expression"]):
             to_rtn |= child._required_columns()
         return to_rtn
 
-    def _replace_column_with_expression(self, col_expr: ColumnExpression, new_expr: Expression) -> Expression:
+    def _replace_column_with_expression(self, column: str, new_expr: Expression) -> Expression:
         if isinstance(self, ColumnExpression):
-            if self.name() == col_expr.name():
+            if self.name() == column:
                 return copy.deepcopy(new_expr)
             else:
                 return self
         for i in range(len(self._children())):
             self._registered_children[i] = self._registered_children[i]._replace_column_with_expression(
-                col_expr, new_expr
+                column, new_expr
             )
         return self
 
