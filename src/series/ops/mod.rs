@@ -10,6 +10,7 @@ pub mod downcast;
 pub mod filter;
 pub mod full;
 pub mod sort;
+pub mod sum;
 pub mod take;
 
 fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)> {

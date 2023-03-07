@@ -10,6 +10,7 @@ mod filter;
 mod full;
 mod len;
 mod sort;
+mod sum;
 mod take;
 
 pub trait DaftCompare<Rhs> {
@@ -45,4 +46,10 @@ pub trait DaftLogical<Rhs> {
 
     /// xor.
     fn xor(&self, rhs: Rhs) -> Self::Output;
+}
+
+pub trait DaftNumericAgg {
+    type Output;
+
+    fn sum(&self) -> Self::Output;
 }

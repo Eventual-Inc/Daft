@@ -148,7 +148,7 @@ impl Table {
     fn eval_agg_expression(&self, agg_expr: &AggExpr) -> DaftResult<Series> {
         use crate::dsl::AggExpr::*;
         match agg_expr {
-            Sum(expr) => self.eval_expression(expr),
+            Sum(expr) => self.eval_expression(expr)?.sum(),
         }
     }
 
