@@ -50,6 +50,10 @@ impl Expr {
         Expr::Cast(self.clone().into(), dtype.clone())
     }
 
+    pub fn sum(&self) -> Self {
+        Expr::Agg(AggExpr::Sum(self.clone().into()))
+    }
+
     pub fn and(&self, other: &Self) -> Self {
         binary_op(Operator::And, self, other)
     }
