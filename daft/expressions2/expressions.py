@@ -22,8 +22,14 @@ class Expression:
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
 
+    @property
+    def agg(self) -> ExpressionAggNamespace:
+        ns = ExpressionAggNamespace.__new__(ExpressionAggNamespace)
+        ns._expr = self._expr
+        return ns
+
     @staticmethod
-    def _from_pyexpr(pyexpr) -> Expression:
+    def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)
         expr._expr = pyexpr
         return expr
@@ -163,6 +169,42 @@ class Expression:
 
     def _required_columns(self) -> set[str]:
         raise NotImplementedError("[RUST-INT] Implement for getting required columns in an Expression")
+
+
+class ExpressionNamespace:
+    _expr: _PyExpr
+
+    def __init__(self) -> None:
+        raise NotImplementedError("We do not support creating a ExpressionNamespace via __init__ ")
+
+    @staticmethod
+    def _from_pyexpr(pyexpr: _PyExpr) -> ExpressionNamespace:
+        expr = ExpressionNamespace.__new__(ExpressionNamespace)
+        expr._expr = pyexpr
+        return expr
+
+
+class ExpressionAggNamespace(ExpressionNamespace):
+    def sum(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def mean(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def min(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def max(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def count(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def list(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+
+    def concat(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
 
 
 class ExpressionsProjection(Iterable[Expression]):
