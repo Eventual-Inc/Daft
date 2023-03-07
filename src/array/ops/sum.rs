@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     array::{BaseArray, DataArray},
     datatypes::{DaftNumericType, Float64Array, Utf8Array},
@@ -16,13 +18,15 @@ where
     fn sum(&self) -> DaftResult<DataArray<T>> {
         let res = self.downcast().iter().fold(None, |acc, v| match v {
             Some(v) => match acc {
-                Some(acc) => Some(acc + v),
-                None => Some(v),
+                Some(acc) => Some(acc + *v),
+                None => Some(*v),
             },
             None => acc,
         });
-        let slice = std::slice::from_ref(&res);
-        let arrow_array = arrow2::array::PrimitiveArray::<T::Native>::from_slice(slice);
-        Ok(DataArray::new(self.field, arrow_array.arced()))
+
+        let scalar = res.unwrap();
+
+        let arrow_array = arrow2::array::PrimitiveArray::<T::Native>::from_slice([scalar]);
+        DataArray::new(self.field.clone(), Arc::new(arrow_array))
     }
 }
