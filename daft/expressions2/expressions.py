@@ -171,6 +171,9 @@ class Expression:
     def _is_column(self) -> bool:
         raise NotImplementedError("[RUST-INT] Implement for checking if this Expression is a Column")
 
+    def _replace_column_with_expression(self, column: str, new_expr: Expression) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement replacing a Column with an Expression - used in optimizer")
+
 
 class ExpressionNamespace:
     _expr: _PyExpr

@@ -53,7 +53,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
             if all(name in child_input_mapping for name in required_names):
                 pred = copy.deepcopy(pred)
                 for name in required_names:
-                    pred = pred._replace_column_with_expression(col(name), col(child_input_mapping[name]))
+                    pred = pred._replace_column_with_expression(name, col(child_input_mapping[name]))
                 can_push_down.append(pred)
             else:
                 can_not_push_down.append(pred)
@@ -101,12 +101,12 @@ class PushDownPredicates(Rule[LogicalPlan]):
             if all(name in left_input_mapping for name in required_names):
                 pred = copy.deepcopy(pred)
                 for name in required_names:
-                    pred = pred._replace_column_with_expression(col(name), col(left_input_mapping[name]))
+                    pred = pred._replace_column_with_expression(name, col(left_input_mapping[name]))
                 left_push_down.append(pred)
             elif all(name in right_input_mapping for name in required_names):
                 pred = copy.deepcopy(pred)
                 for name in required_names:
-                    pred = pred._replace_column_with_expression(col(name), col(right_input_mapping[name]))
+                    pred = pred._replace_column_with_expression(name, col(right_input_mapping[name]))
                 right_push_down.append(pred)
             else:
                 can_not_push_down.append(pred)
@@ -388,7 +388,7 @@ class FoldProjections(Rule[LogicalPlan]):
                     e = copy.deepcopy(e)
                     to_replace = e._required_columns()
                     for name in to_replace:
-                        e = e._replace_column_with_expression(col(name), child_projection.get_expression_by_name(name))
+                        e = e._replace_column_with_expression(name, child_projection.get_expression_by_name(name))
                 new_exprs.append(e)
             return Projection(
                 grandchild,
