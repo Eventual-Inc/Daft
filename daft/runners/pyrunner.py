@@ -8,7 +8,7 @@ from typing import Iterable
 import psutil
 import pyarrow as pa
 
-from daft.datasources import CSVSourceInfo, SourceInfo, StorageType
+from daft.datasources import SourceInfo
 from daft.execution import physical_plan, physical_plan_factory
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
 from daft.execution.logical_op_runners import LogicalPartitionOpRunner
@@ -34,9 +34,6 @@ from daft.runners.partitioning import (
     PartitionMetadata,
     PartitionSet,
     vPartition,
-    vPartitionParseCSVOptions,
-    vPartitionReadOptions,
-    vPartitionSchemaInferenceOptions,
 )
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
@@ -114,8 +111,10 @@ class PyRunnerIO(runner_io.RunnerIO[vPartition]):
         )
         return pset
 
-    def get_schema(self, listing_details_partitions: PartitionSet[vPartition], source_info: SourceInfo) -> Schema:
-        # Hardcoded: sample only the first file in the first partition
+    def get_schema_from_first_filepath(
+        self, listing_details_partitions: PartitionSet[vPartition], source_info: SourceInfo
+    ) -> Schema:
+        # Naively retrieve the first filepath in the PartitionSet
         nonempty_partitions = [
             p
             for p, p_len in zip(listing_details_partitions.values(), listing_details_partitions.len_of_partitions())
@@ -123,48 +122,9 @@ class PyRunnerIO(runner_io.RunnerIO[vPartition]):
         ]
         if len(nonempty_partitions) == 0:
             raise ValueError("No files to get schema from")
-        filepath = listing_details_partitions.items()[0][1].to_pydict()[PyRunnerIO.FS_LISTING_PATH_COLUMN_NAME][0]
+        first_filepath = nonempty_partitions[0].to_pydict()[PyRunnerIO.FS_LISTING_PATH_COLUMN_NAME][0]
 
-        sampled_partition: vPartition
-        if source_info.scan_type() == StorageType.CSV:
-            assert isinstance(source_info, CSVSourceInfo)
-            sampled_partition = vPartition.from_csv(
-                path=filepath,
-                csv_options=vPartitionParseCSVOptions(
-                    delimiter=source_info.delimiter,
-                    has_headers=source_info.has_headers,
-                    skip_rows_before_header=0,
-                    skip_rows_after_header=0,
-                ),
-                schema_options=vPartitionSchemaInferenceOptions(
-                    schema=None,
-                    inference_column_names=None,  # TODO: pass in user-provided column names
-                ),
-                read_options=vPartitionReadOptions(
-                    num_rows=100,  # sample 100 rows for schema inference
-                    column_names=None,  # read all columns
-                ),
-            )
-        elif source_info.scan_type() == StorageType.JSON:
-            sampled_partition = vPartition.from_json(
-                path=filepath,
-                read_options=vPartitionReadOptions(
-                    num_rows=100,  # sample 100 rows for schema inference
-                    column_names=None,  # read all columns
-                ),
-            )
-        elif source_info.scan_type() == StorageType.PARQUET:
-            sampled_partition = vPartition.from_parquet(
-                path=filepath,
-                read_options=vPartitionReadOptions(
-                    num_rows=100,  # sample 100 rows for schema inference
-                    column_names=None,  # read all columns
-                ),
-            )
-        else:
-            raise NotImplementedError(f"Schema inference for {source_info} not implemented")
-
-        return sampled_partition.schema()
+        return runner_io.sample_schema(first_filepath, source_info)
 
 
 class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):

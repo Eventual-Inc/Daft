@@ -58,8 +58,9 @@ def _get_tabular_files_scan(path: str, source_info: SourceInfo) -> logical_plan.
     runner_io = get_context().runner().runner_io()
     listing_details_partition_set = runner_io.glob_paths_details(path, source_info)
 
-    # Infer schema from the listings
-    data_schema = runner_io.get_schema(listing_details_partition_set, source_info)
+    # TODO: We should have a more sophisticated schema inference mechanism (sample >1 file and resolve schemas across files)
+    # Infer schema from the first filepath in the listings PartitionSet
+    data_schema = runner_io.get_schema_from_first_filepath(listing_details_partition_set, source_info)
 
     # Construct plan
     cache_entry = get_context().runner().put_partition_set_into_cache(listing_details_partition_set)

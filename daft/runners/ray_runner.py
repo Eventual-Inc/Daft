@@ -39,6 +39,7 @@ from daft.logical.optimizer import (
     PushDownPredicates,
 )
 from daft.resource_request import ResourceRequest
+from daft.runners import runner_io
 from daft.runners.blocks import ArrowDataBlock, zip_blocks_as_py
 from daft.runners.partitioning import (
     PartID,
@@ -107,6 +108,16 @@ def remote_len_partition(p: vPartition) -> int:
     return len(p)
 
 
+@ray.remote
+def sample_schema_from_filepath_vpartition(p: vPartition, filepath_column: str, source_info: SourceInfo) -> Schema:
+    """Ray remote function to run schema sampling on top of a vPartition containing filepaths"""
+    assert len(p) > 0
+
+    # Currently just samples the Schema from the first file
+    first_filepath = p.to_pydict()[filepath_column][0]
+    return runner_io.sample_schema(first_filepath, source_info)
+
+
 @dataclass
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     _partitions: dict[PartID, ray.ObjectRef]
@@ -160,15 +171,33 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         ray.wait([o for o in self._partitions.values()])
 
 
-class RayPartitionSetFactory(PartitionSetFactory[ray.ObjectRef]):
+class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
     def glob_paths_details(
         self,
         source_path: str,
         source_info: SourceInfo | None = None,
-    ) -> tuple[RayPartitionSet, Schema]:
-        schema = self._get_listing_paths_details_schema()
-        partition_refs = ray.get(_glob_path_into_details_vpartitions.remote(source_path, schema, source_info))
-        return RayPartitionSet({part_id: part for part_id, part in partition_refs}), schema
+    ) -> RayPartitionSet:
+        partition_refs = ray.get(
+            _glob_path_into_details_vpartitions.remote(source_path, RayRunnerIO.FS_LISTING_SCHEMA, source_info)
+        )
+        return RayPartitionSet({part_id: part for part_id, part in partition_refs})
+
+    def get_schema_from_first_filepath(
+        self, listing_details_partitions: PartitionSet[ray.ObjectRef], source_info: SourceInfo
+    ) -> Schema:
+        nonempty_partitions: list[ray.ObjectRef] = [
+            p
+            for p, p_len in zip(listing_details_partitions.values(), listing_details_partitions.len_of_partitions())
+            if p_len > 0
+        ]
+        if len(nonempty_partitions) == 0:
+            raise ValueError("No files to get schema from")
+        partition: ray.ObjectRef = nonempty_partitions[0]
+        return ray.get(
+            sample_schema_from_filepath_vpartition.remote(
+                partition, RayRunnerIO.FS_LISTING_PATH_COLUMN_NAME, source_info
+            )
+        )
 
 
 def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
@@ -475,8 +504,8 @@ class RayRunner(Runner):
     def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
         return self._optimizer.optimize(plan)
 
-    def partition_set_factory(self) -> PartitionSetFactory:
-        return RayPartitionSetFactory()
+    def runner_io(self) -> RayRunnerIO:
+        return RayRunnerIO()
 
 
 @dataclass(frozen=True)

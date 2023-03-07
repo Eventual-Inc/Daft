@@ -3,9 +3,21 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Generic, TypeVar
 
-from daft.datasources import SourceInfo
+from daft.datasources import (
+    CSVSourceInfo,
+    JSONSourceInfo,
+    ParquetSourceInfo,
+    SourceInfo,
+    StorageType,
+)
 from daft.logical.schema import Schema
-from daft.runners.partitioning import PartitionSet
+from daft.runners.partitioning import (
+    PartitionSet,
+    vPartition,
+    vPartitionParseCSVOptions,
+    vPartitionReadOptions,
+    vPartitionSchemaInferenceOptions,
+)
 from daft.types import ExpressionType
 
 PartitionT = TypeVar("PartitionT")
@@ -50,5 +62,54 @@ class RunnerIO(Generic[PartitionT]):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_schema(self, listing_details_partitions: PartitionSet[PartitionT], source_info: SourceInfo) -> Schema:
+    def get_schema_from_first_filepath(
+        self, listing_details_partitions: PartitionSet[PartitionT], source_info: SourceInfo
+    ) -> Schema:
         raise NotImplementedError()
+
+
+def sample_schema(filepath: str, source_info: SourceInfo) -> Schema:
+    """Helper method that samples a schema from the specified source"""
+
+    sampled_partition: vPartition
+    if source_info.scan_type() == StorageType.CSV:
+        assert isinstance(source_info, CSVSourceInfo)
+        sampled_partition = vPartition.from_csv(
+            path=filepath,
+            csv_options=vPartitionParseCSVOptions(
+                delimiter=source_info.delimiter,
+                has_headers=source_info.has_headers,
+                skip_rows_before_header=0,
+                skip_rows_after_header=0,
+            ),
+            schema_options=vPartitionSchemaInferenceOptions(
+                schema=None,
+                inference_column_names=None,  # TODO: pass in user-provided column names
+            ),
+            read_options=vPartitionReadOptions(
+                num_rows=100,  # sample 100 rows for schema inference
+                column_names=None,  # read all columns
+            ),
+        )
+    elif source_info.scan_type() == StorageType.JSON:
+        assert isinstance(source_info, JSONSourceInfo)
+        sampled_partition = vPartition.from_json(
+            path=filepath,
+            read_options=vPartitionReadOptions(
+                num_rows=100,  # sample 100 rows for schema inference
+                column_names=None,  # read all columns
+            ),
+        )
+    elif source_info.scan_type() == StorageType.PARQUET:
+        assert isinstance(source_info, ParquetSourceInfo)
+        sampled_partition = vPartition.from_parquet(
+            path=filepath,
+            read_options=vPartitionReadOptions(
+                num_rows=100,  # sample 100 rows for schema inference
+                column_names=None,  # read all columns
+            ),
+        )
+    else:
+        raise NotImplementedError(f"Schema inference for {source_info} not implemented")
+
+    return sampled_partition.schema()
