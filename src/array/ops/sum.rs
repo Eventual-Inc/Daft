@@ -1,11 +1,6 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{BaseArray, DataArray},
-    datatypes::{DaftNumericType, Float64Array, Utf8Array},
-    error::{DaftError, DaftResult},
-    kernels::utf8::add_utf8_arrays,
-};
+use crate::{array::DataArray, datatypes::DaftNumericType, error::DaftResult};
 
 use super::DaftNumericAgg;
 
