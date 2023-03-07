@@ -133,40 +133,41 @@ class MyCastableObj:
 PY_DATA = [MyCastableObj(), MyCastableObj(), None]
 
 
-@pytest.mark.parametrize(
-    ["before", "method_to_run", "to_type", "expected"],
-    [
-        # (PY_DATA, None, MyCastableObj, PY_DATA),
-        (PY_DATA, "get_integer", int, pa.chunked_array([[0, 0, None]])),
-        (PY_DATA, "get_float", float, pa.chunked_array([[0.5, 0.5, None]])),
-        (PY_DATA, "get_bool", bool, pa.chunked_array([[True, True, None]])),
-        (PY_DATA, "get_string", str, pa.chunked_array([["foo", "foo", None]])),
-        (PY_DATA, "get_bytes", bytes, pa.chunked_array([[b"foo", b"foo", None]])),
-        (
-            PY_DATA,
-            "get_date",
-            datetime.date,
-            pa.chunked_array([[datetime.date(1994, 1, 1), datetime.date(1994, 1, 1), None]]),
-        ),
-    ],
-)
-def test_cast_py(before, method_to_run, to_type, expected):
-    data = {"before": before}
-    df = DataFrame.from_pydict(data)
+# TODO: [RUST-INT][PY] Enable after adding Python object functionality
+# @pytest.mark.parametrize(
+#     ["before", "method_to_run", "to_type", "expected"],
+#     [
+#         # (PY_DATA, None, MyCastableObj, PY_DATA),
+#         (PY_DATA, "get_integer", int, pa.chunked_array([[0, 0, None]])),
+#         (PY_DATA, "get_float", float, pa.chunked_array([[0.5, 0.5, None]])),
+#         (PY_DATA, "get_bool", bool, pa.chunked_array([[True, True, None]])),
+#         (PY_DATA, "get_string", str, pa.chunked_array([["foo", "foo", None]])),
+#         (PY_DATA, "get_bytes", bytes, pa.chunked_array([[b"foo", b"foo", None]])),
+#         (
+#             PY_DATA,
+#             "get_date",
+#             datetime.date,
+#             pa.chunked_array([[datetime.date(1994, 1, 1), datetime.date(1994, 1, 1), None]]),
+#         ),
+#     ],
+# )
+# def test_cast_py(before, method_to_run, to_type, expected):
+#     data = {"before": before}
+#     df = DataFrame.from_pydict(data)
 
-    if method_to_run is not None:
-        df = df.with_column(
-            "before",
-            df["before"].apply(
-                lambda obj: getattr(obj, method_to_run)() if obj is not None else None, return_dtype=object
-            ),
-        )
+#     if method_to_run is not None:
+#         df = df.with_column(
+#             "before",
+#             df["before"].apply(
+#                 lambda obj: getattr(obj, method_to_run)() if obj is not None else None, return_dtype=object
+#             ),
+#         )
 
-    df = df.with_column("after", df["before"].cast(to_type))
-    df.collect()
-    collected = df.to_pydict()
+#     df = df.with_column("after", df["before"].cast(to_type))
+#     df.collect()
+#     collected = df.to_pydict()
 
-    if isinstance(expected, pa.ChunkedArray):
-        assert_chunkedarray_eq(collected["after"], expected)
-    else:
-        assert collected["after"] == expected
+#     if isinstance(expected, pa.ChunkedArray):
+#         assert_chunkedarray_eq(collected["after"], expected)
+#     else:
+#         assert collected["after"] == expected

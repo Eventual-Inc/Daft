@@ -57,7 +57,8 @@ _default_strategies = {
     DataType.bool(): _strat_boolean,
     DataType.binary(): _strat_byte,
     DataType.date(): _strat_date,
-    DataType.python(UserObject): _strat_user_object,
+    # TODO: [RUST-INT][PY] Enable after adding support for Python
+    # DataType.python(UserObject): _strat_user_object,
     DataType.null(): none(),
 }
 
@@ -79,7 +80,8 @@ all_dtypes = sampled_from(
         DataType.bool(),
         DataType.binary(),
         DataType.date(),
-        DataType.python(UserObject),
+        # TODO: [RUST-INT][PY] perform sorts on keys/values which are Python objects
+        # DataType.python(UserObject),
     ]
 )
 
@@ -134,8 +136,9 @@ def column(
     )
 
     # Convert sampled data to appropriate underlying format
-    if daft_type._is_python_type():
-        return col_data
+    # TODO: [RUST-INT][PY] handle Python types
+    # if daft_type._is_python_type():
+    # return col_data
     return pa.array(col_data, type=daft_type.to_arrow_type())
 
 

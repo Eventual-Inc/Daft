@@ -4,7 +4,6 @@ import pytest
 
 from daft import DataFrame
 from daft.datatype import DataType
-from daft.expressions import ColumnExpression
 from daft.logical.field import Field
 from daft.logical.logical_plan import LogicalPlan
 
@@ -36,5 +35,5 @@ def test_column_names(df):
 def test_columns(df):
     assert len(df.columns) == 1
     [ex] = df.columns
-    assert isinstance(ex, ColumnExpression)
+    assert ex._is_column()
     assert ex.name() == "foo"
