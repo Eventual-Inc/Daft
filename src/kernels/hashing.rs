@@ -1,6 +1,6 @@
 use arrow2::{
     array::Array,
-    array::{BinaryArray, PrimitiveArray, Utf8Array},
+    array::{BinaryArray, BooleanArray, NullArray, PrimitiveArray, Utf8Array},
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
     types::{NativeType, Offset},
@@ -35,6 +35,48 @@ fn hash_primitive<T: NativeType>(
                 None => null_hash,
             })
             .collect::<Vec<_>>()
+    };
+    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+}
+
+fn hash_boolean(array: &BooleanArray, seed: Option<&PrimitiveArray<u64>>) -> PrimitiveArray<u64> {
+    let null_hash = xxh3_64(b"");
+
+    let false_hash = xxh3_64(b"0");
+    let true_hash = xxh3_64(b"1");
+
+    let hashes = if let Some(seed) = seed {
+        array
+            .iter()
+            .zip(seed.values_iter())
+            .map(|(v, s)| match v {
+                Some(true) => xxh3_64_with_seed(b"1", *s),
+                Some(false) => xxh3_64_with_seed(b"0", *s),
+                None => null_hash,
+            })
+            .collect::<Vec<_>>()
+    } else {
+        array
+            .iter()
+            .map(|v| match v {
+                Some(true) => true_hash,
+                Some(false) => false_hash,
+                None => null_hash,
+            })
+            .collect::<Vec<_>>()
+    };
+    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+}
+
+fn hash_null(array: &NullArray, seed: Option<&PrimitiveArray<u64>>) -> PrimitiveArray<u64> {
+    let null_hash = xxh3_64(b"");
+
+    let hashes = if let Some(seed) = seed {
+        seed.values_iter()
+            .map(|s| xxh3_64_with_seed(b"", *s))
+            .collect::<Vec<_>>()
+    } else {
+        (0..array.len()).map(|_| null_hash).collect::<Vec<_>>()
     };
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
@@ -121,7 +163,8 @@ pub fn hash(array: &dyn Array, seed: Option<&PrimitiveArray<u64>>) -> Result<Pri
 
     use PhysicalType::*;
     Ok(match array.data_type().to_physical_type() {
-        // Boolean => hash_boolean(array.as_any().downcast_ref().unwrap()),
+        Null => hash_null(array.as_any().downcast_ref().unwrap(), seed),
+        Boolean => hash_boolean(array.as_any().downcast_ref().unwrap(), seed),
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed)
         }),
