@@ -81,9 +81,8 @@ impl DaftLogical<&Series> for Series {
                 rhs.name()
             )));
         }
-        return self
-            .downcast::<BooleanType>()?
-            .and(rhs.downcast::<BooleanType>()?);
+        self.downcast::<BooleanType>()?
+            .and(rhs.downcast::<BooleanType>()?)
     }
     fn or(&self, rhs: &Series) -> Self::Output {
         if self.data_type() != &DataType::Boolean {
@@ -99,9 +98,8 @@ impl DaftLogical<&Series> for Series {
                 rhs.name()
             )));
         }
-        return self
-            .downcast::<BooleanType>()?
-            .or(rhs.downcast::<BooleanType>()?);
+        self.downcast::<BooleanType>()?
+            .or(rhs.downcast::<BooleanType>()?)
     }
 
     fn xor(&self, rhs: &Series) -> Self::Output {
@@ -118,8 +116,7 @@ impl DaftLogical<&Series> for Series {
                 rhs.name()
             )));
         }
-        return self
-            .downcast::<BooleanType>()?
-            .xor(rhs.downcast::<BooleanType>()?);
+        self.downcast::<BooleanType>()?
+            .xor(rhs.downcast::<BooleanType>()?)
     }
 }
