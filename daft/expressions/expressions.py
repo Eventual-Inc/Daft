@@ -8,8 +8,8 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
 from daft.datatype import DataType
-from daft.expressions2.testing import expr_structurally_equal
-from daft.logical.schema2 import Field, Schema
+from daft.expressions.testing import expr_structurally_equal
+from daft.logical.schema import Field, Schema
 
 
 def lit(value: object) -> Expression:
@@ -30,12 +30,6 @@ class Expression:
 
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
-
-    @property
-    def agg(self) -> ExpressionAggNamespace:
-        ns = ExpressionAggNamespace.__new__(ExpressionAggNamespace)
-        ns._expr = self._expr
-        return ns
 
     @property
     def str(self) -> ExpressionStringNamespace:
@@ -280,29 +274,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         raise NotImplementedError("[RUST-INT] Implement string expression")
 
 
-class ExpressionAggNamespace(ExpressionNamespace):
-    def sum(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
-
-    def mean(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
-
-    def min(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
-
-    def max(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
-
-    def count(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
-
-    def list(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][NESTED] Implement expression aggregation")
-
-    def concat(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][NESTED] Implement expression aggregation")
-
-
 class ExpressionsProjection(Iterable[Expression]):
     """A collection of Expressions that can be projected onto a Table to produce another Table
 
@@ -363,7 +334,7 @@ class ExpressionsProjection(Iterable[Expression]):
         """Unions two Expressions. Output naming conflicts are handled with keyword arguments.
 
         Args:
-            other (ExpressionList): other ExpressionList to union with this one
+            other (ExpressionsProjection): other ExpressionsProjection to union with this one
             rename_dup (Optional[str], optional): when conflicts in naming happen, append this string to the conflicting column in `other`. Defaults to None.
         """
         unioned: dict[str, Expression] = {}

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from daft.dataframe import DataFrame
-from daft.expressions import ExpressionList, col
+from daft.expressions import ExpressionsProjection, col
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import Filter, Join, LogicalPlan
 from daft.logical.optimizer import PushDownPredicates
@@ -86,9 +86,9 @@ def test_filter_merge(valid_data: list[dict[str, float]], optimizer) -> None:
     df = DataFrame.from_pylist(valid_data)
     unoptimized = df.where((col("sepal_length") > 4.8).alias("foo")).where((col("sepal_width") > 2.4).alias("foo"))
 
-    # HACK: We manually modify the plan here because currently CombineFilters works by combining predicates as an ExpressionList rather than taking the & of the two predicates
+    # HACK: We manually modify the plan here because currently CombineFilters works by combining predicates as an ExpressionsProjection rather than taking the & of the two predicates
     DUMMY = col("sepal_width") > 100
-    EXPECTED = ExpressionList(
+    EXPECTED = ExpressionsProjection(
         [(col("sepal_width") > 2.4).alias("foo"), (col("sepal_length") > 4.8).alias("foo").alias("copy.foo")]
     )
     optimized = df.where(DUMMY)
