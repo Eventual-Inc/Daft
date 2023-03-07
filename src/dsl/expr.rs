@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(z.get_type(&schema)?, DataType::Boolean);
         Ok(())
     }
-    
+
     #[test]
     fn check_alias_type() -> DaftResult<()> {
         let a = col("a");
