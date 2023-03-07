@@ -10,8 +10,7 @@ from typing import Any, Generic, TypeVar
 
 from daft.datasources import SourceInfo, StorageType
 from daft.errors import ExpressionTypeError
-from daft.execution.operators import OperatorEnum
-from daft.expressions import CallExpression, Expression, ExpressionList, col
+from daft.expressions import Expression, ExpressionList, col
 from daft.internal.treenode import TreeNode
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
@@ -547,11 +546,8 @@ class MapPartition(UnaryNode, Generic[TMapPartitionOp]):
 
 class Explode(MapPartition[ExplodeOp]):
     def __init__(self, input: LogicalPlan, explode_expressions: ExpressionList):
-        assert [
-            isinstance(e, CallExpression) and e._operator == OperatorEnum.EXPLODE for e in explode_expressions
-        ], "Expressions supplied to Explode LogicalPlan must be a CallExpression with OperatorEnum.EXPLODE"
-
-        map_partition_op = ExplodeOp(input.schema(), explode_columns=explode_expressions)
+        exploded_expressions = ExpressionList([e._explode() for e in explode_expressions])
+        map_partition_op = ExplodeOp(input.schema(), explode_columns=exploded_expressions)
         super().__init__(
             input,
             map_partition_op,
