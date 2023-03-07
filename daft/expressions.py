@@ -34,6 +34,7 @@ except ImportError:
 
 import pyarrow as pa
 
+from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionOperator, OperatorEnum
 from daft.internal.treenode import TreeNode
@@ -45,7 +46,7 @@ from daft.runners.blocks import (
     PyListDataBlock,
     zip_blocks_as_py,
 )
-from daft.types import DatatypeInference, ExpressionType, PrimitiveExpressionType
+from daft.types import DatatypeInference, PrimitiveDataType
 
 
 def col(name: str) -> ColumnExpression:
@@ -140,7 +141,7 @@ class ExpressionExecutor:
             # Explcitly cast results of the UDF here for these primitive types:
             #   1. Ensures that all blocks across all partitions will have the same underlying Arrow type after the UDF
             #   2. Ensures that any null blocks from empty partitions or partitions with all nulls have the correct type
-            assert isinstance(expr._func_ret_type, PrimitiveExpressionType)
+            assert isinstance(expr._func_ret_type, PrimitiveDataType)
             expected_arrow_type = expr._func_ret_type.to_arrow_type()
             results = results.cast(expected_arrow_type)
 
@@ -196,7 +197,7 @@ class Expression(TreeNode["Expression"]):
         return other_expr._binary_op(operator, self)
 
     @abstractmethod
-    def _resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> DataType:
         raise NotImplementedError()
 
     def to_field(self, schema: Schema) -> Field:
@@ -382,7 +383,7 @@ class Expression(TreeNode["Expression"]):
         """
         return AsPyExpression(self, DatatypeInference.infer_from_py_type(type_))
 
-    def apply(self, func: Callable, return_dtype: ExpressionType | None = None, return_type: Any = None) -> Expression:
+    def apply(self, func: Callable, return_dtype: DataType | None = None, return_type: Any = None) -> Expression:
         """Apply a function on a given expression
 
         Example:
@@ -404,18 +405,18 @@ class Expression(TreeNode["Expression"]):
 
         inferred_type = get_type_hints(func).get("return", None)
 
-        # Infer ExpressionType from user-supplied `return_dtype`, or fall back onto function type annotations if not available
-        expression_type: ExpressionType
+        # Infer DataType from user-supplied `return_dtype`, or fall back onto function type annotations if not available
+        expression_type: DataType
         if return_dtype is None:
             if inferred_type is None:
                 warnings.warn(
                     f"Supplied function {func} was not annotated with a return type and no `return_dtype` keyword argument specified in `.apply`."
                     "It is highly recommended to specify a return_dtype for Daft to perform optimizations and for access to vectorized expression operators."
                 )
-                expression_type = ExpressionType.python(object)
+                expression_type = DataType.python(object)
             else:
                 expression_type = DatatypeInference.infer_from_py_type(inferred_type)
-        elif not isinstance(return_dtype, ExpressionType):
+        elif not isinstance(return_dtype, DataType):
             warnings.warn(
                 "Type inference from a Python type will be deprecated in Daft v0.1. "
                 "Please construct a Daft datatype and pass that into `return_dtype` instead of a Python type."
@@ -595,7 +596,7 @@ class LiteralExpression(Expression):
         super().__init__()
         self._value = value
 
-    def _resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> DataType:
         return DatatypeInference._infer_type_from_list([self._value])
 
     def name(self) -> str:
@@ -618,11 +619,11 @@ class CallExpression(Expression):
         self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         self._operator = operator
 
-    def _resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> DataType:
         args_resolved_types = tuple(arg._resolve_type(schema) for arg in self._args)
-        args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
+        args_resolved_types_non_none = cast(Tuple[DataType, ...], args_resolved_types)
         ret_type = self._operator.value.get_return_type(args_resolved_types_non_none)
-        if ret_type == ExpressionType.unknown():
+        if ret_type == DataType.unknown():
             operator: ExpressionOperator = self._operator.value
             op_pretty_print = ""
             operator_symbol = operator.symbol or operator.name
@@ -661,7 +662,7 @@ class UdfExpression(Expression):
     def __init__(
         self,
         func: Callable[..., Sequence],
-        func_ret_type: ExpressionType,
+        func_ret_type: DataType,
         func_args: tuple,
         func_kwargs: dict[str, Any],
     ) -> None:
@@ -679,7 +680,7 @@ class UdfExpression(Expression):
     def _kwargs(self) -> dict[str, Expression]:
         return {kw: self._children()[i] for kw, i in self._kwargs_ids.items()}
 
-    def _resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> DataType:
         return self._func_ret_type
 
     def _display_str(self) -> str:
@@ -713,7 +714,7 @@ class ColumnExpression(Expression):
             raise TypeError(f"Expected name to be type str, is {type(name)}")
         self._name = name
 
-    def _resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> DataType:
         return schema[self.name()].dtype
 
     def _display_str(self) -> str:
@@ -745,7 +746,7 @@ class AliasExpression(Expression):
         self._register_child(expr)
         self._name = name
 
-    def _resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> DataType:
         return self._expr._resolve_type(schema)
 
     def _input_mapping(self) -> str | None:
@@ -770,7 +771,7 @@ class AsPyExpression(Expression):
     def __init__(
         self,
         expr: Expression,
-        type_: ExpressionType,
+        type_: DataType,
         attr_name: str | None = "__call__",
     ) -> None:
         super().__init__()
@@ -803,7 +804,7 @@ class AsPyExpression(Expression):
 
         return UdfExpression(
             f,
-            ExpressionType.python_object(),
+            DataType.python_object(),
             func_args=(self._expr,) + args,
             func_kwargs=kwargs,
         )
@@ -822,7 +823,7 @@ class AsPyExpression(Expression):
 
         return UdfExpression(
             __getitem__,
-            ExpressionType.python_object(),
+            DataType.python_object(),
             func_args=(self._expr, key),
             func_kwargs={},
         )
@@ -834,7 +835,7 @@ class AsPyExpression(Expression):
     def _expr(self) -> Expression:
         return self._children()[0]
 
-    def _resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> DataType:
         return self._type
 
     def _is_eq_local(self, other: Expression) -> bool:

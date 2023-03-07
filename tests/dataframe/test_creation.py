@@ -12,7 +12,7 @@ import pytest
 
 from daft.api_annotations import APITypeError
 from daft.dataframe import DataFrame
-from daft.types import ExpressionType
+from daft.datatype import DataType
 
 
 class MyObj:
@@ -148,23 +148,23 @@ def test_load_pydict_types():
     collected_data = daft_df.to_pydict()
 
     expected = {
-        "arrow_int": ExpressionType.integer(),
-        "arrow_float": ExpressionType.float(),
-        "arrow_mixed_numbers": ExpressionType.float(),
-        "arrow_str": ExpressionType.string(),
-        "arrow_struct": ExpressionType.python(dict),
-        "arrow_nulls": ExpressionType.null(),
-        "py_objs": ExpressionType.python(MyObj),
-        "heterogenous_py_objs": ExpressionType.python_object(),
-        "numpy_arrays": ExpressionType.python(np.ndarray),
-        "np_int": ExpressionType.integer(),
-        "np_string": ExpressionType.string(),
-        "np_object": ExpressionType.python(MyObj),
-        "np_nested": ExpressionType.python(np.ndarray),
-        "pa_int": ExpressionType.integer(),
-        "pa_nested": ExpressionType.python(list),
-        "pa_int_chunked": ExpressionType.integer(),
-        "pa_nested_chunked": ExpressionType.python(list),
+        "arrow_int": DataType.int64(),
+        "arrow_float": DataType.float64(),
+        "arrow_mixed_numbers": DataType.float64(),
+        "arrow_str": DataType.string(),
+        "arrow_struct": DataType.python(dict),
+        "arrow_nulls": DataType.null(),
+        "py_objs": DataType.python(MyObj),
+        "heterogenous_py_objs": DataType.python_object(),
+        "numpy_arrays": DataType.python(np.ndarray),
+        "np_int": DataType.int64(),
+        "np_string": DataType.string(),
+        "np_object": DataType.python(MyObj),
+        "np_nested": DataType.python(np.ndarray),
+        "pa_int": DataType.int64(),
+        "pa_nested": DataType.python(list),
+        "pa_int_chunked": DataType.int64(),
+        "pa_nested_chunked": DataType.python(list),
     }
 
     assert collected_data.keys() == data.keys() == expected.keys()

@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from daft import DataFrame, col
-from daft.execution.operators import ExpressionType
+from daft.execution.operators import DataType
 from tests.conftest import assert_df_equals
 
 
@@ -33,11 +33,11 @@ def test_explode_single_col_pylist(nrepartitions):
     }
     df = DataFrame.from_pydict(data).repartition(nrepartitions)
     df = df.explode(col("explode"))
-    assert df.schema()["explode"].dtype == ExpressionType.python_object()
+    assert df.schema()["explode"].dtype == DataType.python_object()
 
     df = df.with_column("explode_plus1", col("explode").apply(add_one))
     df = df.select(col("explode_plus1"), col("repeat"))
-    assert df.schema()["explode_plus1"].dtype == ExpressionType.python_object()
+    assert df.schema()["explode_plus1"].dtype == DataType.python_object()
 
     pd_df = pd.DataFrame(data)
     pd_df = pd_df.explode("explode")
@@ -59,7 +59,7 @@ def test_explode_single_col_arrow(nrepartitions):
     }
     df = DataFrame.from_pydict(data).repartition(nrepartitions)
     df = df.explode(col("explode"))
-    assert df.schema()["explode"].dtype == ExpressionType.python_object()
+    assert df.schema()["explode"].dtype == DataType.python_object()
 
     df = df.select(col("explode"), col("repeat"))
 
@@ -83,8 +83,8 @@ def test_explode_multi_col(nrepartitions):
     }
     df = DataFrame.from_pydict(data).repartition(nrepartitions)
     df = df.explode(col("explode1"), col("explode2"))
-    assert df.schema()["explode1"].dtype == ExpressionType.python_object()
-    assert df.schema()["explode2"].dtype == ExpressionType.python_object()
+    assert df.schema()["explode1"].dtype == DataType.python_object()
+    assert df.schema()["explode2"].dtype == DataType.python_object()
 
     df.collect()
     daft_pd_df = pd.DataFrame(df.to_pydict())

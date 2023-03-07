@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from daft.types import ExpressionType
+from daft.datatype import DataType
 
 if TYPE_CHECKING:
     from daft.expressions import Expression
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class Field:
     name: str
-    dtype: ExpressionType
+    dtype: DataType
 
     def to_column_expression(self) -> Expression:
         from daft.expressions import col
