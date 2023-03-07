@@ -34,12 +34,8 @@ class ExplodeOp(MapPartitionOp):
         self.output_schema = Schema._from_field_name_and_types([(f.name, f.dtype) for f in output_fields])
         self.explode_columns = explode_columns
 
-        resolved_schema = self.input_schema.resolve_expressions(self.explode_columns)
-        for f, explode_expr in zip(resolved_schema, self.explode_columns):
-            if not f.dtype._is_python_type():
-                raise ValueError(
-                    f"Expected expression {explode_expr} to resolve to an explodable type such as PY, but received: {f.dtype}"
-                )
+        # Resolve expressions to validate that explode_columns is a valid operation
+        self.input_schema.resolve_expressions(self.explode_columns)
 
     def get_output_schema(self) -> Schema:
         return self.output_schema

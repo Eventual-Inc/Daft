@@ -2,12 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
 import pytest
-
-from daft.runners.blocks import ArrowDataBlock, PyListDataBlock
-from daft.runners.partitioning import PartitionSet
-from daft.types import ExpressionType
 
 
 def pytest_addoption(parser):
@@ -29,26 +24,6 @@ def pytest_collection_modifyitems(config, items):
         for keyword in marks:
             if keyword in item.keywords and not config.getoption(f"--run_{keyword}"):
                 item.add_marker(marks[keyword])
-
-
-def assert_df_column_type(
-    partition_set: PartitionSet,
-    colname: str,
-    type_: ExpressionType,
-):
-    """Asserts that all tiles for a given column is of the implementation, given a type"""
-    et = type_
-    vpart = partition_set._get_merged_vpartition()
-    blocks = [tile.block for tile in vpart.columns.values() if tile.column_name == colname]
-    assert len(blocks) == 1, f"cannot find block with provided colname {colname}"
-    block = blocks[0]
-
-    if et._is_python_type():
-        assert isinstance(block, PyListDataBlock)
-    else:
-        assert isinstance(block, ArrowDataBlock)
-        assert isinstance(block.data, pa.ChunkedArray)
-        assert block.data.type == et.to_arrow_type()
 
 
 def assert_pydict_equals(
