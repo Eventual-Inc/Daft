@@ -17,7 +17,6 @@ from pyarrow import csv
 from pyarrow import dataset as pada
 from pyarrow import json, parquet
 
-from daft.datasources import SourceInfo
 from daft.execution.operators import OperatorEnum
 from daft.expressions import Expression, ExpressionExecutor, ExpressionList
 from daft.filesystem import get_filesystem_from_path
@@ -68,12 +67,14 @@ class vPartitionParseCSVOptions:
     Args:
         delimiter: The delimiter to use when parsing CSVs, defaults to ","
         has_headers: Whether the CSV has headers, defaults to True
+        column_names: Column names to use in place of headers, defaults to None
         skip_rows_before_header: Number of rows to skip before the header, defaults to 0
         skip_rows_after_header: Number of rows to skip after the header, defaults to 0
     """
 
     delimiter: str = ","
     has_headers: bool = True
+    column_names: list[str] | None = None
     skip_rows_before_header: int = 0
     skip_rows_after_header: int = 0
 
@@ -834,48 +835,3 @@ class PartitionSetCache:
     def clear(self) -> None:
         del self._uuid_to_partition_set
         self._uuid_to_partition_set = weakref.WeakValueDictionary()
-
-
-class PartitionSetFactory(Generic[PartitionT]):
-    """Factory class for creating PartitionSets."""
-
-    FS_LISTING_PATH_COLUMN_NAME = "path"
-    FS_LISTING_SIZE_COLUMN_NAME = "size"
-    FS_LISTING_TYPE_COLUMN_NAME = "type"
-    FS_LISTING_ROWS_COLUMN_NAME = "rows"
-
-    def _get_listing_paths_schema(self) -> Schema:
-        """Construct the schema for a DataFrame of path listing"""
-        return Schema._from_field_name_and_types(
-            [
-                (self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
-            ]
-        )
-
-    def _get_listing_paths_details_schema(self) -> Schema:
-        """Construct the schema for a DataFrame of detailed path listing"""
-        return Schema._from_field_name_and_types(
-            [
-                (self.FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
-                (self.FS_LISTING_SIZE_COLUMN_NAME, ExpressionType.integer()),
-                (self.FS_LISTING_TYPE_COLUMN_NAME, ExpressionType.string()),
-                (self.FS_LISTING_ROWS_COLUMN_NAME, ExpressionType.integer()),
-            ]
-        )
-
-    @abstractmethod
-    def glob_paths_details(
-        self,
-        source_path: str,
-        source_info: SourceInfo | None = None,
-    ) -> tuple[PartitionSet[PartitionT], Schema]:
-        """Globs the specified filepath to construct a PartitionSet of file and dir metadata
-
-        Args:
-            source_path (str): path to glob
-
-        Returns:
-            PartitionSet[PartitionT]: PartitionSet containing the listings' metadata
-            ExpressionList: Schema of the PartitionSet that was constructed
-        """
-        raise NotImplementedError()
