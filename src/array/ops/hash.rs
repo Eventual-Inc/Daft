@@ -14,10 +14,7 @@ where
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let downcasted = self.downcast();
 
-        let seed = match seed {
-            None => None,
-            Some(v) => Some(v.downcast()),
-        };
+        let seed = seed.map(|v| v.downcast());
 
         let result = kernels::hashing::hash(downcasted, seed)?;
 
@@ -29,10 +26,7 @@ impl Utf8Array {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let downcasted = self.downcast();
 
-        let seed = match seed {
-            None => None,
-            Some(v) => Some(v.downcast()),
-        };
+        let seed = seed.map(|v| v.downcast());
 
         let result = kernels::hashing::hash(downcasted, seed)?;
 
@@ -44,10 +38,7 @@ impl BooleanArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let downcasted = self.downcast();
 
-        let seed = match seed {
-            None => None,
-            Some(v) => Some(v.downcast()),
-        };
+        let seed = seed.map(|v| v.downcast());
 
         let result = kernels::hashing::hash(downcasted, seed)?;
 
@@ -59,10 +50,7 @@ impl NullArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let downcasted = self.data();
 
-        let seed = match seed {
-            None => None,
-            Some(v) => Some(v.downcast()),
-        };
+        let seed = seed.map(|v| v.downcast());
 
         let result = kernels::hashing::hash(downcasted, seed)?;
 
