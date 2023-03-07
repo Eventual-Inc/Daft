@@ -170,6 +170,9 @@ class Expression:
     def _required_columns(self) -> set[str]:
         raise NotImplementedError("[RUST-INT] Implement for getting required columns in an Expression")
 
+    def _is_column(self) -> bool:
+        raise NotImplementedError("[RUST-INT] Implement for checking if this Expression is a Column")
+
 
 class ExpressionNamespace:
     _expr: _PyExpr

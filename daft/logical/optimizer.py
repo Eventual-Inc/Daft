@@ -350,7 +350,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             filepaths_child=child._filepaths_child,
             filepaths_column_name=child._filepaths_column_name,
         )
-        if any(not e.is_column() for e in parent._projection):
+        if any(not e._is_column() for e in parent._projection):
             return parent.copy_with_new_children([new_scan])
         else:
             return new_scan
@@ -380,7 +380,7 @@ class FoldProjections(Rule[LogicalPlan]):
 
             new_exprs = []
             for e in parent_projection:
-                if e.is_column():
+                if e._is_column():
                     name = e.name()
                     assert name is not None
                     e = child_projection.get_expression_by_name(name)
@@ -414,7 +414,7 @@ class DropProjections(Rule[LogicalPlan]):
         parent_projection = parent._projection
         child_output = child.schema()
         if (
-            all(expr.is_column() for expr in parent_projection)
+            all(expr._is_column() for expr in parent_projection)
             and len(parent_projection) == len(child_output)
             and all(p.name() == c.name for p, c in zip(parent_projection, child_output))
         ):

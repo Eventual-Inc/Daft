@@ -549,7 +549,7 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
-                assert c.is_column(), "we cant support non Column Expressions for partition writing"
+                assert c._is_column(), "we cant support non Column Expressions for partition writing"
             df = self.repartition(self.num_partitions(), *cols)
         else:
             df = self
@@ -592,7 +592,7 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
-                assert c.is_column(), "we cant support non Column Expressions for partition writing"
+                assert c._is_column(), "we cant support non Column Expressions for partition writing"
             df = self.repartition(self.num_partitions(), *cols)
         else:
             df = self

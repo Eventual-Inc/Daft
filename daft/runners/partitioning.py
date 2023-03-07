@@ -665,7 +665,7 @@ class vPartition:
         partition_col_names = []
         if partition_cols is not None:
             for col in partition_cols:
-                assert col.is_column(), "we can only support Column Expressions for partitioning parquet"
+                assert col._is_column(), "we can only support Column Expressions for partitioning parquet"
                 col_name = col.name()
                 assert col_name is not None
                 assert col_name in keys
