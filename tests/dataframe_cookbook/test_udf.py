@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 
 from daft import DataFrame
+from daft.datatype import DataType
 from daft.expressions import col
-from daft.types import ExpressionType
 from daft.udf import udf
 from tests.conftest import assert_df_equals
 from tests.dataframe_cookbook.conftest import (
@@ -95,7 +95,7 @@ def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
     # Running .str expressions will fail on PyObj columns
-    assert daft_df.schema()["string_key"].dtype == ExpressionType.python_object()
+    assert daft_df.schema()["string_key"].dtype == DataType.python_object()
     # TODO(jay): This should fail during column resolving instead of at runtime
     daft_df_fail = daft_df.with_column("string_key_starts_with_1", col("string_key").str.startswith("1"))
     with pytest.raises(AssertionError):
@@ -111,6 +111,6 @@ def test_apply_udf(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_pd_df_pass = daft_df_pass.to_pandas()
     assert_df_equals(daft_pd_df_pass, service_requests_csv_pd_df)
 
-    assert daft_df_pass.schema()["string_key"].dtype == ExpressionType.string()
-    assert daft_df_pass.schema()["string_key_starts_with_1"].dtype == ExpressionType.logical()
+    assert daft_df_pass.schema()["string_key"].dtype == DataType.string()
+    assert daft_df_pass.schema()["string_key_starts_with_1"].dtype == DataType.bool()
     daft_df_pass.collect()

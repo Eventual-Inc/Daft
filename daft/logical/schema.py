@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Iterator
 
+from daft.datatype import DataType
 from daft.expressions import ExpressionList, col
 from daft.logical.field import Field
-from daft.types import ExpressionType
 
 
 class Schema:
@@ -14,7 +14,7 @@ class Schema:
         raise NotImplementedError(f"Initializing a schema with __init__ is not supported")
 
     @classmethod
-    def _from_field_name_and_types(self, fields: list[tuple[str, ExpressionType]]) -> Schema:
+    def _from_field_name_and_types(self, fields: list[tuple[str, DataType]]) -> Schema:
         s = Schema.__new__(Schema)
         s._fields = {name: Field(name=name, dtype=dtype) for name, dtype in fields}
         return s

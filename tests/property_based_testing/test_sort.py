@@ -17,7 +17,7 @@ from hypothesis.strategies import (
 )
 
 from daft import DataFrame
-from daft.types import ExpressionType
+from daft.datatype import DataType
 from tests.property_based_testing.strategies import (
     UserObject,
     columns_dict,
@@ -173,14 +173,14 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         col_daft_type = self.df.schema()[col_name_to_filter].dtype
 
         # Logical types do not accept equality operators, but can be filtered on by themselves
-        if col_daft_type == ExpressionType.logical():
+        if col_daft_type == DataType.bool():
             self.df = self.df.where(self.df[col_name_to_filter])
         # Python object columns return another PY column after equality, so we have to cast to bool
-        elif col_daft_type == ExpressionType.python(UserObject):
+        elif col_daft_type == DataType.python(UserObject):
             filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
             self.df = self.df.where((self.df[col_name_to_filter] == filter_value).cast(bool))
         # Reject if filtering on a null column - not a meaningful operation
-        elif col_daft_type == ExpressionType.null():
+        elif col_daft_type == DataType.null():
             reject()
         else:
             filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
@@ -194,17 +194,17 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         column_name = data.draw(sampled_from(self.df.schema().column_names()), label="Column to filter on")
         column_daft_type = self.df.schema()[column_name].dtype
         type_to_op_mapping = {
-            ExpressionType.string(): lambda e, other: e.str.concat(other),
-            ExpressionType.integer(): lambda e, other: e + other,
-            ExpressionType.float(): lambda e, other: e + other,
-            ExpressionType.logical(): lambda e, other: e & other,
-            ExpressionType.python(UserObject): lambda e, other: e.apply(
+            DataType.string(): lambda e, other: e.str.concat(other),
+            DataType.int64(): lambda e, other: e + other,
+            DataType.float64(): lambda e, other: e + other,
+            DataType.bool(): lambda e, other: e & other,
+            DataType.python(UserObject): lambda e, other: e.apply(
                 lambda x: x.add(other) if x is not None else None, return_dtype=UserObject
             ),
             # No meaningful binary operations supported for these yet
-            ExpressionType.date(): lambda e, other: e.dt.year(),
-            ExpressionType.bytes(): lambda e, other: e,
-            ExpressionType.null(): lambda e, other: e,
+            DataType.date(): lambda e, other: e.dt.year(),
+            DataType.binary(): lambda e, other: e,
+            DataType.null(): lambda e, other: e,
         }
         op = type_to_op_mapping[column_daft_type]
         other_binary_value = data.draw(generate_data(column_daft_type), label="Binary *other* value")
