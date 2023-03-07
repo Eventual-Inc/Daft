@@ -34,6 +34,7 @@ from daft.runners.partitioning import (
     PartitionMetadata,
     PartitionSet,
     vPartition,
+    vPartitionSchemaInferenceOptions,
 )
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
@@ -112,7 +113,10 @@ class PyRunnerIO(runner_io.RunnerIO[vPartition]):
         return pset
 
     def get_schema_from_first_filepath(
-        self, listing_details_partitions: PartitionSet[vPartition], source_info: SourceInfo
+        self,
+        listing_details_partitions: PartitionSet[vPartition],
+        source_info: SourceInfo,
+        schema_inference_options: vPartitionSchemaInferenceOptions,
     ) -> Schema:
         # Naively retrieve the first filepath in the PartitionSet
         nonempty_partitions = [
@@ -124,7 +128,7 @@ class PyRunnerIO(runner_io.RunnerIO[vPartition]):
             raise ValueError("No files to get schema from")
         first_filepath = nonempty_partitions[0].to_pydict()[PyRunnerIO.FS_LISTING_PATH_COLUMN_NAME][0]
 
-        return runner_io.sample_schema(first_filepath, source_info)
+        return runner_io.sample_schema(first_filepath, source_info, schema_inference_options)
 
 
 class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):

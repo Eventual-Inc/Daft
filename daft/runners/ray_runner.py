@@ -47,6 +47,7 @@ from daft.runners.partitioning import (
     PartitionMetadata,
     PartitionSet,
     vPartition,
+    vPartitionSchemaInferenceOptions,
 )
 from daft.runners.profiler import profiler
 from daft.runners.pyrunner import LocalPartitionSet
@@ -109,13 +110,18 @@ def remote_len_partition(p: vPartition) -> int:
 
 
 @ray.remote
-def sample_schema_from_filepath_vpartition(p: vPartition, filepath_column: str, source_info: SourceInfo) -> Schema:
+def sample_schema_from_filepath_vpartition(
+    p: vPartition,
+    filepath_column: str,
+    source_info: SourceInfo,
+    schema_inference_options: vPartitionSchemaInferenceOptions,
+) -> Schema:
     """Ray remote function to run schema sampling on top of a vPartition containing filepaths"""
     assert len(p) > 0
 
     # Currently just samples the Schema from the first file
     first_filepath = p.to_pydict()[filepath_column][0]
-    return runner_io.sample_schema(first_filepath, source_info)
+    return runner_io.sample_schema(first_filepath, source_info, schema_inference_options)
 
 
 @dataclass
@@ -183,7 +189,10 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
         return RayPartitionSet({part_id: part for part_id, part in partition_refs})
 
     def get_schema_from_first_filepath(
-        self, listing_details_partitions: PartitionSet[ray.ObjectRef], source_info: SourceInfo
+        self,
+        listing_details_partitions: PartitionSet[ray.ObjectRef],
+        source_info: SourceInfo,
+        schema_inference_options: vPartitionSchemaInferenceOptions,
     ) -> Schema:
         nonempty_partitions: list[ray.ObjectRef] = [
             p
@@ -195,7 +204,10 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
         partition: ray.ObjectRef = nonempty_partitions[0]
         return ray.get(
             sample_schema_from_filepath_vpartition.remote(
-                partition, RayRunnerIO.FS_LISTING_PATH_COLUMN_NAME, source_info
+                partition,
+                RayRunnerIO.FS_LISTING_PATH_COLUMN_NAME,
+                source_info,
+                schema_inference_options,
             )
         )
 

@@ -34,7 +34,12 @@ from daft.logical import logical_plan
 from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
 from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
-from daft.runners.partitioning import PartitionCacheEntry, PartitionSet, vPartition
+from daft.runners.partitioning import (
+    PartitionCacheEntry,
+    PartitionSet,
+    vPartition,
+    vPartitionSchemaInferenceOptions,
+)
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.viz import DataFrameDisplay
 
@@ -52,7 +57,11 @@ ColumnInputType = Union[Expression, str]
 InputListType = Union[list, "np.ndarray", "pa.Array", "pa.ChunkedArray"]
 
 
-def _get_tabular_files_scan(path: str, source_info: SourceInfo) -> logical_plan.TabularFilesScan:
+def _get_tabular_files_scan(
+    path: str,
+    source_info: SourceInfo,
+    schema_inference_options: vPartitionSchemaInferenceOptions,
+) -> logical_plan.TabularFilesScan:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
     # Glob the path using the Runner
     runner_io = get_context().runner().runner_io()
@@ -60,7 +69,9 @@ def _get_tabular_files_scan(path: str, source_info: SourceInfo) -> logical_plan.
 
     # TODO: We should have a more sophisticated schema inference mechanism (sample >1 file and resolve schemas across files)
     # Infer schema from the first filepath in the listings PartitionSet
-    data_schema = runner_io.get_schema_from_first_filepath(listing_details_partition_set, source_info)
+    data_schema = runner_io.get_schema_from_first_filepath(
+        listing_details_partition_set, source_info, schema_inference_options
+    )
 
     # Construct plan
     cache_entry = get_context().runner().put_partition_set_into_cache(listing_details_partition_set)
@@ -306,6 +317,7 @@ class DataFrame:
         plan = _get_tabular_files_scan(
             path,
             JSONSourceInfo(),
+            vPartitionSchemaInferenceOptions(),
         )
         return cls(plan)
 
@@ -348,6 +360,7 @@ class DataFrame:
                 delimiter=delimiter,
                 has_headers=has_headers,
             ),
+            vPartitionSchemaInferenceOptions(inference_column_names=column_names),
         )
         return cls(plan)
 
@@ -377,6 +390,7 @@ class DataFrame:
         plan = _get_tabular_files_scan(
             path,
             ParquetSourceInfo(),
+            vPartitionSchemaInferenceOptions(),
         )
         return cls(plan)
 

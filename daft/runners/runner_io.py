@@ -63,12 +63,19 @@ class RunnerIO(Generic[PartitionT]):
 
     @abstractmethod
     def get_schema_from_first_filepath(
-        self, listing_details_partitions: PartitionSet[PartitionT], source_info: SourceInfo
+        self,
+        listing_details_partitions: PartitionSet[PartitionT],
+        source_info: SourceInfo,
+        schema_inference_options: vPartitionSchemaInferenceOptions,
     ) -> Schema:
         raise NotImplementedError()
 
 
-def sample_schema(filepath: str, source_info: SourceInfo) -> Schema:
+def sample_schema(
+    filepath: str,
+    source_info: SourceInfo,
+    schema_inference_options: vPartitionSchemaInferenceOptions,
+) -> Schema:
     """Helper method that samples a schema from the specified source"""
 
     sampled_partition: vPartition
@@ -82,10 +89,7 @@ def sample_schema(filepath: str, source_info: SourceInfo) -> Schema:
                 skip_rows_before_header=0,
                 skip_rows_after_header=0,
             ),
-            schema_options=vPartitionSchemaInferenceOptions(
-                schema=None,
-                inference_column_names=None,  # TODO: pass in user-provided column names
-            ),
+            schema_options=schema_inference_options,
             read_options=vPartitionReadOptions(
                 num_rows=100,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns
@@ -99,6 +103,7 @@ def sample_schema(filepath: str, source_info: SourceInfo) -> Schema:
                 num_rows=100,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns
             ),
+            schema_options=schema_inference_options,
         )
     elif source_info.scan_type() == StorageType.PARQUET:
         assert isinstance(source_info, ParquetSourceInfo)
@@ -108,6 +113,7 @@ def sample_schema(filepath: str, source_info: SourceInfo) -> Schema:
                 num_rows=100,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns
             ),
+            schema_options=schema_inference_options,
         )
     else:
         raise NotImplementedError(f"Schema inference for {source_info} not implemented")
