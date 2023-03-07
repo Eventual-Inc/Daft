@@ -19,7 +19,6 @@ from hypothesis.strategies import (
 from daft import DataFrame
 from daft.datatype import DataType
 from tests.property_based_testing.strategies import (
-    UserObject,
     columns_dict,
     generate_data,
     total_order_dtypes,
@@ -175,10 +174,11 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         # Logical types do not accept equality operators, but can be filtered on by themselves
         if col_daft_type == DataType.bool():
             self.df = self.df.where(self.df[col_name_to_filter])
+        # TODO: [RUST-INT][PY] Enable after adding support for Python
         # Python object columns return another PY column after equality, so we have to cast to bool
-        elif col_daft_type == DataType.python(UserObject):
-            filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
-            self.df = self.df.where((self.df[col_name_to_filter] == filter_value).cast(bool))
+        # elif col_daft_type == DataType.python(UserObject):
+        #     filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
+        #     self.df = self.df.where((self.df[col_name_to_filter] == filter_value).cast(bool))
         # Reject if filtering on a null column - not a meaningful operation
         elif col_daft_type == DataType.null():
             reject()
@@ -198,9 +198,10 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
             DataType.int64(): lambda e, other: e + other,
             DataType.float64(): lambda e, other: e + other,
             DataType.bool(): lambda e, other: e & other,
-            DataType.python(UserObject): lambda e, other: e.apply(
-                lambda x: x.add(other) if x is not None else None, return_dtype=UserObject
-            ),
+            # TODO: [RUST-INT][PY] Enable after adding support for Python
+            # DataType.python(UserObject): lambda e, other: e.apply(
+            # lambda x: x.add(other) if x is not None else None, return_dtype=UserObject
+            # ),
             # No meaningful binary operations supported for these yet
             DataType.date(): lambda e, other: e.dt.year(),
             DataType.binary(): lambda e, other: e,
