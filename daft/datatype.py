@@ -83,6 +83,10 @@ class DataType:
         return DataType._from_pydatatype(PyDataType.null())
 
     @staticmethod
+    def date() -> DataType:
+        return DataType._from_pydatatype(PyDataType.date())
+
+    @staticmethod
     def from_arrow_type(arrow_type: pa.lib.DataType) -> DataType:
         if pa.types.is_int8(arrow_type):
             return DataType.int8()
