@@ -44,7 +44,7 @@ from daft.runners.blocks import (
     PyListDataBlock,
     zip_blocks_as_py,
 )
-from daft.types import ExpressionType, PrimitiveExpressionType
+from daft.types import DatatypeInference, ExpressionType, PrimitiveExpressionType
 
 if TYPE_CHECKING:
     from daft.logical.schema import Schema
@@ -200,11 +200,12 @@ class Expression(TreeNode["Expression"]):
         return other_expr._binary_op(operator, self)
 
     @abstractmethod
-    def resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
         raise NotImplementedError()
 
     def to_field(self, schema: Schema) -> Field:
-        return Field(name=self.name(), dtype=self.resolve_type(schema))
+        # NOTE: not needed in new expressions - this is only used internally in schema.py
+        return Field(name=self.name(), dtype=self._resolve_type(schema))
 
     def name(self) -> str:
         for child in self._children():
@@ -222,10 +223,10 @@ class Expression(TreeNode["Expression"]):
             raise ValueError("we can only convert expressions to ColumnExpressions if they have a name")
         return ColumnExpression(name)
 
-    def required_columns(self) -> set[str]:
+    def _required_columns(self) -> set[str]:
         to_rtn: set[str] = set()
         for child in self._children():
-            to_rtn |= child.required_columns()
+            to_rtn |= child._required_columns()
         return to_rtn
 
     def _replace_column_with_expression(self, col_expr: ColumnExpression, new_expr: Expression) -> Expression:
@@ -383,7 +384,7 @@ class Expression(TreeNode["Expression"]):
         Returns:
             AsPyExpression: A special Expression that records any method calls that a user runs on it, applying the method call to each item in the expression.
         """
-        return AsPyExpression(self, ExpressionType._infer_from_py_type(type_))
+        return AsPyExpression(self, DatatypeInference.infer_from_py_type(type_))
 
     def apply(self, func: Callable, return_dtype: ExpressionType | None = None, return_type: Any = None) -> Expression:
         """Apply a function on a given expression
@@ -417,13 +418,13 @@ class Expression(TreeNode["Expression"]):
                 )
                 expression_type = ExpressionType.python(object)
             else:
-                expression_type = ExpressionType._infer_from_py_type(inferred_type)
+                expression_type = DatatypeInference.infer_from_py_type(inferred_type)
         elif not isinstance(return_dtype, ExpressionType):
             warnings.warn(
                 "Type inference from a Python type will be deprecated in Daft v0.1. "
                 "Please construct a Daft datatype and pass that into `return_dtype` instead of a Python type."
             )
-            expression_type = ExpressionType._infer_from_py_type(return_dtype)
+            expression_type = DatatypeInference.infer_from_py_type(return_dtype)
         else:
             expression_type = return_dtype
 
@@ -450,7 +451,7 @@ class Expression(TreeNode["Expression"]):
     def _is_eq_local(self, other: Expression) -> bool:
         raise NotImplementedError()
 
-    def is_eq(self, other: Expression) -> bool:
+    def _is_eq(self, other: Expression) -> bool:
         if self is other:
             return True
 
@@ -461,7 +462,7 @@ class Expression(TreeNode["Expression"]):
             return False
 
         for s, o in zip(self._children(), other._children()):
-            if not s.is_eq(o):
+            if not s._is_eq(o):
                 return False
 
         return True
@@ -598,8 +599,8 @@ class LiteralExpression(Expression):
         super().__init__()
         self._value = value
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
-        return ExpressionType._infer_type([self._value])
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
+        return DatatypeInference._infer_type_from_list([self._value])
 
     def name(self) -> str:
         return "lit"
@@ -621,8 +622,8 @@ class CallExpression(Expression):
         self._args_ids = tuple(self._register_child(self._to_expression(arg)) for arg in func_args)
         self._operator = operator
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
-        args_resolved_types = tuple(arg.resolve_type(schema) for arg in self._args)
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
+        args_resolved_types = tuple(arg._resolve_type(schema) for arg in self._args)
         args_resolved_types_non_none = cast(Tuple[ExpressionType, ...], args_resolved_types)
         ret_type = self._operator.value.get_return_type(args_resolved_types_non_none)
         if ret_type == ExpressionType.unknown():
@@ -682,7 +683,7 @@ class UdfExpression(Expression):
     def _kwargs(self) -> dict[str, Expression]:
         return {kw: self._children()[i] for kw, i in self._kwargs_ids.items()}
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
         return self._func_ret_type
 
     def _display_str(self) -> str:
@@ -716,7 +717,7 @@ class ColumnExpression(Expression):
             raise TypeError(f"Expected name to be type str, is {type(name)}")
         self._name = name
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
         return schema[self.name()].dtype
 
     def _display_str(self) -> str:
@@ -733,7 +734,7 @@ class ColumnExpression(Expression):
         assert self._name is not None
         return self._name
 
-    def required_columns(self) -> set[str]:
+    def _required_columns(self) -> set[str]:
         return {self.name()}
 
     def _is_eq_local(self, other: Expression) -> bool:
@@ -748,8 +749,8 @@ class AliasExpression(Expression):
         self._register_child(expr)
         self._name = name
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
-        return self._expr.resolve_type(schema)
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
+        return self._expr._resolve_type(schema)
 
     def _input_mapping(self) -> str | None:
         return self._children()[0]._input_mapping()
@@ -837,7 +838,7 @@ class AsPyExpression(Expression):
     def _expr(self) -> Expression:
         return self._children()[0]
 
-    def resolve_type(self, schema: Schema) -> ExpressionType:
+    def _resolve_type(self, schema: Schema) -> ExpressionType:
         return self._type
 
     def _is_eq_local(self, other: Expression) -> bool:
@@ -1043,7 +1044,7 @@ class ExpressionList(Iterable[Expression]):
             return False
 
         return len(self._exprs) == len(other._exprs) and all(
-            (s.name() == o.name()) and (s.is_eq(o)) for s, o in zip(self._exprs, other._exprs)
+            (s.name() == o.name()) and (s._is_eq(o)) for s, o in zip(self._exprs, other._exprs)
         )
 
     def __iter__(self) -> Iterator[Expression]:
@@ -1060,10 +1061,10 @@ class ExpressionList(Iterable[Expression]):
     def __getitem__(self, idx: int | slice) -> Expression | list[Expression]:
         return self._exprs[idx]
 
-    def required_columns(self) -> set[str]:
+    def _required_columns(self) -> set[str]:
         result = set()
         for e in self._exprs:
-            result |= e.required_columns()
+            result |= e._required_columns()
         return result
 
     def union(self, other: ExpressionList, rename_dup: str | None = None) -> ExpressionList:

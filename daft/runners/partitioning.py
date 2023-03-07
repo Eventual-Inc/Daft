@@ -24,7 +24,7 @@ from daft.filesystem import get_filesystem_from_path
 from daft.logical.field import Field
 from daft.logical.schema import Schema
 from daft.runners.blocks import ArrowArrType, ArrowDataBlock, DataBlock, PyListDataBlock
-from daft.types import ExpressionType
+from daft.types import DatatypeInference, ExpressionType
 
 PartID = int
 
@@ -205,7 +205,7 @@ class vPartition:
 
         assert expr_name is not None
 
-        required_cols = expr.required_columns()
+        required_cols = expr._required_columns()
         required_blocks = {}
         for name in required_cols:
             block = self.columns[name].block
@@ -236,7 +236,7 @@ class vPartition:
         cls,
         data: dict[str, list[Any] | np.ndarray | pa.Array | pa.ChunkedArray],
     ) -> vPartition:
-        column_types = {header: ExpressionType._infer_type(data[header]) for header in data}
+        column_types = {header: DatatypeInference.infer_type(data[header]) for header in data}
         schema = Schema._from_field_name_and_types(list(column_types.items()))
         tiles = {}
         for f in schema:

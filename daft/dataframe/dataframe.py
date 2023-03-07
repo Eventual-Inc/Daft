@@ -199,7 +199,7 @@ class DataFrame:
         Returns:
             List[Expression]: Columns of this DataFrame.
         """
-        return [expr.to_column_expression() for expr in self.__plan.schema()]
+        return [col(field.name) for field in self.__plan.schema()]
 
     @DataframePublicAPI
     def show(self, n: int = 8) -> "DataFrameDisplay":
@@ -630,25 +630,21 @@ class DataFrame:
             return result
         elif isinstance(item, str):
             schema = self._plan.schema()
-            result = schema[item].to_column_expression()
-            return result
+            field = schema[item]
+            return col(field.name)
         elif isinstance(item, Iterable):
             schema = self._plan.schema()
-            col_exprs = self._plan.schema().to_column_expressions()
 
             columns = []
             for it in item:
                 if isinstance(it, str):
-                    result = schema[it].to_column_expression()
-                    if result is None:
-                        raise ValueError(f"{it} not found in DataFrame schema {schema}")
+                    result = col(schema[it].name)
                     columns.append(result)
                 elif isinstance(it, int):
                     if it < -len(schema) or it >= len(schema):
                         raise ValueError(f"{it} out of bounds for {schema}")
-                    result = col_exprs[it]
-                    assert result is not None
-                    columns.append(result)
+                    field = list(self._plan.schema())[it]
+                    columns.append(col(field.name))
                 else:
                     raise ValueError(f"unknown indexing type: {type(it)}")
             return self.select(*columns)
@@ -1203,8 +1199,9 @@ class GroupedDataFrame:
     group_by: ExpressionList
 
     def __post_init__(self):
-        for e in self.group_by:
-            if e.resolve_type(self.df._plan.schema()) == ExpressionType.null():
+        resolved_groupby_schema = self.df._plan.schema().resolve_expressions(self.group_by)
+        for field, e in zip(resolved_groupby_schema, self.group_by):
+            if field.dtype == ExpressionType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
@@ -1263,9 +1260,9 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped count per column.
         """
-
+        groupby_name_set = self.group_by.to_name_set()
         return self.df._agg(
-            [(c, "count") for c in self.df.column_names if c not in self.group_by.names], group_by=self.group_by
+            [(c, "count") for c in self.df.column_names if c not in groupby_name_set], group_by=self.group_by
         )
 
     def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> "DataFrame":

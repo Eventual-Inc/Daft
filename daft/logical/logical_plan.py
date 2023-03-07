@@ -258,7 +258,7 @@ class TabularFilesScan(UnaryNode):
         return self._repr_helper(columns_pruned=len(self._columns) - len(self.schema()), source_info=self._source_info)
 
     def required_columns(self) -> list[set[str]]:
-        return [{self._filepaths_column_name} | self._predicate.required_columns()]
+        return [{self._filepaths_column_name} | self._predicate._required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [dict()]
@@ -367,7 +367,7 @@ class FileWrite(UnaryNode):
         return self._repr_helper()
 
     def required_columns(self) -> list[set[str]]:
-        return [self._partition_cols.required_columns()]
+        return [self._partition_cols._required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [dict()]
@@ -416,7 +416,7 @@ class Filter(UnaryNode):
         return self._repr_helper(predicate=self._predicate)
 
     def required_columns(self) -> list[set[str]]:
-        return [self._predicate.required_columns()]
+        return [self._predicate._required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [{name: name for name in self.schema().column_names()}]
@@ -454,7 +454,7 @@ class Projection(UnaryNode):
         return self._repr_helper(output=list(self._projection))
 
     def required_columns(self) -> list[set[str]]:
-        return [self._projection.required_columns()]
+        return [self._projection._required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [self._projection.input_mapping()]
@@ -483,10 +483,10 @@ class Sort(UnaryNode):
         self._register_child(input)
         self._sort_by = sort_by
 
-        for e in self._sort_by:
-            dtype = e.resolve_type(input.schema())
-            if dtype in {ExpressionType.null(), ExpressionType.bytes(), ExpressionType.logical()}:
-                raise ExpressionTypeError(f"Cannot sort on expression {e} with type: {dtype}")
+        resolved_sort_by_schema = input.schema().resolve_expressions(self._sort_by)
+        for f, sort_by_expr in zip(resolved_sort_by_schema, self._sort_by):
+            if f.dtype in {ExpressionType.null(), ExpressionType.bytes(), ExpressionType.logical()}:
+                raise ExpressionTypeError(f"Cannot sort on expression {sort_by_expr} with type: {f.dtype}")
 
         if isinstance(descending, bool):
             self._descending = [descending for _ in self._sort_by]
@@ -497,7 +497,7 @@ class Sort(UnaryNode):
         return self._repr_helper(sort_by=self._sort_by, desc=self._descending)
 
     def required_columns(self) -> list[set[str]]:
-        return [self._sort_by.required_columns()]
+        return [self._sort_by._required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [{name: name for name in self.schema().column_names()}]
@@ -561,7 +561,7 @@ class Explode(MapPartition[ExplodeOp]):
         return self._repr_helper()
 
     def required_columns(self) -> list[set[str]]:
-        return [self._map_partition_op.explode_columns.required_columns()]
+        return [self._map_partition_op.explode_columns._required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         explode_columns = self._map_partition_op.explode_columns.input_mapping().keys()
@@ -688,7 +688,7 @@ class Repartition(UnaryNode):
         self._register_child(input)
         self._partition_by = partition_by
         self._scheme = scheme
-        if scheme == PartitionScheme.RANDOM and len(partition_by.names) > 0:
+        if scheme == PartitionScheme.RANDOM and len(partition_by.to_name_set()) > 0:
             raise ValueError("Can not pass in random partitioning and partition_by args")
 
     def __repr__(self) -> str:
@@ -706,7 +706,7 @@ class Repartition(UnaryNode):
         )
 
     def required_columns(self) -> list[set[str]]:
-        return [self._partition_by.required_columns()]
+        return [self._partition_by._required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [{name: name for name in self.schema().column_names()}]
@@ -780,12 +780,12 @@ class LocalAggregate(UnaryNode):
     ) -> None:
         cols_to_agg = ExpressionList([e for e, _ in agg])
         self._group_by = group_by
-        required_cols = set(cols_to_agg.required_columns())
+        required_cols = set(cols_to_agg._required_columns())
 
         if group_by is not None:
             group_and_agg_cols = ExpressionList(list(group_by) + [e for e, _ in agg])
             schema = input.schema().resolve_expressions(group_and_agg_cols)
-            required_cols = required_cols | set(group_by.required_columns())
+            required_cols = required_cols | set(group_by._required_columns())
         else:
             schema = input.schema().resolve_expressions(cols_to_agg)
 
@@ -814,7 +814,7 @@ class LocalAggregate(UnaryNode):
         return (
             isinstance(other, LocalAggregate)
             and self.schema() == other.schema()
-            and all(l[0].is_eq(r[0]) and l[1] == r[1] for l, r in zip(self._agg, other._agg))
+            and all(l[0]._is_eq(r[0]) and l[1] == r[1] for l, r in zip(self._agg, other._agg))
             and self._group_by == other._group_by
         )
 
@@ -846,7 +846,7 @@ class LocalDistinct(UnaryNode):
         return LocalDistinct(new_children[0], group_by=self._group_by)
 
     def required_columns(self) -> list[set[str]]:
-        return [self._group_by.required_columns()]
+        return [self._group_by._required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [self._group_by.input_mapping()]
@@ -949,13 +949,11 @@ class Join(BinaryNode):
         self._left_on = left_on
         self._right_on = right_on
 
-        for e in self._left_on:
-            if e.resolve_type(left.schema()) == ExpressionType.null():
-                raise ExpressionTypeError(f"Cannot join on null type expression: {e}")
-
-        for e in self._right_on:
-            if e.resolve_type(right.schema()) == ExpressionType.null():
-                raise ExpressionTypeError(f"Cannot join on null type expression: {e}")
+        for schema, exprs in ((left.schema(), self._left_on), (right.schema(), self._right_on)):
+            resolved_schema = schema.resolve_expressions(exprs)
+            for f, expr in zip(resolved_schema, exprs):
+                if f.dtype == ExpressionType.null():
+                    raise ExpressionTypeError(f"Cannot join on null type expression: {expr}")
 
         self._how = how
         output_schema: Schema
@@ -1012,7 +1010,7 @@ class Join(BinaryNode):
         return Join(new_children[0], new_children[1], left_on=self._left_on, right_on=self._right_on, how=self._how)
 
     def required_columns(self) -> list[set[str]]:
-        return [self._left_on.required_columns(), self._right_on.required_columns()]
+        return [self._left_on._required_columns(), self._right_on._required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [self._left_columns.input_mapping(), self._right_columns.input_mapping()]

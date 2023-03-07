@@ -20,11 +20,11 @@ def test_col_expr_add() -> None:
 def test_name() -> None:
     expr = col("a") + col("b")
     assert expr.name() == "a"
-    assert expr.required_columns() == {"a", "b"}
+    assert expr._required_columns() == {"a", "b"}
 
     new_expr = col("c") + expr
     new_expr.name() == "c"
-    assert new_expr.required_columns() == {"c", "a", "b"}
+    assert new_expr._required_columns() == {"c", "a", "b"}
 
 
 def test_alias() -> None:
@@ -33,42 +33,42 @@ def test_alias() -> None:
 
     alias_expr = expr.alias("ab")
     assert alias_expr.name() == "ab"
-    assert alias_expr.required_columns() == {"a", "b"}
+    assert alias_expr._required_columns() == {"a", "b"}
     assert (alias_expr + col("c")).name() == "ab"
     assert (col("c") + alias_expr).name() == "c"
 
-    assert (col("c") + alias_expr).required_columns() == {"c", "a", "b"}
+    assert (col("c") + alias_expr)._required_columns() == {"c", "a", "b"}
 
 
 def test_column_expr_eq() -> None:
-    assert col("a").is_eq(col("a"))
+    assert col("a")._is_eq(col("a"))
 
-    assert not col("a").is_eq(col("b"))
+    assert not col("a")._is_eq(col("b"))
 
 
 def test_unary_op_eq() -> None:
     neg_col = -col("a")
-    assert not neg_col.is_eq(col("a"))
-    assert neg_col.is_eq(-col("a"))
-    assert not (-neg_col).is_eq(neg_col)
-    assert not (-neg_col).is_eq(abs(neg_col))
+    assert not neg_col._is_eq(col("a"))
+    assert neg_col._is_eq(-col("a"))
+    assert not (-neg_col)._is_eq(neg_col)
+    assert not (-neg_col)._is_eq(abs(neg_col))
 
 
 def test_binary_op_eq() -> None:
-    assert col("a").is_eq(col("a"))
-    assert (col("a") + col("b")).is_eq(col("a") + col("b"))
+    assert col("a")._is_eq(col("a"))
+    assert (col("a") + col("b"))._is_eq(col("a") + col("b"))
 
-    assert not (col("a") + col("b")).is_eq(col("a") + col("c"))
+    assert not (col("a") + col("b"))._is_eq(col("a") + col("c"))
 
-    assert not (col("a") + col("b")).is_eq(col("b") + col("a"))
+    assert not (col("a") + col("b"))._is_eq(col("b") + col("a"))
 
-    assert not (col("a") + col("b")).is_eq(col("b") + col("a"))
+    assert not (col("a") + col("b"))._is_eq(col("b") + col("a"))
 
-    assert not (col("a") + col("b")).is_eq((col("a") + col("b")).alias("c"))
+    assert not (col("a") + col("b"))._is_eq((col("a") + col("b")).alias("c"))
 
-    assert (col("a") + col("b")).alias("c").is_eq((col("a") + col("b")).alias("c"))
+    assert (col("a") + col("b")).alias("c")._is_eq((col("a") + col("b")).alias("c"))
 
-    assert not col("c").is_eq((col("a") + col("b")).alias("c"))
+    assert not col("c")._is_eq((col("a") + col("b")).alias("c"))
 
 
 def test_expression_bool() -> None:
