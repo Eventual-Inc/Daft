@@ -105,6 +105,15 @@ class Series:
 
         return Series._from_pyseries(self._series.sort(descending))
 
+    def hash(self, seed: Series | None = None) -> Series:
+        if self._series is None:
+            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
+
+        if not isinstance(seed, Series) and seed is not None:
+            raise ValueError(f"expected `seed` to be Series, got {type(seed)}")
+
+        return Series._from_pyseries(self._series.hash(seed._series if seed is not None else None))
+
     def __repr__(self) -> str:
         return repr(self._series)
 

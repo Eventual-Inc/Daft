@@ -217,6 +217,7 @@ mod tests {
         Ok(())
     }
 
+    #[test]
     fn check_alias_type() -> DaftResult<()> {
         let a = col("a");
         let b = a.alias("b");

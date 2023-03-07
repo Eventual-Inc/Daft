@@ -8,6 +8,7 @@ mod comparison;
 mod downcast;
 mod filter;
 mod full;
+mod hash;
 mod len;
 mod sort;
 mod take;

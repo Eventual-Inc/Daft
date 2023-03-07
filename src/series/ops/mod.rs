@@ -9,6 +9,7 @@ pub mod comparision;
 pub mod downcast;
 pub mod filter;
 pub mod full;
+pub mod hash;
 pub mod sort;
 pub mod take;
 

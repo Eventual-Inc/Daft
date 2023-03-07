@@ -4,7 +4,7 @@ use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 
 use crate::{
     array::{ops::DaftLogical, BaseArray},
-    datatypes::DataType,
+    datatypes::{DataType, UInt64Type},
     ffi, series,
 };
 
@@ -98,6 +98,22 @@ impl PySeries {
 
     pub fn argsort(&self, descending: bool) -> PyResult<Self> {
         Ok(self.series.argsort(descending)?.into())
+    }
+
+    pub fn hash(&self, seed: Option<PySeries>) -> PyResult<Self> {
+        let seed_series;
+        let mut seed_array = None;
+        if let Some(s) = seed {
+            if s.series.data_type() != &DataType::UInt64 {
+                return Err(PyValueError::new_err(format!(
+                    "We can only use UInt64 as a seed for hashing, got {}",
+                    s.series.data_type()
+                )));
+            }
+            seed_series = s.series;
+            seed_array = Some(seed_series.downcast::<UInt64Type>()?);
+        }
+        Ok(self.series.hash(seed_array)?.into_series().into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
