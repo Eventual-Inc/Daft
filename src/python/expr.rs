@@ -83,6 +83,10 @@ impl PyExpr {
         Ok(self.expr.cast(&dtype.into()).into())
     }
 
+    pub fn sum(&self) -> PyResult<Self> {
+        Ok(self.expr.sum().into())
+    }
+
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
         Ok(dsl::binary_op(dsl::Operator::Plus, &self.expr, &other.expr).into())
     }
