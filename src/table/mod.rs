@@ -75,7 +75,7 @@ impl Table {
         }
     }
 
-    pub fn head(&self, num: usize) -> DaftResult<Table> {
+    pub fn head(&self, num: usize) -> DaftResult<Self> {
         if num >= self.len() {
             return Ok(Table {
                 schema: self.schema.clone(),
@@ -90,7 +90,7 @@ impl Table {
         })
     }
 
-    pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Table> {
+    pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {
         if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
@@ -107,7 +107,7 @@ impl Table {
         }
     }
 
-    pub fn mask_filter(&self, mask: &Series) -> DaftResult<Table> {
+    pub fn mask_filter(&self, mask: &Series) -> DaftResult<Self> {
         if *mask.data_type() != DataType::Boolean {
             return Err(DaftError::ValueError(format!(
                 "We can only mask a Table with a Boolean Series, but we got {}",
@@ -123,14 +123,15 @@ impl Table {
         })
     }
 
-    pub fn take(&self, idx: &Series) -> DaftResult<Table> {
+    pub fn take(&self, idx: &Series) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
         Ok(Table {
             schema: self.schema.clone(),
             columns: new_series?,
         })
     }
-    //pub fn concat(tables: &[&Table]) -> DaftResult<Table>;
+
+    //pub fn concat(tables: &[&Table]) -> DaftResult<Self>;
 
     pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<Series> {
         let i = self.schema.get_index(name.as_ref())?;

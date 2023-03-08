@@ -168,10 +168,27 @@ class Table:
         right: Table,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
-        output_projection: ExpressionsProjection,
+        output_projection: ExpressionsProjection | None = None,
         how: str = "inner",
     ) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+
+        if how != "inner":
+            raise NotImplementedError("TODO: [RUST] Implement Other Join types")
+        if len(left_on) != len(right_on):
+            raise ValueError(
+                f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
+            )
+
+        if len(left_on) > 1:
+            raise NotImplementedError("TODO: [RUST-INT][TPCH] Multicolumn joins not implemented")
+
+        if not isinstance(right, Table):
+            raise ValueError(f"Expected a Table for `right` in join but got {type(right)}")
+
+        left_exprs = [e._expr for e in left_on]
+        right_exprs = [e._expr for e in right_on]
+
+        return Table._from_pytable(self._table.join(right._table, left_on=left_exprs, right_on=right_exprs))
 
     def split_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Table]:
         raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")

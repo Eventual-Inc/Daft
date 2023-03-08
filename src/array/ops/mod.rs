@@ -10,6 +10,7 @@ mod filter;
 mod full;
 mod hash;
 mod len;
+mod pairwise;
 mod sort;
 mod take;
 

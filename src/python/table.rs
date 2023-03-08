@@ -61,6 +61,21 @@ impl PyTable {
             .into())
     }
 
+    pub fn join(
+        &self,
+        right: &Self,
+        left_on: Vec<PyExpr>,
+        right_on: Vec<PyExpr>,
+    ) -> PyResult<Self> {
+        let left_exprs: Vec<dsl::Expr> = left_on.into_iter().map(|e| e.into()).collect();
+        let right_exprs: Vec<dsl::Expr> = right_on.into_iter().map(|e| e.into()).collect();
+
+        Ok(self
+            .table
+            .join(&right.table, left_exprs.as_slice(), right_exprs.as_slice())?
+            .into())
+    }
+
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.table))
     }
