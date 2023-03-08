@@ -81,6 +81,14 @@ def test_table_join_mismatch_column() -> None:
         left_table.join(right_table, left_on=[col("x"), col("y")], right_on=[col("a")])
 
 
+def test_table_join_no_columns() -> None:
+    left_table = Table.from_pydict({"x": [1, 2, 3, 4], "y": [2, 3, 4, 5]})
+    right_table = Table.from_pydict({"a": [1, 2, 3, 4], "b": [2, 3, 4, 5]})
+
+    with pytest.raises(ValueError, match="No columns were passed in to join on"):
+        left_table.join(right_table, left_on=[], right_on=[])
+
+
 def test_table_join_single_column_name_conflicts() -> None:
     left_table = Table.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5]})
     right_table = Table.from_pydict({"x": [3, 2, 1, 0], "y": [6, 7, 8, 9]})
