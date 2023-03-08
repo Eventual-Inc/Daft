@@ -7,6 +7,7 @@ from typing import Iterable
 
 import psutil
 import pyarrow as pa
+from loguru import logger
 
 from daft.datasources import SourceInfo
 from daft.execution import physical_plan, physical_plan_factory
@@ -214,6 +215,7 @@ class PyRunner(Runner):
                         # - Threading is disabled in runner config.
                         # - Task is a no-op.
                         # - Task requires GPU.
+                        # TODO(charles): Queue these up until the physical plan is blocked to avoid starving cluster.
                         if (
                             not self._use_thread_pool
                             or len(next_step.instructions) == 0
@@ -222,11 +224,13 @@ class PyRunner(Runner):
                                 and next_step.resource_request.num_gpus > 0
                             )
                         ):
+                            logger.debug("Running task synchronously in main thread: {next_step}", next_step=next_step)
                             partitions = self.build_partitions(next_step.instructions, *next_step.inputs)
                             next_step.set_result([PyMaterializedResult(partition) for partition in partitions])
 
                         else:
                             # Submit the task for execution.
+                            logger.debug("Submitting task for execution: {next_step}", next_step=next_step)
                             future = thread_pool.submit(
                                 self.build_partitions, next_step.instructions, *next_step.inputs
                             )
@@ -243,12 +247,15 @@ class PyRunner(Runner):
                         len(future_to_task) > 0
                     ), f"Scheduler deadlocked! This should never happen. Please file an issue."
                     done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
-                    for done in done_set:
-                        done_id = future_to_task.pop(done)
+                    for done_future in done_set:
+                        done_id = future_to_task.pop(done_future)
                         del inflight_tasks_resources[done_id]
                         done_task = inflight_tasks.pop(done_id)
+                        partitions = done_future.result()
 
-                        partitions = done.result()
+                        logger.debug(
+                            "Task completed: {done_id} -> {partitions}", done_id=done_id, partitions=partitions
+                        )
                         done_task.set_result([PyMaterializedResult(partition) for partition in partitions])
 
             except StopIteration as e:
