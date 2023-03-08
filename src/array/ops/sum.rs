@@ -2,17 +2,14 @@ use std::sync::Arc;
 
 use arrow2;
 
-use crate::{array::DataArray, datatypes::{DaftIntegerType, DaftNumericType, NumericNative}, error::DaftResult};
+use crate::{array::DataArray, datatypes::{DaftIntegerType, DaftNumericType, NumericNative, Int64Array}, error::DaftResult};
 
 use super::DaftNumericAgg;
 
-impl<T> DaftNumericAgg for &DataArray<T>
-where
-    T: DaftIntegerType,
-{
-    type Output = DaftResult<DataArray<T>>;
+impl DaftNumericAgg for &Int64Array {
+    type Output = DaftResult<Int64Array>;
 
-    fn sum(&self) -> DaftResult<DataArray<T>> {
+    fn sum(&self) -> Self::Output {
         let primitive_arr = self.downcast();
 
         let result = match primitive_arr.validity() {
@@ -28,9 +25,10 @@ where
 
         println!("{:?}", result);
 
+        todo!();
         // let scalar = res.unwrap();
 
-        let arrow_array = arrow2::array::PrimitiveArray::<T::Native>::from_slice(&[res]);
+        let arrow_array = arrow2::array::PrimitiveArray::from([result]);
         DataArray::new(self.field.clone(), Arc::new(arrow_array))
     }
 }
