@@ -92,7 +92,7 @@ class Schema:
     def resolve_expressions(self, expressions: ExpressionsProjection) -> Schema:
         """Create a new Schema by resolving the Expressions against an existing Schema"""
         raise NotImplementedError(
-            "[RUST-INT] Requires an API for construction of a new Schema from resolving Expressions against an existing one"
+            "[RUST-INT][TPCH] Requires an API for construction of a new Schema from resolving Expressions against an existing one"
         )
 
     def union(self, other: Schema) -> Schema:
