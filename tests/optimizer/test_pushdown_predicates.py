@@ -3,11 +3,10 @@ from __future__ import annotations
 import pytest
 
 from daft.dataframe import DataFrame
-from daft.expressions import col
+from daft.expressions import ExpressionList, col
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import Filter, Join, LogicalPlan
 from daft.logical.optimizer import PushDownPredicates
-from daft.logical.schema import ExpressionList
 from tests.optimizer.conftest import assert_plan_eq
 
 

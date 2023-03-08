@@ -16,8 +16,7 @@ from daft.experimental.serving.backends import (
     MultiprocessingEndpointBackend,
 )
 from daft.experimental.serving.env import DaftEnv, get_docker_client
-from daft.expressions import col
-from daft.logical.schema import ExpressionList
+from daft.expressions import ExpressionList, col
 
 TEST_BACKEND_CONFIG = {
     "mp": {"type": "multiprocessing"},

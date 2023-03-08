@@ -70,14 +70,14 @@ def test_projection_new_columns_logical_plan(schema) -> None:
 
     Projection(
         scan,
-        schema.to_column_expressions().union(ExpressionList([(col("a") + col("b")).alias("d")])),
+        ExpressionList.from_schema(schema).union(ExpressionList([(col("a") + col("b")).alias("d")])),
         custom_resource_request=None,
     )
     projection = Projection(scan, ExpressionList([col("b")]), custom_resource_request=None)
     proj_schema = projection.schema()
     hstacked_on_proj = Projection(
         projection,
-        proj_schema.to_column_expressions().union(
+        ExpressionList.from_schema(proj_schema).union(
             ExpressionList([(col("b") + 1).alias("a"), (col("b") + 2).alias("c")])
         ),
         custom_resource_request=None,
@@ -105,7 +105,7 @@ def test_scan_projection_filter_projection_chain(schema) -> None:
 
     hstacked = Projection(
         scan,
-        schema.to_column_expressions().union(ExpressionList([(col("a") + col("b")).alias("d")])),
+        ExpressionList.from_schema(schema).union(ExpressionList([(col("a") + col("b")).alias("d")])),
         custom_resource_request=None,
     )
     assert hstacked.schema().column_names() == ["a", "b", "c", "d"]

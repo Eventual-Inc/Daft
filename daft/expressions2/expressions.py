@@ -8,6 +8,7 @@ from daft.daft import col as _col
 from daft.daft import lit as _lit
 from daft.datatype import DataType
 from daft.expressions2.testing import expr_structurally_equal
+from daft.logical.schema2 import Field, Schema
 
 
 def lit(value: object) -> Expression:
@@ -202,6 +203,9 @@ class Expression:
             "[RUST-INT][TPCH] Implement replacing a Column with an Expression - used in optimizer"
         )
 
+    def _to_field(self, schema: Schema) -> Field:
+        return Field._from_pyfield(self._expr.to_field(schema._schema))
+
 
 class ExpressionNamespace:
     _expr: _PyExpr
@@ -288,6 +292,10 @@ class ExpressionsProjection(Iterable[Expression]):
 
         self._output_name_to_exprs = {e.name(): e for e in exprs}
 
+    @classmethod
+    def from_schema(cls, schema: Schema) -> ExpressionsProjection:
+        return cls([col(field.name) for field in schema])
+
     def __len__(self) -> int:
         return len(self._output_name_to_exprs)
 
@@ -366,3 +374,7 @@ class ExpressionsProjection(Iterable[Expression]):
         if name not in self._output_name_to_exprs:
             raise ValueError(f"{name} not found in ExpressionsProjection")
         return self._output_name_to_exprs[name]
+
+    def resolve_schema(self, schema: Schema) -> Schema:
+        fields = [e._to_field(schema) for e in self]
+        return Schema._from_field_name_and_types([(f.name, f.dtype) for f in fields])

@@ -28,11 +28,10 @@ from daft.datasources import (
 )
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionType
-from daft.expressions import Expression, col
+from daft.expressions import Expression, ExpressionList, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
-from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartitionCacheEntry,
@@ -569,7 +568,7 @@ class DataFrame:
             schema = self._plan.schema()
             if item < -len(schema) or item >= len(schema):
                 raise ValueError(f"{item} out of bounds for {schema}")
-            result = schema.to_column_expressions()[item]
+            result = ExpressionList.from_schema(schema)[item]
             assert result is not None
             return result
         elif isinstance(item, str):
@@ -594,7 +593,7 @@ class DataFrame:
             return self.select(*columns)
         elif isinstance(item, slice):
             schema = self._plan.schema()
-            columns_exprs: ExpressionList = schema.to_column_expressions()
+            columns_exprs: ExpressionList = ExpressionList.from_schema(schema)
             selected_columns = columns_exprs[item]
             return self.select(*selected_columns)
         else:
@@ -641,7 +640,7 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame that has only  unique rows.
         """
-        all_exprs = self._plan.schema().to_column_expressions()
+        all_exprs = ExpressionList.from_schema(self._plan.schema())
         plan: logical_plan.LogicalPlan = logical_plan.LocalDistinct(self._plan, all_exprs)
         if self.num_partitions() > 1:
             plan = logical_plan.Repartition(
@@ -710,7 +709,7 @@ class DataFrame:
             raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
 
         prev_schema_as_cols = ExpressionList(
-            [e for e in self._plan.schema().to_column_expressions() if e.name() != column_name]
+            [col(field.name) for field in self._plan.schema() if field.name != column_name]
         )
         new_schema = prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]))
         projection = logical_plan.Projection(
@@ -1143,7 +1142,7 @@ class GroupedDataFrame:
     group_by: ExpressionList
 
     def __post_init__(self):
-        resolved_groupby_schema = self.df._plan.schema().resolve_expressions(self.group_by)
+        resolved_groupby_schema = self.group_by.resolve_schema(self.df._plan.schema())
         for field, e in zip(resolved_groupby_schema, self.group_by):
             if field.dtype == ExpressionType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")

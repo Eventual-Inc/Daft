@@ -11,10 +11,9 @@ else:
     from typing import Protocol
 
 import daft
-from daft.expressions import Expression, col
+from daft.expressions import Expression, ExpressionList, col
 from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
-from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartialPartitionMetadata,

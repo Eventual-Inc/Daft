@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from daft.expressions import Expression, col, lit
+from daft.expressions import Expression, ExpressionList, col, lit
 from daft.logical import logical_plan
-from daft.logical.schema import ExpressionList
 
 AggregationOp = str
 ColName = str
@@ -73,7 +72,7 @@ class AggregationPlanBuilder:
         # 4. Perform post-shuffle projections if necessary
         postshuffle_projection_plan: logical_plan.LogicalPlan
         if self._final_projection_includes or self._final_projection_excludes:
-            final_expressions = postshuffle_agg_plan.schema().to_column_expressions()
+            final_expressions = ExpressionList.from_schema(postshuffle_agg_plan.schema())
             final_expressions = ExpressionList(
                 [e for e in final_expressions if e.name() not in self._final_projection_excludes]
             )
