@@ -200,6 +200,15 @@ def test_table_take_null(idx_dtype) -> None:
     assert taken.to_pydict() == {"a": [None, None], "b": [None, None]}
 
 
+def test_table_sum() -> None:
+    a, b = [5, 6, 7, 8], [1, 2, 3, 4]
+    pa_table = pa.Table.from_pydict({"a": a, "b": b})
+    daft_table = Table.from_arrow(pa_table)
+
+    daft_table = daft_table.eval_expression_list([col("a").sum(), col("b").sum()])
+    print(daft_table)
+
+
 import operator as ops
 
 OPS = [ops.add, ops.sub, ops.mul, ops.truediv, ops.mod, ops.lt, ops.le, ops.eq, ops.ne, ops.ge, ops.gt]
