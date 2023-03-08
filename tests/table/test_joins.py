@@ -45,6 +45,8 @@ def test_table_join_single_column(dtype, data) -> None:
     right_table = Table.from_pydict({"y": r, "y_ind": list(range(len(r)))})
     result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("y")], how="inner")
 
+    assert result_table.column_names() == ["x", "x_ind", "y", "y_ind"]
+
     result_pairs = list(zip(result_table.get_column("x_ind").to_pylist(), result_table.get_column("y_ind").to_pylist()))
     assert sorted(expected_pairs) == sorted(result_pairs)
     casted_l = left_table.get_column("x").to_pylist()
@@ -57,6 +59,8 @@ def test_table_join_single_column(dtype, data) -> None:
 
     # make sure the result is the same with right table on left
     result_table = right_table.join(left_table, right_on=[col("x")], left_on=[col("y")], how="inner")
+
+    assert result_table.column_names() == ["y", "y_ind", "x", "x_ind"]
 
     result_pairs = list(zip(result_table.get_column("x_ind").to_pylist(), result_table.get_column("y_ind").to_pylist()))
     assert sorted(expected_pairs) == sorted(result_pairs)
@@ -75,3 +79,29 @@ def test_table_join_mismatch_column() -> None:
 
     with pytest.raises(ValueError, match="Mismatch of number of join keys"):
         left_table.join(right_table, left_on=[col("x"), col("y")], right_on=[col("a")])
+
+
+def test_table_join_single_column_name_conflicts() -> None:
+    left_table = Table.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5]})
+    right_table = Table.from_pydict({"x": [3, 2, 1, 0], "y": [6, 7, 8, 9]})
+
+    result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("x")])
+    assert result_table.column_names() == ["x", "y", "right.y"]
+    result_sorted = result_table.sort([col("x")])
+    assert result_sorted.get_column("y").to_pylist() == [2, 3, 4, 5]
+
+    assert result_sorted.get_column("right.y").to_pylist() == [9, 8, 7, 6]
+
+
+def test_table_join_single_column_name_multiple_conflicts() -> None:
+
+    left_table = Table.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5], "right.y": [6, 7, 8, 9]})
+    right_table = Table.from_pydict({"x": [3, 2, 1, 0], "y": [10, 11, 12, 13]})
+
+    result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("x")])
+    assert result_table.column_names() == ["x", "y", "right.y", "right.right.y"]
+    result_sorted = result_table.sort([col("x")])
+    assert result_sorted.get_column("y").to_pylist() == [2, 3, 4, 5]
+
+    assert result_sorted.get_column("right.y").to_pylist() == [6, 7, 8, 9]
+    assert result_sorted.get_column("right.right.y").to_pylist() == [13, 12, 11, 10]
