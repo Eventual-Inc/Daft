@@ -569,7 +569,7 @@ class DataFrame:
             schema = self._plan.schema()
             if item < -len(schema) or item >= len(schema):
                 raise ValueError(f"{item} out of bounds for {schema}")
-            result = schema.to_column_expressions()[item]
+            result = ExpressionList.from_schema(schema)[item]
             assert result is not None
             return result
         elif isinstance(item, str):
@@ -594,7 +594,7 @@ class DataFrame:
             return self.select(*columns)
         elif isinstance(item, slice):
             schema = self._plan.schema()
-            columns_exprs: ExpressionList = schema.to_column_expressions()
+            columns_exprs: ExpressionList = ExpressionList.from_schema(schema)
             selected_columns = columns_exprs[item]
             return self.select(*selected_columns)
         else:
@@ -641,7 +641,7 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame that has only  unique rows.
         """
-        all_exprs = self._plan.schema().to_column_expressions()
+        all_exprs = ExpressionList.from_schema(self._plan.schema())
         plan: logical_plan.LogicalPlan = logical_plan.LocalDistinct(self._plan, all_exprs)
         if self.num_partitions() > 1:
             plan = logical_plan.Repartition(
@@ -710,7 +710,7 @@ class DataFrame:
             raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
 
         prev_schema_as_cols = ExpressionList(
-            [e for e in self._plan.schema().to_column_expressions() if e.name() != column_name]
+            [col(field.name) for field in self._plan.schema() if field.name != column_name]
         )
         new_schema = prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]))
         projection = logical_plan.Projection(

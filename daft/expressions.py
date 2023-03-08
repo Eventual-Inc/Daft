@@ -1036,6 +1036,10 @@ class ExpressionList(Iterable[Expression]):
             self.names.append(e_name)
             name_set.add(e_name)
 
+    @classmethod
+    def from_schema(cls, schema: Schema) -> ExpressionList:
+        return cls([col(field.name) for field in schema])
+
     def __len__(self) -> int:
         return len(self._exprs)
 

@@ -8,6 +8,7 @@ from daft.daft import col as _col
 from daft.daft import lit as _lit
 from daft.datatype import DataType
 from daft.expressions2.testing import expr_structurally_equal
+from daft.logical.schema2 import Schema
 
 
 def lit(value: object) -> Expression:
@@ -287,6 +288,10 @@ class ExpressionsProjection(Iterable[Expression]):
             seen.add(e.name())
 
         self._output_name_to_exprs = {e.name(): e for e in exprs}
+
+    @classmethod
+    def from_schema(cls, schema: Schema) -> ExpressionsProjection:
+        return cls([col(field.name) for field in schema])
 
     def __len__(self) -> int:
         return len(self._output_name_to_exprs)

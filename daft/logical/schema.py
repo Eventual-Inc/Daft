@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-from daft.expressions import ExpressionList, col
+from daft.expressions import ExpressionList
 from daft.logical.field import Field
 from daft.types import ExpressionType
 
@@ -44,9 +44,6 @@ class Schema:
 
     def _repr_html_(self) -> str:
         return repr([(field.name, field.dtype) for field in self._fields.values()])
-
-    def to_column_expressions(self) -> ExpressionList:
-        return ExpressionList([col(f.name) for f in self._fields.values()])
 
     def union(self, other: Schema) -> Schema:
         assert isinstance(other, Schema), f"expected Schema, got {type(other)}"

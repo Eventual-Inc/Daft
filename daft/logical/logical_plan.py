@@ -179,7 +179,7 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
             if isinstance(v, ExpressionList):
                 v = list(v)
             elif isinstance(v, Schema):
-                v = list(v.to_column_expressions())
+                v = list([col(field.name) for field in v])
             elif isinstance(v, PartitionSpec):
                 v = asdict(v)
                 if isinstance(v["by"], ExpressionList):
@@ -966,7 +966,7 @@ class Join(BinaryNode):
         elif how == JoinType.INNER:
             num_partitions = max(left.num_partitions(), right.num_partitions())
             right_drop_set = {r.name() for l, r in zip(left_on, right_on) if l.name() == r.name()}
-            left_columns = left.schema().to_column_expressions()
+            left_columns = ExpressionList.from_schema(left.schema())
             right_columns = ExpressionList([col(f.name) for f in right.schema() if f.name not in right_drop_set])
             unioned_expressions = left_columns.union(right_columns, rename_dup="right.")
             self._left_columns = left_columns
