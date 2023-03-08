@@ -121,13 +121,13 @@ class DataType:
 
     @staticmethod
     def python(py_class: type) -> DataType:
-        raise NotImplementedError("[RUST-INT] implement Python types for DataType")
+        raise NotImplementedError("[RUST-INT][PY] implement Python types for DataType")
 
     def _is_python_type(self) -> builtins.bool:
         # NOTE: This is currently used in a few places still. We can get rid of it once these are refactored away. To be discussed.
         # 1. Visualizations - we can get rid of it if we do all our repr and repr_html logic in a Series instead of in Python
         # 2. Hypothesis test data generation - we can get rid of it if we allow for creation of Series from a Python list and DataType
-        raise NotImplementedError("[RUST-INT] Implement checking whether this dtype is a Python type")
+        raise NotImplementedError("[RUST-INT][PY] Implement checking whether this dtype is a Python type")
 
     def __repr__(self) -> str:
         return f"DataType({self._dtype})"

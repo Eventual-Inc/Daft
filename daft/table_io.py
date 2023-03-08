@@ -22,7 +22,7 @@ def read_parquet(
     path: str,
     read_options: vPartitionReadOptions = vPartitionReadOptions(),
 ) -> Table:
-    raise NotImplementedError("[RUST-INT] Implement tableio")
+    raise NotImplementedError("[RUST-INT][TPCH] Implement tableio")
 
 
 def read_csv(

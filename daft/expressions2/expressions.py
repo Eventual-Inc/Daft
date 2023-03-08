@@ -162,17 +162,19 @@ class Expression:
 
     def _input_mapping(self) -> str | None:
         raise NotImplementedError(
-            "[RUST-INT] Implement for checking if expression is a no-op and returning the input name it maps to if so"
+            "[RUST-INT][TPCH] Implement for checking if expression is a no-op and returning the input name it maps to if so"
         )
 
     def _required_columns(self) -> set[str]:
-        raise NotImplementedError("[RUST-INT] Implement for getting required columns in an Expression")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement for getting required columns in an Expression")
 
     def _is_column(self) -> bool:
-        raise NotImplementedError("[RUST-INT] Implement for checking if this Expression is a Column")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement for checking if this Expression is a Column")
 
     def _replace_column_with_expression(self, column: str, new_expr: Expression) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement replacing a Column with an Expression - used in optimizer")
+        raise NotImplementedError(
+            "[RUST-INT][TPCH] Implement replacing a Column with an Expression - used in optimizer"
+        )
 
 
 class ExpressionNamespace:
@@ -190,25 +192,25 @@ class ExpressionNamespace:
 
 class ExpressionAggNamespace(ExpressionNamespace):
     def sum(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
 
     def mean(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
 
     def min(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
 
     def max(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
 
     def count(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
 
     def list(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][NESTED] Implement expression aggregation")
 
     def concat(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][NESTED] Implement expression aggregation")
 
 
 class ExpressionsProjection(Iterable[Expression]):
