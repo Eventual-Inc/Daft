@@ -17,6 +17,8 @@ import math
 from collections import deque
 from typing import Generator, Iterator, List, TypeVar, Union
 
+from loguru import logger
+
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -109,6 +111,7 @@ def file_read(
 
         except StopIteration:
             if len(materializations) > 0:
+                logger.debug("file_read blocked on completion of first source in: {sources}", sources=materializations)
                 yield None
             else:
                 return
@@ -190,6 +193,13 @@ def join(
             # Left and right child plans have completed.
             # Are we still waiting for materializations to complete? (We will emit more joins from them).
             if len(left_requests) + len(right_requests) > 0:
+                logger.debug(
+                    "join blocked on completion of sources.\n"
+                    "Left sources: {left_requests}\n"
+                    "Right sources: {right_requests}",
+                    left_requests=left_requests,
+                    right_requests=right_requests,
+                )
                 yield None
 
             # Otherwise, we are entirely done.
@@ -283,6 +293,7 @@ def global_limit(
 
         # (Optimization. If we are doing limit(0) and already have a partition executing to use for it, just wait.)
         if remaining_rows == 0 and len(materializations) > 0:
+            logger.debug("global_limit blocked on completion of: {source}", source=materializations[0])
             yield None
             continue
 
@@ -307,6 +318,9 @@ def global_limit(
 
         except StopIteration:
             if len(materializations) > 0:
+                logger.debug(
+                    "global_limit blocked on completion of first source in: {sources}", sources=materializations
+                )
                 yield None
             else:
                 return
@@ -363,6 +377,7 @@ def coalesce(
 
         except StopIteration:
             if len(materializations) > 0:
+                logger.debug("coalesce blocked on completion of a task in: {sources}", sources=materializations)
                 yield None
             else:
                 return
@@ -393,6 +408,7 @@ def reduce(
     # All fanouts dispatched. Wait for all of them to materialize
     # (since we need all of them to emit even a single reduce).
     while any(not _.done() for _ in materializations):
+        logger.debug("reduce blocked on completion of all sources in: {sources}", sources=materializations)
         yield None
 
     inputs_to_reduce = [deque(_.partitions()) for _ in materializations]
@@ -430,6 +446,7 @@ def sort(
     sample_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     for source in source_materializations:
         while not source.done():
+            logger.debug("sort blocked on completion of source: {source}", source=source)
             yield None
 
         sample = (
@@ -448,6 +465,7 @@ def sort(
 
     # Wait for samples to materialize.
     while any(not _.done() for _ in sample_materializations):
+        logger.debug("sort blocked on completion of all samples: {samples}", samples=sample_materializations)
         yield None
 
     # Reduce the samples to get sort boundaries.
@@ -469,6 +487,7 @@ def sort(
 
     # Wait for boundaries to materialize.
     while not boundaries.done():
+        logger.debug("sort blocked on completion of boundary partition: {boundaries}", boundaries=boundaries)
         yield None
 
     # Create a range fanout plan.
@@ -530,6 +549,7 @@ def materialize(
         yield step
 
     while any(not _.done() for _ in materializations):
+        logger.debug("materialize blocked on completion of all sources: {sources}", sources=materializations)
         yield None
 
     return [_.partition() for _ in materializations]

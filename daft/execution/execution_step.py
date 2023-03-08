@@ -179,6 +179,12 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         assert self._result is not None
         return self._result.vpartition()
 
+    def __str__(self) -> str:
+        return super().__str__()
+
+    def __repr__(self) -> str:
+        return super().__str__()
+
 
 @dataclass
 class MultiOutputPartitionTask(PartitionTask[PartitionT]):
@@ -218,6 +224,12 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
         """Get the raw vPartition of the result."""
         assert self._results is not None
         return self._results[index].vpartition()
+
+    def __str__(self) -> str:
+        return super().__str__()
+
+    def __repr__(self) -> str:
+        return super().__str__()
 
 
 class MaterializedResult(Protocol[PartitionT]):
