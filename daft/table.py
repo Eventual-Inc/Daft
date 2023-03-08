@@ -168,7 +168,7 @@ class Table:
         right: Table,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
-        output_projection: ExpressionsProjection,
+        output_projection: ExpressionsProjection | None = None,
         how: str = "inner",
     ) -> Table:
 

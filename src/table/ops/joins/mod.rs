@@ -7,7 +7,7 @@ mod naive_join;
 impl Table {
     pub fn join(&self, right: &Self, left_on: &[Expr], right_on: &[Expr]) -> DaftResult<Self> {
         let ltable = self.eval_expression_list(left_on)?;
-        let rtable = self.eval_expression_list(right_on)?;
+        let rtable = right.eval_expression_list(right_on)?;
 
         let (lidx, ridx) = naive_join::naive_inner_join(&ltable, &rtable)?;
 
