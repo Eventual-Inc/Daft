@@ -1,6 +1,6 @@
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BooleanArray, DaftIntegerType, DaftNumericType, NullArray, UInt64Type, Utf8Array},
+    datatypes::{BooleanArray, DaftNumericType, NullArray, UInt64Type, Utf8Array},
     error::DaftResult,
 };
 
@@ -38,7 +38,7 @@ where
         }
         let left_series = DataArray::from((self.name(), left_idx.as_slice()));
         let right_series = DataArray::from((other.name(), right_idx.as_slice()));
-        return Ok((left_series, right_series));
+        Ok((left_series, right_series))
     }
 }
 
@@ -73,7 +73,7 @@ impl Utf8Array {
         }
         let left_series = DataArray::from((self.name(), left_idx.as_slice()));
         let right_series = DataArray::from((other.name(), right_idx.as_slice()));
-        return Ok((left_series, right_series));
+        Ok((left_series, right_series))
     }
 }
 
@@ -108,7 +108,7 @@ impl BooleanArray {
         }
         let left_series = DataArray::from((self.name(), left_idx.as_slice()));
         let right_series = DataArray::from((other.name(), right_idx.as_slice()));
-        return Ok((left_series, right_series));
+        Ok((left_series, right_series))
     }
 }
 
@@ -125,6 +125,6 @@ impl NullArray {
         let right_idx = vec![];
         let left_series = DataArray::from((self.name(), left_idx.as_slice()));
         let right_series = DataArray::from((other.name(), right_idx.as_slice()));
-        return Ok((left_series, right_series));
+        Ok((left_series, right_series))
     }
 }

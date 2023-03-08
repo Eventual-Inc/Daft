@@ -13,9 +13,9 @@ pub(super) fn naive_inner_join(left: &Table, right: &Table) -> DaftResult<(Serie
         )));
     }
     if left.num_columns() == 0 {
-        return Err(DaftError::ValueError(format!(
-            "No columns were passed in to join on"
-        )));
+        return Err(DaftError::ValueError(
+            "No columns were passed in to join on".to_string(),
+        ));
     }
     if left.num_columns() == 1 {
         let left_series = left.get_column_by_index(0)?;
@@ -23,7 +23,7 @@ pub(super) fn naive_inner_join(left: &Table, right: &Table) -> DaftResult<(Serie
         return left_series.pairwise_equal(&right_series);
     }
 
-    return Err(DaftError::ValueError(format!(
-        "Multicolumn naive join not implemented"
-    )));
+    Err(DaftError::ValueError(
+        "Multicolumn naive join not implemented".to_string(),
+    ))
 }

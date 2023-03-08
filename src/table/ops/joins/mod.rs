@@ -18,7 +18,7 @@ impl Table {
             .into_values()
             .collect::<Vec<_>>();
 
-        let mut join_series = ltable.take(&lidx)?.columns.clone();
+        let mut join_series = ltable.take(&lidx)?.columns;
 
         let mut names_so_far = HashSet::new();
 
@@ -54,6 +54,6 @@ impl Table {
             names_so_far.insert(curr_name.clone());
         }
 
-        return Table::new(Schema::new(join_fields), join_series);
+        Table::new(Schema::new(join_fields), join_series)
     }
 }
