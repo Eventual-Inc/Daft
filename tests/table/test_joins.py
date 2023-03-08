@@ -81,6 +81,14 @@ def test_table_join_mismatch_column() -> None:
         left_table.join(right_table, left_on=[col("x"), col("y")], right_on=[col("a")])
 
 
+def test_table_join_multicolumn() -> None:
+    left_table = Table.from_pydict({"x": [1, 2, 3, 4], "y": [2, 3, 4, 5]})
+    right_table = Table.from_pydict({"a": [1, 2, 3, 4], "b": [2, 3, 4, 5]})
+
+    with pytest.raises(NotImplementedError, match="Multicolumn joins not implemented"):
+        left_table.join(right_table, left_on=[col("x"), col("y")], right_on=[col("a"), col("b")])
+
+
 def test_table_join_no_columns() -> None:
     left_table = Table.from_pydict({"x": [1, 2, 3, 4], "y": [2, 3, 4, 5]})
     right_table = Table.from_pydict({"a": [1, 2, 3, 4], "b": [2, 3, 4, 5]})
@@ -113,3 +121,25 @@ def test_table_join_single_column_name_multiple_conflicts() -> None:
 
     assert result_sorted.get_column("right.y").to_pylist() == [6, 7, 8, 9]
     assert result_sorted.get_column("right.right.y").to_pylist() == [13, 12, 11, 10]
+
+
+def test_table_join_single_column_name_boolean() -> None:
+    left_table = Table.from_pydict({"x": [False, True, None], "y": [0, 1, 2]})
+    right_table = Table.from_pydict({"x": [None, True, False, None], "y": [0, 1, 2, 3]})
+
+    result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("x")])
+    assert result_table.column_names() == ["x", "y", "right.y"]
+    result_sorted = result_table.sort([col("x")])
+    assert result_sorted.get_column("y").to_pylist() == [0, 1]
+    assert result_sorted.get_column("right.y").to_pylist() == [2, 1]
+
+
+def test_table_join_single_column_name_null() -> None:
+    left_table = Table.from_pydict({"x": [None, None, None], "y": [0, 1, 2]})
+    right_table = Table.from_pydict({"x": [None, None, None, None], "y": [0, 1, 2, 3]})
+
+    result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("x")])
+    assert result_table.column_names() == ["x", "y", "right.y"]
+    result_sorted = result_table.sort([col("x")])
+    assert result_sorted.get_column("y").to_pylist() == []
+    assert result_sorted.get_column("right.y").to_pylist() == []
