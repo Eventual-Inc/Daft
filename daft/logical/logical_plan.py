@@ -403,7 +403,7 @@ class Filter(UnaryNode):
         self._register_child(input)
 
         self._predicate = predicate
-        predicate_schema = input.schema().resolve_expressions(predicate)
+        predicate_schema = predicate.resolve_schema(input.schema())
 
         for resolved_field, predicate_expr in zip(predicate_schema, predicate):
             resolved_type = resolved_field.dtype
@@ -441,7 +441,7 @@ class Projection(UnaryNode):
         projection: ExpressionList,
         custom_resource_request: ResourceRequest = ResourceRequest(),
     ) -> None:
-        schema = input.schema().resolve_expressions(projection)
+        schema = projection.resolve_schema(input.schema())
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.ROW)
         self._register_child(input)
         self._projection = projection
@@ -483,7 +483,7 @@ class Sort(UnaryNode):
         self._register_child(input)
         self._sort_by = sort_by
 
-        resolved_sort_by_schema = input.schema().resolve_expressions(self._sort_by)
+        resolved_sort_by_schema = self._sort_by.resolve_schema(input.schema())
         for f, sort_by_expr in zip(resolved_sort_by_schema, self._sort_by):
             if f.dtype in {ExpressionType.null(), ExpressionType.bytes(), ExpressionType.logical()}:
                 raise ExpressionTypeError(f"Cannot sort on expression {sort_by_expr} with type: {f.dtype}")
@@ -784,10 +784,10 @@ class LocalAggregate(UnaryNode):
 
         if group_by is not None:
             group_and_agg_cols = ExpressionList(list(group_by) + [e for e, _ in agg])
-            schema = input.schema().resolve_expressions(group_and_agg_cols)
+            schema = group_and_agg_cols.resolve_schema(input.schema())
             required_cols = required_cols | set(group_by._required_columns())
         else:
-            schema = input.schema().resolve_expressions(cols_to_agg)
+            schema = cols_to_agg.resolve_schema(input.schema())
 
         self._required_cols = required_cols
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
@@ -834,7 +834,7 @@ class LocalDistinct(UnaryNode):
     ) -> None:
 
         self._group_by = group_by
-        schema = input.schema().resolve_expressions(group_by)
+        schema = group_by.resolve_schema(input.schema())
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
 
@@ -950,7 +950,7 @@ class Join(BinaryNode):
         self._right_on = right_on
 
         for schema, exprs in ((left.schema(), self._left_on), (right.schema(), self._right_on)):
-            resolved_schema = schema.resolve_expressions(exprs)
+            resolved_schema = exprs.resolve_schema(schema)
             for f, expr in zip(resolved_schema, exprs):
                 if f.dtype == ExpressionType.null():
                     raise ExpressionTypeError(f"Cannot join on null type expression: {expr}")
@@ -972,10 +972,8 @@ class Join(BinaryNode):
             self._left_columns = left_columns
             self._right_columns = ExpressionList(list(unioned_expressions)[len(self._left_columns) :])
             self._output_projection = unioned_expressions
-            output_schema = (
-                left.schema()
-                .resolve_expressions(self._left_columns)
-                .union(right.schema().resolve_expressions(self._right_columns))
+            output_schema = self._left_columns.resolve_schema(left.schema()).union(
+                self._right_columns.resolve_schema(right.schema())
             )
 
         left_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._left_on)

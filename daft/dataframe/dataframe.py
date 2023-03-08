@@ -28,11 +28,10 @@ from daft.datasources import (
 )
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionType
-from daft.expressions import Expression, col
+from daft.expressions import Expression, ExpressionList, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
-from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartitionCacheEntry,
@@ -1143,7 +1142,7 @@ class GroupedDataFrame:
     group_by: ExpressionList
 
     def __post_init__(self):
-        resolved_groupby_schema = self.df._plan.schema().resolve_expressions(self.group_by)
+        resolved_groupby_schema = self.group_by.resolve_schema(self.df._plan.schema())
         for field, e in zip(resolved_groupby_schema, self.group_by):
             if field.dtype == ExpressionType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")

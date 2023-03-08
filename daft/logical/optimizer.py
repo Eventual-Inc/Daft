@@ -5,7 +5,7 @@ import copy
 from loguru import logger
 
 from daft import resource_request
-from daft.expressions import col
+from daft.expressions import ExpressionList, col
 from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
     Coalesce,
@@ -22,7 +22,6 @@ from daft.logical.logical_plan import (
     TabularFilesScan,
     UnaryNode,
 )
-from daft.logical.schema import ExpressionList
 
 
 class PushDownPredicates(Rule[LogicalPlan]):

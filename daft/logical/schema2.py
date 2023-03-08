@@ -7,7 +7,7 @@ from daft.daft import PySchema as _PySchema
 from daft.datatype import DataType
 
 if TYPE_CHECKING:
-    from daft.expressions2 import ExpressionsProjection
+    pass
 
 
 class Field:
@@ -87,13 +87,6 @@ class Schema:
 
     def __repr__(self) -> str:
         return repr([(field.name, field.dtype) for field in self])
-
-    def resolve_expressions(self, expressions: ExpressionsProjection) -> Schema:
-        """Create a new Schema by resolving the Expressions against an existing Schema"""
-
-        raise NotImplementedError(
-            "[RUST-INT][TPCH] Requires an API for construction of a new Schema from resolving Expressions against an existing one"
-        )
 
     def union(self, other: Schema) -> Schema:
         if not isinstance(other, Schema):

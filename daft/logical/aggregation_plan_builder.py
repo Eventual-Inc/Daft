@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from daft.expressions import Expression, col, lit
+from daft.expressions import Expression, ExpressionList, col, lit
 from daft.logical import logical_plan
-from daft.logical.schema import ExpressionList
 
 AggregationOp = str
 ColName = str

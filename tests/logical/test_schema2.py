@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from daft.datatype import DataType
-from daft.expressions2 import col
+from daft.expressions2 import ExpressionsProjection, col
 from daft.logical.schema2 import Schema
 from daft.table import Table
 
@@ -68,7 +68,7 @@ def test_repr():
 
 def test_to_col_expr():
     schema = TABLE.schema()
-    schema_col_exprs = schema.to_column_expressions()
+    schema_col_exprs = ExpressionsProjection.from_schema(schema)
     expected_col_exprs = [col(n) for n in schema.column_names()]
 
     assert len(schema_col_exprs) == len(expected_col_exprs)

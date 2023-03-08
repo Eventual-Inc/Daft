@@ -4,8 +4,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft.expressions import Expression, col
-from daft.logical.schema import ExpressionList
+from daft.expressions import Expression, ExpressionList, col
 from daft.runners.blocks import ArrowDataBlock, DataBlock
 from daft.runners.partitioning import PyListTile, vPartition
 
