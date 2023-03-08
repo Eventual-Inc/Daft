@@ -26,7 +26,7 @@ def scale_factor():
 
 @pytest.fixture(scope="session", autouse=True)
 def gen_tpch(scale_factor):
-    num_parts = math.ceil(scale_factor)
+    num_parts = math.ceil(scale_factor) * 4
 
     csv_files_location = data_generation.gen_csv_files(TPCH_DBGEN_DIR, num_parts, scale_factor)
 
