@@ -352,6 +352,9 @@ class Scheduler:
 
                             # If this task is a no-op, just run it locally immediately.
                             while next_step is not None and len(next_step.instructions) == 0:
+                                logger.debug(
+                                    "Running task synchronously in main thread: {next_step}", next_step=next_step
+                                )
                                 assert isinstance(next_step, SingleOutputPartitionTask)
                                 next_step.set_result(
                                     [RayMaterializedResult(partition) for partition in next_step.inputs]
