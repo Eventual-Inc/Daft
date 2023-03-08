@@ -67,3 +67,11 @@ def test_table_join_single_column(dtype, data) -> None:
     casted_r = right_table.get_column("y").to_pylist()
     result_r = [casted_r[idx] for _, idx in result_pairs]
     assert result_table.get_column("y").to_pylist() == result_r
+
+
+def test_table_join_mismatch_column() -> None:
+    left_table = Table.from_pydict({"x": [1, 2, 3, 4], "y": [2, 3, 4, 5]})
+    right_table = Table.from_pydict({"a": [1, 2, 3, 4], "b": [2, 3, 4, 5]})
+
+    with pytest.raises(ValueError, match="Mismatch of number of join keys"):
+        left_table.join(right_table, left_on=[col("x"), col("y")], right_on=[col("a")])
