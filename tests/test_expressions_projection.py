@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
+from daft.errors import ExpressionTypeError
 from daft.expressions2 import Expression, ExpressionsProjection, col
+from daft.table import Table
 
 
 def test_expressions_projection_error_dup_name():
@@ -155,3 +157,37 @@ def test_expressions_projection_indexing():
     # TODO: [RUST-INT] enable once we have Expression._is_eq
     # assert ep[0]._is_eq(col("x"))
     # assert all([result._is_eq(expected) for result, expected in zip(ep[:2], list(col("x"), col("y") + 1))])
+
+
+def test_resolve_schema():
+    tbl = Table.from_pydict(
+        {
+            "foo": [1, 2, 3],
+        }
+    )
+    ep = ExpressionsProjection([col("foo"), (col("foo") + 1).alias("foo_plus")])
+    resolved_schema = ep.resolve_schema(tbl.schema())
+    assert resolved_schema.to_name_set() == {"foo", "foo_plus"}
+
+
+@pytest.mark.skip(reason="[RUST-INT] throw error on bad types during schema resolving")
+def test_resolve_schema_invalid_type():
+    tbl = Table.from_pydict(
+        {
+            "foo": ["a", "b", "c"],
+        }
+    )
+    ep = ExpressionsProjection([(col("foo") + 1).alias("invalid")])
+    with pytest.raises(ExpressionTypeError):
+        ep.resolve_schema(tbl.schema())
+
+
+def test_resolve_schema_missing_col():
+    tbl = Table.from_pydict(
+        {
+            "foo": ["a", "b", "c"],
+        }
+    )
+    ep = ExpressionsProjection([col("bar")])
+    with pytest.raises(ValueError):
+        ep.resolve_schema(tbl.schema())

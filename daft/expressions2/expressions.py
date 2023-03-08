@@ -204,7 +204,7 @@ class Expression:
         )
 
     def _to_field(self, schema: Schema) -> Field:
-        raise NotImplementedError("TODO!!!")
+        return Field._from_pyfield(self._expr.to_field(schema._schema))
 
 
 class ExpressionNamespace:
