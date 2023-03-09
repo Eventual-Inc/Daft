@@ -1,5 +1,9 @@
 use crate::{
-    datatypes::DataType, datatypes::Field, dsl::lit, error::DaftResult, schema::Schema,
+    datatypes::DataType,
+    datatypes::Field,
+    dsl::lit,
+    error::{DaftError, DaftResult},
+    schema::Schema,
     utils::supertype::try_get_supertype,
 };
 use serde::{Deserialize, Serialize};
@@ -65,7 +69,30 @@ impl Expr {
         match self {
             Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Agg(agg_expr) => match agg_expr {
-                Sum(expr) => expr.to_field(schema),
+                Sum(expr) => {
+                    let field = expr.to_field(schema)?;
+                    Ok(Field::new(
+                        field.name.as_str(),
+                        match &field.dtype {
+                            DataType::Int8
+                            | DataType::Int16
+                            | DataType::Int32
+                            | DataType::Int64 => DataType::Int64,
+                            DataType::UInt8
+                            | DataType::UInt16
+                            | DataType::UInt32
+                            | DataType::UInt64 => DataType::UInt64,
+                            DataType::Float32 => DataType::Float32,
+                            DataType::Float64 => DataType::Float64,
+                            other => {
+                                return Err(DaftError::TypeError(format!(
+                                    "Numeric sum is not implemented for type {}",
+                                    other
+                                )))
+                            }
+                        },
+                    ))
+                }
             },
             Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
             Column(name) => Ok(schema.get_field(name).cloned()?),
