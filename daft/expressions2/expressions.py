@@ -172,7 +172,7 @@ class Expression:
         expr = self._expr.cast(dtype._dtype)
         return Expression._from_pyexpr(expr)
 
-    def sum(self) -> Expression:
+    def _sum(self) -> Expression:
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 

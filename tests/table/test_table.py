@@ -244,20 +244,20 @@ def test_table_sum() -> None:
 
     daft_table = daft_table.eval_expression_list(
         [
-            col("u8").sum(),
-            col("i8p").sum(),
-            col("i8n").sum(),
-            col("u16").sum(),
-            col("i16p").sum(),
-            col("i16n").sum(),
-            col("u32").sum(),
-            col("i32p").sum(),
-            col("i32n").sum(),
-            col("u64").sum(),
-            col("i64p").sum(),
-            col("i64n").sum(),
-            col("f32").sum(),
-            col("f64").sum(),
+            col("u8")._sum(),
+            col("i8p")._sum(),
+            col("i8n")._sum(),
+            col("u16")._sum(),
+            col("i16p")._sum(),
+            col("i16n")._sum(),
+            col("u32")._sum(),
+            col("i32p")._sum(),
+            col("i32n")._sum(),
+            col("u64")._sum(),
+            col("i64p")._sum(),
+            col("i64n")._sum(),
+            col("f32")._sum(),
+            col("f64")._sum(),
         ]
     )
 
