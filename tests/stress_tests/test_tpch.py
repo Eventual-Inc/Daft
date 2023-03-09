@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-import os
 import pathlib
 import sqlite3
 
@@ -14,21 +12,16 @@ from daft.dataframe import DataFrame
 from tests.assets.assets import TPCH_DBGEN_DIR, TPCH_QUERIES
 from tests.conftest import assert_df_equals
 
-# If running in github, we use smaller-scale data
+# Hardcode scale factor to 200M for local testing
+SCALE_FACTOR = 0.2
 
 
-@pytest.fixture(scope="session", autouse=True)
-def scale_factor():
-    scale_factor = float(os.getenv("SCALE_FACTOR", "1"))
-    scale_factor = 0.2 if os.getenv("CI") else scale_factor
-    return scale_factor
+@pytest.fixture(scope="session", autouse=True, params=[1, 4])
+def gen_tpch(request):
+    # Parametrize the number of parts for each file so that we run tests on single-partition files and multi-partition files
+    num_parts = request.param
 
-
-@pytest.fixture(scope="session", autouse=True)
-def gen_tpch(scale_factor):
-    num_parts = math.ceil(scale_factor)
-
-    csv_files_location = data_generation.gen_csv_files(TPCH_DBGEN_DIR, num_parts, scale_factor)
+    csv_files_location = data_generation.gen_csv_files(TPCH_DBGEN_DIR, num_parts, SCALE_FACTOR)
 
     sqlite_path = data_generation.gen_sqlite_db(
         csv_filepath=csv_files_location,
