@@ -6,7 +6,7 @@ import dataclasses
 import datetime
 import json
 import pathlib
-from typing import Literal
+from typing import Callable, Literal
 
 import pyarrow as pa
 import pytest
@@ -100,7 +100,7 @@ def _resolve_parametrized_input_type(input_type: InputType, path: str) -> table_
 
 
 @pytest.fixture(scope="function")
-def json_input(tmpdir: str) -> str:
+def generate_json_input(tmpdir: str) -> str:
     path = tmpdir + f"/data.json"
     with open(path, "wb") as f:
         for row in range(TEST_DATA_LEN):
@@ -110,33 +110,19 @@ def json_input(tmpdir: str) -> str:
     yield path
 
 
-@pytest.fixture(
-    scope="function",
-    params=[
-        (vPartitionParseCSVOptions(), vPartitionSchemaInferenceOptions()),
-        (
-            vPartitionParseCSVOptions(has_headers=False),
-            vPartitionSchemaInferenceOptions(inference_column_names=list(TEST_DATA.keys())),
-        ),
-        (
-            vPartitionParseCSVOptions(has_headers=True),
-            vPartitionSchemaInferenceOptions(inference_column_names=list(TEST_DATA.keys())),
-        ),
-        (vPartitionParseCSVOptions(delimiter="|"), vPartitionSchemaInferenceOptions()),
-    ],
-)
-def csv_input(request, tmpdir: str) -> tuple[str, vPartitionParseCSVOptions, vPartitionSchemaInferenceOptions]:
-    csv_options, schema_inference_options = request.param
+@pytest.fixture(scope="function")
+def generate_csv_input(tmpdir: str) -> Callable[[vPartitionParseCSVOptions], str]:
+    def _generate(csv_options) -> str:
+        path = tmpdir + f"/data.csv"
+        headers = [cname for cname in TEST_DATA]
+        with open(path, "w") as f:
+            writer = csv.writer(f, delimiter=csv_options.delimiter)
+            if csv_options.has_headers:
+                writer.writerow(headers)
+            writer.writerows([[TEST_DATA[cname][row] for cname in headers] for row in range(TEST_DATA_LEN)])
+        return path
 
-    path = tmpdir + f"/data.csv"
-    headers = [cname for cname in TEST_DATA]
-    with open(path, "w") as f:
-        writer = csv.writer(f, delimiter=csv_options.delimiter)
-        if csv_options.has_headers:
-            writer.writerow(headers)
-        writer.writerows([[TEST_DATA[cname][row] for cname in headers] for row in range(TEST_DATA_LEN)])
-
-    yield path, csv_options, schema_inference_options
+    yield _generate
 
 
 @pytest.fixture(scope="function")
@@ -146,21 +132,22 @@ def parquet_input(tmpdir: str) -> str:
     yield path
 
 
+###
+# JSON
+###
+
+
 @pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
-def test_json_reads(json_input: str, input_type: InputType):
-    with _resolve_parametrized_input_type(input_type, json_input) as table_io_input:
+def test_json_reads(generate_json_input: str, input_type: InputType):
+    with _resolve_parametrized_input_type(input_type, generate_json_input) as table_io_input:
         table = table_io.read_json(table_io_input)
         d = table.to_pydict()
         assert d == JSON_EXPECTED_DATA
 
 
-@pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
-def test_csv_reads(csv_input: tuple[str, vPartitionParseCSVOptions], input_type: InputType):
-    csv_input_path, csv_options, schema_inference_options = csv_input
-    with _resolve_parametrized_input_type(input_type, csv_input_path) as table_io_input:
-        table = table_io.read_csv(table_io_input, csv_options=csv_options, schema_options=schema_inference_options)
-        d = table.to_pydict()
-        assert d == CSV_EXPECTED_DATA
+###
+# Parquet
+###
 
 
 @pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
@@ -169,3 +156,48 @@ def test_parquet_reads(parquet_input: str, input_type: InputType):
         table = table_io.read_parquet(table_io_input)
         d = table.to_pydict()
         assert d == PARQUET_EXPECTED_DATA
+
+
+###
+# CSV
+###
+
+
+@pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
+def test_csv_reads(generate_csv_input: Callable[[vPartitionParseCSVOptions], str], input_type: InputType):
+    generate_csv_input_path = generate_csv_input(vPartitionParseCSVOptions())
+    with _resolve_parametrized_input_type(input_type, generate_csv_input_path) as table_io_input:
+        table = table_io.read_csv(table_io_input)
+        d = table.to_pydict()
+        assert d == CSV_EXPECTED_DATA
+
+
+@pytest.mark.parametrize(
+    ["csv_options", "schema_options"],
+    [
+        # Default options - headers present with default delimiter (",")
+        (vPartitionParseCSVOptions(), vPartitionSchemaInferenceOptions()),
+        # No headers, but inference_column_names is provided
+        (
+            vPartitionParseCSVOptions(has_headers=False),
+            vPartitionSchemaInferenceOptions(inference_column_names=list(TEST_DATA.keys())),
+        ),
+        # Has headers, but provide inference_column_names so we should skip the first row of headers
+        (
+            vPartitionParseCSVOptions(has_headers=True),
+            vPartitionSchemaInferenceOptions(inference_column_names=list(TEST_DATA.keys())),
+        ),
+        # Custom delimiter
+        (vPartitionParseCSVOptions(delimiter="|"), vPartitionSchemaInferenceOptions()),
+    ],
+)
+def test_csv_reads_custom_options(
+    generate_csv_input: Callable[[vPartitionParseCSVOptions, vPartitionSchemaInferenceOptions], str],
+    csv_options: vPartitionParseCSVOptions,
+    schema_options: vPartitionSchemaInferenceOptions,
+):
+    generate_csv_input_path = generate_csv_input(csv_options)
+    with _resolve_parametrized_input_type("path", generate_csv_input_path) as table_io_input:
+        table = table_io.read_csv(table_io_input, csv_options=csv_options, schema_options=schema_options)
+        d = table.to_pydict()
+        assert d == CSV_EXPECTED_DATA
