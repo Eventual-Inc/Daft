@@ -88,7 +88,9 @@ def _get_tabular_files_scan(
         source_info=source_info,
         filepaths_child=filepath_plan,
         filepaths_column_name=runner_io.FS_LISTING_PATH_COLUMN_NAME,
-        num_partitions=filepath_plan.num_partitions(),
+        # WARNING: This is currently hardcoded to be the same number of partitions as rows!! This is because we emit
+        # one partition per filepath. This will change in the future and our logic here should change accordingly.
+        num_partitions=len(listing_details_partition_set),
     )
 
 
