@@ -1,4 +1,7 @@
-use crate::{error::DaftResult, series::Series};
+use crate::{
+    error::{DaftError, DaftResult},
+    series::Series,
+};
 
 use crate::array::BaseArray;
 use crate::datatypes::*;
@@ -24,7 +27,10 @@ impl Series {
             // floatX -> floatX (in line with numpy)
             Float32 => Ok(self.downcast::<Float32Type>()?.sum()?.into_series()),
             Float64 => Ok(self.downcast::<Float64Type>()?.sum()?.into_series()),
-            _ => panic!(),
+            other => Err(DaftError::TypeError(format!(
+                "Numeric sum is not implemented for type {}",
+                other
+            ))),
         }
         // let array = self.downcast::<$T>()?;
         // Ok(array.sum()?.into_series())
