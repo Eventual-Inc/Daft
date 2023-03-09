@@ -9,8 +9,6 @@ use crate::datatypes::*;
 impl Series {
     pub fn sum(&self) -> DaftResult<Series> {
         use crate::array::ops::DaftNumericAgg;
-        // with_match_numeric_daft_types!(self.data_type(), |$T| {
-
         use crate::datatypes::DataType::*;
 
         match self.data_type() {
@@ -32,8 +30,5 @@ impl Series {
                 other
             ))),
         }
-        // let array = self.downcast::<$T>()?;
-        // Ok(array.sum()?.into_series())
-        // })
     }
 }
