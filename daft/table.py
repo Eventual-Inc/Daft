@@ -43,7 +43,7 @@ class Table:
         return Series._from_pyseries(self._table.get_column(name))
 
     def size_bytes(self) -> int:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+        return self._table.size_bytes()
 
     def __len__(self) -> int:
         return len(self._table)
