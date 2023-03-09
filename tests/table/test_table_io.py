@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import csv
-import dataclasses
 import datetime
 import json
 import pathlib
@@ -18,10 +17,11 @@ from daft.runners.partitioning import (
 )
 from daft.table import table_io
 
+InputType = Literal["file"] | Literal["filepath"] | Literal["pathlib.Path"]
+TEST_INPUT_TYPES = ["file", "path", "pathlib.Path"]
+
 TEST_DATA_LEN = 16
 TEST_DATA = {
-    # TODO: [RUST-INT] conversions back to dates is currently bad. We can should add these tests into a Hypothesis
-    # encode/decode test: https://hypothesis.works/articles/encode-decode-invariant/ to test across all our different datatypes
     "dates": [datetime.date(2020, 1, 1) + datetime.timedelta(days=i) for i in range(TEST_DATA_LEN)],
     "strings": [f"foo_{i}" for i in range(TEST_DATA_LEN)],
     "integers": [i for i in range(TEST_DATA_LEN)],
@@ -31,59 +31,6 @@ TEST_DATA = {
     "fixed_sized_arrays": [[i for _ in range(4)] for i in range(TEST_DATA_LEN)],
     "var_sized_arrays": [[i for _ in range(i)] for i in range(TEST_DATA_LEN)],
 }
-
-PARQUET_EXPECTED_DATA = {
-    "dates": TEST_DATA["dates"],
-    "strings": TEST_DATA["strings"],
-    "integers": TEST_DATA["integers"],
-    "floats": TEST_DATA["floats"],
-    "bools": TEST_DATA["bools"],
-    "structs": TEST_DATA["structs"],
-    "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
-    "var_sized_arrays": TEST_DATA["var_sized_arrays"],
-}
-
-JSON_EXPECTED_DATA = {
-    # NOTE: JSON decoder parses isoformat dates as datetimes - seems incorrect.
-    "dates": [datetime.datetime(d.year, d.month, d.day) for d in TEST_DATA["dates"]],
-    "strings": TEST_DATA["strings"],
-    "integers": TEST_DATA["integers"],
-    "floats": TEST_DATA["floats"],
-    "bools": TEST_DATA["bools"],
-    "structs": TEST_DATA["structs"],
-    "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
-    "var_sized_arrays": TEST_DATA["var_sized_arrays"],
-}
-
-CSV_EXPECTED_DATA = {
-    "dates": TEST_DATA["dates"],
-    "strings": TEST_DATA["strings"],
-    "integers": TEST_DATA["integers"],
-    "floats": TEST_DATA["floats"],
-    "bools": TEST_DATA["bools"],
-    "structs": [str(s) for s in TEST_DATA["structs"]],
-    "fixed_sized_arrays": [str(l) for l in TEST_DATA["fixed_sized_arrays"]],
-    "var_sized_arrays": [str(l) for l in TEST_DATA["var_sized_arrays"]],
-}
-
-
-InputType = Literal["file"] | Literal["filepath"] | Literal["pathlib.Path"]
-
-
-@dataclasses.dataclass(frozen=True)
-class TableIOTestParams:
-    input_type: InputType
-
-
-TEST_INPUT_TYPES = ["file", "path", "pathlib.Path"]
-
-
-class CustomJSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, datetime.date):
-            return obj.isoformat()
-        else:
-            return super().default(obj)
 
 
 @contextlib.contextmanager
@@ -99,6 +46,32 @@ def _resolve_parametrized_input_type(input_type: InputType, path: str) -> table_
         raise NotImplementedError(f"input_type={input_type}")
 
 
+###
+# JSON
+###
+
+
+JSON_EXPECTED_DATA = {
+    # NOTE: JSON decoder parses isoformat dates as datetimes - seems incorrect.
+    "dates": [datetime.datetime(d.year, d.month, d.day) for d in TEST_DATA["dates"]],
+    "strings": TEST_DATA["strings"],
+    "integers": TEST_DATA["integers"],
+    "floats": TEST_DATA["floats"],
+    "bools": TEST_DATA["bools"],
+    "structs": TEST_DATA["structs"],
+    "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
+    "var_sized_arrays": TEST_DATA["var_sized_arrays"],
+}
+
+
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime.date):
+            return obj.isoformat()
+        else:
+            return super().default(obj)
+
+
 @pytest.fixture(scope="function")
 def generate_json_input(tmpdir: str) -> str:
     path = tmpdir + f"/data.json"
@@ -108,33 +81,6 @@ def generate_json_input(tmpdir: str) -> str:
             f.write(json.dumps(row_data, default=CustomJSONEncoder().default).encode("utf-8"))
             f.write(b"\n")
     yield path
-
-
-@pytest.fixture(scope="function")
-def generate_csv_input(tmpdir: str) -> Callable[[vPartitionParseCSVOptions], str]:
-    def _generate(csv_options) -> str:
-        path = tmpdir + f"/data.csv"
-        headers = [cname for cname in TEST_DATA]
-        with open(path, "w") as f:
-            writer = csv.writer(f, delimiter=csv_options.delimiter)
-            if csv_options.has_headers:
-                writer.writerow(headers)
-            writer.writerows([[TEST_DATA[cname][row] for cname in headers] for row in range(TEST_DATA_LEN)])
-        return path
-
-    yield _generate
-
-
-@pytest.fixture(scope="function")
-def parquet_input(tmpdir: str) -> str:
-    path = tmpdir + f"/data.parquet"
-    papq.write_table(pa.Table.from_pydict(TEST_DATA), path)
-    yield path
-
-
-###
-# JSON
-###
 
 
 @pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
@@ -150,6 +96,25 @@ def test_json_reads(generate_json_input: str, input_type: InputType):
 ###
 
 
+PARQUET_EXPECTED_DATA = {
+    "dates": TEST_DATA["dates"],
+    "strings": TEST_DATA["strings"],
+    "integers": TEST_DATA["integers"],
+    "floats": TEST_DATA["floats"],
+    "bools": TEST_DATA["bools"],
+    "structs": TEST_DATA["structs"],
+    "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
+    "var_sized_arrays": TEST_DATA["var_sized_arrays"],
+}
+
+
+@pytest.fixture(scope="function")
+def parquet_input(tmpdir: str) -> str:
+    path = tmpdir + f"/data.parquet"
+    papq.write_table(pa.Table.from_pydict(TEST_DATA), path)
+    yield path
+
+
 @pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
 def test_parquet_reads(parquet_input: str, input_type: InputType):
     with _resolve_parametrized_input_type(input_type, parquet_input) as table_io_input:
@@ -161,6 +126,33 @@ def test_parquet_reads(parquet_input: str, input_type: InputType):
 ###
 # CSV
 ###
+
+
+CSV_EXPECTED_DATA = {
+    "dates": TEST_DATA["dates"],
+    "strings": TEST_DATA["strings"],
+    "integers": TEST_DATA["integers"],
+    "floats": TEST_DATA["floats"],
+    "bools": TEST_DATA["bools"],
+    "structs": [str(s) for s in TEST_DATA["structs"]],
+    "fixed_sized_arrays": [str(l) for l in TEST_DATA["fixed_sized_arrays"]],
+    "var_sized_arrays": [str(l) for l in TEST_DATA["var_sized_arrays"]],
+}
+
+
+@pytest.fixture(scope="function")
+def generate_csv_input(tmpdir: str) -> Callable[[vPartitionParseCSVOptions], str]:
+    def _generate(csv_options) -> str:
+        path = tmpdir + f"/data.csv"
+        headers = [cname for cname in TEST_DATA]
+        with open(path, "w") as f:
+            writer = csv.writer(f, delimiter=csv_options.delimiter)
+            if csv_options.has_headers:
+                writer.writerow(headers)
+            writer.writerows([[TEST_DATA[cname][row] for cname in headers] for row in range(TEST_DATA_LEN)])
+        return path
+
+    yield _generate
 
 
 @pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
