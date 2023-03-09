@@ -505,3 +505,10 @@ def test_table_boolean_multiple_col_sorting(second_dtype, data) -> None:
         daft_table.argsort([col("a"), col("b")], descending=[not a_desc, not b_desc]).to_pylist()
         == argsort_order.to_pylist()[::-1]
     )
+
+
+def test_table_size_bytes() -> None:
+    data = Table.from_pydict({"a": [1, 2, 3, 4, None], "b": [False, True, False, True, None]}).eval_expression_list(
+        [col("a").cast(DataType.int64()), col("b")]
+    )
+    assert data.size_bytes() == (5 * 8 + 1) + (1 + 1)
