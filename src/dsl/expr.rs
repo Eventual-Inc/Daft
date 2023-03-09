@@ -14,7 +14,7 @@ type ExprRef = Arc<Expr>;
 pub enum Expr {
     Alias(ExprRef, Arc<str>),
     BinaryOp {
-        op: Operator,
+        op: BinaryOperatorEnum,
         left: ExprRef,
         right: ExprRef,
     },
@@ -27,7 +27,7 @@ pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
     Expr::Column(name.into())
 }
 
-pub fn binary_op(op: Operator, left: &Expr, right: &Expr) -> Expr {
+pub fn binary_op(op: BinaryOperatorEnum, left: &Expr, right: &Expr) -> Expr {
     Expr::BinaryOp {
         op,
         left: left.clone().into(),
@@ -45,7 +45,7 @@ impl Expr {
     }
 
     pub fn and(&self, other: &Self) -> Self {
-        binary_op(Operator::And, self, other)
+        binary_op(BinaryOperatorEnum::And, self, other)
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
@@ -59,17 +59,17 @@ impl Expr {
 
             BinaryOp { op, left, right } => {
                 let result = match op {
-                    Operator::Lt
-                    | Operator::Gt
-                    | Operator::Eq
-                    | Operator::NotEq
-                    | Operator::And
-                    | Operator::LtEq
-                    | Operator::GtEq
-                    | Operator::Or => {
+                    BinaryOperatorEnum::Lt
+                    | BinaryOperatorEnum::Gt
+                    | BinaryOperatorEnum::Eq
+                    | BinaryOperatorEnum::NotEq
+                    | BinaryOperatorEnum::And
+                    | BinaryOperatorEnum::LtEq
+                    | BinaryOperatorEnum::GtEq
+                    | BinaryOperatorEnum::Or => {
                         Field::new(left.to_field(schema)?.name.as_str(), DataType::Boolean)
                     }
-                    Operator::TrueDivide => {
+                    BinaryOperatorEnum::TrueDivide => {
                         Field::new(left.to_field(schema)?.name.as_str(), DataType::Float64)
                     }
                     _ => {
@@ -133,7 +133,7 @@ impl Display for Expr {
 
 /// Based on Polars first class operators: https://github.com/pola-rs/polars/blob/master/polars/polars-lazy/polars-plan/src/dsl/expr.rs
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Operator {
+pub enum BinaryOperatorEnum {
     Eq,
     NotEq,
     Lt,
@@ -151,9 +151,9 @@ pub enum Operator {
     Xor,
 }
 
-impl Display for Operator {
+impl Display for BinaryOperatorEnum {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use Operator::*;
+        use BinaryOperatorEnum::*;
         let tkn = match self {
             Eq => "==",
             NotEq => "!=",
@@ -175,7 +175,7 @@ impl Display for Operator {
     }
 }
 
-impl Operator {
+impl BinaryOperatorEnum {
     #![allow(dead_code)]
     pub(crate) fn is_comparison(&self) -> bool {
         matches!(
@@ -211,7 +211,7 @@ mod tests {
         let z = Expr::BinaryOp {
             left: x.into(),
             right: y.into(),
-            op: Operator::Lt,
+            op: BinaryOperatorEnum::Lt,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Boolean);
         Ok(())
@@ -238,7 +238,7 @@ mod tests {
         let z = Expr::BinaryOp {
             left: x.into(),
             right: y.into(),
-            op: Operator::Plus,
+            op: BinaryOperatorEnum::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
 
@@ -248,7 +248,7 @@ mod tests {
         let z = Expr::BinaryOp {
             left: y.into(),
             right: x.into(),
-            op: Operator::Plus,
+            op: BinaryOperatorEnum::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
 
@@ -267,7 +267,7 @@ mod tests {
         let z = Expr::BinaryOp {
             left: x.into(),
             right: y.into(),
-            op: Operator::Plus,
+            op: BinaryOperatorEnum::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
 
@@ -277,7 +277,7 @@ mod tests {
         let z = Expr::BinaryOp {
             left: y.into(),
             right: x.into(),
-            op: Operator::Plus,
+            op: BinaryOperatorEnum::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
 

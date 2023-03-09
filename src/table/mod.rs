@@ -159,7 +159,7 @@ impl Table {
                 let rhs = self.eval_expression(right)?;
                 use crate::array::ops::{DaftCompare, DaftLogical};
                 use crate::array::BaseArray;
-                use crate::dsl::Operator::*;
+                use crate::dsl::BinaryOperatorEnum::*;
                 match op {
                     Plus => lhs + rhs,
                     Minus => lhs - rhs,

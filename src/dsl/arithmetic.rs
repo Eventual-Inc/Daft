@@ -1,6 +1,6 @@
 use std::ops::*;
 
-use crate::dsl::{Expr, Operator};
+use crate::dsl::{BinaryOperatorEnum, Expr};
 
 macro_rules! impl_expr_op {
     ($math_op:ident, $func_name:ident, $op_name: ident) => {
@@ -8,7 +8,7 @@ macro_rules! impl_expr_op {
             type Output = Expr;
             fn $func_name(self, rhs: Self) -> Self::Output {
                 Expr::BinaryOp {
-                    op: Operator::$op_name,
+                    op: BinaryOperatorEnum::$op_name,
                     left: self.clone().into(),
                     right: rhs.clone().into(),
                 }
@@ -19,7 +19,7 @@ macro_rules! impl_expr_op {
             type Output = Expr;
             fn $func_name(self, rhs: Self) -> Self::Output {
                 Expr::BinaryOp {
-                    op: Operator::$op_name,
+                    op: BinaryOperatorEnum::$op_name,
                     left: self.into(),
                     right: rhs.into(),
                 }

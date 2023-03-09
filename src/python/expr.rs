@@ -84,46 +84,57 @@ impl PyExpr {
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
-        Ok(dsl::binary_op(dsl::Operator::Plus, &self.expr, &other.expr).into())
+        Ok(dsl::binary_op(dsl::BinaryOperatorEnum::Plus, &self.expr, &other.expr).into())
     }
 
     pub fn __sub__(&self, other: &Self) -> PyResult<Self> {
-        Ok(dsl::binary_op(dsl::Operator::Minus, &self.expr, &other.expr).into())
+        Ok(dsl::binary_op(dsl::BinaryOperatorEnum::Minus, &self.expr, &other.expr).into())
     }
 
     pub fn __mul__(&self, other: &Self) -> PyResult<Self> {
-        Ok(dsl::binary_op(dsl::Operator::Multiply, &self.expr, &other.expr).into())
+        Ok(dsl::binary_op(dsl::BinaryOperatorEnum::Multiply, &self.expr, &other.expr).into())
     }
 
     pub fn __floordiv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(dsl::binary_op(dsl::Operator::FloorDivide, &self.expr, &other.expr).into())
+        Ok(dsl::binary_op(
+            dsl::BinaryOperatorEnum::FloorDivide,
+            &self.expr,
+            &other.expr,
+        )
+        .into())
     }
 
     pub fn __truediv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(dsl::binary_op(dsl::Operator::TrueDivide, &self.expr, &other.expr).into())
+        Ok(dsl::binary_op(dsl::BinaryOperatorEnum::TrueDivide, &self.expr, &other.expr).into())
     }
 
     pub fn __mod__(&self, other: &Self) -> PyResult<Self> {
-        Ok(dsl::binary_op(dsl::Operator::Modulus, &self.expr, &other.expr).into())
+        Ok(dsl::binary_op(dsl::BinaryOperatorEnum::Modulus, &self.expr, &other.expr).into())
     }
 
     pub fn __and__(&self, other: &Self) -> PyResult<Self> {
-        Ok(dsl::binary_op(dsl::Operator::And, &self.expr, &other.expr).into())
+        Ok(dsl::binary_op(dsl::BinaryOperatorEnum::And, &self.expr, &other.expr).into())
     }
 
     pub fn __or__(&self, other: &Self) -> PyResult<Self> {
-        Ok(dsl::binary_op(dsl::Operator::Or, &self.expr, &other.expr).into())
+        Ok(dsl::binary_op(dsl::BinaryOperatorEnum::Or, &self.expr, &other.expr).into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
-        use dsl::{binary_op, Operator};
+        use dsl::{binary_op, BinaryOperatorEnum};
         match op {
-            CompareOp::Lt => Ok(binary_op(Operator::Lt, &self.expr, &other.expr).into()),
-            CompareOp::Le => Ok(binary_op(Operator::LtEq, &self.expr, &other.expr).into()),
-            CompareOp::Eq => Ok(binary_op(Operator::Eq, &self.expr, &other.expr).into()),
-            CompareOp::Ne => Ok(binary_op(Operator::NotEq, &self.expr, &other.expr).into()),
-            CompareOp::Gt => Ok(binary_op(Operator::Gt, &self.expr, &other.expr).into()),
-            CompareOp::Ge => Ok(binary_op(Operator::GtEq, &self.expr, &other.expr).into()),
+            CompareOp::Lt => Ok(binary_op(BinaryOperatorEnum::Lt, &self.expr, &other.expr).into()),
+            CompareOp::Le => {
+                Ok(binary_op(BinaryOperatorEnum::LtEq, &self.expr, &other.expr).into())
+            }
+            CompareOp::Eq => Ok(binary_op(BinaryOperatorEnum::Eq, &self.expr, &other.expr).into()),
+            CompareOp::Ne => {
+                Ok(binary_op(BinaryOperatorEnum::NotEq, &self.expr, &other.expr).into())
+            }
+            CompareOp::Gt => Ok(binary_op(BinaryOperatorEnum::Gt, &self.expr, &other.expr).into()),
+            CompareOp::Ge => {
+                Ok(binary_op(BinaryOperatorEnum::GtEq, &self.expr, &other.expr).into())
+            }
         }
     }
 
