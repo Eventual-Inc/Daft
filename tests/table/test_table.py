@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 
+import numpy as np
 import pyarrow as pa
 import pytest
 
@@ -200,83 +201,28 @@ def test_table_take_null(idx_dtype) -> None:
     assert taken.to_pydict() == {"a": [None, None], "b": [None, None]}
 
 
-def test_table_sum() -> None:
+@pytest.mark.parametrize("nptype", [np.uint8, np.uint16, np.uint32, np.int8, np.int16, np.int32])
+def test_table_sum_upcast(nptype) -> None:
     """Tests correctness, including type upcasting, of sum aggregations."""
-
-    pa_table = pa.Table.from_pydict(
+    daft_table = Table.from_pydict(
         {
-            "u8": 128 * [2**8 - 1],
-            "i8p": 128 * [2**7 - 1],
-            "i8n": 128 * [-(2**7)],
-            "u16": 128 * [2**16 - 1],
-            "i16p": 128 * [2**15 - 1],
-            "i16n": 128 * [-(2**15)],
-            "u32": 128 * [2**32 - 1],
-            "i32p": 128 * [2**31 - 1],
-            "i32n": 128 * [-(2**31)],
-            "u64": 128 * [2**48],
-            "i64p": 128 * [2**48],
-            "i64n": 128 * [-(2**48)],
-            "f32": 128 * [1.0],
-            "f64": 128 * [1.0],
+            "maxes": np.ones(128, dtype=nptype) * np.iinfo(nptype).max,
+            "mins": np.ones(128, dtype=nptype) * np.iinfo(nptype).min,
         }
     )
-    daft_table = Table.from_arrow(pa_table)
-
-    daft_table = daft_table.eval_expression_list(
-        [
-            col("u8").cast(DataType.uint8()),
-            col("i8p").cast(DataType.int8()),
-            col("i8n").cast(DataType.int8()),
-            col("u16").cast(DataType.uint16()),
-            col("i16p").cast(DataType.int16()),
-            col("i16n").cast(DataType.int16()),
-            col("u32").cast(DataType.uint32()),
-            col("i32p").cast(DataType.int32()),
-            col("i32n").cast(DataType.int32()),
-            col("u64").cast(DataType.uint64()),
-            col("i64p").cast(DataType.int64()),
-            col("i64n").cast(DataType.int64()),
-            col("f32").cast(DataType.float32()),
-            col("f64").cast(DataType.float64()),
-        ]
-    )
-
-    daft_table = daft_table.eval_expression_list(
-        [
-            col("u8")._sum(),
-            col("i8p")._sum(),
-            col("i8n")._sum(),
-            col("u16")._sum(),
-            col("i16p")._sum(),
-            col("i16n")._sum(),
-            col("u32")._sum(),
-            col("i32p")._sum(),
-            col("i32n")._sum(),
-            col("u64")._sum(),
-            col("i64p")._sum(),
-            col("i64n")._sum(),
-            col("f32")._sum(),
-            col("f64")._sum(),
-        ]
-    )
-
+    daft_table = daft_table.eval_expression_list([col("maxes")._sum(), col("mins")._sum()])
     pydict = daft_table.to_pydict()
+    assert pydict["maxes"] == [128 * np.iinfo(nptype).max]
+    assert pydict["mins"] == [128 * np.iinfo(nptype).min]
 
-    assert pydict["u8"] == [128 * (2**8 - 1)]
-    assert pydict["i8p"] == [128 * (2**7 - 1)]
-    assert pydict["i8n"] == [128 * (-(2**7))]
-    assert pydict["u16"] == [128 * (2**16 - 1)]
-    assert pydict["i16p"] == [128 * (2**15 - 1)]
-    assert pydict["i16n"] == [128 * (-(2**15))]
-    assert pydict["u32"] == [128 * (2**32 - 1)]
-    assert pydict["i32p"] == [128 * (2**31 - 1)]
-    assert pydict["i32n"] == [128 * (-(2**31))]
-    assert pydict["u64"] == [128 * (2**48)]
-    assert pydict["i64p"] == [128 * (2**48)]
-    assert pydict["i64n"] == [128 * (-(2**48))]
-    assert pydict["f32"] == [128 * 1.0]
-    assert pydict["f64"] == [128 * 1.0]
+
+@pytest.mark.parametrize("idx_dtype", daft_numeric_types)
+def test_table_sum(idx_dtype) -> None:
+    daft_table = Table.from_pydict({"a": [1] * 128})
+    daft_table = daft_table.eval_expression_list([col("a").cast(idx_dtype)])
+    daft_table = daft_table.eval_expression_list([col("a")._sum()])
+    pydict = daft_table.to_pydict()
+    assert pydict["a"] == [128]
 
 
 import operator as ops
