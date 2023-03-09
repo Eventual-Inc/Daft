@@ -217,12 +217,13 @@ def test_table_sum_upcast(nptype) -> None:
 
 
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types)
-def test_table_sum(idx_dtype) -> None:
-    daft_table = Table.from_pydict({"a": [1] * 128})
+@pytest.mark.parametrize("length", [0, 1, 128])
+def test_table_sum(idx_dtype, length) -> None:
+    daft_table = Table.from_pydict({"a": [1] * length})
     daft_table = daft_table.eval_expression_list([col("a").cast(idx_dtype)])
     daft_table = daft_table.eval_expression_list([col("a")._sum()])
     pydict = daft_table.to_pydict()
-    assert pydict["a"] == [128]
+    assert pydict["a"] == [length]
 
 
 import operator as ops
