@@ -7,8 +7,8 @@ from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionSet,
     PartitionSetCache,
-    PartitionSetFactory,
 )
+from daft.runners.runner_io import RunnerIO
 
 
 class Runner:
@@ -22,7 +22,7 @@ class Runner:
         return self._part_set_cache.put_partition_set(pset=pset)
 
     @abstractmethod
-    def partition_set_factory(self) -> PartitionSetFactory:
+    def runner_io(self) -> RunnerIO:
         ...
 
     @abstractmethod

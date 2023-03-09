@@ -43,7 +43,7 @@ class Table:
         return Series._from_pyseries(self._table.get_column(name))
 
     def size_bytes(self) -> int:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     def __len__(self) -> int:
         return len(self._table)
@@ -89,26 +89,25 @@ class Table:
 
     @classmethod
     def concat(cls, to_merge: list[Table]) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     ###
     # Exporting methods
     ###
 
     def to_arrow(self) -> pa.Table:
-        # TODO: [RUST-INT] throw error for Python object types
+        # TODO: [RUST-INT][PY] throw error for Python object types
         return pa.Table.from_batches([self._table.to_arrow_record_batch()])
 
     def to_pydict(self) -> dict[str, list]:
-        # TODO: [RUST-INT] support for Python object types
+        # TODO: [RUST-INT][PY] support for Python object types
         return self.to_arrow().to_pydict()
 
     def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
         if not _PANDAS_AVAILABLE:
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
 
-        # TODO: [RUST-INT] it should be possible to go from .to_arrow(*arrow_columns) + .to_pydict(*py_columns)
-        # to Pandas for more accurate type conversions
+        # TODO: [RUST-INT][TPCH] implement and test better - this is used in test validations
         pd_df = pd.DataFrame(self.to_pydict())
         if schema is not None:
             pd_df = pd_df[schema.column_names()]
@@ -153,35 +152,52 @@ class Table:
         return Table._from_pytable(self._table.sort(pyexprs, descending))
 
     def sample(self, num: int) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     def agg(self, to_agg: list[tuple[Expression, str]], group_by: ExpressionsProjection | None = None) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     def quantiles(self, num: int) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     def explode(self, columns: ExpressionsProjection) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+        raise NotImplementedError("TODO: [RUST-INT][NESTED] Implement for Table")
 
     def join(
         self,
         right: Table,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
-        output_projection: ExpressionsProjection,
+        output_projection: ExpressionsProjection | None = None,
         how: str = "inner",
     ) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+
+        if how != "inner":
+            raise NotImplementedError("TODO: [RUST] Implement Other Join types")
+        if len(left_on) != len(right_on):
+            raise ValueError(
+                f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
+            )
+
+        if len(left_on) > 1:
+            raise NotImplementedError("TODO: [RUST-INT][TPCH] Multicolumn joins not implemented")
+
+        if not isinstance(right, Table):
+            raise ValueError(f"Expected a Table for `right` in join but got {type(right)}")
+
+        left_exprs = [e._expr for e in left_on]
+        right_exprs = [e._expr for e in right_on]
+
+        return Table._from_pytable(self._table.join(right._table, left_on=left_exprs, right_on=right_exprs))
 
     def split_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     def split_by_index(self, num_partitions: int, target_partition_indices: Series) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     def split_random(self, num_partitions: int, seed: int) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     ###
     # Compute methods (Table -> Series)
@@ -205,4 +221,4 @@ class Table:
         return Series._from_pyseries(self._table.argsort(pyexprs, descending))
 
     def search_sorted(self, sort_keys: Table, descending: list[bool]) -> Series:
-        raise NotImplementedError("TODO: [RUST-INT] Implement for Table")
+        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")

@@ -13,6 +13,7 @@ use crate::{
 
 pub type SchemaRef = Arc<Schema>;
 
+#[derive(Debug)]
 pub struct Schema {
     pub fields: indexmap::IndexMap<String, Field>,
 }
@@ -35,14 +36,22 @@ impl Schema {
 
     pub fn get_field(&self, name: &str) -> DaftResult<&Field> {
         match self.fields.get(name) {
-            None => Err(DaftError::NotFound(name.into())),
+            None => Err(DaftError::NotFound(format!(
+                "Field: {} not found in {:?}",
+                name,
+                self.fields.values()
+            ))),
             Some(val) => Ok(val),
         }
     }
 
     pub fn get_index(&self, name: &str) -> DaftResult<usize> {
         match self.fields.get_index_of(name) {
-            None => Err(DaftError::NotFound(name.into())),
+            None => Err(DaftError::NotFound(format!(
+                "Field: {} not found in {:?}",
+                name,
+                self.fields.values()
+            ))),
             Some(val) => Ok(val),
         }
     }

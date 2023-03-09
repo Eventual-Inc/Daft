@@ -6,7 +6,6 @@ import warnings
 from abc import abstractmethod
 from functools import partial, partialmethod
 from typing import (
-    TYPE_CHECKING,
     Any,
     Callable,
     Iterable,
@@ -38,6 +37,8 @@ import pyarrow as pa
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionOperator, OperatorEnum
 from daft.internal.treenode import TreeNode
+from daft.logical.field import Field
+from daft.logical.schema import Schema
 from daft.runners.blocks import (
     ArrowDataBlock,
     DataBlock,
@@ -45,11 +46,6 @@ from daft.runners.blocks import (
     zip_blocks_as_py,
 )
 from daft.types import DatatypeInference, ExpressionType, PrimitiveExpressionType
-
-if TYPE_CHECKING:
-    from daft.logical.schema import Schema
-
-from daft.logical.field import Field
 
 
 def col(name: str) -> ColumnExpression:
@@ -1036,6 +1032,10 @@ class ExpressionList(Iterable[Expression]):
             self.names.append(e_name)
             name_set.add(e_name)
 
+    @classmethod
+    def from_schema(cls, schema: Schema) -> ExpressionList:
+        return cls([col(field.name) for field in schema])
+
     def __len__(self) -> int:
         return len(self._exprs)
 
@@ -1127,3 +1127,7 @@ class ExpressionList(Iterable[Expression]):
             if n == name:
                 return self._exprs[i]
         raise ValueError(f"{name} not found in ExpressionList")
+
+    def resolve_schema(self, schema: Schema) -> Schema:
+        fields = [e.to_field(schema) for e in self]
+        return Schema._from_field_name_and_types([(f.name, f.dtype) for f in fields])

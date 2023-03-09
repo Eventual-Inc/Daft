@@ -83,6 +83,11 @@ impl PyDataType {
         Ok(DataType::Utf8.into())
     }
 
+    #[staticmethod]
+    pub fn date() -> PyResult<Self> {
+        Ok(DataType::Date.into())
+    }
+
     pub fn is_equal(&self, other: &PyAny) -> PyResult<bool> {
         if other.is_instance_of::<PyDataType>()? {
             let other = other.extract::<PyDataType>()?;

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Dict,
     Iterable,
     List,
@@ -29,18 +28,15 @@ from daft.datasources import (
 )
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionType
-from daft.expressions import Expression, col
+from daft.expressions import Expression, ExpressionList, col
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
-from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionSet,
     vPartition,
-    vPartitionParseCSVOptions,
-    vPartitionReadOptions,
     vPartitionSchemaInferenceOptions,
 )
 from daft.runners.pyrunner import LocalPartitionSet
@@ -61,44 +57,40 @@ InputListType = Union[list, "np.ndarray", "pa.Array", "pa.ChunkedArray"]
 
 
 def _get_tabular_files_scan(
-    path: str, get_schema: Callable[[str], Schema], source_info: SourceInfo
+    path: str,
+    source_info: SourceInfo,
+    schema_inference_options: vPartitionSchemaInferenceOptions,
 ) -> logical_plan.TabularFilesScan:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
-    # Glob the path and return as a DataFrame with a column containing the filepaths
-    partition_set_factory = get_context().runner().partition_set_factory()
-    partition_set, filepaths_schema = partition_set_factory.glob_paths_details(path, source_info)
-    cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
+    # Glob the path using the Runner
+    runner_io = get_context().runner().runner_io()
+    listing_details_partition_set = runner_io.glob_paths_details(path, source_info)
+
+    # TODO: We should have a more sophisticated schema inference mechanism (sample >1 file and resolve schemas across files)
+    # Infer schema from the first filepath in the listings PartitionSet
+    data_schema = runner_io.get_schema_from_first_filepath(
+        listing_details_partition_set, source_info, schema_inference_options
+    )
+
+    # Construct plan
+    cache_entry = get_context().runner().put_partition_set_into_cache(listing_details_partition_set)
     filepath_plan = logical_plan.InMemoryScan(
         cache_entry=cache_entry,
-        schema=filepaths_schema,
-        partition_spec=logical_plan.PartitionSpec(logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()),
+        schema=runner_io.FS_LISTING_SCHEMA,
+        partition_spec=logical_plan.PartitionSpec(
+            logical_plan.PartitionScheme.UNKNOWN, listing_details_partition_set.num_partitions()
+        ),
     )
-    filepath_df = DataFrame(filepath_plan)
-
-    # Sample the first 10 filepaths and infer the schema
-    schema_df = filepath_df.limit(10).select(
-        col(partition_set_factory.FS_LISTING_PATH_COLUMN_NAME)
-        .apply(get_schema, return_dtype=ExpressionType.python(ExpressionList))
-        .alias("schema")
-    )
-    schema_df.collect()
-    schema_result = schema_df._result
-    assert schema_result is not None
-    sampled_schemas = schema_result.to_pydict()["schema"]
-
-    # TODO: infer schema from all sampled schemas instead of just taking the first one
-    schema = sampled_schemas[0]
-
-    # Return a TabularFilesScan node that will scan from the globbed filepaths filepaths
     return logical_plan.TabularFilesScan(
-        schema=schema,
+        schema=data_schema,
         predicate=None,
         columns=None,
         source_info=source_info,
         filepaths_child=filepath_plan,
-        filepaths_column_name=partition_set_factory.FS_LISTING_PATH_COLUMN_NAME,
-        # Hardcoded for now.
-        num_partitions=len(partition_set),
+        filepaths_column_name=runner_io.FS_LISTING_PATH_COLUMN_NAME,
+        # WARNING: This is currently hardcoded to be the same number of partitions as rows!! This is because we emit
+        # one partition per filepath. This will change in the future and our logic here should change accordingly.
+        num_partitions=len(listing_details_partition_set),
     )
 
 
@@ -323,24 +315,10 @@ class DataFrame:
         returns:
             DataFrame: parsed DataFrame
         """
-
-        def get_schema(filepath: str) -> Schema:
-            return vPartition.from_json(
-                filepath,
-                schema_options=vPartitionSchemaInferenceOptions(
-                    schema=None,
-                    inference_column_names=None,  # has no effect on inferring schema from JSON
-                ),
-                read_options=vPartitionReadOptions(
-                    num_rows=100,  # sample 100 rows for inferring schema
-                    column_names=None,  # read all columns
-                ),
-            ).schema()
-
         plan = _get_tabular_files_scan(
             path,
-            get_schema,
             JSONSourceInfo(),
+            vPartitionSchemaInferenceOptions(),
         )
         return cls(plan)
 
@@ -377,32 +355,13 @@ class DataFrame:
             DataFrame: parsed DataFrame
         """
 
-        def get_schema(filepath: str) -> Schema:
-            return vPartition.from_csv(
-                path=filepath,
-                csv_options=vPartitionParseCSVOptions(
-                    delimiter=delimiter,
-                    has_headers=has_headers,
-                    skip_rows_before_header=0,
-                    skip_rows_after_header=0,
-                ),
-                schema_options=vPartitionSchemaInferenceOptions(
-                    schema=None,
-                    inference_column_names=column_names,  # pass in user-provided column names
-                ),
-                read_options=vPartitionReadOptions(
-                    num_rows=100,  # sample 100 rows for schema inference
-                    column_names=None,  # read all columns
-                ),
-            ).schema()
-
         plan = _get_tabular_files_scan(
             path,
-            get_schema,
             CSVSourceInfo(
                 delimiter=delimiter,
                 has_headers=has_headers,
             ),
+            vPartitionSchemaInferenceOptions(inference_column_names=column_names),
         )
         return cls(plan)
 
@@ -429,24 +388,10 @@ class DataFrame:
         returns:
             DataFrame: parsed DataFrame
         """
-
-        def get_schema(filepath: str) -> Schema:
-            return vPartition.from_parquet(
-                filepath,
-                schema_options=vPartitionSchemaInferenceOptions(
-                    schema=None,
-                    inference_column_names=None,  # has no effect on schema inferencing Parquet
-                ),
-                read_options=vPartitionReadOptions(
-                    num_rows=0,  # sample 0 rows since Parquet has metadata
-                    column_names=None,  # read all columns
-                ),
-            ).schema()
-
         plan = _get_tabular_files_scan(
             path,
-            get_schema,
             ParquetSourceInfo(),
+            vPartitionSchemaInferenceOptions(),
         )
         return cls(plan)
 
@@ -502,12 +447,12 @@ class DataFrame:
             DataFrame: DataFrame containing the path to each file as a row, along with other metadata
                 parsed from the provided filesystem
         """
-        partition_set_factory = get_context().runner().partition_set_factory()
-        partition_set, filepaths_schema = partition_set_factory.glob_paths_details(path)
+        runner_io = get_context().runner().runner_io()
+        partition_set = runner_io.glob_paths_details(path)
         cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
         filepath_plan = logical_plan.InMemoryScan(
             cache_entry=cache_entry,
-            schema=filepaths_schema,
+            schema=runner_io.FS_LISTING_SCHEMA,
             partition_spec=logical_plan.PartitionSpec(
                 logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
             ),
@@ -625,7 +570,7 @@ class DataFrame:
             schema = self._plan.schema()
             if item < -len(schema) or item >= len(schema):
                 raise ValueError(f"{item} out of bounds for {schema}")
-            result = schema.to_column_expressions()[item]
+            result = ExpressionList.from_schema(schema)[item]
             assert result is not None
             return result
         elif isinstance(item, str):
@@ -650,7 +595,7 @@ class DataFrame:
             return self.select(*columns)
         elif isinstance(item, slice):
             schema = self._plan.schema()
-            columns_exprs: ExpressionList = schema.to_column_expressions()
+            columns_exprs: ExpressionList = ExpressionList.from_schema(schema)
             selected_columns = columns_exprs[item]
             return self.select(*selected_columns)
         else:
@@ -697,7 +642,7 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame that has only  unique rows.
         """
-        all_exprs = self._plan.schema().to_column_expressions()
+        all_exprs = ExpressionList.from_schema(self._plan.schema())
         plan: logical_plan.LogicalPlan = logical_plan.LocalDistinct(self._plan, all_exprs)
         if self.num_partitions() > 1:
             plan = logical_plan.Repartition(
@@ -766,7 +711,7 @@ class DataFrame:
             raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
 
         prev_schema_as_cols = ExpressionList(
-            [e for e in self._plan.schema().to_column_expressions() if e.name() != column_name]
+            [col(field.name) for field in self._plan.schema() if field.name != column_name]
         )
         new_schema = prev_schema_as_cols.union(ExpressionList([expr.alias(column_name)]))
         projection = logical_plan.Projection(
@@ -1199,7 +1144,7 @@ class GroupedDataFrame:
     group_by: ExpressionList
 
     def __post_init__(self):
-        resolved_groupby_schema = self.df._plan.schema().resolve_expressions(self.group_by)
+        resolved_groupby_schema = self.group_by.resolve_schema(self.df._plan.schema())
         for field, e in zip(resolved_groupby_schema, self.group_by):
             if field.dtype == ExpressionType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")

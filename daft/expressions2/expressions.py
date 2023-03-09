@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Iterable, Iterator, overload
+import builtins
+from typing import Callable, Iterable, Iterator, overload
 
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
 from daft.datatype import DataType
 from daft.expressions2.testing import expr_structurally_equal
+from daft.logical.schema2 import Field, Schema
 
 
 def lit(value: object) -> Expression:
@@ -26,6 +28,18 @@ class Expression:
     @property
     def agg(self) -> ExpressionAggNamespace:
         ns = ExpressionAggNamespace.__new__(ExpressionAggNamespace)
+        ns._expr = self._expr
+        return ns
+
+    @property
+    def str(self) -> ExpressionStringNamespace:
+        ns = ExpressionStringNamespace.__new__(ExpressionStringNamespace)
+        ns._expr = self._expr
+        return ns
+
+    @property
+    def dt(self) -> ExpressionDatetimeNamespace:
+        ns = ExpressionDatetimeNamespace.__new__(ExpressionDatetimeNamespace)
         ns._expr = self._expr
         return ns
 
@@ -144,7 +158,11 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >= expr._expr)
 
-    def alias(self, name: str) -> Expression:
+    def __invert__(self) -> Expression:
+        """Inverts a bool expression (``~e``)"""
+        raise NotImplementedError("[RUST-INT] Implement expression")
+
+    def alias(self, name: builtins.str) -> Expression:
         assert isinstance(name, str)
         expr = self._expr.alias(name)
         return Expression._from_pyexpr(expr)
@@ -158,25 +176,39 @@ class Expression:
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
-    def name(self) -> str:
+    def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression")
+
+    def apply(self, func: Callable, return_dtype: DataType | None = None) -> Expression:
+        raise NotImplementedError("[RUST-INT][UDF] Implement .apply")
+
+    def is_null(self) -> Expression:
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression")
+
+    def name(self) -> builtins.str:
         return self._expr.name()
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> builtins.str:
         return repr(self._expr)
 
-    def _input_mapping(self) -> str | None:
+    def _input_mapping(self) -> builtins.str | None:
         raise NotImplementedError(
-            "[RUST-INT] Implement for checking if expression is a no-op and returning the input name it maps to if so"
+            "[RUST-INT][TPCH] Implement for checking if expression is a no-op and returning the input name it maps to if so"
         )
 
-    def _required_columns(self) -> set[str]:
-        raise NotImplementedError("[RUST-INT] Implement for getting required columns in an Expression")
+    def _required_columns(self) -> set[builtins.str]:
+        raise NotImplementedError("[RUST-INT][TPCH] Implement for getting required columns in an Expression")
 
     def _is_column(self) -> bool:
-        raise NotImplementedError("[RUST-INT] Implement for checking if this Expression is a Column")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement for checking if this Expression is a Column")
 
-    def _replace_column_with_expression(self, column: str, new_expr: Expression) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement replacing a Column with an Expression - used in optimizer")
+    def _replace_column_with_expression(self, column: builtins.str, new_expr: Expression) -> Expression:
+        raise NotImplementedError(
+            "[RUST-INT][TPCH] Implement replacing a Column with an Expression - used in optimizer"
+        )
+
+    def _to_field(self, schema: Schema) -> Field:
+        return Field._from_pyfield(self._expr.to_field(schema._schema))
 
 
 class ExpressionNamespace:
@@ -192,27 +224,58 @@ class ExpressionNamespace:
         return expr
 
 
+class ExpressionDatetimeNamespace(ExpressionNamespace):
+    def year(self) -> Expression:
+        raise NotImplementedError("[RUST-INT][TPCH] Implement date expression")
+
+    def month(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement date expression")
+
+    def day(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement date expression")
+
+    def day_of_week(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement date expression")
+
+
+class ExpressionStringNamespace(ExpressionNamespace):
+    def contains(self, substr: str) -> Expression:
+        raise NotImplementedError("[RUST-INT][TPCH] Implement string expression")
+
+    def endswith(self, suffix: str) -> Expression:
+        raise NotImplementedError("[RUST-INT][TPCH] Implement string expression")
+
+    def startswith(self, prefix: str) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement string expression")
+
+    def concat(self, other: str) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement string expression")
+
+    def length(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement string expression")
+
+
 class ExpressionAggNamespace(ExpressionNamespace):
     def sum(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
 
     def mean(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
 
     def min(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
 
     def max(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
 
     def count(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
 
     def list(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][NESTED] Implement expression aggregation")
 
     def concat(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement expression aggregation")
+        raise NotImplementedError("[RUST-INT][NESTED] Implement expression aggregation")
 
 
 class ExpressionsProjection(Iterable[Expression]):
@@ -232,6 +295,10 @@ class ExpressionsProjection(Iterable[Expression]):
             seen.add(e.name())
 
         self._output_name_to_exprs = {e.name(): e for e in exprs}
+
+    @classmethod
+    def from_schema(cls, schema: Schema) -> ExpressionsProjection:
+        return cls([col(field.name) for field in schema])
 
     def __len__(self) -> int:
         return len(self._output_name_to_exprs)
@@ -311,3 +378,7 @@ class ExpressionsProjection(Iterable[Expression]):
         if name not in self._output_name_to_exprs:
             raise ValueError(f"{name} not found in ExpressionsProjection")
         return self._output_name_to_exprs[name]
+
+    def resolve_schema(self, schema: Schema) -> Schema:
+        fields = [e._to_field(schema) for e in self]
+        return Schema._from_field_name_and_types([(f.name, f.dtype) for f in fields])

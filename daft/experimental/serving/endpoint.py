@@ -6,8 +6,8 @@ from daft.experimental.serving.backend import (
 )
 from daft.experimental.serving.definitions import Endpoint
 from daft.experimental.serving.env import DaftEnv
+from daft.expressions import ExpressionList
 from daft.logical.logical_plan import HTTPResponse, LogicalPlan
-from daft.logical.schema import ExpressionList
 
 
 class HTTPEndpoint:

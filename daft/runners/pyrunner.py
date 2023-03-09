@@ -7,6 +7,7 @@ from typing import Iterable
 
 import psutil
 import pyarrow as pa
+from loguru import logger
 
 from daft.datasources import SourceInfo
 from daft.execution import physical_plan, physical_plan_factory
@@ -27,13 +28,14 @@ from daft.logical.optimizer import (
 )
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
+from daft.runners import runner_io
 from daft.runners.partitioning import (
     PartID,
     PartitionCacheEntry,
     PartitionMetadata,
     PartitionSet,
-    PartitionSetFactory,
     vPartition,
+    vPartitionSchemaInferenceOptions,
 )
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
@@ -78,12 +80,12 @@ class LocalPartitionSet(PartitionSet[vPartition]):
         pass
 
 
-class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
+class PyRunnerIO(runner_io.RunnerIO[vPartition]):
     def glob_paths_details(
         self,
         source_path: str,
         source_info: SourceInfo | None = None,
-    ) -> tuple[LocalPartitionSet, Schema]:
+    ) -> LocalPartitionSet:
         files_info = glob_path_with_stats(source_path, source_info)
 
         if len(files_info) == 0:
@@ -99,8 +101,9 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
         )
 
         # Make sure that the schema is consistent with what we expect
-        schema = self._get_listing_paths_details_schema()
-        assert partition.schema() == schema, f"Schema should be expected: {schema}, but received: {partition.schema()}"
+        assert (
+            partition.schema() == PyRunnerIO.FS_LISTING_SCHEMA
+        ), f"Schema should be expected: {PyRunnerIO.FS_LISTING_SCHEMA}, but received: {partition.schema()}"
 
         pset = LocalPartitionSet(
             {
@@ -108,7 +111,25 @@ class LocalPartitionSetFactory(PartitionSetFactory[vPartition]):
                 0: partition,
             }
         )
-        return pset, partition.schema()
+        return pset
+
+    def get_schema_from_first_filepath(
+        self,
+        listing_details_partitions: PartitionSet[vPartition],
+        source_info: SourceInfo,
+        schema_inference_options: vPartitionSchemaInferenceOptions,
+    ) -> Schema:
+        # Naively retrieve the first filepath in the PartitionSet
+        nonempty_partitions = [
+            p
+            for p, p_len in zip(listing_details_partitions.values(), listing_details_partitions.len_of_partitions())
+            if p_len > 0
+        ]
+        if len(nonempty_partitions) == 0:
+            raise ValueError("No files to get schema from")
+        first_filepath = nonempty_partitions[0].to_pydict()[PyRunnerIO.FS_LISTING_PATH_COLUMN_NAME][0]
+
+        return runner_io.sample_schema(first_filepath, source_info, schema_inference_options)
 
 
 class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
@@ -149,8 +170,8 @@ class PyRunner(Runner):
         # From PyRunner
         return self._optimizer.optimize(plan)
 
-    def partition_set_factory(self) -> PartitionSetFactory:
-        return LocalPartitionSetFactory()
+    def runner_io(self) -> PyRunnerIO:
+        return PyRunnerIO()
 
     def run(self, logplan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         logplan = self.optimize(logplan)
@@ -194,6 +215,7 @@ class PyRunner(Runner):
                         # - Threading is disabled in runner config.
                         # - Task is a no-op.
                         # - Task requires GPU.
+                        # TODO(charles): Queue these up until the physical plan is blocked to avoid starving cluster.
                         if (
                             not self._use_thread_pool
                             or len(next_step.instructions) == 0
@@ -202,11 +224,13 @@ class PyRunner(Runner):
                                 and next_step.resource_request.num_gpus > 0
                             )
                         ):
+                            logger.debug("Running task synchronously in main thread: {next_step}", next_step=next_step)
                             partitions = self.build_partitions(next_step.instructions, *next_step.inputs)
                             next_step.set_result([PyMaterializedResult(partition) for partition in partitions])
 
                         else:
                             # Submit the task for execution.
+                            logger.debug("Submitting task for execution: {next_step}", next_step=next_step)
                             future = thread_pool.submit(
                                 self.build_partitions, next_step.instructions, *next_step.inputs
                             )
@@ -223,12 +247,15 @@ class PyRunner(Runner):
                         len(future_to_task) > 0
                     ), f"Scheduler deadlocked! This should never happen. Please file an issue."
                     done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
-                    for done in done_set:
-                        done_id = future_to_task.pop(done)
+                    for done_future in done_set:
+                        done_id = future_to_task.pop(done_future)
                         del inflight_tasks_resources[done_id]
                         done_task = inflight_tasks.pop(done_id)
+                        partitions = done_future.result()
 
-                        partitions = done.result()
+                        logger.debug(
+                            "Task completed: {done_id} -> {partitions}", done_id=done_id, partitions=partitions
+                        )
                         done_task.set_result([PyMaterializedResult(partition) for partition in partitions])
 
             except StopIteration as e:

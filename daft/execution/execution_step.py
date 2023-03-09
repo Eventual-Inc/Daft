@@ -11,10 +11,9 @@ else:
     from typing import Protocol
 
 import daft
-from daft.expressions import Expression, col
+from daft.expressions import Expression, ExpressionList, col
 from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
-from daft.logical.schema import ExpressionList
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartialPartitionMetadata,
@@ -180,6 +179,12 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         assert self._result is not None
         return self._result.vpartition()
 
+    def __str__(self) -> str:
+        return super().__str__()
+
+    def __repr__(self) -> str:
+        return super().__str__()
+
 
 @dataclass
 class MultiOutputPartitionTask(PartitionTask[PartitionT]):
@@ -219,6 +224,12 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
         """Get the raw vPartition of the result."""
         assert self._results is not None
         return self._results[index].vpartition()
+
+    def __str__(self) -> str:
+        return super().__str__()
+
+    def __repr__(self) -> str:
+        return super().__str__()
 
 
 class MaterializedResult(Protocol[PartitionT]):

@@ -1,3 +1,5 @@
+use super::field::PyField;
+use super::{datatype::PyDataType, schema::PySchema};
 use crate::dsl;
 use pyo3::{
     exceptions::PyValueError,
@@ -5,8 +7,6 @@ use pyo3::{
     pyclass::CompareOp,
     types::{PyBool, PyBytes, PyFloat, PyInt, PyString, PyTuple},
 };
-
-use super::datatype::PyDataType;
 
 #[pyfunction]
 pub fn col(name: &str) -> PyResult<PyExpr> {
@@ -133,6 +133,10 @@ impl PyExpr {
 
     pub fn name(&self) -> PyResult<&str> {
         Ok(self.expr.name()?)
+    }
+
+    pub fn to_field(&self, schema: &PySchema) -> PyResult<PyField> {
+        Ok(self.expr.to_field(&schema.schema)?.into())
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
