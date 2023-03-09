@@ -30,7 +30,11 @@ pub enum Expr {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AggExpr {
+    Count(ExprRef),
     Sum(ExprRef),
+    Mean(ExprRef),
+    Min(ExprRef),
+    Max(ExprRef),
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
@@ -49,6 +53,10 @@ impl AggExpr {
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use AggExpr::*;
         match self {
+            Count(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name.as_str(), DataType::UInt64))
+            }
             Sum(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
@@ -72,6 +80,34 @@ impl AggExpr {
                     },
                 ))
             }
+            Mean(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    match &field.dtype {
+                        DataType::Int8
+                        | DataType::Int16
+                        | DataType::Int32
+                        | DataType::Int64
+                        | DataType::UInt8
+                        | DataType::UInt16
+                        | DataType::UInt32
+                        | DataType::UInt64
+                        | DataType::Float32
+                        | DataType::Float64 => DataType::Float64,
+                        other => {
+                            return Err(DaftError::TypeError(format!(
+                                "Numeric mean is not implemented for type {}",
+                                other
+                            )))
+                        }
+                    },
+                ))
+            }
+            Min(expr) | Max(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name.as_str(), field.dtype))
+            }
         }
     }
 }
@@ -85,8 +121,24 @@ impl Expr {
         Expr::Cast(self.clone().into(), dtype.clone())
     }
 
+    pub fn count(&self) -> Self {
+        Expr::Agg(AggExpr::Count(self.clone().into()))
+    }
+
     pub fn sum(&self) -> Self {
         Expr::Agg(AggExpr::Sum(self.clone().into()))
+    }
+
+    pub fn mean(&self) -> Self {
+        Expr::Agg(AggExpr::Mean(self.clone().into()))
+    }
+
+    pub fn min(&self) -> Self {
+        Expr::Agg(AggExpr::Min(self.clone().into()))
+    }
+
+    pub fn max(&self) -> Self {
+        Expr::Agg(AggExpr::Max(self.clone().into()))
     }
 
     pub fn and(&self, other: &Self) -> Self {
@@ -137,7 +189,7 @@ impl Expr {
         match self {
             Alias(.., name) => Ok(name.as_ref()),
             Agg(agg_expr) => match agg_expr {
-                Sum(expr) => expr.name(),
+                Count(expr) | Sum(expr) | Mean(expr) | Min(expr) | Max(expr) => expr.name(),
             },
             Cast(expr, ..) => expr.name(),
             Column(name) => Ok(name.as_ref()),
@@ -158,13 +210,10 @@ impl Expr {
 impl Display for Expr {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        use AggExpr::*;
         use Expr::*;
         match self {
             Alias(expr, name) => write!(f, "{expr} AS {name}"),
-            Agg(agg_expr) => match agg_expr {
-                Sum(expr) => write!(f, "sum({expr})"),
-            },
+            Agg(agg_expr) => write!(f, "{agg_expr}"),
             BinaryOp { op, left, right } => {
                 let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
                     Alias(e, _) => write!(f, "{e}"),
@@ -180,6 +229,19 @@ impl Display for Expr {
             Cast(expr, dtype) => write!(f, "cast({expr} AS {dtype})"),
             Column(name) => write!(f, "col({name})"),
             Literal(val) => write!(f, "lit({val})"),
+        }
+    }
+}
+
+impl Display for AggExpr {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        use AggExpr::*;
+        match self {
+            Count(expr) => write!(f, "count({expr})"),
+            Sum(expr) => write!(f, "sum({expr})"),
+            Mean(expr) => write!(f, "mean({expr})"),
+            Min(expr) => write!(f, "min({expr})"),
+            Max(expr) => write!(f, "max({expr})"),
         }
     }
 }
