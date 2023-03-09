@@ -296,7 +296,7 @@ mod test {
 
     #[test]
     fn sum_expression() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice())).into_series();
+        let a = Float64Array::from(("a", vec![1.0, 2.0, 3.0].as_slice())).into_series();
         let schema = Schema::new(vec![a.field().clone().rename("a")]);
         let table = Table::new(schema, vec![a])?;
         let e1 = Expr::Agg(AggExpr::Sum(col("a").into()));
