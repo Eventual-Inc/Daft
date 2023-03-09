@@ -151,7 +151,9 @@ impl Table {
 
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         use crate::dsl::Expr::*;
-        match expr {
+
+        let expected_field = expr.to_field(self.schema.as_ref())?;
+        let series = match expr {
             Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
             Agg(agg_expr) => self.eval_agg_expression(agg_expr),
             Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
@@ -181,7 +183,18 @@ impl Table {
                 }
             }
             Literal(lit_value) => Ok(lit_value.to_series()),
+        }?;
+        if expected_field.name != series.field().name {
+            return Err(DaftError::ComputeError(format!(
+                "Mismatch of expected expression name and name from computed series, {} vs {}",
+                expected_field.name,
+                series.field().name
+            )));
         }
+        if expected_field.dtype != series.field().dtype {
+            return Err(DaftError::ComputeError(format!("Mismatch of expected expression data type and data type from computed series, {} vs {}", expected_field.dtype, series.field().dtype)));
+        }
+        Ok(series)
     }
 
     pub fn eval_expression_list(&self, exprs: &[Expr]) -> DaftResult<Self> {
@@ -189,6 +202,7 @@ impl Table {
             .iter()
             .map(|e| self.eval_expression(e))
             .collect::<DaftResult<Vec<Series>>>()?;
+
         let fields = result_series
             .iter()
             .map(|s| s.field().clone())
