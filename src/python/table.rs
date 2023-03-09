@@ -94,6 +94,10 @@ impl PyTable {
         Ok(self.table.len())
     }
 
+    pub fn size_bytes(&self) -> PyResult<usize> {
+        Ok(self.table.size_bytes())
+    }
+
     pub fn column_names(&self) -> PyResult<Vec<String>> {
         Ok(self.table.column_names()?)
     }

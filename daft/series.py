@@ -127,6 +127,12 @@ class Series:
             raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         return len(self._series)
 
+    def size_bytes(self) -> int:
+        if self._series is None:
+            raise ValueError("This Series isn't backed by a Rust PySeries, can not get size bytes")
+
+        return self._series.size_bytes()
+
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
             raise ValueError(f"expected another Series but got {type(other)}")
