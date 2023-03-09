@@ -266,12 +266,11 @@ impl Display for Table {
 mod test {
 
     use crate::array::BaseArray;
-    use crate::datatypes::{DataType, Int64Array};
+    use crate::datatypes::{DataType, Float64Array, Int64Array};
     use crate::dsl::col;
-    use crate::dsl::{AggExpr, Expr};
+    use crate::error::DaftResult;
     use crate::schema::Schema;
     use crate::table::Table;
-    use crate::{datatypes::Float64Array, error::DaftResult};
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
         let a = Int64Array::from(("a", vec![1, 2, 3].as_slice())).into_series();
@@ -290,22 +289,6 @@ mod test {
         let result = table.eval_expression(&e2)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
-
-        Ok(())
-    }
-
-    #[test]
-    fn sum_expression() -> DaftResult<()> {
-        let a = Float64Array::from(("a", vec![1.0, 2.0, 3.0].as_slice())).into_series();
-        let schema = Schema::new(vec![a.field().clone().rename("a")]);
-        let table = Table::new(schema, vec![a])?;
-        let e1 = Expr::Agg(AggExpr::Sum(col("a").into()));
-        let result = table.eval_expression(&e1)?;
-
-        // let expected = Int64Array::from(("a", vec![6].as_slice())).into_series();
-        // assert_eq!(result.array().data().as_any().downcast().value(0), 6);
-        println!("{result}");
-        // assert_eq!(*result.data_type(), DataType::Float64);
 
         Ok(())
     }
