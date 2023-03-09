@@ -222,8 +222,12 @@ def test_table_sum(idx_dtype, length) -> None:
     daft_table = Table.from_pydict({"a": [1] * length})
     daft_table = daft_table.eval_expression_list([col("a").cast(idx_dtype)])
     daft_table = daft_table.eval_expression_list([col("a")._sum()])
-    pydict = daft_table.to_pydict()
-    assert pydict["a"] == [length]
+    res_column = daft_table.to_pydict()["a"]
+
+    if length == 0:
+        assert res_column == []  # Currently, all empty aggregations return an empty column.
+    else:
+        assert res_column == [length]
 
 
 import operator as ops

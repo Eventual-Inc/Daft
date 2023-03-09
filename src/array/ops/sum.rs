@@ -14,9 +14,13 @@ macro_rules! impl_daft_numeric_agg {
             fn sum(&self) -> Self::Output {
                 let primitive_arr = self.downcast();
 
-                let result = arrow2::compute::aggregate::sum_primitive(primitive_arr);
-
-                let arrow_array = arrow2::array::PrimitiveArray::from([result]);
+                let arrow_array = match primitive_arr.len() {
+                    0 => arrow2::array::PrimitiveArray::from([]),
+                    _ => {
+                        let result = arrow2::compute::aggregate::sum_primitive(primitive_arr);
+                        arrow2::array::PrimitiveArray::from([result])
+                    }
+                };
                 DataArray::new(self.field.clone(), Arc::new(arrow_array))
             }
         }
