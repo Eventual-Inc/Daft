@@ -83,8 +83,24 @@ impl PyExpr {
         Ok(self.expr.cast(&dtype.into()).into())
     }
 
+    pub fn count(&self) -> PyResult<Self> {
+        Ok(self.expr.count().into())
+    }
+
     pub fn sum(&self) -> PyResult<Self> {
         Ok(self.expr.sum().into())
+    }
+
+    pub fn mean(&self) -> PyResult<Self> {
+        Ok(self.expr.mean().into())
+    }
+
+    pub fn min(&self) -> PyResult<Self> {
+        Ok(self.expr.min().into())
+    }
+
+    pub fn max(&self) -> PyResult<Self> {
+        Ok(self.expr.max().into())
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
