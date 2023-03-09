@@ -5,11 +5,12 @@ import csv
 import datetime
 import json
 import pathlib
-from typing import Callable, Literal
+from typing import Callable
 
 import pyarrow as pa
 import pytest
 from pyarrow import parquet as papq
+from typing_extensions import Literal
 
 from daft.runners.partitioning import (
     vPartitionParseCSVOptions,
