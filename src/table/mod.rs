@@ -90,6 +90,10 @@ impl Table {
         })
     }
 
+    pub fn size_bytes(&self) -> usize {
+        self.columns.iter().map(|s| s.size_bytes()).sum::<usize>()
+    }
+
     pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {
         if predicate.is_empty() {
             Ok(self.clone())

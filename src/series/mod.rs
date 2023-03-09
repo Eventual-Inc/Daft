@@ -37,10 +37,6 @@ impl Series {
         Self::new(Arc::from(self.data_array.rename(name.as_ref())))
     }
 
-    pub fn len(&self) -> usize {
-        self.data_array.len()
-    }
-
     pub fn field(&self) -> &Field {
         self.data_array.field()
     }
