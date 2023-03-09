@@ -92,7 +92,7 @@ impl Table {
     }
 
     pub fn sample(&self, num: usize) -> DaftResult<Self> {
-        if num <= self.len() {
+        if num >= self.len() {
             Ok(self.clone())
         } else {
             use rand::{distributions::Uniform, Rng};

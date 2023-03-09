@@ -152,7 +152,7 @@ class Table:
         return Table._from_pytable(self._table.sort(pyexprs, descending))
 
     def sample(self, num: int) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+        return Table._from_pytable(self._table.sample(num))
 
     def agg(self, to_agg: list[tuple[Expression, str]], group_by: ExpressionsProjection | None = None) -> Table:
         raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
