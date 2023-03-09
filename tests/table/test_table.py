@@ -323,13 +323,28 @@ def test_table_sum_all_nulls(idx_dtype, length) -> None:
 
 
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types)
-def test_table_sum_some_nulls(idx_dtype) -> None:
-    daft_table = Table.from_pydict({"a": [None, 1, None, None, 2, 3, None]})
+def test_table_agg_some_nulls(idx_dtype) -> None:
+    daft_table = Table.from_pydict({"a": [None, 3, None, None, 1, 2, 0, None]})
     daft_table = daft_table.eval_expression_list([col("a").cast(idx_dtype)])
-    daft_table = daft_table.eval_expression_list([col("a")._sum()])
-    res_column = daft_table.to_pydict()["a"]
+    daft_table = daft_table.eval_expression_list(
+        [
+            col("a").alias("count")._count(),
+            col("a").alias("sum")._sum(),
+            col("a").alias("mean")._mean(),
+            col("a").alias("min")._min(),
+            col("a").alias("max")._max(),
+        ]
+    )
 
-    assert res_column == [6]
+    res_pydict = daft_table.to_pydict()
+    for key, value in {
+        "count": [4],
+        "sum": [6],
+        "mean": [1.5],
+        "min": [0],
+        "max": [3],
+    }.items():
+        assert res_pydict[key] == value
 
 
 import operator as ops
