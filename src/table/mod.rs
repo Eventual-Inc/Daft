@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter, Result};
 
-use crate::datatypes::{BooleanType, DataType, Field};
+use crate::array::BaseArray;
+use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
 use crate::dsl::Expr;
 use crate::error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
@@ -90,6 +91,18 @@ impl Table {
         })
     }
 
+    pub fn sample(&self, num: usize) -> DaftResult<Self> {
+        if num <= self.len() {
+            Ok(self.clone())
+        } else {
+            use rand::{distributions::Uniform, Rng};
+            let range = Uniform::from(0..self.len() as u64);
+            let values: Vec<u64> = rand::thread_rng().sample_iter(&range).take(num).collect();
+            let indices = UInt64Array::from(("idx", values.as_slice()));
+            self.take(&indices.into_series())
+        }
+    }
+
     pub fn size_bytes(&self) -> usize {
         self.columns.iter().map(|s| s.size_bytes()).sum::<usize>()
     }
@@ -158,7 +171,6 @@ impl Table {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
                 use crate::array::ops::{DaftCompare, DaftLogical};
-                use crate::array::BaseArray;
                 use crate::dsl::Operator::*;
                 match op {
                     Plus => lhs + rhs,

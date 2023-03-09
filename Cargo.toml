@@ -1,5 +1,6 @@
 [dependencies]
 prettytable-rs = "^0.10"
+rand = "^0.8"
 
 [dependencies.arrow2]
 features = ["compute"]
