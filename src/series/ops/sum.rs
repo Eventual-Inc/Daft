@@ -1,21 +1,12 @@
 use crate::{
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_daft_types,
 };
 
 use crate::array::BaseArray;
 use crate::datatypes::*;
 
 impl Series {
-    pub fn count(&self) -> DaftResult<Series> {
-        use crate::array::ops::DaftCountAggable;
-
-        with_match_daft_types!(self.data_type(), |$T| {
-            Ok(DaftCountAggable::count(&self.downcast::<$T>()?)?.into_series())
-        })
-    }
-
     pub fn sum(&self) -> DaftResult<Series> {
         use crate::array::ops::DaftNumericAggable;
         use crate::datatypes::DataType::*;

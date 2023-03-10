@@ -7,6 +7,7 @@ pub mod arithmetic;
 pub mod broadcast;
 pub mod cast;
 pub mod comparision;
+pub mod count;
 pub mod downcast;
 pub mod filter;
 pub mod full;
