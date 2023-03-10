@@ -232,6 +232,12 @@ def test_table_sum(idx_dtype, length) -> None:
         assert res_column == [length * elem]
 
 
+def test_table_sum_badtype() -> None:
+    daft_table = Table.from_pydict({"a": ["str1", "str2"]})
+    with pytest.raises(ValueError):
+        daft_table = daft_table.eval_expression_list([col("a")._sum()])
+
+
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types)
 @pytest.mark.parametrize("length", [1, 128])
 def test_table_sum_all_nulls(idx_dtype, length) -> None:
