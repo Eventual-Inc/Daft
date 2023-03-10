@@ -153,6 +153,16 @@ def test_parquet_reads_limit_rows(parquet_input: str):
     assert d == {k: v[:row_limit] for k, v in PARQUET_EXPECTED_DATA.items()}
 
 
+@pytest.mark.skip(
+    reason="[RUST-INT] Fails for 0 rows because of the way we do schema inference from row_batches. We should fix this!"
+)
+def test_parquet_reads_no_rows(parquet_input: str):
+    row_limit = 0
+    table = table_io.read_parquet(parquet_input, read_options=vPartitionReadOptions(num_rows=row_limit))
+    d = table.to_pydict()
+    assert d == {k: [] for k, _ in PARQUET_EXPECTED_DATA.items()}
+
+
 def test_parquet_reads_pruned_columns(parquet_input: str):
     included_columns = ["strings", "integers"]
     table = table_io.read_parquet(parquet_input, read_options=vPartitionReadOptions(column_names=included_columns))
