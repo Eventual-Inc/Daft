@@ -5,6 +5,7 @@ mod arrow2;
 mod broadcast;
 mod cast;
 mod comparison;
+mod count;
 mod downcast;
 mod filter;
 mod full;

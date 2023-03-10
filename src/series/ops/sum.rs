@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{
     error::{DaftError, DaftResult},
     series::Series,
@@ -10,19 +8,76 @@ use crate::datatypes::*;
 
 impl Series {
     pub fn count(&self) -> DaftResult<Series> {
-        // let data_type = self.data_type();
-        let data_array = self.array();
-        let arrow_array = data_array.data();
-        let count = match arrow_array.validity() {
-            None => arrow_array.len(),
-            Some(bitmap) => arrow_array.len() - bitmap.unset_bits(),
-        };
-        let arrow_array = arrow2::array::PrimitiveArray::from([Some(count as u64)]);
-        Ok(DataArray::<UInt64Type>::new(
-            Arc::new(data_array.field().clone()),
-            Arc::new(arrow_array),
-        )?
-        .into_series())
+        use crate::array::ops::DaftCountAggable;
+        match self.data_type() {
+            DataType::Null => {
+                Ok(DaftCountAggable::count(&self.downcast::<NullType>()?)?.into_series())
+            }
+            DataType::Boolean => {
+                Ok(DaftCountAggable::count(&self.downcast::<BooleanType>()?)?.into_series())
+            }
+            DataType::Int8 => {
+                Ok(DaftCountAggable::count(&self.downcast::<Int8Type>()?)?.into_series())
+            }
+            DataType::Int16 => {
+                Ok(DaftCountAggable::count(&self.downcast::<Int16Type>()?)?.into_series())
+            }
+            DataType::Int32 => {
+                Ok(DaftCountAggable::count(&self.downcast::<Int32Type>()?)?.into_series())
+            }
+            DataType::Int64 => {
+                Ok(DaftCountAggable::count(&self.downcast::<Int64Type>()?)?.into_series())
+            }
+            DataType::UInt8 => {
+                Ok(DaftCountAggable::count(&self.downcast::<UInt8Type>()?)?.into_series())
+            }
+            DataType::UInt16 => {
+                Ok(DaftCountAggable::count(&self.downcast::<UInt16Type>()?)?.into_series())
+            }
+            DataType::UInt32 => {
+                Ok(DaftCountAggable::count(&self.downcast::<UInt32Type>()?)?.into_series())
+            }
+            DataType::UInt64 => {
+                Ok(DaftCountAggable::count(&self.downcast::<UInt64Type>()?)?.into_series())
+            }
+            DataType::Float16 => {
+                Ok(DaftCountAggable::count(&self.downcast::<Float16Type>()?)?.into_series())
+            }
+            DataType::Float32 => {
+                Ok(DaftCountAggable::count(&self.downcast::<Float32Type>()?)?.into_series())
+            }
+            DataType::Float64 => {
+                Ok(DaftCountAggable::count(&self.downcast::<Float64Type>()?)?.into_series())
+            }
+            DataType::Timestamp(_, _) => {
+                Ok(DaftCountAggable::count(&self.downcast::<TimestampType>()?)?.into_series())
+            }
+            DataType::Date => {
+                Ok(DaftCountAggable::count(&self.downcast::<DateType>()?)?.into_series())
+            }
+            DataType::Time(_) => {
+                Ok(DaftCountAggable::count(&self.downcast::<TimeType>()?)?.into_series())
+            }
+            DataType::Duration(_) => {
+                Ok(DaftCountAggable::count(&self.downcast::<DurationType>()?)?.into_series())
+            }
+            DataType::Binary => {
+                Ok(DaftCountAggable::count(&self.downcast::<BinaryType>()?)?.into_series())
+            }
+            DataType::Utf8 => {
+                Ok(DaftCountAggable::count(&self.downcast::<Utf8Type>()?)?.into_series())
+            }
+            DataType::FixedSizeList(_, _) => {
+                Ok(DaftCountAggable::count(&self.downcast::<FixedSizeListType>()?)?.into_series())
+            }
+            DataType::List(_) => {
+                Ok(DaftCountAggable::count(&self.downcast::<ListType>()?)?.into_series())
+            }
+            DataType::Struct(_) => {
+                Ok(DaftCountAggable::count(&self.downcast::<StructType>()?)?.into_series())
+            }
+            _ => panic!(),
+        }
     }
 
     pub fn sum(&self) -> DaftResult<Series> {
