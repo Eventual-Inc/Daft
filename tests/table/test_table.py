@@ -206,8 +206,8 @@ def test_table_sum_upcast(nptype) -> None:
     """Tests correctness, including type upcasting, of sum aggregations."""
     daft_table = Table.from_pydict(
         {
-            "maxes": np.ones(128, dtype=nptype) * np.iinfo(nptype).max,
-            "mins": np.ones(128, dtype=nptype) * np.iinfo(nptype).min,
+            "maxes": np.full(128, fill_value=np.iinfo(nptype).max, dtype=nptype),
+            "mins": np.full(128, fill_value=np.iinfo(nptype).min, dtype=nptype),
         }
     )
     daft_table = daft_table.eval_expression_list([col("maxes")._sum(), col("mins")._sum()])
