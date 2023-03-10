@@ -5,12 +5,17 @@ import csv
 import datetime
 import json
 import pathlib
+import sys
 from typing import Callable, Union
 
 import pyarrow as pa
 import pytest
 from pyarrow import parquet as papq
-from typing_extensions import Literal
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Literal
+else:
+    from typing import Literal
 
 from daft.runners.partitioning import (
     vPartitionParseCSVOptions,
