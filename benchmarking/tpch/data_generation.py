@@ -233,7 +233,7 @@ def gen_sqlite_db(csv_filepath: str, num_parts: int) -> str:
             import_table(table, f"{csv_filepath}/{table}.tbl")
 
         for table in multi_partition_tables:
-            for part_idx in range(1, num_parts + 1):
+            for part_idx in range(num_parts):
                 import_table(table, f"{csv_filepath}/{table}.tbl.{part_idx}")
     else:
         logger.info(f"Cached SQLite DB already exists at {sqlite_db_file_path}, skipping SQLite DB generation")
@@ -261,19 +261,25 @@ def gen_csv_files(basedir: str, num_parts: int, scale_factor: float) -> str:
         subprocess.check_output("make", cwd=cachedir)
 
         logger.info(f"Generating {num_parts} for tpch")
-        if num_parts == 1:
-            subprocess.check_output(shlex.split(f"./dbgen -v -f -s {scale_factor}"), cwd=cachedir)
-        else:
-
-            for part_idx in range(1, num_parts + 1):
-                logger.info(f"Generating partition: {part_idx}")
-                subprocess.check_output(
-                    shlex.split(f"./dbgen -v -f -s {scale_factor} -S {part_idx} -C {num_parts}"),
-                    cwd=cachedir,
-                )
+        subprocess.check_output(shlex.split(f"./dbgen -v -f -s {scale_factor}"), cwd=cachedir)
 
         # The tool sometimes generates weird files with bad permissioning, we override that manually here
         subprocess.check_output(shlex.split("chmod -R u+rwx ."), cwd=cachedir)
+
+        # Split the files manually
+        if num_parts > 1:
+            for tbl in ["customer", "lineitem", "orders", "partsupp", "part", "supplier"]:
+                csv_file = os.path.join(cachedir, f"{tbl}.tbl")
+                with open(csv_file) as f:
+                    num_lines = sum(1 for _ in f)
+                num_lines_per_part = math.ceil(num_lines / num_parts)
+                with open(csv_file, "rb") as f:
+                    for i in range(num_parts):
+                        csv_part_file = os.path.join(cachedir, f"{tbl}.tbl.{i}")
+                        with open(csv_part_file, "wb") as out:
+                            for _ in range(num_lines_per_part):
+                                out.write(f.readline())
+                os.remove(csv_file)
 
         # The tool generates CSV files with a trailing delimiter, we get rid of that here
         csv_files = glob(f"{cachedir}/*.tbl*")
