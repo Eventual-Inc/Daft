@@ -28,7 +28,7 @@ mod tests {
 
     #[test]
     fn broadcast_int() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1].as_slice())).into_series();
+        let a = Int64Array::from(("a", vec![1])).into_series();
         let a = a.broadcast(10)?;
         assert_eq!(a.len(), 10);
         assert_eq!(*a.data_type(), DataType::Int64);

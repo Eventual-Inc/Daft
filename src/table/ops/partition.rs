@@ -40,9 +40,9 @@ impl Table {
             output_to_input_idx[unsafe { t_idx.as_usize() }].push(s_idx as u64);
         }
         output_to_input_idx
-            .iter()
+            .into_iter()
             .map(|v| {
-                let indices = UInt64Array::from(("idx", v.as_slice()));
+                let indices = UInt64Array::from(("idx", v));
                 self.take(&indices.into_series())
             })
             .collect::<DaftResult<Vec<_>>>()
