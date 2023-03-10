@@ -310,3 +310,69 @@ def test_series_boolean_sorting() -> None:
     taken = s.take(s_argsorted)
     assert len(taken) == len(s)
     assert taken.to_pylist() == sorted_order[::-1]
+
+
+@pytest.mark.parametrize("dtype, size", itertools.product(arrow_int_types + arrow_float_types, [0, 1, 2, 8, 9, 16]))
+def test_series_numeric_size_bytes(dtype, size) -> None:
+    pydata = list(range(size))
+    data = pa.array(pydata, dtype)
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.from_arrow_type(dtype)
+    assert s.size_bytes() == data.nbytes
+
+    ## with nulls
+    if size > 0:
+        pydata = pydata[:-1] + [None]
+    data = pa.array(pydata, dtype)
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.from_arrow_type(dtype)
+    assert s.size_bytes() == data.nbytes
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
+def test_series_string_size_bytes(size) -> None:
+
+    pydata = list(str(i) for i in range(size))
+    data = pa.array(pydata, pa.large_string())
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.string()
+    assert s.size_bytes() == data.nbytes
+
+    ## with nulls
+    if size > 0:
+        pydata = pydata[:-1] + [None]
+    data = pa.array(pydata, pa.large_string())
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.string()
+    assert s.size_bytes() == data.nbytes
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
+def test_series_boolean_size_bytes(size) -> None:
+
+    pydata = [True if i % 2 else False for i in range(size)]
+
+    data = pa.array(pydata, pa.bool_())
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.bool()
+    assert s.size_bytes() == data.nbytes
+
+    ## with nulls
+    if size > 0:
+        pydata = pydata[:-1] + [None]
+    data = pa.array(pydata, pa.bool_())
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.bool()
+    assert s.size_bytes() == data.nbytes

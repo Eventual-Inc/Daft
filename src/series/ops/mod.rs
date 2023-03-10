@@ -10,6 +10,7 @@ pub mod downcast;
 pub mod filter;
 pub mod full;
 pub mod hash;
+pub mod len;
 pub mod pairwise;
 pub mod sort;
 pub mod sum;

@@ -502,7 +502,6 @@ class vPartition:
     def split_by_hash(self, exprs: ExpressionList, num_partitions: int) -> list[vPartition]:
         values_to_hash = self.eval_expression_list(exprs)
         keys = list(values_to_hash.columns.keys())
-        keys.sort()
         hsf = None
         assert len(keys) > 0
         for k in keys:

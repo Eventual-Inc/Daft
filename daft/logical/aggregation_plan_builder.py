@@ -28,7 +28,10 @@ class AggregationPlanBuilder:
         self._postshuffle_aggs: dict[ColName, tuple[Expression, AggregationOp]] = {}
 
         # Parameters for a final projection that is performed after "global" aggregations
-        self._final_projection_includes: dict[ColName, Expression] = {}
+        self._needs_final_projection = False
+        self._final_projection: dict[ColName, Expression] = (
+            {} if self.group_by is None else {e.name(): e for e in self.group_by}
+        )
         self._final_projection_excludes: set[ColName] = set()
 
     def build(self) -> logical_plan.LogicalPlan:
@@ -71,13 +74,12 @@ class AggregationPlanBuilder:
 
         # 4. Perform post-shuffle projections if necessary
         postshuffle_projection_plan: logical_plan.LogicalPlan
-        if self._final_projection_includes or self._final_projection_excludes:
-            final_expressions = ExpressionList.from_schema(postshuffle_agg_plan.schema())
+        if self._needs_final_projection:
+            final_expressions = ExpressionList(
+                [expr.alias(colname) for colname, expr in self._final_projection.items()]
+            )
             final_expressions = ExpressionList(
                 [e for e in final_expressions if e.name() not in self._final_projection_excludes]
-            )
-            final_expressions = final_expressions.union(
-                ExpressionList([expr.alias(colname) for colname, expr in self._final_projection_includes.items()])
             )
             postshuffle_projection_plan = logical_plan.Projection(postshuffle_agg_plan, final_expressions)
         else:
@@ -109,6 +111,7 @@ class AggregationPlanBuilder:
         intermediate_colname = f"{result_colname}:_local_{local_op}"
         self._preshuffle_aggs[intermediate_colname] = (expr, local_op)
         self._postshuffle_aggs[result_colname] = (col(intermediate_colname), global_op)
+        self._final_projection[result_colname] = col(result_colname)
 
     def add_sum(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
         self._add_single_partition_shortcut_agg(result_colname, Expression._sum(expr), "sum")
@@ -151,7 +154,8 @@ class AggregationPlanBuilder:
 
         # Run projection to get mean using intermediate sun and count
         # HACK: we add 0.0 because our current PyArrow-based type system returns an integer when dividing two integers
-        self._final_projection_includes[result_colname] = (col(intermediate_sum_colname) + lit(0.0)) / (
+        self._needs_final_projection = True
+        self._final_projection[result_colname] = (col(intermediate_sum_colname) + lit(0.0)) / (
             col(intermediate_count_colname) + lit(0.0)
         )
         self._final_projection_excludes.add(intermediate_sum_colname)

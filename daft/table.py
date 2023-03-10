@@ -43,7 +43,7 @@ class Table:
         return Series._from_pyseries(self._table.get_column(name))
 
     def size_bytes(self) -> int:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+        return self._table.size_bytes()
 
     def __len__(self) -> int:
         return len(self._table)
@@ -152,13 +152,13 @@ class Table:
         return Table._from_pytable(self._table.sort(pyexprs, descending))
 
     def sample(self, num: int) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+        return Table._from_pytable(self._table.sample(num))
 
     def agg(self, to_agg: list[tuple[Expression, str]], group_by: ExpressionsProjection | None = None) -> Table:
         raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     def quantiles(self, num: int) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+        return Table._from_pytable(self._table.quantiles(num))
 
     def explode(self, columns: ExpressionsProjection) -> Table:
         raise NotImplementedError("TODO: [RUST-INT][NESTED] Implement for Table")

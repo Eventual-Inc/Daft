@@ -60,6 +60,79 @@ def test_table_head() -> None:
         headed = daft_table.head(-1)
 
 
+def test_table_sample() -> None:
+    pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+    source_pairs = {(1, 5), (2, 6), (3, 7), (4, 8)}
+
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    # subsample
+    sampled = daft_table.sample(3)
+    assert len(sampled) == 3
+    assert sampled.column_names() == ["a", "b"]
+    assert all(
+        pair in source_pairs for pair in zip(sampled.get_column("a").to_pylist(), sampled.get_column("b").to_pylist())
+    )
+
+    # oversample
+    sampled = daft_table.sample(5)
+    assert len(sampled) == 4
+    assert sampled.column_names() == ["a", "b"]
+    assert all(
+        pair in source_pairs for pair in zip(sampled.get_column("a").to_pylist(), sampled.get_column("b").to_pylist())
+    )
+
+    # negative sample
+    with pytest.raises(ValueError, match="negative number"):
+        daft_table.sample(-1)
+
+
+@pytest.mark.parametrize("size, k", itertools.product([0, 1, 10, 33, 100, 101], [0, 1, 2, 3, 100, 101, 200]))
+def test_table_quantiles(size, k) -> None:
+    first = np.arange(size)
+
+    second = 2 * first
+
+    daft_table = Table.from_pydict({"a": first, "b": second})
+    assert len(daft_table) == size
+    assert daft_table.column_names() == ["a", "b"]
+
+    # sub
+    quantiles = daft_table.quantiles(k)
+
+    if size > 0:
+        assert len(quantiles) == max(k - 1, 0)
+    else:
+        assert len(quantiles) == 0
+
+    assert quantiles.column_names() == ["a", "b"]
+    ind = quantiles.get_column("a").to_pylist()
+
+    if k > 0:
+        assert np.all(np.diff(ind) >= 0)
+        expected_delta = size / k
+        assert np.all(np.abs(np.diff(ind) - expected_delta) <= 1)
+    else:
+        assert len(ind) == 0
+
+
+def test_table_quantiles_bad_input() -> None:
+    # negative sample
+
+    first = np.arange(10)
+
+    second = 2 * first
+
+    pa_table = pa.Table.from_pydict({"a": first, "b": second})
+
+    daft_table = Table.from_arrow(pa_table)
+
+    with pytest.raises(ValueError, match="negative number"):
+        daft_table.quantiles(-1)
+
+
 def test_table_eval_expressions() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
     daft_table = Table.from_arrow(pa_table)
@@ -564,3 +637,10 @@ def test_table_boolean_multiple_col_sorting(second_dtype, data) -> None:
         daft_table.argsort([col("a"), col("b")], descending=[not a_desc, not b_desc]).to_pylist()
         == argsort_order.to_pylist()[::-1]
     )
+
+
+def test_table_size_bytes() -> None:
+    data = Table.from_pydict({"a": [1, 2, 3, 4, None], "b": [False, True, False, True, None]}).eval_expression_list(
+        [col("a").cast(DataType.int64()), col("b")]
+    )
+    assert data.size_bytes() == (5 * 8 + 1) + (1 + 1)
