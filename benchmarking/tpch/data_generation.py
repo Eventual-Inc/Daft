@@ -263,6 +263,9 @@ def gen_csv_files(basedir: str, num_parts: int, scale_factor: float) -> str:
         logger.info(f"Generating {num_parts} for tpch")
         subprocess.check_output(shlex.split(f"./dbgen -v -f -s {scale_factor}"), cwd=cachedir)
 
+        # The tool sometimes generates weird files with bad permissioning, we override that manually here
+        subprocess.check_output(shlex.split("chmod -R u+rwx ."), cwd=cachedir)
+
         # Split the files manually
         if num_parts > 1:
             for tbl in ["customer", "lineitem", "orders", "partsupp", "part", "supplier"]:
@@ -277,9 +280,6 @@ def gen_csv_files(basedir: str, num_parts: int, scale_factor: float) -> str:
                             for _ in range(num_lines_per_part):
                                 out.write(f.readline())
                 os.remove(csv_file)
-
-        # The tool sometimes generates weird files with bad permissioning, we override that manually here
-        subprocess.check_output(shlex.split("chmod -R u+rwx ."), cwd=cachedir)
 
         # The tool generates CSV files with a trailing delimiter, we get rid of that here
         csv_files = glob(f"{cachedir}/*.tbl*")
