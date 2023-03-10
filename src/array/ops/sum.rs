@@ -7,9 +7,9 @@ use crate::{array::DataArray, datatypes::*, error::DaftResult};
 use super::DaftNumericAgg;
 
 macro_rules! impl_daft_numeric_agg {
-    ($arrayT:ident) => {
-        impl DaftNumericAgg for &$arrayT {
-            type Output = DaftResult<$arrayT>;
+    ($T:ident) => {
+        impl DaftNumericAgg for &DataArray<$T> {
+            type Output = DaftResult<DataArray<$T>>;
 
             fn sum(&self) -> Self::Output {
                 let primitive_arr = self.downcast();
@@ -27,7 +27,7 @@ macro_rules! impl_daft_numeric_agg {
     };
 }
 
-impl_daft_numeric_agg!(Int64Array);
-impl_daft_numeric_agg!(UInt64Array);
-impl_daft_numeric_agg!(Float32Array);
-impl_daft_numeric_agg!(Float64Array);
+impl_daft_numeric_agg!(Int64Type);
+impl_daft_numeric_agg!(UInt64Type);
+impl_daft_numeric_agg!(Float32Type);
+impl_daft_numeric_agg!(Float64Type);
