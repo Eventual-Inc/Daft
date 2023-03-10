@@ -42,7 +42,7 @@ def test_table_partition_by_hash_single_col(size, k, dtype) -> None:
             seen_so_far.add(v)
 
 
-def test_table_quantiles_bad_input() -> None:
+def test_table_partition_by_hash_bad_input() -> None:
     # negative sample
 
     table = Table.from_pydict({"x": [1, 2, 3], "b": [0, 1, 2]})
