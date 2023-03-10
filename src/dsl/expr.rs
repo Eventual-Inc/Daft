@@ -46,31 +46,27 @@ pub fn binary_op(op: Operator, left: &Expr, right: &Expr) -> Expr {
 }
 
 impl AggExpr {
-    pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
+    pub fn get_type(&self, schema: &Schema) -> DaftResult<DataType> {
         use AggExpr::*;
         match self {
             Sum(expr) => {
-                let field = expr.to_field(schema)?;
-                Ok(Field::new(
-                    field.name.as_str(),
-                    match &field.dtype {
-                        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
-                            DataType::Int64
-                        }
-                        DataType::UInt8
-                        | DataType::UInt16
-                        | DataType::UInt32
-                        | DataType::UInt64 => DataType::UInt64,
-                        DataType::Float32 => DataType::Float32,
-                        DataType::Float64 => DataType::Float64,
-                        other => {
-                            return Err(DaftError::TypeError(format!(
-                                "Numeric sum is not implemented for type {}",
-                                other
-                            )))
-                        }
-                    },
-                ))
+                let child_dtype = expr.get_type(schema)?;
+                Ok(match &child_dtype {
+                    DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                        DataType::Int64
+                    }
+                    DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                        DataType::UInt64
+                    }
+                    DataType::Float32 => DataType::Float32,
+                    DataType::Float64 => DataType::Float64,
+                    other => {
+                        return Err(DaftError::TypeError(format!(
+                            "Numeric sum is not implemented for type {}",
+                            other
+                        )))
+                    }
+                })
             }
         }
     }
@@ -94,41 +90,7 @@ impl Expr {
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        use Expr::*;
-
-        match self {
-            Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
-            Agg(agg_expr) => agg_expr.to_field(schema),
-            Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
-            Column(name) => Ok(schema.get_field(name).cloned()?),
-            Literal(value) => Ok(Field::new("literal", value.get_type())),
-            BinaryOp { op, left, right } => {
-                let result = match op {
-                    Operator::Lt
-                    | Operator::Gt
-                    | Operator::Eq
-                    | Operator::NotEq
-                    | Operator::And
-                    | Operator::LtEq
-                    | Operator::GtEq
-                    | Operator::Or => {
-                        Field::new(left.to_field(schema)?.name.as_str(), DataType::Boolean)
-                    }
-                    Operator::TrueDivide => {
-                        Field::new(left.to_field(schema)?.name.as_str(), DataType::Float64)
-                    }
-                    _ => {
-                        let left_field = left.to_field(schema)?;
-                        let right_field = right.to_field(schema)?;
-                        Field::new(
-                            left_field.name.as_str(),
-                            try_get_supertype(&left_field.dtype, &right_field.dtype)?,
-                        )
-                    }
-                };
-                Ok(result)
-            }
-        }
+        Ok(Field::new(self.name()?, self.get_type(schema)?))
     }
 
     pub fn name(&self) -> DaftResult<&str> {
@@ -151,7 +113,15 @@ impl Expr {
     }
 
     pub fn get_type(&self, schema: &Schema) -> DaftResult<DataType> {
-        Ok(self.to_field(schema)?.dtype)
+        use Expr::*;
+        match self {
+            Alias(expr, _) => Ok(expr.get_type(schema)?),
+            Agg(agg_expr) => agg_expr.get_type(schema),
+            Cast(_, dtype) => Ok(dtype.clone()),
+            Column(name) => Ok(schema.get_field(name)?.dtype.clone()),
+            Literal(value) => Ok(value.get_type()),
+            BinaryOp { op, left, right } => op.get_type(schema, left, right),
+        }
     }
 }
 
@@ -202,6 +172,32 @@ pub enum Operator {
     And,
     Or,
     Xor,
+}
+
+impl Operator {
+    pub fn get_type(
+        &self,
+        schema: &Schema,
+        left: &ExprRef,
+        right: &ExprRef,
+    ) -> DaftResult<DataType> {
+        Ok(match self {
+            Operator::Lt
+            | Operator::Gt
+            | Operator::Eq
+            | Operator::NotEq
+            | Operator::And
+            | Operator::LtEq
+            | Operator::GtEq
+            | Operator::Or => DataType::Boolean,
+            Operator::TrueDivide => DataType::Float64,
+            _ => {
+                let left_field = left.to_field(schema)?;
+                let right_field = right.to_field(schema)?;
+                try_get_supertype(&left_field.dtype, &right_field.dtype)?
+            }
+        })
+    }
 }
 
 impl Display for Operator {
