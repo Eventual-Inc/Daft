@@ -11,6 +11,7 @@ mod full;
 mod hash;
 mod len;
 mod pairwise;
+mod slice;
 mod sort;
 mod sum;
 mod take;
