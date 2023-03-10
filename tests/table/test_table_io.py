@@ -82,7 +82,7 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 
 @pytest.fixture(scope="function")
-def generate_json_input(tmpdir: str) -> str:
+def json_input(tmpdir: str) -> str:
     path = str(tmpdir + f"/data.json")
     with open(path, "wb") as f:
         for row in range(TEST_DATA_LEN):
@@ -93,19 +93,25 @@ def generate_json_input(tmpdir: str) -> str:
 
 
 @pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
-def test_json_reads(generate_json_input: str, input_type: InputType):
-    with _resolve_parametrized_input_type(input_type, generate_json_input) as table_io_input:
+def test_json_reads(json_input: str, input_type: InputType):
+    with _resolve_parametrized_input_type(input_type, json_input) as table_io_input:
         table = table_io.read_json(table_io_input)
         d = table.to_pydict()
         assert d == JSON_EXPECTED_DATA
 
 
-def test_json_reads_limit_rows(generate_json_input: str):
+def test_json_reads_limit_rows(json_input: str):
     row_limit = 3
-    with _resolve_parametrized_input_type("path", generate_json_input) as table_io_input:
-        table = table_io.read_json(table_io_input, read_options=vPartitionReadOptions(num_rows=row_limit))
-        d = table.to_pydict()
-        assert {k: v[:row_limit] for k, v in d.items()} == {k: v[:row_limit] for k, v in JSON_EXPECTED_DATA.items()}
+    table = table_io.read_json(json_input, read_options=vPartitionReadOptions(num_rows=row_limit))
+    d = table.to_pydict()
+    assert d == {k: v[:row_limit] for k, v in JSON_EXPECTED_DATA.items()}
+
+
+def test_json_reads_pruned_columns(json_input: str):
+    included_columns = ["strings", "integers"]
+    table = table_io.read_json(json_input, read_options=vPartitionReadOptions(column_names=included_columns))
+    d = table.to_pydict()
+    assert d == {k: v for k, v in PARQUET_EXPECTED_DATA.items() if k in included_columns}
 
 
 ###
@@ -142,10 +148,16 @@ def test_parquet_reads(parquet_input: str, input_type: InputType):
 
 def test_parquet_reads_limit_rows(parquet_input: str):
     row_limit = 3
-    with _resolve_parametrized_input_type("path", parquet_input) as table_io_input:
-        table = table_io.read_parquet(table_io_input, read_options=vPartitionReadOptions(num_rows=row_limit))
-        d = table.to_pydict()
-        assert {k: v[:row_limit] for k, v in d.items()} == {k: v[:row_limit] for k, v in PARQUET_EXPECTED_DATA.items()}
+    table = table_io.read_parquet(parquet_input, read_options=vPartitionReadOptions(num_rows=row_limit))
+    d = table.to_pydict()
+    assert d == {k: v[:row_limit] for k, v in PARQUET_EXPECTED_DATA.items()}
+
+
+def test_parquet_reads_pruned_columns(parquet_input: str):
+    included_columns = ["strings", "integers"]
+    table = table_io.read_parquet(parquet_input, read_options=vPartitionReadOptions(column_names=included_columns))
+    d = table.to_pydict()
+    assert d == {k: v for k, v in PARQUET_EXPECTED_DATA.items() if k in included_columns}
 
 
 ###
@@ -192,10 +204,19 @@ def test_csv_reads(generate_csv_input: Callable[[vPartitionParseCSVOptions], str
 def test_csv_reads_limit_rows(generate_csv_input: Callable[[vPartitionParseCSVOptions], str]):
     row_limit = 3
     generate_csv_input_path = generate_csv_input(vPartitionParseCSVOptions())
-    with _resolve_parametrized_input_type("path", generate_csv_input_path) as table_io_input:
-        table = table_io.read_csv(table_io_input, read_options=vPartitionReadOptions(num_rows=row_limit))
-        d = table.to_pydict()
-        assert {k: v[:row_limit] for k, v in d.items()} == {k: v[:row_limit] for k, v in CSV_EXPECTED_DATA.items()}
+    table = table_io.read_csv(generate_csv_input_path, read_options=vPartitionReadOptions(num_rows=row_limit))
+    d = table.to_pydict()
+    assert d == {k: v[:row_limit] for k, v in CSV_EXPECTED_DATA.items()}
+
+
+def test_csv_reads_pruned_columns(generate_csv_input: str):
+    included_columns = ["strings", "integers"]
+    generate_csv_input_path = generate_csv_input(vPartitionParseCSVOptions())
+    table = table_io.read_csv(
+        generate_csv_input_path, read_options=vPartitionReadOptions(column_names=included_columns)
+    )
+    d = table.to_pydict()
+    assert d == {k: v for k, v in CSV_EXPECTED_DATA.items() if k in included_columns}
 
 
 @pytest.mark.parametrize(
@@ -223,7 +244,6 @@ def test_csv_reads_custom_options(
     schema_options: vPartitionSchemaInferenceOptions,
 ):
     generate_csv_input_path = generate_csv_input(csv_options)
-    with _resolve_parametrized_input_type("path", generate_csv_input_path) as table_io_input:
-        table = table_io.read_csv(table_io_input, csv_options=csv_options, schema_options=schema_options)
-        d = table.to_pydict()
-        assert d == CSV_EXPECTED_DATA
+    table = table_io.read_csv(generate_csv_input_path, csv_options=csv_options, schema_options=schema_options)
+    d = table.to_pydict()
+    assert d == CSV_EXPECTED_DATA
