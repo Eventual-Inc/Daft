@@ -62,7 +62,7 @@ jobs:
         cache-name: cache-tpch-data
       with:
         path: data/tpch-dbgen
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/stress_tests/test_tpch.py,benchmarking/tpch/**') }}
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/stress_tests/test_tpch.py', 'benchmarking/tpch/**') }}
 
     - name: Build library and Test with pytest
       run: |
