@@ -62,6 +62,7 @@ class Table:
 
     @staticmethod
     def _from_pytable(pyt: _PyTable) -> Table:
+        assert isinstance(pyt, _PyTable)
         tab = Table.__new__(Table)
         tab._table = pyt
         return tab
@@ -190,13 +191,16 @@ class Table:
 
         return Table._from_pytable(self._table.join(right._table, left_on=left_exprs, right_on=right_exprs))
 
-    def split_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Table]:
+    def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Table]:
+        pyexprs = [e._expr for e in exprs]
+        return [Table._from_pytable(t) for t in self._table.partition_by_hash(pyexprs, num_partitions)]
+
+    def partition_by_range(
+        self, partition_keys: ExpressionsProjection, pivots: Table, descending: list[bool]
+    ) -> list[Table]:
         raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
-    def split_by_index(self, num_partitions: int, target_partition_indices: Series) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
-
-    def split_random(self, num_partitions: int, seed: int) -> list[Table]:
+    def partition_by_random(self, num_partitions: int, seed: int) -> list[Table]:
         raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     ###
@@ -219,6 +223,3 @@ class Table:
         else:
             raise ValueError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return Series._from_pyseries(self._table.argsort(pyexprs, descending))
-
-    def search_sorted(self, sort_keys: Table, descending: list[bool]) -> Series:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
