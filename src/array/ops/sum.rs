@@ -4,14 +4,15 @@ use arrow2;
 
 use crate::{array::DataArray, datatypes::*, error::DaftResult};
 
-use super::DaftNumericAgg;
+use super::DaftNumericAggable;
 
 macro_rules! impl_daft_numeric_agg {
     ($T:ident) => {
-        impl DaftNumericAgg for &DataArray<$T> {
-            type Output = DaftResult<DataArray<$T>>;
+        impl DaftNumericAggable for &DataArray<$T> {
+            type SumOutput = DaftResult<DataArray<$T>>;
+            type MeanOutput = DaftResult<DataArray<Float64Type>>;
 
-            fn sum(&self) -> Self::Output {
+            fn sum(&self) -> Self::SumOutput {
                 let primitive_arr = self.downcast();
 
                 let arrow_array = match primitive_arr.len() {
@@ -22,6 +23,9 @@ macro_rules! impl_daft_numeric_agg {
                     }
                 };
                 DataArray::new(self.field.clone(), Arc::new(arrow_array))
+            }
+            fn mean(&self) -> Self::MeanOutput {
+                todo!()
             }
         }
     };

@@ -50,8 +50,20 @@ pub trait DaftLogical<Rhs> {
     fn xor(&self, rhs: Rhs) -> Self::Output;
 }
 
-pub trait DaftNumericAgg {
+pub trait DaftCountAggable {
     type Output;
+    fn count(&self) -> Self::Output;
+}
 
-    fn sum(&self) -> Self::Output;
+pub trait DaftNumericAggable {
+    type SumOutput;
+    type MeanOutput;
+    fn sum(&self) -> Self::SumOutput;
+    fn mean(&self) -> Self::MeanOutput;
+}
+
+pub trait DaftCompareAggable {
+    type Output;
+    fn min(&self) -> Self::Output;
+    fn max(&self) -> Self::Output;
 }
