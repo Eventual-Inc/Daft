@@ -99,7 +99,6 @@ def read_parquet(
                 rows_read += len(tables[i])
                 if rows_read >= read_options.num_rows:
                     break
-
             table = pa.concat_tables(tables)
             table = table.slice(length=read_options.num_rows)
 
@@ -142,7 +141,13 @@ def read_csv(
     with _get_file(file) as f:
 
         if read_options.num_rows is not None:
-            f = _limit_num_rows(f, read_options.num_rows)
+            num_rows_to_read = (
+                csv_options.skip_rows_before_header
+                + (1 if csv_options.has_headers else 0)
+                + pyarrow_skip_rows_after_names
+                + read_options.num_rows
+            )
+            f = _limit_num_rows(f, num_rows_to_read)
 
         table = pacsv.read_csv(
             f,

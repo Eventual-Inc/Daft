@@ -19,6 +19,7 @@ else:
 
 from daft.runners.partitioning import (
     vPartitionParseCSVOptions,
+    vPartitionReadOptions,
     vPartitionSchemaInferenceOptions,
 )
 from daft.table import table_io
@@ -80,7 +81,7 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 @pytest.fixture(scope="function")
 def generate_json_input(tmpdir: str) -> str:
-    path = tmpdir + f"/data.json"
+    path = str(tmpdir + f"/data.json")
     with open(path, "wb") as f:
         for row in range(TEST_DATA_LEN):
             row_data = {cname: TEST_DATA[cname][row] for cname in TEST_DATA}
@@ -95,6 +96,14 @@ def test_json_reads(generate_json_input: str, input_type: InputType):
         table = table_io.read_json(table_io_input)
         d = table.to_pydict()
         assert d == JSON_EXPECTED_DATA
+
+
+def test_json_reads_limit_rows(generate_json_input: str):
+    row_limit = 3
+    with _resolve_parametrized_input_type("path", generate_json_input) as table_io_input:
+        table = table_io.read_json(table_io_input, read_options=vPartitionReadOptions(num_rows=row_limit))
+        d = table.to_pydict()
+        assert {k: v[:row_limit] for k, v in d.items()} == {k: v[:row_limit] for k, v in JSON_EXPECTED_DATA.items()}
 
 
 ###
@@ -116,7 +125,7 @@ PARQUET_EXPECTED_DATA = {
 
 @pytest.fixture(scope="function")
 def parquet_input(tmpdir: str) -> str:
-    path = tmpdir + f"/data.parquet"
+    path = str(tmpdir + f"/data.parquet")
     papq.write_table(pa.Table.from_pydict(TEST_DATA), path)
     yield path
 
@@ -127,6 +136,14 @@ def test_parquet_reads(parquet_input: str, input_type: InputType):
         table = table_io.read_parquet(table_io_input)
         d = table.to_pydict()
         assert d == PARQUET_EXPECTED_DATA
+
+
+def test_parquet_reads_limit_rows(parquet_input: str):
+    row_limit = 3
+    with _resolve_parametrized_input_type("path", parquet_input) as table_io_input:
+        table = table_io.read_parquet(table_io_input, read_options=vPartitionReadOptions(num_rows=row_limit))
+        d = table.to_pydict()
+        assert {k: v[:row_limit] for k, v in d.items()} == {k: v[:row_limit] for k, v in PARQUET_EXPECTED_DATA.items()}
 
 
 ###
@@ -149,7 +166,7 @@ CSV_EXPECTED_DATA = {
 @pytest.fixture(scope="function")
 def generate_csv_input(tmpdir: str) -> Callable[[vPartitionParseCSVOptions], str]:
     def _generate(csv_options) -> str:
-        path = tmpdir + f"/data.csv"
+        path = str(tmpdir + f"/data.csv")
         headers = [cname for cname in TEST_DATA]
         with open(path, "w") as f:
             writer = csv.writer(f, delimiter=csv_options.delimiter)
@@ -168,6 +185,15 @@ def test_csv_reads(generate_csv_input: Callable[[vPartitionParseCSVOptions], str
         table = table_io.read_csv(table_io_input)
         d = table.to_pydict()
         assert d == CSV_EXPECTED_DATA
+
+
+def test_csv_reads_limit_rows(generate_csv_input: Callable[[vPartitionParseCSVOptions], str]):
+    row_limit = 3
+    generate_csv_input_path = generate_csv_input(vPartitionParseCSVOptions())
+    with _resolve_parametrized_input_type("path", generate_csv_input_path) as table_io_input:
+        table = table_io.read_csv(table_io_input, read_options=vPartitionReadOptions(num_rows=row_limit))
+        d = table.to_pydict()
+        assert {k: v[:row_limit] for k, v in d.items()} == {k: v[:row_limit] for k, v in CSV_EXPECTED_DATA.items()}
 
 
 @pytest.mark.parametrize(
