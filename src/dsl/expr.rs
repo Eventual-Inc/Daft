@@ -1,5 +1,9 @@
 use crate::{
-    datatypes::DataType, datatypes::Field, dsl::lit, error::DaftResult, schema::Schema,
+    datatypes::DataType,
+    datatypes::Field,
+    dsl::lit,
+    error::{DaftError, DaftResult},
+    schema::Schema,
     utils::supertype::try_get_supertype,
 };
 use serde::{Deserialize, Serialize};
@@ -13,6 +17,7 @@ type ExprRef = Arc<Expr>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Expr {
     Alias(ExprRef, Arc<str>),
+    Agg(AggExpr),
     BinaryOp {
         op: Operator,
         left: ExprRef,
@@ -21,6 +26,11 @@ pub enum Expr {
     Cast(ExprRef, DataType),
     Column(Arc<str>),
     Literal(lit::LiteralValue),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AggExpr {
+    Sum(ExprRef),
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
@@ -35,6 +45,37 @@ pub fn binary_op(op: Operator, left: &Expr, right: &Expr) -> Expr {
     }
 }
 
+impl AggExpr {
+    pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
+        use AggExpr::*;
+        match self {
+            Sum(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    match &field.dtype {
+                        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                            DataType::Int64
+                        }
+                        DataType::UInt8
+                        | DataType::UInt16
+                        | DataType::UInt32
+                        | DataType::UInt64 => DataType::UInt64,
+                        DataType::Float32 => DataType::Float32,
+                        DataType::Float64 => DataType::Float64,
+                        other => {
+                            return Err(DaftError::TypeError(format!(
+                                "Numeric sum is not implemented for type {}",
+                                other
+                            )))
+                        }
+                    },
+                ))
+            }
+        }
+    }
+}
+
 impl Expr {
     pub fn alias<S: Into<Arc<str>>>(&self, name: S) -> Self {
         Expr::Alias(self.clone().into(), name.into())
@@ -42,6 +83,10 @@ impl Expr {
 
     pub fn cast(&self, dtype: &DataType) -> Self {
         Expr::Cast(self.clone().into(), dtype.clone())
+    }
+
+    pub fn sum(&self) -> Self {
+        Expr::Agg(AggExpr::Sum(self.clone().into()))
     }
 
     pub fn and(&self, other: &Self) -> Self {
@@ -53,10 +98,10 @@ impl Expr {
 
         match self {
             Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
+            Agg(agg_expr) => agg_expr.to_field(schema),
             Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
             Column(name) => Ok(schema.get_field(name).cloned()?),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
-
             BinaryOp { op, left, right } => {
                 let result = match op {
                     Operator::Lt
@@ -87,9 +132,13 @@ impl Expr {
     }
 
     pub fn name(&self) -> DaftResult<&str> {
+        use AggExpr::*;
         use Expr::*;
         match self {
             Alias(.., name) => Ok(name.as_ref()),
+            Agg(agg_expr) => match agg_expr {
+                Sum(expr) => expr.name(),
+            },
             Cast(expr, ..) => expr.name(),
             Column(name) => Ok(name.as_ref()),
             Literal(..) => Ok("literal"),
@@ -109,9 +158,13 @@ impl Expr {
 impl Display for Expr {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
+        use AggExpr::*;
         use Expr::*;
         match self {
             Alias(expr, name) => write!(f, "{expr} AS {name}"),
+            Agg(agg_expr) => match agg_expr {
+                Sum(expr) => write!(f, "sum({expr})"),
+            },
             BinaryOp { op, left, right } => {
                 let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
                     Alias(e, _) => write!(f, "{e}"),

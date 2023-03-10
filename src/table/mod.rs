@@ -4,7 +4,7 @@ use num_traits::ToPrimitive;
 
 use crate::array::BaseArray;
 use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
-use crate::dsl::Expr;
+use crate::dsl::{AggExpr, Expr};
 use crate::error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
 use crate::series::Series;
@@ -186,12 +186,20 @@ impl Table {
         Ok(self.columns.get(idx).unwrap().clone())
     }
 
+    fn eval_agg_expression(&self, agg_expr: &AggExpr) -> DaftResult<Series> {
+        use crate::dsl::AggExpr::*;
+        match agg_expr {
+            Sum(expr) => self.eval_expression(expr)?.sum(),
+        }
+    }
+
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         use crate::dsl::Expr::*;
 
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
             Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
+            Agg(agg_expr) => self.eval_agg_expression(agg_expr),
             Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             Column(name) => self.get_column(name),
             BinaryOp { op, left, right } => {
@@ -316,11 +324,11 @@ impl Display for Table {
 mod test {
 
     use crate::array::BaseArray;
-    use crate::datatypes::{DataType, Int64Array};
+    use crate::datatypes::{DataType, Float64Array, Int64Array};
     use crate::dsl::col;
+    use crate::error::DaftResult;
     use crate::schema::Schema;
     use crate::table::Table;
-    use crate::{datatypes::Float64Array, error::DaftResult};
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
         let a = Int64Array::from(("a", vec![1, 2, 3].as_slice())).into_series();

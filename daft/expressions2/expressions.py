@@ -172,6 +172,10 @@ class Expression:
         expr = self._expr.cast(dtype._dtype)
         return Expression._from_pyexpr(expr)
 
+    def _sum(self) -> Expression:
+        expr = self._expr.sum()
+        return Expression._from_pyexpr(expr)
+
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
         raise NotImplementedError("[RUST-INT][TPCH] Implement expression")
 
