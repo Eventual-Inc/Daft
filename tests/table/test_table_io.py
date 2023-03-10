@@ -5,7 +5,7 @@ import csv
 import datetime
 import json
 import pathlib
-from typing import Callable
+from typing import Callable, Union
 
 import pyarrow as pa
 import pytest
@@ -18,7 +18,7 @@ from daft.runners.partitioning import (
 )
 from daft.table import table_io
 
-InputType = Literal["file"] | Literal["filepath"] | Literal["pathlib.Path"]
+InputType = Union[Literal["file"], Literal["filepath"], Literal["pathlib.Path"]]
 TEST_INPUT_TYPES = ["file", "path", "pathlib.Path"]
 
 TEST_DATA_LEN = 16
