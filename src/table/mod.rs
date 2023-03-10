@@ -1,6 +1,9 @@
 use std::fmt::{Display, Formatter, Result};
 
-use crate::datatypes::{BooleanType, DataType, Field};
+use num_traits::ToPrimitive;
+
+use crate::array::BaseArray;
+use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
 use crate::dsl::Expr;
 use crate::error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
@@ -90,6 +93,43 @@ impl Table {
         })
     }
 
+    pub fn sample(&self, num: usize) -> DaftResult<Self> {
+        if num >= self.len() {
+            Ok(self.clone())
+        } else {
+            use rand::{distributions::Uniform, Rng};
+            let range = Uniform::from(0..self.len() as u64);
+            let values: Vec<u64> = rand::thread_rng().sample_iter(&range).take(num).collect();
+            let indices = UInt64Array::from(("idx", values.as_slice()));
+            self.take(&indices.into_series())
+        }
+    }
+
+    pub fn quantiles(&self, num: usize) -> DaftResult<Self> {
+        if self.len() == 0 {
+            return Ok(self.clone());
+        }
+
+        if num == 0 {
+            let indices = UInt64Array::empty("idx");
+            return self.take(&indices.into_series());
+        }
+
+        let self_len = self.len();
+
+        let sample_points: Vec<u64> = (1..num)
+            .map(|i| {
+                ((i as f64 / num as f64) * self_len as f64)
+                    .floor()
+                    .to_u64()
+                    .unwrap()
+                    .min((self.len() - 1) as u64)
+            })
+            .collect();
+        let indices = UInt64Array::from(("idx", sample_points.as_slice()));
+        self.take(&indices.into_series())
+    }
+
     pub fn size_bytes(&self) -> usize {
         self.columns.iter().map(|s| s.size_bytes()).sum::<usize>()
     }
@@ -158,7 +198,6 @@ impl Table {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
                 use crate::array::ops::{DaftCompare, DaftLogical};
-                use crate::array::BaseArray;
                 use crate::dsl::Operator::*;
                 match op {
                     Plus => lhs + rhs,

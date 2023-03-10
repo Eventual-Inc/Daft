@@ -90,6 +90,26 @@ impl PyTable {
         Ok(self.table.head(num)?.into())
     }
 
+    pub fn sample(&self, num: i64) -> PyResult<Self> {
+        if num < 0 {
+            return Err(PyValueError::new_err(format!(
+                "Can not sample table with negative number: {num}"
+            )));
+        }
+        let num = num as usize;
+        Ok(self.table.sample(num)?.into())
+    }
+
+    pub fn quantiles(&self, num: i64) -> PyResult<Self> {
+        if num < 0 {
+            return Err(PyValueError::new_err(format!(
+                "Can not fetch quantile from table with negative number: {num}"
+            )));
+        }
+        let num = num as usize;
+        Ok(self.table.quantiles(num)?.into())
+    }
+
     pub fn __len__(&self) -> PyResult<usize> {
         Ok(self.table.len())
     }
