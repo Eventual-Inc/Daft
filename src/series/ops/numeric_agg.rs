@@ -31,4 +31,29 @@ impl Series {
             ))),
         }
     }
+    pub fn mean(&self) -> DaftResult<Series> {
+        use crate::array::ops::DaftNumericAggable;
+        use crate::datatypes::DataType::*;
+
+        match self.data_type() {
+            Int8 | Int16 | Int32 | Int64 => {
+                let casted = self.cast(&Int64)?;
+                Ok(DaftNumericAggable::mean(&casted.i64()?)?.into_series())
+            }
+            UInt8 | UInt16 | UInt32 | UInt64 => {
+                let casted = self.cast(&UInt64)?;
+                Ok(DaftNumericAggable::mean(&casted.u64()?)?.into_series())
+            }
+            Float32 => {
+                Ok(DaftNumericAggable::mean(&self.downcast::<Float32Type>()?)?.into_series())
+            }
+            Float64 => {
+                Ok(DaftNumericAggable::mean(&self.downcast::<Float64Type>()?)?.into_series())
+            }
+            other => Err(DaftError::TypeError(format!(
+                "Numeric sum is not implemented for type {}",
+                other
+            ))),
+        }
+    }
 }

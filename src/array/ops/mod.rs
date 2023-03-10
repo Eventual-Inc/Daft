@@ -11,9 +11,9 @@ mod filter;
 mod full;
 mod hash;
 mod len;
+mod numeric_agg;
 mod pairwise;
 mod sort;
-mod sum;
 mod take;
 
 pub trait DaftCompare<Rhs> {
