@@ -1,7 +1,6 @@
-use std::{ops::Rem};
+use std::ops::Rem;
 
 use arrow2::array::{Array, DictionaryKey};
-
 
 use crate::{
     array::BaseArray,
@@ -55,7 +54,9 @@ impl Table {
         num_partitions: usize,
     ) -> DaftResult<Vec<Self>> {
         if num_partitions == 0 {
-            return Err(DaftError::ValueError("Can not partition a Table by 0 partitions".to_string()));
+            return Err(DaftError::ValueError(
+                "Can not partition a Table by 0 partitions".to_string(),
+            ));
         }
 
         let targets = self
