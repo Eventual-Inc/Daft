@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 
+import numpy as np
 import pyarrow as pa
 import pytest
 
@@ -86,6 +87,50 @@ def test_table_sample() -> None:
     # negative sample
     with pytest.raises(ValueError, match="negative number"):
         daft_table.sample(-1)
+
+
+@pytest.mark.parametrize("size, k", itertools.product([0, 1, 10, 33, 100, 101], [0, 1, 2, 3, 100, 101, 200]))
+def test_table_quantiles(size, k) -> None:
+    first = np.arange(size)
+
+    second = 2 * first
+
+    daft_table = Table.from_pydict({"a": first, "b": second})
+    assert len(daft_table) == size
+    assert daft_table.column_names() == ["a", "b"]
+
+    # sub
+    quantiles = daft_table.quantiles(k)
+
+    if size > 0:
+        assert len(quantiles) == max(k - 1, 0)
+    else:
+        assert len(quantiles) == 0
+
+    assert quantiles.column_names() == ["a", "b"]
+    ind = quantiles.get_column("a").to_pylist()
+
+    if k > 0:
+        assert np.all(np.diff(ind) >= 0)
+        expected_delta = size / k
+        assert np.all(np.abs(np.diff(ind) - expected_delta) <= 1)
+    else:
+        assert len(ind) == 0
+
+
+def test_table_quantiles_bad_input() -> None:
+    # negative sample
+
+    first = np.arange(10)
+
+    second = 2 * first
+
+    pa_table = pa.Table.from_pydict({"a": first, "b": second})
+
+    daft_table = Table.from_arrow(pa_table)
+
+    with pytest.raises(ValueError, match="negative number"):
+        daft_table.quantiles(-1)
 
 
 def test_table_eval_expressions() -> None:

@@ -1,5 +1,7 @@
 use std::fmt::{Display, Formatter, Result};
 
+use num_traits::ToPrimitive;
+
 use crate::array::BaseArray;
 use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
 use crate::dsl::Expr;
@@ -101,6 +103,31 @@ impl Table {
             let indices = UInt64Array::from(("idx", values.as_slice()));
             self.take(&indices.into_series())
         }
+    }
+
+    pub fn quantiles(&self, num: usize) -> DaftResult<Self> {
+        if self.len() == 0 {
+            return Ok(self.clone());
+        }
+
+        if num == 0 {
+            let indices = UInt64Array::empty("idx");
+            return self.take(&indices.into_series());
+        }
+
+        let self_len = self.len();
+
+        let sample_points: Vec<u64> = (1..num)
+            .map(|i| {
+                ((i as f64 / num as f64) * self_len as f64)
+                    .floor()
+                    .to_u64()
+                    .unwrap()
+                    .min((self.len() - 1) as u64)
+            })
+            .collect();
+        let indices = UInt64Array::from(("idx", sample_points.as_slice()));
+        self.take(&indices.into_series())
     }
 
     pub fn size_bytes(&self) -> usize {

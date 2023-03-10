@@ -158,7 +158,7 @@ class Table:
         raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     def quantiles(self, num: int) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+        return Table._from_pytable(self._table.quantiles(num))
 
     def explode(self, columns: ExpressionsProjection) -> Table:
         raise NotImplementedError("TODO: [RUST-INT][NESTED] Implement for Table")
