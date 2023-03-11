@@ -1,4 +1,5 @@
 use crate::{
+    datatypes::dtype_utils,
     datatypes::DataType,
     datatypes::Field,
     dsl::{functions::FunctionEvaluator, lit},
@@ -109,30 +110,67 @@ impl Expr {
             Literal(value) => Ok(Field::new("literal", value.get_type())),
             Function { func, inputs } => func.to_field(inputs.as_slice(), schema),
             BinaryOp { op, left, right } => {
-                let result = match op {
+                let left_field = left.to_field(schema)?;
+                let right_field = right.to_field(schema)?;
+
+                match op {
+                    // Logical operations
+                    Operator::And | Operator::Or | Operator::Xor => {
+                        if left_field.dtype != DataType::Boolean
+                            || right_field.dtype != DataType::Boolean
+                        {
+                            return Err(DaftError::TypeError(format!("Logical operation expects left and right boolean arguments, but received: {left} {op} {right}")));
+                        }
+                        Ok(Field::new(left_field.name.as_str(), DataType::Boolean))
+                    }
+
+                    // Comparison operations
                     Operator::Lt
                     | Operator::Gt
                     | Operator::Eq
                     | Operator::NotEq
-                    | Operator::And
                     | Operator::LtEq
-                    | Operator::GtEq
-                    | Operator::Or => {
-                        Field::new(left.to_field(schema)?.name.as_str(), DataType::Boolean)
+                    | Operator::GtEq => {
+                        // Validate: left and right must be castable to the same type to be compared
+                        try_get_supertype(&left_field.dtype, &right_field.dtype)?;
+                        Ok(Field::new(
+                            left.to_field(schema)?.name.as_str(),
+                            DataType::Boolean,
+                        ))
                     }
+
+                    // Plus operation: special-cased as it has semantic meaning for non-arithmetic types as well
+                    Operator::Plus => Ok(Field::new(
+                        left.to_field(schema)?.name.as_str(),
+                        try_get_supertype(&left_field.dtype, &right_field.dtype)?,
+                    )),
+
+                    // True divide operation
                     Operator::TrueDivide => {
-                        Field::new(left.to_field(schema)?.name.as_str(), DataType::Float64)
+                        if !dtype_utils::is_castable(&left_field.dtype, &DataType::Float64)?
+                            || !dtype_utils::is_castable(&left_field.dtype, &DataType::Float64)?
+                        {
+                            return Err(DaftError::TypeError(format!("{op} expects left and right arguments to be castable to {}, but received: {left} {op} {right}", DataType::Float64)));
+                        }
+                        Ok(Field::new(left_field.name.as_str(), DataType::Float64))
                     }
-                    _ => {
-                        let left_field = left.to_field(schema)?;
-                        let right_field = right.to_field(schema)?;
-                        Field::new(
+
+                    // Regular arithmetic operations
+                    Operator::Minus
+                    | Operator::Multiply
+                    | Operator::Modulus
+                    | Operator::FloorDivide => {
+                        if !dtype_utils::is_numeric(&left_field.dtype)
+                            || !dtype_utils::is_numeric(&right_field.dtype)
+                        {
+                            return Err(DaftError::TypeError(format!("{op} expects left and right arguments to be numeric, but received: {left} {op} {right}")));
+                        }
+                        Ok(Field::new(
                             left_field.name.as_str(),
                             try_get_supertype(&left_field.dtype, &right_field.dtype)?,
-                        )
+                        ))
                     }
-                };
-                Ok(result)
+                }
             }
         }
     }

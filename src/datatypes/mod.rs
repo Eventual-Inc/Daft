@@ -1,4 +1,5 @@
 mod dtype;
+pub mod dtype_utils;
 mod field;
 mod time_unit;
 
