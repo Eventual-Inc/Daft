@@ -150,7 +150,7 @@ impl Expr {
                         if !dtype_utils::is_castable(&left_field.dtype, &DataType::Float64)?
                             || !dtype_utils::is_castable(&left_field.dtype, &DataType::Float64)?
                         {
-                            return Err(DaftError::TypeError(format!("{op} expects left and right arguments to be castable to {}, but received: {left} {op} {right}", DataType::Float64)));
+                            return Err(DaftError::TypeError(format!("{op} expects left and right arguments to be castable to {}, but received: {:?} {op} {:?}", DataType::Float64, left_field, right_field)));
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Float64))
                     }
@@ -163,7 +163,7 @@ impl Expr {
                         if !dtype_utils::is_numeric(&left_field.dtype)
                             || !dtype_utils::is_numeric(&right_field.dtype)
                         {
-                            return Err(DaftError::TypeError(format!("{op} expects left and right arguments to be numeric, but received: {left} {op} {right}")));
+                            return Err(DaftError::TypeError(format!("{op} expects left and right arguments to be numeric, but received: {:?} {op} {:?}", left_field, right_field)));
                         }
                         Ok(Field::new(
                             left_field.name.as_str(),
