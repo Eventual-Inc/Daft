@@ -6,6 +6,7 @@ use super::Series;
 pub mod arithmetic;
 pub mod broadcast;
 pub mod cast;
+pub mod compare_agg;
 pub mod comparision;
 pub mod count;
 pub mod downcast;

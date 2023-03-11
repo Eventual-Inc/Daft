@@ -283,8 +283,8 @@ def test_table_agg_empty(idx_dtype) -> None:
             col("a").alias("count")._count(),
             col("a").alias("sum")._sum(),
             col("a").alias("mean")._mean(),
-            # col("a").alias("min")._min(),
-            # col("a").alias("max")._max(),
+            col("a").alias("min")._min(),
+            col("a").alias("max")._max(),
         ]
     )
 
@@ -293,8 +293,8 @@ def test_table_agg_empty(idx_dtype) -> None:
         "count": [],
         "sum": [],
         "mean": [],
-        # "min": [0],
-        # "max": [3],
+        "min": [],
+        "max": [],
     }.items():
         assert res_pydict[key] == value
 
@@ -309,8 +309,8 @@ def test_table_agg_all_nulls(idx_dtype, length) -> None:
             col("a").alias("count")._count(),
             col("a").alias("sum")._sum(),
             col("a").alias("mean")._mean(),
-            # col("a").alias("min")._min(),
-            # col("a").alias("max")._max(),
+            col("a").alias("min")._min(),
+            col("a").alias("max")._max(),
         ]
     )
 
@@ -319,8 +319,8 @@ def test_table_agg_all_nulls(idx_dtype, length) -> None:
         "count": [0],
         "sum": [None],
         "mean": [None],
-        # "min": [0],
-        # "max": [3],
+        "min": [None],
+        "max": [None],
     }.items():
         assert res_pydict[key] == value
 
@@ -334,8 +334,8 @@ def test_table_agg_some_nulls(idx_dtype) -> None:
             col("a").alias("count")._count(),
             col("a").alias("sum")._sum(),
             col("a").alias("mean")._mean(),
-            # col("a").alias("min")._min(),
-            # col("a").alias("max")._max(),
+            col("a").alias("min")._min(),
+            col("a").alias("max")._max(),
         ]
     )
 
@@ -344,8 +344,8 @@ def test_table_agg_some_nulls(idx_dtype) -> None:
         "count": [4],
         "sum": [6],
         "mean": [1.5],
-        # "min": [0],
-        # "max": [3],
+        "min": [0],
+        "max": [3],
     }.items():
         assert res_pydict[key] == value
 

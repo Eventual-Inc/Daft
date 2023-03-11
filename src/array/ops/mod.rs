@@ -4,6 +4,7 @@ mod arithmetic;
 mod arrow2;
 mod broadcast;
 mod cast;
+mod compare_agg;
 mod comparison;
 mod count;
 mod downcast;

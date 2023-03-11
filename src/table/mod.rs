@@ -192,12 +192,8 @@ impl Table {
             Count(expr) => Series::count(&self.eval_expression(expr)?),
             Sum(expr) => Series::sum(&self.eval_expression(expr)?),
             Mean(expr) => Series::mean(&self.eval_expression(expr)?),
-            // Mean(expr) => self.eval_expression(
-            // &binary_op(Operator::TrueDivide, &Expr::sum(expr), &Expr::count(expr))
-            // ),
-            _ => todo!(),
-            // Min(expr) => Series::min(&self.eval_expression(expr)?),
-            // Max(expr) => Series::max(&self.eval_expression(expr)?),
+            Min(expr) => Series::min(&self.eval_expression(expr)?),
+            Max(expr) => Series::max(&self.eval_expression(expr)?),
         }
     }
 
