@@ -1,21 +1,3 @@
-"""Tests to ensure that table schemas match with table types at runtime. Daft needs to make sure that the following
-invariants are ALWAYS maintained:
-
-A kernel `f(s1, s2, ..., sn)` throws an error IF-AND-ONLY-IF `typecheck(s1.dtype, s2.dtype, ..., sn.dtype)` throws an error
-
-This means that users will see these errors at schema resolving-time and never at runtime.
-
-To do so, we do:
-
-for kernel in KERNELS:
-    for dtype_permutation in all_dtype_permutations(kernel.num_args):
-        if valid(kernel, dtype_permutation):
-            kernel(*[dtype[dt] for dt in dtype_permutation])
-        else:
-            with pytest.raises(...):
-"""
-
-
 from __future__ import annotations
 
 import dataclasses
@@ -27,7 +9,7 @@ import numpy as np
 import pytest
 
 from daft.datatype import DataType
-from daft.expressions2 import ExpressionsProjection, col
+from daft.expressions2 import Expression, ExpressionsProjection, col
 from daft.table import Table
 
 # For each datatype, we will generate an array pre-filled with the values in this dictionary
@@ -55,48 +37,68 @@ ALL_DTYPES = {
 
 
 @dataclasses.dataclass(frozen=True)
-class Kernel:
+class KernelSpec:
     name: str
     num_args: int
     # Callable that takes `num_args` number of arguments, each of which is an expression
     func: Callable
+    # Optional list of non-Expression kwargs that the kernel should be tested against
+    kwarg_variants: list[dict] | None = None
+
+
+def _cast(e: Expression, cast_to: DataType) -> Expression:
+    return e.cast(cast_to)
 
 
 ALL_KERNELS = [
-    Kernel(name="add", num_args=2, func=ops.add),
-    Kernel(name="sub", num_args=2, func=ops.sub),
-    Kernel(name="mul", num_args=2, func=ops.mul),
-    Kernel(name="truediv", num_args=2, func=ops.mod),
-    Kernel(name="mod", num_args=2, func=ops.truediv),
-    Kernel(name="and", num_args=2, func=ops.and_),
-    Kernel(name="or", num_args=2, func=ops.or_),
-    Kernel(name="lt", num_args=2, func=ops.lt),
-    Kernel(name="le", num_args=2, func=ops.le),
-    Kernel(name="eq", num_args=2, func=ops.eq),
-    Kernel(name="ne", num_args=2, func=ops.ne),
-    Kernel(name="ge", num_args=2, func=ops.ge),
-    Kernel(name="gt", num_args=2, func=ops.gt),
-    Kernel(name="alias", num_args=1, func=lambda e: e.alias("foo")),
-    # TODO: How to parametrize over the possible args to this?
-    # Kernel(name="cast", num_args=2, func=ops.gt),
+    KernelSpec(name="add", num_args=2, func=ops.add),
+    KernelSpec(name="sub", num_args=2, func=ops.sub),
+    KernelSpec(name="mul", num_args=2, func=ops.mul),
+    KernelSpec(name="truediv", num_args=2, func=ops.mod),
+    KernelSpec(name="mod", num_args=2, func=ops.truediv),
+    KernelSpec(name="and", num_args=2, func=ops.and_),
+    KernelSpec(name="or", num_args=2, func=ops.or_),
+    KernelSpec(name="lt", num_args=2, func=ops.lt),
+    KernelSpec(name="le", num_args=2, func=ops.le),
+    KernelSpec(name="eq", num_args=2, func=ops.eq),
+    KernelSpec(name="ne", num_args=2, func=ops.ne),
+    KernelSpec(name="ge", num_args=2, func=ops.ge),
+    KernelSpec(name="gt", num_args=2, func=ops.gt),
+    KernelSpec(name="alias", num_args=1, func=lambda e: e.alias("foo")),
+    KernelSpec(name="cast", num_args=1, func=_cast, kwarg_variants=[{"cast_to": dt for dt in ALL_DTYPES.keys()}]),
 ]
 
 
+# Generate parameters: for every kernel, for every possible type permutation, for every possible kwarg variant
 TEST_PARAMS = [
-    pytest.param(kernel, dtype_permutation, id=f"{kernel.name}:{'-'.join([repr(dt) for dt in dtype_permutation])}")
+    pytest.param(
+        kernel,
+        dtype_permutation,
+        kernel_func_kwargs,
+        id=f"{kernel.name}:{'-'.join([repr(dt) for dt in dtype_permutation])}",
+    )
     for kernel in ALL_KERNELS
     for dtype_permutation in itertools.product(ALL_DTYPES.keys(), repeat=kernel.num_args)
+    for kernel_func_kwargs in (kernel.kwarg_variants if kernel.kwarg_variants is not None else [{}])
 ]
 
 
-@pytest.mark.parametrize(["kernel", "dtypes"], TEST_PARAMS)
-def test_schema_resolve_validation_matches_runtime_behavior(kernel: Kernel, dtypes: tuple[DataType, ...]):
+@pytest.mark.parametrize(["kernel", "dtypes", "kernel_func_kwargs"], TEST_PARAMS)
+def test_schema_resolve_validation_matches_runtime_behavior(
+    kernel: KernelSpec, dtypes: tuple[DataType, ...], kernel_func_kwargs: dict
+):
+    """Test to ensure that table schemas match with table types at runtime.
+
+    To ensure that users will always see type errors at schema resolving-time and not at runtime, Daft needs ensure the following invariant:
+
+    A kernel `f(s1, s2, ..., sn)` throws an error IF-AND-ONLY-IF `typecheck(s1.dtype, s2.dtype, ..., sn.dtype)` throws an error
+    """
     assert kernel.num_args == len(dtypes), "Test harness must pass in the same number of dtypes as kernel.num_args"
 
     table = Table.from_pydict({f"col_{i}": ALL_DTYPES[dt] for i, dt in enumerate(dtypes)})
 
     projection = ExpressionsProjection(
-        [kernel.func(*[col(f"col_{i}") for i in range(kernel.num_args)]).alias("col_result")]
+        [kernel.func(*[col(f"col_{i}") for i in range(kernel.num_args)], **kernel_func_kwargs).alias("col_result")]
     )
 
     # Try to resolve the schema, or keep as None if an error occurs
