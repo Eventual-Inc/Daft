@@ -5,7 +5,6 @@ import itertools
 import operator as ops
 from typing import Callable
 
-import numpy as np
 import pytest
 
 from daft.datatype import DataType
@@ -15,25 +14,25 @@ from daft.table import Table
 # For each datatype, we will generate an array pre-filled with the values in this dictionary
 # Note that this does not do corner-case testing. We leave runtime corner-case testing to each individual kernel implementation's unit tests.
 
-ALL_DTYPES = {
-    DataType.int8(): np.array([1] * 3, dtype=np.int8),
-    DataType.int16(): np.array([1] * 3, dtype=np.int16),
-    DataType.int32(): np.array([1] * 3, dtype=np.int32),
-    DataType.int64(): np.array([1] * 3, dtype=np.int64),
-    DataType.uint8(): np.array([1] * 3, dtype=np.uint8),
-    DataType.uint16(): np.array([1] * 3, dtype=np.uint16),
-    DataType.uint32(): np.array([1] * 3, dtype=np.uint32),
-    DataType.uint64(): np.array([1] * 3, dtype=np.uint64),
-    DataType.float32(): np.array([1] * 3, dtype=np.float32),
-    DataType.float64(): np.array([1] * 3, dtype=np.float64),
-    DataType.string(): np.array(["foo"] * 3, dtype=np.object_),
+ALL_DTYPES = [
+    DataType.int8(),
+    DataType.int16(),
+    DataType.int32(),
+    DataType.int64(),
+    DataType.uint8(),
+    DataType.uint16(),
+    DataType.uint32(),
+    DataType.uint64(),
+    DataType.float32(),
+    DataType.float64(),
+    DataType.string(),
     # TODO: [RUST-INT][TPCH] Activate tests once these types have been implemented
-    # DataType.date(): np.array([datetime.date(2021, 1, 1)] * 3, dtype=np.object_),
-    # DataType.bool(): np.array([True] * 3, dtype=np.bool),
-    # DataType.null(): np.array([None] * 3, dtype=np.object_),
+    # DataType.date(),
+    # DataType.bool(),
+    # DataType.null(),
     # TODO: [RUST-INT] Implement tests for these types
-    # DataType.binary(): np.array([b"foo"] * 3, dtype=np.object_),
-}
+    # DataType.binary(),
+]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -65,7 +64,7 @@ ALL_KERNELS = [
     KernelSpec(name="ge", num_args=2, func=ops.ge),
     KernelSpec(name="gt", num_args=2, func=ops.gt),
     KernelSpec(name="alias", num_args=1, func=lambda e: e.alias("foo")),
-    KernelSpec(name="cast", num_args=1, func=_cast, kwarg_variants=[{"cast_to": dt for dt in ALL_DTYPES.keys()}]),
+    KernelSpec(name="cast", num_args=1, func=_cast, kwarg_variants=[{"cast_to": dt for dt in ALL_DTYPES}]),
     # TODO: [RUST-INT][TPCH] Activate tests once these kernels have been implemented
     # KernelSpec(name="sum", num_args=1, func=lambda e: e.agg.sum()),
 ]
@@ -80,7 +79,7 @@ TEST_PARAMS = [
         id=f"{kernel.name}:{'-'.join([repr(dt) for dt in dtype_permutation])}",
     )
     for kernel in ALL_KERNELS
-    for dtype_permutation in itertools.product(ALL_DTYPES.keys(), repeat=kernel.num_args)
+    for dtype_permutation in itertools.product(ALL_DTYPES, repeat=kernel.num_args)
     for kernel_func_kwargs in (kernel.kwarg_variants if kernel.kwarg_variants is not None else [{}])
 ]
 
@@ -97,7 +96,10 @@ def test_schema_resolve_validation_matches_runtime_behavior(
     """
     assert kernel.num_args == len(dtypes), "Test harness must pass in the same number of dtypes as kernel.num_args"
 
-    table = Table.from_pydict({f"col_{i}": ALL_DTYPES[dt] for i, dt in enumerate(dtypes)})
+    table = Table.from_pydict({f"col_{i}": [1, 2, 3] for i in range(len(dtypes))})
+
+    # NOTE: This might fail if INTEGERs cannot be casted to the type that is being tested
+    table = table.eval_expression_list(ExpressionsProjection([col(f"col_{i}").cast(dt) for i, dt in enumerate(dtypes)]))
 
     projection = ExpressionsProjection(
         [kernel.func(*[col(f"col_{i}") for i in range(kernel.num_args)], **kernel_func_kwargs).alias("col_result")]
