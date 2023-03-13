@@ -100,7 +100,6 @@ impl Expr {
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        use crate::dsl::functions::FunctionEvaluator;
         use Expr::*;
         match self {
             Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
