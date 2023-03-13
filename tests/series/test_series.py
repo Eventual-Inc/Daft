@@ -381,9 +381,10 @@ def test_series_boolean_size_bytes(size) -> None:
 @pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types)
 def test_series_numeric_abs(dtype) -> None:
     if pa.types.is_unsigned_integer(dtype):
-        return
+        pydata = list(range(0, 10))
+    else:
+        pydata = list(range(-10, 10))
 
-    pydata = list(range(-10, 10))
     data = pa.array(pydata, dtype)
 
     s = Series.from_arrow(data)
