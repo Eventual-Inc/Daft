@@ -50,6 +50,13 @@ pub fn binary_op(op: Operator, left: &Expr, right: &Expr) -> Expr {
 }
 
 impl AggExpr {
+    pub fn name(&self) -> DaftResult<&str> {
+        use AggExpr::*;
+        match self {
+            Count(expr) | Sum(expr) | Mean(expr) | Min(expr) | Max(expr) => expr.name(),
+        }
+    }
+
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use AggExpr::*;
         match self {
@@ -184,13 +191,10 @@ impl Expr {
     }
 
     pub fn name(&self) -> DaftResult<&str> {
-        use AggExpr::*;
         use Expr::*;
         match self {
             Alias(.., name) => Ok(name.as_ref()),
-            Agg(agg_expr) => match agg_expr {
-                Count(expr) | Sum(expr) | Mean(expr) | Min(expr) | Max(expr) => expr.name(),
-            },
+            Agg(agg_expr) => agg_expr.name(),
             Cast(expr, ..) => expr.name(),
             Column(name) => Ok(name.as_ref()),
             Literal(..) => Ok("literal"),
