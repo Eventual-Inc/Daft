@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import itertools
 
 import numpy as np
@@ -24,6 +25,7 @@ daft_int_types = [
 
 daft_numeric_types = daft_int_types + [DataType.float32(), DataType.float64()]
 daft_string_types = [DataType.string()]
+daft_nonnull_types = daft_numeric_types + daft_string_types + [DataType.bool(), DataType.binary(), DataType.date()]
 
 
 def test_from_arrow_round_trip() -> None:
@@ -274,6 +276,39 @@ def test_table_take_null(idx_dtype) -> None:
     assert taken.to_pydict() == {"a": [None, None], "b": [None, None]}
 
 
+test_table_count_cases = [
+    ([], []),
+    ([None], [0]),
+    ([None, None, None], [0]),
+    ([None, 0, None, 0, None], [2]),
+]
+
+
+@pytest.mark.parametrize("idx_dtype", daft_nonnull_types, ids=[f"{_}" for _ in daft_nonnull_types])
+@pytest.mark.parametrize("case", test_table_count_cases, ids=[f"{_}" for _ in test_table_count_cases])
+def test_table_count(idx_dtype, case) -> None:
+    input, expected = case
+    if idx_dtype == DataType.date():
+        input = [datetime.datetime.utcfromtimestamp(_) if _ is not None else None for _ in input]
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
+    daft_table = daft_table.eval_expression_list([col("input").alias("count")._count()])
+
+    res = daft_table.to_pydict()["count"]
+    assert res == expected
+
+
+@pytest.mark.parametrize("length", [1, 10])
+def test_table_count_nulltype(length) -> None:
+    """Count on NullType in Arrow counts the nulls (instead of ignoring them)."""
+    daft_table = Table.from_pydict({"input": [None] * length})
+    daft_table = daft_table.eval_expression_list([col("input").cast(DataType.null())])
+    daft_table = daft_table.eval_expression_list([col("input").alias("count")._count()])
+
+    res = daft_table.to_pydict()["count"]
+    assert res == [length]
+
+
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types)
 def test_table_agg_empty(idx_dtype) -> None:
     daft_table = Table.from_pydict({"a": []})
@@ -326,7 +361,7 @@ def test_table_agg_all_nulls(idx_dtype, length) -> None:
 
 
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types)
-def test_table_agg_some_nulls(idx_dtype) -> None:
+def test_table_agg_numeric_some_nulls(idx_dtype) -> None:
     daft_table = Table.from_pydict({"a": [None, 3, None, None, 1, 2, 0, None]})
     daft_table = daft_table.eval_expression_list([col("a").cast(idx_dtype)])
     daft_table = daft_table.eval_expression_list(
