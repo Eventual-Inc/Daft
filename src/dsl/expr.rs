@@ -187,7 +187,16 @@ impl Display for Expr {
             Cast(expr, dtype) => write!(f, "cast({expr} AS {dtype})"),
             Column(name) => write!(f, "col({name})"),
             Literal(val) => write!(f, "lit({val})"),
-            Function { func, inputs } => write!(f, "{:?}({:?})", func.fn_name(), inputs.as_slice()),
+            Function { func, inputs } => {
+                write!(f, "{}(", func.fn_name())?;
+                for i in 0..(inputs.len() - 1) {
+                    write!(f, "{}, ", inputs.get(i).unwrap())?;
+                }
+                if !inputs.is_empty() {
+                    write!(f, "{})", inputs.last().unwrap())?;
+                }
+                Ok(())
+            }
         }
     }
 }
