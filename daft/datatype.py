@@ -134,6 +134,3 @@ class DataType:
 
     def __eq__(self, other: object) -> builtins.bool:
         return isinstance(other, DataType) and self._dtype.is_equal(other._dtype)
-
-    def __hash__(self) -> int:
-        return hash(repr(self))
