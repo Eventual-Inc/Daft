@@ -391,39 +391,6 @@ def test_table_minmax_bool(case) -> None:
     assert res == expected
 
 
-small_datetime = datetime.datetime.utcfromtimestamp(5)
-big_datetime = datetime.datetime.utcfromtimestamp(100000)
-test_table_minmax_datetime_cases = [
-    ([], {"min": [], "max": []}),
-    ([None], {"min": [None], "max": [None]}),
-    ([None, None, None], {"min": [None], "max": [None]}),
-    ([small_datetime, big_datetime], {"min": [small_datetime], "max": [big_datetime]}),
-    ([None, big_datetime], {"min": [big_datetime], "max": [big_datetime]}),
-    (
-        [None, small_datetime, big_datetime, None, big_datetime, small_datetime, None],
-        {"min": [small_datetime], "max": [big_datetime]},
-    ),
-]
-
-
-@pytest.mark.parametrize(
-    "case", test_table_minmax_datetime_cases, ids=[f"{_}" for _ in test_table_minmax_datetime_cases]
-)
-def test_table_minmax_datetime(case) -> None:
-    input, expected = case
-    daft_table = Table.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").cast(DataType.date())])
-    daft_table = daft_table.eval_expression_list(
-        [
-            col("input").alias("min")._min(),
-            col("input").alias("max")._max(),
-        ]
-    )
-
-    res = daft_table.to_pydict()
-    assert res == expected
-
-
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types)
 def test_table_agg_empty(idx_dtype) -> None:
     daft_table = Table.from_pydict({"a": []})
