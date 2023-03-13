@@ -50,7 +50,7 @@ pub enum DataType {
     ///
     /// * As used in the Olson time zone database (the "tz database" or
     ///   "tzdata"), such as "America/New_York"
-    /// * An absolute time zone offset of the form +XX:XX or -XX:XX, such as +07:30
+    /// * An absolute time zone offset of the form XX:X or -XX:XX, such as 07:0
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
     Timestamp(TimeUnit, Option<String>),
@@ -124,6 +124,24 @@ impl DataType {
     #[inline]
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()
+    }
+
+    #[inline]
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            // DataType::Float16
+            | DataType::Float32
+            | DataType::Float64 => true,
+            _ => false
+        }
     }
 }
 

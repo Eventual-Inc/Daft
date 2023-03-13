@@ -4,6 +4,7 @@ use num_traits::ToPrimitive;
 
 use crate::array::BaseArray;
 use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
+use crate::dsl::functions::FunctionEvaluator;
 use crate::dsl::{AggExpr, Expr};
 use crate::error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
@@ -195,7 +196,6 @@ impl Table {
 
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         use crate::dsl::Expr::*;
-
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
             Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
@@ -224,6 +224,13 @@ impl Table {
                     Xor => Ok(lhs.xor(&rhs)?.into_series()),
                     _ => panic!("{op:?} not supported"),
                 }
+            }
+            Function { func, inputs } => {
+                let evaluated_inputs = inputs
+                    .iter()
+                    .map(|e| self.eval_expression(e))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                func.evaluate(evaluated_inputs.as_slice())
             }
             Literal(lit_value) => Ok(lit_value.to_series()),
         }?;

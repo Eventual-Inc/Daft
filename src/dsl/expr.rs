@@ -1,7 +1,7 @@
 use crate::{
     datatypes::DataType,
     datatypes::Field,
-    dsl::lit,
+    dsl::{functions::FunctionEvaluator, lit},
     error::{DaftError, DaftResult},
     schema::Schema,
     utils::supertype::try_get_supertype,
@@ -11,6 +11,8 @@ use std::{
     fmt::{Debug, Display, Formatter, Result},
     sync::Arc,
 };
+
+use super::functions::FunctionExpr;
 
 type ExprRef = Arc<Expr>;
 
@@ -25,6 +27,10 @@ pub enum Expr {
     },
     Cast(ExprRef, DataType),
     Column(Arc<str>),
+    Function {
+        func: FunctionExpr,
+        inputs: Vec<Expr>,
+    },
     Literal(lit::LiteralValue),
 }
 
@@ -94,14 +100,15 @@ impl Expr {
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
+        use crate::dsl::functions::FunctionEvaluator;
         use Expr::*;
-
         match self {
             Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Agg(agg_expr) => agg_expr.to_field(schema),
             Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
             Column(name) => Ok(schema.get_field(name).cloned()?),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
+            Function { func, inputs } => func.to_field(inputs.as_slice(), schema),
             BinaryOp { op, left, right } => {
                 let result = match op {
                     Operator::Lt
@@ -142,6 +149,7 @@ impl Expr {
             Cast(expr, ..) => expr.name(),
             Column(name) => Ok(name.as_ref()),
             Literal(..) => Ok("literal"),
+            Function { func: _, inputs } => inputs.first().unwrap().name(),
             BinaryOp {
                 op: _,
                 left,
@@ -180,6 +188,7 @@ impl Display for Expr {
             Cast(expr, dtype) => write!(f, "cast({expr} AS {dtype})"),
             Column(name) => write!(f, "col({name})"),
             Literal(val) => write!(f, "lit({val})"),
+            Function { func, inputs } => write!(f, "{:?}({:?})", func.fn_name(), inputs.as_slice()),
         }
     }
 }
