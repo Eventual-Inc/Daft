@@ -37,7 +37,7 @@ experimental = ["daft[serving, iceberg]"]
 iceberg = ["icebridge"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  "ray[data, default]>=1.10.0",
+  "ray[data, default]>=2.0.0",
   # Ray has a bug with grpcio 1.52.0: https://github.com/ray-project/ray/issues/32246
   "grpcio<1.52.0"
 ]
