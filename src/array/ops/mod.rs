@@ -1,3 +1,4 @@
+mod abs;
 mod apply;
 mod arange;
 mod arithmetic;

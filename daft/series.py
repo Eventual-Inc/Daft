@@ -133,6 +133,10 @@ class Series:
 
         return self._series.size_bytes()
 
+    def __abs__(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(abs(self._series))
+
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
             raise ValueError(f"expected another Series but got {type(other)}")

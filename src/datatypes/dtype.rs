@@ -125,6 +125,24 @@ impl DataType {
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()
     }
+
+    #[inline]
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            // DataType::Float16
+            | DataType::Float32
+            | DataType::Float64 => true,
+            _ => false
+        }
+    }
 }
 
 impl From<&ArrowType> for DataType {

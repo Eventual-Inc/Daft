@@ -376,3 +376,30 @@ def test_series_boolean_size_bytes(size) -> None:
 
     assert s.datatype() == DataType.bool()
     assert s.size_bytes() == data.nbytes
+
+
+@pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types)
+def test_series_numeric_abs(dtype) -> None:
+    if pa.types.is_unsigned_integer(dtype):
+        pydata = list(range(0, 10))
+    else:
+        pydata = list(range(-10, 10))
+
+    data = pa.array(pydata, dtype)
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.from_arrow_type(dtype)
+
+    abs_s = abs(s)
+
+    assert abs_s.datatype() == DataType.from_arrow_type(dtype)
+
+    assert abs_s.to_pylist() == list(map(abs, pydata))
+
+
+def test_table_abs_bad_input() -> None:
+    series = Series.from_pylist(["a", "b", "c"])
+
+    with pytest.raises(ValueError, match="abs not implemented"):
+        abs(series)

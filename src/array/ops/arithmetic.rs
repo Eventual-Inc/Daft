@@ -51,17 +51,17 @@ where
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);
-            Ok(match opt_rhs {
-                None => DataArray::full_null(lhs.name(), lhs.len()),
+            match opt_rhs {
+                None => Ok(DataArray::full_null(lhs.name(), lhs.len())),
                 Some(rhs) => lhs.apply(|lhs| operation(lhs, rhs)),
-            })
+            }
         }
         (1, _) => {
             let opt_lhs = lhs.get(0);
-            Ok(match opt_lhs {
-                None => DataArray::full_null(rhs.name(), rhs.len()),
+            match opt_lhs {
+                None => Ok(DataArray::full_null(rhs.name(), rhs.len())),
                 Some(lhs) => rhs.apply(|rhs| operation(lhs, rhs)),
-            })
+            }
         }
         (a, b) => Err(DaftError::ValueError(format!(
             "Cannot apply operation on arrays of different lengths: {a} vs {b}"
@@ -157,10 +157,10 @@ where
                 // broadcast right path
                 (_, 1) => {
                     let opt_rhs = rhs.get(0);
-                    Ok(match opt_rhs {
-                        None => DataArray::full_null(self.name(), self.len()),
+                    match opt_rhs {
+                        None => Ok(DataArray::full_null(self.name(), self.len())),
                         Some(rhs) => self.apply(|lhs| lhs % rhs),
-                    })
+                    }
                 }
                 (1, _) => {
                     let opt_lhs = self.get(0);
