@@ -12,9 +12,10 @@ mod filter;
 mod full;
 mod hash;
 mod len;
-mod numeric_agg;
+mod mean;
 mod pairwise;
 mod sort;
+mod sum;
 mod take;
 
 pub trait DaftCompare<Rhs> {
@@ -57,11 +58,14 @@ pub trait DaftCountAggable {
     fn count(&self) -> Self::Output;
 }
 
-pub trait DaftNumericAggable {
-    type SumOutput;
-    type MeanOutput;
-    fn sum(&self) -> Self::SumOutput;
-    fn mean(&self) -> Self::MeanOutput;
+pub trait DaftSumAggable {
+    type Output;
+    fn sum(&self) -> Self::Output;
+}
+
+pub trait DaftMeanAggable {
+    type Output;
+    fn mean(&self) -> Self::Output;
 }
 
 pub trait DaftCompareAggable {
