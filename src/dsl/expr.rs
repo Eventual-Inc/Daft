@@ -70,12 +70,12 @@ impl AggExpr {
                         DataType::Float32 => DataType::Float32,
                         DataType::Float64 => DataType::Float64,
                         _other => {
-                            return Err(unary_resolving_type_error(
-                                "sum",
-                                "input to be numeric",
-                                expr,
-                                &field,
-                            ))
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: "input to be numeric".into(),
+                                op_display_name: "sum".into(),
+                                fields_to_expr: vec![(field.clone(), (*expr).clone())],
+                                binary_op_display: None,
+                            })
                         }
                     },
                 ))
@@ -120,14 +120,15 @@ impl Expr {
                         if left_field.dtype != DataType::Boolean
                             || right_field.dtype != DataType::Boolean
                         {
-                            return Err(binary_resolving_type_error(
-                                op,
-                                "all boolean arguments",
-                                left,
-                                right,
-                                &left_field,
-                                &right_field,
-                            ));
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: "all boolean arguments".into(),
+                                op_display_name: op.to_string(),
+                                fields_to_expr: vec![
+                                    (left_field, (*left).clone()),
+                                    (right_field, (*right).clone()),
+                                ],
+                                binary_op_display: Some(op.to_string()),
+                            });
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Boolean))
                     }
@@ -144,7 +145,12 @@ impl Expr {
                                 left.to_field(schema)?.name.as_str(),
                                 DataType::Boolean,
                             )),
-                            Err(_) => Err(binary_resolving_type_error(op, "left and right arguments to be castable to the same supertype for comparison", left, right, &left_field, &right_field)),
+                            Err(_) => Err(DaftError::ExprResolveTypeError {
+                                expectation: "left and right arguments to be castable to the same supertype for comparison".into(),
+                                op_display_name: op.to_string(),
+                                fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                                binary_op_display: Some(op.to_string()),
+                            }),
                         }
                     }
 
@@ -155,9 +161,24 @@ impl Expr {
                                 left.to_field(schema)?.name.as_str(),
                                 supertype,
                             )),
-                            Err(_) if left_field.dtype == DataType::Utf8 => Err(binary_resolving_type_error(op, "right argument to be castable to string for a string concat since left argument resolves to a string", left, right, &left_field, &right_field)),
-                            Err(_) if right_field.dtype == DataType::Utf8 => Err(binary_resolving_type_error(op, "left argument to be castable to string for a string concat since right argument resolves to a string", left, right, &left_field, &right_field)),
-                            Err(_) => Err(binary_resolving_type_error(op, "left and right arguments to both be numeric", left, right, &left_field, &right_field)),
+                            Err(_) if left_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
+                                expectation: "right argument to be castable to string for string concatenation".into(),
+                                op_display_name: op.to_string(),
+                                fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                                binary_op_display: Some(op.to_string()),
+                            }),
+                            Err(_) if right_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
+                                expectation: "left argument to be castable to string for string concatenation".into(),
+                                op_display_name: op.to_string(),
+                                fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                                binary_op_display: Some(op.to_string()),
+                            }),
+                            Err(_) => Err(DaftError::ExprResolveTypeError {
+                                expectation: "left and right arguments to both be numeric".into(),
+                                op_display_name: op.to_string(),
+                                fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                                binary_op_display: Some(op.to_string()),
+                            }),
                         }
                     }
 
@@ -166,18 +187,18 @@ impl Expr {
                         if !left_field.dtype.is_castable(&DataType::Float64)?
                             || !left_field.dtype.is_castable(&DataType::Float64)?
                         {
-                            return Err(binary_resolving_type_error(
-                                op,
-                                format!(
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: format!(
                                     "left and right arguments to both be castable to {}",
                                     DataType::Float64
-                                )
-                                .as_str(),
-                                left,
-                                right,
-                                &left_field,
-                                &right_field,
-                            ));
+                                ),
+                                op_display_name: op.to_string(),
+                                fields_to_expr: vec![
+                                    (left_field, (*left).clone()),
+                                    (right_field, (*right).clone()),
+                                ],
+                                binary_op_display: Some(op.to_string()),
+                            });
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Float64))
                     }
@@ -188,14 +209,15 @@ impl Expr {
                     | Operator::Modulus
                     | Operator::FloorDivide => {
                         if !&left_field.dtype.is_numeric() || !&right_field.dtype.is_numeric() {
-                            return Err(binary_resolving_type_error(
-                                op,
-                                "left and right arguments to both be numeric",
-                                left,
-                                right,
-                                &left_field,
-                                &right_field,
-                            ));
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: "left and right arguments to both be numeric".into(),
+                                op_display_name: op.to_string(),
+                                fields_to_expr: vec![
+                                    (left_field, (*left).clone()),
+                                    (right_field, (*right).clone()),
+                                ],
+                                binary_op_display: Some(op.to_string()),
+                            });
                         }
                         Ok(Field::new(
                             left_field.name.as_str(),
@@ -335,41 +357,6 @@ impl Operator {
     pub(crate) fn is_arithmetic(&self) -> bool {
         !(self.is_comparison())
     }
-}
-
-// Helper method that standardizes the error messages when "unary" expressions fail during type-resolution against a schema
-fn unary_resolving_type_error(
-    op_display_name: &str,
-    expects: &str,
-    expr: &Expr,
-    field: &Field,
-) -> DaftError {
-    let name = field.name.as_str();
-    DaftError::TypeError(format!(
-        "{op_display_name} expects {expects}, but failed type resolution: {op_display_name}(`{name}`)
-
-        `{name}` resolves to a {}: {expr}", field.dtype
-    ))
-}
-
-// Helper method that standardizes the error messages when "binary" expressions fail during type-resolution against a schema
-fn binary_resolving_type_error(
-    op: &Operator,
-    expects: &str,
-    left_expr: &Expr,
-    right_expr: &Expr,
-    left_field: &Field,
-    right_field: &Field,
-) -> DaftError {
-    let left_name = left_field.name.as_str();
-    let right_name = right_field.name.as_str();
-    DaftError::TypeError(format!(
-        "{:?} expects {expects}, but failed type resolution: `{left_name}` {op} `{right_name}`
-
-        `{left_name}` resolves to a {}: {left_expr}
-        `{right_name}` resolves to a {}: {right_expr}",
-        op, left_field.dtype, right_field.dtype
-    ))
 }
 
 #[cfg(test)]

@@ -109,12 +109,12 @@ def test_schema_resolve_validation_matches_runtime_behavior(
     resolved_schema = None
     try:
         resolved_schema = projection.resolve_schema(table.schema())
-    except ValueError:
+    except TypeError:
         pass
 
     # If an error occurs during schema resolution, assert that an error would occur at runtime as well
     if resolved_schema is None:
-        with pytest.raises(ValueError):
+        with pytest.raises(TypeError):
             table.eval_expression_list(projection)
     # Otherwise, assert that kernel works at runtime, and check the dtype of the resulting data
     else:
