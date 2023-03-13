@@ -66,6 +66,8 @@ ALL_KERNELS = [
     KernelSpec(name="gt", num_args=2, func=ops.gt),
     KernelSpec(name="alias", num_args=1, func=lambda e: e.alias("foo")),
     KernelSpec(name="cast", num_args=1, func=_cast, kwarg_variants=[{"cast_to": dt for dt in ALL_DTYPES.keys()}]),
+    # TODO: [RUST-INT][TPCH] Activate tests once these kernels have been implemented
+    # KernelSpec(name="sum", num_args=1, func=lambda e: e.agg.sum()),
 ]
 
 

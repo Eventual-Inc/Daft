@@ -70,11 +70,13 @@ impl AggExpr {
                         | DataType::UInt64 => DataType::UInt64,
                         DataType::Float32 => DataType::Float32,
                         DataType::Float64 => DataType::Float64,
-                        other => {
-                            return Err(DaftError::TypeError(format!(
-                                "Numeric sum is not implemented for type {}",
-                                other
-                            )))
+                        _other => {
+                            return Err(unary_resolving_type_error(
+                                "sum",
+                                "input to be numeric",
+                                expr,
+                                &field,
+                            ))
                         }
                     },
                 ))
@@ -119,7 +121,14 @@ impl Expr {
                         if left_field.dtype != DataType::Boolean
                             || right_field.dtype != DataType::Boolean
                         {
-                            return Err(DaftError::TypeError(format!("{:?} expects left and right boolean arguments, but received: {:?} {op} {:?}", op, left_field, right_field)));
+                            return Err(binary_resolving_type_error(
+                                op,
+                                "all boolean arguments",
+                                left,
+                                right,
+                                &left_field,
+                                &right_field,
+                            ));
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Boolean))
                     }
@@ -131,26 +140,45 @@ impl Expr {
                     | Operator::NotEq
                     | Operator::LtEq
                     | Operator::GtEq => {
-                        // Validate: left and right must be castable to the same type to be compared
-                        try_get_supertype(&left_field.dtype, &right_field.dtype)?;
-                        Ok(Field::new(
-                            left.to_field(schema)?.name.as_str(),
-                            DataType::Boolean,
-                        ))
+                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
+                            Ok(_) => Ok(Field::new(
+                                left.to_field(schema)?.name.as_str(),
+                                DataType::Boolean,
+                            )),
+                            Err(_) => Err(binary_resolving_type_error(op, "left and right arguments to be castable to the same supertype for comparison", left, right, &left_field, &right_field)),
+                        }
                     }
 
-                    // Plus operation: special-cased as it has semantic meaning for non-arithmetic types as well
-                    Operator::Plus => Ok(Field::new(
-                        left.to_field(schema)?.name.as_str(),
-                        try_get_supertype(&left_field.dtype, &right_field.dtype)?,
-                    )),
+                    // Plus operation: special-cased as it has semantic meaning for string types
+                    Operator::Plus => {
+                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
+                            Ok(supertype) => Ok(Field::new(
+                                left.to_field(schema)?.name.as_str(),
+                                supertype,
+                            )),
+                            Err(_) if left_field.dtype == DataType::Utf8 => Err(binary_resolving_type_error(op, "right argument to be castable to string for a string concat since left argument resolves to a string", left, right, &left_field, &right_field)),
+                            Err(_) if right_field.dtype == DataType::Utf8 => Err(binary_resolving_type_error(op, "left argument to be castable to string for a string concat since right argument resolves to a string", left, right, &left_field, &right_field)),
+                            Err(_) => Err(binary_resolving_type_error(op, "left and right arguments to both be numeric", left, right, &left_field, &right_field)),
+                        }
+                    }
 
                     // True divide operation
                     Operator::TrueDivide => {
                         if !dtype_utils::is_castable(&left_field.dtype, &DataType::Float64)?
                             || !dtype_utils::is_castable(&left_field.dtype, &DataType::Float64)?
                         {
-                            return Err(DaftError::TypeError(format!("{:?} expects left and right arguments to be castable to {}, but received: {:?} {op} {:?}", op, DataType::Float64, left_field, right_field)));
+                            return Err(binary_resolving_type_error(
+                                op,
+                                format!(
+                                    "left and right arguments to both be castable to {}",
+                                    DataType::Float64
+                                )
+                                .as_str(),
+                                left,
+                                right,
+                                &left_field,
+                                &right_field,
+                            ));
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Float64))
                     }
@@ -163,7 +191,14 @@ impl Expr {
                         if !dtype_utils::is_numeric(&left_field.dtype)
                             || !dtype_utils::is_numeric(&right_field.dtype)
                         {
-                            return Err(DaftError::TypeError(format!("{:?} expects left and right arguments to be numeric, but received: {:?} {op} {:?}", op, left_field, right_field)));
+                            return Err(binary_resolving_type_error(
+                                op,
+                                "left and right arguments to both be numeric",
+                                left,
+                                right,
+                                &left_field,
+                                &right_field,
+                            ));
                         }
                         Ok(Field::new(
                             left_field.name.as_str(),
@@ -303,6 +338,41 @@ impl Operator {
     pub(crate) fn is_arithmetic(&self) -> bool {
         !(self.is_comparison())
     }
+}
+
+// Helper method that standardizes the error messages when "unary" expressions fail during type-resolution against a schema
+fn unary_resolving_type_error(
+    op_display_name: &str,
+    expects: &str,
+    expr: &Expr,
+    field: &Field,
+) -> DaftError {
+    let name = field.name.as_str();
+    DaftError::TypeError(format!(
+        "{op_display_name} expects {expects}, but failed type resolution: {op_display_name}(`{name}`)
+
+        `{name}` resolves to a {}: {expr}", field.dtype
+    ))
+}
+
+// Helper method that standardizes the error messages when "binary" expressions fail during type-resolution against a schema
+fn binary_resolving_type_error(
+    op: &Operator,
+    expects: &str,
+    left_expr: &Expr,
+    right_expr: &Expr,
+    left_field: &Field,
+    right_field: &Field,
+) -> DaftError {
+    let left_name = left_field.name.as_str();
+    let right_name = right_field.name.as_str();
+    DaftError::TypeError(format!(
+        "{:?} expects {expects}, but failed type resolution: `{left_name}` {op} `{right_name}`
+
+        `{left_name}` resolves to a {}: {left_expr}
+        `{right_name}` resolves to a {}: {right_expr}",
+        op, left_field.dtype, right_field.dtype
+    ))
 }
 
 #[cfg(test)]
