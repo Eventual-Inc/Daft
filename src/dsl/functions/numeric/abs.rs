@@ -39,6 +39,6 @@ impl FunctionEvaluator for AbsEvaluator {
                 inputs.len()
             )));
         }
-        todo!("impl abs eval")
+        inputs.first().unwrap().abs()
     }
 }

@@ -64,6 +64,10 @@ class Expression:
 
     def __abs__(self) -> Expression:
         "Absolute value of expression"
+        return self.abs()
+
+    def abs(self) -> Expression:
+        "Absolute value of expression"
         return Expression._from_pyexpr(abs(self._expr))
 
     def __add__(self, other: object) -> Expression:

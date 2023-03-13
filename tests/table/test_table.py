@@ -644,3 +644,16 @@ def test_table_size_bytes() -> None:
         [col("a").cast(DataType.int64()), col("b")]
     )
     assert data.size_bytes() == (5 * 8 + 1) + (1 + 1)
+
+
+def test_table_numeric_abs() -> None:
+    table = Table.from_pydict({"a": [None, -1.0, 0, 2, 3, None], "b": [-1, -2, 3, 4, None, None]})
+
+    abs_table = table.eval_expression_list([abs(col("a")), col("b").abs()])
+
+    assert [abs(v) if v is not None else v for v in table.get_column("a").to_pylist()] == abs_table.get_column(
+        "a"
+    ).to_pylist()
+    assert [abs(v) if v is not None else v for v in table.get_column("b").to_pylist()] == abs_table.get_column(
+        "b"
+    ).to_pylist()

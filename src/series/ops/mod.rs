@@ -2,6 +2,7 @@ use crate::{error::DaftResult, utils::supertype::try_get_supertype};
 
 use super::Series;
 
+pub mod abs;
 pub mod arithmetic;
 pub mod broadcast;
 pub mod cast;
