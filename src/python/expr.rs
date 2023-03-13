@@ -88,12 +88,8 @@ impl PyExpr {
     }
 
     pub fn __abs__(&self) -> PyResult<Self> {
-        use functions::numeric::NumericExpr::Abs;
-        Ok(dsl::Expr::Function {
-            func: functions::FunctionExpr::Numeric(Abs),
-            inputs: vec![self.expr.clone()],
-        }
-        .into())
+        use functions::numeric::abs;
+        Ok(abs(&self.expr).into())
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {

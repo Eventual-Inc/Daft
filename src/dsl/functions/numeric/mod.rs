@@ -3,6 +3,8 @@ mod abs;
 use abs::AbsEvaluator;
 use serde::{Deserialize, Serialize};
 
+use crate::dsl::Expr;
+
 use super::FunctionEvaluator;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,5 +19,12 @@ impl NumericExpr {
         match self {
             Abs => &AbsEvaluator {},
         }
+    }
+}
+
+pub fn abs(input: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Abs),
+        inputs: vec![input.clone()],
     }
 }
