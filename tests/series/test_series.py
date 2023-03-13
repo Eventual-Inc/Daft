@@ -396,3 +396,10 @@ def test_series_numeric_abs(dtype) -> None:
     assert abs_s.datatype() == DataType.from_arrow_type(dtype)
 
     assert abs_s.to_pylist() == list(map(abs, pydata))
+
+
+def test_table_abs_bad_input() -> None:
+    series = Series.from_pylist(["a", "b", "c"])
+
+    with pytest.raises(ValueError, match="abs not implemented"):
+        abs(series)

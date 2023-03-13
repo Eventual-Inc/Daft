@@ -657,3 +657,10 @@ def test_table_numeric_abs() -> None:
     assert [abs(v) if v is not None else v for v in table.get_column("b").to_pylist()] == abs_table.get_column(
         "b"
     ).to_pylist()
+
+
+def test_table_abs_bad_input() -> None:
+    table = Table.from_pydict({"a": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError, match="Expected input to abs to be numeric"):
+        table.eval_expression_list([abs(col("a"))])
