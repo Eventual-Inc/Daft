@@ -8,7 +8,7 @@ pub fn endswith_utf8_arrays(
     pattern: &Utf8Array<i64>,
 ) -> DaftResult<BooleanArray> {
     match (data.len(), pattern.len()) {
-        // Broadcast case:
+        // Broadcast pattern case:
         (data_len, 1) => match pattern.validity() {
             Some(validity) if !validity.get_bit(0) => Ok(BooleanArray::new_null(
                 arrow2::datatypes::DataType::Boolean,
@@ -22,16 +22,30 @@ pub fn endswith_utf8_arrays(
                     .collect())
             }
         },
-        // Mismatched len case:
-        (data_len, pattern_len) if data_len != pattern_len => Err(DaftError::ComputeError(
-            format!("lhs and rhs have different length arrays: {data_len} vs {pattern_len}"),
-        )),
+        // Broadcast data case
+        (1, pattern_len) => match data.validity() {
+            Some(validity) if !validity.get_bit(0) => Ok(BooleanArray::new_null(
+                arrow2::datatypes::DataType::Boolean,
+                pattern_len,
+            )),
+            _ => {
+                let data_val = data.value(0);
+                Ok(pattern
+                    .into_iter()
+                    .map(|pat| Some(data_val.ends_with(pat?)))
+                    .collect())
+            }
+        },
         // Matching len case:
-        _ => Ok(data
+        (data_len, pattern_len) if data_len == pattern_len => Ok(data
             .into_iter()
             .zip(pattern.into_iter())
             .map(|(val, pat)| Some(val?.ends_with(pat?)))
             .collect()),
+        // Mismatched len case:
+        (data_len, pattern_len) => Err(DaftError::ComputeError(format!(
+            "lhs and rhs have different length arrays: {data_len} vs {pattern_len}"
+        ))),
     }
 }
 
