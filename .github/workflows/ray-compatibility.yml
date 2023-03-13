@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.8']
-        ray-version: [2.1.0, 2.0.0, 1.13.0, 1.12.0, 1.11.0, 1.10.0]
+        ray-version: [2.3.0, 2.2.0, 2.1.0, 2.0.0]
 
     steps:
     - uses: actions/checkout@v3
