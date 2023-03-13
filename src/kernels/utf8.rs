@@ -1,4 +1,4 @@
-use arrow2::array::{BooleanArray, Utf8Array};
+use arrow2::array::Utf8Array;
 
 use crate::error::{DaftError, DaftResult};
 
@@ -73,39 +73,6 @@ pub fn add_utf8_arrays(lhs: &Utf8Array<i64>, rhs: &Utf8Array<i64>) -> DaftResult
         })
         .collect();
     Ok(result)
-}
-
-#[allow(dead_code)] // TODO: Integrate and remove me!
-pub fn endswith_utf8_arrays(
-    data: &Utf8Array<i64>,
-    pattern: &Utf8Array<i64>,
-) -> DaftResult<BooleanArray> {
-    match (data.len(), pattern.len()) {
-        // Broadcast case:
-        (data_len, 1) => match pattern.validity() {
-            Some(validity) if !validity.get_bit(0) => Ok(BooleanArray::new_null(
-                arrow2::datatypes::DataType::Boolean,
-                data_len,
-            )),
-            _ => {
-                let pattern_val = pattern.value(0);
-                Ok(data
-                    .into_iter()
-                    .map(|val| Some(val?.ends_with(pattern_val)))
-                    .collect())
-            }
-        },
-        // Mismatched len case:
-        (data_len, pattern_len) if data_len != pattern_len => Err(DaftError::ComputeError(
-            format!("lhs and rhs have different length arrays: {data_len} vs {pattern_len}"),
-        )),
-        // Matching len case:
-        _ => Ok(data
-            .into_iter()
-            .zip(pattern.into_iter())
-            .map(|(val, pat)| Some(val?.ends_with(pat?)))
-            .collect()),
-    }
 }
 
 #[cfg(test)]

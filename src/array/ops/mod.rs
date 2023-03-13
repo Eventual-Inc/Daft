@@ -16,6 +16,7 @@ mod search_sorted;
 mod sort;
 mod sum;
 mod take;
+mod utf8;
 
 pub trait DaftCompare<Rhs> {
     type Output;
