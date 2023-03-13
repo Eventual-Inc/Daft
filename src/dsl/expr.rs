@@ -1,5 +1,4 @@
 use crate::{
-    datatypes::dtype_utils,
     datatypes::DataType,
     datatypes::Field,
     dsl::{functions::FunctionEvaluator, lit},
@@ -164,8 +163,8 @@ impl Expr {
 
                     // True divide operation
                     Operator::TrueDivide => {
-                        if !dtype_utils::is_castable(&left_field.dtype, &DataType::Float64)?
-                            || !dtype_utils::is_castable(&left_field.dtype, &DataType::Float64)?
+                        if !left_field.dtype.is_castable(&DataType::Float64)?
+                            || !left_field.dtype.is_castable(&DataType::Float64)?
                         {
                             return Err(binary_resolving_type_error(
                                 op,
@@ -188,9 +187,7 @@ impl Expr {
                     | Operator::Multiply
                     | Operator::Modulus
                     | Operator::FloorDivide => {
-                        if !dtype_utils::is_numeric(&left_field.dtype)
-                            || !dtype_utils::is_numeric(&right_field.dtype)
-                        {
+                        if !&left_field.dtype.is_numeric() || !&right_field.dtype.is_numeric() {
                             return Err(binary_resolving_type_error(
                                 op,
                                 "left and right arguments to both be numeric",
