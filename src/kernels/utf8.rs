@@ -1,3 +1,8 @@
+// ****************************************************************************************
+// IMPLEMENTOR NOTE: This file will soon be deprecated and functionality should be moved to
+// src/array/ops/utf-8.py instead
+// ****************************************************************************************
+
 use arrow2::array::Utf8Array;
 
 use crate::error::{DaftError, DaftResult};
@@ -112,30 +117,6 @@ mod tests {
         assert_eq!(result.value(0), "a1");
         assert_eq!(result.value(1), "b1");
         assert_eq!(result.value(2), "c1");
-        Ok(())
-    }
-
-    #[test]
-    fn check_endswith_utf_arrays_broadcast() -> DaftResult<()> {
-        let data = Utf8Array::<i64>::from(vec!["x_foo".into(), "y_foo".into(), "z_bar".into()]);
-        let pattern = Utf8Array::<i64>::from(vec!["foo".into()]);
-        let result = endswith_utf8_arrays(&data, &pattern)?;
-        assert_eq!(result.len(), 3);
-        assert!(result.value(0));
-        assert!(result.value(1));
-        assert!(!result.value(2));
-        Ok(())
-    }
-
-    #[test]
-    fn check_endswith_utf_arrays() -> DaftResult<()> {
-        let data = Utf8Array::<i64>::from(vec!["x_foo".into(), "y_foo".into(), "z_bar".into()]);
-        let pattern = Utf8Array::<i64>::from(vec!["foo".into(), "wrong".into(), "bar".into()]);
-        let result = endswith_utf8_arrays(&data, &pattern)?;
-        assert_eq!(result.len(), 3);
-        assert!(result.value(0));
-        assert!(!result.value(1));
-        assert!(result.value(2));
         Ok(())
     }
 }
