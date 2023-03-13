@@ -277,10 +277,11 @@ def test_table_take_null(idx_dtype) -> None:
 
 
 test_table_count_cases = [
-    ([], []),
-    ([None], [0]),
-    ([None, None, None], [0]),
-    ([None, 0, None, 0, None], [2]),
+    ([], {"count": []}),
+    ([None], {"count": [0]}),
+    ([None, None, None], {"count": [0]}),
+    ([0], {"count": [1]}),
+    ([None, 0, None, 0, None], {"count": [2]}),
 ]
 
 
@@ -294,7 +295,7 @@ def test_table_count(idx_dtype, case) -> None:
     daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
     daft_table = daft_table.eval_expression_list([col("input").alias("count")._count()])
 
-    res = daft_table.to_pydict()["count"]
+    res = daft_table.to_pydict()
     assert res == expected
 
 
@@ -307,6 +308,120 @@ def test_table_count_nulltype(length) -> None:
 
     res = daft_table.to_pydict()["count"]
     assert res == [length]
+
+
+test_table_minmax_numerics_cases = [
+    ([], {"min": [], "max": []}),
+    ([None], {"min": [None], "max": [None]}),
+    ([None, None, None], {"min": [None], "max": [None]}),
+    ([5], {"min": [5], "max": [5]}),
+    ([None, 5], {"min": [5], "max": [5]}),
+    ([None, 1, 21, None, 21, 1, None], {"min": [1], "max": [21]}),
+]
+
+
+@pytest.mark.parametrize("idx_dtype", daft_numeric_types)
+@pytest.mark.parametrize(
+    "case", test_table_minmax_numerics_cases, ids=[f"{_}" for _ in test_table_minmax_numerics_cases]
+)
+def test_table_minmax_numerics(idx_dtype, case) -> None:
+    input, expected = case
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
+    daft_table = daft_table.eval_expression_list(
+        [
+            col("input").alias("min")._min(),
+            col("input").alias("max")._max(),
+        ]
+    )
+
+    res = daft_table.to_pydict()
+    assert res == expected
+
+
+test_table_minmax_string_cases = [
+    ([], {"min": [], "max": []}),
+    ([None], {"min": [None], "max": [None]}),
+    ([None, None, None], {"min": [None], "max": [None]}),
+    (["abc"], {"min": ["abc"], "max": ["abc"]}),
+    ([None, "abc"], {"min": ["abc"], "max": ["abc"]}),
+    ([None, "aaa", None, "b", "c", "aaa", None], {"min": ["aaa"], "max": ["c"]}),
+]
+
+
+@pytest.mark.parametrize("idx_dtype", daft_string_types)
+@pytest.mark.parametrize("case", test_table_minmax_string_cases, ids=[f"{_}" for _ in test_table_minmax_string_cases])
+def test_table_minmax_string(idx_dtype, case) -> None:
+    input, expected = case
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
+    daft_table = daft_table.eval_expression_list(
+        [
+            col("input").alias("min")._min(),
+            col("input").alias("max")._max(),
+        ]
+    )
+
+    res = daft_table.to_pydict()
+    assert res == expected
+
+
+test_table_minmax_bool_cases = [
+    ([], {"min": [], "max": []}),
+    ([None], {"min": [None], "max": [None]}),
+    ([None, None, None], {"min": [None], "max": [None]}),
+    ([False, True], {"min": [False], "max": [True]}),
+    ([None, None, True, None], {"min": [True], "max": [True]}),
+]
+
+
+@pytest.mark.parametrize("case", test_table_minmax_bool_cases, ids=[f"{_}" for _ in test_table_minmax_bool_cases])
+def test_table_minmax_bool(case) -> None:
+    input, expected = case
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").cast(DataType.bool())])
+    daft_table = daft_table.eval_expression_list(
+        [
+            col("input").alias("min")._min(),
+            col("input").alias("max")._max(),
+        ]
+    )
+
+    res = daft_table.to_pydict()
+    assert res == expected
+
+
+small_datetime = datetime.datetime.utcfromtimestamp(5)
+big_datetime = datetime.datetime.utcfromtimestamp(100000)
+test_table_minmax_datetime_cases = [
+    ([], {"min": [], "max": []}),
+    ([None], {"min": [None], "max": [None]}),
+    ([None, None, None], {"min": [None], "max": [None]}),
+    ([small_datetime, big_datetime], {"min": [small_datetime], "max": [big_datetime]}),
+    ([None, big_datetime], {"min": [big_datetime], "max": [big_datetime]}),
+    (
+        [None, small_datetime, big_datetime, None, big_datetime, small_datetime, None],
+        {"min": [small_datetime], "max": [big_datetime]},
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "case", test_table_minmax_datetime_cases, ids=[f"{_}" for _ in test_table_minmax_datetime_cases]
+)
+def test_table_minmax_datetime(case) -> None:
+    input, expected = case
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").cast(DataType.date())])
+    daft_table = daft_table.eval_expression_list(
+        [
+            col("input").alias("min")._min(),
+            col("input").alias("max")._max(),
+        ]
+    )
+
+    res = daft_table.to_pydict()
+    assert res == expected
 
 
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types)
