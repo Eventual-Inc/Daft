@@ -391,80 +391,31 @@ def test_table_minmax_bool(case) -> None:
     assert res == expected
 
 
-@pytest.mark.parametrize("idx_dtype", daft_numeric_types)
-def test_table_agg_empty(idx_dtype) -> None:
-    daft_table = Table.from_pydict({"a": []})
-    daft_table = daft_table.eval_expression_list([col("a").cast(idx_dtype)])
+test_table_sum_mean_cases = [
+    ([], {"sum": [], "mean": []}),
+    ([None], {"sum": [None], "mean": [None]}),
+    ([None, None, None], {"sum": [None], "mean": [None]}),
+    ([0], {"sum": [0], "mean": [0]}),
+    ([1], {"sum": [1], "mean": [1]}),
+    ([None, 3, None, None, 1, 2, 0, None], {"sum": [6], "mean": [1.5]}),
+]
+
+
+@pytest.mark.parametrize("idx_dtype", daft_numeric_types, ids=[f"{_}" for _ in daft_numeric_types])
+@pytest.mark.parametrize("case", test_table_sum_mean_cases, ids=[f"{_}" for _ in test_table_sum_mean_cases])
+def test_table_sum_mean(idx_dtype, case) -> None:
+    input, expected = case
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
     daft_table = daft_table.eval_expression_list(
         [
-            col("a").alias("count")._count(),
-            col("a").alias("sum")._sum(),
-            col("a").alias("mean")._mean(),
-            col("a").alias("min")._min(),
-            col("a").alias("max")._max(),
+            col("input").alias("sum")._sum(),
+            col("input").alias("mean")._mean(),
         ]
     )
 
-    res_pydict = daft_table.to_pydict()
-    for key, value in {
-        "count": [],
-        "sum": [],
-        "mean": [],
-        "min": [],
-        "max": [],
-    }.items():
-        assert res_pydict[key] == value
-
-
-@pytest.mark.parametrize("idx_dtype", daft_numeric_types)
-@pytest.mark.parametrize("length", [1, 128])
-def test_table_agg_all_nulls(idx_dtype, length) -> None:
-    daft_table = Table.from_pydict({"a": [None] * length})
-    daft_table = daft_table.eval_expression_list([col("a").cast(idx_dtype)])
-    daft_table = daft_table.eval_expression_list(
-        [
-            col("a").alias("count")._count(),
-            col("a").alias("sum")._sum(),
-            col("a").alias("mean")._mean(),
-            col("a").alias("min")._min(),
-            col("a").alias("max")._max(),
-        ]
-    )
-
-    res_pydict = daft_table.to_pydict()
-    for key, value in {
-        "count": [0],
-        "sum": [None],
-        "mean": [None],
-        "min": [None],
-        "max": [None],
-    }.items():
-        assert res_pydict[key] == value
-
-
-@pytest.mark.parametrize("idx_dtype", daft_numeric_types)
-def test_table_agg_numeric_some_nulls(idx_dtype) -> None:
-    daft_table = Table.from_pydict({"a": [None, 3, None, None, 1, 2, 0, None]})
-    daft_table = daft_table.eval_expression_list([col("a").cast(idx_dtype)])
-    daft_table = daft_table.eval_expression_list(
-        [
-            col("a").alias("count")._count(),
-            col("a").alias("sum")._sum(),
-            col("a").alias("mean")._mean(),
-            col("a").alias("min")._min(),
-            col("a").alias("max")._max(),
-        ]
-    )
-
-    res_pydict = daft_table.to_pydict()
-    for key, value in {
-        "count": [4],
-        "sum": [6],
-        "mean": [1.5],
-        "min": [0],
-        "max": [3],
-    }.items():
-        assert res_pydict[key] == value
+    res = daft_table.to_pydict()
+    assert res == expected
 
 
 @pytest.mark.parametrize("nptype", [np.uint8, np.uint16, np.uint32, np.int8, np.int16, np.int32])
