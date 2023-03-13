@@ -3,18 +3,16 @@ use crate::utils::supertype::try_get_supertype;
 
 use super::Series;
 
+pub mod agg;
 pub mod arithmetic;
 pub mod broadcast;
 pub mod cast;
-pub mod compare_agg;
 pub mod comparision;
-pub mod count;
 pub mod downcast;
 pub mod filter;
 pub mod full;
 pub mod hash;
 pub mod len;
-pub mod numeric_agg;
 pub mod pairwise;
 pub mod sort;
 pub mod take;
