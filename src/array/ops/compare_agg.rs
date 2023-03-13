@@ -13,8 +13,6 @@ use super::DaftCompareAggable;
 impl<T> DaftCompareAggable for &DataArray<T>
 where
     T: DaftDataType + DaftNumericType,
-    // <T::Native as arrow2::types::simd::Simd>: arrow2::compute::aggregate::SimdOrd<T::Native>,
-    // T::Native: NumericNative,
     <T::Native as arrow2::types::simd::Simd>::Simd: arrow2::compute::aggregate::SimdOrd<T::Native>,
 {
     type Output = DaftResult<DataArray<T>>;
