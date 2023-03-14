@@ -52,6 +52,14 @@ class Series:
             raise ValueError("This Series isn't backed by a Rust PySeries, can not cast")
         return Series._from_pyseries(self._series.cast(dtype._dtype))
 
+    @staticmethod
+    def concat(series: list[Series]) -> Series:
+        pyseries = []
+        for s in series:
+            assert isinstance(s, Series)
+            pyseries.append(s._series)
+        return Series._from_pyseries(PySeries.concat(pyseries))
+
     def name(self) -> str:
         if self._series is None:
             raise ValueError("This Series isn't backed by a Rust PySeries, can not get name")

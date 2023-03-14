@@ -403,3 +403,24 @@ def test_table_abs_bad_input() -> None:
 
     with pytest.raises(ValueError, match="abs not implemented"):
         abs(series)
+
+
+@pytest.mark.parametrize(
+    "dtype, chunks", itertools.product(arrow_float_types + arrow_int_types + arrow_float_types, [1, 2, 3, 10])
+)
+def test_series_concat(dtype, chunks) -> None:
+    series = []
+    for i in range(chunks):
+        series.append(Series.from_pylist([i * j for j in range(i)]).cast(dtype=DataType.from_arrow_type(dtype)))
+
+    concated = Series.concat(series)
+
+    assert concated.datatype() == DataType.from_arrow_type(dtype)
+    concated_list = concated.to_pylist()
+
+    counter = 0
+    for i in range(chunks):
+        for j in range(i):
+            val = i * j
+            assert concated_list[counter] == val
+            counter += 1

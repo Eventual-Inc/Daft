@@ -5,7 +5,8 @@ use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use crate::{
     array::{ops::DaftLogical, BaseArray},
     datatypes::{DataType, UInt64Type},
-    ffi, series,
+    ffi,
+    series::{self, Series},
 };
 
 use super::datatype::PyDataType;
@@ -134,6 +135,12 @@ impl PySeries {
 
     pub fn cast(&self, dtype: PyDataType) -> PyResult<Self> {
         Ok(self.series.cast(&dtype.into())?.into())
+    }
+
+    #[staticmethod]
+    pub fn concat(series: Vec<Self>) -> PyResult<Self> {
+        let series: Vec<_> = series.iter().map(|s| &s.series).collect();
+        Ok(Series::concat(series.as_slice())?.into())
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
