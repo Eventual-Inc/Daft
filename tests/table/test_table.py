@@ -277,7 +277,7 @@ def test_table_take_null(idx_dtype) -> None:
 
 
 test_table_count_cases = [
-    ([], {"count": []}),
+    ([], {"count": [0]}),
     ([None], {"count": [0]}),
     ([None, None, None], {"count": [0]}),
     ([0], {"count": [1]}),
@@ -311,7 +311,7 @@ def test_table_count_nulltype(length) -> None:
 
 
 test_table_minmax_numerics_cases = [
-    ([], {"min": [], "max": []}),
+    ([], {"min": [None], "max": [None]}),
     ([None], {"min": [None], "max": [None]}),
     ([None, None, None], {"min": [None], "max": [None]}),
     ([5], {"min": [5], "max": [5]}),
@@ -340,7 +340,7 @@ def test_table_minmax_numerics(idx_dtype, case) -> None:
 
 
 test_table_minmax_string_cases = [
-    ([], {"min": [], "max": []}),
+    ([], {"min": [None], "max": [None]}),
     ([None], {"min": [None], "max": [None]}),
     ([None, None, None], {"min": [None], "max": [None]}),
     (["abc"], {"min": ["abc"], "max": ["abc"]}),
@@ -367,7 +367,7 @@ def test_table_minmax_string(idx_dtype, case) -> None:
 
 
 test_table_minmax_bool_cases = [
-    ([], {"min": [], "max": []}),
+    ([], {"min": [None], "max": [None]}),
     ([None], {"min": [None], "max": [None]}),
     ([None, None, None], {"min": [None], "max": [None]}),
     ([False, True], {"min": [False], "max": [True]}),
@@ -392,7 +392,7 @@ def test_table_minmax_bool(case) -> None:
 
 
 test_table_sum_mean_cases = [
-    ([], {"sum": [], "mean": []}),
+    ([], {"sum": [None], "mean": [None]}),
     ([None], {"sum": [None], "mean": [None]}),
     ([None, None, None], {"sum": [None], "mean": [None]}),
     ([0], {"sum": [0], "mean": [0]}),
