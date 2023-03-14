@@ -89,8 +89,6 @@ def test_table_partition_by_random(size, k) -> None:
 
 
 def test_table_partition_by_hash_bad_input() -> None:
-    # negative sample
-
     table = Table.from_pydict({"x": [1, 2, 3], "b": [0, 1, 2]})
 
     with pytest.raises(ValueError, match="negative number"):
@@ -101,8 +99,6 @@ def test_table_partition_by_hash_bad_input() -> None:
 
 
 def test_table_partition_by_random_bad_input() -> None:
-    # negative sample
-
     table = Table.from_pydict({"x": [1, 2, 3], "b": [0, 1, 2]})
 
     with pytest.raises(ValueError, match="negative number"):
@@ -199,8 +195,6 @@ def test_table_partition_by_range_multi_column_string() -> None:
 
 
 def test_table_partition_by_range_input() -> None:
-    # negative sample
-
     table = Table.from_pydict({"x": [1, 2, 3], "b": [0, 1, 2]})
 
     with pytest.raises(ValueError, match="Schema Mismatch"):
