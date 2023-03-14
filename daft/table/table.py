@@ -199,9 +199,13 @@ class Table:
         return [Table._from_pytable(t) for t in self._table.partition_by_hash(pyexprs, num_partitions)]
 
     def partition_by_range(
-        self, partition_keys: ExpressionsProjection, pivots: Table, descending: list[bool]
+        self, partition_keys: ExpressionsProjection, boundaries: Table, descending: list[bool]
     ) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+        if not isinstance(boundaries, Table):
+            raise TypeError(f"Expected a Table for `boundaries` in partition_by_range but got {type(boundaries)}")
+
+        exprs = [e._expr for e in partition_keys]
+        return [Table._from_pytable(t) for t in self._table.partition_by_range(exprs, boundaries._table, descending)]
 
     def partition_by_random(self, num_partitions: int, seed: int) -> list[Table]:
         if not isinstance(num_partitions, int):

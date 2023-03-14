@@ -149,6 +149,21 @@ impl PyTable {
             .collect::<Vec<PyTable>>())
     }
 
+    pub fn partition_by_range(
+        &self,
+        partition_keys: Vec<PyExpr>,
+        boundaries: &Self,
+        descending: Vec<bool>,
+    ) -> PyResult<Vec<Self>> {
+        let exprs: Vec<dsl::Expr> = partition_keys.into_iter().map(|e| e.into()).collect();
+        Ok(self
+            .table
+            .partition_by_range(exprs.as_slice(), &boundaries.table, descending.as_slice())?
+            .into_iter()
+            .map(|t| t.into())
+            .collect::<Vec<PyTable>>())
+    }
+
     pub fn __len__(&self) -> PyResult<usize> {
         Ok(self.table.len())
     }
@@ -162,7 +177,7 @@ impl PyTable {
     }
 
     pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
-        Ok(self.table.get_column(name)?.into())
+        Ok(self.table.get_column(name)?.clone().into())
     }
 
     pub fn get_column_by_index(&self, idx: i64) -> PyResult<PySeries> {
@@ -179,7 +194,7 @@ impl PyTable {
             )));
         }
 
-        Ok(self.table.get_column_by_index(idx)?.into())
+        Ok(self.table.get_column_by_index(idx)?.clone().into())
     }
 
     #[staticmethod]

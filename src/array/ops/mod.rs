@@ -12,6 +12,7 @@ mod full;
 mod hash;
 mod len;
 mod pairwise;
+mod search_sorted;
 mod sort;
 mod sum;
 mod take;

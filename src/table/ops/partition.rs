@@ -85,4 +85,18 @@ impl Table {
 
         self.partition_by_index(&targets, num_partitions)
     }
+
+    pub fn partition_by_range(
+        &self,
+        partition_keys: &[Expr],
+        boundaries: &Self,
+        descending: &[bool],
+    ) -> DaftResult<Vec<Self>> {
+        if boundaries.len() == 0 {
+            return Ok(vec![self.clone()]);
+        }
+        let partition_key_table = self.eval_expression_list(partition_keys)?;
+        let targets = boundaries.search_sorted(&partition_key_table, descending)?;
+        self.partition_by_index(&targets, boundaries.len() + 1)
+    }
 }

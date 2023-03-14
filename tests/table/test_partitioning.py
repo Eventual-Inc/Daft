@@ -112,3 +112,39 @@ def test_table_partition_by_random_bad_input() -> None:
 
     with pytest.raises(ValueError, match="negative number"):
         table.partition_by_random(-1, 10)
+
+
+import numpy as np
+
+
+@pytest.mark.parametrize("size, k, desc", itertools.product([0, 1, 10, 33, 100], [1, 2, 3, 10, 40], [False, True]))
+def test_table_partition_by_range_single_column(size, k, desc) -> None:
+    table = Table.from_pydict({"x": np.arange(size, dtype=np.float64()), "x_ind": list(range(size))})
+
+    original_boundaries = np.linspace(0, size, k)
+
+    input_boundaries = original_boundaries[1:]
+
+    if desc:
+        input_boundaries = input_boundaries[::-1]
+
+    boundaries = Table.from_pydict({"x": input_boundaries}).eval_expression_list(
+        [col("x").cast(table.get_column("x").datatype())]
+    )
+
+    split_tables = table.partition_by_range([col("x")], boundaries, [desc])
+    if desc:
+        split_tables = split_tables[::-1]
+
+    total_split_len = sum([len(t) for t in split_tables])
+    assert total_split_len == size
+
+    seen_idx = set()
+
+    for i, st in enumerate(split_tables):
+        for x, x_ind in zip(st.get_column("x").to_pylist(), st.get_column("x_ind").to_pylist()):
+            assert original_boundaries[i] <= x
+            if i < (k - 1):
+                assert x <= original_boundaries[i + 1]
+            assert x_ind not in seen_idx
+            seen_idx.add(x_ind)

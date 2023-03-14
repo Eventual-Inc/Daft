@@ -20,7 +20,7 @@ pub(super) fn naive_inner_join(left: &Table, right: &Table) -> DaftResult<(Serie
     if left.num_columns() == 1 {
         let left_series = left.get_column_by_index(0)?;
         let right_series = right.get_column_by_index(0)?;
-        return left_series.pairwise_equal(&right_series);
+        return left_series.pairwise_equal(right_series);
     }
 
     Err(DaftError::ValueError(

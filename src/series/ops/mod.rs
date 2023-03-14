@@ -13,6 +13,7 @@ pub mod full;
 pub mod hash;
 pub mod len;
 pub mod pairwise;
+pub mod search_sorted;
 pub mod sort;
 pub mod sum;
 pub mod take;
