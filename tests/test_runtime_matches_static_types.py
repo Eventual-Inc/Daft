@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import itertools
 import operator as ops
@@ -55,8 +56,8 @@ ALL_KERNELS = [
     KernelSpec(name="add", num_args=2, func=ops.add),
     KernelSpec(name="sub", num_args=2, func=ops.sub),
     KernelSpec(name="mul", num_args=2, func=ops.mul),
-    KernelSpec(name="truediv", num_args=2, func=ops.mod),
-    KernelSpec(name="mod", num_args=2, func=ops.truediv),
+    KernelSpec(name="truediv", num_args=2, func=ops.truediv),
+    KernelSpec(name="mod", num_args=2, func=ops.mod),
     KernelSpec(name="and", num_args=2, func=ops.and_),
     KernelSpec(name="or", num_args=2, func=ops.or_),
     KernelSpec(name="lt", num_args=2, func=ops.lt),
@@ -65,7 +66,6 @@ ALL_KERNELS = [
     KernelSpec(name="ne", num_args=2, func=ops.ne),
     KernelSpec(name="ge", num_args=2, func=ops.ge),
     KernelSpec(name="gt", num_args=2, func=ops.gt),
-    # KernelSpec(name="alias", num_args=1, func=lambda e: e.alias("foo")),
     KernelSpec(name="cast", num_args=1, func=_cast, kwarg_variants=[{"cast_to": dt for dt in ALL_DTYPES}]),
     # TODO: [RUST-INT][TPCH] Activate tests once these kernels have been implemented
     # KernelSpec(name="sum", num_args=1, func=lambda e: e.agg.sum()),
@@ -107,10 +107,8 @@ def test_schema_resolve_validation_matches_runtime_behavior(
 
     # Try to resolve the schema, or keep as None if an error occurs
     resolved_schema = None
-    try:
+    with contextlib.suppress(ValueError):
         resolved_schema = projection.resolve_schema(table.schema())
-    except ValueError:
-        pass
 
     def run_kernel():
         return kernel.func(*[data[f"col_{i}"].cast(dt) for i, dt in enumerate(dtypes)], **kernel_func_kwargs)

@@ -186,8 +186,8 @@ impl Expr {
 
                     // True divide operation
                     Operator::TrueDivide => {
-                        if !left_field.dtype.is_castable(&DataType::Float64)?
-                            || !left_field.dtype.is_castable(&DataType::Float64)?
+                        if !left_field.dtype.is_castable(&DataType::Float64)
+                            || !left_field.dtype.is_castable(&DataType::Float64)
                         {
                             return Err(DaftError::ExprResolveTypeError {
                                 expectation: format!(
@@ -260,7 +260,7 @@ impl Display for Expr {
         use Expr::*;
         match self {
             Alias(expr, name) => write!(f, "{expr} AS {name}"),
-            Agg(agg_expr) => f.write_str(&agg_expr.to_string()),
+            Agg(agg_expr) => write!(f, "{agg_expr}"),
             BinaryOp { op, left, right } => {
                 let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
                     Alias(e, _) => write!(f, "{e}"),

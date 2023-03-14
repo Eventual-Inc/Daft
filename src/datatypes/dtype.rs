@@ -145,11 +145,13 @@ impl DataType {
     }
 
     #[inline]
-    pub fn is_castable(&self, cast_to: &DataType) -> DaftResult<bool> {
-        Ok(arrow2::compute::cast::can_cast_types(
-            &self.to_arrow()?,
-            &cast_to.to_arrow()?,
-        ))
+    pub fn is_castable(&self, cast_to: &DataType) -> bool {
+        match (self.to_arrow(), cast_to.to_arrow()) {
+            (Ok(self_arrow_type), Ok(cast_to_arrow_type)) => {
+                arrow2::compute::cast::can_cast_types(&self_arrow_type, &cast_to_arrow_type)
+            }
+            _ => false,
+        }
     }
 }
 

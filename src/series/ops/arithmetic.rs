@@ -14,12 +14,7 @@ macro_rules! impl_series_math_op {
             type Output = DaftResult<Series>;
             fn $func_name(self, rhs: Self) -> Self::Output {
                 let (lhs, rhs) = match_types_on_series(self, rhs)?;
-                if !lhs.data_type().is_numeric() {
-                    return Err(DaftError::TypeError(
-                        "Cannot run on non-numeric types".into(),
-                    ));
-                }
-                if !rhs.data_type().is_numeric() {
+                if !lhs.data_type().is_numeric() || !rhs.data_type().is_numeric() {
                     return Err(DaftError::TypeError(
                         "Cannot run on non-numeric types".into(),
                     ));
