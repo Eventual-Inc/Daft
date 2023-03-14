@@ -64,13 +64,9 @@ impl DaftCompareAggable for &DataArray<BooleanType> {
         let arrow_array: &arrow2::array::BooleanArray =
             self.data().as_any().downcast_ref().unwrap();
 
-        let res_arrow_array = match arrow_array.len() {
-            0 => arrow2::array::BooleanArray::new_empty(arrow2::datatypes::DataType::Boolean),
-            _ => {
-                let result = arrow2::compute::aggregate::min_boolean(arrow_array);
-                arrow2::array::BooleanArray::from([result])
-            }
-        };
+        let result = arrow2::compute::aggregate::min_boolean(arrow_array);
+        let res_arrow_array = arrow2::array::BooleanArray::from([result]);
+
         DataArray::new(self.field.clone(), Arc::new(res_arrow_array))
     }
     fn max(&self) -> Self::Output {
