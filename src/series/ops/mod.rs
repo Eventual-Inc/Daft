@@ -19,6 +19,7 @@ pub mod pairwise;
 pub mod search_sorted;
 pub mod sort;
 pub mod take;
+pub mod utf8;
 
 fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)> {
     let mut lhs = l.clone();

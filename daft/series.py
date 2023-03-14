@@ -229,3 +229,9 @@ class Series:
             raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)
+
+    def utf8_endswith(self, other: object) -> Series:
+        if not isinstance(other, Series):
+            raise ValueError(f"expected another Series but got {type(other)}")
+        assert self._series is not None and other._series is not None
+        return Series._from_pyseries(self._series.utf8_endswith(other._series))
