@@ -11,6 +11,10 @@ pub enum DaftError {
     ComputeError(String),
     ArrowError(String),
     ValueError(String),
+    // ExprResolveTypeError: Typing error when resolving expressions against schemas
+    //
+    // This variant has custom Display logic for presenting a more user-friendly error message which shows
+    // exactly which operation, arguments and dtypes of those arguments caused the issue.
     ExprResolveTypeError {
         expectation: String,
         op_display_name: String,
