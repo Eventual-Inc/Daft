@@ -176,26 +176,37 @@ impl Table {
         })
     }
 
-    pub fn concat(tables: &[Table]) -> DaftResult<Self> {
+    pub fn concat(tables: &[&Table]) -> DaftResult<Self> {
         if tables.is_empty() {
             return Err(DaftError::ValueError(format!(
                 "Need at least 1 table to perform concat"
             )));
         }
         if tables.len() == 1 {
-            return  Ok(tables.first().unwrap().clone());
+            return Ok((*tables.first().unwrap()).clone());
         }
-        let first_schema = tables.first().unwrap().schema.as_ref();
+        let first_table = tables.first().unwrap();
+
+        let first_schema = first_table.schema.as_ref();
         for tab in tables.iter().skip(1) {
             if tab.schema.as_ref() != first_schema {
                 return Err(DaftError::SchemaMismatch(format!(
                     "Table concat requires all schemas to match, {} vs {}",
-                    first_schema,
-                    tab.schema
+                    first_schema, tab.schema
                 )));
             }
         }
-        
+        let num_columns = first_table.num_columns();
+        let mut new_series = Vec::with_capacity(num_columns);
+        for i in 0..num_columns {
+            let series_to_cat: Vec<&Series> = tables.iter().map(|s| s.get_column_by_index(i).unwrap()).collect();
+            new_series.push(Series::concat(series_to_cat.as_slice())?);
+        }
+        Ok(Table {
+            schema: first_table.schema.clone(),
+            columns: new_series,
+        })
+
 
     }
 

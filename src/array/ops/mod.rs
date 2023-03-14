@@ -8,6 +8,7 @@ mod cast;
 mod compare_agg;
 mod comparison;
 mod count;
+mod concat;
 mod downcast;
 mod filter;
 mod full;
