@@ -73,3 +73,18 @@ def test_table_partition_by_hash_bad_input() -> None:
 
     with pytest.raises(ValueError, match="0 partitions"):
         table.partition_by_hash([col("x")], 0)
+
+
+def test_table_partition_by_random_bad_input() -> None:
+    # negative sample
+
+    table = Table.from_pydict({"x": [1, 2, 3], "b": [0, 1, 2]})
+
+    with pytest.raises(ValueError, match="negative number"):
+        table.partition_by_random(10, -1)
+
+    with pytest.raises(ValueError, match="0 partitions"):
+        table.partition_by_random(0, 10)
+
+    with pytest.raises(ValueError, match="negative number"):
+        table.partition_by_random(-1, 10)

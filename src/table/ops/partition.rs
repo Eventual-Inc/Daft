@@ -1,6 +1,7 @@
 use std::ops::Rem;
 
 use arrow2::array::{Array, DictionaryKey};
+use rand::SeedableRng;
 
 use crate::{
     array::BaseArray,
@@ -66,6 +67,22 @@ impl Table {
                 "num_partitions",
                 [num_partitions as u64].as_slice(),
             )))?;
+        self.partition_by_index(&targets, num_partitions)
+    }
+
+    pub fn partition_by_random(&self, num_partitions: usize, seed: u64) -> DaftResult<Vec<Self>> {
+        if num_partitions == 0 {
+            return Err(DaftError::ValueError(
+                "Can not partition a Table by 0 partitions".to_string(),
+            ));
+        }
+        use rand::{distributions::Uniform, Rng};
+        let range = Uniform::from(0..num_partitions as u64);
+
+        let rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let values: Vec<u64> = rng.sample_iter(&range).take(self.len()).collect();
+        let targets = UInt64Array::from(("idx", values));
+
         self.partition_by_index(&targets, num_partitions)
     }
 }

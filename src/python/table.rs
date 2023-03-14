@@ -129,6 +129,26 @@ impl PyTable {
             .collect::<Vec<PyTable>>())
     }
 
+    pub fn partition_by_random(&self, num_partitions: i64, seed: i64) -> PyResult<Vec<Self>> {
+        if num_partitions < 0 {
+            return Err(PyValueError::new_err(format!(
+                "Can not partition into negative number of partitions: {num_partitions}"
+            )));
+        }
+
+        if seed < 0 {
+            return Err(PyValueError::new_err(format!(
+                "Can not have seed has negative number: {seed}"
+            )));
+        }
+        Ok(self
+            .table
+            .partition_by_random(num_partitions as usize, seed as u64)?
+            .into_iter()
+            .map(|t| t.into())
+            .collect::<Vec<PyTable>>())
+    }
+
     pub fn __len__(&self) -> PyResult<usize> {
         Ok(self.table.len())
     }

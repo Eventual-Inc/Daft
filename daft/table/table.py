@@ -192,6 +192,9 @@ class Table:
         return Table._from_pytable(self._table.join(right._table, left_on=left_exprs, right_on=right_exprs))
 
     def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Table]:
+        if not isinstance(num_partitions, int):
+            raise TypeError(f"Expected a num_partitions to be int, got {type(num_partitions)}")
+
         pyexprs = [e._expr for e in exprs]
         return [Table._from_pytable(t) for t in self._table.partition_by_hash(pyexprs, num_partitions)]
 
@@ -201,7 +204,13 @@ class Table:
         raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
 
     def partition_by_random(self, num_partitions: int, seed: int) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+        if not isinstance(num_partitions, int):
+            raise TypeError(f"Expected a num_partitions to be int, got {type(num_partitions)}")
+
+        if not isinstance(seed, int):
+            raise TypeError(f"Expected a seed to be int, got {type(seed)}")
+
+        return [Table._from_pytable(t) for t in self._table.partition_by_random(num_partitions, seed)]
 
     ###
     # Compute methods (Table -> Series)
