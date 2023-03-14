@@ -125,6 +125,34 @@ impl DataType {
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()
     }
+
+    #[inline]
+    pub fn is_numeric(&self) -> bool {
+        match self {
+             DataType::Int8
+             | DataType::Int16
+             | DataType::Int32
+             | DataType::Int64
+             | DataType::UInt8
+             | DataType::UInt16
+             | DataType::UInt32
+             | DataType::UInt64
+             // DataType::Float16
+             | DataType::Float32
+             | DataType::Float64 => true,
+             _ => false
+         }
+    }
+
+    #[inline]
+    pub fn is_castable(&self, cast_to: &DataType) -> bool {
+        match (self.to_arrow(), cast_to.to_arrow()) {
+            (Ok(self_arrow_type), Ok(cast_to_arrow_type)) => {
+                arrow2::compute::cast::can_cast_types(&self_arrow_type, &cast_to_arrow_type)
+            }
+            _ => false,
+        }
+    }
 }
 
 impl From<&ArrowType> for DataType {

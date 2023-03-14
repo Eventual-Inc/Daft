@@ -62,6 +62,7 @@ class Table:
 
     @staticmethod
     def _from_pytable(pyt: _PyTable) -> Table:
+        assert isinstance(pyt, _PyTable)
         tab = Table.__new__(Table)
         tab._table = pyt
         return tab
@@ -148,7 +149,7 @@ class Table:
                     f"got {len(descending)} instead of {len(sort_keys)}"
                 )
         else:
-            raise ValueError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
+            raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return Table._from_pytable(self._table.sort(pyexprs, descending))
 
     def sample(self, num: int) -> Table:
@@ -183,21 +184,37 @@ class Table:
             raise NotImplementedError("TODO: [RUST-INT][TPCH] Multicolumn joins not implemented")
 
         if not isinstance(right, Table):
-            raise ValueError(f"Expected a Table for `right` in join but got {type(right)}")
+            raise TypeError(f"Expected a Table for `right` in join but got {type(right)}")
 
         left_exprs = [e._expr for e in left_on]
         right_exprs = [e._expr for e in right_on]
 
         return Table._from_pytable(self._table.join(right._table, left_on=left_exprs, right_on=right_exprs))
 
-    def split_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+    def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Table]:
+        if not isinstance(num_partitions, int):
+            raise TypeError(f"Expected a num_partitions to be int, got {type(num_partitions)}")
 
-    def split_by_index(self, num_partitions: int, target_partition_indices: Series) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+        pyexprs = [e._expr for e in exprs]
+        return [Table._from_pytable(t) for t in self._table.partition_by_hash(pyexprs, num_partitions)]
 
-    def split_random(self, num_partitions: int, seed: int) -> list[Table]:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+    def partition_by_range(
+        self, partition_keys: ExpressionsProjection, boundaries: Table, descending: list[bool]
+    ) -> list[Table]:
+        if not isinstance(boundaries, Table):
+            raise TypeError(f"Expected a Table for `boundaries` in partition_by_range but got {type(boundaries)}")
+
+        exprs = [e._expr for e in partition_keys]
+        return [Table._from_pytable(t) for t in self._table.partition_by_range(exprs, boundaries._table, descending)]
+
+    def partition_by_random(self, num_partitions: int, seed: int) -> list[Table]:
+        if not isinstance(num_partitions, int):
+            raise TypeError(f"Expected a num_partitions to be int, got {type(num_partitions)}")
+
+        if not isinstance(seed, int):
+            raise TypeError(f"Expected a seed to be int, got {type(seed)}")
+
+        return [Table._from_pytable(t) for t in self._table.partition_by_random(num_partitions, seed)]
 
     ###
     # Compute methods (Table -> Series)
@@ -217,8 +234,5 @@ class Table:
                     f"got {len(descending)} instead of {len(sort_keys)}"
                 )
         else:
-            raise ValueError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
+            raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return Series._from_pyseries(self._table.argsort(pyexprs, descending))
-
-    def search_sorted(self, sort_keys: Table, descending: list[bool]) -> Series:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")

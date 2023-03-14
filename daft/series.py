@@ -31,19 +31,19 @@ class Series:
             pys = PySeries.from_arrow(name, combined_array)
             return Series._from_pyseries(pys)
         else:
-            raise ValueError(f"expected either PyArrow Array or Chunked Array, got {type(array)}")
+            raise TypeError(f"expected either PyArrow Array or Chunked Array, got {type(array)}")
 
     @staticmethod
     def from_pylist(data: list, name: str = "list_series") -> Series:
         if not isinstance(data, list):
-            raise ValueError(f"expected a python list, got {type(data)}")
+            raise TypeError(f"expected a python list, got {type(data)}")
         arrow_array = pa.array(data)
         return Series.from_arrow(arrow_array, name=name)
 
     @staticmethod
     def from_numpy(data: np.ndarray, name: str = "numpy_series") -> Series:
         if not isinstance(data, np.ndarray):
-            raise ValueError(f"expected a numpy ndarray, got {type(data)}")
+            raise TypeError(f"expected a numpy ndarray, got {type(data)}")
         arrow_array = pa.array(data)
         return Series.from_arrow(arrow_array, name=name)
 
@@ -77,14 +77,14 @@ class Series:
         if self._series is None:
             raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         if not isinstance(mask, Series):
-            raise ValueError(f"expected another Series but got {type(mask)}")
+            raise TypeError(f"expected another Series but got {type(mask)}")
         return Series._from_pyseries(self._series.filter(mask._series))
 
     def take(self, idx: Series) -> Series:
         if self._series is None:
             raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         if not isinstance(idx, Series):
-            raise ValueError(f"expected another Series but got {type(idx)}")
+            raise TypeError(f"expected another Series but got {type(idx)}")
         return Series._from_pyseries(self._series.take(idx._series))
 
     def argsort(self, descending: bool = False) -> Series:
@@ -92,7 +92,7 @@ class Series:
             raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
 
         if not isinstance(descending, bool):
-            raise ValueError(f"expected `descending` to be bool, got {type(descending)}")
+            raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
 
         return Series._from_pyseries(self._series.argsort(descending))
 
@@ -101,7 +101,7 @@ class Series:
             raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
 
         if not isinstance(descending, bool):
-            raise ValueError(f"expected `descending` to be bool, got {type(descending)}")
+            raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
 
         return Series._from_pyseries(self._series.sort(descending))
 
@@ -110,7 +110,7 @@ class Series:
             raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
 
         if not isinstance(seed, Series) and seed is not None:
-            raise ValueError(f"expected `seed` to be Series, got {type(seed)}")
+            raise TypeError(f"expected `seed` to be Series, got {type(seed)}")
 
         return Series._from_pyseries(self._series.hash(seed._series if seed is not None else None))
 
@@ -133,86 +133,90 @@ class Series:
 
         return self._series.size_bytes()
 
+    def __abs__(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(abs(self._series))
+
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series + other._series)
 
     def __sub__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series - other._series)
 
     def __mul__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series * other._series)
 
     def __truediv__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series / other._series)
 
     def __mod__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series % other._series)
 
     def __eq__(self, other: object) -> Series:  # type: ignore[override]
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series == other._series)
 
     def __ne__(self, other: object) -> Series:  # type: ignore[override]
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series != other._series)
 
     def __gt__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series > other._series)
 
     def __lt__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series < other._series)
 
     def __ge__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series >= other._series)
 
     def __le__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series <= other._series)
 
     def __and__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series & other._series)
 
     def __or__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series | other._series)
 
     def __xor__(self, other: object) -> Series:
         if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
+            raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)

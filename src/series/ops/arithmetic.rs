@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use super::match_types_on_series;
 use crate::array::BaseArray;
 use crate::datatypes::Float64Type;
-use crate::error::DaftResult;
+use crate::error::{DaftError, DaftResult};
 use crate::series::Series;
 use crate::with_match_numeric_and_utf_daft_types;
 use crate::with_match_numeric_daft_types;
@@ -14,6 +14,11 @@ macro_rules! impl_series_math_op {
             type Output = DaftResult<Series>;
             fn $func_name(self, rhs: Self) -> Self::Output {
                 let (lhs, rhs) = match_types_on_series(self, rhs)?;
+                if !lhs.data_type().is_numeric() || !rhs.data_type().is_numeric() {
+                    return Err(DaftError::TypeError(
+                        "Cannot run on non-numeric types".into(),
+                    ));
+                }
                 with_match_numeric_daft_types!(lhs.data_type(), |$T| {
                     let lhs = lhs.downcast::<$T>()?;
                     let rhs = rhs.downcast::<$T>()?;
@@ -53,6 +58,13 @@ impl Add for Series {
 impl Div for &Series {
     type Output = DaftResult<Series>;
     fn div(self, rhs: Self) -> Self::Output {
+        if !self.data_type().is_numeric() || !rhs.data_type().is_numeric() {
+            return Err(DaftError::TypeError(format!(
+                "True division requires numeric arguments, but received {} / {}",
+                self.data_type(),
+                rhs.data_type()
+            )));
+        }
         let lhs = self.cast(&crate::datatypes::DataType::Float64)?;
         let rhs = rhs.cast(&crate::datatypes::DataType::Float64)?;
 
@@ -78,13 +90,13 @@ impl_series_math_op!(Rem, rem);
 mod tests {
     use crate::{
         array::BaseArray,
-        datatypes::{DataType, Float64Array, Int64Array, Utf8Array},
+        datatypes::{DataType, Float64Array, Int64Array, Int8Array, Utf8Array},
         error::DaftResult,
     };
     #[test]
     fn add_int_and_int() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice()));
-        let b = Int64Array::from(("b", vec![1, 2, 3].as_slice()));
+        let a = Int64Array::from(("a", vec![1, 2, 3]));
+        let b = Int64Array::from(("b", vec![1, 2, 3]));
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Int64);
         Ok(())
@@ -92,16 +104,16 @@ mod tests {
 
     #[test]
     fn add_int_and_float() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice()));
-        let b = Float64Array::from(("b", vec![1., 2., 3.].as_slice()));
+        let a = Int64Array::from(("a", vec![1, 2, 3]));
+        let b = Float64Array::from(("b", vec![1., 2., 3.]));
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
     }
     #[test]
     fn sub_int_and_float() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice()));
-        let b = Float64Array::from(("b", vec![1., 2., 3.].as_slice()));
+        let a = Int64Array::from(("a", vec![1, 2, 3]));
+        let b = Float64Array::from(("b", vec![1., 2., 3.]));
         let c = a.into_series() - b.into_series();
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
@@ -109,31 +121,31 @@ mod tests {
 
     #[test]
     fn mul_int_and_float() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice()));
-        let b = Float64Array::from(("b", vec![1., 2., 3.].as_slice()));
+        let a = Int64Array::from(("a", vec![1, 2, 3]));
+        let b = Float64Array::from(("b", vec![1., 2., 3.]));
         let c = a.into_series() * b.into_series();
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
     }
     #[test]
     fn div_int_and_float() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice()));
-        let b = Float64Array::from(("b", vec![1., 2., 3.].as_slice()));
+        let a = Int64Array::from(("a", vec![1, 2, 3]));
+        let b = Float64Array::from(("b", vec![1., 2., 3.]));
         let c = a.into_series() / b.into_series();
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
     }
     #[test]
     fn rem_int_and_float() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice()));
-        let b = Float64Array::from(("b", vec![1., 2., 3.].as_slice()));
+        let a = Int64Array::from(("a", vec![1, 2, 3]));
+        let b = Float64Array::from(("b", vec![1., 2., 3.]));
         let c = a.into_series() % b.into_series();
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
     }
     #[test]
     fn add_int_and_int_full_null() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice()));
+        let a = Int64Array::from(("a", vec![1, 2, 3]));
         let b = Int64Array::full_null("b", 3);
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Int64);
@@ -141,7 +153,7 @@ mod tests {
     }
     #[test]
     fn add_int_and_utf8() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice()));
+        let a = Int64Array::from(("a", vec![1, 2, 3]));
         let str_array = vec!["a", "b", "c"];
         let b = Utf8Array::from(("b", str_array.as_slice()));
         let c = a.into_series() + b.into_series();

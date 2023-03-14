@@ -74,7 +74,6 @@ class vPartitionParseCSVOptions:
 
     delimiter: str = ","
     has_headers: bool = True
-    column_names: list[str] | None = None
     skip_rows_before_header: int = 0
     skip_rows_after_header: int = 0
 

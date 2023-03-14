@@ -1,3 +1,4 @@
+mod abs;
 mod apply;
 mod arange;
 mod arithmetic;
@@ -14,6 +15,7 @@ mod hash;
 mod len;
 mod mean;
 mod pairwise;
+mod search_sorted;
 mod sort;
 mod sum;
 mod take;

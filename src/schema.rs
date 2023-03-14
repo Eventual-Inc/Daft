@@ -13,7 +13,7 @@ use crate::{
 
 pub type SchemaRef = Arc<Schema>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Schema {
     pub fields: indexmap::IndexMap<String, Field>,
 }

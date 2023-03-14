@@ -1,6 +1,6 @@
 use super::field::PyField;
 use super::{datatype::PyDataType, schema::PySchema};
-use crate::dsl;
+use crate::dsl::{self, functions};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -101,6 +101,11 @@ impl PyExpr {
 
     pub fn max(&self) -> PyResult<Self> {
         Ok(self.expr.max().into())
+    }
+
+    pub fn __abs__(&self) -> PyResult<Self> {
+        use functions::numeric::abs;
+        Ok(abs(&self.expr).into())
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {

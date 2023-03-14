@@ -3,6 +3,7 @@ use crate::utils::supertype::try_get_supertype;
 
 use super::Series;
 
+pub mod abs;
 pub mod agg;
 pub mod arithmetic;
 pub mod broadcast;
@@ -14,6 +15,7 @@ pub mod full;
 pub mod hash;
 pub mod len;
 pub mod pairwise;
+pub mod search_sorted;
 pub mod sort;
 pub mod take;
 

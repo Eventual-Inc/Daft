@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from daft.datatype import DataType
-from daft.expressions2 import lit
+from daft.expressions2 import col, lit
 from daft.table import Table
 
 
@@ -27,3 +27,43 @@ def test_make_lit(data, expected_dtype) -> None:
     lit_table = empty_table.eval_expression_list([l])
     series = lit_table.get_column("literal")
     assert series.datatype() == expected_dtype
+    repr_out = repr(l)
+    assert repr_out.startswith("lit(")
+    assert repr_out.endswith(")")
+
+
+import operator as ops
+
+OPS = [
+    (ops.add, "+"),
+    (ops.sub, "-"),
+    (ops.mul, "*"),
+    (ops.truediv, "/"),
+    (ops.mod, "%"),
+    (ops.lt, "<"),
+    (ops.le, "<="),
+    (ops.eq, "=="),
+    (ops.ne, "!="),
+    (ops.ge, ">="),
+    (ops.gt, ">"),
+]
+
+
+@pytest.mark.parametrize("op, symbol", OPS)
+def test_repr_binary_operators(op, symbol) -> None:
+    a = col("a")
+    b = col("b")
+    y = op(a, b)
+    output = repr(y)
+    tokens = output.split(" ")
+    assert len(tokens) == 3
+    assert tokens[0] == "col(a)"
+    assert tokens[1] == symbol
+    assert tokens[2] == "col(b)"
+
+
+def test_repr_functions_abs() -> None:
+    a = col("a")
+    y = abs(a)
+    repr_out = repr(y)
+    assert repr_out == "abs(col(a))"

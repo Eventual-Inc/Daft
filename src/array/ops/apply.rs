@@ -3,6 +3,7 @@ use arrow2::array::PrimitiveArray;
 use crate::{
     array::{BaseArray, DataArray},
     datatypes::DaftNumericType,
+    error::DaftResult,
 };
 
 impl<T> DataArray<T>
@@ -10,7 +11,7 @@ where
     T: DaftNumericType,
 {
     // applies a native function to a numeric DataArray maintaining validity of the source array.
-    pub fn apply<F>(&self, func: F) -> Self
+    pub fn apply<F>(&self, func: F) -> DaftResult<Self>
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
@@ -19,6 +20,6 @@ where
             PrimitiveArray::from_trusted_len_values_iter(arr.values_iter().map(|v| func(*v)))
                 .with_validity(arr.validity().cloned());
 
-        DataArray::from((self.name(), Box::new(result_arr)))
+        Ok(DataArray::from((self.name(), Box::new(result_arr))))
     }
 }

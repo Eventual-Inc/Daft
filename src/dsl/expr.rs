@@ -1,7 +1,7 @@
 use crate::{
     datatypes::DataType,
     datatypes::Field,
-    dsl::lit,
+    dsl::{functions::FunctionEvaluator, lit},
     error::{DaftError, DaftResult},
     schema::Schema,
     utils::supertype::try_get_supertype,
@@ -11,6 +11,8 @@ use std::{
     fmt::{Debug, Display, Formatter, Result},
     sync::Arc,
 };
+
+use super::functions::FunctionExpr;
 
 type ExprRef = Arc<Expr>;
 
@@ -25,6 +27,10 @@ pub enum Expr {
     },
     Cast(ExprRef, DataType),
     Column(Arc<str>),
+    Function {
+        func: FunctionExpr,
+        inputs: Vec<Expr>,
+    },
     Literal(lit::LiteralValue),
 }
 
@@ -78,11 +84,12 @@ impl AggExpr {
                         | DataType::UInt64 => DataType::UInt64,
                         DataType::Float32 => DataType::Float32,
                         DataType::Float64 => DataType::Float64,
-                        other => {
-                            return Err(DaftError::TypeError(format!(
-                                "Numeric sum is not implemented for type {}",
-                                other
-                            )))
+                        _other => {
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: "input to be numeric".into(),
+                                expr: Arc::new(Expr::Agg(self.clone())),
+                                child_fields_to_expr: vec![(field.clone(), (*expr).clone())],
+                            })
                         }
                     },
                 ))
@@ -154,38 +161,123 @@ impl Expr {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use Expr::*;
-
         match self {
             Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Agg(agg_expr) => agg_expr.to_field(schema),
             Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
             Column(name) => Ok(schema.get_field(name).cloned()?),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
+            Function { func, inputs } => func.to_field(inputs.as_slice(), schema),
             BinaryOp { op, left, right } => {
-                let result = match op {
+                let left_field = left.to_field(schema)?;
+                let right_field = right.to_field(schema)?;
+
+                match op {
+                    // Logical operations
+                    Operator::And | Operator::Or | Operator::Xor => {
+                        if left_field.dtype != DataType::Boolean
+                            || right_field.dtype != DataType::Boolean
+                        {
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: "all boolean arguments".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![
+                                    (left_field, (*left).clone()),
+                                    (right_field, (*right).clone()),
+                                ],
+                            });
+                        }
+                        Ok(Field::new(left_field.name.as_str(), DataType::Boolean))
+                    }
+
+                    // Comparison operations
                     Operator::Lt
                     | Operator::Gt
                     | Operator::Eq
                     | Operator::NotEq
-                    | Operator::And
                     | Operator::LtEq
-                    | Operator::GtEq
-                    | Operator::Or => {
-                        Field::new(left.to_field(schema)?.name.as_str(), DataType::Boolean)
+                    | Operator::GtEq => {
+                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
+                            Ok(_) => Ok(Field::new(
+                                left.to_field(schema)?.name.as_str(),
+                                DataType::Boolean,
+                            )),
+                            Err(_) => Err(DaftError::ExprResolveTypeError {
+                                expectation: "left and right arguments to be castable to the same supertype for comparison".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                            }),
+                        }
                     }
+
+                    // Plus operation: special-cased as it has semantic meaning for string types
+                    Operator::Plus => {
+                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
+                            Ok(supertype) => Ok(Field::new(
+                                left.to_field(schema)?.name.as_str(),
+                                supertype,
+                            )),
+                            Err(_) if left_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
+                                expectation: "right argument to be castable to string for string concatenation".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                            }),
+                            Err(_) if right_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
+                                expectation: "left argument to be castable to string for string concatenation".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                            }),
+                            Err(_) => Err(DaftError::ExprResolveTypeError {
+                                expectation: "left and right arguments to both be numeric".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                            }),
+                        }
+                    }
+
+                    // True divide operation
                     Operator::TrueDivide => {
-                        Field::new(left.to_field(schema)?.name.as_str(), DataType::Float64)
+                        if !left_field.dtype.is_castable(&DataType::Float64)
+                            || !right_field.dtype.is_castable(&DataType::Float64)
+                            || !left_field.dtype.is_numeric()
+                            || !right_field.dtype.is_numeric()
+                        {
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: format!(
+                                    "left and right arguments to both be numeric and castable to {}",
+                                    DataType::Float64
+                                ),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![
+                                    (left_field, (*left).clone()),
+                                    (right_field, (*right).clone()),
+                                ],
+                            });
+                        }
+                        Ok(Field::new(left_field.name.as_str(), DataType::Float64))
                     }
-                    _ => {
-                        let left_field = left.to_field(schema)?;
-                        let right_field = right.to_field(schema)?;
-                        Field::new(
+
+                    // Regular arithmetic operations
+                    Operator::Minus
+                    | Operator::Multiply
+                    | Operator::Modulus
+                    | Operator::FloorDivide => {
+                        if !&left_field.dtype.is_numeric() || !&right_field.dtype.is_numeric() {
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: "left and right arguments to both be numeric".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![
+                                    (left_field, (*left).clone()),
+                                    (right_field, (*right).clone()),
+                                ],
+                            });
+                        }
+                        Ok(Field::new(
                             left_field.name.as_str(),
                             try_get_supertype(&left_field.dtype, &right_field.dtype)?,
-                        )
+                        ))
                     }
-                };
-                Ok(result)
+                }
             }
         }
     }
@@ -198,6 +290,7 @@ impl Expr {
             Cast(expr, ..) => expr.name(),
             Column(name) => Ok(name.as_ref()),
             Literal(..) => Ok("literal"),
+            Function { func: _, inputs } => inputs.first().unwrap().name(),
             BinaryOp {
                 op: _,
                 left,
@@ -233,12 +326,22 @@ impl Display for Expr {
             Cast(expr, dtype) => write!(f, "cast({expr} AS {dtype})"),
             Column(name) => write!(f, "col({name})"),
             Literal(val) => write!(f, "lit({val})"),
+            Function { func, inputs } => {
+                write!(f, "{}(", func.fn_name())?;
+                for i in 0..(inputs.len() - 1) {
+                    write!(f, "{}, ", inputs.get(i).unwrap())?;
+                }
+                if !inputs.is_empty() {
+                    write!(f, "{})", inputs.last().unwrap())?;
+                }
+                Ok(())
+            }
         }
     }
 }
 
 impl Display for AggExpr {
-    fn fmt(&self, f: &mut Formatter) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         use AggExpr::*;
         match self {
             Count(expr) => write!(f, "count({expr})"),

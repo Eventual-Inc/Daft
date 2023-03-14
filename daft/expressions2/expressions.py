@@ -62,6 +62,14 @@ class Expression:
             "If you reached this error using `and` / `or`, use `&` / `|` instead."
         )
 
+    def __abs__(self) -> Expression:
+        "Absolute value of expression"
+        return self.abs()
+
+    def abs(self) -> Expression:
+        "Absolute value of expression"
+        return Expression._from_pyexpr(abs(self._expr))
+
     def __add__(self, other: object) -> Expression:
         """Adds two numeric expressions (``e1 + e2``)"""
         expr = Expression._to_expression(other)

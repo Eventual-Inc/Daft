@@ -46,6 +46,10 @@ impl PySeries {
         })
     }
 
+    pub fn __abs__(&self) -> PyResult<Self> {
+        Ok(self.series.abs()?.into())
+    }
+
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
         Ok((&self.series).add(&other.series)?.into())
     }
