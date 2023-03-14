@@ -63,6 +63,30 @@ def test_table_partition_by_hash_two_col(size, k, dtype) -> None:
             seen_so_far.add(v)
 
 
+@pytest.mark.parametrize("size, k", itertools.product([0, 1, 10, 33, 100], [1, 2, 3, 10, 40]))
+def test_table_partition_by_random(size, k) -> None:
+    table = Table.from_pydict({"x": [i for i in range(size)]})
+    split_tables = table.partition_by_random(k, 0)
+    seen_so_far = set()
+
+    total_split_len = sum([len(t) for t in split_tables])
+    assert total_split_len == size
+
+    for st in split_tables:
+        for x in st.get_column("x").to_pylist():
+            assert x not in seen_so_far
+            seen_so_far.add(x)
+
+    # ensure deterministic
+    re_split_tables = table.partition_by_random(k, 0)
+    assert all([lt.to_pydict() == rt.to_pydict() for lt, rt in zip(split_tables, re_split_tables)])
+
+    if k > 1 and size > 1:
+        diff_split_tables = table.partition_by_random(k, 1)
+
+        assert [t.to_pydict() for t in split_tables] != [t.to_pydict() for t in diff_split_tables]
+
+
 def test_table_partition_by_hash_bad_input() -> None:
     # negative sample
 
