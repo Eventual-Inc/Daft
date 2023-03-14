@@ -275,10 +275,6 @@ impl Table {
         let schema = Schema::new(fields);
         Table::new(schema, result_series)
     }
-
-    pub fn agg(&self, _to_agg: &[Expr], _group_by: &[Expr]) -> DaftResult<Self> {
-        todo!()
-    }
 }
 
 impl Display for Table {

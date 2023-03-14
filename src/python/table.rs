@@ -62,7 +62,13 @@ impl PyTable {
     }
 
     pub fn agg(&self, to_agg: Vec<(PyExpr, &str)>, group_by: Vec<PyExpr>) -> PyResult<Self> {
-        todo!("Got to_agg: {:?}, group_by: {:?}", to_agg, group_by)
+        let converted_to_agg: Vec<(dsl::Expr, &str)> =
+            to_agg.into_iter().map(|(e, s)| (e.into(), s)).collect();
+        let converted_group_by: Vec<dsl::Expr> = group_by.into_iter().map(|e| e.into()).collect();
+        Ok(self
+            .table
+            .agg(converted_to_agg.as_slice(), converted_group_by.as_slice())?
+            .into())
     }
 
     pub fn join(
