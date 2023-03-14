@@ -61,6 +61,10 @@ impl PyTable {
             .into())
     }
 
+    pub fn agg(&self, to_agg: Vec<(PyExpr, &str)>, group_by: Vec<PyExpr>) -> PyResult<Self> {
+        todo!("Got to_agg: {:?}, group_by: {:?}", to_agg, group_by)
+    }
+
     pub fn join(
         &self,
         right: &Self,

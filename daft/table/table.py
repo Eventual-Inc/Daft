@@ -156,7 +156,9 @@ class Table:
         return Table._from_pytable(self._table.sample(num))
 
     def agg(self, to_agg: list[tuple[Expression, str]], group_by: ExpressionsProjection | None = None) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+        to_agg_pyexprs = [(e._expr, s) for e, s in to_agg]
+        group_by_pyexprs = [e._expr for e in group_by] if group_by is not None else None
+        return Table._from_pytable(self._table.agg(to_agg_pyexprs, group_by_pyexprs))
 
     def quantiles(self, num: int) -> Table:
         return Table._from_pytable(self._table.quantiles(num))

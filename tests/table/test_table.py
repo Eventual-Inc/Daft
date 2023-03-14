@@ -439,6 +439,11 @@ def test_table_sum_badtype() -> None:
         daft_table = daft_table.eval_expression_list([col("a")._sum()])
 
 
+def test_table_groupby() -> None:
+    daft_table = Table.from_pydict({"groupkeys": ["str1", "str2", "str1"], "values": [1, 2, 3]})
+    daft_table = daft_table.agg([(col("values"), "sum")], [col("groupkeys")])
+
+
 import operator as ops
 
 OPS = [ops.add, ops.sub, ops.mul, ops.truediv, ops.mod, ops.lt, ops.le, ops.eq, ops.ne, ops.ge, ops.gt]
