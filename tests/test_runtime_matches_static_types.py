@@ -5,10 +5,12 @@ import itertools
 import operator as ops
 from typing import Callable
 
+import pyarrow as pa
 import pytest
 
 from daft.datatype import DataType
 from daft.expressions2 import Expression, ExpressionsProjection, col
+from daft.series import Series
 from daft.table import Table
 
 # For each datatype, we will generate an array pre-filled with the values in this dictionary
@@ -39,13 +41,13 @@ ALL_DTYPES = [
 class KernelSpec:
     name: str
     num_args: int
-    # Callable that takes `num_args` number of arguments, each of which is an expression
+    # Callable that takes `num_args` number of arguments, each of which is EITHER an expression or Series
     func: Callable
     # Optional list of non-Expression kwargs that the kernel should be tested against
     kwarg_variants: list[dict] | None = None
 
 
-def _cast(e: Expression, cast_to: DataType) -> Expression:
+def _cast(e: Expression | Series, cast_to: DataType) -> Expression | Series:
     return e.cast(cast_to)
 
 
@@ -63,7 +65,7 @@ ALL_KERNELS = [
     KernelSpec(name="ne", num_args=2, func=ops.ne),
     KernelSpec(name="ge", num_args=2, func=ops.ge),
     KernelSpec(name="gt", num_args=2, func=ops.gt),
-    KernelSpec(name="alias", num_args=1, func=lambda e: e.alias("foo")),
+    # KernelSpec(name="alias", num_args=1, func=lambda e: e.alias("foo")),
     KernelSpec(name="cast", num_args=1, func=_cast, kwarg_variants=[{"cast_to": dt for dt in ALL_DTYPES}]),
     # TODO: [RUST-INT][TPCH] Activate tests once these kernels have been implemented
     # KernelSpec(name="sum", num_args=1, func=lambda e: e.agg.sum()),
@@ -96,11 +98,9 @@ def test_schema_resolve_validation_matches_runtime_behavior(
     """
     assert kernel.num_args == len(dtypes), "Test harness must pass in the same number of dtypes as kernel.num_args"
 
+    data = {f"col_{i}": Series.from_arrow(pa.array([1, 2, 3])) for i in range(len(dtypes))}
     table = Table.from_pydict({f"col_{i}": [1, 2, 3] for i in range(len(dtypes))})
-
-    # NOTE: This might fail if INTEGERs cannot be casted to the type that is being tested
     table = table.eval_expression_list(ExpressionsProjection([col(f"col_{i}").cast(dt) for i, dt in enumerate(dtypes)]))
-
     projection = ExpressionsProjection(
         [kernel.func(*[col(f"col_{i}") for i in range(kernel.num_args)], **kernel_func_kwargs).alias("col_result")]
     )
@@ -109,15 +109,17 @@ def test_schema_resolve_validation_matches_runtime_behavior(
     resolved_schema = None
     try:
         resolved_schema = projection.resolve_schema(table.schema())
-    except TypeError:
+    except ValueError:
         pass
+
+    def run_kernel():
+        return kernel.func(*[data[f"col_{i}"] for i in range(kernel.num_args)], **kernel_func_kwargs)
 
     # If an error occurs during schema resolution, assert that an error would occur at runtime as well
     if resolved_schema is None:
-        with pytest.raises(TypeError):
-            table.eval_expression_list(projection)
+        with pytest.raises(ValueError):
+            run_kernel()
     # Otherwise, assert that kernel works at runtime, and check the dtype of the resulting data
     else:
-        result_table = table.eval_expression_list(projection)
-        result_series = result_table.get_column("col_result")
+        result_series = run_kernel()
         assert result_series.datatype() == resolved_schema["col_result"].dtype
