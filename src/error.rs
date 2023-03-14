@@ -50,19 +50,17 @@ impl Display for DaftError {
                         format!("{op_display_name}({})", args.join(", "))
                     }
                 };
-                let explanation: Vec<String> = fields_to_expr
-                    .iter()
-                    .map(|(field, expr)| {
-                        format!("`{}` resolves to {}: {}", field.name, field.dtype, expr)
-                    })
-                    .collect();
                 writeln!(
                     f,
                     "{op_display_name} expects {expectation}, but failed type resolution: {simple_field_display}"
                 )?;
                 writeln!(f, "where:")?;
-                for line in explanation.iter() {
-                    writeln!(f, "  {line}")?;
+                for (field, expr) in fields_to_expr.iter() {
+                    writeln!(
+                        f,
+                        "  `{}` resolves to {}: {}",
+                        field.name, field.dtype, expr
+                    )?;
                 }
                 Ok(())
             }
