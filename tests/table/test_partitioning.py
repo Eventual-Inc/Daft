@@ -48,7 +48,11 @@ def test_table_partition_by_hash_single_col(size, k, dtype) -> None:
 )
 def test_table_partition_by_hash_two_col(size, k, dtype) -> None:
     table = Table.from_pydict({"x": [i for i in range(size)], "x_ind": [i for i in range(size)]}).eval_expression_list(
-        [(col("x") % k).cast(dtype), (col("x") % (k + 1)).alias("y"), col("x_ind")]
+        [
+            (col("x").cast(DataType.int8()) % k).cast(dtype),
+            (col("x").cast(DataType.int8()) % (k + 1)).alias("y"),
+            col("x_ind"),
+        ]
     )
     split_tables = table.partition_by_hash([col("x"), col("y")], k)
     seen_so_far = set()

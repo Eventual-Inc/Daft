@@ -130,7 +130,7 @@ class DataType:
         raise NotImplementedError("[RUST-INT][PY] Implement checking whether this dtype is a Python type")
 
     def __repr__(self) -> str:
-        return f"DataType({self._dtype})"
+        return f"DataType[{self._dtype}]"
 
     def __eq__(self, other: object) -> builtins.bool:
         return isinstance(other, DataType) and self._dtype.is_equal(other._dtype)

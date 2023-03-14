@@ -62,7 +62,7 @@ def test_repr():
     schema = TABLE.schema()
     assert (
         repr(schema)
-        == "[('int', DataType(Int64)), ('float', DataType(Float64)), ('string', DataType(Utf8)), ('bool', DataType(Boolean))]"
+        == "[('int', DataType[Int64]), ('float', DataType[Float64]), ('string', DataType[Utf8]), ('bool', DataType[Boolean])]"
     )
 
 

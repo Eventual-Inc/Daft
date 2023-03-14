@@ -69,15 +69,24 @@ impl AggExpr {
                         | DataType::UInt64 => DataType::UInt64,
                         DataType::Float32 => DataType::Float32,
                         DataType::Float64 => DataType::Float64,
-                        other => {
-                            return Err(DaftError::TypeError(format!(
-                                "Numeric sum is not implemented for type {}",
-                                other
-                            )))
+                        _other => {
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: "input to be numeric".into(),
+                                expr: Arc::new(Expr::Agg(self.clone())),
+                                child_fields_to_expr: vec![(field.clone(), (*expr).clone())],
+                            })
                         }
                     },
                 ))
             }
+        }
+    }
+}
+
+impl Display for AggExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            AggExpr::Sum(expr) => write!(f, "sum({expr})"),
         }
     }
 }
@@ -109,30 +118,115 @@ impl Expr {
             Literal(value) => Ok(Field::new("literal", value.get_type())),
             Function { func, inputs } => func.to_field(inputs.as_slice(), schema),
             BinaryOp { op, left, right } => {
-                let result = match op {
+                let left_field = left.to_field(schema)?;
+                let right_field = right.to_field(schema)?;
+
+                match op {
+                    // Logical operations
+                    Operator::And | Operator::Or | Operator::Xor => {
+                        if left_field.dtype != DataType::Boolean
+                            || right_field.dtype != DataType::Boolean
+                        {
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: "all boolean arguments".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![
+                                    (left_field, (*left).clone()),
+                                    (right_field, (*right).clone()),
+                                ],
+                            });
+                        }
+                        Ok(Field::new(left_field.name.as_str(), DataType::Boolean))
+                    }
+
+                    // Comparison operations
                     Operator::Lt
                     | Operator::Gt
                     | Operator::Eq
                     | Operator::NotEq
-                    | Operator::And
                     | Operator::LtEq
-                    | Operator::GtEq
-                    | Operator::Or => {
-                        Field::new(left.to_field(schema)?.name.as_str(), DataType::Boolean)
+                    | Operator::GtEq => {
+                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
+                            Ok(_) => Ok(Field::new(
+                                left.to_field(schema)?.name.as_str(),
+                                DataType::Boolean,
+                            )),
+                            Err(_) => Err(DaftError::ExprResolveTypeError {
+                                expectation: "left and right arguments to be castable to the same supertype for comparison".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                            }),
+                        }
                     }
+
+                    // Plus operation: special-cased as it has semantic meaning for string types
+                    Operator::Plus => {
+                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
+                            Ok(supertype) => Ok(Field::new(
+                                left.to_field(schema)?.name.as_str(),
+                                supertype,
+                            )),
+                            Err(_) if left_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
+                                expectation: "right argument to be castable to string for string concatenation".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                            }),
+                            Err(_) if right_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
+                                expectation: "left argument to be castable to string for string concatenation".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                            }),
+                            Err(_) => Err(DaftError::ExprResolveTypeError {
+                                expectation: "left and right arguments to both be numeric".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
+                            }),
+                        }
+                    }
+
+                    // True divide operation
                     Operator::TrueDivide => {
-                        Field::new(left.to_field(schema)?.name.as_str(), DataType::Float64)
+                        if !left_field.dtype.is_castable(&DataType::Float64)
+                            || !right_field.dtype.is_castable(&DataType::Float64)
+                            || !left_field.dtype.is_numeric()
+                            || !right_field.dtype.is_numeric()
+                        {
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: format!(
+                                    "left and right arguments to both be numeric and castable to {}",
+                                    DataType::Float64
+                                ),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![
+                                    (left_field, (*left).clone()),
+                                    (right_field, (*right).clone()),
+                                ],
+                            });
+                        }
+                        Ok(Field::new(left_field.name.as_str(), DataType::Float64))
                     }
-                    _ => {
-                        let left_field = left.to_field(schema)?;
-                        let right_field = right.to_field(schema)?;
-                        Field::new(
+
+                    // Regular arithmetic operations
+                    Operator::Minus
+                    | Operator::Multiply
+                    | Operator::Modulus
+                    | Operator::FloorDivide => {
+                        if !&left_field.dtype.is_numeric() || !&right_field.dtype.is_numeric() {
+                            return Err(DaftError::ExprResolveTypeError {
+                                expectation: "left and right arguments to both be numeric".into(),
+                                expr: Arc::new(self.clone()),
+                                child_fields_to_expr: vec![
+                                    (left_field, (*left).clone()),
+                                    (right_field, (*right).clone()),
+                                ],
+                            });
+                        }
+                        Ok(Field::new(
                             left_field.name.as_str(),
                             try_get_supertype(&left_field.dtype, &right_field.dtype)?,
-                        )
+                        ))
                     }
-                };
-                Ok(result)
+                }
             }
         }
     }
@@ -165,13 +259,10 @@ impl Expr {
 impl Display for Expr {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        use AggExpr::*;
         use Expr::*;
         match self {
             Alias(expr, name) => write!(f, "{expr} AS {name}"),
-            Agg(agg_expr) => match agg_expr {
-                Sum(expr) => write!(f, "sum({expr})"),
-            },
+            Agg(agg_expr) => write!(f, "{agg_expr}"),
             BinaryOp { op, left, right } => {
                 let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
                     Alias(e, _) => write!(f, "{e}"),
