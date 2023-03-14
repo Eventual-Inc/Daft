@@ -17,7 +17,7 @@ impl Series {
         if series.len() == 1 {
             return Ok((*series.first().unwrap()).clone());
         }
-        
+
         let first_dtype = series.first().unwrap().data_type();
         for s in series.iter().skip(1) {
             if first_dtype != s.data_type() {
@@ -35,11 +35,9 @@ impl Series {
             )));
         }
 
-
         with_match_arrow_daft_types!(first_dtype, |$T| {
             let downcasted = series.iter().map(|s| s.downcast::<$T>()).collect::<DaftResult<Vec<_>>>()?;
             Ok(DataArray::<$T>::concat(downcasted.as_slice())?.into_series())
         })
-    
     }
 }

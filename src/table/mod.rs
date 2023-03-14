@@ -199,15 +199,16 @@ impl Table {
         let num_columns = first_table.num_columns();
         let mut new_series = Vec::with_capacity(num_columns);
         for i in 0..num_columns {
-            let series_to_cat: Vec<&Series> = tables.iter().map(|s| s.get_column_by_index(i).unwrap()).collect();
+            let series_to_cat: Vec<&Series> = tables
+                .iter()
+                .map(|s| s.get_column_by_index(i).unwrap())
+                .collect();
             new_series.push(Series::concat(series_to_cat.as_slice())?);
         }
         Ok(Table {
             schema: first_table.schema.clone(),
             columns: new_series,
         })
-
-
     }
 
     pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<&Series> {
