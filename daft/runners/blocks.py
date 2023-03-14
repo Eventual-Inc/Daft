@@ -808,7 +808,7 @@ class ArrowDataBlock(DataBlock[ArrowArrType]):
             elif op == "concat":
                 if len(arr) == 0:
                     # If the column is empty, explode() will not work due to type information being missing.
-                    # Manually construct the result in that case (by passsing through the empty column).
+                    # Manually construct the result in that case (by passing through the empty column).
                     exprs.append(pl.col(an))
                     agg_expected_arrow_type.append(pa.list_(table[an].type))
                 elif table[an].type == pa.list_(pa.null()):
