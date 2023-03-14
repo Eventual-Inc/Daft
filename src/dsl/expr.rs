@@ -72,14 +72,21 @@ impl AggExpr {
                         _other => {
                             return Err(DaftError::ExprResolveTypeError {
                                 expectation: "input to be numeric".into(),
-                                op_display_name: "sum".into(),
-                                fields_to_expr: vec![(field.clone(), (*expr).clone())],
-                                binary_op_display: None,
+                                expr_repr: self.to_string(),
+                                child_fields_to_expr: vec![(field.clone(), (*expr).clone())],
                             })
                         }
                     },
                 ))
             }
+        }
+    }
+}
+
+impl Display for AggExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            AggExpr::Sum(expr) => write!(f, "sum({expr})"),
         }
     }
 }
@@ -122,12 +129,11 @@ impl Expr {
                         {
                             return Err(DaftError::ExprResolveTypeError {
                                 expectation: "all boolean arguments".into(),
-                                op_display_name: op.to_string(),
-                                fields_to_expr: vec![
+                                expr_repr: self.to_string(),
+                                child_fields_to_expr: vec![
                                     (left_field, (*left).clone()),
                                     (right_field, (*right).clone()),
                                 ],
-                                binary_op_display: Some(op.to_string()),
                             });
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Boolean))
@@ -147,9 +153,8 @@ impl Expr {
                             )),
                             Err(_) => Err(DaftError::ExprResolveTypeError {
                                 expectation: "left and right arguments to be castable to the same supertype for comparison".into(),
-                                op_display_name: op.to_string(),
-                                fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
-                                binary_op_display: Some(op.to_string()),
+                                expr_repr: self.to_string(),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
                             }),
                         }
                     }
@@ -163,21 +168,18 @@ impl Expr {
                             )),
                             Err(_) if left_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
                                 expectation: "right argument to be castable to string for string concatenation".into(),
-                                op_display_name: op.to_string(),
-                                fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
-                                binary_op_display: Some(op.to_string()),
+                                expr_repr: self.to_string(),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
                             }),
                             Err(_) if right_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
                                 expectation: "left argument to be castable to string for string concatenation".into(),
-                                op_display_name: op.to_string(),
-                                fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
-                                binary_op_display: Some(op.to_string()),
+                                expr_repr: self.to_string(),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
                             }),
                             Err(_) => Err(DaftError::ExprResolveTypeError {
                                 expectation: "left and right arguments to both be numeric".into(),
-                                op_display_name: op.to_string(),
-                                fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
-                                binary_op_display: Some(op.to_string()),
+                                expr_repr: self.to_string(),
+                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
                             }),
                         }
                     }
@@ -192,12 +194,11 @@ impl Expr {
                                     "left and right arguments to both be castable to {}",
                                     DataType::Float64
                                 ),
-                                op_display_name: op.to_string(),
-                                fields_to_expr: vec![
+                                expr_repr: self.to_string(),
+                                child_fields_to_expr: vec![
                                     (left_field, (*left).clone()),
                                     (right_field, (*right).clone()),
                                 ],
-                                binary_op_display: Some(op.to_string()),
                             });
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Float64))
@@ -211,12 +212,11 @@ impl Expr {
                         if !&left_field.dtype.is_numeric() || !&right_field.dtype.is_numeric() {
                             return Err(DaftError::ExprResolveTypeError {
                                 expectation: "left and right arguments to both be numeric".into(),
-                                op_display_name: op.to_string(),
-                                fields_to_expr: vec![
+                                expr_repr: self.to_string(),
+                                child_fields_to_expr: vec![
                                     (left_field, (*left).clone()),
                                     (right_field, (*right).clone()),
                                 ],
-                                binary_op_display: Some(op.to_string()),
                             });
                         }
                         Ok(Field::new(
@@ -257,13 +257,10 @@ impl Expr {
 impl Display for Expr {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        use AggExpr::*;
         use Expr::*;
         match self {
             Alias(expr, name) => write!(f, "{expr} AS {name}"),
-            Agg(agg_expr) => match agg_expr {
-                Sum(expr) => write!(f, "sum({expr})"),
-            },
+            Agg(agg_expr) => f.write_str(&agg_expr.to_string()),
             BinaryOp { op, left, right } => {
                 let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
                     Alias(e, _) => write!(f, "{e}"),

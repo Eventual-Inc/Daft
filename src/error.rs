@@ -17,9 +17,8 @@ pub enum DaftError {
     // exactly which operation, arguments and dtypes of those arguments caused the issue.
     ExprResolveTypeError {
         expectation: String,
-        op_display_name: String,
-        binary_op_display: Option<String>,
-        fields_to_expr: Vec<(Field, Arc<Expr>)>,
+        expr_repr: String,
+        child_fields_to_expr: Vec<(Field, Arc<Expr>)>,
     },
 }
 
@@ -38,28 +37,15 @@ impl Display for DaftError {
         match self {
             Self::ExprResolveTypeError {
                 expectation,
-                op_display_name,
-                binary_op_display,
-                fields_to_expr,
+                expr_repr,
+                child_fields_to_expr,
             } => {
-                let simple_field_display = match (binary_op_display, &fields_to_expr[..]) {
-                    (Some(op), [(left_field, _), (right_field, _)]) => {
-                        format!("`{}` {op} `{}`", left_field.name, right_field.name)
-                    }
-                    _ => {
-                        let args: Vec<String> = fields_to_expr
-                            .iter()
-                            .map(|(field, _)| format!("`{}`", field.name))
-                            .collect();
-                        format!("{op_display_name}({})", args.join(", "))
-                    }
-                };
                 writeln!(
                     f,
-                    "{op_display_name} expects {expectation}, but failed type resolution: {simple_field_display}"
+                    "Expects {expectation}, but failed type resolution: {expr_repr}",
                 )?;
-                writeln!(f, "where:")?;
-                for (field, expr) in fields_to_expr.iter() {
+                writeln!(f, "where expression arguments are:")?;
+                for (field, expr) in child_fields_to_expr.iter() {
                     writeln!(
                         f,
                         "  `{}` resolves to {}: {}",
