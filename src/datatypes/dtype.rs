@@ -153,6 +153,10 @@ impl DataType {
             _ => false,
         }
     }
+
+    pub fn is_utf8(&self) -> bool {
+        matches!(self, DataType::Utf8)
+    }
 }
 
 impl From<&ArrowType> for DataType {
