@@ -149,7 +149,7 @@ class Table:
                     f"got {len(descending)} instead of {len(sort_keys)}"
                 )
         else:
-            raise ValueError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
+            raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return Table._from_pytable(self._table.sort(pyexprs, descending))
 
     def sample(self, num: int) -> Table:
@@ -184,7 +184,7 @@ class Table:
             raise NotImplementedError("TODO: [RUST-INT][TPCH] Multicolumn joins not implemented")
 
         if not isinstance(right, Table):
-            raise ValueError(f"Expected a Table for `right` in join but got {type(right)}")
+            raise TypeError(f"Expected a Table for `right` in join but got {type(right)}")
 
         left_exprs = [e._expr for e in left_on]
         right_exprs = [e._expr for e in right_on]
@@ -221,5 +221,5 @@ class Table:
                     f"got {len(descending)} instead of {len(sort_keys)}"
                 )
         else:
-            raise ValueError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
+            raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return Series._from_pyseries(self._table.argsort(pyexprs, descending))
