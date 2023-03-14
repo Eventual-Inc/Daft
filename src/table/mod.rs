@@ -176,7 +176,28 @@ impl Table {
         })
     }
 
-    //pub fn concat(tables: &[&Table]) -> DaftResult<Self>;
+    pub fn concat(tables: &[Table]) -> DaftResult<Self> {
+        if tables.is_empty() {
+            return Err(DaftError::ValueError(format!(
+                "Need at least 1 table to perform concat"
+            )));
+        }
+        if tables.len() == 1 {
+            return  Ok(tables.first().unwrap().clone());
+        }
+        let first_schema = tables.first().unwrap().schema.as_ref();
+        for tab in tables.iter().skip(1) {
+            if tab.schema.as_ref() != first_schema {
+                return Err(DaftError::SchemaMismatch(format!(
+                    "Table concat requires all schemas to match, {} vs {}",
+                    first_schema,
+                    tab.schema
+                )));
+            }
+        }
+        
+
+    }
 
     pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<&Series> {
         let i = self.schema.get_index(name.as_ref())?;

@@ -9,6 +9,7 @@ pub mod arithmetic;
 pub mod broadcast;
 pub mod cast;
 pub mod comparision;
+pub mod concat;
 pub mod downcast;
 pub mod filter;
 pub mod full;
