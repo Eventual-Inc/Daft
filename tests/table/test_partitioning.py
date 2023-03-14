@@ -42,6 +42,27 @@ def test_table_partition_by_hash_single_col(size, k, dtype) -> None:
             seen_so_far.add(v)
 
 
+@pytest.mark.parametrize(
+    "size, k, dtype", itertools.product([0, 1, 10, 33, 100], [1, 2, 3, 10, 40], daft_numeric_types + daft_string_types)
+)
+def test_table_partition_by_hash_two_col(size, k, dtype) -> None:
+    table = Table.from_pydict({"x": [i for i in range(size)], "x_ind": [i for i in range(size)]}).eval_expression_list(
+        [(col("x") % k).cast(dtype), (col("x") % (k + 1)).alias("y"), col("x_ind")]
+    )
+    split_tables = table.partition_by_hash([col("x"), col("y")], k)
+    seen_so_far = set()
+    for st in split_tables:
+        unique_to_table = set()
+        for x, y, x_ind in zip(
+            st.get_column("x").to_pylist(), st.get_column("y").to_pylist(), st.get_column("x_ind").to_pylist()
+        ):
+            assert (x_ind % k) == int(x)
+            unique_to_table.add((x, y))
+        for v in unique_to_table:
+            assert v not in seen_so_far
+            seen_so_far.add(v)
+
+
 def test_table_partition_by_hash_bad_input() -> None:
     # negative sample
 
