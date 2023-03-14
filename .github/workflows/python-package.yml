@@ -72,7 +72,7 @@ jobs:
         export CARGO_INCREMENTAL=1
         cargo llvm-cov clean --workspace
         maturin develop
-        mkdir -p report-output && pytest --cov=daft
+        mkdir -p report-output && pytest --cov=daft --durations=50
         coverage combine -a --data-file='.coverage' || true
         coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft_runner }}.xml
         cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft_runner }}.lcov

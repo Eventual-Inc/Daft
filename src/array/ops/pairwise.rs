@@ -36,8 +36,8 @@ where
                 }
             }
         }
-        let left_series = DataArray::from((self.name(), left_idx.as_slice()));
-        let right_series = DataArray::from((other.name(), right_idx.as_slice()));
+        let left_series = DataArray::from((self.name(), left_idx));
+        let right_series = DataArray::from((other.name(), right_idx));
         Ok((left_series, right_series))
     }
 }
@@ -71,8 +71,8 @@ impl Utf8Array {
                 }
             }
         }
-        let left_series = DataArray::from((self.name(), left_idx.as_slice()));
-        let right_series = DataArray::from((other.name(), right_idx.as_slice()));
+        let left_series = DataArray::from((self.name(), left_idx));
+        let right_series = DataArray::from((other.name(), right_idx));
         Ok((left_series, right_series))
     }
 }
@@ -106,8 +106,8 @@ impl BooleanArray {
                 }
             }
         }
-        let left_series = DataArray::from((self.name(), left_idx.as_slice()));
-        let right_series = DataArray::from((other.name(), right_idx.as_slice()));
+        let left_series = DataArray::from((self.name(), left_idx));
+        let right_series = DataArray::from((other.name(), right_idx));
         Ok((left_series, right_series))
     }
 }
@@ -123,8 +123,8 @@ impl NullArray {
     {
         let left_idx = vec![];
         let right_idx = vec![];
-        let left_series = DataArray::from((self.name(), left_idx.as_slice()));
-        let right_series = DataArray::from((other.name(), right_idx.as_slice()));
+        let left_series = DataArray::from((self.name(), left_idx));
+        let right_series = DataArray::from((other.name(), right_idx));
         Ok((left_series, right_series))
     }
 }

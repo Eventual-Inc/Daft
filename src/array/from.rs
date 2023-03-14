@@ -34,6 +34,17 @@ where
     }
 }
 
+impl<T> From<(&str, Vec<T::Native>)> for DataArray<T>
+where
+    T: DaftNumericType,
+{
+    fn from(item: (&str, Vec<T::Native>)) -> Self {
+        let (name, v) = item;
+        let arrow_array = arrow2::array::PrimitiveArray::<T::Native>::from_vec(v);
+        DataArray::new(Field::new(name, T::get_dtype()).into(), arrow_array.arced()).unwrap()
+    }
+}
+
 impl From<(&str, &[bool])> for BooleanArray {
     fn from(item: (&str, &[bool])) -> Self {
         let (name, slice) = item;

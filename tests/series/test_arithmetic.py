@@ -174,19 +174,19 @@ def test_comparisons_bad_right_value() -> None:
     l = Series.from_arrow(l_arrow)
     r = [1, 2, 3, None, 5, None]
 
-    with pytest.raises(ValueError, match="another Series"):
+    with pytest.raises(TypeError, match="another Series"):
         l + r
 
-    with pytest.raises(ValueError, match="another Series"):
+    with pytest.raises(TypeError, match="another Series"):
         l - r
 
-    with pytest.raises(ValueError, match="another Series"):
+    with pytest.raises(TypeError, match="another Series"):
         l / r
 
-    with pytest.raises(ValueError, match="another Series"):
+    with pytest.raises(TypeError, match="another Series"):
         l * r
 
-    with pytest.raises(ValueError, match="another Series"):
+    with pytest.raises(TypeError, match="another Series"):
         l % r
 
 

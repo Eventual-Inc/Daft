@@ -101,7 +101,7 @@ impl Table {
             use rand::{distributions::Uniform, Rng};
             let range = Uniform::from(0..self.len() as u64);
             let values: Vec<u64> = rand::thread_rng().sample_iter(&range).take(num).collect();
-            let indices = UInt64Array::from(("idx", values.as_slice()));
+            let indices = UInt64Array::from(("idx", values));
             self.take(&indices.into_series())
         }
     }
@@ -127,7 +127,7 @@ impl Table {
                     .min((self.len() - 1) as u64)
             })
             .collect();
-        let indices = UInt64Array::from(("idx", sample_points.as_slice()));
+        let indices = UInt64Array::from(("idx", sample_points));
         self.take(&indices.into_series())
     }
 
@@ -178,13 +178,13 @@ impl Table {
 
     //pub fn concat(tables: &[&Table]) -> DaftResult<Self>;
 
-    pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<Series> {
+    pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<&Series> {
         let i = self.schema.get_index(name.as_ref())?;
-        Ok(self.columns.get(i).unwrap().clone())
+        Ok(self.columns.get(i).unwrap())
     }
 
-    pub fn get_column_by_index(&self, idx: usize) -> DaftResult<Series> {
-        Ok(self.columns.get(idx).unwrap().clone())
+    pub fn get_column_by_index(&self, idx: usize) -> DaftResult<&Series> {
+        Ok(self.columns.get(idx).unwrap())
     }
 
     fn eval_agg_expression(&self, agg_expr: &AggExpr) -> DaftResult<Series> {
@@ -201,7 +201,7 @@ impl Table {
             Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
             Agg(agg_expr) => self.eval_agg_expression(agg_expr),
             Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
-            Column(name) => self.get_column(name),
+            Column(name) => self.get_column(name).cloned(),
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
@@ -338,8 +338,8 @@ mod test {
     use crate::table::Table;
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3].as_slice())).into_series();
-        let b = Float64Array::from(("b", vec![1., 2., 3.].as_slice())).into_series();
+        let a = Int64Array::from(("a", vec![1, 2, 3])).into_series();
+        let b = Float64Array::from(("b", vec![1., 2., 3.])).into_series();
         let schema = Schema::new(vec![
             a.field().clone().rename("a"),
             b.field().clone().rename("b"),
