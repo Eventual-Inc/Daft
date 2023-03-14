@@ -58,6 +58,13 @@ impl Add for Series {
 impl Div for &Series {
     type Output = DaftResult<Series>;
     fn div(self, rhs: Self) -> Self::Output {
+        if !self.data_type().is_numeric() || !rhs.data_type().is_numeric() {
+            return Err(DaftError::TypeError(format!(
+                "True division requires numeric arguments, but received {} / {}",
+                self.data_type(),
+                rhs.data_type()
+            )));
+        }
         let lhs = self.cast(&crate::datatypes::DataType::Float64)?;
         let rhs = rhs.cast(&crate::datatypes::DataType::Float64)?;
 

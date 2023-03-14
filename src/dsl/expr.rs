@@ -187,11 +187,13 @@ impl Expr {
                     // True divide operation
                     Operator::TrueDivide => {
                         if !left_field.dtype.is_castable(&DataType::Float64)
-                            || !left_field.dtype.is_castable(&DataType::Float64)
+                            || !right_field.dtype.is_castable(&DataType::Float64)
+                            || !left_field.dtype.is_numeric()
+                            || !right_field.dtype.is_numeric()
                         {
                             return Err(DaftError::ExprResolveTypeError {
                                 expectation: format!(
-                                    "left and right arguments to both be castable to {}",
+                                    "left and right arguments to both be numeric and castable to {}",
                                     DataType::Float64
                                 ),
                                 expr_repr: self.to_string(),
