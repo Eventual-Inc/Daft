@@ -183,6 +183,21 @@ def test_table_partition_by_range_multi_column(size, k, desc) -> None:
             seen_idx.add(y)
 
 
+def test_table_partition_by_range_multi_column_string() -> None:
+    table = Table.from_pydict({"x": ["a", "c", "a", "c"], "y": ["1", "2", "3", "4"]})
+    boundaries = Table.from_pydict({"x": ["b"], "y": ["1"]})
+    split_tables = table.partition_by_range([col("x"), col("y")], boundaries, [False, False])
+    assert len(split_tables) == 2
+
+    assert split_tables[0].to_pydict() == {"x": ["a", "a"], "y": ["1", "3"]}
+    assert split_tables[1].to_pydict() == {"x": ["c", "c"], "y": ["2", "4"]}
+
+    split_tables = table.partition_by_range([col("x"), col("y")], boundaries, [True, False])
+
+    assert split_tables[1].to_pydict() == {"x": ["a", "a"], "y": ["1", "3"]}
+    assert split_tables[0].to_pydict() == {"x": ["c", "c"], "y": ["2", "4"]}
+
+
 def test_table_partition_by_range_input() -> None:
     # negative sample
 
