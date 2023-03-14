@@ -113,9 +113,9 @@ def test_schema_resolve_validation_matches_runtime_behavior(
         pass
 
     def run_kernel():
-        return kernel.func(*[data[f"col_{i}"] for i in range(kernel.num_args)], **kernel_func_kwargs)
+        return kernel.func(*[data[f"col_{i}"].cast(dt) for i, dt in enumerate(dtypes)], **kernel_func_kwargs)
 
-    # If an error occurs during schema resolution, assert that an error would occur at runtime as well
+    # If an error occurs during schema resolution, assert that a ValueError would occur at runtime as well
     if resolved_schema is None:
         with pytest.raises(ValueError):
             run_kernel()

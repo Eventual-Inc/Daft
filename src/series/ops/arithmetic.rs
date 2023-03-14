@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use super::match_types_on_series;
 use crate::array::BaseArray;
 use crate::datatypes::Float64Type;
-use crate::error::DaftResult;
+use crate::error::{DaftError, DaftResult};
 use crate::series::Series;
 use crate::with_match_numeric_and_utf_daft_types;
 use crate::with_match_numeric_daft_types;
@@ -14,6 +14,16 @@ macro_rules! impl_series_math_op {
             type Output = DaftResult<Series>;
             fn $func_name(self, rhs: Self) -> Self::Output {
                 let (lhs, rhs) = match_types_on_series(self, rhs)?;
+                if !lhs.data_type().is_numeric() {
+                    return Err(DaftError::TypeError(
+                        "Cannot run on non-numeric types".into(),
+                    ));
+                }
+                if !rhs.data_type().is_numeric() {
+                    return Err(DaftError::TypeError(
+                        "Cannot run on non-numeric types".into(),
+                    ));
+                }
                 with_match_numeric_daft_types!(lhs.data_type(), |$T| {
                     let lhs = lhs.downcast::<$T>()?;
                     let rhs = rhs.downcast::<$T>()?;
@@ -78,7 +88,7 @@ impl_series_math_op!(Rem, rem);
 mod tests {
     use crate::{
         array::BaseArray,
-        datatypes::{DataType, Float64Array, Int64Array, Utf8Array},
+        datatypes::{DataType, Float64Array, Int64Array, Int8Array, Utf8Array},
         error::DaftResult,
     };
     #[test]
