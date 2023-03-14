@@ -72,7 +72,7 @@ impl AggExpr {
                         _other => {
                             return Err(DaftError::ExprResolveTypeError {
                                 expectation: "input to be numeric".into(),
-                                expr_repr: self.to_string(),
+                                expr: Arc::new(Expr::Agg(self.clone())),
                                 child_fields_to_expr: vec![(field.clone(), (*expr).clone())],
                             })
                         }
@@ -129,7 +129,7 @@ impl Expr {
                         {
                             return Err(DaftError::ExprResolveTypeError {
                                 expectation: "all boolean arguments".into(),
-                                expr_repr: self.to_string(),
+                                expr: Arc::new(self.clone()),
                                 child_fields_to_expr: vec![
                                     (left_field, (*left).clone()),
                                     (right_field, (*right).clone()),
@@ -153,7 +153,7 @@ impl Expr {
                             )),
                             Err(_) => Err(DaftError::ExprResolveTypeError {
                                 expectation: "left and right arguments to be castable to the same supertype for comparison".into(),
-                                expr_repr: self.to_string(),
+                                expr: Arc::new(self.clone()),
                                 child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
                             }),
                         }
@@ -168,17 +168,17 @@ impl Expr {
                             )),
                             Err(_) if left_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
                                 expectation: "right argument to be castable to string for string concatenation".into(),
-                                expr_repr: self.to_string(),
+                                expr: Arc::new(self.clone()),
                                 child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
                             }),
                             Err(_) if right_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
                                 expectation: "left argument to be castable to string for string concatenation".into(),
-                                expr_repr: self.to_string(),
+                                expr: Arc::new(self.clone()),
                                 child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
                             }),
                             Err(_) => Err(DaftError::ExprResolveTypeError {
                                 expectation: "left and right arguments to both be numeric".into(),
-                                expr_repr: self.to_string(),
+                                expr: Arc::new(self.clone()),
                                 child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
                             }),
                         }
@@ -196,7 +196,7 @@ impl Expr {
                                     "left and right arguments to both be numeric and castable to {}",
                                     DataType::Float64
                                 ),
-                                expr_repr: self.to_string(),
+                                expr: Arc::new(self.clone()),
                                 child_fields_to_expr: vec![
                                     (left_field, (*left).clone()),
                                     (right_field, (*right).clone()),
@@ -214,7 +214,7 @@ impl Expr {
                         if !&left_field.dtype.is_numeric() || !&right_field.dtype.is_numeric() {
                             return Err(DaftError::ExprResolveTypeError {
                                 expectation: "left and right arguments to both be numeric".into(),
-                                expr_repr: self.to_string(),
+                                expr: Arc::new(self.clone()),
                                 child_fields_to_expr: vec![
                                     (left_field, (*left).clone()),
                                     (right_field, (*right).clone()),

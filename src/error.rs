@@ -17,7 +17,7 @@ pub enum DaftError {
     // exactly which operation, arguments and dtypes of those arguments caused the issue.
     ExprResolveTypeError {
         expectation: String,
-        expr_repr: String,
+        expr: Arc<Expr>,
         child_fields_to_expr: Vec<(Field, Arc<Expr>)>,
     },
 }
@@ -37,12 +37,12 @@ impl Display for DaftError {
         match self {
             Self::ExprResolveTypeError {
                 expectation,
-                expr_repr,
+                expr,
                 child_fields_to_expr,
             } => {
                 writeln!(
                     f,
-                    "Expects {expectation}, but failed type resolution: {expr_repr}",
+                    "Expects {expectation}, but failed type resolution: {expr}",
                 )?;
                 writeln!(f, "where expression arguments are:")?;
                 for (field, expr) in child_fields_to_expr.iter() {
