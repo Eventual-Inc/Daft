@@ -190,7 +190,11 @@ impl Table {
     fn eval_agg_expression(&self, agg_expr: &AggExpr) -> DaftResult<Series> {
         use crate::dsl::AggExpr::*;
         match agg_expr {
-            Sum(expr) => self.eval_expression(expr)?.sum(),
+            Count(expr) => Series::count(&self.eval_expression(expr)?),
+            Sum(expr) => Series::sum(&self.eval_expression(expr)?),
+            Mean(expr) => Series::mean(&self.eval_expression(expr)?),
+            Min(expr) => Series::min(&self.eval_expression(expr)?),
+            Max(expr) => Series::max(&self.eval_expression(expr)?),
         }
     }
 

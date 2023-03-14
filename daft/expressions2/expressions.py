@@ -180,8 +180,24 @@ class Expression:
         expr = self._expr.cast(dtype._dtype)
         return Expression._from_pyexpr(expr)
 
+    def _count(self) -> Expression:
+        expr = self._expr.count()
+        return Expression._from_pyexpr(expr)
+
     def _sum(self) -> Expression:
         expr = self._expr.sum()
+        return Expression._from_pyexpr(expr)
+
+    def _mean(self) -> Expression:
+        expr = self._expr.mean()
+        return Expression._from_pyexpr(expr)
+
+    def _min(self) -> Expression:
+        expr = self._expr.min()
+        return Expression._from_pyexpr(expr)
+
+    def _max(self) -> Expression:
+        expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:

@@ -5,12 +5,15 @@ mod arithmetic;
 mod arrow2;
 mod broadcast;
 mod cast;
+mod compare_agg;
 mod comparison;
+mod count;
 mod downcast;
 mod filter;
 mod full;
 mod hash;
 mod len;
+mod mean;
 mod pairwise;
 mod search_sorted;
 mod sort;
@@ -52,8 +55,23 @@ pub trait DaftLogical<Rhs> {
     fn xor(&self, rhs: Rhs) -> Self::Output;
 }
 
-pub trait DaftNumericAgg {
+pub trait DaftCountAggable {
     type Output;
+    fn count(&self) -> Self::Output;
+}
 
+pub trait DaftSumAggable {
+    type Output;
     fn sum(&self) -> Self::Output;
+}
+
+pub trait DaftMeanAggable {
+    type Output;
+    fn mean(&self) -> Self::Output;
+}
+
+pub trait DaftCompareAggable {
+    type Output;
+    fn min(&self) -> Self::Output;
+    fn max(&self) -> Self::Output;
 }
