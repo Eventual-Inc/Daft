@@ -148,6 +148,41 @@ def test_table_partition_by_range_single_column(size, k, desc) -> None:
             seen_idx.add(x_ind)
 
 
+@pytest.mark.parametrize("size, k, desc", itertools.product([0, 1, 10, 33, 100], [1, 2, 3, 10, 40], [False, True]))
+def test_table_partition_by_range_multi_column(size, k, desc) -> None:
+    x = np.ones(size)
+    y = np.arange(size, dtype=np.float64())
+
+    table = Table.from_pydict({"x": x, "y": y})
+
+    original_boundaries = np.linspace(0, size, k)
+
+    input_boundaries = original_boundaries[1:]
+    if desc:
+        input_boundaries = input_boundaries[::-1]
+
+    boundaries = Table.from_pydict({"x": np.ones(k - 1), "y": input_boundaries}).eval_expression_list(
+        [col("x").cast(table.get_column("x").datatype()), col("y").cast(table.get_column("y").datatype())]
+    )
+
+    split_tables = table.partition_by_range([col("x"), col("y")], boundaries, [desc, desc])
+    if desc:
+        split_tables = split_tables[::-1]
+
+    total_split_len = sum([len(t) for t in split_tables])
+    assert total_split_len == size
+
+    seen_idx = set()
+
+    for i, st in enumerate(split_tables):
+        for x, y in zip(st.get_column("x").to_pylist(), st.get_column("y").to_pylist()):
+            assert original_boundaries[i] <= y
+            if i < (k - 1):
+                assert y <= original_boundaries[i + 1]
+            assert y not in seen_idx
+            seen_idx.add(y)
+
+
 def test_table_partition_by_range_input() -> None:
     # negative sample
 

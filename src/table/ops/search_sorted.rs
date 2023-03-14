@@ -1,6 +1,9 @@
 use crate::{
+    array::DataArray,
     datatypes::UInt64Array,
     error::{DaftError, DaftResult},
+    kernels::search_sorted::search_sorted_multi_array,
+    series::Series,
     table::Table,
 };
 
@@ -21,6 +24,21 @@ impl Table {
                 .get_column_by_index(0)?
                 .search_sorted(keys.get_column_by_index(0)?, *descending.first().unwrap());
         }
-        todo!("impl multicol search_sorted")
+        unsafe {
+            multicol_search_sorted(self.columns.as_slice(), keys.columns.as_slice(), descending)
+        }
     }
+}
+
+unsafe fn multicol_search_sorted(
+    data: &[Series],
+    keys: &[Series],
+    descending: &[bool],
+) -> DaftResult<UInt64Array> {
+    let data_arrow_vec = data.iter().map(|s| s.array().data()).collect();
+    let keys_arrow_vec = keys.iter().map(|s| s.array().data()).collect();
+
+    let indices =
+        search_sorted_multi_array(&data_arrow_vec, &keys_arrow_vec, &Vec::from(descending))?;
+    Ok(DataArray::from(("indices", Box::new(indices))))
 }
