@@ -178,9 +178,9 @@ impl Table {
 
     pub fn concat(tables: &[&Table]) -> DaftResult<Self> {
         if tables.is_empty() {
-            return Err(DaftError::ValueError(format!(
-                "Need at least 1 table to perform concat"
-            )));
+            return Err(DaftError::ValueError(
+                "Need at least 1 table to perform concat".to_string(),
+            ));
         }
         if tables.len() == 1 {
             return Ok((*tables.first().unwrap()).clone());

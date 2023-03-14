@@ -9,9 +9,9 @@ use crate::array::BaseArray;
 impl Series {
     pub fn concat(series: &[&Series]) -> DaftResult<Self> {
         if series.is_empty() {
-            return Err(DaftError::ValueError(format!(
-                "Need at least 1 series to perform concat"
-            )));
+            return Err(DaftError::ValueError(
+                "Need at least 1 series to perform concat".to_string(),
+            ));
         }
 
         if series.len() == 1 {
