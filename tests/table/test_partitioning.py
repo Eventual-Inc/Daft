@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 
+import numpy as np
 import pytest
 
 from daft.datatype import DataType
@@ -114,9 +115,6 @@ def test_table_partition_by_random_bad_input() -> None:
         table.partition_by_random(-1, 10)
 
 
-import numpy as np
-
-
 @pytest.mark.parametrize("size, k, desc", itertools.product([0, 1, 10, 33, 100], [1, 2, 3, 10, 40], [False, True]))
 def test_table_partition_by_range_single_column(size, k, desc) -> None:
     table = Table.from_pydict({"x": np.arange(size, dtype=np.float64()), "x_ind": list(range(size))})
@@ -148,3 +146,18 @@ def test_table_partition_by_range_single_column(size, k, desc) -> None:
                 assert x <= original_boundaries[i + 1]
             assert x_ind not in seen_idx
             seen_idx.add(x_ind)
+
+
+def test_table_partition_by_range_input() -> None:
+    # negative sample
+
+    table = Table.from_pydict({"x": [1, 2, 3], "b": [0, 1, 2]})
+
+    with pytest.raises(ValueError, match="Schema Mismatch"):
+        table.partition_by_range([col("x")], table, [False])
+
+    with pytest.raises(ValueError, match="Mismatch in number of arguments for `descending`"):
+        table.partition_by_range([col("x")], table.eval_expression_list([col("x")]), [False, False])
+
+    with pytest.raises(ValueError, match="Schema Mismatch"):
+        table.partition_by_range([col("x")], table.eval_expression_list([col("x").alias("y")]), [False])
