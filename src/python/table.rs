@@ -16,6 +16,7 @@ use super::schema::PySchema;
 use super::series::PySeries;
 
 #[pyclass]
+#[derive(Clone)]
 pub struct PyTable {
     pub table: table::Table,
 }
@@ -195,6 +196,12 @@ impl PyTable {
         }
 
         Ok(self.table.get_column_by_index(idx)?.clone().into())
+    }
+
+    #[staticmethod]
+    pub fn concat(tables: Vec<Self>) -> PyResult<Self> {
+        let tables: Vec<_> = tables.iter().map(|t| &t.table).collect();
+        Ok(Table::concat(tables.as_slice())?.into())
     }
 
     #[staticmethod]

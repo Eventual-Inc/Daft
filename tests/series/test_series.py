@@ -424,3 +424,19 @@ def test_series_concat(dtype, chunks) -> None:
             val = i * j
             assert concated_list[counter] == val
             counter += 1
+
+
+def test_series_concat_bad_input() -> None:
+    mix_types_series = [Series.from_pylist([1, 2, 3]), []]
+    with pytest.raises(TypeError, match="Expected a Series for concat"):
+        Series.concat(mix_types_series)
+
+    with pytest.raises(ValueError, match="Need at least 1 series"):
+        Series.concat([])
+
+
+def test_series_concat_dtype_mismatch() -> None:
+    mix_types_series = [Series.from_pylist([1, 2, 3]), Series.from_pylist([1.0, 2.0, 3.0])]
+
+    with pytest.raises(ValueError, match="concat requires all data types to match"):
+        Series.concat(mix_types_series)

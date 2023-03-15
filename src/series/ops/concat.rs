@@ -36,7 +36,7 @@ impl Series {
         }
 
         with_match_arrow_daft_types!(first_dtype, |$T| {
-            let downcasted = series.iter().map(|s| s.downcast::<$T>()).collect::<DaftResult<Vec<_>>>()?;
+            let downcasted = series.into_iter().map(|s| s.downcast::<$T>()).collect::<DaftResult<Vec<_>>>()?;
             Ok(DataArray::<$T>::concat(downcasted.as_slice())?.into_series())
         })
     }

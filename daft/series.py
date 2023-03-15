@@ -56,7 +56,8 @@ class Series:
     def concat(series: list[Series]) -> Series:
         pyseries = []
         for s in series:
-            assert isinstance(s, Series)
+            if not isinstance(s, Series):
+                raise TypeError(f"Expected a Series for concat, got {type(s)}")
             pyseries.append(s._series)
         return Series._from_pyseries(PySeries.concat(pyseries))
 

@@ -795,3 +795,38 @@ def test_table_abs_bad_input() -> None:
 
     with pytest.raises(ValueError, match="Expected input to abs to be numeric"):
         table.eval_expression_list([abs(col("a"))])
+
+
+def test_table_concat_bad_input() -> None:
+    mix_types_table = [Table.from_pydict({"x": [1, 2, 3]}), []]
+    with pytest.raises(TypeError, match="Expected a Table for concat"):
+        Table.concat(mix_types_table)
+
+    with pytest.raises(ValueError, match="Need at least 1 table"):
+        Table.concat([])
+
+
+def test_table_concat_schema_mismatch() -> None:
+    mix_types_table = [
+        Table.from_pydict({"x": [1, 2, 3]}),
+        Table.from_pydict({"y": [1, 2, 3]}),
+    ]
+
+    with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
+        Table.concat(mix_types_table)
+
+    mix_types_table = [
+        Table.from_pydict({"x": [1, 2, 3]}),
+        Table.from_pydict({"x": [1.0, 2.0, 3.0]}),
+    ]
+
+    with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
+        Table.concat(mix_types_table)
+
+    mix_types_table = [
+        Table.from_pydict({"x": [1, 2, 3]}),
+        Table.from_pydict({"x": [1, 2, 3], "y": [2, 3, 4]}),
+    ]
+
+    with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
+        Table.concat(mix_types_table)
