@@ -28,6 +28,30 @@ daft_string_types = [DataType.string()]
 daft_nonnull_types = daft_numeric_types + daft_string_types + [DataType.bool(), DataType.binary(), DataType.date()]
 
 
+def test_from_pydict_list() -> None:
+    daft_table = Table.from_pydict({"a": [1, 2, 3]})
+    assert "a" in daft_table.column_names()
+    assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int64())
+
+
+def test_from_pydict_np() -> None:
+    daft_table = Table.from_pydict({"a": np.array([1, 2, 3], dtype=np.int64)})
+    assert "a" in daft_table.column_names()
+    assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int64())
+
+
+def test_from_pydict_arrow() -> None:
+    daft_table = Table.from_pydict({"a": pa.array([1, 2, 3], type=pa.int8())})
+    assert "a" in daft_table.column_names()
+    assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int8())
+
+
+def test_from_pydict_series() -> None:
+    daft_table = Table.from_pydict({"a": Series.from_arrow(pa.array([1, 2, 3], type=pa.int8()))})
+    assert "a" in daft_table.column_names()
+    assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int8())
+
+
 def test_from_arrow_round_trip() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
     daft_table = Table.from_arrow(pa_table)

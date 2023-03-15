@@ -83,6 +83,8 @@ class Table:
                 series = Series.from_numpy(v)
             elif isinstance(v, Series):
                 series = v
+            elif isinstance(v, pa.Array) or isinstance(v, pa.ChunkedArray):
+                series = Series.from_arrow(v)
             else:
                 series = Series.from_arrow(pa.array(v))
             series_dict[k] = series._series
