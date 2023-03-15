@@ -83,8 +83,10 @@ class Table:
                 series = Series.from_numpy(v)
             elif isinstance(v, Series):
                 series = v
+            elif isinstance(v, pa.Array) or isinstance(v, pa.ChunkedArray):
+                series = Series.from_arrow(v)
             else:
-                series = Series.from_arrow(pa.array(v))
+                raise NotImplementedError(f"Creating a Table from {type(data)} not implemented")
             series_dict[k] = series._series
         return Table._from_pytable(_PyTable.from_pylist_series(series_dict))
 
