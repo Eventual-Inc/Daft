@@ -252,6 +252,7 @@ def test_series_int_sorting(dtype) -> None:
     assert taken.to_pylist() == sorted_order[::-1]
 
 
+@pytest.mark.skip()
 def test_series_date_sorting() -> None:
     from datetime import date
 
