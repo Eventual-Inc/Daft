@@ -43,6 +43,23 @@ pub enum AggExpr {
     Max(ExprRef),
 }
 
+impl AggExpr {
+    pub fn from_name_and_child_expr(name: &str, child: &Expr) -> DaftResult<AggExpr> {
+        use AggExpr::*;
+        match name {
+            "count" => Ok(Count(child.clone().into())),
+            "sum" => Ok(Sum(child.clone().into())),
+            "mean" => Ok(Mean(child.clone().into())),
+            "min" => Ok(Min(child.clone().into())),
+            "max" => Ok(Max(child.clone().into())),
+            _ => Err(DaftError::ValueError(format!(
+                "{} not a valid aggregation name",
+                name
+            ))),
+        }
+    }
+}
+
 pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
     Expr::Column(name.into())
 }
