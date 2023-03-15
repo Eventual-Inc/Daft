@@ -468,6 +468,70 @@ def test_table_sum_badtype() -> None:
         daft_table = daft_table.eval_expression_list([col("a")._sum()])
 
 
+test_table_agg_global_cases = [
+    (
+        [],
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+        },
+    ),
+    (
+        [None],
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+        },
+    ),
+    (
+        [None, None, None],
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+        },
+    ),
+    (
+        [None, 3, None, None, 1, 2, 0, None],
+        {
+            "count": [4],
+            "sum": [6],
+            "mean": [1.5],
+            "min": [0],
+            "max": [3],
+        },
+    ),
+]
+
+
+@pytest.mark.parametrize("case", test_table_agg_global_cases, ids=[f"{_}" for _ in test_table_agg_global_cases])
+def test_table_agg_global(case) -> None:
+    """Test that global aggregation works at the API layer."""
+    input, expected = case
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.agg(
+        [
+            (col("input").cast(DataType.int32()).alias("count"), "count"),
+            (col("input").cast(DataType.int32()).alias("sum"), "sum"),
+            (col("input").cast(DataType.int32()).alias("mean"), "mean"),
+            (col("input").cast(DataType.int32()).alias("min"), "min"),
+            (col("input").cast(DataType.int32()).alias("max"), "max"),
+        ]
+    )
+
+    result = daft_table.to_pydict()
+    for key, value in expected.items():
+        assert result[key] == value
+
+
 import operator as ops
 
 OPS = [ops.add, ops.sub, ops.mul, ops.truediv, ops.mod, ops.lt, ops.le, ops.eq, ops.ne, ops.ge, ops.gt]

@@ -1,3 +1,4 @@
+mod agg;
 mod hash;
 mod joins;
 mod partition;
