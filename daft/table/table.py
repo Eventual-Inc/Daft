@@ -70,6 +70,9 @@ class Table:
     @staticmethod
     def from_arrow(arrow_table: pa.Table) -> Table:
         assert isinstance(arrow_table, pa.Table)
+        # TODO: [RUST-INT][TPCH] _PyTable.from_arrow_record_batches only supports single-batch inputs at the moment
+        # so we hack around it by combining the chunks first. We should fix this and remove arrow_table.combine_chunks() here.
+        arrow_table = arrow_table.combine_chunks()
         pyt = _PyTable.from_arrow_record_batches(arrow_table.to_batches())
         return Table._from_pytable(pyt)
 
