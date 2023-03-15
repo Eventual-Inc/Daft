@@ -90,7 +90,7 @@ impl_series_math_op!(Rem, rem);
 mod tests {
     use crate::{
         array::BaseArray,
-        datatypes::{DataType, Float64Array, Int64Array, Int8Array, Utf8Array},
+        datatypes::{DataType, Float64Array, Int64Array, Utf8Array},
         error::DaftResult,
     };
     #[test]

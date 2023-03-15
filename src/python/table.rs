@@ -4,6 +4,7 @@ use pyo3::types::PyDict;
 
 use crate::datatypes::Field;
 use crate::dsl;
+use crate::error::DaftError;
 use crate::ffi;
 use crate::schema::Schema;
 use crate::series::Series;
@@ -16,6 +17,7 @@ use super::schema::PySchema;
 use super::series::PySeries;
 
 #[pyclass]
+#[derive(Clone)]
 pub struct PyTable {
     pub table: table::Table,
 }
@@ -198,6 +200,12 @@ impl PyTable {
     }
 
     #[staticmethod]
+    pub fn concat(tables: Vec<Self>) -> PyResult<Self> {
+        let tables: Vec<_> = tables.iter().map(|t| &t.table).collect();
+        Ok(Table::concat(tables.as_slice())?.into())
+    }
+
+    #[staticmethod]
     pub fn from_arrow_record_batches(record_batches: Vec<&PyAny>) -> PyResult<Self> {
         let table = ffi::record_batches_to_table(record_batches.as_slice())?;
         Ok(PyTable { table })
@@ -215,6 +223,19 @@ impl PyTable {
             let series = v.extract::<PySeries>()?.series;
             fields.push(Field::new(name.clone(), series.data_type().clone()));
             columns.push(series.rename(name));
+        }
+        if !columns.is_empty() {
+            let first = columns.first().unwrap();
+            for s in columns.iter().skip(1) {
+                if s.len() != first.len() {
+                    return Err(DaftError::ValueError(format!(
+                        "Mismatch in Series lengths when making a Table, {} vs {}",
+                        s.len(),
+                        first.len()
+                    ))
+                    .into());
+                }
+            }
         }
 
         Ok(PyTable {

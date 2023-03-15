@@ -95,7 +95,12 @@ class Table:
 
     @classmethod
     def concat(cls, to_merge: list[Table]) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT][TPCH] Implement for Table")
+        tables = []
+        for t in to_merge:
+            if not isinstance(t, Table):
+                raise TypeError(f"Expected a Table for concat, got {type(t)}")
+            tables.append(t._table)
+        return Table._from_pytable(_PyTable.concat(tables))
 
     ###
     # Exporting methods

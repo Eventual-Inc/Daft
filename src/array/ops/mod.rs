@@ -7,6 +7,7 @@ mod broadcast;
 mod cast;
 mod compare_agg;
 mod comparison;
+mod concat;
 mod count;
 mod downcast;
 mod filter;

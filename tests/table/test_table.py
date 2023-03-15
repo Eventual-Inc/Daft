@@ -61,6 +61,11 @@ def test_from_arrow_round_trip() -> None:
     assert pa_table == read_back
 
 
+def test_from_pydict_bad_input() -> None:
+    with pytest.raises(ValueError, match="Mismatch in Series lengths"):
+        Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7]})
+
+
 def test_table_head() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
     daft_table = Table.from_arrow(pa_table)
@@ -795,3 +800,56 @@ def test_table_abs_bad_input() -> None:
 
     with pytest.raises(ValueError, match="Expected input to abs to be numeric"):
         table.eval_expression_list([abs(col("a"))])
+
+
+def test_table_concat() -> None:
+    tables = [
+        Table.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]}),
+        Table.from_pydict({"x": [4, 5, 6], "y": ["d", "e", "f"]}),
+    ]
+
+    result = Table.concat(tables)
+    assert result.to_pydict() == {"x": [1, 2, 3, 4, 5, 6], "y": ["a", "b", "c", "d", "e", "f"]}
+
+    tables = [
+        Table.from_pydict({"x": [], "y": []}),
+        Table.from_pydict({"x": [], "y": []}),
+    ]
+
+    result = Table.concat(tables)
+    assert result.to_pydict() == {"x": [], "y": []}
+
+
+def test_table_concat_bad_input() -> None:
+    mix_types_table = [Table.from_pydict({"x": [1, 2, 3]}), []]
+    with pytest.raises(TypeError, match="Expected a Table for concat"):
+        Table.concat(mix_types_table)
+
+    with pytest.raises(ValueError, match="Need at least 1 table"):
+        Table.concat([])
+
+
+def test_table_concat_schema_mismatch() -> None:
+    mix_types_table = [
+        Table.from_pydict({"x": [1, 2, 3]}),
+        Table.from_pydict({"y": [1, 2, 3]}),
+    ]
+
+    with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
+        Table.concat(mix_types_table)
+
+    mix_types_table = [
+        Table.from_pydict({"x": [1, 2, 3]}),
+        Table.from_pydict({"x": [1.0, 2.0, 3.0]}),
+    ]
+
+    with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
+        Table.concat(mix_types_table)
+
+    mix_types_table = [
+        Table.from_pydict({"x": [1, 2, 3]}),
+        Table.from_pydict({"x": [1, 2, 3], "y": [2, 3, 4]}),
+    ]
+
+    with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
+        Table.concat(mix_types_table)
