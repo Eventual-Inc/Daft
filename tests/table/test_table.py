@@ -532,6 +532,20 @@ def test_table_agg_global(case) -> None:
         assert result[key] == value
 
 
+def test_table_agg_groupby() -> None:
+    daft_table = Table.from_pydict({"groups": ["str1", "str2", "str0", "str1", "str1"], "values": [1, 2, 3, 4, 5]})
+    daft_table = daft_table.agg(
+        [
+            (col("input").cast(DataType.int32()).alias("count"), "count"),
+            (col("input").cast(DataType.int32()).alias("sum"), "sum"),
+            (col("input").cast(DataType.int32()).alias("mean"), "mean"),
+            (col("input").cast(DataType.int32()).alias("min"), "min"),
+            (col("input").cast(DataType.int32()).alias("max"), "max"),
+        ],
+        [col("groups")],
+    )
+
+
 import operator as ops
 
 OPS = [ops.add, ops.sub, ops.mul, ops.truediv, ops.mod, ops.lt, ops.le, ops.eq, ops.ne, ops.ge, ops.gt]

@@ -1,9 +1,12 @@
+// use arrow2::array::Array;
+
 use crate::{
-    datatypes::UInt64Type,
+    datatypes::{UInt64Type, Utf8Type},
     dsl::{AggExpr, Expr},
     error::DaftResult,
     series::Series,
     table::Table,
+    // with_match_comparable_daft_types,
 };
 
 impl Table {
@@ -29,32 +32,65 @@ impl Table {
         self.eval_expression_list(&expr_list)
     }
 
-    pub fn agg_groupby(&self, to_agg: &[(Expr, &str)], group_by: &[Expr]) -> DaftResult<Table> {
+    pub fn agg_groupby(&self, _to_agg: &[(Expr, &str)], group_by: &[Expr]) -> DaftResult<Table> {
         let groupby_table = self.eval_expression_list(group_by)?;
-        // Inverse argsort returns a list of indices, e.g. ["b", "c", "a"] -> [2, 0, 1]
-        // It is used to traverse the original array in sorted order.
-        // e.g. [2, 0, 1] -> [2nd, 0th, 1st] -> ["a", "b", "c"]
-        let inverse_argsort = {
-            let argsort_series = Series::argsort_multikey(
-                groupby_table.columns.as_slice(),
-                &vec![false; group_by.len()],
-            )?;
-            let argsort_indices = argsort_series.downcast::<UInt64Type>()?.downcast();
-            let mut temp = argsort_indices
-                .values_iter()
-                .enumerate()
-                .map(|(i, v)| (v, i))
-                .collect::<Vec<_>>();
-            temp.sort();
-            temp.iter().map(|(_, v)| *v).collect::<Vec<_>>()
-        };
-        println!("{:?}", inverse_argsort);
-        // add enumerate column 0..n
-        // argsort on groupby cols
+
+        let (_groupkeys, _indices) = groupby_table.sort_grouper()?;
+
         // iterate through result, manually aggregate enumerate column for each groupby row
         // for each groupby row, take the enumerate values against the table, then perform the agg
         // concat the tables together
 
+        todo!()
+    }
+
+    fn sort_grouper(&self) -> DaftResult<(Vec<Series>, Vec<&[u64]>)> {
+        let argsort_series =
+            Series::argsort_multikey(self.columns.as_slice(), &vec![false; self.columns.len()])?;
+        let argsort_indices = argsort_series.downcast::<UInt64Type>()?.downcast();
+        println!("{:?}", argsort_indices);
+
+        let mut result_indices: Vec<Vec<u64>> = vec![];
+        let mut result_groups: Vec<Vec<Option<&str>>> = vec![];
+
+        for index in argsort_indices {
+            let i = *index.unwrap() as usize;
+            let value_tuple = self
+                .columns
+                .iter()
+                .map(|c| {
+                    // todo broaden
+                    let arrow_array = c
+                        .downcast::<Utf8Type>()
+                        .expect("Non-string types TODO")
+                        .downcast();
+                    match arrow_array.validity() {
+                        None => Some(arrow_array.value(i)),
+                        Some(bitmap) => match bitmap.get_bit(i) {
+                            true => Some(arrow_array.value(i)),
+                            false => None,
+                        },
+                    }
+                })
+                .collect::<Vec<Option<&str>>>();
+
+            match result_groups.len() {
+                0 => {
+                    result_groups.push(value_tuple.to_owned());
+                    result_indices.push(vec![]);
+                }
+                _ => {
+                    if result_groups.last().unwrap() != &value_tuple {
+                        result_groups.push(value_tuple.to_owned());
+                        result_indices.push(vec![]);
+                    }
+                }
+            }
+            result_indices.last_mut().unwrap().push(*index.unwrap());
+        }
+
+        println!("{:?}", result_groups);
+        println!("{:?}", result_indices);
         todo!()
     }
 }
