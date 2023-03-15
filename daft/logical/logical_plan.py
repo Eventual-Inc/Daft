@@ -778,21 +778,18 @@ class LocalAggregate(UnaryNode):
         agg: list[tuple[Expression, str]],
         group_by: ExpressionList | None = None,
     ) -> None:
-        cols_to_agg = ExpressionList([e for e, _ in agg])
+        self._cols_to_agg = ExpressionList([e for e, _ in agg])
         self._group_by = group_by
-        required_cols = set(cols_to_agg._required_columns())
 
         if group_by is not None:
             group_and_agg_cols = ExpressionList(list(group_by) + [e for e, _ in agg])
             schema = group_and_agg_cols.resolve_schema(input.schema())
-            required_cols = required_cols | set(group_by._required_columns())
         else:
-            schema = cols_to_agg.resolve_schema(input.schema())
+            schema = self._cols_to_agg.resolve_schema(input.schema())
 
-        self._required_cols = required_cols
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
-        self._agg = [(e, op) for e, (_, op) in zip(cols_to_agg, agg)]
+        self._agg = [(e, op) for e, (_, op) in zip(self._cols_to_agg, agg)]
 
     def __repr__(self) -> str:
         return self._repr_helper(agg=[e for e, _ in self._agg], group_by=self._group_by)
@@ -802,7 +799,10 @@ class LocalAggregate(UnaryNode):
         return LocalAggregate(new_children[0], agg=self._agg, group_by=self._group_by)
 
     def required_columns(self) -> list[set[str]]:
-        return [self._required_cols]
+        required_cols = set(self._cols_to_agg._required_columns())
+        if self._group_by is not None:
+            required_cols = required_cols | set(self._group_by._required_columns())
+        return [required_cols]
 
     def input_mapping(self) -> list[dict[str, str]]:
         if self._group_by is not None:
