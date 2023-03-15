@@ -61,6 +61,11 @@ def test_from_arrow_round_trip() -> None:
     assert pa_table == read_back
 
 
+def test_from_pydict_bad_input() -> None:
+    with pytest.raises(ValueError, match="Mismatch in Series lengths"):
+        Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7]})
+
+
 def test_table_head() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
     daft_table = Table.from_arrow(pa_table)
@@ -805,6 +810,14 @@ def test_table_concat() -> None:
 
     result = Table.concat(tables)
     assert result.to_pydict() == {"x": [1, 2, 3, 4, 5, 6], "y": ["a", "b", "c", "d", "e", "f"]}
+
+    tables = [
+        Table.from_pydict({"x": [], "y": []}),
+        Table.from_pydict({"x": [], "y": []}),
+    ]
+
+    result = Table.concat(tables)
+    assert result.to_pydict() == {"x": [], "y": []}
 
 
 def test_table_concat_bad_input() -> None:

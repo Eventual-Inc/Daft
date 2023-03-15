@@ -4,6 +4,7 @@ use pyo3::types::PyDict;
 
 use crate::datatypes::Field;
 use crate::dsl;
+use crate::error::DaftError;
 use crate::ffi;
 use crate::schema::Schema;
 use crate::series::Series;
@@ -222,6 +223,19 @@ impl PyTable {
             let series = v.extract::<PySeries>()?.series;
             fields.push(Field::new(name.clone(), series.data_type().clone()));
             columns.push(series.rename(name));
+        }
+        if !columns.is_empty() {
+            let first = columns.first().unwrap();
+            for s in columns.iter().skip(1) {
+                if s.len() != first.len() {
+                    return Err(DaftError::ValueError(format!(
+                        "Mismatch in Series lengths when making a Table, {} vs {}",
+                        s.len(),
+                        first.len()
+                    ))
+                    .into());
+                }
+            }
         }
 
         Ok(PyTable {
