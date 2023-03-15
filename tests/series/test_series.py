@@ -406,7 +406,7 @@ def test_table_abs_bad_input() -> None:
 
 
 @pytest.mark.parametrize(
-    "dtype, chunks", itertools.product(arrow_float_types + arrow_int_types + arrow_float_types, [1, 2, 3, 10])
+    "dtype, chunks", itertools.product(arrow_float_types + arrow_int_types + arrow_string_types, [1, 2, 3, 10])
 )
 def test_series_concat(dtype, chunks) -> None:
     series = []
@@ -422,7 +422,7 @@ def test_series_concat(dtype, chunks) -> None:
     for i in range(chunks):
         for j in range(i):
             val = i * j
-            assert concated_list[counter] == val
+            assert float(concated_list[counter]) == val
             counter += 1
 
 
