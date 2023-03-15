@@ -1,14 +1,26 @@
-use crate::{dsl::Expr, error::DaftResult, series::Series, table::Table};
+use crate::{datatypes::UInt64Type, dsl::Expr, error::DaftResult, series::Series, table::Table};
 
 impl Table {
     pub fn agg(&self, _to_agg: &[(Expr, &str)], group_by: &[Expr]) -> DaftResult<Table> {
         let groupby_table = self.eval_expression_list(group_by)?;
-        let argsorted = Series::argsort_multikey(
-            groupby_table.columns.as_slice(),
-            &vec![true; group_by.len()],
-        )?;
-        println!("{}", argsorted);
-
+        // Inverse argsort returns a list of indices, e.g. ["b", "c", "a"] -> [2, 0, 1]
+        // It is used to traverse the original array in sorted order.
+        // e.g. [2, 0, 1] -> [2nd, 0th, 1st] -> ["a", "b", "c"]
+        let inverse_argsort = {
+            let argsort_series = Series::argsort_multikey(
+                groupby_table.columns.as_slice(),
+                &vec![false; group_by.len()],
+            )?;
+            let argsort_indices = argsort_series.downcast::<UInt64Type>()?.downcast();
+            let mut temp = argsort_indices
+                .values_iter()
+                .enumerate()
+                .map(|(i, v)| (v, i))
+                .collect::<Vec<_>>();
+            temp.sort();
+            temp.iter().map(|(_, v)| *v).collect::<Vec<_>>()
+        };
+        println!("{:?}", inverse_argsort);
         // add enumerate column 0..n
         // argsort on groupby cols
         // iterate through result, manually aggregate enumerate column for each groupby row

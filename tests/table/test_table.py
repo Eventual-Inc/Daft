@@ -440,7 +440,7 @@ def test_table_sum_badtype() -> None:
 
 
 def test_table_groupby() -> None:
-    daft_table = Table.from_pydict({"groupkeys": ["str1", "str2", "str1"], "values": [1, 2, 3]})
+    daft_table = Table.from_pydict({"groupkeys": ["str1", "str2", "str0", "str1"], "values": [1, 2, 3, 4]})
     daft_table = daft_table.agg([(col("values"), "sum")], [col("groupkeys")])
 
 
