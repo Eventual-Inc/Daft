@@ -797,6 +797,16 @@ def test_table_abs_bad_input() -> None:
         table.eval_expression_list([abs(col("a"))])
 
 
+def test_table_concat() -> None:
+    tables = [
+        Table.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]}),
+        Table.from_pydict({"x": [4, 5, 6], "y": ["d", "e", "f"]}),
+    ]
+
+    result = Table.concat(tables)
+    assert result.to_pydict() == {"x": [1, 2, 3, 4, 5, 6], "y": ["a", "b", "c", "d", "e", "f"]}
+
+
 def test_table_concat_bad_input() -> None:
     mix_types_table = [Table.from_pydict({"x": [1, 2, 3]}), []]
     with pytest.raises(TypeError, match="Expected a Table for concat"):
