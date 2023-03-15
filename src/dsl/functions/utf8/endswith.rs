@@ -6,8 +6,8 @@ use crate::{
     series::Series,
 };
 
-use super::super::FunctionEvaluator;
-
+use super::{super::FunctionEvaluator, super::FunctionExpr, Utf8Expr};
+use std::sync::Arc;
 pub(super) struct EndswithEvaluator {}
 
 impl FunctionEvaluator for EndswithEvaluator {
@@ -20,19 +20,20 @@ impl FunctionEvaluator for EndswithEvaluator {
             [data, pattern] => {
                 let data_field = data.to_field(schema)?;
                 let pattern_field = pattern.to_field(schema)?;
-                if !data_field.dtype.is_utf8() {
-                    // TODO: Change to SchemaResolveTypeError
-                    return Err(DaftError::TypeError(format!(
-                        "Expected data input to endswith to be utf8, got {}",
-                        data_field.dtype
-                    )));
-                }
-                if !pattern_field.dtype.is_utf8() {
-                    // TODO: Change to SchemaResolveTypeError
-                    return Err(DaftError::TypeError(format!(
-                        "Expected pattern input to endswith to be utf8, got {}",
-                        pattern_field.dtype
-                    )));
+                if !matches!(data_field.dtype, DataType::Utf8)
+                    || !matches!(pattern_field.dtype, DataType::Utf8)
+                {
+                    return Err(DaftError::ExprResolveTypeError {
+                        expectation: "data input to endswith to be utf8".into(),
+                        expr: Arc::new(Expr::Function {
+                            func: FunctionExpr::Utf8(Utf8Expr::EndsWith),
+                            inputs: inputs.to_vec(),
+                        }),
+                        child_fields_to_expr: vec![
+                            (data_field, Arc::new(data.clone())),
+                            (pattern_field, Arc::new(pattern.clone())),
+                        ],
+                    });
                 }
                 Ok(Field::new(data_field.name, DataType::Boolean))
             }
