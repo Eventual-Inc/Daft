@@ -464,7 +464,7 @@ def test_logical_ops_with_non_boolean() -> None:
         r ^ l
 
 
-def test_comparisons_int_and_float() -> None:
+def test_comparisons_dates() -> None:
 
     from datetime import date
 
