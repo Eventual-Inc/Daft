@@ -21,16 +21,19 @@ pub mod sort;
 pub mod take;
 
 fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)> {
+    let supertype = try_get_supertype(l.data_type(), r.data_type())?;
+
     let mut lhs = l.clone();
+
     let mut rhs = r.clone();
-    let supertype = try_get_supertype(lhs.data_type(), rhs.data_type())?;
+
     if !lhs.data_type().eq(&supertype) {
         lhs = lhs.cast(&supertype)?;
     }
-
     if !rhs.data_type().eq(&supertype) {
         rhs = rhs.cast(&supertype)?;
     }
+
     Ok((lhs, rhs))
 }
 

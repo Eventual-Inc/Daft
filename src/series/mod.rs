@@ -9,6 +9,7 @@ use std::{
 use crate::{
     array::BaseArray,
     datatypes::{DataType, Field},
+    error::DaftResult,
 };
 
 #[derive(Debug, Clone)]
@@ -39,6 +40,15 @@ impl Series {
 
     pub fn field(&self) -> &Field {
         self.data_array.field()
+    }
+
+    pub fn as_physical(&self) -> DaftResult<Series> {
+        let physical_dtype = self.data_type().to_physical();
+        if &physical_dtype == self.data_type() {
+            Ok(self.clone())
+        } else {
+            self.cast(&physical_dtype)
+        }
     }
 }
 
