@@ -917,3 +917,25 @@ def test_table_concat_schema_mismatch() -> None:
 
     with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
         Table.concat(mix_types_table)
+
+
+def test_string_table_sorting():
+    daft_table = Table.from_pydict(
+        {
+            "firstname": [
+                "bob",
+                "alice",
+                "eve",
+                None,
+                None,
+                "bob",
+                "alice",
+            ],
+            "lastname": ["a", "a", "a", "bond", None, None, "a"],
+        }
+    )
+    sorted_table = daft_table.sort([col("firstname"), col("lastname")])
+    assert sorted_table.to_pydict() == {
+        "firstname": ["alice", "alice", "bob", "bob", "eve", None, None],
+        "lastname": ["a", "a", "a", None, "a", "bond", None],
+    }
