@@ -536,14 +536,15 @@ def test_table_agg_groupby() -> None:
     daft_table = Table.from_pydict({"groups": ["str1", "str2", "str0", "str1", "str1"], "values": [1, 2, 3, 4, 5]})
     daft_table = daft_table.agg(
         [
-            (col("input").cast(DataType.int32()).alias("count"), "count"),
-            (col("input").cast(DataType.int32()).alias("sum"), "sum"),
-            (col("input").cast(DataType.int32()).alias("mean"), "mean"),
-            (col("input").cast(DataType.int32()).alias("min"), "min"),
-            (col("input").cast(DataType.int32()).alias("max"), "max"),
+            (col("values").cast(DataType.int32()).alias("count"), "count"),
+            (col("values").cast(DataType.int32()).alias("sum"), "sum"),
+            (col("values").cast(DataType.int32()).alias("mean"), "mean"),
+            (col("values").cast(DataType.int32()).alias("min"), "min"),
+            (col("values").cast(DataType.int32()).alias("max"), "max"),
         ],
         [col("groups")],
     )
+    print(daft_table)
 
 
 import operator as ops
