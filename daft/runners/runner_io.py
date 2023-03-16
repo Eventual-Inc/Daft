@@ -110,7 +110,7 @@ def sample_schema(
         sampled_partition = vPartition.from_parquet(
             path=filepath,
             read_options=vPartitionReadOptions(
-                num_rows=100,  # sample 100 rows for schema inference
+                num_rows=0,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns
             ),
             schema_options=schema_inference_options,
