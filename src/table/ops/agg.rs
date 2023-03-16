@@ -1,7 +1,7 @@
 // use arrow2::array::Array;
 
 use crate::{
-    array::{BaseArray},
+    array::BaseArray,
     datatypes::{UInt64Array, UInt64Type, Utf8Type},
     dsl::{AggExpr, Expr},
     error::DaftResult,
@@ -34,20 +34,33 @@ impl Table {
     }
 
     pub fn agg_groupby(&self, to_agg: &[(Expr, &str)], group_by: &[Expr]) -> DaftResult<Table> {
+        // Table with just the groupby columns.
         let groupby_table = self.eval_expression_list(group_by)?;
 
-        let (groupkeys, indices) = groupby_table.sort_grouper()?;
+        let indices_grouped = groupby_table.sort_grouper()?;
 
-        println!("{:?}", groupkeys);
-        println!("{:?}", indices);
+        println!("{:?}", indices_grouped);
 
-        // for each groupby row, take the indices against the table, then perform the agg
-        // concat the tables together
+        // Table with the aggregated (deduplicated) group keys.
+        let groupkeys_table = {
+            let groupkeys_indices = indices_grouped
+                .iter()
+                .map(|a| Some(*a.first().expect("by construction")))
+                .collect::<Vec<Option<u64>>>();
+            let indices_as_arrow = arrow2::array::PrimitiveArray::from(groupkeys_indices);
+            let indices_as_series =
+                UInt64Array::from(("__TEMP_DAFT_GROUP_INDICES", Box::new(indices_as_arrow)))
+                    .into_series();
+            groupby_table.take(&indices_as_series)?
+        };
 
-        let agged_values = {
+        println!("{}", groupkeys_table);
+
+        // Table with the aggregated values, one row for each group.
+        let agged_values_table = {
             let mut subresults: Vec<Self> = vec![];
 
-            for group_indices in indices.iter() {
+            for group_indices in indices_grouped.iter() {
                 let subtable = {
                     let optional_indices = group_indices
                         .iter()
@@ -66,34 +79,22 @@ impl Table {
                 println!("{}", subresult);
                 subresults.push(subresult.to_owned());
             }
-            Self::concat(
-                subresults
-                    .iter()
-                    .collect::<Vec<&Self>>()
-                    .as_slice(),
-            )?
+            Self::concat(subresults.iter().collect::<Vec<&Self>>().as_slice())?
         };
 
-        println!("{}", agged_values);
+        println!("{}", agged_values_table);
 
-        let groupkeys_table = {
-            let groupkeys_indices = indices
-                .iter()
-                .map(|a| Some(*a.first().expect("by construction")))
-                .collect::<Vec<Option<u64>>>();
-            let indices_as_arrow = arrow2::array::PrimitiveArray::from(groupkeys_indices);
-            let indices_as_series =
-                UInt64Array::from(("__TEMP_DAFT_GROUP_INDICES", Box::new(indices_as_arrow)))
-                    .into_series();
-            groupby_table.take(&indices_as_series)?
-        };
-
-        println!("{}", groupkeys_table);
-
-        Self::from_columns([&groupkeys_table.columns[..], &agged_values.columns[..]].concat())
+        // Final result - concat the groupkey columns and the agg result columns together.
+        Self::from_columns(
+            [
+                &groupkeys_table.columns[..],
+                &agged_values_table.columns[..],
+            ]
+            .concat(),
+        )
     }
 
-    fn sort_grouper(&self) -> DaftResult<(Vec<Vec<Option<&str>>>, Vec<Vec<u64>>)> {
+    fn sort_grouper(&self) -> DaftResult<Vec<Vec<u64>>> {
         let argsort_series =
             Series::argsort_multikey(self.columns.as_slice(), &vec![false; self.columns.len()])?;
         let argsort_indices = argsort_series.downcast::<UInt64Type>()?.downcast();
@@ -123,6 +124,7 @@ impl Table {
                 })
                 .collect::<Vec<Option<&str>>>();
 
+            // Start a new group result if the groupkey has changed (or if there was no previous groupkey).
             match result_groups.len() {
                 0 => {
                     result_groups.push(value_tuple.to_owned());
@@ -138,6 +140,6 @@ impl Table {
             result_indices.last_mut().unwrap().push(*index.unwrap());
         }
 
-        Ok((result_groups, result_indices))
+        Ok(result_indices)
     }
 }
