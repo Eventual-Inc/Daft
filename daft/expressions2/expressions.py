@@ -267,9 +267,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         raise NotImplementedError("[RUST-INT][TPCH] Implement string expression")
 
     def endswith(self, suffix: str | Expression) -> Expression:
-        if not isinstance(suffix, str) and not isinstance(suffix, Expression):
-            raise ValueError(f"Expected a suffix which is either a string or an Expression, received: {suffix}")
-        suffix_expr = lit(suffix) if isinstance(suffix, str) else suffix
+        suffix_expr = Expression._to_expression(suffix)
         return Expression._from_pyexpr(self._expr.utf8_endswith(suffix_expr._expr))
 
     def startswith(self, prefix: str) -> Expression:

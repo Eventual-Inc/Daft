@@ -1,6 +1,6 @@
 // ****************************************************************************************
 // IMPLEMENTOR NOTE: This file will soon be deprecated and functionality should be moved to
-// src/array/ops/utf-8.py instead
+// src/array/ops/utf8.py instead
 // ****************************************************************************************
 
 use arrow2::array::Utf8Array;
