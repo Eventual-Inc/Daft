@@ -164,6 +164,11 @@ impl PyExpr {
         Ok(format!("{}", self.expr))
     }
 
+    pub fn dt_year(&self) -> PyResult<Self> {
+        use functions::temporal::year;
+        Ok(year(&self.expr).into())
+    }
+
     pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {

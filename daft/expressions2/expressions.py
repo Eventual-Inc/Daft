@@ -247,16 +247,10 @@ class ExpressionNamespace:
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a ExpressionNamespace via __init__ ")
 
-    @staticmethod
-    def _from_pyexpr(pyexpr: _PyExpr) -> ExpressionNamespace:
-        expr = ExpressionNamespace.__new__(ExpressionNamespace)
-        expr._expr = pyexpr
-        return expr
-
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
     def year(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement date expression")
+        return Expression._from_pyexpr(self._expr.dt_year())
 
     def month(self) -> Expression:
         raise NotImplementedError("[RUST-INT] Implement date expression")

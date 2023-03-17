@@ -188,6 +188,21 @@ def test_series_take_numeric(dtype) -> None:
     assert result.to_pylist() == expected
 
 
+@pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types + arrow_string_types)
+def test_series_slice(dtype) -> None:
+    data = pa.array([10, 20, 33, None, 50, None])
+
+    s = Series.from_arrow(data.cast(dtype))
+
+    result = s.slice(2, 4)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 2
+
+    original_data = s.to_pylist()
+    expected = original_data[2:4]
+    assert result.to_pylist() == expected
+
+
 @pytest.mark.parametrize("dtype", arrow_float_types)
 def test_series_float_sorting(dtype) -> None:
     data = pa.array([5.0, 4.0, 1.0, None, 2.0, None, float("nan"), -float("nan"), float("inf"), -float("inf")])
@@ -493,3 +508,18 @@ def test_series_concat_dtype_mismatch() -> None:
 
     with pytest.raises(ValueError, match="concat requires all data types to match"):
         Series.concat(mix_types_series)
+
+
+def test_series_slice_bad_input() -> None:
+    data = pa.array([10, 20, 33, None, 50, None])
+
+    s = Series.from_arrow(data)
+
+    with pytest.raises(ValueError, match="slice length can not be negative:"):
+        s.slice(3, 2)
+
+    with pytest.raises(ValueError, match="slice start can not be negative"):
+        s.slice(-1, 2)
+
+    with pytest.raises(ValueError, match="slice end can not be negative"):
+        s.slice(0, -1)

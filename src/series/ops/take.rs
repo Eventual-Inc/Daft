@@ -20,6 +20,18 @@ impl Series {
         Ok(result)
     }
 
+    pub fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
+        let s = self.as_physical()?;
+
+        let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
+            s.downcast::<$T>()?.slice(start, end)?.into_series()
+        });
+        if result.data_type() != self.data_type() {
+            return result.cast(self.data_type());
+        }
+        Ok(result)
+    }
+
     pub fn take(&self, idx: &Series) -> DaftResult<Series> {
         let s = self.as_physical()?;
         let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
