@@ -27,7 +27,7 @@ impl Series {
                 if result.data_type() != self.data_type() {
                     return result.cast(self.data_type());
                 }
-                return Ok(result);
+                Ok(result)
             }
             _ => Err(DaftError::ValueError(format!(
                 "Lengths for filter do not match, Series {} vs mask {}",

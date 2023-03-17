@@ -17,7 +17,7 @@ impl Series {
         if result.data_type() != self.data_type() {
             return result.cast(self.data_type());
         }
-        return Ok(result);
+        Ok(result)
     }
 
     pub fn take(&self, idx: &Series) -> DaftResult<Series> {
@@ -30,7 +30,7 @@ impl Series {
         if result.data_type() != self.data_type() {
             return result.cast(self.data_type());
         }
-        return Ok(result);
+        Ok(result)
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {

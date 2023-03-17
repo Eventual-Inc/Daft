@@ -49,6 +49,6 @@ impl Series {
             return result.cast(self.data_type());
         }
 
-        return Ok(result);
+        Ok(result)
     }
 }
