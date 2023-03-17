@@ -326,6 +326,67 @@ def global_limit(
                 return
 
 
+def split(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    num_input_partitions: int,
+    num_output_partitions: int,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Repartition the child_plan into more partitions by splitting partitions only. Preserves order."""
+
+    assert (
+        num_output_partitions >= num_input_partitions
+    ), f"Cannot split from {num_input_partitions} to {num_output_partitions}."
+
+    # Materialize the input partitions so we can see the number of rows and try to split evenly.
+    # Splitting evenly is fairly important if this operation is to be used for parallelism.
+    # (optimization TODO: don't materialize if num_rows is already available in physical plan metadata.)
+    materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+
+    for step in child_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            step = step.finalize_partition_task_single_output()
+            materializations.append(step)
+        yield step
+
+    while any(not _.done() for _ in materializations):
+        logger.debug("split_to blocked on completion of all sources: {sources}", sources=materializations)
+        yield None
+
+    splits_per_partition = deque([1 for _ in materializations])
+    num_splits_to_apply = num_output_partitions - num_input_partitions
+
+    # Split by rows for now.
+    # In the future, maybe parameterize to allow alternatively splitting by size.
+    rows_by_partitions = [task.partition_metadata().num_rows for task in materializations]
+
+    # Calculate how to spread the required splits across all the partitions.
+    # Iteratively apply a split and update how many rows would be in the resulting partitions.
+    # After this loop, splits_per_partition has the final number of splits to apply to each partition.
+    rows_after_splitting = [float(_) for _ in rows_by_partitions]
+    for _ in range(num_splits_to_apply):
+        _, split_at = max((rows, index) for (index, rows) in enumerate(rows_after_splitting))
+        splits_per_partition[split_at] += 1
+        rows_after_splitting[split_at] = float(rows_by_partitions[split_at] / splits_per_partition[split_at])
+
+    # Emit the splitted partitions.
+    for task, num_out, num_rows in zip(consume_deque(materializations), splits_per_partition, rows_by_partitions):
+        if num_out == 1:
+            yield PartitionTaskBuilder[PartitionT](
+                inputs=[task.partition()],
+                partial_metadatas=[task.partition_metadata()],
+                resource_request=ResourceRequest(memory_bytes=task.partition_metadata().size_bytes),
+            )
+        else:
+            boundaries = [math.ceil(num_rows * i / num_out) for i in range(num_out + 1)]
+            starts, ends = boundaries[:-1], boundaries[1:]
+            for start, end in zip(starts, ends):
+                yield PartitionTaskBuilder[PartitionT](
+                    inputs=[task.partition()],
+                    partial_metadatas=[task.partition_metadata()],
+                    resource_request=ResourceRequest(memory_bytes=task.partition_metadata().size_bytes),
+                ).add_instruction(instruction=execution_step.Slice(start, end))
+
+
 def coalesce(
     child_plan: InProgressPhysicalPlan[PartitionT],
     coalesce: logical_plan.Coalesce,
@@ -339,8 +400,8 @@ def coalesce(
     coalesce_to = coalesce.num_partitions()
     assert coalesce_to <= coalesce_from, f"Cannot coalesce upwards from {coalesce_from} to {coalesce_to} partitions."
 
-    starts = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(coalesce_to)]
-    stops = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(1, coalesce_to + 1)]
+    boundaries = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(coalesce_to + 1)]
+    starts, stops = boundaries[:-1], boundaries[1:]
     # For each output partition, the number of input partitions to merge in.
     merges_per_result = deque([stop - start for start, stop in zip(starts, stops)])
 

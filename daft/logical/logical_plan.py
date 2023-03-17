@@ -688,8 +688,8 @@ class Repartition(UnaryNode):
         self._register_child(input)
         self._partition_by = partition_by
         self._scheme = scheme
-        if scheme == PartitionScheme.RANDOM and len(partition_by.to_name_set()) > 0:
-            raise ValueError("Can not pass in random partitioning and partition_by args")
+        if scheme in (PartitionScheme.RANDOM, PartitionScheme.UNKNOWN) and len(partition_by.to_name_set()) > 0:
+            raise ValueError(f"Can not pass in {scheme} and partition_by args")
 
     def __repr__(self) -> str:
         return self._repr_helper(
