@@ -7,6 +7,7 @@ import pytest
 from daft.expressions import Expression, ExpressionList, col
 from daft.runners.blocks import ArrowDataBlock, DataBlock
 from daft.runners.partitioning import PyListTile, vPartition
+from daft.types import ExpressionType
 
 
 def test_vpartition_eval_expression() -> None:
@@ -68,6 +69,16 @@ def test_vpartition_from_arrow_table() -> None:
     for i, (col_name, tile) in enumerate(vpart.columns.items()):
         assert tile.block == DataBlock.make_block(data=np.ones(10) * i)
         assert tile.column_name == col_name
+
+
+def test_vpartition_from_arrow_table_empty_schema() -> None:
+    arrow_table = pa.table(
+        [pa.array([], type=pa.int64()), pa.array([], type=pa.list_(pa.int64()))], names=["col_0", "col_1"]
+    )
+    vpart = vPartition.from_arrow_table(arrow_table)
+    assert len(vpart) == 0
+    assert vpart.schema()["col_0"].dtype == ExpressionType.integer()
+    assert vpart.schema()["col_1"].dtype == ExpressionType.python(list)
 
 
 def test_vpartition_uneven_tiles() -> None:
