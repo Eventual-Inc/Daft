@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import itertools
 import math
 from collections import Counter
@@ -523,3 +524,10 @@ def test_series_slice_bad_input() -> None:
 
     with pytest.raises(ValueError, match="slice end can not be negative"):
         s.slice(0, -1)
+
+
+def test_series_pickling() -> None:
+    s = Series.from_pylist([1, 2, 3, None])
+    copied_s = copy.deepcopy(s)
+    assert s.datatype() == copied_s.datatype
+    assert s.to_pylist() == copied_s.to_pylist()
