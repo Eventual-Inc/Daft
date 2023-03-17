@@ -34,7 +34,7 @@ impl FunctionEvaluator for AbsEvaluator {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         if inputs.len() != 1 {
-            return Err(DaftError::SchemaMismatch(format!(
+            return Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
             )));

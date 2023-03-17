@@ -12,6 +12,10 @@ impl DaftCompare<&Series> for Series {
     type Output = DaftResult<BooleanArray>;
     fn equal(&self, rhs: &Series) -> Self::Output {
         let (lhs, rhs) = match_types_on_series(self, rhs)?;
+
+        let lhs = lhs.as_physical()?;
+        let rhs = rhs.as_physical()?;
+
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
@@ -21,6 +25,10 @@ impl DaftCompare<&Series> for Series {
 
     fn not_equal(&self, rhs: &Series) -> Self::Output {
         let (lhs, rhs) = match_types_on_series(self, rhs)?;
+
+        let lhs = lhs.as_physical()?;
+        let rhs = rhs.as_physical()?;
+
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
@@ -30,6 +38,9 @@ impl DaftCompare<&Series> for Series {
 
     fn lt(&self, rhs: &Series) -> Self::Output {
         let (lhs, rhs) = match_types_on_series(self, rhs)?;
+        let lhs = lhs.as_physical()?;
+        let rhs = rhs.as_physical()?;
+
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
@@ -39,6 +50,9 @@ impl DaftCompare<&Series> for Series {
 
     fn lte(&self, rhs: &Series) -> Self::Output {
         let (lhs, rhs) = match_types_on_series(self, rhs)?;
+        let lhs = lhs.as_physical()?;
+        let rhs = rhs.as_physical()?;
+
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
@@ -48,6 +62,9 @@ impl DaftCompare<&Series> for Series {
 
     fn gt(&self, rhs: &Series) -> Self::Output {
         let (lhs, rhs) = match_types_on_series(self, rhs)?;
+        let lhs = lhs.as_physical()?;
+        let rhs = rhs.as_physical()?;
+
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
@@ -57,6 +74,9 @@ impl DaftCompare<&Series> for Series {
 
     fn gte(&self, rhs: &Series) -> Self::Output {
         let (lhs, rhs) = match_types_on_series(self, rhs)?;
+        let lhs = lhs.as_physical()?;
+        let rhs = rhs.as_physical()?;
+
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;

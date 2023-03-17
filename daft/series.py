@@ -229,3 +229,24 @@ class Series:
             raise TypeError(f"expected another Series but got {type(other)}")
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)
+
+    @property
+    def str(self) -> SeriesStringNamespace:
+        series = SeriesStringNamespace.__new__(SeriesStringNamespace)
+        series._series = self._series
+        return series
+
+
+class SeriesNamespace:
+    _series: PySeries
+
+    def __init__(self) -> None:
+        raise NotImplementedError("We do not support creating a SeriesNamespace via __init__ ")
+
+
+class SeriesStringNamespace(SeriesNamespace):
+    def endswith(self, suffix: Series) -> Series:
+        if not isinstance(suffix, Series):
+            raise ValueError(f"expected another Series but got {type(suffix)}")
+        assert self._series is not None and suffix._series is not None
+        return Series._from_pyseries(self._series.utf8_endswith(suffix._series))

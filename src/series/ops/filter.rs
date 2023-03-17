@@ -18,10 +18,16 @@ impl Series {
                 }
             }
             (n, m) if n == m => {
-                with_match_comparable_daft_types!(self.data_type(), |$T| {
-                    let downcasted = self.downcast::<$T>()?;
-                    Ok(downcasted.filter(mask)?.into_series())
-                })
+                let s = self.as_physical()?;
+
+                let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
+                    let downcasted = s.downcast::<$T>()?;
+                    downcasted.filter(mask)?.into_series()
+                });
+                if result.data_type() != self.data_type() {
+                    return result.cast(self.data_type());
+                }
+                Ok(result)
             }
             _ => Err(DaftError::ValueError(format!(
                 "Lengths for filter do not match, Series {} vs mask {}",

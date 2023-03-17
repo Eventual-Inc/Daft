@@ -488,16 +488,14 @@ impl Utf8Array {
             .downcast_ref::<arrow2::array::Utf8Array<i64>>()
             .unwrap();
 
-        let values = arrow_array.values();
-
         let result = if first_desc {
             multi_column_idx_sort(
                 arrow_array.validity(),
                 |a: &I::Native, b: &I::Native| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_unchecked(a) };
-                    let r = unsafe { values.get_unchecked(b) };
+                    let l = unsafe { arrow_array.value_unchecked(a) };
+                    let r = unsafe { arrow_array.value_unchecked(b) };
                     match r.cmp(l) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
@@ -513,8 +511,8 @@ impl Utf8Array {
                 |a: &I::Native, b: &I::Native| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_unchecked(a) };
-                    let r = unsafe { values.get_unchecked(b) };
+                    let l = unsafe { arrow_array.value_unchecked(a) };
+                    let r = unsafe { arrow_array.value_unchecked(b) };
                     match l.cmp(r) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,

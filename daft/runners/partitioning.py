@@ -162,6 +162,11 @@ class PartitionMetadata(PartialPartitionMetadata):
 class vPartition:
     columns: dict[str, PyListTile]
 
+    # Temporary workaround for empty blocks affecting .schema
+    # Users of vPartition can explicitly pass in a schema to override the "schema inferencing" behavior
+    # This will be removed once we move to Rust Tables, which are schema-aware.
+    override_schema: Schema | None = None
+
     def __post_init__(self) -> None:
         size = None
         for name, tile in self.columns.items():
@@ -182,6 +187,11 @@ class vPartition:
 
     def schema(self) -> Schema:
         """Generates column expressions that represent the vPartition's schema"""
+        if self.override_schema is None:
+            return self._infer_schema_from_columns()
+        return self.override_schema
+
+    def _infer_schema_from_columns(self) -> Schema:
         fields = []
         for _, tile in self.columns.items():
             col_name = tile.column_name
@@ -229,7 +239,13 @@ class vPartition:
             arr = table[i]
             block: DataBlock[ArrowArrType] = DataBlock.make_block(arr)
             tiles[name] = PyListTile(column_name=name, block=block)
-        return vPartition(columns=tiles)
+
+        # Infer the schema from Arrow and pass that in explicitly as the inferred schema
+        inferred_schema = Schema._from_field_name_and_types(
+            [(cname, ExpressionType.from_arrow_type(table[cname].type)) for cname in table.column_names]
+        )
+
+        return vPartition(columns=tiles, override_schema=inferred_schema)
 
     @classmethod
     def from_pydict(

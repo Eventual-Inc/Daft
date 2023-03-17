@@ -462,3 +462,31 @@ def test_logical_ops_with_non_boolean() -> None:
 
     with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
         r ^ l
+
+
+def test_comparisons_dates() -> None:
+
+    from datetime import date
+
+    l = Series.from_pylist([date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3), None, date(2023, 1, 5), None])
+    r = Series.from_pylist([date(2023, 1, 1), date(2023, 1, 3), date(2023, 1, 1), date(2023, 1, 5), None, None])
+
+    # eq, lt, gt, None, None, None
+
+    lt = (l < r).to_pylist()
+    assert lt == [False, True, False, None, None, None]
+
+    le = (l <= r).to_pylist()
+    assert le == [True, True, False, None, None, None]
+
+    eq = (l == r).to_pylist()
+    assert eq == [True, False, False, None, None, None]
+
+    neq = (l != r).to_pylist()
+    assert neq == [False, True, True, None, None, None]
+
+    ge = (l >= r).to_pylist()
+    assert ge == [True, False, True, None, None, None]
+
+    gt = (l > r).to_pylist()
+    assert gt == [False, False, True, None, None, None]

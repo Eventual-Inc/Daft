@@ -1,4 +1,5 @@
 use crate::datatypes::DataType;
+use crate::datatypes::TimeUnit;
 use crate::error::DaftError;
 use crate::error::DaftResult;
 
@@ -21,6 +22,15 @@ use crate::error::DaftResult;
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
+
+fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
+    use TimeUnit::*;
+    match (tu_l, tu_r) {
+        (Nanoseconds, Microseconds) => Microseconds,
+        (_, Milliseconds) => Milliseconds,
+        _ => *tu_l,
+    }
+}
 
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
     match get_supertype(l, r) {
@@ -107,6 +117,68 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (Float64, UInt64) => Some(Float64),
 
             (Float64, Float32) => Some(Float64),
+
+            (Date, UInt32) => Some(Int64),
+            (Date, UInt64) => Some(Int64),
+            (Date, Int32) => Some(Int32),
+            (Date, Int64) => Some(Int64),
+            (Date, Float32) => Some(Float32),
+            (Date, Float64) => Some(Float64),
+            (Date, Timestamp(tu, tz)) => Some(Timestamp(*tu, tz.clone())),
+
+            (Timestamp(_, _), UInt32) => Some(Int64),
+            (Timestamp(_, _), UInt64) => Some(Int64),
+            (Timestamp(_, _), Int32) => Some(Int64),
+            (Timestamp(_, _), Int64) => Some(Int64),
+            (Timestamp(_, _), Float32) => Some(Float64),
+            (Timestamp(_, _), Float64) => Some(Float64),
+            (Timestamp(tu, tz), Date) => Some(Timestamp(*tu, tz.clone())),
+
+            (Duration(_), UInt32) => Some(Int64),
+            (Duration(_), UInt64) => Some(Int64),
+            (Duration(_), Int32) => Some(Int64),
+            (Duration(_), Int64) => Some(Int64),
+            (Duration(_), Float32) => Some(Float64),
+            (Duration(_), Float64) => Some(Float64),
+
+            (Time(_), Int32) => Some(Int64),
+            (Time(_), Int64) => Some(Int64),
+            (Time(_), Float32) => Some(Float64),
+            (Time(_), Float64) => Some(Float64),
+
+            (Duration(lu), Timestamp(ru, Some(tz))) | (Timestamp(lu, Some(tz)), Duration(ru)) => {
+                if tz.is_empty() {
+                    Some(Timestamp(get_time_units(lu, ru), None))
+                } else {
+                    Some(Timestamp(get_time_units(lu, ru), Some(tz.clone())))
+                }
+            }
+            (Duration(lu), Timestamp(ru, None)) | (Timestamp(lu, None), Duration(ru)) => {
+                Some(Timestamp(get_time_units(lu, ru), None))
+            }
+            (Duration(_), Date) | (Date, Duration(_)) => Some(Date),
+            (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(lu, ru))),
+
+            // None and Some("") timezones
+            // we cast from more precision to higher precision as that always fits with occasional loss of precision
+            (Timestamp(tu_l, tz_l), Timestamp(tu_r, tz_r))
+                if (tz_l.is_none() || tz_l.as_deref() == Some(""))
+                    && (tz_r.is_none() || tz_r.as_deref() == Some("")) =>
+            {
+                let tu = get_time_units(tu_l, tu_r);
+                Some(Timestamp(tu, None))
+            }
+            // None and Some("<tz>") timezones
+            // we cast from more precision to higher precision as that always fits with occasional loss of precision
+            (Timestamp(tu_l, tz_l), Timestamp(tu_r, tz_r)) if
+                // both are none
+                tz_l.is_none() && tz_r.is_some()
+                // both have the same time zone
+                || (tz_l.is_some() && (tz_l == tz_r)) => {
+                let tu = get_time_units(tu_l, tu_r);
+                Some(Timestamp(tu, tz_r.clone()))
+            }
+
             //TODO(sammy): add time, struct related dtypes
             (Boolean, Float32) => Some(Float32),
             (Boolean, Float64) => Some(Float64),

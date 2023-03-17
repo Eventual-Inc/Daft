@@ -932,3 +932,48 @@ def test_table_concat_schema_mismatch() -> None:
 
     with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
         Table.concat(mix_types_table)
+
+
+def test_string_table_sorting():
+    daft_table = Table.from_pydict(
+        {
+            "firstname": [
+                "bob",
+                "alice",
+                "eve",
+                None,
+                None,
+                "bob",
+                "alice",
+            ],
+            "lastname": ["a", "a", "a", "bond", None, None, "a"],
+        }
+    )
+    sorted_table = daft_table.sort([col("firstname"), col("lastname")])
+    assert sorted_table.to_pydict() == {
+        "firstname": ["alice", "alice", "bob", "bob", "eve", None, None],
+        "lastname": ["a", "a", "a", None, "a", "bond", None],
+    }
+
+
+def test_table_filter_with_dates() -> None:
+    from datetime import date
+
+    def date_maker(d):
+        if d is None:
+            return None
+        return date(2023, 1, d)
+
+    days = list(map(date_maker, [5, 4, 1, None, 2, None]))
+    pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 6
+    assert daft_table.column_names() == ["days", "enum"]
+
+    exprs = [(col("days") > date(2023, 1, 2)) & (col("enum") > 0)]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 1
+    assert new_table.column_names() == ["days", "enum"]
+    result = new_table.to_pydict()
+    assert result["days"] == [date(2023, 1, 4)]
+    assert result["enum"] == [1]

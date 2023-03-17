@@ -529,7 +529,6 @@ class Join(Instruction):
                 num_rows=None,
                 size_bytes=None,
             )
-            for _ in input_metadatas
         ]
 
 
