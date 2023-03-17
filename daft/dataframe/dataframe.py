@@ -808,6 +808,42 @@ class DataFrame:
         return DataFrame(repartition_op)
 
     @DataframePublicAPI
+    def into_partitions(self, num: int) -> "DataFrame":
+        """Splits or coalesces DataFrame to ``num`` partitions. Order is preserved.
+
+        No rebalancing is done; the minimum number of splits or merges are applied.
+        (i.e. if there are 2 partitions, and change it into 3, this function will just split the bigger one)
+
+        Example:
+            >>> df_with_5_partitions = df.into_partitions(5)
+
+        Args:
+            num (int): number of target partitions.
+
+        Returns:
+            DataFrame: Repartitioned DataFrame.
+        """
+        current_partitions = self._plan.num_partitions()
+
+        if num > current_partitions:
+            # Do a split (increase the number of partitions).
+            split_op = logical_plan.Repartition(
+                self._plan,
+                num_partitions=num,
+                scheme=logical_plan.PartitionScheme.UNKNOWN,
+                partition_by=ExpressionList([]),
+            )
+            return DataFrame(split_op)
+
+        elif num < current_partitions:
+            # Do a coalese (decrease the number of partitions).
+            coalesce_op = logical_plan.Coalesce(self._plan, num)
+            return DataFrame(coalesce_op)
+
+        else:
+            return self
+
+    @DataframePublicAPI
     def join(
         self,
         other: "DataFrame",

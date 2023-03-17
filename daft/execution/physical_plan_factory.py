@@ -89,6 +89,16 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             return physical_plan.global_limit(child_plan, node)
 
         elif isinstance(node, logical_plan.Repartition):
+            # Case: simple repartition (split)
+            if node._scheme == PartitionScheme.UNKNOWN:
+                return physical_plan.split(
+                    child_plan,
+                    num_input_partitions=node._children()[0].num_partitions(),
+                    num_output_partitions=node.num_partitions(),
+                )
+
+            # All other repartitions require shuffling.
+
             # Do the fanout.
             fanout_plan: physical_plan.InProgressPhysicalPlan
             if node._scheme == PartitionScheme.RANDOM:
