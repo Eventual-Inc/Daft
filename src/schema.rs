@@ -5,6 +5,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     datatypes::Field,
@@ -13,8 +14,10 @@ use crate::{
 
 pub type SchemaRef = Arc<Schema>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Schema {
+    #[serde(with = "indexmap::serde_seq")]
     pub fields: indexmap::IndexMap<String, Field>,
 }
 
