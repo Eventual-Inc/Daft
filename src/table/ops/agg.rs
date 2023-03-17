@@ -80,7 +80,10 @@ impl Table {
                 subresults.push(subresult.to_owned());
             }
 
-            Self::concat(subresults.iter().collect::<Vec<&Self>>().as_slice())?
+            match subresults.len() {
+                0 => self.head(0)?.agg_global(to_agg)?.head(0)?,
+                _ => Self::concat(subresults.iter().collect::<Vec<&Self>>().as_slice())?,
+            }
         };
 
         println!("{}", agged_values_table);
