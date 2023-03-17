@@ -155,10 +155,7 @@ impl DataType {
 
     #[inline]
     pub fn is_temporal(&self) -> bool {
-        match self {
-            DataType::Date => true,
-            _ => false,
-        }
+        matches!(self, DataType::Date)
     }
 
     #[inline]
