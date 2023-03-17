@@ -190,7 +190,7 @@ def test_series_take_numeric(dtype) -> None:
 
 @pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types + arrow_string_types)
 def test_series_slice(dtype) -> None:
-    data = pa.array([1, 2, 3, None, 5, None])
+    data = pa.array([10, 20, 33, None, 50, None])
 
     s = Series.from_arrow(data.cast(dtype))
 
