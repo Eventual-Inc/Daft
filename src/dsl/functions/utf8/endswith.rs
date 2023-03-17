@@ -6,8 +6,8 @@ use crate::{
     series::Series,
 };
 
-use super::{super::FunctionEvaluator, super::FunctionExpr, Utf8Expr};
-use std::sync::Arc;
+use super::super::FunctionEvaluator;
+
 pub(super) struct EndswithEvaluator {}
 
 impl FunctionEvaluator for EndswithEvaluator {
@@ -23,17 +23,10 @@ impl FunctionEvaluator for EndswithEvaluator {
                 if !matches!(data_field.dtype, DataType::Utf8)
                     || !matches!(pattern_field.dtype, DataType::Utf8)
                 {
-                    return Err(DaftError::ExprResolveTypeError {
-                        expectation: "data input to endswith to be utf8".into(),
-                        expr: Arc::new(Expr::Function {
-                            func: FunctionExpr::Utf8(Utf8Expr::EndsWith),
-                            inputs: inputs.to_vec(),
-                        }),
-                        child_fields_to_expr: vec![
-                            (data_field, Arc::new(data.clone())),
-                            (pattern_field, Arc::new(pattern.clone())),
-                        ],
-                    });
+                    return Err(DaftError::TypeError(format!(
+                        "Expects inputs to endwith to be utf8, but received {:?} and {:?}",
+                        data_field, pattern_field
+                    )));
                 }
                 Ok(Field::new(data_field.name, DataType::Boolean))
             }
