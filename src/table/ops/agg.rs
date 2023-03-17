@@ -79,6 +79,7 @@ impl Table {
                 println!("{}", subresult);
                 subresults.push(subresult.to_owned());
             }
+
             Self::concat(subresults.iter().collect::<Vec<&Self>>().as_slice())?
         };
 

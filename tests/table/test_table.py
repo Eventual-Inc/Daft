@@ -532,19 +532,80 @@ def test_table_agg_global(case) -> None:
         assert result[key] == value
 
 
-def test_table_agg_groupby() -> None:
-    daft_table = Table.from_pydict({"groups": ["str1", "str2", "str0", "str1", "str1"], "values": [1, 2, 3, 4, 5]})
+@pytest.mark.parametrize(
+    "groups_and_aggs",
+    [
+        (["col_A"], ["col_B"]),
+        (["col_A", "col_B"], []),
+    ],
+)
+@pytest.mark.skip
+def test_table_agg_groupby_empty(groups_and_aggs) -> None:
+    groups, aggs = groups_and_aggs
+    daft_table = Table.from_pydict({"col_A": [], "col_B": []})
     daft_table = daft_table.agg(
-        [
-            (col("values").cast(DataType.int32()).alias("count"), "count"),
-            (col("values").cast(DataType.int32()).alias("sum"), "sum"),
-            (col("values").cast(DataType.int32()).alias("mean"), "mean"),
-            (col("values").cast(DataType.int32()).alias("min"), "min"),
-            (col("values").cast(DataType.int32()).alias("max"), "max"),
-        ],
-        [col("groups")],
+        [(col(a).alias(a + "_count"), "count") for a in aggs],
+        [col(g).cast(DataType.int32()) for g in groups],
     )
     print(daft_table)
+
+
+test_table_agg_groupby_cases = [
+    {
+        # Group by strings.
+        "groups": ["name"],
+        "aggs": [("cookies", "sum"), ("name", "count")],
+        "expected": {"name": ["Alice", "Bob", None], "sum": [2, 10, 7], "count": [4, 4, 0]},
+    },
+    {
+        # Group by numbers.
+        "groups": ["cookies"],
+        "aggs": [("cookies", "count")],
+        "expected": {"cookies": [2, 5, None], "count": [2, 3, 0]},
+    },
+    {
+        # Group by multicol.
+        "groups": ["name", "cookies"],
+        "aggs": [("name", "count")],
+        "expected": {
+            "name": ["Alice", "Alice", "Bob", "Bob", None, None, None],
+            "cookies": [2, None, 5, None, 2, 5, None],
+            "count": [1, 3, 2, 2, 0, 0, 0],
+        },
+    },
+]
+
+
+@pytest.mark.parametrize(
+    "case", test_table_agg_groupby_cases, ids=[f"{case['groups']}" for case in test_table_agg_groupby_cases]
+)
+def test_table_agg_groupby(case) -> None:
+    values = [
+        ("Bob", None),
+        ("Bob", None),
+        ("Bob", 5),
+        ("Bob", 5),
+        (None, None),
+        (None, 5),
+        (None, None),
+        (None, 2),
+        ("Alice", None),
+        ("Alice", None),
+        ("Alice", 2),
+        ("Alice", None),
+    ]
+    daft_table = Table.from_pydict(
+        {
+            "name": [_[0] for _ in values],
+            "cookies": [_[1] for _ in values],
+        }
+    )
+    daft_table = daft_table.agg(
+        [(col(aggcol).alias(aggfn), aggfn) for aggcol, aggfn in case["aggs"]],
+        [col(group) for group in case["groups"]],
+    )
+    print(daft_table)
+    assert daft_table.to_pydict() == case["expected"]
 
 
 import operator as ops
