@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import builtins
 from datetime import date
-from typing import Callable, Iterable, Iterator, overload
+from typing import Callable, Iterable, Iterator, TypeVar, overload
 
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
@@ -32,22 +32,12 @@ class Expression:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
 
     @property
-    def agg(self) -> ExpressionAggNamespace:
-        ns = ExpressionAggNamespace.__new__(ExpressionAggNamespace)
-        ns._expr = self._expr
-        return ns
-
-    @property
     def str(self) -> ExpressionStringNamespace:
-        ns = ExpressionStringNamespace.__new__(ExpressionStringNamespace)
-        ns._expr = self._expr
-        return ns
+        return ExpressionStringNamespace.from_expression(self)
 
     @property
     def dt(self) -> ExpressionDatetimeNamespace:
-        ns = ExpressionDatetimeNamespace.__new__(ExpressionDatetimeNamespace)
-        ns._expr = self._expr
-        return ns
+        return ExpressionDatetimeNamespace.from_expression(self)
 
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
@@ -241,11 +231,20 @@ class Expression:
         return Field._from_pyfield(self._expr.to_field(schema._schema))
 
 
+SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
+
+
 class ExpressionNamespace:
     _expr: _PyExpr
 
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a ExpressionNamespace via __init__ ")
+
+    @classmethod
+    def from_expression(cls: type[SomeExpressionNamespace], expr: Expression) -> SomeExpressionNamespace:
+        ns = cls.__new__(cls)
+        ns._expr = expr._expr
+        return ns
 
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
@@ -278,29 +277,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
     def length(self) -> Expression:
         raise NotImplementedError("[RUST-INT] Implement string expression")
-
-
-class ExpressionAggNamespace(ExpressionNamespace):
-    def sum(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
-
-    def mean(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
-
-    def min(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
-
-    def max(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
-
-    def count(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression aggregation")
-
-    def list(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][NESTED] Implement expression aggregation")
-
-    def concat(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][NESTED] Implement expression aggregation")
 
 
 class ExpressionsProjection(Iterable[Expression]):
