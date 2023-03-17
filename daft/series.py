@@ -242,4 +242,3 @@ class SeriesStringNamespace(SeriesNamespace):
             raise ValueError(f"expected another Series but got {type(suffix)}")
         assert self._series is not None and suffix._series is not None
         return Series._from_pyseries(self._series.utf8_endswith(suffix._series))
-    

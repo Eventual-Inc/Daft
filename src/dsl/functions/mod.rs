@@ -1,6 +1,6 @@
 pub mod numeric;
-pub mod utf8;
 pub mod temporal;
+pub mod utf8;
 
 use numeric::NumericExpr;
 use serde::{Deserialize, Serialize};
