@@ -1,8 +1,8 @@
-// use arrow2::array::Array;
+use std::cmp::Ordering;
 
 use crate::{
-    array::BaseArray,
-    datatypes::{UInt64Array, UInt64Type, Utf8Type},
+    array::{ops::build_multi_array_compare, BaseArray},
+    datatypes::{UInt64Array, UInt64Type},
     dsl::{AggExpr, Expr},
     error::DaftResult,
     series::Series,
@@ -101,43 +101,29 @@ impl Table {
         println!("{:?}", argsort_indices);
 
         let mut result_indices: Vec<Vec<u64>> = vec![];
-        let mut result_groups: Vec<Vec<Option<&str>>> = vec![];
+
+        let comparator =
+            build_multi_array_compare(self.columns.as_slice(), &vec![false; self.columns.len()])?;
+        let mut maybe_curr_index: Option<usize> = None;
 
         for index in argsort_indices {
-            let i = *index.unwrap() as usize;
-            let value_tuple = self
-                .columns
-                .iter()
-                .map(|c| {
-                    // todo broaden
-                    let arrow_array = c
-                        .downcast::<Utf8Type>()
-                        .expect("Non-string types TODO")
-                        .downcast();
-                    match arrow_array.validity() {
-                        None => Some(arrow_array.value(i)),
-                        Some(bitmap) => match bitmap.get_bit(i) {
-                            true => Some(arrow_array.value(i)),
-                            false => None,
-                        },
-                    }
-                })
-                .collect::<Vec<Option<&str>>>();
+            let index = *index.unwrap() as usize;
 
             // Start a new group result if the groupkey has changed (or if there was no previous groupkey).
-            match result_groups.len() {
-                0 => {
-                    result_groups.push(value_tuple.to_owned());
+            match maybe_curr_index {
+                None => {
                     result_indices.push(vec![]);
+                    maybe_curr_index = Some(index)
                 }
-                _ => {
-                    if result_groups.last().unwrap() != &value_tuple {
-                        result_groups.push(value_tuple.to_owned());
+                Some(curr_index) => {
+                    let comp_result = comparator(curr_index, index);
+                    if comp_result != Ordering::Equal {
                         result_indices.push(vec![]);
+                        maybe_curr_index = Some(index)
                     }
                 }
             }
-            result_indices.last_mut().unwrap().push(*index.unwrap());
+            result_indices.last_mut().unwrap().push(index as u64);
         }
 
         Ok(result_indices)

@@ -22,6 +22,8 @@ mod sum;
 mod take;
 mod utf8;
 
+pub use sort::build_multi_array_compare;
+
 pub trait DaftCompare<Rhs> {
     type Output;
 
