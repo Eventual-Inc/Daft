@@ -4,78 +4,39 @@ use arrow2;
 
 use crate::error::{DaftError, DaftResult};
 
-fn endswith_arrow_kernel(
-    data: &arrow2::array::Utf8Array<i64>,
-    pattern: &arrow2::array::Utf8Array<i64>,
-) -> arrow2::array::BooleanArray {
-    data.into_iter()
-        .zip(pattern.into_iter())
-        .map(|(val, pat)| Some(val?.ends_with(pat?)))
-        .collect()
-}
-
-fn startswith_arrow_kernel(
-    data: &arrow2::array::Utf8Array<i64>,
-    pattern: &arrow2::array::Utf8Array<i64>,
-) -> arrow2::array::BooleanArray {
-    data.into_iter()
-        .zip(pattern.into_iter())
-        .map(|(val, pat)| Some(val?.starts_with(pat?)))
-        .collect()
-}
-
-fn contains_arrow_kernel(
-    data: &arrow2::array::Utf8Array<i64>,
-    pattern: &arrow2::array::Utf8Array<i64>,
-) -> arrow2::array::BooleanArray {
-    data.into_iter()
-        .zip(pattern.into_iter())
-        .map(|(val, pat)| Some(val?.contains(pat?)))
-        .collect()
-}
-
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, endswith_arrow_kernel, |data: &str, pat: &str| {
-            data.ends_with(pat)
-        })
+        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| data.ends_with(pat))
     }
 
     pub fn startswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(
-            pattern,
-            startswith_arrow_kernel,
-            |data: &str, pat: &str| data.starts_with(pat),
-        )
+        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| data.starts_with(pat))
     }
 
     pub fn contains(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, contains_arrow_kernel, |data: &str, pat: &str| {
-            data.contains(pat)
-        })
+        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| data.contains(pat))
     }
 
-    fn binary_broadcasted_compare<ArrowKernel, ScalarKernel>(
+    fn binary_broadcasted_compare<ScalarKernel>(
         &self,
         other: &Self,
-        kernel: ArrowKernel,
         operation: ScalarKernel,
     ) -> DaftResult<BooleanArray>
     where
-        ArrowKernel: Fn(
-            &arrow2::array::Utf8Array<i64>,
-            &arrow2::array::Utf8Array<i64>,
-        ) -> arrow2::array::BooleanArray,
         ScalarKernel: Fn(&str, &str) -> bool,
     {
         let self_arrow = self.downcast();
         let other_arrow = other.downcast();
         match (self.len(), other.len()) {
             // Matching len case:
-            (self_len, other_len) if self_len == other_len => Ok(BooleanArray::from((
-                self.name(),
-                kernel(self_arrow, other_arrow),
-            ))),
+            (self_len, other_len) if self_len == other_len => {
+                let arrow_result: arrow2::array::BooleanArray = self_arrow
+                    .into_iter()
+                    .zip(other_arrow.into_iter())
+                    .map(|(val, pat)| Some(operation(val?, pat?)))
+                    .collect();
+                Ok(BooleanArray::from((self.name(), arrow_result)))
+            }
             // Broadcast other case:
             (self_len, 1) => {
                 let other_scalar_value = other.get(0);
