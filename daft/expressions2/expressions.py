@@ -240,6 +240,13 @@ class Expression:
     def _to_field(self, schema: Schema) -> Field:
         return Field._from_pyfield(self._expr.to_field(schema._schema))
 
+    def __getstate__(self) -> bytes:
+        return self._expr.__getstate__()
+
+    def __setstate__(self, state: bytes) -> None:
+        self._expr = _PyExpr.__new__(_PyExpr)
+        self._expr.__setstate__(state)
+
 
 class ExpressionNamespace:
     _expr: _PyExpr
