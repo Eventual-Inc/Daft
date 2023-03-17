@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from daft.datatype import DataType
@@ -18,6 +20,7 @@ from daft.table import Table
         (b"a", DataType.binary()),
         (True, DataType.bool()),
         (None, DataType.null()),
+        (date(2023, 1, 1), DataType.date()),
     ],
 )
 def test_make_lit(data, expected_dtype) -> None:
@@ -28,8 +31,9 @@ def test_make_lit(data, expected_dtype) -> None:
     series = lit_table.get_column("literal")
     assert series.datatype() == expected_dtype
     repr_out = repr(l)
-    assert repr_out.startswith("lit(")
-    assert repr_out.endswith(")")
+    if expected_dtype != DataType.date():
+        assert repr_out.startswith("lit(")
+        assert repr_out.endswith(")")
 
 
 import operator as ops

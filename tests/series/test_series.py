@@ -252,18 +252,17 @@ def test_series_int_sorting(dtype) -> None:
     assert taken.to_pylist() == sorted_order[::-1]
 
 
-@pytest.mark.skip()
 def test_series_date_sorting() -> None:
     from datetime import date
 
     def date_maker(d):
         if d is None:
             return None
-        date(2023, 1, d)
+        return date(2023, 1, d)
 
     days = [5, 4, 1, None, 2, None]
     s = Series.from_pylist(list(map(date_maker, days)))
-    sorted_order = [1, 2, 4, 5, None, None]
+    sorted_order = list(map(date_maker, [1, 2, 4, 5, None, None]))
     s = s.cast(DataType.date())
     s_sorted = s.sort()
     assert len(s_sorted) == len(s)
@@ -289,6 +288,21 @@ def test_series_date_sorting() -> None:
     taken = s.take(s_argsorted)
     assert len(taken) == len(s)
     assert taken.to_pylist() == sorted_order[::-1]
+
+
+def test_series_date_take() -> None:
+    from datetime import date
+
+    def date_maker(d):
+        if d is None:
+            return None
+        return date(2023, 1, d)
+
+    days = list(map(date_maker, [5, 4, 1, None, 2, None]))
+    s = Series.from_pylist(days)
+    taken = s.take(Series.from_pylist([5, 4, 3, 2, 1, 0]))
+    assert taken.datatype() == DataType.date()
+    assert taken.to_pylist() == days[::-1]
 
 
 def test_series_string_sorting() -> None:
