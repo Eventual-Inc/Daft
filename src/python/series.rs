@@ -166,6 +166,10 @@ impl PySeries {
     pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
         Ok(self.series.utf8_endswith(&pattern.series)?.into())
     }
+
+    pub fn dt_year(&self) -> PyResult<Self> {
+        Ok(self.series.dt_year()?.into())
+    }
 }
 
 impl From<series::Series> for PySeries {

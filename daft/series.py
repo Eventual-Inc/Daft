@@ -230,6 +230,10 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)
 
+    def dt_year(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.dt_year())
+
     @property
     def str(self) -> SeriesStringNamespace:
         series = SeriesStringNamespace.__new__(SeriesStringNamespace)
@@ -250,3 +254,4 @@ class SeriesStringNamespace(SeriesNamespace):
             raise ValueError(f"expected another Series but got {type(suffix)}")
         assert self._series is not None and suffix._series is not None
         return Series._from_pyseries(self._series.utf8_endswith(suffix._series))
+    
