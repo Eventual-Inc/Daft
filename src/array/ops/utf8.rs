@@ -4,51 +4,75 @@ use arrow2;
 
 use crate::error::{DaftError, DaftResult};
 
+fn endswith_arrow_kernel(
+    data: &arrow2::array::Utf8Array<i64>,
+    pattern: &arrow2::array::Utf8Array<i64>,
+) -> arrow2::array::BooleanArray {
+    data.into_iter()
+        .zip(pattern.into_iter())
+        .map(|(val, pat)| Some(val?.ends_with(pat?)))
+        .collect()
+}
+
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        let data_arrow = self.downcast();
-        let pattern_arrow = pattern.downcast();
-        match (self.len(), pattern.len()) {
-            // Broadcast pattern case:
-            (data_len, 1) => match pattern_arrow.validity() {
-                Some(validity) if !validity.get_bit(0) => {
-                    Ok(BooleanArray::full_null(self.name(), data_len))
-                }
-                _ => {
-                    let pattern_val = pattern_arrow.value(0);
-                    let arrow_result: arrow2::array::BooleanArray = data_arrow
-                        .into_iter()
-                        .map(|val| Some(val?.ends_with(pattern_val)))
-                        .collect();
-                    Ok(BooleanArray::from((self.name(), arrow_result)))
-                }
-            },
-            // Broadcast data case
-            (1, pattern_len) => match data_arrow.validity() {
-                Some(validity) if !validity.get_bit(0) => {
-                    Ok(BooleanArray::full_null(self.name(), pattern_len))
-                }
-                _ => {
-                    let data_val = data_arrow.value(0);
-                    let arrow_result: arrow2::array::BooleanArray = pattern_arrow
-                        .into_iter()
-                        .map(|pat| Some(data_val.ends_with(pat?)))
-                        .collect();
-                    Ok(BooleanArray::from((self.name(), arrow_result)))
-                }
-            },
+        self.binary_broadcasted_compare(pattern, endswith_arrow_kernel, |data: &str, pat: &str| {
+            data.ends_with(pat)
+        })
+    }
+
+    fn binary_broadcasted_compare<ArrowKernel, ScalarKernel>(
+        &self,
+        other: &Self,
+        kernel: ArrowKernel,
+        operation: ScalarKernel,
+    ) -> DaftResult<BooleanArray>
+    where
+        ArrowKernel: Fn(
+            &arrow2::array::Utf8Array<i64>,
+            &arrow2::array::Utf8Array<i64>,
+        ) -> arrow2::array::BooleanArray,
+        ScalarKernel: Fn(&str, &str) -> bool,
+    {
+        let self_arrow = self.downcast();
+        let other_arrow = other.downcast();
+        match (self.len(), other.len()) {
             // Matching len case:
-            (data_len, pattern_len) if data_len == pattern_len => {
-                let arrow_result: arrow2::array::BooleanArray = data_arrow
-                    .into_iter()
-                    .zip(pattern_arrow.into_iter())
-                    .map(|(val, pat)| Some(val?.ends_with(pat?)))
-                    .collect();
-                Ok(BooleanArray::from((self.name(), arrow_result)))
+            (self_len, other_len) if self_len == other_len => Ok(BooleanArray::from((
+                self.name(),
+                kernel(self_arrow, other_arrow),
+            ))),
+            // Broadcast other case:
+            (self_len, 1) => {
+                let other_scalar_value = other.get(0);
+                match other_scalar_value {
+                    None => Ok(BooleanArray::full_null(self.name(), self_len)),
+                    Some(other_v) => {
+                        let arrow_result: arrow2::array::BooleanArray = self_arrow
+                            .into_iter()
+                            .map(|self_v| Some(operation(self_v?, other_v)))
+                            .collect();
+                        Ok(BooleanArray::from((self.name(), arrow_result)))
+                    }
+                }
+            }
+            // Broadcast self case
+            (1, other_len) => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(BooleanArray::full_null(self.name(), other_len)),
+                    Some(self_v) => {
+                        let arrow_result: arrow2::array::BooleanArray = other_arrow
+                            .into_iter()
+                            .map(|other_v| Some(operation(self_v, other_v?)))
+                            .collect();
+                        Ok(BooleanArray::from((self.name(), arrow_result)))
+                    }
+                }
             }
             // Mismatched len case:
-            (data_len, pattern_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {data_len} vs {pattern_len}"
+            (self_len, other_len) => Err(DaftError::ComputeError(format!(
+                "lhs and rhs have different length arrays: {self_len} vs {other_len}"
             ))),
         }
     }
