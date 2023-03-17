@@ -47,7 +47,7 @@ impl FunctionEvaluator for EndswithEvaluator {
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, pattern] => data.utf8_endswith(pattern),
-            _ => Err(DaftError::SchemaMismatch(format!(
+            _ => Err(DaftError::ValueError(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()
             ))),
