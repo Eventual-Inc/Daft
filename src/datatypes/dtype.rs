@@ -154,6 +154,14 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_temporal(&self) -> bool {
+        match self {
+            DataType::Date => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
     pub fn is_castable(&self, cast_to: &DataType) -> bool {
         match (self.to_arrow(), cast_to.to_arrow()) {
             (Ok(self_arrow_type), Ok(cast_to_arrow_type)) => {

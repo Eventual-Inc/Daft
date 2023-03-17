@@ -1,5 +1,6 @@
 pub mod numeric;
 pub mod utf8;
+pub mod temporal;
 
 use numeric::NumericExpr;
 use serde::{Deserialize, Serialize};
@@ -7,12 +8,15 @@ use utf8::Utf8Expr;
 
 use crate::{datatypes::Field, error::DaftResult, schema::Schema, series::Series};
 
+use self::temporal::TemporalExpr;
+
 use super::Expr;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FunctionExpr {
     Numeric(NumericExpr),
     Utf8(Utf8Expr),
+    Temporal(TemporalExpr),
 }
 
 pub trait FunctionEvaluator {
@@ -28,6 +32,7 @@ impl FunctionExpr {
         match self {
             Numeric(expr) => expr.get_evaluator(),
             Utf8(expr) => expr.get_evaluator(),
+            Temporal(expr) => expr.get_evaluator(),
         }
     }
 }

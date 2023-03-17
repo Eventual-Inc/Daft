@@ -962,3 +962,26 @@ def test_table_filter_with_dates() -> None:
     result = new_table.to_pydict()
     assert result["days"] == [date(2023, 1, 4)]
     assert result["enum"] == [1]
+
+
+def test_table_filter_with_date_years() -> None:
+    from datetime import date
+
+    def date_maker(y):
+        if y is None:
+            return None
+        return date(y, 1, 1)
+
+    days = list(map(date_maker, [5, 4000, 1, None, 2022, None]))
+    pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 6
+    assert daft_table.column_names() == ["days", "enum"]
+
+    exprs = [col("days").dt.year() > 2000]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 2
+    assert new_table.column_names() == ["days", "enum"]
+    result = new_table.to_pydict()
+    assert result["days"] == [date(4000, 1, 1), date(2022, 1, 1)]
+    assert result["enum"] == [1, 4]
