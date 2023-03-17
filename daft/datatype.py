@@ -134,3 +134,10 @@ class DataType:
 
     def __eq__(self, other: object) -> builtins.bool:
         return isinstance(other, DataType) and self._dtype.is_equal(other._dtype)
+
+    def __getstate__(self) -> bytes:
+        return self._dtype.__getstate__()
+
+    def __setstate__(self, state: bytes) -> None:
+        self._dtype = PyDataType.__new__(PyDataType)
+        self._dtype.__setstate__(state)

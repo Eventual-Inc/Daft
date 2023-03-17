@@ -65,7 +65,7 @@ pub struct PyExpr {
 impl PyExpr {
     #[new]
     #[args(args = "*")]
-    fn new(args: &PyTuple) -> PyResult<Self> {
+    pub fn new(args: &PyTuple) -> PyResult<Self> {
         match args.len() {
             0 => Ok(dsl::null_lit().into()),
             _ => Err(PyValueError::new_err(format!(

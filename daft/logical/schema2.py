@@ -35,6 +35,13 @@ class Field:
             return False
         return self._field.eq(other._field)
 
+    def __getstate__(self) -> bytes:
+        return self._field.__getstate__()
+
+    def __setstate__(self, state: bytes) -> None:
+        self._field = _PyField.__new__(_PyField)
+        self._field.__setstate__(state)
+
 
 class Schema:
     _schema: _PySchema
@@ -97,3 +104,10 @@ class Schema:
             raise ValueError(f"Cannot union schemas with overlapping names: {intersecting_names}")
 
         return Schema._from_pyschema(self._schema.union(other._schema))
+
+    def __getstate__(self) -> bytes:
+        return self._schema.__getstate__()
+
+    def __setstate__(self, state: bytes) -> None:
+        self._schema = _PySchema.__new__(_PySchema)
+        self._schema.__setstate__(state)

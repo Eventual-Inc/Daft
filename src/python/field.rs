@@ -16,7 +16,7 @@ pub struct PyField {
 impl PyField {
     #[new]
     #[args(args = "*")]
-    fn new(args: &PyTuple) -> PyResult<Self> {
+    pub fn new(args: &PyTuple) -> PyResult<Self> {
         match args.len() {
             0 => Ok(Field::new("null", DataType::new_null()).into()),
             _ => Err(PyValueError::new_err(format!(

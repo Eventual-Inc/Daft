@@ -20,7 +20,7 @@ pub struct PySchema {
 impl PySchema {
     #[new]
     #[args(args = "*")]
-    fn new(args: &PyTuple) -> PyResult<Self> {
+    pub fn new(args: &PyTuple) -> PyResult<Self> {
         match args.len() {
             0 => Ok(Self {
                 schema: Schema::empty().into(),
