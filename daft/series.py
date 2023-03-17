@@ -245,6 +245,18 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None and suffix._series is not None
         return Series._from_pyseries(self._series.utf8_endswith(suffix._series))
 
+    def startswith(self, suffix: Series) -> Series:
+        if not isinstance(suffix, Series):
+            raise ValueError(f"expected another Series but got {type(suffix)}")
+        assert self._series is not None and suffix._series is not None
+        return Series._from_pyseries(self._series.utf8_startswith(suffix._series))
+
+    def contains(self, suffix: Series) -> Series:
+        if not isinstance(suffix, Series):
+            raise ValueError(f"expected another Series but got {type(suffix)}")
+        assert self._series is not None and suffix._series is not None
+        return Series._from_pyseries(self._series.utf8_contains(suffix._series))
+
 
 class SeriesDateNamespace(SeriesNamespace):
     def year(self) -> Series:

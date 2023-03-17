@@ -6,52 +6,82 @@ import pytest
 from daft import Series
 
 
-def test_series_endswith() -> None:
-    s = Series.from_arrow(pa.array(["x_foo", "y_foo", "z_bar"]))
+@pytest.mark.parametrize(
+    ["funcname", "data"],
+    [
+        ("endswith", ["x_foo", "y_foo", "z_bar"]),
+        ("startswith", ["foo_x", "foo_y", "bar_z"]),
+        ("contains", ["x_foo_x", "y_foo_y", "z_bar_z"]),
+    ],
+)
+def test_series_utf8_compare(funcname, data) -> None:
+    s = Series.from_arrow(pa.array(data))
     pattern = Series.from_arrow(pa.array(["foo", "bar", "bar"]))
-    result = s.str.endswith(pattern)
+    result = getattr(s.str, funcname)(pattern)
     assert result.to_pylist() == [True, False, True]
 
 
-def test_series_endswith_pattern_broadcast() -> None:
-    s = Series.from_arrow(pa.array(["x_foo", "y_foo", "z_bar"]))
+@pytest.mark.parametrize(
+    ["funcname", "data"],
+    [
+        ("endswith", ["x_foo", "y_foo", "z_bar"]),
+        ("startswith", ["foo_x", "foo_y", "bar_z"]),
+        ("contains", ["x_foo_x", "y_foo_y", "z_bar_z"]),
+    ],
+)
+def test_series_utf8_compare_pattern_broadcast(funcname, data) -> None:
+    s = Series.from_arrow(pa.array(data))
     pattern = Series.from_arrow(pa.array(["foo"]))
-    result = s.str.endswith(pattern)
+    result = getattr(s.str, funcname)(pattern)
     assert result.to_pylist() == [True, True, False]
 
 
-def test_series_endswith_pattern_broadcast_null() -> None:
+@pytest.mark.parametrize(
+    ["funcname", "data"],
+    [
+        ("endswith", ["x_foo", "y_foo", "z_bar"]),
+        ("startswith", ["foo_x", "foo_y", "bar_z"]),
+        ("contains", ["x_foo_x", "y_foo_y", "z_bar_z"]),
+    ],
+)
+def test_series_utf8_compare_pattern_broadcast_null(funcname, data) -> None:
     s = Series.from_arrow(pa.array(["x_foo", "y_foo", "z_bar"]))
     pattern = Series.from_arrow(pa.array([None], type=pa.string()))
-    result = s.str.endswith(pattern)
+    result = getattr(s.str, funcname)(pattern)
     assert result.to_pylist() == [None, None, None]
 
 
-def test_series_endswith_data_broadcast() -> None:
-    s = Series.from_arrow(pa.array(["x_foo"]))
+@pytest.mark.parametrize(
+    ["funcname", "data"], [("endswith", ["x_foo"]), ("startswith", ["foo_x"]), ("contains", ["x_foo_x"])]
+)
+def test_series_utf8_compare_data_broadcast(funcname, data) -> None:
+    s = Series.from_arrow(pa.array(data))
     pattern = Series.from_arrow(pa.array(["foo", "bar", "baz"]))
-    result = s.str.endswith(pattern)
+    result = getattr(s.str, funcname)(pattern)
     assert result.to_pylist() == [True, False, False]
 
 
-def test_series_endswith_data_broadcast_null() -> None:
+@pytest.mark.parametrize("funcname", ["endswith", "startswith", "contains"])
+def test_series_utf8_compare_data_broadcast_null(funcname) -> None:
     s = Series.from_arrow(pa.array([None], type=pa.string()))
     pattern = Series.from_arrow(pa.array(["foo", "bar", "baz"]))
-    result = s.str.endswith(pattern)
+    result = getattr(s.str, funcname)(pattern)
     assert result.to_pylist() == [None, None, None]
 
 
-def test_series_endswith_nulls() -> None:
+@pytest.mark.parametrize("funcname", ["endswith", "startswith", "contains"])
+def test_series_utf8_compare_nulls(funcname) -> None:
     s = Series.from_arrow(pa.array([None, None, "z_bar"]))
     pattern = Series.from_arrow(pa.array([None, "bar", None]))
-    result = s.str.endswith(pattern)
+    result = getattr(s.str, funcname)(pattern)
     assert result.to_pylist() == [None, None, None]
 
 
-def test_series_endswith_empty() -> None:
+@pytest.mark.parametrize("funcname", ["endswith", "startswith", "contains"])
+def test_series_utf8_compare_empty(funcname) -> None:
     s = Series.from_arrow(pa.array([], type=pa.string()))
     pattern = Series.from_arrow(pa.array([], type=pa.string()))
-    result = s.str.endswith(pattern)
+    result = getattr(s.str, funcname)(pattern)
     assert result.to_pylist() == []
 
 
@@ -65,7 +95,8 @@ def test_series_endswith_empty() -> None:
         object(),
     ],
 )
-def test_series_endswith_invalid_inputs(bad_series) -> None:
+@pytest.mark.parametrize("funcname", ["endswith", "startswith", "contains"])
+def test_series_utf8_compare_invalid_inputs(funcname, bad_series) -> None:
     s = Series.from_arrow(pa.array(["x_foo", "y_foo", "z_bar"]))
     with pytest.raises(ValueError):
-        s.str.endswith(bad_series)
+        getattr(s.str, funcname)(bad_series)

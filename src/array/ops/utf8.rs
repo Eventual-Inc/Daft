@@ -14,10 +14,44 @@ fn endswith_arrow_kernel(
         .collect()
 }
 
+fn startswith_arrow_kernel(
+    data: &arrow2::array::Utf8Array<i64>,
+    pattern: &arrow2::array::Utf8Array<i64>,
+) -> arrow2::array::BooleanArray {
+    data.into_iter()
+        .zip(pattern.into_iter())
+        .map(|(val, pat)| Some(val?.starts_with(pat?)))
+        .collect()
+}
+
+fn contains_arrow_kernel(
+    data: &arrow2::array::Utf8Array<i64>,
+    pattern: &arrow2::array::Utf8Array<i64>,
+) -> arrow2::array::BooleanArray {
+    data.into_iter()
+        .zip(pattern.into_iter())
+        .map(|(val, pat)| Some(val?.contains(pat?)))
+        .collect()
+}
+
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
         self.binary_broadcasted_compare(pattern, endswith_arrow_kernel, |data: &str, pat: &str| {
             data.ends_with(pat)
+        })
+    }
+
+    pub fn startswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+        self.binary_broadcasted_compare(
+            pattern,
+            startswith_arrow_kernel,
+            |data: &str, pat: &str| data.starts_with(pat),
+        )
+    }
+
+    pub fn contains(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+        self.binary_broadcasted_compare(pattern, contains_arrow_kernel, |data: &str, pat: &str| {
+            data.contains(pat)
         })
     }
 
