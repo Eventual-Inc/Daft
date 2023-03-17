@@ -188,6 +188,21 @@ def test_series_take_numeric(dtype) -> None:
     assert result.to_pylist() == expected
 
 
+@pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types + arrow_string_types)
+def test_series_slice(dtype) -> None:
+    data = pa.array([1, 2, 3, None, 5, None])
+
+    s = Series.from_arrow(data.cast(dtype))
+
+    result = s.slice(2, 4)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 2
+
+    original_data = s.to_pylist()
+    expected = original_data[2:4]
+    assert result.to_pylist() == expected
+
+
 @pytest.mark.parametrize("dtype", arrow_float_types)
 def test_series_float_sorting(dtype) -> None:
     data = pa.array([5.0, 4.0, 1.0, None, 2.0, None, float("nan"), -float("nan"), float("inf"), -float("inf")])

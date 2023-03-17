@@ -13,11 +13,14 @@ except ImportError:
 
 
 class Series:
-    _series: PySeries | None
+    _series: PySeries
+
+    def __init__(self) -> None:
+        raise NotImplementedError("We do not support creating a Table via __init__ ")
 
     @staticmethod
     def _from_pyseries(pyseries: PySeries) -> Series:
-        s = Series()
+        s = Series.__new__(Series)
         s._series = pyseries
         return s
 
@@ -73,32 +76,30 @@ class Series:
         return DataType._from_pydatatype(self._series.data_type())
 
     def to_arrow(self) -> pa.Array:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         return self._series.to_arrow()
 
     def to_pylist(self) -> list:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         return self._series.to_arrow().to_pylist()
 
     def filter(self, mask: Series) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         if not isinstance(mask, Series):
             raise TypeError(f"expected another Series but got {type(mask)}")
         return Series._from_pyseries(self._series.filter(mask._series))
 
     def take(self, idx: Series) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         if not isinstance(idx, Series):
             raise TypeError(f"expected another Series but got {type(idx)}")
         return Series._from_pyseries(self._series.take(idx._series))
 
+    def slice(self, start: int, end: int) -> Series:
+        if not isinstance(start, int):
+            raise TypeError(f"expected int for start but got {type(start)}")
+        if not isinstance(end, int):
+            raise TypeError(f"expected int for end but got {type(end)}")
+
+        return Series._from_pyseries(self._series.slice(start, end))
+
     def argsort(self, descending: bool = False) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
 
         if not isinstance(descending, bool):
             raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
@@ -106,18 +107,12 @@ class Series:
         return Series._from_pyseries(self._series.argsort(descending))
 
     def sort(self, descending: bool = False) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
-
         if not isinstance(descending, bool):
             raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
 
         return Series._from_pyseries(self._series.sort(descending))
 
     def hash(self, seed: Series | None = None) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
-
         if not isinstance(seed, Series) and seed is not None:
             raise TypeError(f"expected `seed` to be Series, got {type(seed)}")
 
@@ -132,18 +127,12 @@ class Series:
         )
 
     def __len__(self) -> int:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         return len(self._series)
 
     def size_bytes(self) -> int:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not get size bytes")
-
         return self._series.size_bytes()
 
     def __abs__(self) -> Series:
-        assert self._series is not None
         return Series._from_pyseries(abs(self._series))
 
     def __add__(self, other: object) -> Series:
@@ -231,7 +220,6 @@ class Series:
         return Series._from_pyseries(self._series ^ other._series)
 
     def dt_year(self) -> Series:
-        assert self._series is not None
         return Series._from_pyseries(self._series.dt_year())
 
     @property

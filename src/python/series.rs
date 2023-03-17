@@ -87,6 +87,25 @@ impl PySeries {
         Ok(self.series.take(&idx.series)?.into())
     }
 
+    pub fn slice(&self, start: i64, end: i64) -> PyResult<Self> {
+        if start < 0 {
+            return Err(PyValueError::new_err(format!(
+                "slice start can not be negative: {start}"
+            )));
+        }
+        if end < 0 {
+            return Err(PyValueError::new_err(format!(
+                "slice send can not be negative: {start}"
+            )));
+        }
+        if start > end {
+            return Err(PyValueError::new_err(format!(
+                "slice length can not be negative: start: {start} end: {end}"
+            )));
+        }
+        Ok(self.series.slice(start as usize, end as usize)?.into())
+    }
+
     pub fn filter(&self, mask: &Self) -> PyResult<Self> {
         if mask.series.data_type() != &DataType::Boolean {
             return Err(PyValueError::new_err(format!(
