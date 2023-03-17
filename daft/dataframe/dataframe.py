@@ -821,7 +821,7 @@ class DataFrame:
             num (int): number of target partitions.
 
         Returns:
-            DataFrame: Repartitioned DataFrame.
+            DataFrame: Dataframe with ``num`` partitions.
         """
         current_partitions = self._plan.num_partitions()
 
