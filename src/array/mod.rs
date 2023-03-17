@@ -84,9 +84,18 @@ where
         DataArray::new(self.field.clone(), with_bitmap.into())
     }
 
-    pub fn head(&self, num: usize) -> DaftResult<Self> {
-        let sliced = self.data.slice(0, num);
+    pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
+        if start > end {
+            return Err(DaftError::ValueError(format!(
+                "Trying to slice array with negative length, start: {start} vs end: {end}"
+            )));
+        }
+        let sliced = self.data.slice(start, end - start);
         Self::new(self.field.clone(), Arc::from(sliced))
+    }
+
+    pub fn head(&self, num: usize) -> DaftResult<Self> {
+        self.slice(0, num)
     }
 }
 
