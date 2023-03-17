@@ -508,3 +508,18 @@ def test_series_concat_dtype_mismatch() -> None:
 
     with pytest.raises(ValueError, match="concat requires all data types to match"):
         Series.concat(mix_types_series)
+
+
+def test_series_slice_bad_input() -> None:
+    data = pa.array([10, 20, 33, None, 50, None])
+
+    s = Series.from_arrow(data)
+
+    with pytest.raises(ValueError, match="slice length can not be negative:"):
+        s.slice(3, 2)
+
+    with pytest.raises(ValueError, match="slice start can not be negative"):
+        s.slice(-1, 2)
+
+    with pytest.raises(ValueError, match="slice end can not be negative"):
+        s.slice(0, -1)

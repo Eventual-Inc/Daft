@@ -95,7 +95,7 @@ impl PySeries {
         }
         if end < 0 {
             return Err(PyValueError::new_err(format!(
-                "slice send can not be negative: {start}"
+                "slice end can not be negative: {start}"
             )));
         }
         if start > end {
