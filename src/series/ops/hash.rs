@@ -4,8 +4,9 @@ use crate::{
 
 impl Series {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        with_match_comparable_daft_types!(self.data_type(), |$T| {
-            let downcasted = self.downcast::<$T>()?;
+        let s = self.as_physical()?;
+        with_match_comparable_daft_types!(s.data_type(), |$T| {
+            let downcasted = s.downcast::<$T>()?;
             downcasted.hash(seed)
         })
     }

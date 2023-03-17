@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+from datetime import date
 from typing import Callable, Iterable, Iterator, overload
 
 from daft.daft import PyExpr as _PyExpr
@@ -12,7 +13,12 @@ from daft.logical.schema2 import Field, Schema
 
 
 def lit(value: object) -> Expression:
-    return Expression._from_pyexpr(_lit(value))
+    if isinstance(value, date):
+        epoch_time = value - date(1970, 1, 1)
+        return lit(epoch_time.days).cast(DataType.date())
+    else:
+        lit_value = _lit(value)
+    return Expression._from_pyexpr(lit_value)
 
 
 def col(name: str) -> Expression:

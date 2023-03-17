@@ -121,6 +121,15 @@ impl DataType {
         }
     }
 
+    pub fn to_physical(&self) -> DataType {
+        use DataType::*;
+        match self {
+            Date => Int32,
+            Duration(_) | Timestamp(..) | Time(_) => Int64,
+            _ => self.clone(),
+        }
+    }
+
     #[inline]
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()

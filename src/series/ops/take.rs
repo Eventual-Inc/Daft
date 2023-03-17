@@ -9,23 +9,34 @@ impl Series {
         if num >= self.len() {
             return Ok(self.clone());
         }
+        let s = self.as_physical()?;
 
-        with_match_comparable_daft_types!(self.data_type(), |$T| {
-            Ok(self.downcast::<$T>()?.head(num)?.into_series())
-        })
+        let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
+            s.downcast::<$T>()?.head(num)?.into_series()
+        });
+        if result.data_type() != self.data_type() {
+            return result.cast(self.data_type());
+        }
+        Ok(result)
     }
 
     pub fn take(&self, idx: &Series) -> DaftResult<Series> {
-        with_match_comparable_daft_types!(self.data_type(), |$T| {
+        let s = self.as_physical()?;
+        let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
             with_match_integer_daft_types!(idx.data_type(), |$S| {
-                Ok(self.downcast::<$T>()?.take(idx.downcast::<$S>()?)?.into_series())
+                s.downcast::<$T>()?.take(idx.downcast::<$S>()?)?.into_series()
             })
-        })
+        });
+        if result.data_type() != self.data_type() {
+            return result.cast(self.data_type());
+        }
+        Ok(result)
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        with_match_comparable_daft_types!(self.data_type(), |$T| {
-            self.downcast::<$T>()?.str_value(idx)
+        let s = self.as_physical()?;
+        with_match_comparable_daft_types!(s.data_type(), |$T| {
+            s.downcast::<$T>()?.str_value(idx)
         })
     }
 }
