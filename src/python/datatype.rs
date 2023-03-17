@@ -1,5 +1,9 @@
 use crate::datatypes::DataType;
-use pyo3::prelude::*;
+use pyo3::{
+    exceptions::PyValueError,
+    prelude::*,
+    types::{PyBytes, PyTuple},
+};
 
 #[pyclass]
 #[derive(Clone)]
@@ -9,6 +13,18 @@ pub struct PyDataType {
 
 #[pymethods]
 impl PyDataType {
+    #[new]
+    #[args(args = "*")]
+    fn new(args: &PyTuple) -> PyResult<Self> {
+        match args.len() {
+            0 => Ok(DataType::new_null().into()),
+            _ => Err(PyValueError::new_err(format!(
+                "expected no arguments to make new PyDataType, got : {}",
+                args.len()
+            ))),
+        }
+    }
+
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.dtype))
     }
@@ -95,6 +111,20 @@ impl PyDataType {
         } else {
             Ok(false)
         }
+    }
+
+    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                self.dtype = bincode::deserialize(s.as_bytes()).unwrap();
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        Ok(PyBytes::new(py, &bincode::serialize(&self.dtype).unwrap()).to_object(py))
     }
 }
 

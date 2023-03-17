@@ -124,5 +124,5 @@ def test_schema_pickling():
 
     t_empty = Table.empty()
     assert s1 != t_empty.schema()
-    t_empty_copy = copy.deepcopy(t_empty)
-    assert t_empty.schema() == t_empty_copy.schema()
+    t_empty_schema_copy = copy.deepcopy(t_empty.schema())
+    assert t_empty.schema() == t_empty_schema_copy
