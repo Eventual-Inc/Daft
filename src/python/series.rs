@@ -162,6 +162,10 @@ impl PySeries {
     pub fn data_type(&self) -> PyResult<PyDataType> {
         Ok(self.series.data_type().clone().into())
     }
+
+    pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
+        Ok(self.series.utf8_endswith(&pattern.series)?.into())
+    }
 }
 
 impl From<series::Series> for PySeries {

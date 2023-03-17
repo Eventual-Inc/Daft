@@ -272,8 +272,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def contains(self, substr: str) -> Expression:
         raise NotImplementedError("[RUST-INT][TPCH] Implement string expression")
 
-    def endswith(self, suffix: str) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement string expression")
+    def endswith(self, suffix: str | Expression) -> Expression:
+        suffix_expr = Expression._to_expression(suffix)
+        return Expression._from_pyexpr(self._expr.utf8_endswith(suffix_expr._expr))
 
     def startswith(self, prefix: str) -> Expression:
         raise NotImplementedError("[RUST-INT] Implement string expression")

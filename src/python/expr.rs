@@ -177,6 +177,11 @@ impl PyExpr {
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         Ok(PyBytes::new(py, &bincode::serialize(&self.expr).unwrap()).to_object(py))
     }
+
+    pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
+        use dsl::functions::utf8::endswith;
+        Ok(endswith(&self.expr, &pattern.expr).into())
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
