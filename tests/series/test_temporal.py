@@ -16,7 +16,7 @@ def test_series_date_year_operation() -> None:
 
     days = list(map(date_maker, input))
     s = Series.from_pylist(days)
-    years = s.dt_year()
+    years = s.dt.year()
 
     assert years.datatype() == DataType.int32()
 

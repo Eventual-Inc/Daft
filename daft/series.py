@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TypeVar
+
 import pyarrow as pa
 
 from daft.daft import PySeries
@@ -16,7 +18,7 @@ class Series:
     _series: PySeries
 
     def __init__(self) -> None:
-        raise NotImplementedError("We do not support creating a Table via __init__ ")
+        raise NotImplementedError("We do not support creating a Series via __init__ ")
 
     @staticmethod
     def _from_pyseries(pyseries: PySeries) -> Series:
@@ -51,8 +53,6 @@ class Series:
         return Series.from_arrow(arrow_array, name=name)
 
     def cast(self, dtype: DataType) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not cast")
         return Series._from_pyseries(self._series.cast(dtype._dtype))
 
     @staticmethod
@@ -65,14 +65,9 @@ class Series:
         return Series._from_pyseries(PySeries.concat(pyseries))
 
     def name(self) -> str:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not get name")
         return self._series.name()
 
     def datatype(self) -> DataType:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not get datatype")
-
         return DataType._from_pydatatype(self._series.data_type())
 
     def to_arrow(self) -> pa.Array:
@@ -100,7 +95,6 @@ class Series:
         return Series._from_pyseries(self._series.slice(start, end))
 
     def argsort(self, descending: bool = False) -> Series:
-
         if not isinstance(descending, bool):
             raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
 
@@ -219,14 +213,16 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)
 
-    def dt_year(self) -> Series:
-        return Series._from_pyseries(self._series.dt_year())
-
     @property
     def str(self) -> SeriesStringNamespace:
-        series = SeriesStringNamespace.__new__(SeriesStringNamespace)
-        series._series = self._series
-        return series
+        return SeriesStringNamespace.from_series(self)
+
+    @property
+    def dt(self) -> SeriesDateNamespace:
+        return SeriesDateNamespace.from_series(self)
+
+
+SomeSeriesNamespace = TypeVar("SomeSeriesNamespace", bound="SeriesNamespace")
 
 
 class SeriesNamespace:
@@ -235,6 +231,12 @@ class SeriesNamespace:
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a SeriesNamespace via __init__ ")
 
+    @classmethod
+    def from_series(cls: type[SomeSeriesNamespace], series: Series) -> SomeSeriesNamespace:
+        ns = cls.__new__(cls)
+        ns._series = series._series
+        return ns
+
 
 class SeriesStringNamespace(SeriesNamespace):
     def endswith(self, suffix: Series) -> Series:
@@ -242,3 +244,8 @@ class SeriesStringNamespace(SeriesNamespace):
             raise ValueError(f"expected another Series but got {type(suffix)}")
         assert self._series is not None and suffix._series is not None
         return Series._from_pyseries(self._series.utf8_endswith(suffix._series))
+
+
+class SeriesDateNamespace(SeriesNamespace):
+    def year(self) -> Series:
+        return Series._from_pyseries(self._series.dt_year())
