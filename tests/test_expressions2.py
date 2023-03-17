@@ -71,3 +71,10 @@ def test_repr_functions_abs() -> None:
     y = abs(a)
     repr_out = repr(y)
     assert repr_out == "abs(col(a))"
+
+
+def test_repr_functions_year() -> None:
+    a = col("a")
+    y = a.dt.year()
+    repr_out = repr(y)
+    assert repr_out == "year(col(a))"
