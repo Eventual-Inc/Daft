@@ -102,11 +102,10 @@ impl AggExpr {
                         DataType::Float32 => DataType::Float32,
                         DataType::Float64 => DataType::Float64,
                         _other => {
-                            return Err(DaftError::ExprResolveTypeError {
-                                expectation: "input to be numeric".into(),
-                                expr: Arc::new(Expr::Agg(self.clone())),
-                                child_fields_to_expr: vec![(field.clone(), (*expr).clone())],
-                            })
+                            return Err(DaftError::TypeError(format!(
+                                "Expected input to sum() to be numeric but received {:?}",
+                                field
+                            )))
                         }
                     },
                 ))
@@ -128,8 +127,7 @@ impl AggExpr {
                         | DataType::Float64 => DataType::Float64,
                         other => {
                             return Err(DaftError::TypeError(format!(
-                                "Numeric mean is not implemented for type {}",
-                                other
+                                "Numeric mean is not implemented for type {other}"
                             )))
                         }
                     },
@@ -195,14 +193,10 @@ impl Expr {
                         if left_field.dtype != DataType::Boolean
                             || right_field.dtype != DataType::Boolean
                         {
-                            return Err(DaftError::ExprResolveTypeError {
-                                expectation: "all boolean arguments".into(),
-                                expr: Arc::new(self.clone()),
-                                child_fields_to_expr: vec![
-                                    (left_field, (*left).clone()),
-                                    (right_field, (*right).clone()),
-                                ],
-                            });
+                            return Err(DaftError::TypeError(format!(
+                                "Expected all boolean arguments for {op} but received {:?} {op} {:?}",
+                                left_field, right_field
+                            )));
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Boolean))
                     }
@@ -219,11 +213,7 @@ impl Expr {
                                 left.to_field(schema)?.name.as_str(),
                                 DataType::Boolean,
                             )),
-                            Err(_) => Err(DaftError::ExprResolveTypeError {
-                                expectation: "left and right arguments to be castable to the same supertype for comparison".into(),
-                                expr: Arc::new(self.clone()),
-                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
-                            }),
+                            Err(_) => Err(DaftError::TypeError(format!("Expected left and right arguments to be castable to the same supertype for comparison {op}, but received {:?} and {:?}", left_field, right_field))),
                         }
                     }
 
@@ -234,21 +224,9 @@ impl Expr {
                                 left.to_field(schema)?.name.as_str(),
                                 supertype,
                             )),
-                            Err(_) if left_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
-                                expectation: "right argument to be castable to string for string concatenation".into(),
-                                expr: Arc::new(self.clone()),
-                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
-                            }),
-                            Err(_) if right_field.dtype == DataType::Utf8 => Err(DaftError::ExprResolveTypeError {
-                                expectation: "left argument to be castable to string for string concatenation".into(),
-                                expr: Arc::new(self.clone()),
-                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
-                            }),
-                            Err(_) => Err(DaftError::ExprResolveTypeError {
-                                expectation: "left and right arguments to both be numeric".into(),
-                                expr: Arc::new(self.clone()),
-                                child_fields_to_expr: vec![(left_field, (*left).clone()), (right_field, (*right).clone())],
-                            }),
+                            Err(_) if left_field.dtype == DataType::Utf8 => Err(DaftError::TypeError(format!("Expected right argument to {op} to be castable to string for string concatenation, but received {:?}", right_field))),
+                            Err(_) if right_field.dtype == DataType::Utf8 => Err(DaftError::TypeError(format!("Expected left argument to {op} to be castable to string for string concatenation, but received {:?}", left_field))),
+                            Err(_) => Err(DaftError::TypeError(format!("Expected left and right arguments to both be numeric for {op}, but received {:?} and {:?}", right_field, left_field))),
                         }
                     }
 
@@ -259,17 +237,7 @@ impl Expr {
                             || !left_field.dtype.is_numeric()
                             || !right_field.dtype.is_numeric()
                         {
-                            return Err(DaftError::ExprResolveTypeError {
-                                expectation: format!(
-                                    "left and right arguments to both be numeric and castable to {}",
-                                    DataType::Float64
-                                ),
-                                expr: Arc::new(self.clone()),
-                                child_fields_to_expr: vec![
-                                    (left_field, (*left).clone()),
-                                    (right_field, (*right).clone()),
-                                ],
-                            });
+                            return Err(DaftError::TypeError(format!("Expected left and right arguments for {op} to both be numeric and castable to {}, but received {:?} and {:?}", DataType::Float64, left_field, right_field)));
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Float64))
                     }
@@ -280,14 +248,7 @@ impl Expr {
                     | Operator::Modulus
                     | Operator::FloorDivide => {
                         if !&left_field.dtype.is_numeric() || !&right_field.dtype.is_numeric() {
-                            return Err(DaftError::ExprResolveTypeError {
-                                expectation: "left and right arguments to both be numeric".into(),
-                                expr: Arc::new(self.clone()),
-                                child_fields_to_expr: vec![
-                                    (left_field, (*left).clone()),
-                                    (right_field, (*right).clone()),
-                                ],
-                            });
+                            return Err(DaftError::TypeError(format!("Expected left and right arguments for {op} to both be numeric but received {:?} and {:?}", left_field, right_field)));
                         }
                         Ok(Field::new(
                             left_field.name.as_str(),

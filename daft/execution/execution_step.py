@@ -5,6 +5,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
+import numpy as np
+
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
 else:
@@ -15,6 +17,7 @@ from daft.expressions import Expression, ExpressionList, col
 from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.resource_request import ResourceRequest
+from daft.runners.blocks import DataBlock
 from daft.runners.partitioning import (
     PartialPartitionMetadata,
     PartitionMetadata,
@@ -428,6 +431,43 @@ class LocalLimit(Instruction):
                 size_bytes=None,
             )
             for input_meta in input_metadatas
+        ]
+
+
+@dataclass(frozen=True)
+class Slice(Instruction):
+    start: int  # inclusive
+    end: int  # exclusive
+
+    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+        return self._take(inputs)
+
+    def _take(self, inputs: list[vPartition]) -> list[vPartition]:
+        [input] = inputs
+
+        assert self.start >= 0, f"start must be positive, but got {self.start}"
+        end = min(self.end, len(input))
+
+        indices_block = DataBlock.make_block(data=np.arange(self.start, end))
+        return [input.take(indices_block)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        [input_meta] = input_metadatas
+
+        definite_end = min(self.end, input_meta.num_rows) if input_meta.num_rows is not None else None
+        assert self.start >= 0, f"start must be positive, but got {self.start}"
+
+        if definite_end is not None:
+            num_rows = definite_end - self.start
+            num_rows = max(num_rows, 0)
+        else:
+            num_rows = None
+
+        return [
+            PartialPartitionMetadata(
+                num_rows=num_rows,
+                size_bytes=None,
+            )
         ]
 
 

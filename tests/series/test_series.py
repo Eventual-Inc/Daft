@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import itertools
 import math
 from collections import Counter
@@ -185,6 +186,21 @@ def test_series_take_numeric(dtype) -> None:
 
     original_data = s.to_pylist()
     expected = [original_data[i] if i is not None else None for i in pyidx]
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types + arrow_string_types)
+def test_series_slice(dtype) -> None:
+    data = pa.array([10, 20, 33, None, 50, None])
+
+    s = Series.from_arrow(data.cast(dtype))
+
+    result = s.slice(2, 4)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 2
+
+    original_data = s.to_pylist()
+    expected = original_data[2:4]
     assert result.to_pylist() == expected
 
 
@@ -493,3 +509,26 @@ def test_series_concat_dtype_mismatch() -> None:
 
     with pytest.raises(ValueError, match="concat requires all data types to match"):
         Series.concat(mix_types_series)
+
+
+def test_series_slice_bad_input() -> None:
+    data = pa.array([10, 20, 33, None, 50, None])
+
+    s = Series.from_arrow(data)
+
+    with pytest.raises(ValueError, match="slice length can not be negative:"):
+        s.slice(3, 2)
+
+    with pytest.raises(ValueError, match="slice start can not be negative"):
+        s.slice(-1, 2)
+
+    with pytest.raises(ValueError, match="slice end can not be negative"):
+        s.slice(0, -1)
+
+
+@pytest.mark.parametrize("dtype", arrow_float_types + arrow_int_types + arrow_string_types)
+def test_series_pickling(dtype) -> None:
+    s = Series.from_pylist([1, 2, 3, None]).cast(DataType.from_arrow_type(dtype))
+    copied_s = copy.deepcopy(s)
+    assert s.datatype() == copied_s.datatype()
+    assert s.to_pylist() == copied_s.to_pylist()

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TypeVar
+
 import pyarrow as pa
 
 from daft.daft import PySeries
@@ -13,11 +15,14 @@ except ImportError:
 
 
 class Series:
-    _series: PySeries | None
+    _series: PySeries
+
+    def __init__(self) -> None:
+        raise NotImplementedError("We do not support creating a Series via __init__ ")
 
     @staticmethod
     def _from_pyseries(pyseries: PySeries) -> Series:
-        s = Series()
+        s = Series.__new__(Series)
         s._series = pyseries
         return s
 
@@ -48,8 +53,6 @@ class Series:
         return Series.from_arrow(arrow_array, name=name)
 
     def cast(self, dtype: DataType) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not cast")
         return Series._from_pyseries(self._series.cast(dtype._dtype))
 
     @staticmethod
@@ -62,62 +65,48 @@ class Series:
         return Series._from_pyseries(PySeries.concat(pyseries))
 
     def name(self) -> str:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not get name")
         return self._series.name()
 
     def datatype(self) -> DataType:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not get datatype")
-
         return DataType._from_pydatatype(self._series.data_type())
 
     def to_arrow(self) -> pa.Array:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         return self._series.to_arrow()
 
     def to_pylist(self) -> list:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         return self._series.to_arrow().to_pylist()
 
     def filter(self, mask: Series) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         if not isinstance(mask, Series):
             raise TypeError(f"expected another Series but got {type(mask)}")
         return Series._from_pyseries(self._series.filter(mask._series))
 
     def take(self, idx: Series) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         if not isinstance(idx, Series):
             raise TypeError(f"expected another Series but got {type(idx)}")
         return Series._from_pyseries(self._series.take(idx._series))
 
-    def argsort(self, descending: bool = False) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
+    def slice(self, start: int, end: int) -> Series:
+        if not isinstance(start, int):
+            raise TypeError(f"expected int for start but got {type(start)}")
+        if not isinstance(end, int):
+            raise TypeError(f"expected int for end but got {type(end)}")
 
+        return Series._from_pyseries(self._series.slice(start, end))
+
+    def argsort(self, descending: bool = False) -> Series:
         if not isinstance(descending, bool):
             raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
 
         return Series._from_pyseries(self._series.argsort(descending))
 
     def sort(self, descending: bool = False) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
-
         if not isinstance(descending, bool):
             raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
 
         return Series._from_pyseries(self._series.sort(descending))
 
     def hash(self, seed: Series | None = None) -> Series:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
-
         if not isinstance(seed, Series) and seed is not None:
             raise TypeError(f"expected `seed` to be Series, got {type(seed)}")
 
@@ -132,18 +121,12 @@ class Series:
         )
 
     def __len__(self) -> int:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not convert to arrow")
         return len(self._series)
 
     def size_bytes(self) -> int:
-        if self._series is None:
-            raise ValueError("This Series isn't backed by a Rust PySeries, can not get size bytes")
-
         return self._series.size_bytes()
 
     def __abs__(self) -> Series:
-        assert self._series is not None
         return Series._from_pyseries(abs(self._series))
 
     def __add__(self, other: object) -> Series:
@@ -232,9 +215,17 @@ class Series:
 
     @property
     def str(self) -> SeriesStringNamespace:
-        series = SeriesStringNamespace.__new__(SeriesStringNamespace)
-        series._series = self._series
-        return series
+        return SeriesStringNamespace.from_series(self)
+
+    @property
+    def dt(self) -> SeriesDateNamespace:
+        return SeriesDateNamespace.from_series(self)
+
+    def __reduce__(self) -> tuple:
+        return (Series.from_arrow, (self.to_arrow(), self.name()))
+
+
+SomeSeriesNamespace = TypeVar("SomeSeriesNamespace", bound="SeriesNamespace")
 
 
 class SeriesNamespace:
@@ -243,6 +234,12 @@ class SeriesNamespace:
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a SeriesNamespace via __init__ ")
 
+    @classmethod
+    def from_series(cls: type[SomeSeriesNamespace], series: Series) -> SomeSeriesNamespace:
+        ns = cls.__new__(cls)
+        ns._series = series._series
+        return ns
+
 
 class SeriesStringNamespace(SeriesNamespace):
     def endswith(self, suffix: Series) -> Series:
@@ -250,3 +247,8 @@ class SeriesStringNamespace(SeriesNamespace):
             raise ValueError(f"expected another Series but got {type(suffix)}")
         assert self._series is not None and suffix._series is not None
         return Series._from_pyseries(self._series.utf8_endswith(suffix._series))
+
+
+class SeriesDateNamespace(SeriesNamespace):
+    def year(self) -> Series:
+        return Series._from_pyseries(self._series.dt_year())

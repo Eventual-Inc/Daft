@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import csv
 import datetime
 import json
@@ -257,3 +258,19 @@ def test_csv_reads_custom_options(
     table = table_io.read_csv(generate_csv_input_path, csv_options=csv_options, schema_options=schema_options)
     d = table.to_pydict()
     assert d == CSV_EXPECTED_DATA
+
+
+## Pickling
+
+
+@pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
+def test_table_pickling(json_input: str, input_type: InputType):
+    with _resolve_parametrized_input_type(input_type, json_input) as table_io_input:
+        table = table_io.read_json(table_io_input)
+        copied_table = copy.deepcopy(table)
+
+        assert table.column_names() == copied_table.column_names()
+
+        for name in table.column_names():
+            assert table.get_column(name).datatype() == copied_table.get_column(name).datatype()
+            assert table.get_column(name).to_pylist() == copied_table.get_column(name).to_pylist()

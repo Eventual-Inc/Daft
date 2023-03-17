@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from daft.datatype import DataType
@@ -98,3 +100,29 @@ def test_from_field_name_and_types():
 def test_from_empty_field_name_and_types():
     schema = Schema._from_field_name_and_types([])
     assert len(schema) == 0
+
+
+def test_field_pickling():
+    schema = Schema._from_field_name_and_types([("foo", DataType.int16())])
+    f1 = schema["foo"]
+    f1_copy = copy.deepcopy(f1)
+    assert f1_copy.dtype == f1.dtype
+    assert f1_copy.name == f1.name
+    assert f1_copy == f1
+
+
+def test_schema_pickling():
+    t1, t2 = Table.from_pydict({k: data for k, (data, _) in DATA.items()}), Table.from_pydict(
+        {k: data for k, (data, _) in DATA.items()}
+    )
+
+    s1, s2 = t1.schema(), t2.schema()
+
+    s1 = copy.deepcopy(s1)
+
+    assert s1 == s2
+
+    t_empty = Table.empty()
+    assert s1 != t_empty.schema()
+    t_empty_schema_copy = copy.deepcopy(t_empty.schema())
+    assert t_empty.schema() == t_empty_schema_copy

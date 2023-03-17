@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from datetime import date
 
 import pytest
@@ -31,9 +32,12 @@ def test_make_lit(data, expected_dtype) -> None:
     series = lit_table.get_column("literal")
     assert series.datatype() == expected_dtype
     repr_out = repr(l)
+
     if expected_dtype != DataType.date():
         assert repr_out.startswith("lit(")
         assert repr_out.endswith(")")
+    copied = copy.deepcopy(l)
+    assert repr_out == repr(copied)
 
 
 import operator as ops
@@ -64,6 +68,8 @@ def test_repr_binary_operators(op, symbol) -> None:
     assert tokens[0] == "col(a)"
     assert tokens[1] == symbol
     assert tokens[2] == "col(b)"
+    copied = copy.deepcopy(y)
+    assert output == repr(copied)
 
 
 def test_repr_functions_abs() -> None:
@@ -71,3 +77,14 @@ def test_repr_functions_abs() -> None:
     y = abs(a)
     repr_out = repr(y)
     assert repr_out == "abs(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_year() -> None:
+    a = col("a")
+    y = a.dt.year()
+    repr_out = repr(y)
+    assert repr_out == "year(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)

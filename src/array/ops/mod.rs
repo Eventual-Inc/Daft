@@ -9,6 +9,7 @@ mod compare_agg;
 mod comparison;
 mod concat;
 mod count;
+mod date;
 mod downcast;
 mod filter;
 mod full;
