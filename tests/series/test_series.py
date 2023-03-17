@@ -526,8 +526,9 @@ def test_series_slice_bad_input() -> None:
         s.slice(0, -1)
 
 
-def test_series_pickling() -> None:
-    s = Series.from_pylist([1, 2, 3, None])
+@pytest.mark.parametrize("dtype", arrow_float_types + arrow_int_types + arrow_string_types)
+def test_series_pickling(dtype) -> None:
+    s = Series.from_pylist([1, 2, 3, None]).cast(DataType.from_arrow_type(dtype))
     copied_s = copy.deepcopy(s)
-    assert s.datatype() == copied_s.datatype
+    assert s.datatype() == copied_s.datatype()
     assert s.to_pylist() == copied_s.to_pylist()

@@ -248,3 +248,7 @@ class Table:
         else:
             raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return Series._from_pyseries(self._table.argsort(pyexprs, descending))
+
+    def __reduce__(self) -> tuple:
+        names = self.column_names()
+        return Table.from_pydict, ({name: self.get_column(name) for name in names},)

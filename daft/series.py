@@ -221,6 +221,9 @@ class Series:
     def dt(self) -> SeriesDateNamespace:
         return SeriesDateNamespace.from_series(self)
 
+    def __reduce__(self) -> tuple:
+        return (Series.from_arrow, (self.to_arrow(), self.name()))
+
 
 SomeSeriesNamespace = TypeVar("SomeSeriesNamespace", bound="SeriesNamespace")
 
