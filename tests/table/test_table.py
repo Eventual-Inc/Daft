@@ -940,7 +940,7 @@ def test_string_table_sorting():
         "lastname": ["a", "a", "a", None, "a", "bond", None],
     }
 
-    
+
 def test_table_filter_with_dates() -> None:
     from datetime import date
 
