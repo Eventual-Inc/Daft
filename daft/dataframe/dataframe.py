@@ -1173,6 +1173,38 @@ class DataFrame:
         assert isinstance(partition_set, RayPartitionSet), "Cannot convert to Ray Dataset if not running on Ray backend"
         return partition_set.to_ray_dataset()
 
+    @classmethod
+    @DataframePublicAPI
+    def from_ray_dataset(cls, ds: "RayDataset") -> "DataFrame":
+        """Creates a DataFrame from a Ray Dataset
+
+        .. NOTE::
+            This function can only work if Daft is running using the RayRunner
+
+        Args:
+            ds: the Ray Dataset to create a Daft DataFrame from
+        """
+        assert (
+            get_context().runner_config.name == "ray"
+        ), "Daft needs to be running on the Ray Runner for this operation"
+
+        from daft.runners.ray_runner import RayRunnerIO
+
+        ray_runner_io = get_context().runner().runner_io()
+        assert isinstance(ray_runner_io, RayRunnerIO)
+
+        partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
+        cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
+        return cls(
+            logical_plan.InMemoryScan(
+                cache_entry=cache_entry,
+                schema=schema,
+                partition_spec=logical_plan.PartitionSpec(
+                    logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
+                ),
+            )
+        )
+
 
 @dataclass
 class GroupedDataFrame:
