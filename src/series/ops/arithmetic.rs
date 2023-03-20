@@ -22,7 +22,7 @@ macro_rules! impl_series_math_op {
                 with_match_numeric_daft_types!(lhs.data_type(), |$T| {
                     let lhs = lhs.downcast::<$T>()?;
                     let rhs = rhs.downcast::<$T>()?;
-                    Ok(lhs.$func_name(rhs)?.into_series())
+                    Ok(lhs.$func_name(rhs)?.into_series().rename(lhs.name()))
                 })
             }
         }
@@ -43,7 +43,7 @@ impl Add for &Series {
         with_match_numeric_and_utf_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;
-            Ok(lhs.add(rhs)?.into_series())
+            Ok(lhs.add(rhs)?.into_series().rename(lhs.name()))
         })
     }
 }
@@ -71,7 +71,8 @@ impl Div for &Series {
         Ok(lhs
             .downcast::<Float64Type>()?
             .div(rhs.downcast::<Float64Type>()?)?
-            .into_series())
+            .into_series()
+            .rename(lhs.name()))
     }
 }
 
