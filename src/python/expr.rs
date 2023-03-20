@@ -187,6 +187,16 @@ impl PyExpr {
         use dsl::functions::utf8::endswith;
         Ok(endswith(&self.expr, &pattern.expr).into())
     }
+
+    pub fn utf8_startswith(&self, pattern: &Self) -> PyResult<Self> {
+        use dsl::functions::utf8::startswith;
+        Ok(startswith(&self.expr, &pattern.expr).into())
+    }
+
+    pub fn utf8_contains(&self, pattern: &Self) -> PyResult<Self> {
+        use dsl::functions::utf8::contains;
+        Ok(contains(&self.expr, &pattern.expr).into())
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

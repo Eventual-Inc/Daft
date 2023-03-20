@@ -186,6 +186,14 @@ impl PySeries {
         Ok(self.series.utf8_endswith(&pattern.series)?.into())
     }
 
+    pub fn utf8_startswith(&self, pattern: &Self) -> PyResult<Self> {
+        Ok(self.series.utf8_startswith(&pattern.series)?.into())
+    }
+
+    pub fn utf8_contains(&self, pattern: &Self) -> PyResult<Self> {
+        Ok(self.series.utf8_contains(&pattern.series)?.into())
+    }
+
     pub fn dt_year(&self) -> PyResult<Self> {
         Ok(self.series.dt_year()?.into())
     }

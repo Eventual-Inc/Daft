@@ -271,14 +271,16 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
 class ExpressionStringNamespace(ExpressionNamespace):
     def contains(self, substr: str) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement string expression")
+        substr_expr = Expression._to_expression(substr)
+        return Expression._from_pyexpr(self._expr.utf8_contains(substr_expr._expr))
 
     def endswith(self, suffix: str | Expression) -> Expression:
         suffix_expr = Expression._to_expression(suffix)
         return Expression._from_pyexpr(self._expr.utf8_endswith(suffix_expr._expr))
 
     def startswith(self, prefix: str) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement string expression")
+        prefix_expr = Expression._to_expression(prefix)
+        return Expression._from_pyexpr(self._expr.utf8_startswith(prefix_expr._expr))
 
     def concat(self, other: str) -> Expression:
         raise NotImplementedError("[RUST-INT] Implement string expression")
