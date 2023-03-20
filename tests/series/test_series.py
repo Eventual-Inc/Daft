@@ -447,6 +447,27 @@ def test_series_boolean_size_bytes(size) -> None:
     assert s.size_bytes() == data.nbytes
 
 
+@pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
+def test_series_date_size_bytes(size) -> None:
+    from datetime import date
+
+    pydata = [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)]
+    data = pa.array(pydata)
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.date()
+    assert s.size_bytes() == data.nbytes
+
+    ## with nulls
+    if size > 0:
+        pydata = pydata[:-1] + [None]
+    data = pa.array(pydata, pa.date32())
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.date()
+    assert s.size_bytes() == data.nbytes
+
+
 @pytest.mark.parametrize("dtype", arrow_int_types + arrow_float_types)
 def test_series_numeric_abs(dtype) -> None:
     if pa.types.is_unsigned_integer(dtype):
