@@ -219,7 +219,7 @@ class DataFrame:
             dataframe_num_rows=None,
         )
 
-        return DataFrameDisplay(preview, self.schema())
+        return DataFrameDisplay(preview, self.schema(), num_rows=n)
 
     @DataframePublicAPI
     def __repr__(self) -> str:
