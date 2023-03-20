@@ -485,7 +485,11 @@ class Sort(UnaryNode):
 
         resolved_sort_by_schema = self._sort_by.resolve_schema(input.schema())
         for f, sort_by_expr in zip(resolved_sort_by_schema, self._sort_by):
-            if f.dtype in {ExpressionType.null(), ExpressionType.bytes(), ExpressionType.logical()}:
+            if (
+                f.dtype == ExpressionType.null()
+                or f.dtype == ExpressionType.bytes()
+                or f.dtype == ExpressionType.logical()
+            ):
                 raise ExpressionTypeError(f"Cannot sort on expression {sort_by_expr} with type: {f.dtype}")
 
         if isinstance(descending, bool):
