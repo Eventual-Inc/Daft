@@ -4,6 +4,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+import ray.data
 
 from daft import DataFrame
 from daft.context import get_context
@@ -74,4 +75,23 @@ def test_ray_dataset_with_numpy(n_partitions: int):
             {"intcol": 2, "strcol": "b", "npcol": np.ones((2, 3))},
             {"intcol": 3, "strcol": "c", "npcol": np.ones((3, 3))},
         ],
+    )
+
+
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.parametrize("n_partitions", [1, 2])
+def test_from_ray_dataset(n_partitions: int):
+    ds = ray.data.range(8)
+    ds = ds.map(lambda i: {"int": i, "np": np.ones((3, 3)), "np_variable": np.ones((i + 1, 3))}).repartition(
+        n_partitions
+    )
+
+    df = DataFrame.from_ray_dataset(ds)
+    np.testing.assert_equal(
+        df.to_pydict(),
+        {
+            "int": list(range(8)),
+            "np": [np.ones((3, 3)) for i in range(8)],
+            "np_variable": [np.ones((i + 1, 3)) for i in range(8)],
+        },
     )

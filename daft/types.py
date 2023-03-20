@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass
 from enum import Enum
+from typing import Hashable
 
 _NUMPY_AVAILABLE = True
 try:
@@ -114,7 +115,7 @@ class ExpressionType:
             return ExpressionType.python(list)
         elif pa.types.is_struct(datatype):
             return ExpressionType.python(dict)
-        if datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
+        if not isinstance(datatype, Hashable) or datatype not in _PYARROW_TYPE_TO_EXPRESSION_TYPE:
             return ExpressionType.python_object()
         return _PYARROW_TYPE_TO_EXPRESSION_TYPE[datatype]
 

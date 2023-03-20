@@ -52,6 +52,7 @@ from daft.runners.partitioning import (
 from daft.runners.profiler import profiler
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.runners.runner import Runner
+from daft.types import ExpressionType
 
 if TYPE_CHECKING:
     from ray.data.block import Block as RayDatasetBlock
@@ -122,6 +123,25 @@ def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
     colnames = list(partition.columns.keys())
     blocks = [tile.block for tile in partition.columns.values()]
     return [dict(zip(colnames, row_tuple)) for row_tuple in zip_blocks_as_py(*blocks)]
+
+
+@ray.remote
+def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_schema: Schema) -> vPartition:
+    assert isinstance(ray_dataset_block, pa.Table), "Cannot handle non-arrow Ray Datasets, please file a ticket!"
+
+    data = {}
+    for cname, column in zip(ray_dataset_block.column_names, ray_dataset_block):
+        daft_field = daft_schema[cname]
+
+        # NOTE: Since we only handle Arrow Ray Datasets, all Python-type fields should be Ray's Tensor extension types
+        # We convert that to a Daft Python block here by invoking `np.array` on each item to convert it to numpy
+        if daft_field.dtype._is_python_type():
+            column = [np.array(item) for item in column]
+
+        data[cname] = column
+
+    partition = vPartition.from_pydict(data)
+    return partition
 
 
 @ray.remote
@@ -230,6 +250,28 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
                 schema_inference_options,
             )
         )
+
+    def partition_set_from_ray_dataset(
+        self,
+        ds: RayDataset,
+    ) -> tuple[RayPartitionSet, Schema]:
+        arrow_schema = ds.schema()
+        if not isinstance(arrow_schema, pa.Schema):
+            raise RuntimeError(
+                f"Schema is {type(arrow_schema)}, required pyarrow.lib.Schema. \n"
+                f"to_spark does not support converting non-arrow ray datasets."
+            )
+        daft_schema = Schema._from_field_name_and_types(
+            [(arrow_field.name, ExpressionType.from_arrow_type(arrow_field.type)) for arrow_field in arrow_schema]
+        )
+        block_refs = ds.get_internal_block_refs()
+
+        # NOTE: This materializes the entire Ray Dataset - we could make this more intelligent by creating a new RayDatasetScan node
+        # which can iterate on Ray Dataset blocks and materialize as-needed
+        daft_vpartitions = [
+            _make_daft_partition_from_ray_dataset_blocks.remote(block, daft_schema) for block in block_refs
+        ]
+        return RayPartitionSet({part_id: part for part_id, part in enumerate(daft_vpartitions)}), daft_schema
 
 
 def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
