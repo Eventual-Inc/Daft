@@ -131,8 +131,10 @@ impl Table {
         self.take(&indices.into_series())
     }
 
-    pub fn size_bytes(&self) -> usize {
-        self.columns.iter().map(|s| s.size_bytes()).sum::<usize>()
+    pub fn size_bytes(&self) -> DaftResult<usize> {
+        let column_sizes: DaftResult<Vec<usize>> =
+            self.columns.iter().map(|s| s.size_bytes()).collect();
+        Ok(column_sizes?.iter().sum())
     }
 
     pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {

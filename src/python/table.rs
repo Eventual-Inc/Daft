@@ -181,7 +181,7 @@ impl PyTable {
     }
 
     pub fn size_bytes(&self) -> PyResult<usize> {
-        Ok(self.table.size_bytes())
+        Ok(self.table.size_bytes()?)
     }
 
     pub fn column_names(&self) -> PyResult<Vec<String>> {
