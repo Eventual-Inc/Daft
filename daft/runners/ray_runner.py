@@ -65,6 +65,12 @@ except ImportError:
 
 from daft.logical.schema import Schema
 
+_NUMPY_AVAILABLE = True
+try:
+    import numpy as np
+except ImportError:
+    _NUMPY_AVAILABLE = False
+
 
 @ray.remote
 def _glob_path_into_details_vpartitions(
@@ -93,14 +99,28 @@ def _glob_path_into_details_vpartitions(
 
 @ray.remote
 def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
-    daft_blocks = {tile.column_name: tile.block for _, tile in partition.columns.items()}
+    # We perform a best-effort conversion to Arrow, including converting numpy arrays to Ray's ArrowTensorArray extension
+    #
+    # Use logic from Ray Data's block builder for creating ArrowTensorArray blocks when we detect numpy arrays
+    # https://github.com/ray-project/ray/blob/3240547f9fcf620c8a5544594afaddc748f5174c/python/ray/data/_internal/arrow_block.py#L108-L123
+    from ray.data.extensions.tensor_extension import ArrowTensorArray
 
-    all_arrow = all(isinstance(daft_block, ArrowDataBlock) for daft_block in daft_blocks.values())
-    if all_arrow:
-        return pa.Table.from_pydict({colname: daft_block.data for colname, daft_block in daft_blocks.items()})
+    arrow_data = {}
+    for cname, tile in partition.columns.items():
+        if tile.block.is_scalar():
+            raise NotImplementedError(f"Cannot convert column {cname} because it is a scalar literal value")
+        if isinstance(tile.block, ArrowDataBlock):
+            arrow_data[cname] = tile.block.data
+        elif _NUMPY_AVAILABLE and isinstance(next(iter(tile.block.data), None), np.ndarray):
+            arrow_data[cname] = ArrowTensorArray.from_numpy(tile.block.data)
+        else:
+            break
+    else:
+        return pa.Table.from_pydict(arrow_data)
 
-    colnames = list(daft_blocks.keys())
-    blocks = list(daft_blocks.values())
+    # On failure (for-else does not trigger), we fall-back to returning Ray Dataset's "simple" format, which is a list of dictionaries
+    colnames = list(partition.columns.keys())
+    blocks = [tile.block for tile in partition.columns.values()]
     return [dict(zip(colnames, row_tuple)) for row_tuple in zip_blocks_as_py(*blocks)]
 
 
