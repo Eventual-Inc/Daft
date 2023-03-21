@@ -435,40 +435,46 @@ class LocalLimit(Instruction):
 
 
 @dataclass(frozen=True)
-class Slice(Instruction):
-    start: int  # inclusive
-    end: int  # exclusive
+class MultiSlice(Instruction):
+    slices: list[(int, int)] # start inclusive, end exclusive
 
     def run(self, inputs: list[vPartition]) -> list[vPartition]:
-        return self._take(inputs)
+        return self._multislice(inputs)
 
-    def _take(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _multislice(self, inputs: list[vPartition]) -> list[vPartition]:
         [input] = inputs
+        results = []
 
-        assert self.start >= 0, f"start must be positive, but got {self.start}"
-        end = min(self.end, len(input))
+        for start, end in self.slices:
+            assert start >= 0, f"start must be positive, but got {start}"
+            end = min(end, len(input))
 
-        indices_block = DataBlock.make_block(data=np.arange(self.start, end))
-        return [input.take(indices_block)]
+            indices_block = DataBlock.make_block(data=np.arange(start, end))
+            results.append(input.take(indices_block))
+
+        return results
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         [input_meta] = input_metadatas
 
-        definite_end = min(self.end, input_meta.num_rows) if input_meta.num_rows is not None else None
-        assert self.start >= 0, f"start must be positive, but got {self.start}"
+        results = []
+        for start, end in self.slices:
+            definite_end = min(end, input_meta.num_rows) if input_meta.num_rows is not None else None
+            assert start >= 0, f"start must be positive, but got {start}"
 
-        if definite_end is not None:
-            num_rows = definite_end - self.start
-            num_rows = max(num_rows, 0)
-        else:
-            num_rows = None
+            if definite_end is not None:
+                num_rows = definite_end - start
+                num_rows = max(num_rows, 0)
+            else:
+                num_rows = None
 
-        return [
-            PartialPartitionMetadata(
-                num_rows=num_rows,
-                size_bytes=None,
+            results.append(PartialPartitionMetadata(
+                    num_rows=num_rows,
+                    size_bytes=None,
+                )
             )
-        ]
+
+        return results
 
 
 @dataclass(frozen=True)

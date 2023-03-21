@@ -146,6 +146,13 @@ def pipeline_instruction(
     )
 
 
+def flatten_plan(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+) -> InProgressPhysicalPlan[PartitionT]:
+    """TODO"""
+    raise NotImplementedError
+
+
 def join(
     left_plan: InProgressPhysicalPlan[PartitionT],
     right_plan: InProgressPhysicalPlan[PartitionT],
@@ -384,7 +391,7 @@ def split(
                     inputs=[task.partition()],
                     partial_metadatas=[task.partition_metadata()],
                     resource_request=ResourceRequest(memory_bytes=task.partition_metadata().size_bytes),
-                ).add_instruction(instruction=execution_step.Slice(start, end))
+                ).add_instruction(instruction=execution_step.MultiSlice([(start, end)]))
 
 
 def coalesce(
