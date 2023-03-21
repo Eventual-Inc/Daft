@@ -22,6 +22,7 @@ from loguru import logger
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
+    MultiOutputPartitionTask,
     PartitionTask,
     PartitionTaskBuilder,
     ReduceInstruction,
@@ -326,6 +327,38 @@ def global_limit(
                 return
 
 
+def flatten_plan(child_plan: InProgressPhysicalPlan[PartitionT]) -> InProgressPhysicalPlan[PartitionT]:
+    """Wrap a plan that emits multi-output tasks to a plan that emits single-output tasks."""
+
+    materializations: deque[MultiOutputPartitionTask[PartitionT]] = deque()
+
+    while True:
+        while len(materializations) > 0 and materializations[0].done():
+            done_task = materializations.popleft()
+            for partition, metadata in zip(done_task.partitions(), done_task.partition_metadatas()):
+                yield PartitionTaskBuilder[PartitionT](
+                    inputs=[partition],
+                    partial_metadatas=[metadata],
+                    resource_request=ResourceRequest(memory_bytes=metadata.size_bytes),
+                )
+
+        try:
+            step = next(child_plan)
+            if isinstance(step, PartitionTaskBuilder):
+                step = step.finalize_partition_task_multi_output()
+                materializations.append(step)
+            yield step
+
+        except StopIteration:
+            if len(materializations) > 0:
+                logger.debug(
+                    "flatten_plan blocked on completion of first source in: {sources}", sources=materializations
+                )
+                yield None
+            else:
+                return
+
+
 def split(
     child_plan: InProgressPhysicalPlan[PartitionT],
     num_input_partitions: int,
@@ -379,12 +412,13 @@ def split(
         else:
             boundaries = [math.ceil(num_rows * i / num_out) for i in range(num_out + 1)]
             starts, ends = boundaries[:-1], boundaries[1:]
-            for start, end in zip(starts, ends):
-                yield PartitionTaskBuilder[PartitionT](
-                    inputs=[task.partition()],
-                    partial_metadatas=[task.partition_metadata()],
-                    resource_request=ResourceRequest(memory_bytes=task.partition_metadata().size_bytes),
-                ).add_instruction(instruction=execution_step.Slice(start, end))
+            yield PartitionTaskBuilder[PartitionT](
+                inputs=[task.partition()],
+                partial_metadatas=[task.partition_metadata()],
+                resource_request=ResourceRequest(memory_bytes=task.partition_metadata().size_bytes),
+            ).add_instruction(
+                instruction=execution_step.FanoutSlices(_num_outputs=num_out, slices=list(zip(starts, ends)))
+            )
 
 
 def coalesce(
@@ -462,7 +496,7 @@ def reduce(
     # Dispatch all fanouts.
     for step in fanout_plan:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_multi_output(num_partitions)
+            step = step.finalize_partition_task_multi_output()
             materializations.append(step)
         yield step
 
@@ -561,7 +595,7 @@ def sort(
             ),
         ).add_instruction(
             instruction=execution_step.FanoutRange[PartitionT](
-                num_outputs=sort_info.num_partitions(),
+                _num_outputs=sort_info.num_partitions(),
                 sort_by=sort_info._sort_by,
                 descending=sort_info._descending,
             ),

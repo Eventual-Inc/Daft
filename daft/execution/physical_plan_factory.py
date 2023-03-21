@@ -91,10 +91,12 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
         elif isinstance(node, logical_plan.Repartition):
             # Case: simple repartition (split)
             if node._scheme == PartitionScheme.UNKNOWN:
-                return physical_plan.split(
-                    child_plan,
-                    num_input_partitions=node._children()[0].num_partitions(),
-                    num_output_partitions=node.num_partitions(),
+                return physical_plan.flatten_plan(
+                    physical_plan.split(
+                        child_plan,
+                        num_input_partitions=node._children()[0].num_partitions(),
+                        num_output_partitions=node.num_partitions(),
+                    )
                 )
 
             # All other repartitions require shuffling.
@@ -105,7 +107,7 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
                 fanout_plan = physical_plan.fanout_random(child_plan, node)
             elif node._scheme == PartitionScheme.HASH:
                 fanout_instruction = execution_step.FanoutHash(
-                    num_outputs=node.num_partitions(),
+                    _num_outputs=node.num_partitions(),
                     partition_by=node._partition_by,
                 )
                 fanout_plan = physical_plan.pipeline_instruction(
