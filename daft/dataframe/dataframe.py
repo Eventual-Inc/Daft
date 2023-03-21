@@ -890,6 +890,20 @@ class DataFrame:
         return DataFrame(join_op)
 
     @DataframePublicAPI
+    def drop_na(self, *cols):
+        """drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
+        If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
+        Example:
+            >>> df = DataFrame.from_pydict({"a": [1, 2, 3, None]})
+            >>> df.drop_na()  # drops rows where any column contains Null/NaN values
+            >>> df = DataFrame.from_pydict({"a": [1, 2, 3, None]})
+            >>> df.drop_na("a")  # drops rows where columns x or y contain Null/NaN values
+
+        """
+        drop_na_op = logical_plan.Filter(self._plan, )
+        return DataFrame(drop_na_op)
+
+    @DataframePublicAPI
     def explode(self, *columns: ColumnInputType) -> "DataFrame":
         """Explodes a List column, where every element in each row's List becomes its own row, and all
         other columns in the DataFrame are duplicated across rows
