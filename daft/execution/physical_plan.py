@@ -332,29 +332,31 @@ def flatten_plan(child_plan: InProgressPhysicalPlan[PartitionT]) -> InProgressPh
 
     materializations: deque[MultiOutputPartitionTask[PartitionT]] = deque()
 
-    while len(materializations) > 0 and materializations[0].done():
-        done_task = materializations.popleft()
-        for partition, metadata in zip(done_task.partitions(), done_task.partition_metadatas()):
-            yield PartitionTaskBuilder[PartitionT](
-                inputs=[partition],
-                partial_metadatas=[metadata],
-                resource_request=ResourceRequest(memory_bytes=metadata.size_bytes),
-            )
+    while True:
+        while len(materializations) > 0 and materializations[0].done():
+            done_task = materializations.popleft()
+            for partition, metadata in zip(done_task.partitions(), done_task.partition_metadatas()):
+                yield PartitionTaskBuilder[PartitionT](
+                    inputs=[partition],
+                    partial_metadatas=[metadata],
+                    resource_request=ResourceRequest(memory_bytes=metadata.size_bytes),
+                )
 
-    try:
-        step = next(child_plan)
-        if isinstance(step, PartitionTaskBuilder):
-            # Only used for slices for now. TODO(charles) generalize.
-            step = step.finalize_partition_task_multi_output()
-            materializations.append(step)
-        yield step
+        try:
+            step = next(child_plan)
+            if isinstance(step, PartitionTaskBuilder):
+                step = step.finalize_partition_task_multi_output()
+                materializations.append(step)
+            yield step
 
-    except StopIteration:
-        if len(materializations) > 0:
-            logger.debug("flatten_plan blocked on completion of first source in: {sources}", sources=materializations)
-            yield None
-        else:
-            return
+        except StopIteration:
+            if len(materializations) > 0:
+                logger.debug(
+                    "flatten_plan blocked on completion of first source in: {sources}", sources=materializations
+                )
+                yield None
+            else:
+                return
 
 
 def split(
