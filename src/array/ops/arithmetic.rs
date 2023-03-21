@@ -60,6 +60,8 @@ where
             let opt_lhs = lhs.get(0);
             match opt_lhs {
                 None => Ok(DataArray::full_null(rhs.name(), rhs.len())),
+                // NOTE: naming logic here is wrong, and assigns the rhs name. However, renaming is handled at the Series level so this
+                // error is obfuscated.
                 Some(lhs) => rhs.apply(|rhs| operation(lhs, rhs)),
             }
         }

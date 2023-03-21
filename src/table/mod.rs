@@ -275,7 +275,7 @@ impl Table {
         }?;
         if expected_field.name != series.field().name {
             return Err(DaftError::ComputeError(format!(
-                "Mismatch of expected expression name and name from computed series, {} vs {}",
+                "Mismatch of expected expression name and name from computed series ({} vs {}) for expression: {expr}",
                 expected_field.name,
                 series.field().name
             )));
