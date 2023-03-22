@@ -8,7 +8,7 @@ import pyarrow as pa
 import pytest
 
 from daft.datatype import DataType
-from daft.expressions2 import col, lit
+from daft.expressions import col, lit
 from daft.series import Series
 from daft.table import Table
 

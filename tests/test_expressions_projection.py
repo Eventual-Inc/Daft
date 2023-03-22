@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from daft.errors import ExpressionTypeError
-from daft.expressions2 import Expression, ExpressionsProjection, col
+from daft.expressions import Expression, ExpressionsProjection, col
 from daft.table import Table
 
 
