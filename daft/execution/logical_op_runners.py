@@ -7,22 +7,20 @@ from daft.datasources import (
     StorageType,
 )
 from daft.logical.logical_plan import FileWrite, TabularFilesScan
-from daft.runners.blocks import DataBlock
 from daft.runners.partitioning import (
-    PyListTile,
-    vPartition,
     vPartitionParseCSVOptions,
     vPartitionReadOptions,
     vPartitionSchemaInferenceOptions,
 )
+from daft.table import Table, table_io
 
 
 class LogicalPartitionOpRunner:
     # TODO(charles): move to ExecutionStep
 
     def _handle_tabular_files_scan(
-        self, inputs: dict[int, vPartition], scan: TabularFilesScan, index: int | None = None
-    ) -> vPartition:
+        self, inputs: dict[int, Table], scan: TabularFilesScan, index: int | None = None
+    ) -> Table:
         child_id = scan._children()[0].id()
         prev_partition = inputs[child_id]
         data = prev_partition.to_pydict()
@@ -44,10 +42,10 @@ class LogicalPartitionOpRunner:
 
         if scan._source_info.scan_type() == StorageType.CSV:
             assert isinstance(scan._source_info, CSVSourceInfo)
-            return vPartition.concat(
+            return Table.concat(
                 [
-                    vPartition.from_csv(
-                        path=fp,
+                    table_io.read_csv(
+                        file=fp,
                         csv_options=vPartitionParseCSVOptions(
                             delimiter=scan._source_info.delimiter,
                             has_headers=scan._source_info.has_headers,
@@ -62,11 +60,10 @@ class LogicalPartitionOpRunner:
             )
         elif scan._source_info.scan_type() == StorageType.JSON:
             assert isinstance(scan._source_info, JSONSourceInfo)
-            return vPartition.concat(
+            return Table.concat(
                 [
-                    vPartition.from_json(
-                        path=fp,
-                        schema_options=schema_options,
+                    table_io.read_json(
+                        file=fp,
                         read_options=read_options,
                     )
                     for fp in filepaths
@@ -74,11 +71,10 @@ class LogicalPartitionOpRunner:
             )
         elif scan._source_info.scan_type() == StorageType.PARQUET:
             assert isinstance(scan._source_info, ParquetSourceInfo)
-            return vPartition.concat(
+            return Table.concat(
                 [
-                    vPartition.from_parquet(
-                        path=fp,
-                        schema_options=schema_options,
+                    table_io.read_parquet(
+                        file=fp,
                         read_options=read_options,
                     )
                     for fp in filepaths
@@ -87,17 +83,19 @@ class LogicalPartitionOpRunner:
         else:
             raise NotImplementedError(f"PyRunner has not implemented scan: {scan._source_info.scan_type()}")
 
-    def _handle_file_write(self, inputs: dict[int, vPartition], file_write: FileWrite) -> vPartition:
+    def _handle_file_write(self, inputs: dict[int, Table], file_write: FileWrite) -> Table:
         child_id = file_write._children()[0].id()
         assert file_write._storage_type == StorageType.PARQUET or file_write._storage_type == StorageType.CSV
         if file_write._storage_type == StorageType.PARQUET:
-            file_names = inputs[child_id].to_parquet(
+            file_names = table_io.write_parquet(
+                inputs[child_id],
                 root_path=file_write._root_dir,
                 partition_cols=file_write._partition_cols,
                 compression=file_write._compression,
             )
         else:
-            file_names = inputs[child_id].to_csv(
+            file_names = table_io.write_csv(
+                inputs[child_id],
                 root_path=file_write._root_dir,
                 partition_cols=file_write._partition_cols,
                 compression=file_write._compression,
@@ -105,11 +103,8 @@ class LogicalPartitionOpRunner:
 
         output_schema = file_write.schema()
         assert len(output_schema) == 1
-        col_name = output_schema.column_names()[0]
-        columns: dict[str, PyListTile] = {}
-        assert col_name is not None
-        columns[col_name] = PyListTile(
-            col_name,
-            block=DataBlock.make_block(file_names),
+        return Table.from_pydict(
+            {
+                output_schema.column_names()[0]: file_names,
+            }
         )
-        return vPartition(columns)

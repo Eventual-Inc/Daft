@@ -6,7 +6,7 @@ from typing import Any, Callable, Iterable
 from tabulate import tabulate
 
 from daft.logical.schema import Schema
-from daft.runners.partitioning import vPartition
+from daft.table import Table
 from daft.types import ExpressionType
 from daft.viz.html_viz_hooks import get_viz_hook
 
@@ -64,7 +64,7 @@ def _stringify_vpartition(
 
 
 def vpartition_repr_html(
-    vpartition: vPartition | None,
+    vpartition: Table | None,
     daft_schema: Schema,
     num_rows: int,
     user_message: str,
@@ -122,7 +122,7 @@ def vpartition_repr_html(
 
 
 def vpartition_repr(
-    vpartition: vPartition | None,
+    vpartition: Table | None,
     daft_schema: Schema,
     num_rows: int,
     user_message: str,
