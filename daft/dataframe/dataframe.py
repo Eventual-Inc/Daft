@@ -903,7 +903,9 @@ class DataFrame:
         """
         if len(cols) == 0:
             cols = self.column_names
-        drop_na_op = logical_plan.Filter(self._plan, ExpressionList([~reduce(lambda x, y: x | y,  (col(x).is_null() for x in cols))]))
+        drop_na_op = logical_plan.Filter(
+            self._plan, ExpressionList([~reduce(lambda x, y: x | y, (col(x).is_null() for x in cols))])
+        )
         return DataFrame(drop_na_op)
 
     @DataframePublicAPI
