@@ -152,6 +152,10 @@ impl PyExpr {
         }
     }
 
+    pub fn __invert__(&self) -> PyResult<Self> {
+        Ok(self.expr.invert().into())
+    }
+
     pub fn name(&self) -> PyResult<&str> {
         Ok(self.expr.name()?)
     }
