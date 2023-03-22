@@ -6,7 +6,7 @@ import pyarrow as pa
 
 from daft.daft import PyTable as _PyTable
 from daft.expressions2 import Expression, ExpressionsProjection
-from daft.logical.schema2 import Schema
+from daft.logical.schema import Schema
 from daft.series import Series
 
 _NUMPY_AVAILABLE = True
