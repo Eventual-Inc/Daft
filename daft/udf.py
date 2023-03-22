@@ -13,9 +13,10 @@ if sys.version_info < (3, 8):
 else:
     from typing import get_origin
 
+from daft.datatype import DataType
 from daft.expressions import Expression, UdfExpression
 from daft.runners.blocks import DataBlock
-from daft.types import DatatypeInference, ExpressionType
+from daft.types import DatatypeInference
 
 _POLARS_AVAILABLE = True
 try:
@@ -50,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 
 class UDF:
-    def __init__(self, f: _PythonFunction, input_columns: dict[str, type], return_dtype: ExpressionType):
+    def __init__(self, f: _PythonFunction, input_columns: dict[str, type], return_dtype: DataType):
         self._f = f
         self._input_types = {
             arg_name: UdfInputType.from_type_hint(type_hint) for arg_name, type_hint in input_columns.items()
@@ -207,7 +208,7 @@ class UdfInputType(enum.Enum):
 
 def udf(
     *,
-    return_dtype: ExpressionType,
+    return_dtype: DataType,
     input_columns: dict[str, type],
     **kwargs,
 ) -> Callable:
@@ -344,7 +345,7 @@ def udf(
     if "type_hints" in kwargs:
         raise ValueError(f"The `type_hints` keyword argument has been deprecated and renamed to input_columns.")
 
-    if not isinstance(return_dtype, ExpressionType):
+    if not isinstance(return_dtype, DataType):
         warnings.warn(
             "Type inference from a Python type will be deprecated in Daft v0.1. "
             "Please construct a Daft datatype and pass that into `return_dtype` instead of a Python type."

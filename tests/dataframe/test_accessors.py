@@ -3,10 +3,10 @@ from __future__ import annotations
 import pytest
 
 from daft import DataFrame
+from daft.datatype import DataType
 from daft.expressions import ColumnExpression
 from daft.logical.field import Field
 from daft.logical.logical_plan import LogicalPlan
-from daft.types import ExpressionType
 
 
 @pytest.fixture(scope="function")
@@ -26,7 +26,7 @@ def test_num_partitions(df):
 
 
 def test_schema(df):
-    assert [f for f in df.schema()] == [Field("foo", ExpressionType.integer())]
+    assert [f for f in df.schema()] == [Field("foo", DataType.int64())]
 
 
 def test_column_names(df):

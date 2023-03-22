@@ -5,9 +5,9 @@ from typing import Any, Callable, Iterable
 
 from tabulate import tabulate
 
+from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.table import Table
-from daft.types import ExpressionType
 from daft.viz.html_viz_hooks import get_viz_hook
 
 DEFAULT_MAX_COL_WIDTH = 20
@@ -54,7 +54,7 @@ def _stringify_vpartition(
             data_stringified[colname] = [
                 custom_stringify_object(val, max_col_width, max_lines) for val in data[colname]
             ]
-        elif field.dtype == ExpressionType.logical():
+        elif field.dtype == DataType.bool():
             # BUG: tabulate library does not handle string literal values "True" and "False" correctly, so we lowercase them.
             data_stringified[colname] = [_truncate(str(val).lower(), max_col_width, max_lines) for val in data[colname]]
         else:

@@ -9,6 +9,7 @@ from pprint import pformat
 from typing import Any, Generic, TypeVar
 
 from daft.datasources import SourceInfo, StorageType
+from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import OperatorEnum
 from daft.expressions import CallExpression, Expression, ExpressionList, col
@@ -18,7 +19,6 @@ from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.table import Table
-from daft.types import ExpressionType
 
 
 class OpLevel(IntEnum):
@@ -359,7 +359,7 @@ class FileWrite(UnaryNode):
         for field in input.schema():
             assert not field.dtype._is_python_type(), f"we can currently only write out primitive types, got: {field}"
 
-        schema = Schema._from_field_name_and_types([("file_path", ExpressionType.string())])
+        schema = Schema._from_field_name_and_types([("file_path", DataType.string())])
 
         super().__init__(schema, input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
@@ -408,7 +408,7 @@ class Filter(UnaryNode):
 
         for resolved_field, predicate_expr in zip(predicate_schema, predicate):
             resolved_type = resolved_field.dtype
-            if resolved_type != ExpressionType.logical():
+            if resolved_type != DataType.bool():
                 raise ValueError(
                     f"Expected expression {predicate_expr} to resolve to type LOGICAL, but received: {resolved_type}"
                 )
@@ -486,11 +486,7 @@ class Sort(UnaryNode):
 
         resolved_sort_by_schema = self._sort_by.resolve_schema(input.schema())
         for f, sort_by_expr in zip(resolved_sort_by_schema, self._sort_by):
-            if (
-                f.dtype == ExpressionType.null()
-                or f.dtype == ExpressionType.bytes()
-                or f.dtype == ExpressionType.logical()
-            ):
+            if f.dtype == DataType.null() or f.dtype == DataType.binary() or f.dtype == DataType.bool():
                 raise ExpressionTypeError(f"Cannot sort on expression {sort_by_expr} with type: {f.dtype}")
 
         if isinstance(descending, bool):
@@ -637,7 +633,7 @@ class GlobalLimit(UnaryNode):
 
 class LocalCount(UnaryNode):
     def __init__(self, input: LogicalPlan) -> None:
-        schema = Schema._from_field_name_and_types([("count", ExpressionType.integer())])
+        schema = Schema._from_field_name_and_types([("count", DataType.int64())])
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
 
@@ -957,7 +953,7 @@ class Join(BinaryNode):
         for schema, exprs in ((left.schema(), self._left_on), (right.schema(), self._right_on)):
             resolved_schema = exprs.resolve_schema(schema)
             for f, expr in zip(resolved_schema, exprs):
-                if f.dtype == ExpressionType.null():
+                if f.dtype == DataType.null():
                     raise ExpressionTypeError(f"Cannot join on null type expression: {expr}")
 
         self._how = how
