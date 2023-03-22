@@ -156,6 +156,10 @@ impl PyExpr {
         Ok(self.expr.invert().into())
     }
 
+    pub fn is_null(&self) -> PyResult<Self> {
+        Ok(self.expr.is_null().into())
+    }
+
     pub fn name(&self) -> PyResult<&str> {
         Ok(self.expr.name()?)
     }

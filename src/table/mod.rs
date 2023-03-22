@@ -241,7 +241,8 @@ impl Table {
             Agg(agg_expr) => self.eval_agg_expression(agg_expr),
             Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             Column(name) => self.get_column(name).cloned(),
-            Invert(_child) => todo!(),
+            Invert(child) => !(self.eval_expression(child)?),
+            IsNull(_child) => todo!(),
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;

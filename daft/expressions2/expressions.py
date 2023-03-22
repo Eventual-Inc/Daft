@@ -204,7 +204,8 @@ class Expression:
         raise NotImplementedError("[RUST-INT][UDF] Implement .apply")
 
     def is_null(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression")
+        expr = self._expr.is_null()
+        return Expression._from_pyexpr(expr)
 
     def name(self) -> builtins.str:
         return self._expr.name()

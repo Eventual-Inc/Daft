@@ -32,6 +32,7 @@ pub enum Expr {
         inputs: Vec<Expr>,
     },
     Invert(ExprRef),
+    IsNull(ExprRef),
     Literal(lit::LiteralValue),
 }
 
@@ -173,6 +174,10 @@ impl Expr {
         Expr::Invert(self.clone().into())
     }
 
+    pub fn is_null(&self) -> Self {
+        Expr::IsNull(self.clone().into())
+    }
+
     pub fn and(&self, other: &Self) -> Self {
         binary_op(Operator::And, self, other)
     }
@@ -184,7 +189,17 @@ impl Expr {
             Agg(agg_expr) => agg_expr.to_field(schema),
             Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
             Column(name) => Ok(schema.get_field(name).cloned()?),
-            Invert(expr) => Ok(Field::new(expr.name()?, expr.get_type(schema)?)),
+            Invert(expr) => {
+                let child_field = expr.to_field(schema)?;
+                match child_field.dtype {
+                    DataType::Boolean => Ok(Field::new(expr.name()?, DataType::Boolean)),
+                    _ => Err(DaftError::TypeError(format!(
+                        "Expected argument to be a Boolean expression, but received {:?}",
+                        child_field
+                    ))),
+                }
+            }
+            IsNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
             Function { func, inputs } => func.to_field(inputs.as_slice(), schema),
             BinaryOp { op, left, right } => {
@@ -272,6 +287,7 @@ impl Expr {
             Cast(expr, ..) => expr.name(),
             Column(name) => Ok(name.as_ref()),
             Invert(expr) => expr.name(),
+            IsNull(expr) => expr.name(),
             Literal(..) => Ok("literal"),
             Function { func: _, inputs } => inputs.first().unwrap().name(),
             BinaryOp {
@@ -309,6 +325,7 @@ impl Display for Expr {
             Cast(expr, dtype) => write!(f, "cast({expr} AS {dtype})"),
             Column(name) => write!(f, "col({name})"),
             Invert(expr) => write!(f, "invert({expr})"),
+            IsNull(expr) => write!(f, "is_null({expr})"),
             Literal(val) => write!(f, "lit({val})"),
             Function { func, inputs } => {
                 write!(f, "{}(", func.fn_name())?;
