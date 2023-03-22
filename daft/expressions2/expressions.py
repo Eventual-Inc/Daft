@@ -164,7 +164,8 @@ class Expression:
 
     def __invert__(self) -> Expression:
         """Inverts a bool expression (``~e``)"""
-        raise NotImplementedError("[RUST-INT] Implement expression")
+        expr = self._expr.__invert__()
+        return Expression._from_pyexpr(expr)
 
     def alias(self, name: builtins.str) -> Expression:
         assert isinstance(name, str)
