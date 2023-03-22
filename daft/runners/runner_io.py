@@ -10,6 +10,7 @@ from daft.datasources import (
     SourceInfo,
     StorageType,
 )
+from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     PartitionSet,
@@ -18,7 +19,6 @@ from daft.runners.partitioning import (
     vPartitionSchemaInferenceOptions,
 )
 from daft.table import Table, table_io
-from daft.types import ExpressionType
 
 PartitionT = TypeVar("PartitionT")
 
@@ -38,10 +38,10 @@ class RunnerIO(Generic[PartitionT]):
     FS_LISTING_ROWS_COLUMN_NAME = "rows"
     FS_LISTING_SCHEMA = Schema._from_field_name_and_types(
         [
-            (FS_LISTING_SIZE_COLUMN_NAME, ExpressionType.integer()),
-            (FS_LISTING_PATH_COLUMN_NAME, ExpressionType.string()),
-            (FS_LISTING_TYPE_COLUMN_NAME, ExpressionType.string()),
-            (FS_LISTING_ROWS_COLUMN_NAME, ExpressionType.integer()),
+            (FS_LISTING_SIZE_COLUMN_NAME, DataType.int64()),
+            (FS_LISTING_PATH_COLUMN_NAME, DataType.string()),
+            (FS_LISTING_TYPE_COLUMN_NAME, DataType.string()),
+            (FS_LISTING_ROWS_COLUMN_NAME, DataType.int64()),
         ]
     )
 
