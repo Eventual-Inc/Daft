@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from daft.expressions import Expression, ExpressionList, col, lit
+from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical import logical_plan
 
 AggregationOp = str
@@ -13,7 +13,7 @@ class AggregationPlanBuilder:
     See: `AggregationPlanBuilder.build()` for the high level logic on how this LogicalPlan is put together
     """
 
-    def __init__(self, plan: logical_plan.LogicalPlan, group_by: ExpressionList | None):
+    def __init__(self, plan: logical_plan.LogicalPlan, group_by: ExpressionsProjection | None):
         self._plan = plan
         self.group_by = group_by
 
@@ -75,10 +75,10 @@ class AggregationPlanBuilder:
         # 4. Perform post-shuffle projections if necessary
         postshuffle_projection_plan: logical_plan.LogicalPlan
         if self._needs_final_projection:
-            final_expressions = ExpressionList(
+            final_expressions = ExpressionsProjection(
                 [expr.alias(colname) for colname, expr in self._final_projection.items()]
             )
-            final_expressions = ExpressionList(
+            final_expressions = ExpressionsProjection(
                 [e for e in final_expressions if e.name() not in self._final_projection_excludes]
             )
             postshuffle_projection_plan = logical_plan.Projection(postshuffle_agg_plan, final_expressions)
@@ -114,43 +114,39 @@ class AggregationPlanBuilder:
         self._final_projection[result_colname] = col(result_colname)
 
     def add_sum(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._sum(expr), "sum")
-        self._add_2phase_agg(result_colname, Expression._sum(expr), "sum", "sum")
+        self._add_single_partition_shortcut_agg(result_colname, expr._sum(), "sum")
+        self._add_2phase_agg(result_colname, expr._sum(), "sum", "sum")
         return self
 
     def add_min(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._min(expr), "min")
-        self._add_2phase_agg(result_colname, Expression._min(expr), "min", "min")
+        self._add_single_partition_shortcut_agg(result_colname, expr._min(), "min")
+        self._add_2phase_agg(result_colname, expr._min(), "min", "min")
         return self
 
     def add_max(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._max(expr), "max")
-        self._add_2phase_agg(result_colname, Expression._max(expr), "max", "max")
+        self._add_single_partition_shortcut_agg(result_colname, expr._max(), "max")
+        self._add_2phase_agg(result_colname, expr._max(), "max", "max")
         return self
 
     def add_count(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._count(expr), "count")
-        self._add_2phase_agg(result_colname, Expression._count(expr), "count", "sum")
+        self._add_single_partition_shortcut_agg(result_colname, expr._count(), "count")
+        self._add_2phase_agg(result_colname, expr._count(), "count", "sum")
         return self
 
     def add_list(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._list(expr), "list")
-        self._add_2phase_agg(result_colname, Expression._list(expr), "list", "concat")
-        return self
+        raise NotImplementedError("[RUST-INT][NESTED] Concat is not yet implemented")
 
     def add_concat(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._concat(expr), "concat")
-        self._add_2phase_agg(result_colname, Expression._concat(expr), "concat", "concat")
-        return self
+        raise NotImplementedError("[RUST-INT][NESTED] Concat is not yet implemented")
 
     def add_mean(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, Expression._mean(expr), "mean")
+        self._add_single_partition_shortcut_agg(result_colname, expr._mean(), "mean")
 
         # Calculate intermediate sum and count
         intermediate_sum_colname = f"{result_colname}:_sum_for_mean"
         intermediate_count_colname = f"{result_colname}:_count_for_mean"
-        self._add_2phase_agg(intermediate_sum_colname, Expression._sum(expr), "sum", "sum")
-        self._add_2phase_agg(intermediate_count_colname, Expression._count(expr), "count", "sum")
+        self._add_2phase_agg(intermediate_sum_colname, expr._sum(), "sum", "sum")
+        self._add_2phase_agg(intermediate_count_colname, expr._count(), "count", "sum")
 
         # Run projection to get mean using intermediate sun and count
         # HACK: we add 0.0 because our current PyArrow-based type system returns an integer when dividing two integers
