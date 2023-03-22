@@ -21,14 +21,10 @@
       ~Expression.cast
       ~Expression.has_call
       ~Expression.if_else
-      ~Expression.is_column
-      ~Expression.is_eq
       ~Expression.is_nan
       ~Expression.is_null
       ~Expression.name
       ~Expression.post_order
-      ~Expression.required_columns
-      ~Expression.resolve_type
       ~Expression.to_column_expression
       ~Expression.to_dot
       ~Expression.to_dot_file

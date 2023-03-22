@@ -29,7 +29,9 @@
       ~DataFrame.from_parquet
       ~DataFrame.from_pydict
       ~DataFrame.from_pylist
+      ~DataFrame.from_ray_dataset
       ~DataFrame.groupby
+      ~DataFrame.into_partitions
       ~DataFrame.join
       ~DataFrame.limit
       ~DataFrame.max

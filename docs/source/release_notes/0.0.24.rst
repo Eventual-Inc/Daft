@@ -1,0 +1,140 @@
+Daft 0.0.24 Release Notes
+=========================
+
+The Daft 0.0.24 release adds many bugfixes and moves Daft much closer towards full integration of its Rust code. The highlights are:
+
+* Better integrations with Ray Datasets, adding a ``DataFrame.from_ray_dataset`` constructor and leveraging its ArrowTensorExtension types when converting data.
+* ``DataFrame.into_partitions`` API adds a much faster way of increasing/decreasing the number of partitions in a DataFrame without incurring a shuffle
+
+
+Enhancements
+------------
+
+* Refactor @udf to return a UDF class instead of wrapped functions `#644 <https://github.com/Eventual-Inc/Daft/pull/644>`_
+* Add DataFrame.from\_ray\_dataset `#722 <https://github.com/Eventual-Inc/Daft/pull/722>`_
+* Use Ray Datasets ArrowTensorExtension type when handling numpy arrays `#719 <https://github.com/Eventual-Inc/Daft/pull/719>`_
+* New API: `DataFrame.into_partitions(n)` `#711 <https://github.com/Eventual-Inc/Daft/pull/711>`_
+* Issue \#707: Fix join run\_partial\_metadata logic `#708 <https://github.com/Eventual-Inc/Daft/pull/708>`_
+* Push row limit through to Parquet row group batch reading. `#646 <https://github.com/Eventual-Inc/Daft/pull/646>`_
+* RayRunner: Run scheduler locally if we are not in ray client mode `#643 <https://github.com/Eventual-Inc/Daft/pull/643>`_
+* Deduce, propagate, and use partial partition metadata in physical plan. `#642 <https://github.com/Eventual-Inc/Daft/pull/642>`_
+* Query and store parquet metadata. `#634 <https://github.com/Eventual-Inc/Daft/pull/634>`_
+* Add future-like abstraction to PartitionTask `#633 <https://github.com/Eventual-Inc/Daft/pull/633>`_
+* Remove type annotation inference from UDFs `#632 <https://github.com/Eventual-Inc/Daft/pull/632>`_
+* Check top-level types for public API parameters `#628 <https://github.com/Eventual-Inc/Daft/pull/628>`_
+* Refactor aggregation logic into a AggregationPlanBuilder class `#627 <https://github.com/Eventual-Inc/Daft/pull/627>`_
+* Set show to default to showing 8 rows `#624 <https://github.com/Eventual-Inc/Daft/pull/624>`_
+* Add option to disable threadpool in PyRunner `#614 <https://github.com/Eventual-Inc/Daft/pull/614>`_
+* Typecheck `resource_request` parameter in `DataFrame.with_column()` `#611 <https://github.com/Eventual-Inc/Daft/pull/611>`_
+* Improve resource request settings for file reads `#602 <https://github.com/Eventual-Inc/Daft/pull/602>`_
+* Add 2x partition size memory to all tasks' ResourceRequests. `#600 <https://github.com/Eventual-Inc/Daft/pull/600>`_
+* into\_partitions \(splitting\) emits one task per input partition instead of per output partition. `#726 <https://github.com/Eventual-Inc/Daft/pull/726>`_
+* Ignore multiple calls to set_runner_ray with kwarg noop_if_initialized `#728 <https://github.com/Eventual-Inc/Daft/pull/728>`_
+
+Bug Fixes
+---------
+
+* Fix bug with tabular file scans `#674 <https://github.com/Eventual-Inc/Daft/pull/674>`_
+* Pin the version of sphinx-book-theme to \<1.0.0 which fixes our docs `#639 <https://github.com/Eventual-Inc/Daft/pull/639>`_
+* Fix notebooks for UDF changes `#636 <https://github.com/Eventual-Inc/Daft/pull/636>`_
+* Fix serialization of ArrowDataBlocks with shared buffers `#625 <https://github.com/Eventual-Inc/Daft/pull/625>`_
+* Fix df.show\(\) always showing at most 10 rows `#720 <https://github.com/Eventual-Inc/Daft/pull/720>`_
+* Fix schema inference of reads from Parquet and empty vPartitions `#706 <https://github.com/Eventual-Inc/Daft/pull/706>`_
+* Add multi-partition TPC-H unit test and fixes `#675 <https://github.com/Eventual-Inc/Daft/pull/675>`_
+* Fix ChunkedArray serialization logic to be compatible with PyArrow 6.0.0 `#635 <https://github.com/Eventual-Inc/Daft/pull/635>`_
+* Fix 100G regression from \#600 `#631 <https://github.com/Eventual-Inc/Daft/pull/631>`_
+* Python version compatibility fix for \#628 `#630 <https://github.com/Eventual-Inc/Daft/pull/630>`_
+* Always run GPU tasks in main thread instead of threadpool. `#619 <https://github.com/Eventual-Inc/Daft/pull/619>`_
+* Fix self.X == self.X typos in local\_eq `#618 <https://github.com/Eventual-Inc/Daft/pull/618>`_
+* Disable thread pool in MinDalle notebook `#617 <https://github.com/Eventual-Inc/Daft/pull/617>`_
+* Remove aberrant print `#616 <https://github.com/Eventual-Inc/Daft/pull/616>`_
+* Hotfix for unguarded pickle5 import `#615 <https://github.com/Eventual-Inc/Daft/pull/615>`_
+
+Build Changes
+-------------
+
+* Update ray requirements to \>=2.0.0 `#691 <https://github.com/Eventual-Inc/Daft/pull/691>`_
+* Manually split files during TPC-H data generation `#686 <https://github.com/Eventual-Inc/Daft/pull/686>`_
+* Cache TPCH data generation `#683 <https://github.com/Eventual-Inc/Daft/pull/683>`_
+* Skip file\_read benchmark on remote ray runner `#679 <https://github.com/Eventual-Inc/Daft/pull/679>`_
+* Add debug logging to PyRunner and physical plan. `#673 <https://github.com/Eventual-Inc/Daft/pull/673>`_
+* Downgrade isort 5.12.0 -\> 5.11.5 for py37 compatibility. `#652 <https://github.com/Eventual-Inc/Daft/pull/652>`_
+* Add Slack notification on failure of CI jobs `#641 <https://github.com/Eventual-Inc/Daft/pull/641>`_
+* Fixes for Ray compatibility tests `#638 <https://github.com/Eventual-Inc/Daft/pull/638>`_
+* Fix docs link for ray-init `#629 <https://github.com/Eventual-Inc/Daft/pull/629>`_
+
+
+Rust Integration
+----------------
+
+* Fix Series arithmetic naming logic `#725 <https://github.com/Eventual-Inc/Daft/pull/725>`_
+* Fix size\_bytes for logical types `#724 <https://github.com/Eventual-Inc/Daft/pull/724>`_
+* Remove use of ExpressionType.\_\_hash\_\_ in logicalplan `#723 <https://github.com/Eventual-Inc/Daft/pull/723>`_
+* \[rust\] leverage getstate directly in rust wrappers `#718 <https://github.com/Eventual-Inc/Daft/pull/718>`_
+* Add Rust/Series/Expressions for string .startswith and .contains `#717 <https://github.com/Eventual-Inc/Daft/pull/717>`_
+* \[rust\] Rust Data structures pickling `#716 <https://github.com/Eventual-Inc/Daft/pull/716>`_
+* Add ExpressionNamespace construction similar to SeriesNamespace `#715 <https://github.com/Eventual-Inc/Daft/pull/715>`_
+* Remove ExprResolveTypeError in favor of a plain TypeError `#712 <https://github.com/Eventual-Inc/Daft/pull/712>`_
+* Use ValueError instead of SchemaMismatch in FunctionExpr evaluation `#710 <https://github.com/Eventual-Inc/Daft/pull/710>`_
+* \[rust\] Date Year and Array Slices `#709 <https://github.com/Eventual-Inc/Daft/pull/709>`_
+* \[rust\] String multikey sorting bug fix `#705 <https://github.com/Eventual-Inc/Daft/pull/705>`_
+* Implement grouped aggregations. `#704 <https://github.com/Eventual-Inc/Daft/pull/704>`_
+* \[rust\] Simple Date operations via as\_physical operations `#703 <https://github.com/Eventual-Inc/Daft/pull/703>`_
+* Hook in agg expressions to the table.agg API \(global mode only\). `#702 <https://github.com/Eventual-Inc/Daft/pull/702>`_
+* Unblocking \[RUST-INT\]\[TPCH\]: Add a call to .combine\_chunks\(\) when creating a Table from arrow `#700 <https://github.com/Eventual-Inc/Daft/pull/700>`_
+* Unblocking \[RUST-INT\]\[TPCH\]: Remove calls to Expression.\_required\_columns outside of optimizer `#699 <https://github.com/Eventual-Inc/Daft/pull/699>`_
+* Fix Table.from\_pydict and add unit tests `#698 <https://github.com/Eventual-Inc/Daft/pull/698>`_
+* \[rust\] Table and Series Concat `#697 <https://github.com/Eventual-Inc/Daft/pull/697>`_
+* \[rust\] Function Expressions and Abs Expression `#693 <https://github.com/Eventual-Inc/Daft/pull/693>`_
+* Add endswith kernel to Series `#692 <https://github.com/Eventual-Inc/Daft/pull/692>`_
+* Type-checking schema resolution of Expressions2 `#690 <https://github.com/Eventual-Inc/Daft/pull/690>`_
+* \[rust\] Partitioning Ops \(Hash, Random, Range\) `#685 <https://github.com/Eventual-Inc/Daft/pull/685>`_
+* Mean, Min, Max, Count global aggs for Expressions2 `#684 <https://github.com/Eventual-Inc/Daft/pull/684>`_
+* Implement TableIO reads and tests `#680 <https://github.com/Eventual-Inc/Daft/pull/680>`_
+* \[rust\] Table Sample and Quantile operations `#678 <https://github.com/Eventual-Inc/Daft/pull/678>`_
+* \[rust\] size\_bytes for Table and Series `#677 <https://github.com/Eventual-Inc/Daft/pull/677>`_
+* \[rust\] Validate field params during expression eval `#676 <https://github.com/Eventual-Inc/Daft/pull/676>`_
+* Add resolve\_schema functionality to expressions2 `#671 <https://github.com/Eventual-Inc/Daft/pull/671>`_
+* \[rust\] Single Column Naive Join `#670 <https://github.com/Eventual-Inc/Daft/pull/670>`_
+* Add more Rust python binding requirements for TPC-H `#669 <https://github.com/Eventual-Inc/Daft/pull/669>`_
+* Add Date DataType `#668 <https://github.com/Eventual-Inc/Daft/pull/668>`_
+* Runner IO code `#667 <https://github.com/Eventual-Inc/Daft/pull/667>`_
+* Expression2 optimizer methods `#665 <https://github.com/Eventual-Inc/Daft/pull/665>`_
+* Add `table_io.py` utility module for reading and writing of tables `#663 <https://github.com/Eventual-Inc/Daft/pull/663>`_
+* Sammy/rust series hash `#662 <https://github.com/Eventual-Inc/Daft/pull/662>`_
+* Refactor old Expressions for compatibility with Expressions2 `#659 <https://github.com/Eventual-Inc/Daft/pull/659>`_
+* Refactor old types.py to be compatible with datatypes.py `#658 <https://github.com/Eventual-Inc/Daft/pull/658>`_
+* Expressions and Schema refactors for v2 compatibility `#657 <https://github.com/Eventual-Inc/Daft/pull/657>`_
+* Add ExpressionsProjection to replace ExpressionList `#656 <https://github.com/Eventual-Inc/Daft/pull/656>`_
+* Refactor Schema initialization in the codebase `#655 <https://github.com/Eventual-Inc/Daft/pull/655>`_
+* Refactor vPartition repartitioning APIs `#654 <https://github.com/Eventual-Inc/Daft/pull/654>`_
+* Global sum aggregation for expressions2 `#653 <https://github.com/Eventual-Inc/Daft/pull/653>`_
+* Refactor .from\_pydict\(\) to infer schema in the method `#651 <https://github.com/Eventual-Inc/Daft/pull/651>`_
+* Add Rust bindings for Schema `#650 <https://github.com/Eventual-Inc/Daft/pull/650>`_
+* \[rust\] Table Multicolumn Sorts `#649 <https://github.com/Eventual-Inc/Daft/pull/649>`_
+* Remove partition\_id from vPartition `#648 <https://github.com/Eventual-Inc/Daft/pull/648>`_
+* Add stub code to Table `#647 <https://github.com/Eventual-Inc/Daft/pull/647>`_
+* \[rust\] Single Column Table Sorts `#645 <https://github.com/Eventual-Inc/Daft/pull/645>`_
+* \[Rust\] Series Sorting and Argsort `#640 <https://github.com/Eventual-Inc/Daft/pull/640>`_
+* \[rust\] Table, Series Filter with DaftLogical Operators `#620 <https://github.com/Eventual-Inc/Daft/pull/620>`_
+
+
+Deprecations
+------------
+
+* Deprecate type inference from Python types in @udf and .apply `#661 <https://github.com/Eventual-Inc/Daft/pull/661>`_
+
+
+Closed Issues
+-------------
+
+* df.show\(\) only shows at most 10 rows `#721 <https://github.com/Eventual-Inc/Daft/issues/721>`_
+* Limit after joins are broken `#707 <https://github.com/Eventual-Inc/Daft/issues/707>`_
+* \[Bug\] Resource Requests breaking in tutorial notebook `#603 <https://github.com/Eventual-Inc/Daft/issues/603>`_
+* Improved UDF syntax `#591 <https://github.com/Eventual-Inc/Daft/issues/591>`_
+* Order-preserving groupby-aggregations `#623 <https://github.com/Eventual-Inc/Daft/issues/623>`_
+* Node-level initializations for UDF `#622 <https://github.com/Eventual-Inc/Daft/issues/622>`_
+* Add option to disable threading in PyRunner `#613 <https://github.com/Eventual-Inc/Daft/issues/613>`_
+* Typecheck all user parameters of public APIs `#612 <https://github.com/Eventual-Inc/Daft/issues/612>`_
+* Text to image generation notebook failing on GPU oom `#609 <https://github.com/Eventual-Inc/Daft/issues/609>`_
+* Limit .show to 10 by default `#607 <https://github.com/Eventual-Inc/Daft/issues/607>`_
