@@ -3,6 +3,7 @@
 import pathlib
 import warnings
 from dataclasses import dataclass
+from functools import reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -900,7 +901,9 @@ class DataFrame:
             >>> df.drop_na("a")  # drops rows where columns x or y contain Null/NaN values
 
         """
-        drop_na_op = logical_plan.Filter(self._plan, )
+        if len(cols) == 0:
+            cols = self.column_names
+        drop_na_op = logical_plan.Filter(self._plan, ExpressionList([~reduce(lambda x, y: x | y,  (col(x).is_null() for x in cols))]))
         return DataFrame(drop_na_op)
 
     @DataframePublicAPI

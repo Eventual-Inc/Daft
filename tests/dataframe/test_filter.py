@@ -11,3 +11,13 @@ def test_filter_missing_column(valid_data: list[dict[str, Any]]) -> None:
     df = DataFrame.from_pylist(valid_data)
     with pytest.raises(ValueError):
         df.select("sepal_width").where(df["petal_length"] > 4.8)
+
+
+def test_drop_na(missing_value_data: list[dict[str, Any]]) -> None:
+    df: DataFrame = DataFrame.from_pylist(missing_value_data)
+    df_len_no_col = len(df.drop_na().collect())
+    assert df_len_no_col == 1
+
+    df: DataFrame = DataFrame.from_pylist(missing_value_data)
+    df_len_col = len(df.drop_na("sepal_length").collect())
+    assert df_len_col == 2
