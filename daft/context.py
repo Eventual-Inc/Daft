@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import warnings
 from typing import TYPE_CHECKING, ClassVar
 
 from loguru import logger
@@ -111,6 +112,7 @@ def get_context() -> DaftContext:
 
 def set_runner_ray(
     address: str | None = None,
+    noop_if_initialized: bool = False,
     max_tasks_per_core: float | None = None,
     max_refs_per_core: float | None = None,
     batch_dispatch_coeff: float | None = None,
@@ -122,14 +124,24 @@ def set_runner_ray(
     1. DAFT_RUNNER=ray
     2. Optionally, DAFT_RAY_ADDRESS=ray://...
 
+    **This function will throw an error if called multiple times in the same process.**
+
     Args:
         address: Address to head node of the Ray cluster. Defaults to None.
+        noop_if_initialized: If set to True, only the first call to this function will have any effect in setting the Runner.
+            Subsequent calls will have no effect at all. Defaults to False, which throws an error if this function is called
+            more than once per process.
 
     Returns:
         DaftContext: Daft context after setting the Ray runner
     """
     global _DaftContext
     if _DaftContext.disallow_set_runner:
+        if noop_if_initialized:
+            warnings.warn(
+                "Calling daft.context.set_runner_ray(noop_if_initialized=True) multiple times has no effect beyond the first call."
+            )
+            return _DaftContext
         raise RuntimeError("Cannot set runner more than once")
     _DaftContext = dataclasses.replace(
         _DaftContext,
