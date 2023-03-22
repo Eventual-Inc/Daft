@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from daft.daft import PyTable as _PyTable
-from daft.expressions2 import Expression, ExpressionsProjection
+from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
 

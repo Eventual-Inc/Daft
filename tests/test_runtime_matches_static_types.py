@@ -70,7 +70,7 @@ ALL_KERNELS = [
     KernelSpec(name="str_ends_with", num_args=2, func=lambda data, pattern: data.str.endswith(pattern)),
     KernelSpec(name="date_year", num_args=1, func=lambda data: data.dt.year()),
     # TODO: [RUST-INT][TPCH] Activate tests once these kernels have been implemented
-    # KernelSpec(name="sum", num_args=1, func=lambda e: e.agg.sum()),
+    # KernelSpec(name="sum", num_args=1, func=lambda e: e._sum()),
 ]
 
 
