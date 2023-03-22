@@ -34,30 +34,30 @@ from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionMetadata,
     PartitionSet,
-    vPartition,
     vPartitionSchemaInferenceOptions,
 )
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
+from daft.table import Table
 
 
 @dataclass
-class LocalPartitionSet(PartitionSet[vPartition]):
-    _partitions: dict[PartID, vPartition]
+class LocalPartitionSet(PartitionSet[Table]):
+    _partitions: dict[PartID, Table]
 
-    def items(self) -> list[tuple[PartID, vPartition]]:
+    def items(self) -> list[tuple[PartID, Table]]:
         return sorted(self._partitions.items())
 
-    def _get_merged_vpartition(self) -> vPartition:
+    def _get_merged_vpartition(self) -> Table:
         ids_and_partitions = self.items()
         assert ids_and_partitions[0][0] == 0
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
-        return vPartition.concat([part for id, part in ids_and_partitions])
+        return Table.concat([part for id, part in ids_and_partitions])
 
-    def get_partition(self, idx: PartID) -> vPartition:
+    def get_partition(self, idx: PartID) -> Table:
         return self._partitions[idx]
 
-    def set_partition(self, idx: PartID, part: vPartition) -> None:
+    def set_partition(self, idx: PartID, part: Table) -> None:
         self._partitions[idx] = part
 
     def delete_partition(self, idx: PartID) -> None:
@@ -80,7 +80,7 @@ class LocalPartitionSet(PartitionSet[vPartition]):
         pass
 
 
-class PyRunnerIO(runner_io.RunnerIO[vPartition]):
+class PyRunnerIO(runner_io.RunnerIO[Table]):
     def glob_paths_details(
         self,
         source_path: str,
@@ -91,7 +91,7 @@ class PyRunnerIO(runner_io.RunnerIO[vPartition]):
         if len(files_info) == 0:
             raise FileNotFoundError(f"No files found at {source_path}")
 
-        partition = vPartition.from_pydict(
+        partition = Table.from_pydict(
             {
                 "path": pa.array([file_info.path for file_info in files_info], type=pa.string()),
                 "size": pa.array([file_info.size for file_info in files_info], type=pa.int64()),
@@ -115,7 +115,7 @@ class PyRunnerIO(runner_io.RunnerIO[vPartition]):
 
     def get_schema_from_first_filepath(
         self,
-        listing_details_partitions: PartitionSet[vPartition],
+        listing_details_partitions: PartitionSet[Table],
         source_info: SourceInfo,
         schema_inference_options: vPartitionSchemaInferenceOptions,
     ) -> Schema:
@@ -192,7 +192,7 @@ class PyRunner(Runner):
             pset_entry = self.put_partition_set_into_cache(result_pset)
             return pset_entry
 
-    def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> list[vPartition]:
+    def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> list[Table]:
         inflight_tasks: dict[str, PartitionTask] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
@@ -288,7 +288,7 @@ class PyRunner(Runner):
         return all((cpus_okay, gpus_okay, memory_okay))
 
     @staticmethod
-    def build_partitions(instruction_stack: list[Instruction], *inputs: vPartition) -> list[vPartition]:
+    def build_partitions(instruction_stack: list[Instruction], *inputs: Table) -> list[Table]:
         partitions = list(inputs)
         for instruction in instruction_stack:
             partitions = instruction.run(partitions)
@@ -297,13 +297,13 @@ class PyRunner(Runner):
 
 
 @dataclass(frozen=True)
-class PyMaterializedResult(MaterializedResult[vPartition]):
-    _partition: vPartition
+class PyMaterializedResult(MaterializedResult[Table]):
+    _partition: Table
 
-    def partition(self) -> vPartition:
+    def partition(self) -> Table:
         return self._partition
 
-    def vpartition(self) -> vPartition:
+    def vpartition(self) -> Table:
         return self._partition
 
     def metadata(self) -> PartitionMetadata:
@@ -312,5 +312,5 @@ class PyMaterializedResult(MaterializedResult[vPartition]):
     def cancel(self) -> None:
         return None
 
-    def _noop(self, _: vPartition) -> None:
+    def _noop(self, _: Table) -> None:
         return None

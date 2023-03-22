@@ -37,11 +37,10 @@ from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionSet,
-    vPartition,
     vPartitionSchemaInferenceOptions,
 )
 from daft.runners.pyrunner import LocalPartitionSet
-from daft.types import PrimitiveExpressionType
+from daft.table import Table
 from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
@@ -280,7 +279,7 @@ class DataFrame:
                 f"Expected all columns to be of the same length, but received columns with lengths: {column_lengths}"
             )
 
-        data_vpartition = vPartition.from_pydict(data)
+        data_vpartition = Table.from_pydict(data)
         result_pset = LocalPartitionSet({0: data_vpartition})
 
         cache_entry = get_context().runner().put_partition_set_into_cache(result_pset)
