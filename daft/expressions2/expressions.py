@@ -54,8 +54,8 @@ class Expression:
 
     def __bool__(self) -> bool:
         raise ValueError(
-            "Expressions don't have a truth value until executed. "
-            "If you reached this error using `and` / `or`, use `&` / `|` instead."
+            "Expressions don't have a truth value. "
+            "If you used Python keywords `and` `not` `or` on an expression, use `&` `~` `|` instead."
         )
 
     def __abs__(self) -> Expression:
