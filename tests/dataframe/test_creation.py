@@ -126,21 +126,22 @@ def test_load_pydict_types():
         "arrow_float": [None, 1.0, 3.0],
         "arrow_mixed_numbers": [None, 1.0, 3],
         "arrow_str": [None, "b", "c"],
-        "arrow_struct": [None, {"foo": 1}, {"bar": 1}],
         "arrow_nulls": [None, None, None],
-        "py_objs": [None, MyObj(), MyObj()],
-        "heterogenous_py_objs": [None, MyObj(), MyObj2()],
-        "numpy_arrays": [np.array([1]), np.array([2]), np.array([3])],
         # Numpy arrays
         "np_int": np.array([1, 2, 3], dtype=np.int64),
         "np_string": np.array([None, "foo", "bar"], dtype=np.object_),
-        "np_object": np.array([None, MyObj(), MyObj()], dtype=np.object_),
-        "np_nested": np.ones((3, 3)),
         # Arrow arrays
         "pa_int": pa.array([1, 2, 3]),
-        "pa_nested": pa.array([[1, 2, 3], [1, 2], [1]]),
         "pa_int_chunked": pa.chunked_array([pa.array([1, 2, 3])]),
-        "pa_nested_chunked": pa.chunked_array([pa.array([[1, 2, 3], [1, 2], [1]])]),
+        # TODO: [RUST-INT][PY] Enable after adding support for Python objects
+        # "arrow_struct": [None, {"foo": 1}, {"bar": 1}],
+        # "py_objs": [None, MyObj(), MyObj()],
+        # "heterogenous_py_objs": [None, MyObj(), MyObj2()],
+        # "numpy_arrays": [np.array([1]), np.array([2]), np.array([3])],
+        # "np_object": np.array([None, MyObj(), MyObj()], dtype=np.object_),
+        # "np_nested": np.ones((3, 3)),
+        # "pa_nested_chunked": pa.chunked_array([pa.array([[1, 2, 3], [1, 2], [1]])]),
+        # "pa_nested": pa.array([[1, 2, 3], [1, 2], [1]]),
     }
     daft_df = DataFrame.from_pydict(data)
 
@@ -149,22 +150,23 @@ def test_load_pydict_types():
 
     expected = {
         "arrow_int": DataType.int64(),
-        "arrow_float": DataType.float64(),
-        "arrow_mixed_numbers": DataType.float64(),
+        "arrow_float": DataType.float(),
+        "arrow_mixed_numbers": DataType.float(),
         "arrow_str": DataType.string(),
-        "arrow_struct": DataType.python(dict),
         "arrow_nulls": DataType.null(),
-        "py_objs": DataType.python(MyObj),
-        "heterogenous_py_objs": DataType.python_object(),
-        "numpy_arrays": DataType.python(np.ndarray),
         "np_int": DataType.int64(),
         "np_string": DataType.string(),
-        "np_object": DataType.python(MyObj),
-        "np_nested": DataType.python(np.ndarray),
         "pa_int": DataType.int64(),
-        "pa_nested": DataType.python(list),
         "pa_int_chunked": DataType.int64(),
-        "pa_nested_chunked": DataType.python(list),
+        # TODO: [RUST-INT][PY] Enable after adding support for Python objects
+        # "arrow_struct": DataType.python(dict),
+        # "py_objs": DataType.python(MyObj),
+        # "heterogenous_py_objs": DataType.python_object(),
+        # "numpy_arrays": DataType.python(np.ndarray),
+        # "np_object": DataType.python(MyObj),
+        # "np_nested": DataType.python(np.ndarray),
+        # "pa_nested": DataType.python(list),
+        # "pa_nested_chunked": DataType.python(list),
     }
 
     assert collected_data.keys() == data.keys() == expected.keys()
