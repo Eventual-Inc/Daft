@@ -8,7 +8,11 @@ impl<T> DataArray<T>
 where
     T: DaftDataType + 'static,
 {
-    pub fn if_else(self, other: DataArray<T>, predicate: BooleanArray) -> DaftResult<DataArray<T>> {
+    pub fn if_else(
+        &self,
+        other: &DataArray<T>,
+        predicate: &BooleanArray,
+    ) -> DaftResult<DataArray<T>> {
         let result = if_then_else(predicate.downcast(), self.data(), other.data())?;
         DataArray::try_from((self.name(), result))
     }

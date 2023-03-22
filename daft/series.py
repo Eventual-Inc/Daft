@@ -213,6 +213,15 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)
 
+    def if_else(self, other: object, predicate: object) -> Series:
+        if not isinstance(other, Series):
+            raise ValueError(f"expected another Series but got {type(other)}")
+        if not isinstance(predicate, Series):
+            raise ValueError(f"expected another Series but got {type(predicate)}")
+        assert self._series is not None and other._series is not None and predicate._series is not None
+        return Series._from_pyseries(self._series.if_else(other._series, predicate._series))
+
+
     @property
     def str(self) -> SeriesStringNamespace:
         return SeriesStringNamespace.from_series(self)
