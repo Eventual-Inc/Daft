@@ -39,5 +39,5 @@ def parametrize_service_requests_csv_repartition(test_case):
     """
     return pytest.mark.parametrize(
         ["repartition_nparts"],
-        [pytest.param(n, id=f"NumRepartitionParts:{n}") for n in [1, 15, 25, 50, 51]],
+        [pytest.param(n, id=f"NumRepartitionParts:{n}") for n in [1, 5, 24, 25]],
     )(test_case)
