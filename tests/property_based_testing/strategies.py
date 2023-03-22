@@ -18,7 +18,7 @@ from hypothesis.strategies import (
     text,
 )
 
-from daft.types import ExpressionType
+from daft.datatype import DataType
 
 
 class UserObject:
@@ -51,21 +51,19 @@ _strat_date = dates(min_value=datetime.date(2000, 1, 1), max_value=datetime.date
 _strat_user_object = user_object()
 
 _default_strategies = {
-    ExpressionType.string(): _strat_allstr,
-    ExpressionType.integer(): _strat_int64,
-    ExpressionType.float(): _strat_double,
-    ExpressionType.logical(): _strat_boolean,
-    ExpressionType.bytes(): _strat_byte,
-    ExpressionType.date(): _strat_date,
-    ExpressionType.python(UserObject): _strat_user_object,
-    ExpressionType.null(): none(),
+    DataType.string(): _strat_allstr,
+    DataType.int64(): _strat_int64,
+    DataType.float64(): _strat_double,
+    DataType.bool(): _strat_boolean,
+    DataType.binary(): _strat_byte,
+    DataType.date(): _strat_date,
+    DataType.python(UserObject): _strat_user_object,
+    DataType.null(): none(),
 }
 
 
 @composite
-def generate_data(
-    draw, daft_type: ExpressionType, strategies: dict[ExpressionType, SearchStrategy] = _default_strategies
-):
+def generate_data(draw, daft_type: DataType, strategies: dict[DataType, SearchStrategy] = _default_strategies):
     """Helper to generate data when given a daft_type"""
     if daft_type not in strategies:
         raise NotImplementedError(f"Strategy for type {daft_type} not implemented")
@@ -75,25 +73,25 @@ def generate_data(
 # All available dtypes
 all_dtypes = sampled_from(
     [
-        ExpressionType.string(),
-        ExpressionType.integer(),
-        ExpressionType.float(),
-        ExpressionType.logical(),
-        ExpressionType.bytes(),
-        ExpressionType.date(),
-        ExpressionType.python(UserObject),
+        DataType.string(),
+        DataType.int64(),
+        DataType.float64(),
+        DataType.bool(),
+        DataType.binary(),
+        DataType.date(),
+        DataType.python(UserObject),
     ]
 )
 
 # Dtypes that have a total ordering
 total_order_dtypes = sampled_from(
     [
-        ExpressionType.string(),
-        ExpressionType.integer(),
-        ExpressionType.float(),
-        # ExpressionType.logical(),
-        # ExpressionType.bytes(),
-        ExpressionType.date(),
+        DataType.string(),
+        DataType.int64(),
+        DataType.float64(),
+        # DataType.bool(),
+        # DataType.binary(),
+        DataType.date(),
     ]
 )
 
@@ -109,8 +107,8 @@ ColumnData = "list[Any] | pa.Array"
 def column(
     draw,
     length: int = 64,
-    dtypes: SearchStrategy[ExpressionType] = all_dtypes,
-    strategies: dict[ExpressionType, SearchStrategy] = _default_strategies,
+    dtypes: SearchStrategy[DataType] = all_dtypes,
+    strategies: dict[DataType, SearchStrategy] = _default_strategies,
 ) -> ColumnData:
     """Generate a column of data
 
@@ -149,7 +147,7 @@ def row_nums_column(draw, length: int = 64) -> ColumnData:
 @composite
 def columns_dict(
     draw,
-    generate_columns_with_type: dict[str, SearchStrategy[ExpressionType]] = {},
+    generate_columns_with_type: dict[str, SearchStrategy[DataType]] = {},
     generate_columns_with_strategy: dict[str, SearchStrategy[ColumnData]] = {},
     num_rows_strategy: SearchStrategy[int] = integers(min_value=0, max_value=8),
     num_other_generated_columns_strategy: SearchStrategy[int] = integers(min_value=0, max_value=2),

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
+from daft.datatype import DataType
 from daft.expressions import ExpressionList, col
 from daft.logical.logical_plan import Filter, InMemoryScan, Projection
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
-from daft.types import ExpressionType
 
 
 @pytest.fixture(scope="function")
@@ -14,7 +14,7 @@ def schema():
     return Schema._from_field_name_and_types(
         list(
             map(
-                lambda col_name: (col_name, ExpressionType.integer()),
+                lambda col_name: (col_name, DataType.int64()),
                 ["a", "b", "c"],
             )
         )

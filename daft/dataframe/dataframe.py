@@ -27,8 +27,8 @@ from daft.datasources import (
     SourceInfo,
     StorageType,
 )
+from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
-from daft.execution.operators import ExpressionType
 from daft.expressions import Expression, ExpressionList, col, lit
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
@@ -912,7 +912,8 @@ class DataFrame:
         else:
             columns = self.__column_input_to_expression(cols)
         float_columns = [
-            column for column in columns if column._resolve_type(self.schema()) is PrimitiveExpressionType.float()
+            column for column in columns if
+            (column._resolve_type(self.schema()) == DataType.float32() or column._resolve_type(self.schema()) == DataType.float64())
         ]
 
         return self.where(
@@ -1268,7 +1269,7 @@ class GroupedDataFrame:
     def __post_init__(self):
         resolved_groupby_schema = self.group_by.resolve_schema(self.df._plan.schema())
         for field, e in zip(resolved_groupby_schema, self.group_by):
-            if field.dtype == ExpressionType.null():
+            if field.dtype == DataType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
