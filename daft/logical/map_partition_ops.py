@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 
-from daft.expressions import ExpressionList
+from daft.expressions import ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.table import Table
 
@@ -19,9 +19,9 @@ class MapPartitionOp:
 
 class ExplodeOp(MapPartitionOp):
     input_schema: Schema
-    explode_columns: ExpressionList
+    explode_columns: ExpressionsProjection
 
-    def __init__(self, input_schema: Schema, explode_columns: ExpressionList) -> None:
+    def __init__(self, input_schema: Schema, explode_columns: ExpressionsProjection) -> None:
         super().__init__()
         self.input_schema = input_schema
         output_fields = []
