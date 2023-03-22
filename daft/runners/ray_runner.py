@@ -16,6 +16,7 @@ except ImportError:
     raise
 
 from daft.datasources import SourceInfo
+from daft.datatype import DataType
 from daft.execution import physical_plan_factory
 from daft.execution.execution_step import (
     FanoutInstruction,
@@ -40,19 +41,17 @@ from daft.logical.optimizer import (
 )
 from daft.resource_request import ResourceRequest
 from daft.runners import runner_io
-from daft.runners.blocks import ArrowDataBlock, zip_blocks_as_py
 from daft.runners.partitioning import (
     PartID,
     PartitionCacheEntry,
     PartitionMetadata,
     PartitionSet,
-    vPartition,
     vPartitionSchemaInferenceOptions,
 )
 from daft.runners.profiler import profiler
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.runners.runner import Runner
-from daft.types import ExpressionType
+from daft.table import Table
 
 if TYPE_CHECKING:
     from ray.data.block import Block as RayDatasetBlock
@@ -76,13 +75,13 @@ except ImportError:
 @ray.remote
 def _glob_path_into_details_vpartitions(
     path: str, schema: Schema, source_info: SourceInfo | None
-) -> list[tuple[PartID, vPartition]]:
+) -> list[tuple[PartID, Table]]:
     listing_infos = glob_path_with_stats(path, source_info)
     if len(listing_infos) == 0:
         raise FileNotFoundError(f"No files found at {path}")
 
     # Hardcoded to 1 partition
-    partition = vPartition.from_pydict(
+    partition = Table.from_pydict(
         {
             "path": pa.array([file_info.path for file_info in listing_infos], type=pa.string()),
             "size": pa.array([file_info.size for file_info in listing_infos], type=pa.int64()),
@@ -99,40 +98,20 @@ def _glob_path_into_details_vpartitions(
 
 
 @ray.remote
-def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
-    # We perform a best-effort conversion to Arrow, including converting numpy arrays to Ray's ArrowTensorArray extension
-    #
-    # Use logic from Ray Data's block builder for creating ArrowTensorArray blocks when we detect numpy arrays
-    # https://github.com/ray-project/ray/blob/3240547f9fcf620c8a5544594afaddc748f5174c/python/ray/data/_internal/arrow_block.py#L108-L123
-    from ray.data.extensions.tensor_extension import ArrowTensorArray
-
-    arrow_data = {}
-    for cname, tile in partition.columns.items():
-        if tile.block.is_scalar():
-            raise NotImplementedError(f"Cannot convert column {cname} because it is a scalar literal value")
-        if isinstance(tile.block, ArrowDataBlock):
-            arrow_data[cname] = tile.block.data
-        elif _NUMPY_AVAILABLE and isinstance(next(iter(tile.block.data), None), np.ndarray):
-            arrow_data[cname] = ArrowTensorArray.from_numpy(tile.block.data)
-        else:
-            break
-    else:
-        return pa.Table.from_pydict(arrow_data)
-
-    # On failure (for-else does not trigger), we fall-back to returning Ray Dataset's "simple" format, which is a list of dictionaries
-    colnames = list(partition.columns.keys())
-    blocks = [tile.block for tile in partition.columns.values()]
-    return [dict(zip(colnames, row_tuple)) for row_tuple in zip_blocks_as_py(*blocks)]
+def _make_ray_block_from_vpartition(partition: Table) -> RayDatasetBlock:
+    # TODO: [RUST-INT] properly implement Ray Datasets integrations once we have nested tensor types
+    return partition.to_arrow()
 
 
 @ray.remote
-def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_schema: Schema) -> vPartition:
+def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_schema: Schema) -> Table:
     assert isinstance(ray_dataset_block, pa.Table), "Cannot handle non-arrow Ray Datasets, please file a ticket!"
 
     data = {}
     for cname, column in zip(ray_dataset_block.column_names, ray_dataset_block):
         daft_field = daft_schema[cname]
 
+        # [RUST-INT] Properly handle nested arrow types here and build Ray Dataset's extension types
         # NOTE: Since we only handle Arrow Ray Datasets, all Python-type fields should be Ray's Tensor extension types
         # We convert that to a Daft Python block here by invoking `np.array` on each item to convert it to numpy
         if daft_field.dtype._is_python_type():
@@ -140,23 +119,23 @@ def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_sc
 
         data[cname] = column
 
-    partition = vPartition.from_pydict(data)
+    partition = Table.from_pydict(data)
     return partition
 
 
 @ray.remote
-def remote_len_partition(p: vPartition) -> int:
+def remote_len_partition(p: Table) -> int:
     return len(p)
 
 
 @ray.remote
 def sample_schema_from_filepath_vpartition(
-    p: vPartition,
+    p: Table,
     filepath_column: str,
     source_info: SourceInfo,
     schema_inference_options: vPartitionSchemaInferenceOptions,
 ) -> Schema:
-    """Ray remote function to run schema sampling on top of a vPartition containing filepaths"""
+    """Ray remote function to run schema sampling on top of a Table containing filepaths"""
     assert len(p) > 0
 
     # Currently just samples the Schema from the first file
@@ -171,12 +150,12 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     def items(self) -> list[tuple[PartID, ray.ObjectRef]]:
         return sorted(self._partitions.items())
 
-    def _get_merged_vpartition(self) -> vPartition:
+    def _get_merged_vpartition(self) -> Table:
         ids_and_partitions = self.items()
         assert ids_and_partitions[0][0] == 0
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         all_partitions = ray.get([part for id, part in ids_and_partitions])
-        return vPartition.concat(all_partitions)
+        return Table.concat(all_partitions)
 
     def to_ray_dataset(self) -> RayDataset:
         if not _RAY_FROM_ARROW_REFS_AVAILABLE:
@@ -262,7 +241,7 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
                 f"to_spark does not support converting non-arrow ray datasets."
             )
         daft_schema = Schema._from_field_name_and_types(
-            [(arrow_field.name, ExpressionType.from_arrow_type(arrow_field.type)) for arrow_field in arrow_schema]
+            [(arrow_field.name, DataType.from_arrow_type(arrow_field.type)) for arrow_field in arrow_schema]
         )
         block_refs = ds.get_internal_block_refs()
 
@@ -289,9 +268,7 @@ def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
     return options
 
 
-def build_partitions(
-    instruction_stack: list[Instruction], *inputs: vPartition
-) -> list[list[PartitionMetadata] | vPartition]:
+def build_partitions(instruction_stack: list[Instruction], *inputs: Table) -> list[list[PartitionMetadata] | Table]:
     partitions = list(inputs)
     for instruction in instruction_stack:
         partitions = instruction.run(partitions)
@@ -306,34 +283,28 @@ def build_partitions(
 
 @ray.remote
 def single_partition_pipeline(
-    instruction_stack: list[Instruction], *inputs: vPartition
-) -> list[list[PartitionMetadata] | vPartition]:
+    instruction_stack: list[Instruction], *inputs: Table
+) -> list[list[PartitionMetadata] | Table]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote
-def fanout_pipeline(
-    instruction_stack: list[Instruction], *inputs: vPartition
-) -> list[list[PartitionMetadata] | vPartition]:
+def fanout_pipeline(instruction_stack: list[Instruction], *inputs: Table) -> list[list[PartitionMetadata] | Table]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def reduce_pipeline(
-    instruction_stack: list[Instruction], *inputs: vPartition
-) -> list[list[PartitionMetadata] | vPartition]:
+def reduce_pipeline(instruction_stack: list[Instruction], *inputs: Table) -> list[list[PartitionMetadata] | Table]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def reduce_and_fanout(
-    instruction_stack: list[Instruction], *inputs: vPartition
-) -> list[list[PartitionMetadata] | vPartition]:
+def reduce_and_fanout(instruction_stack: list[Instruction], *inputs: Table) -> list[list[PartitionMetadata] | Table]:
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote
-def get_meta(partition: vPartition) -> PartitionMetadata:
+def get_meta(partition: Table) -> PartitionMetadata:
     return PartitionMetadata.from_table(partition)
 
 
@@ -594,7 +565,7 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
     def partition(self) -> ray.ObjectRef:
         return self._partition
 
-    def vpartition(self) -> vPartition:
+    def vpartition(self) -> Table:
         return ray.get(self._partition)
 
     def metadata(self) -> PartitionMetadata:

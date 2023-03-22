@@ -17,12 +17,9 @@ from daft.expressions import Expression, ExpressionList, col
 from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.resource_request import ResourceRequest
-from daft.runners.blocks import DataBlock
-from daft.runners.partitioning import (
-    PartialPartitionMetadata,
-    PartitionMetadata,
-    vPartition,
-)
+from daft.runners.partitioning import PartialPartitionMetadata, PartitionMetadata
+from daft.series import Series
+from daft.table import Table
 
 PartitionT = TypeVar("PartitionT")
 ID_GEN = itertools.count()
@@ -181,7 +178,7 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         assert self._result is not None
         return self._result.metadata()
 
-    def vpartition(self) -> vPartition:
+    def vpartition(self) -> Table:
         """Get the raw vPartition of the result."""
         assert self._result is not None
         return self._result.vpartition()
@@ -227,7 +224,7 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
         assert self._results is not None
         return [result.metadata() for result in self._results]
 
-    def vpartition(self, index: int) -> vPartition:
+    def vpartition(self, index: int) -> Table:
         """Get the raw vPartition of the result."""
         assert self._results is not None
         return self._results[index].vpartition()
@@ -249,7 +246,7 @@ class MaterializedResult(Protocol[PartitionT]):
         """Get the partition of this result."""
         ...
 
-    def vpartition(self) -> vPartition:
+    def vpartition(self) -> Table:
         """Get the vPartition of this result."""
         ...
 
@@ -274,10 +271,10 @@ class Instruction(Protocol):
     Most instructions take one partition and return another partition.
     However, some instructions take one partition and return many partitions (fanouts),
     and others take many partitions and return one partition (reduces).
-    To accomodate these, instructions are typed as list[vPartition] -> list[vPartition].
+    To accomodate these, instructions are typed as list[Table] -> list[Table].
     """
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         """Run the Instruction over the input partitions.
 
         Note: Dispatching a descriptively named helper here will aid profiling.
@@ -305,10 +302,10 @@ class ReadFile(SingleOutputInstruction):
     logplan: logical_plan.TabularFilesScan
     file_rows: int | None
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._read_file(inputs)
 
-    def _read_file(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _read_file(self, inputs: list[Table]) -> list[Table]:
         assert len(inputs) == 1
         [filepaths_partition] = inputs
         partition = daft.runners.pyrunner.LocalLogicalPartitionOpRunner()._handle_tabular_files_scan(
@@ -339,10 +336,10 @@ class WriteFile(SingleOutputInstruction):
     partition_id: int
     logplan: logical_plan.FileWrite
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._write_file(inputs)
 
-    def _write_file(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _write_file(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
         partition = daft.runners.pyrunner.LocalLogicalPartitionOpRunner()._handle_file_write(
             inputs={self.logplan._children()[0].id(): input},
@@ -364,10 +361,10 @@ class WriteFile(SingleOutputInstruction):
 class Filter(SingleOutputInstruction):
     predicate: ExpressionList
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._filter(inputs)
 
-    def _filter(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _filter(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
         return [input.filter(self.predicate)]
 
@@ -385,10 +382,10 @@ class Filter(SingleOutputInstruction):
 class Project(SingleOutputInstruction):
     projection: ExpressionList
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._project(inputs)
 
-    def _project(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _project(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
         return [input.eval_expression_list(self.projection)]
 
@@ -406,12 +403,12 @@ class Project(SingleOutputInstruction):
 class LocalCount(SingleOutputInstruction):
     logplan: logical_plan.LocalCount
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._count(inputs)
 
-    def _count(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _count(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
-        partition = vPartition.from_pydict({"count": [len(input)]})
+        partition = Table.from_pydict({"count": [len(input)]})
         assert partition.schema() == self.logplan.schema()
         return [partition]
 
@@ -428,10 +425,10 @@ class LocalCount(SingleOutputInstruction):
 class LocalLimit(SingleOutputInstruction):
     limit: int
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._limit(inputs)
 
-    def _limit(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _limit(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
         return [input.head(self.limit)]
 
@@ -449,10 +446,10 @@ class LocalLimit(SingleOutputInstruction):
 class MapPartition(SingleOutputInstruction):
     map_op: MapPartitionOp
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._map_partition(inputs)
 
-    def _map_partition(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _map_partition(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
         return [self.map_op.run(input)]
 
@@ -471,10 +468,10 @@ class Sample(SingleOutputInstruction):
     sort_by: ExpressionList
     num_samples: int = 20
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._sample(inputs)
 
-    def _sample(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _sample(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
         result = (
             input.sample(self.num_samples)
@@ -498,10 +495,10 @@ class Aggregate(SingleOutputInstruction):
     to_agg: list[tuple[Expression, str]]
     group_by: ExpressionList | None
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._aggregate(inputs)
 
-    def _aggregate(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _aggregate(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
         return [input.agg(self.to_agg, self.group_by)]
 
@@ -519,10 +516,10 @@ class Aggregate(SingleOutputInstruction):
 class Join(SingleOutputInstruction):
     logplan: logical_plan.Join
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._join(inputs)
 
-    def _join(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _join(self, inputs: list[Table]) -> list[Table]:
         [left, right] = inputs
         result = left.join(
             right,
@@ -549,11 +546,11 @@ class ReduceInstruction(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class ReduceMerge(ReduceInstruction):
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._reduce_merge(inputs)
 
-    def _reduce_merge(self, inputs: list[vPartition]) -> list[vPartition]:
-        return [vPartition.concat(inputs)]
+    def _reduce_merge(self, inputs: list[Table]) -> list[Table]:
+        return [Table.concat(inputs)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         input_rows = [_.num_rows for _ in input_metadatas]
@@ -571,11 +568,11 @@ class ReduceMergeAndSort(ReduceInstruction):
     sort_by: ExpressionList
     descending: list[bool]
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._reduce_merge_and_sort(inputs)
 
-    def _reduce_merge_and_sort(self, inputs: list[vPartition]) -> list[vPartition]:
-        partition = vPartition.concat(inputs).sort(self.sort_by, descending=self.descending)
+    def _reduce_merge_and_sort(self, inputs: list[Table]) -> list[Table]:
+        partition = Table.concat(inputs).sort(self.sort_by, descending=self.descending)
         return [partition]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
@@ -595,11 +592,11 @@ class ReduceToQuantiles(ReduceInstruction):
     sort_by: ExpressionList
     descending: list[bool]
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._reduce_to_quantiles(inputs)
 
-    def _reduce_to_quantiles(self, inputs: list[vPartition]) -> list[vPartition]:
-        merged = vPartition.concat(inputs)
+    def _reduce_to_quantiles(self, inputs: list[Table]) -> list[Table]:
+        merged = Table.concat(inputs)
 
         # Skip evaluation of expressions by converting to Column Expression, since evaluation was done in Sample
         merged_sorted = merged.sort(self.sort_by.to_column_expressions(), descending=self.descending)
@@ -638,24 +635,24 @@ class FanoutInstruction(Instruction):
 class FanoutRandom(FanoutInstruction):
     seed: int
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._fanout_random(inputs)
 
-    def _fanout_random(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _fanout_random(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
-        return input.split_random(num_partitions=self._num_outputs, seed=self.seed)
+        return input.partition_by_random(num_partitions=self._num_outputs, seed=self.seed)
 
 
 @dataclass(frozen=True)
 class FanoutHash(FanoutInstruction):
     partition_by: ExpressionList
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._fanout_hash(inputs)
 
-    def _fanout_hash(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _fanout_hash(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
-        return input.split_by_hash(self.partition_by, num_partitions=self._num_outputs)
+        return input.partition_by_hash(self.partition_by, num_partitions=self._num_outputs)
 
 
 @dataclass(frozen=True)
@@ -663,26 +660,24 @@ class FanoutRange(FanoutInstruction, Generic[PartitionT]):
     sort_by: ExpressionList
     descending: list[bool]
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._fanout_range(inputs)
 
-    def _fanout_range(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _fanout_range(self, inputs: list[Table]) -> list[Table]:
         [boundaries, input] = inputs
         if self._num_outputs == 1:
             return [input]
-        sort_keys = input.eval_expression_list(self.sort_by)
-        target_partition_indices = boundaries.search_sorted(sort_keys, self.descending)
-        return input.split_by_index(num_partitions=self._num_outputs, target_partition_indices=target_partition_indices)
+        return input.partition_by_range(self.sort_by, boundaries, self.descending)
 
 
 @dataclass(frozen=True)
 class FanoutSlices(FanoutInstruction):
     slices: list[tuple[int, int]]  # start inclusive, end exclusive
 
-    def run(self, inputs: list[vPartition]) -> list[vPartition]:
+    def run(self, inputs: list[Table]) -> list[Table]:
         return self._multislice(inputs)
 
-    def _multislice(self, inputs: list[vPartition]) -> list[vPartition]:
+    def _multislice(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
         results = []
 
@@ -690,7 +685,7 @@ class FanoutSlices(FanoutInstruction):
             assert start >= 0, f"start must be positive, but got {start}"
             end = min(end, len(input))
 
-            indices_block = DataBlock.make_block(data=np.arange(start, end))
+            indices_block = Series.from_numpy(np.arange(start, end))
             results.append(input.take(indices_block))
 
         return results

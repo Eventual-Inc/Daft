@@ -16,7 +16,8 @@ from daft.internal.treenode import TreeNode
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
-from daft.runners.partitioning import PartitionCacheEntry, vPartition
+from daft.runners.partitioning import PartitionCacheEntry
+from daft.table import Table
 from daft.types import ExpressionType
 
 
@@ -545,7 +546,7 @@ class MapPartition(UnaryNode, Generic[TMapPartitionOp]):
             and self._map_partition_op == other._map_partition_op
         )
 
-    def eval_partition(self, partition: vPartition) -> vPartition:
+    def eval_partition(self, partition: Table) -> Table:
         return self._map_partition_op.run(partition)
 
 
