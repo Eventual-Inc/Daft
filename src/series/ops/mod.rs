@@ -15,6 +15,7 @@ pub mod downcast;
 pub mod filter;
 pub mod full;
 pub mod hash;
+pub mod if_else;
 pub mod len;
 pub mod not;
 pub mod null;

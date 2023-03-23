@@ -14,6 +14,7 @@ mod downcast;
 mod filter;
 mod full;
 mod hash;
+mod if_else;
 mod len;
 mod mean;
 mod null;

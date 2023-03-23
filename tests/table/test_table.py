@@ -1102,3 +1102,9 @@ def test_table_filter_with_date_years() -> None:
     result = new_table.to_pydict()
     assert result["days"] == [date(4000, 1, 1), date(2022, 1, 1)]
     assert result["enum"] == [1, 4]
+
+
+def test_table_if_else() -> None:
+    table = Table.from_arrow(pa.Table.from_pydict({"ones": [1, 1, 1], "zeros": [0, 0, 0], "pred": [True, False, None]}))
+    result_table = table.eval_expression_list([col("pred").if_else(col("ones"), col("zeros"))])
+    result_table.to_pydict() == {"ones": [1, 0, None]}

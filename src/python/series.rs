@@ -197,6 +197,13 @@ impl PySeries {
     pub fn dt_year(&self) -> PyResult<Self> {
         Ok(self.series.dt_year()?.into())
     }
+
+    pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .if_else(&other.series, &predicate.series)?
+            .into())
+    }
 }
 
 impl From<series::Series> for PySeries {

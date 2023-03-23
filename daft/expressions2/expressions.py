@@ -198,7 +198,7 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression")
+        return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
     def apply(self, func: Callable, return_dtype: DataType | None = None) -> Expression:
         raise NotImplementedError("[RUST-INT][UDF] Implement .apply")

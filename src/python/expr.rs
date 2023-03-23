@@ -88,6 +88,10 @@ impl PyExpr {
         Ok(self.expr.cast(&dtype.into()).into())
     }
 
+    pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
+        Ok(self.expr.if_else(&if_true.expr, &if_false.expr).into())
+    }
+
     pub fn count(&self) -> PyResult<Self> {
         Ok(self.expr.count().into())
     }

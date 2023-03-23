@@ -213,6 +213,15 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)
 
+    def if_else(self, if_true: object, if_false: object) -> Series:
+        if not isinstance(if_true, Series):
+            raise ValueError(f"expected another Series but got {type(if_true)}")
+        if not isinstance(if_false, Series):
+            raise ValueError(f"expected another Series but got {type(if_false)}")
+        assert self._series is not None and if_true._series is not None and if_false._series is not None
+        # NOTE: Rust Series has a different ordering for if_else because of better static typing
+        return Series._from_pyseries(if_true._series.if_else(if_false._series, self._series))
+
     @property
     def str(self) -> SeriesStringNamespace:
         return SeriesStringNamespace.from_series(self)
