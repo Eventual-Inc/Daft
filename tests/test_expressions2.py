@@ -7,6 +7,7 @@ import pytest
 
 from daft.datatype import DataType
 from daft.expressions2 import col, lit
+from daft.expressions2.testing import expr_structurally_equal
 from daft.table import Table
 
 
@@ -88,3 +89,11 @@ def test_repr_functions_year() -> None:
     assert repr_out == "year(col(a))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
+
+
+def test_expr_structurally_equal() -> None:
+    e1 = (col("a")._max() == col("b").alias("moo") - 3).is_null()
+    e2 = (col("a")._max() == col("b").alias("moo") - 3).is_null()
+    e3 = (col("a")._max() == col("b").alias("moo") - 4).is_null()
+    assert expr_structurally_equal(e1, e2)
+    assert not expr_structurally_equal(e2, e3)

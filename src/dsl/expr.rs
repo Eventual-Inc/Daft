@@ -16,7 +16,7 @@ use super::functions::FunctionExpr;
 
 type ExprRef = Arc<Expr>;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Expr {
     Alias(ExprRef, Arc<str>),
     Agg(AggExpr),
@@ -36,7 +36,7 @@ pub enum Expr {
     Literal(lit::LiteralValue),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AggExpr {
     Count(ExprRef),
     Sum(ExprRef),
