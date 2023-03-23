@@ -31,6 +31,8 @@ pub enum Expr {
         func: FunctionExpr,
         inputs: Vec<Expr>,
     },
+    Not(ExprRef),
+    IsNull(ExprRef),
     Literal(lit::LiteralValue),
 }
 
@@ -41,23 +43,6 @@ pub enum AggExpr {
     Mean(ExprRef),
     Min(ExprRef),
     Max(ExprRef),
-}
-
-impl AggExpr {
-    pub fn from_name_and_child_expr(name: &str, child: &Expr) -> DaftResult<AggExpr> {
-        use AggExpr::*;
-        match name {
-            "count" => Ok(Count(child.clone().into())),
-            "sum" => Ok(Sum(child.clone().into())),
-            "mean" => Ok(Mean(child.clone().into())),
-            "min" => Ok(Min(child.clone().into())),
-            "max" => Ok(Max(child.clone().into())),
-            _ => Err(DaftError::ValueError(format!(
-                "{} not a valid aggregation name",
-                name
-            ))),
-        }
-    }
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
@@ -139,6 +124,21 @@ impl AggExpr {
             }
         }
     }
+
+    pub fn from_name_and_child_expr(name: &str, child: &Expr) -> DaftResult<AggExpr> {
+        use AggExpr::*;
+        match name {
+            "count" => Ok(Count(child.clone().into())),
+            "sum" => Ok(Sum(child.clone().into())),
+            "mean" => Ok(Mean(child.clone().into())),
+            "min" => Ok(Min(child.clone().into())),
+            "max" => Ok(Max(child.clone().into())),
+            _ => Err(DaftError::ValueError(format!(
+                "{} not a valid aggregation name",
+                name
+            ))),
+        }
+    }
 }
 
 impl Expr {
@@ -170,6 +170,14 @@ impl Expr {
         Expr::Agg(AggExpr::Max(self.clone().into()))
     }
 
+    pub fn not(&self) -> Self {
+        Expr::Not(self.clone().into())
+    }
+
+    pub fn is_null(&self) -> Self {
+        Expr::IsNull(self.clone().into())
+    }
+
     pub fn and(&self, other: &Self) -> Self {
         binary_op(Operator::And, self, other)
     }
@@ -181,6 +189,17 @@ impl Expr {
             Agg(agg_expr) => agg_expr.to_field(schema),
             Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
             Column(name) => Ok(schema.get_field(name).cloned()?),
+            Not(expr) => {
+                let child_field = expr.to_field(schema)?;
+                match child_field.dtype {
+                    DataType::Boolean => Ok(Field::new(expr.name()?, DataType::Boolean)),
+                    _ => Err(DaftError::TypeError(format!(
+                        "Expected argument to be a Boolean expression, but received {:?}",
+                        child_field
+                    ))),
+                }
+            }
+            IsNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
             Function { func, inputs } => func.to_field(inputs.as_slice(), schema),
             BinaryOp { op, left, right } => {
@@ -267,6 +286,8 @@ impl Expr {
             Agg(agg_expr) => agg_expr.name(),
             Cast(expr, ..) => expr.name(),
             Column(name) => Ok(name.as_ref()),
+            Not(expr) => expr.name(),
+            IsNull(expr) => expr.name(),
             Literal(..) => Ok("literal"),
             Function { func: _, inputs } => inputs.first().unwrap().name(),
             BinaryOp {
@@ -303,6 +324,8 @@ impl Display for Expr {
             }
             Cast(expr, dtype) => write!(f, "cast({expr} AS {dtype})"),
             Column(name) => write!(f, "col({name})"),
+            Not(expr) => write!(f, "not({expr})"),
+            IsNull(expr) => write!(f, "is_null({expr})"),
             Literal(val) => write!(f, "lit({val})"),
             Function { func, inputs } => {
                 write!(f, "{}(", func.fn_name())?;

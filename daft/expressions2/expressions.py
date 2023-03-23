@@ -54,8 +54,8 @@ class Expression:
 
     def __bool__(self) -> bool:
         raise ValueError(
-            "Expressions don't have a truth value until executed. "
-            "If you reached this error using `and` / `or`, use `&` / `|` instead."
+            "Expressions don't have a truth value. "
+            "If you used Python keywords `and` `not` `or` on an expression, use `&` `~` `|` instead."
         )
 
     def __abs__(self) -> Expression:
@@ -164,7 +164,8 @@ class Expression:
 
     def __invert__(self) -> Expression:
         """Inverts a bool expression (``~e``)"""
-        raise NotImplementedError("[RUST-INT] Implement expression")
+        expr = self._expr.__invert__()
+        return Expression._from_pyexpr(expr)
 
     def alias(self, name: builtins.str) -> Expression:
         assert isinstance(name, str)
@@ -203,7 +204,8 @@ class Expression:
         raise NotImplementedError("[RUST-INT][UDF] Implement .apply")
 
     def is_null(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression")
+        expr = self._expr.is_null()
+        return Expression._from_pyexpr(expr)
 
     def name(self) -> builtins.str:
         return self._expr.name()

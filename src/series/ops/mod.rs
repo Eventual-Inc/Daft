@@ -16,6 +16,8 @@ pub mod filter;
 pub mod full;
 pub mod hash;
 pub mod len;
+pub mod not;
+pub mod null;
 pub mod pairwise;
 pub mod search_sorted;
 pub mod sort;

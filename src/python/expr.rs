@@ -152,6 +152,14 @@ impl PyExpr {
         }
     }
 
+    pub fn __invert__(&self) -> PyResult<Self> {
+        Ok(self.expr.not().into())
+    }
+
+    pub fn is_null(&self) -> PyResult<Self> {
+        Ok(self.expr.is_null().into())
+    }
+
     pub fn name(&self) -> PyResult<&str> {
         Ok(self.expr.name()?)
     }

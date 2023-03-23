@@ -467,6 +467,48 @@ def test_table_sum_badtype() -> None:
         daft_table = daft_table.eval_expression_list([col("a")._sum()])
 
 
+@pytest.mark.parametrize(
+    "input,expr,expected",
+    [
+        pytest.param([True, False, None], ~col("input"), [False, True, None], id="BooleanColumn"),
+        pytest.param(["apple", None, "banana"], ~(col("input") != "banana"), [False, None, True], id="BooleanExpr"),
+        pytest.param([], ~(col("input").cast(DataType.bool())), [], id="EmptyColumn"),
+    ],
+)
+def test_table_expr_not(input, expr, expected) -> None:
+    """Test logical not expression."""
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([expr])
+    pydict = daft_table.to_pydict()
+
+    assert pydict["input"] == expected
+
+
+def test_table_expr_not_wrong() -> None:
+    daft_table = Table.from_pydict({"input": [None, 0, 1]})
+
+    with pytest.raises(ValueError):
+        daft_table = daft_table.eval_expression_list([~col("input")])
+
+
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        pytest.param([True, False, None], [False, False, True], id="BooleanColumn"),
+        pytest.param(["a", "b", "c"], [False, False, False], id="StringColumn"),
+        pytest.param([None, None], [True, True], id="NullColumn"),
+        pytest.param([], [], id="EmptyColumn"),
+    ],
+)
+def test_table_expr_is_null(input, expected) -> None:
+    """Test logical not expression."""
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").is_null()])
+    pydict = daft_table.to_pydict()
+
+    assert pydict["input"] == expected
+
+
 test_table_agg_global_cases = [
     (
         [],
