@@ -192,9 +192,6 @@ class Table:
                 f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
             )
 
-        if len(left_on) > 1:
-            raise NotImplementedError("TODO: [RUST-INT][TPCH] Multicolumn joins not implemented")
-
         if not isinstance(right, Table):
             raise TypeError(f"Expected a Table for `right` in join but got {type(right)}")
 

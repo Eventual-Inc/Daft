@@ -85,8 +85,8 @@ def test_table_join_multicolumn() -> None:
     left_table = Table.from_pydict({"x": [1, 2, 3, 4], "y": [2, 3, 4, 5]})
     right_table = Table.from_pydict({"a": [1, 2, 3, 4], "b": [2, 3, 4, 5]})
 
-    with pytest.raises(NotImplementedError, match="Multicolumn joins not implemented"):
-        left_table.join(right_table, left_on=[col("x"), col("y")], right_on=[col("a"), col("b")])
+    result = left_table.join(right_table, left_on=[col("x"), col("y")], right_on=[col("a"), col("b")])
+    assert result.to_pydict() == {"x": [1, 2], "y": [2, 3], "a": [1, 2], "b": [2, 3]}
 
 
 def test_table_join_no_columns() -> None:
