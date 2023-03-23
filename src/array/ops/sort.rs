@@ -24,7 +24,6 @@ pub fn build_multi_array_compare(
     build_multi_array_bicompare(arrays, arrays, descending)
 }
 
-
 pub fn build_multi_array_bicompare(
     left: &[Series],
     right: &[Series],
