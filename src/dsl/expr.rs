@@ -31,7 +31,7 @@ pub enum Expr {
         func: FunctionExpr,
         inputs: Vec<Expr>,
     },
-    Invert(ExprRef),
+    Not(ExprRef),
     IsNull(ExprRef),
     Literal(lit::LiteralValue),
 }
@@ -170,8 +170,8 @@ impl Expr {
         Expr::Agg(AggExpr::Max(self.clone().into()))
     }
 
-    pub fn invert(&self) -> Self {
-        Expr::Invert(self.clone().into())
+    pub fn not(&self) -> Self {
+        Expr::Not(self.clone().into())
     }
 
     pub fn is_null(&self) -> Self {
@@ -189,7 +189,7 @@ impl Expr {
             Agg(agg_expr) => agg_expr.to_field(schema),
             Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
             Column(name) => Ok(schema.get_field(name).cloned()?),
-            Invert(expr) => {
+            Not(expr) => {
                 let child_field = expr.to_field(schema)?;
                 match child_field.dtype {
                     DataType::Boolean => Ok(Field::new(expr.name()?, DataType::Boolean)),
@@ -286,7 +286,7 @@ impl Expr {
             Agg(agg_expr) => agg_expr.name(),
             Cast(expr, ..) => expr.name(),
             Column(name) => Ok(name.as_ref()),
-            Invert(expr) => expr.name(),
+            Not(expr) => expr.name(),
             IsNull(expr) => expr.name(),
             Literal(..) => Ok("literal"),
             Function { func: _, inputs } => inputs.first().unwrap().name(),
@@ -324,7 +324,7 @@ impl Display for Expr {
             }
             Cast(expr, dtype) => write!(f, "cast({expr} AS {dtype})"),
             Column(name) => write!(f, "col({name})"),
-            Invert(expr) => write!(f, "invert({expr})"),
+            Not(expr) => write!(f, "not({expr})"),
             IsNull(expr) => write!(f, "is_null({expr})"),
             Literal(val) => write!(f, "lit({val})"),
             Function { func, inputs } => {
