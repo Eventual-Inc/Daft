@@ -41,6 +41,7 @@ from daft.runners.partitioning import (
     vPartitionSchemaInferenceOptions,
 )
 from daft.runners.pyrunner import LocalPartitionSet
+from daft.types import PrimitiveExpressionType
 from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
@@ -895,18 +896,36 @@ class DataFrame:
         """drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
         If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
         Example:
-            >>> df = DataFrame.from_pydict({"a": [1, 2, 3, None]})
+            >>> df = DataFrame.from_pydict({"a": [1.0, 2.2, 3.5, float("nan")]})
             >>> df.drop_na()  # drops rows where any column contains Null/NaN values
-            >>> df = DataFrame.from_pydict({"a": [1, 2, 3, None]})
+            >>> df = DataFrame.from_pydict({"a": [1.6, 2.5, 3.3, float("nan")]})
             >>> df.drop_na("a")  # drops rows where columns x or y contain Null/NaN values
 
         """
         if len(cols) == 0:
             cols = self.column_names
-        drop_na_op = logical_plan.Filter(
-            self._plan, ExpressionList([~reduce(lambda x, y: x | y, (col(x).is_null() for x in cols))])
+        return self.where(
+            ~reduce(
+                lambda x, y: x | y, (
+                    col(x).is_nan() for x in cols if col(x)._resolve_type(self.schema()) is PrimitiveExpressionType.float()
+                )
+            )
         )
-        return DataFrame(drop_na_op)
+
+    @DataframePublicAPI
+    def drop_null(self, *cols):
+        """drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
+        If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
+        Example:
+            >>> df = DataFrame.from_pydict({"a": [1.0, 2.2, 3.5, float("NaN")]})
+            >>> df.drop_null()  # drops rows where any column contains Null/NaN values
+            >>> df = DataFrame.from_pydict({"a": [1.6, 2.5, None, float("NaN")]})
+            >>> df.drop_null("a")  # drops rows where columns x or y contain Null/NaN values
+
+        """
+        if len(cols) == 0:
+            cols = self.column_names
+        return self.where(~reduce(lambda x, y: x | y, (col(x).is_null() for x in cols)))
 
     @DataframePublicAPI
     def explode(self, *columns: ColumnInputType) -> "DataFrame":

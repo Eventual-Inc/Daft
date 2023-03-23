@@ -21,5 +21,5 @@ def valid_data() -> list[dict[str, Any]]:
 def missing_value_data() -> list[dict[str, Any]]:
     items = copy.deepcopy(TEST_ITEMS)
     items[0]["sepal_length"] = None
-    items[1]["sepal_width"] = None
+    items[1]["sepal_width"] = float("NaN")
     return items
