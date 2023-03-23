@@ -215,22 +215,6 @@ class Expression:
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
 
-    def _input_mapping(self) -> builtins.str | None:
-        raise NotImplementedError(
-            "[RUST-INT][TPCH] Implement for checking if expression is a no-op and returning the input name it maps to if so"
-        )
-
-    def _required_columns(self) -> set[builtins.str]:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement for getting required columns in an Expression")
-
-    def _is_column(self) -> bool:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement for checking if this Expression is a Column")
-
-    def _replace_column_with_expression(self, column: builtins.str, new_expr: Expression) -> Expression:
-        raise NotImplementedError(
-            "[RUST-INT][TPCH] Implement replacing a Column with an Expression - used in optimizer"
-        )
-
     def _to_field(self, schema: Schema) -> Field:
         return Field._from_pyfield(self._expr.to_field(schema._schema))
 
@@ -240,6 +224,23 @@ class Expression:
     def __setstate__(self, state: bytes) -> None:
         self._expr = _PyExpr.__new__(_PyExpr)
         self._expr.__setstate__(state)
+
+    ###
+    # Helper methods required by optimizer:
+    # These should be removed from the Python API for Expressions when logical plans and optimizer are migrated to Rust
+    ###
+
+    def _input_mapping(self) -> builtins.str | None:
+        return self._expr._input_mapping()
+
+    def _required_columns(self) -> set[builtins.str]:
+        return self._expr._required_columns()
+
+    def _is_column(self) -> bool:
+        return self._expr._is_column()
+
+    def _replace_column_with_expression(self, column: builtins.str, new_expr: Expression) -> Expression:
+        return Expression._from_pyexpr(self._expr._replace_column_with_expression(column, new_expr._expr))
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
