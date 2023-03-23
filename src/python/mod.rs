@@ -17,6 +17,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
 
     parent.add_wrapped(wrap_pyfunction!(expr::col))?;
     parent.add_wrapped(wrap_pyfunction!(expr::lit))?;
+    parent.add_wrapped(wrap_pyfunction!(expr::eq))?;
 
     Ok(())
 }

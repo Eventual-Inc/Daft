@@ -303,7 +303,7 @@ class ExpressionsProjection(Iterable[Expression]):
         seen: set[str] = set()
         for e in exprs:
             if e.name() in seen:
-                raise ValueError("Expressions must all have unique names")
+                raise ValueError(f"Expressions must all have unique names; saw {e.name()} twice")
             seen.add(e.name())
 
         self._output_name_to_exprs = {e.name(): e for e in exprs}

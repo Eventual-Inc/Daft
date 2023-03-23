@@ -61,6 +61,11 @@ pub struct PyExpr {
     pub expr: dsl::Expr,
 }
 
+#[pyfunction]
+pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
+    Ok(expr1.expr == expr2.expr)
+}
+
 #[pymethods]
 impl PyExpr {
     #[new]
