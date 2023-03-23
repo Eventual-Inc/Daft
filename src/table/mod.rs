@@ -242,7 +242,7 @@ impl Table {
             Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             Column(name) => self.get_column(name).cloned(),
             Invert(child) => !(self.eval_expression(child)?),
-            IsNull(_child) => todo!(),
+            IsNull(child) => self.eval_expression(child)?.is_null(),
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;

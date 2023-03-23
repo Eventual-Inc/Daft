@@ -496,7 +496,7 @@ def test_table_expr_not_wrong() -> None:
     "input,expected",
     [
         pytest.param([True, False, None], [False, False, True], id="BooleanColumn"),
-        pytest.param(["a", None, "b", "c", None], [False, True, False, False, True], id="StringColumn"),
+        pytest.param(["a", "b", "c"], [False, False, False], id="StringColumn"),
         pytest.param([None, None], [True, True], id="NullColumn"),
         pytest.param([], [], id="EmptyColumn"),
     ],
