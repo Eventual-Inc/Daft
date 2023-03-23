@@ -328,15 +328,14 @@ def test_table_count(idx_dtype, case) -> None:
     assert res == expected
 
 
-@pytest.mark.parametrize("length", [1, 10])
+@pytest.mark.parametrize("length", [0, 1, 10])
 def test_table_count_nulltype(length) -> None:
-    """Count on NullType in Arrow counts the nulls (instead of ignoring them)."""
     daft_table = Table.from_pydict({"input": [None] * length})
     daft_table = daft_table.eval_expression_list([col("input").cast(DataType.null())])
     daft_table = daft_table.eval_expression_list([col("input").alias("count")._count()])
 
     res = daft_table.to_pydict()["count"]
-    assert res == [length]
+    assert res == [0]
 
 
 test_table_minmax_numerics_cases = [
