@@ -198,6 +198,8 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
+        if_true = Expression._to_expression(if_true)
+        if_false = Expression._to_expression(if_false)
         return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
     def apply(self, func: Callable, return_dtype: DataType | None = None) -> Expression:
