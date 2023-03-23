@@ -114,23 +114,23 @@ class AggregationPlanBuilder:
         self._final_projection[result_colname] = col(result_colname)
 
     def add_sum(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, expr._sum(), "sum")
-        self._add_2phase_agg(result_colname, expr._sum(), "sum", "sum")
+        self._add_single_partition_shortcut_agg(result_colname, expr, "sum")
+        self._add_2phase_agg(result_colname, expr, "sum", "sum")
         return self
 
     def add_min(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, expr._min(), "min")
-        self._add_2phase_agg(result_colname, expr._min(), "min", "min")
+        self._add_single_partition_shortcut_agg(result_colname, expr, "min")
+        self._add_2phase_agg(result_colname, expr, "min", "min")
         return self
 
     def add_max(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, expr._max(), "max")
-        self._add_2phase_agg(result_colname, expr._max(), "max", "max")
+        self._add_single_partition_shortcut_agg(result_colname, expr, "max")
+        self._add_2phase_agg(result_colname, expr, "max", "max")
         return self
 
     def add_count(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, expr._count(), "count")
-        self._add_2phase_agg(result_colname, expr._count(), "count", "sum")
+        self._add_single_partition_shortcut_agg(result_colname, expr, "count")
+        self._add_2phase_agg(result_colname, expr, "count", "sum")
         return self
 
     def add_list(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
@@ -140,13 +140,13 @@ class AggregationPlanBuilder:
         raise NotImplementedError("[RUST-INT][NESTED] Concat is not yet implemented")
 
     def add_mean(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        self._add_single_partition_shortcut_agg(result_colname, expr._mean(), "mean")
+        self._add_single_partition_shortcut_agg(result_colname, expr, "mean")
 
         # Calculate intermediate sum and count
         intermediate_sum_colname = f"{result_colname}:_sum_for_mean"
         intermediate_count_colname = f"{result_colname}:_count_for_mean"
-        self._add_2phase_agg(intermediate_sum_colname, expr._sum(), "sum", "sum")
-        self._add_2phase_agg(intermediate_count_colname, expr._count(), "count", "sum")
+        self._add_2phase_agg(intermediate_sum_colname, expr, "sum", "sum")
+        self._add_2phase_agg(intermediate_count_colname, expr, "count", "sum")
 
         # Run projection to get mean using intermediate sun and count
         # HACK: we add 0.0 because our current PyArrow-based type system returns an integer when dividing two integers
