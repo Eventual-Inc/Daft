@@ -504,8 +504,11 @@ class Expression(TreeNode["Expression"]):
     def is_nan(self) -> Expression:
         """Checks if values are NaN (a special float value indicating not-a-number)
 
+        .. NOTE::
+            Nulls will be propagated! I.e. this operation will return a null for null values.
+
         Example:
-            >>> # [1., None, NaN] -> [False, False, True]
+            >>> # [1., None, NaN] -> [False, None, True]
             >>> col("x").is_nan()
 
         Returns:
