@@ -893,8 +893,8 @@ class DataFrame:
 
     @DataframePublicAPI
     def drop_na(self, *cols):
-        """drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
-        If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
+        """drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
+        If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
         Example:
             >>> df = DataFrame.from_pydict({"a": [1.0, 2.2, 3.5, float("nan")]})
             >>> df.drop_na()  # drops rows where any column contains Null/NaN values
