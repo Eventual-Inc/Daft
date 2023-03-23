@@ -906,9 +906,12 @@ class DataFrame:
             cols = self.column_names
         return self.where(
             ~reduce(
-                lambda x, y: x | y, (
-                    col(x).is_nan() for x in cols if col(x)._resolve_type(self.schema()) is PrimitiveExpressionType.float()
-                )
+                lambda x, y: x | y,
+                (
+                    col(x).is_nan()
+                    for x in cols
+                    if col(x)._resolve_type(self.schema()) is PrimitiveExpressionType.float()
+                ),
             )
         )
 
