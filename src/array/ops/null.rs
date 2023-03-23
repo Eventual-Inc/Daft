@@ -15,7 +15,12 @@ where
     fn is_null(&self) -> Self::Output {
         let arrow_array = &self.data;
         let result_arrow_array = match arrow_array.validity() {
-            None => arrow2::array::BooleanArray::from_slice(vec![false; arrow_array.len()]),
+            // If the bitmap is None, the arrow array doesn't have null values
+            // (unless it's a NullArray - so check the null count)
+            None => match arrow_array.null_count() {
+                0 => arrow2::array::BooleanArray::from_slice(vec![false; arrow_array.len()]),
+                _ => arrow2::array::BooleanArray::from_slice(vec![true; arrow_array.len()]),
+            },
             Some(bitmap) => arrow2::array::BooleanArray::new(
                 arrow2::datatypes::DataType::Boolean,
                 !bitmap,
