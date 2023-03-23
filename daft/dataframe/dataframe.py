@@ -897,9 +897,15 @@ class DataFrame:
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
         Example:
             >>> df = DataFrame.from_pydict({"a": [1.0, 2.2, 3.5, float("nan")]})
-            >>> df.drop_na()  # drops rows where any column contains Null/NaN values
+            >>> df.drop_na()  # drops rows where any column contains NaN values
             >>> df = DataFrame.from_pydict({"a": [1.6, 2.5, 3.3, float("nan")]})
-            >>> df.drop_na("a")  # drops rows where columns x or y contain Null/NaN values
+            >>> df.drop_na("a")  # drops rows where column a contains NaN values
+
+        Args:
+            *cols (str): column names by which rows containings nans/NULLs should be filtered
+
+        Returns:
+            DataFrame: DataFrame without NaNs in specified/all columns
 
         """
         if len(cols) == 0:
@@ -923,8 +929,12 @@ class DataFrame:
             >>> df = DataFrame.from_pydict({"a": [1.0, 2.2, 3.5, float("NaN")]})
             >>> df.drop_null()  # drops rows where any column contains Null/NaN values
             >>> df = DataFrame.from_pydict({"a": [1.6, 2.5, None, float("NaN")]})
-            >>> df.drop_null("a")  # drops rows where columns x or y contain Null/NaN values
+            >>> df.drop_null("a")  # drops rows where column a contains Null/NaN values
+        Args:
+            *cols (str): column names by which rows containings nans should be filtered
 
+        Returns:
+            DataFrame: DataFrame without missing values in specified/all columns
         """
         if len(cols) == 0:
             cols = self.column_names
