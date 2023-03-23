@@ -892,7 +892,7 @@ class DataFrame:
         return DataFrame(join_op)
 
     @DataframePublicAPI
-    def drop_na(self, *cols):
+    def drop_na(self, *cols: ColumnInputType):
         """drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
         Example:
@@ -909,20 +909,18 @@ class DataFrame:
 
         """
         if len(cols) == 0:
-            cols = self.column_names
+            columns = self.__column_input_to_expression(self.column_names)
+        else:
+            columns = self.__column_input_to_expression(cols)
         return self.where(
             ~reduce(
                 lambda x, y: x | y,
-                (
-                    col(x).is_nan()
-                    for x in cols
-                    if col(x)._resolve_type(self.schema()) is PrimitiveExpressionType.float()
-                ),
+                (x.is_nan() for x in columns if x._resolve_type(self.schema()) is PrimitiveExpressionType.float()),
             )
         )
 
     @DataframePublicAPI
-    def drop_null(self, *cols):
+    def drop_null(self, *cols: ColumnInputType):
         """drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
         If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
         Example:
@@ -937,8 +935,11 @@ class DataFrame:
             DataFrame: DataFrame without missing values in specified/all columns
         """
         if len(cols) == 0:
-            cols = self.column_names
-        return self.where(~reduce(lambda x, y: x | y, (col(x).is_null() for x in cols)))
+            columns = self.__column_input_to_expression(self.column_names)
+        else:
+            columns = self.__column_input_to_expression(cols)
+        columns = self.__column_input_to_expression(cols)
+        return self.where(~reduce(lambda x, y: x | y, (x.is_null() for x in columns)))
 
     @DataframePublicAPI
     def explode(self, *columns: ColumnInputType) -> "DataFrame":
