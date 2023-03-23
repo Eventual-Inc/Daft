@@ -32,6 +32,11 @@ pub enum Expr {
         inputs: Vec<Expr>,
     },
     Literal(lit::LiteralValue),
+    IfElse {
+        if_true: ExprRef,
+        if_false: ExprRef,
+        predicate: ExprRef,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,6 +151,14 @@ impl Expr {
         Expr::Alias(self.clone().into(), name.into())
     }
 
+    pub fn if_else(&self, if_true: &Self, if_false: &Self) -> Self {
+        Expr::IfElse {
+            if_true: if_true.clone().into(),
+            if_false: if_false.clone().into(),
+            predicate: self.clone().into(),
+        }
+    }
+
     pub fn cast(&self, dtype: &DataType) -> Self {
         Expr::Cast(self.clone().into(), dtype.clone())
     }
@@ -257,6 +270,25 @@ impl Expr {
                     }
                 }
             }
+            IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => {
+                let if_true_field = if_true.to_field(schema)?;
+                let if_false_field = if_false.to_field(schema)?;
+                let predicate_field = predicate.to_field(schema)?;
+                if predicate_field.dtype != DataType::Boolean {
+                    return Err(DaftError::TypeError(format!(
+                        "Expected predicate for if_else to be boolean but received {:?}",
+                        predicate_field
+                    )));
+                }
+                match try_get_supertype(&if_true_field.dtype, &if_false_field.dtype) {
+                    Ok(supertype) => Ok(Field::new(if_true_field.name, supertype)),
+                    Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {:?} and {:?}", if_true_field, if_false_field)))
+                }
+            }
         }
     }
 
@@ -274,6 +306,7 @@ impl Expr {
                 left,
                 right: _,
             } => left.name(),
+            IfElse { if_true, .. } => if_true.name(),
         }
     }
 
@@ -313,6 +346,13 @@ impl Display for Expr {
                     write!(f, "{})", inputs.last().unwrap())?;
                 }
                 Ok(())
+            }
+            IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => {
+                write!(f, "if [{predicate}] then [{if_true}] else [{if_false}]")
             }
         }
     }
