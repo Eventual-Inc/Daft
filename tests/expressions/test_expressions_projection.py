@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col
+from daft.expressions.testing import expr_structurally_equal
 from daft.table import Table
 
 
@@ -56,20 +56,17 @@ def test_expressions_projection():
         assert e1.name() == e2.name()
 
     # Test eq
-    # TODO: [RUST-INT] Needs Expression._is_eq
-    # assert ep == ep
-    # assert ep != ExpressionsProjection([])
+    assert ep == ep
+    assert ep != ExpressionsProjection([])
 
     # Test required_columns
-    # TODO: [RUST-INT] Needs Expression._required_columns
-    # assert ep.required_columns() == ["x", "y", "z"]
+    assert ep.required_columns() == {"x", "y", "z"}
 
     # Test to_name_set()
     assert ep.to_name_set() == {"x", "y", "a"}
 
     # Test to_column_expression()
-    # TODO: [RUST-INT] Needs Expression._is_eq
-    # assert ep.to_column_expressions() == ExpressionsProjection([col("x"), col("y"), col("a")])
+    assert ep.to_column_expressions() == ExpressionsProjection([col("x"), col("y"), col("a")])
 
 
 def test_expressions_union():
@@ -122,7 +119,6 @@ def test_expressions_union_dup_rename():
     }
 
 
-@pytest.mark.skip(reason="[RUST-INT] Needs Expression._input_mapping")
 def test_input_mapping():
     exprs = [
         col("x"),
@@ -153,10 +149,10 @@ def test_expressions_projection_indexing():
     assert ep[0].name() == "x"
     assert isinstance(ep[:2], list)
     assert [e.name() for e in ep[:2]] == ["x", "y"]
-
-    # TODO: [RUST-INT] enable once we have Expression._is_eq
-    # assert ep[0]._is_eq(col("x"))
-    # assert all([result._is_eq(expected) for result, expected in zip(ep[:2], list(col("x"), col("y") + 1))])
+    assert expr_structurally_equal(ep[0], col("x"))
+    assert all(
+        [expr_structurally_equal(result, expected) for result, expected in zip(ep[:2], [col("x"), col("y") + 1])]
+    )
 
 
 def test_resolve_schema():
@@ -170,15 +166,14 @@ def test_resolve_schema():
     assert resolved_schema.to_name_set() == {"foo", "foo_plus"}
 
 
-@pytest.mark.skip(reason="[RUST-INT] throw error on bad types during schema resolving")
 def test_resolve_schema_invalid_type():
     tbl = Table.from_pydict(
         {
             "foo": ["a", "b", "c"],
         }
     )
-    ep = ExpressionsProjection([(col("foo") + 1).alias("invalid")])
-    with pytest.raises(ExpressionTypeError):
+    ep = ExpressionsProjection([(col("foo") / 1).alias("invalid")])
+    with pytest.raises(ValueError):
         ep.resolve_schema(tbl.schema())
 
 

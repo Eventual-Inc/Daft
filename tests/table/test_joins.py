@@ -6,7 +6,7 @@ import pytest
 
 from daft import utils
 from daft.datatype import DataType
-from daft.expressions2 import col
+from daft.expressions import col
 from daft.table import Table
 
 daft_int_types = [
