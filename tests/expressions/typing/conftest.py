@@ -111,3 +111,7 @@ def is_numeric(dt: DataType):
         or dt == DataType.float32()
         or dt == DataType.float64()
     )
+
+
+def is_comparable(dt: DataType):
+    return is_numeric(dt) or dt == DataType.bool() or dt == DataType.string()
