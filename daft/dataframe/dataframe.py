@@ -1121,6 +1121,36 @@ class DataFrame:
         raise RuntimeError(message)
 
     @DataframePublicAPI
+    def fillnan(self, val: Any):
+        """fills NaN values on all columns with the specified value. Only works if the columns have
+        the same dtype.
+
+        Args:
+            val: value by which to replace the NaN values
+
+        Returns:
+
+        """
+        filled_expr = logical_plan.ExpressionList([column.fillnan(val) for column in self.columns])
+        filled_plan = logical_plan.Projection(self._plan, filled_expr)
+        return DataFrame(filled_plan)
+
+    @DataframePublicAPI
+    def fillnull(self, val: Any):
+        """fills NULL values on all columns with the specified value. Only works if the columns have
+        the same dtype.
+
+        Args:
+            val: value by which to replace the NULL values
+
+        Returns:
+
+        """
+        filled_expr = logical_plan.ExpressionList([column.fillnull(val) for column in self.columns])
+        filled_plan = logical_plan.Projection(self._plan, filled_expr)
+        return DataFrame(filled_plan)
+
+    @DataframePublicAPI
     def to_pandas(self) -> "pandas.DataFrame":
         """Converts the current DataFrame to a pandas DataFrame.
         If results have not computed yet, collect will be called.
