@@ -13,7 +13,92 @@ env:
   DAFT_ANALYTICS_ENABLED: '0'
 
 jobs:
-  build:
+  unit-tests-with-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.7']
+        daft_runner: [py, ray]
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    - uses: actions/cache@v3
+      env:
+        cache-name: cache-cargo
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt
+
+    - name: Build library and Test with pytest
+      run: |
+        source activate
+        source <(cargo llvm-cov show-env --export-prefix)
+        export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
+        export CARGO_INCREMENTAL=1
+        cargo llvm-cov clean --workspace
+        maturin develop
+        mkdir -p report-output && pytest --cov=daft --durations=50
+        coverage combine -a --data-file='.coverage' || true
+        coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft_runner }}.xml
+        cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft_runner }}.lcov
+      env:
+        DAFT_RUNNER: ${{ matrix.daft_runner }}
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v2
+      with:
+        name: coverage-reports
+        path: ./report-output
+
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.23.0
+      if: ${{ failure() && ((github.ref == 'refs/heads/main') || (github.ref == 'refs/heads/rust-main')) }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] Pytest Unit Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main or rust-main* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  tpch-integration-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -62,9 +147,9 @@ jobs:
         cache-name: cache-tpch-data
       with:
         path: data/tpch-dbgen
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/stress_tests/test_tpch.py', 'tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
 
-    - name: Build library and Test with pytest
+    - name: Build library in release mode and run TPCH integration tests
       run: |
         source activate
         source <(cargo llvm-cov show-env --export-prefix)
@@ -72,18 +157,9 @@ jobs:
         export CARGO_INCREMENTAL=1
         cargo llvm-cov clean --workspace
         maturin develop --release
-        mkdir -p report-output && pytest --cov=daft --durations=50
-        coverage combine -a --data-file='.coverage' || true
-        coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft_runner }}.xml
-        cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft_runner }}.lcov
+        pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft_runner }}
-
-    - name: Upload coverage report
-      uses: actions/upload-artifact@v2
-      with:
-        name: coverage-reports
-        path: ./report-output
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.23.0
@@ -96,7 +172,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] Pytest Unit Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main or rust-main* :rotating_light:"
+                  "text": ":rotating_light: [CI] TPCH Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main or rust-main* :rotating_light:"
                 }
               }
             ]
