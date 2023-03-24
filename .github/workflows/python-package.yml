@@ -5,9 +5,9 @@ name: daft
 
 on:
   push:
-    branches: [main, rust-main]
+    branches: [rust-main]
   pull_request:
-    branches: [main, rust-main]
+    branches: [rust-main]
 
 env:
   DAFT_ANALYTICS_ENABLED: '0'
@@ -80,7 +80,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.23.0
-      if: ${{ failure() && ((github.ref == 'refs/heads/main') || (github.ref == 'refs/heads/rust-main')) }}
+      if: ${{ failure() && (github.ref == 'refs/heads/rust-main') }}
       with:
         payload: |
           {
@@ -89,7 +89,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] Pytest Unit Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main or rust-main* :rotating_light:"
+                  "text": ":rotating_light: [CI] Pytest Unit Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on rust-main* :rotating_light:"
                 }
               }
             ]
@@ -163,7 +163,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.23.0
-      if: ${{ failure() && ((github.ref == 'refs/heads/main') || (github.ref == 'refs/heads/rust-main')) }}
+      if: ${{ failure() && (github.ref == 'refs/heads/rust-main') }}
       with:
         payload: |
           {
@@ -172,7 +172,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] TPCH Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main or rust-main* :rotating_light:"
+                  "text": ":rotating_light: [CI] TPCH Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on rust-main* :rotating_light:"
                 }
               }
             ]
@@ -216,7 +216,7 @@ jobs:
         path: ./report-output
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.23.0
-      if: ${{ failure() && ((github.ref == 'refs/heads/main') || (github.ref == 'refs/heads/rust-main')) }}
+      if: ${{ failure() && (github.ref == 'refs/heads/rust-main') }}
       with:
         payload: |
           {
@@ -225,7 +225,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] Rust Unit Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main or rust-main* :rotating_light:"
+                  "text": ":rotating_light: [CI] Rust Unit Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on rust-main* :rotating_light:"
                 }
               }
             ]
@@ -253,7 +253,7 @@ jobs:
         files: ./report-output/*
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.23.0
-      if: ${{ failure() && ((github.ref == 'refs/heads/main') || (github.ref == 'refs/heads/rust-main')) }}
+      if: ${{ failure() && (github.ref == 'refs/heads/rust-main') }}
       with:
         payload: |
           {
@@ -262,7 +262,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] Codecov Uploads <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main or rust-main* :rotating_light:"
+                  "text": ":rotating_light: [CI] Codecov Uploads <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on rust-main* :rotating_light:"
                 }
               }
             ]
@@ -326,7 +326,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.23.0
-      if: ${{ failure() && ((github.ref == 'refs/heads/main') || (github.ref == 'refs/heads/rust-main')) }}
+      if: ${{ failure() && (github.ref == 'refs/heads/rust-main') }}
       with:
         payload: |
           {
@@ -335,7 +335,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] Python Import Checks <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main or rust-main* :rotating_light:"
+                  "text": ":rotating_light: [CI] Python Import Checks <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on rust-main* :rotating_light:"
                 }
               }
             ]
@@ -392,7 +392,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.23.0
-      if: ${{ failure() && ((github.ref == 'refs/heads/main') || (github.ref == 'refs/heads/rust-main')) }}
+      if: ${{ failure() && (github.ref == 'refs/heads/rust-main') }}
       with:
         payload: |
           {
@@ -401,7 +401,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] Style Checks <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main or rust-main* :rotating_light:"
+                  "text": ":rotating_light: [CI] Style Checks <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on rust-main* :rotating_light:"
                 }
               }
             ]
