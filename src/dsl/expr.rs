@@ -240,12 +240,11 @@ impl Expr {
                     | Operator::NotEq
                     | Operator::LtEq
                     | Operator::GtEq => {
-                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
-                            Ok(_) => Ok(Field::new(
-                                left.to_field(schema)?.name.as_str(),
-                                DataType::Boolean,
-                            )),
-                            Err(_) => Err(DaftError::TypeError(format!("Expected left and right arguments to be castable to the same supertype for comparison {op}, but received {:?} and {:?}", left_field, right_field))),
+                        // Must be either both numeric OR both same type
+                        match (&left_field.dtype, &right_field.dtype) {
+                            (lhs, rhs) if lhs.is_numeric() && rhs.is_numeric() => Ok(Field::new(left.to_field(schema)?.name.as_str(), DataType::Boolean)),
+                            (dt1, dt2) if dt1.eq(dt2) => Ok(Field::new(left.to_field(schema)?.name.as_str(), DataType::Boolean)),
+                            _ => Err(DaftError::TypeError(format!("Expected left and right arguments to be comparable for {op}, but received {:?} and {:?}", right_field, left_field))),
                         }
                     }
 
