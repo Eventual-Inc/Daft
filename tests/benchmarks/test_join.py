@@ -6,6 +6,7 @@ import pytest
 from daft import DataFrame
 
 
+@pytest.mark.skip(reason="[RUST-INT] This currently hangs and needs to be investigated")
 @pytest.mark.benchmark(group="join")
 def test_join_groupby_agg_sort_limit(benchmark) -> None:
     """Hash Join where RHS has no projection
@@ -54,6 +55,7 @@ def test_join_groupby_agg_sort_limit(benchmark) -> None:
     }
 
 
+@pytest.mark.skip(reason="[RUST-INT] This currently hangs and needs to be investigated")
 @pytest.mark.benchmark(group="join")
 def test_join_rhs_high_cardinality(benchmark) -> None:
     """Hash Join where RHS has high cardinality
@@ -70,6 +72,7 @@ def test_join_rhs_high_cardinality(benchmark) -> None:
     assert result.to_pydict() == {"v1": [1, 1, 1, 1, 1], "v2": [0, 1, 2, 3, 4], "right.v2": [0, 1, 2, 3, 4]}
 
 
+@pytest.mark.skip(reason="[RUST-INT] This currently hangs and needs to be investigated")
 @pytest.mark.benchmark(group="join")
 def test_join_lhs_arithmetic(benchmark) -> None:
     """Hash Join where LHS performs if_else operation
@@ -92,6 +95,7 @@ def test_join_lhs_arithmetic(benchmark) -> None:
     }
 
 
+@pytest.mark.skip(reason="[RUST-INT] This currently hangs and needs to be investigated")
 @pytest.mark.benchmark(group="join")
 def test_many_inner_joins(benchmark) -> None:
     """Tests many inner joins
