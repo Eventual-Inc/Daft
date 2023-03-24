@@ -10,7 +10,7 @@ from tests.expressions.typing.conftest import (
 )
 
 
-def has_supertype(lhs: DataType, rhs: DataType) -> bool:
+def is_same_type_hierarchy(lhs: DataType, rhs: DataType) -> bool:
     return (
         # (numeric == numeric = bool)
         (is_numeric(lhs) and is_numeric(rhs))
@@ -35,5 +35,5 @@ def test_if_else(binary_data_fixture):
         ),
         col("predicate").if_else(col(lhs.name()), col(rhs.name())),
         lambda tbl: tbl.get_column("predicate").if_else(tbl.get_column(lhs.name()), tbl.get_column(rhs.name())),
-        has_supertype(lhs.datatype(), rhs.datatype()) and (not kernel_not_implemented),
+        is_same_type_hierarchy(lhs.datatype(), rhs.datatype()) and (not kernel_not_implemented),
     )

@@ -118,6 +118,6 @@ def is_comparable(dt: DataType):
     return is_numeric(dt) or dt == DataType.bool() or dt == DataType.string()
 
 
-def has_supertype(dt1: DataType, dt2: DataType) -> bool:
+def is_same_type_hierarchy(dt1: DataType, dt2: DataType) -> bool:
     """Returns if these two datatypes belong to the same type hierarchy"""
     return (dt1 == dt2) or (is_numeric(dt1) and is_numeric(dt2))
