@@ -97,8 +97,8 @@ def assert_typing_resolve_vs_runtime_behavior(
         #     runtime_func(table)
 
 
-def is_numeric(dt: DataType):
-    """Numeric types that support arithmetic"""
+def is_numeric(dt: DataType) -> bool:
+    """Returns if this datatype is a numeric types that supports arithmetic"""
     return (
         dt == DataType.int8()
         or dt == DataType.int16()
@@ -114,4 +114,10 @@ def is_numeric(dt: DataType):
 
 
 def is_comparable(dt: DataType):
+    """Returns if this datatype supports comparisons between elements"""
     return is_numeric(dt) or dt == DataType.bool() or dt == DataType.string()
+
+
+def has_supertype(dt1: DataType, dt2: DataType) -> bool:
+    """Returns if these two datatypes belong to the same type hierarchy"""
+    return (dt1 == dt2) or (is_numeric(dt1) and is_numeric(dt2))

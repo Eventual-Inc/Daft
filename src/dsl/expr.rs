@@ -301,9 +301,17 @@ impl Expr {
                         predicate_field
                     )));
                 }
-                match try_get_supertype(&if_true_field.dtype, &if_false_field.dtype) {
-                    Ok(supertype) => Ok(Field::new(if_true_field.name, supertype)),
-                    Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {:?} and {:?}", if_true_field, if_false_field)))
+                // TODO: [RUST-INT] if_else not implemented for all physical array types yet, so we throw an error early here during schema resolution
+                if !if_true_field.dtype.is_numeric() && !if_true_field.dtype.eq(&DataType::Utf8) {
+                    return Err(DaftError::TypeError(format!(
+                        "If/Else not yet implemented for type: {:?}",
+                        if_true_field
+                    )));
+                }
+                match (&if_true_field.dtype, &if_false_field.dtype) {
+                    (lhs, rhs) if lhs.is_numeric() && rhs.is_numeric() => Ok(Field::new(if_true_field.name, try_get_supertype(&if_true_field.dtype, &if_false_field.dtype)?)),
+                    (lhs, rhs) if lhs.eq(rhs) => Ok(Field::new(if_true_field.name, lhs.clone())),
+                    _ => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be the same type, but received {:?} and {:?}", if_true_field, if_false_field))),
                 }
             }
         }

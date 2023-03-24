@@ -9,18 +9,13 @@ from daft.expressions import col
 from daft.table import Table
 from tests.expressions.typing.conftest import (
     assert_typing_resolve_vs_runtime_behavior,
-    is_numeric,
+    has_supertype,
+    is_comparable,
 )
 
 
 def comparable_resolvable(lhs: DataType, rhs: DataType) -> bool:
-    return (
-        # (numeric == numeric = bool)
-        (is_numeric(lhs) and is_numeric(rhs))
-        or
-        # (T == T = bool)
-        (lhs == rhs)
-    )
+    return is_comparable(lhs) and is_comparable(rhs) and has_supertype(lhs, rhs)
 
 
 @pytest.mark.parametrize("op", [ops.eq, ops.ne, ops.lt, ops.le, ops.gt, ops.ge])
