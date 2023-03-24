@@ -57,3 +57,13 @@ def test_arithmetic(binary_data_fixture, op):
         lambda tbl: op(tbl.get_column(lhs.name()), tbl.get_column(rhs.name())),
         arithmetic_resolvable(lhs.datatype(), rhs.datatype()),
     )
+
+
+def test_abs(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        Table.from_pydict({arg.name(): arg}),
+        abs(col(arg.name())),
+        lambda tbl: abs(tbl.get_column(arg.name())),
+        is_numeric(arg.datatype()),
+    )
