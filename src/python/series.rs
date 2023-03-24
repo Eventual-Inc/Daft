@@ -229,6 +229,10 @@ impl PySeries {
             .if_else(&other.series, &predicate.series)?
             .into())
     }
+
+    pub fn is_null(&self) -> PyResult<Self> {
+        Ok(self.series.is_null()?.into())
+    }
 }
 
 impl From<series::Series> for PySeries {

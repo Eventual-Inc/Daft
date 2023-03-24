@@ -246,6 +246,10 @@ class Series:
         # NOTE: Rust Series has a different ordering for if_else because of better static typing
         return Series._from_pyseries(if_true._series.if_else(if_false._series, self._series))
 
+    def is_null(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.is_null())
+
     @property
     def str(self) -> SeriesStringNamespace:
         return SeriesStringNamespace.from_series(self)
