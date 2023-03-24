@@ -152,6 +152,11 @@ impl PySeries {
         }
     }
 
+    pub fn __invert__(&self) -> PyResult<Self> {
+        use std::ops::Not;
+        Ok((&self.series).not()?.into())
+    }
+
     pub fn cast(&self, dtype: PyDataType) -> PyResult<Self> {
         Ok(self.series.cast(&dtype.into())?.into())
     }

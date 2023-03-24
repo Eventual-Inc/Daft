@@ -195,6 +195,10 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series <= other._series)
 
+    def __invert__(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.__invert__())
+
     def __and__(self, other: object) -> Series:
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")

@@ -48,6 +48,19 @@ def binary_data_fixture(request) -> tuple[Series, Series]:
     return (s1, s2)
 
 
+@pytest.fixture(
+    scope="module",
+    params=ALL_DTYPES,
+    ids=[f"{dt}" for (dt, _) in ALL_DTYPES],
+)
+def unary_data_fixture(request) -> tuple[Series, Series]:
+    """Returns binary permutation of Series' of all DataType pairs"""
+    (dt, data) = request.param
+    s = Series.from_arrow(data, name="lhs")
+    assert s.datatype() == dt
+    return s
+
+
 class TableLambda(Protocol):
     def __call__(self, table: Table) -> Series:
         ...
