@@ -251,14 +251,13 @@ impl Expr {
 
                     // Plus operation: special-cased as it has semantic meaning for string types
                     Operator::Plus => {
-                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
-                            Ok(supertype) => Ok(Field::new(
-                                left.to_field(schema)?.name.as_str(),
-                                supertype,
-                            )),
-                            Err(_) if left_field.dtype == DataType::Utf8 => Err(DaftError::TypeError(format!("Expected right argument to {op} to be castable to string for string concatenation, but received {:?}", right_field))),
-                            Err(_) if right_field.dtype == DataType::Utf8 => Err(DaftError::TypeError(format!("Expected left argument to {op} to be castable to string for string concatenation, but received {:?}", left_field))),
-                            Err(_) => Err(DaftError::TypeError(format!("Expected left and right arguments to both be numeric for {op}, but received {:?} and {:?}", right_field, left_field))),
+                        // Must be either both numeric OR both string
+                        match (&left_field.dtype, &right_field.dtype) {
+                            (DataType::Utf8, DataType::Utf8) => Ok(Field::new(left.to_field(schema)?.name.as_str(), DataType::Utf8)),
+                            (lhs, rhs) if lhs.is_numeric() && rhs.is_numeric() => Ok(Field::new(left.to_field(schema)?.name.as_str(), try_get_supertype(&left_field.dtype, &right_field.dtype)?)),
+                            _ if left_field.dtype == DataType::Utf8 => Err(DaftError::TypeError(format!("Expected right argument to {op} to be string for string concatenation, but received {:?}", right_field))),
+                            _ if right_field.dtype == DataType::Utf8 => Err(DaftError::TypeError(format!("Expected left argument to {op} to be string for string concatenation, but received {:?}", left_field))),
+                            _ => Err(DaftError::TypeError(format!("Expected left and right arguments to both be numeric for {op}, but received {:?} and {:?}", right_field, left_field))),
                         }
                     }
 
