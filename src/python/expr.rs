@@ -1,6 +1,8 @@
+use std::collections::HashSet;
+
 use super::field::PyField;
 use super::{datatype::PyDataType, schema::PySchema};
-use crate::dsl::{self, functions};
+use crate::dsl::{self, functions, optimization, Expr};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -78,6 +80,37 @@ impl PyExpr {
                 args.len()
             ))),
         }
+    }
+
+    pub fn _input_mapping(&self) -> PyResult<Option<String>> {
+        let required_columns = optimization::get_required_columns(&self.expr);
+        let requires_computation = optimization::requires_computation(&self.expr);
+
+        // Return the required column only if:
+        //   1. There is only one required column
+        //   2. No computation is run on this required column
+        match (&required_columns[..], requires_computation) {
+            ([required_col], false) => Ok(Some(required_col.clone())),
+            _ => Ok(None),
+        }
+    }
+
+    pub fn _required_columns(&self) -> PyResult<HashSet<String>> {
+        let mut hs = HashSet::new();
+        for name in optimization::get_required_columns(&self.expr) {
+            hs.insert(name);
+        }
+        Ok(hs)
+    }
+
+    pub fn _is_column(&self) -> PyResult<bool> {
+        Ok(matches!(self.expr, Expr::Column(..)))
+    }
+
+    pub fn _replace_column_with_expression(&self, column: &str, new_expr: &Self) -> PyResult<Self> {
+        Ok(PyExpr {
+            expr: optimization::replace_column_with_expression(&self.expr, column, &new_expr.expr),
+        })
     }
 
     pub fn alias(&self, name: &str) -> PyResult<Self> {
