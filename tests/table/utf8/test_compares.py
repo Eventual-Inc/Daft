@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from daft.expressions2 import col, lit
+from daft.expressions import col, lit
 from daft.table import Table
 
 ENDSWITH_DATA = ["x_foo", "y_foo", "z_bar"]

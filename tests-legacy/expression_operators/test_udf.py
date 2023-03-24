@@ -33,8 +33,8 @@ def my_udf(
     # Test different arg containers
     arg_untyped,
     arg_list: list,
-    arg_typing_list: List,
-    arg_typing_list_int: List[int],
+    arg_typing_list: list,
+    arg_typing_list_int: list[int],
     arg_numpy_array: np.ndarray,
     arg_polars_series: pl.Series,
     arg_pandas_series: pd.Series,
