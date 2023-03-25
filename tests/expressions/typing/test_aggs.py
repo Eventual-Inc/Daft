@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from daft.datatype import DataType
 from daft.expressions import col
 from daft.table import Table
 from tests.expressions.typing.conftest import (
@@ -21,11 +20,6 @@ from tests.expressions.typing.conftest import (
 )
 def test_comparable_aggs(unary_data_fixture, op):
     arg = unary_data_fixture
-
-    # TODO: [RUST-INT][LOGICAL] date min/max currently not implemented and will panic, so we skip tests here
-    if arg.datatype() == DataType.date():
-        return
-
     assert_typing_resolve_vs_runtime_behavior(
         Table.from_pydict({arg.name(): arg}),
         op(col(arg.name())),

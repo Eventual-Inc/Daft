@@ -1,4 +1,4 @@
-use crate::datatypes::DataType;
+use crate::{datatypes::DataType, utils::supertype::get_supertype};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -27,6 +27,14 @@ impl PyDataType {
 
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.dtype))
+    }
+
+    #[staticmethod]
+    pub fn supertype(dt1: &Self, dt2: &Self) -> PyResult<Option<Self>> {
+        match get_supertype(&dt1.dtype, &dt2.dtype) {
+            None => Ok(None),
+            Some(supertype) => Ok(Some(supertype.into())),
+        }
     }
 
     #[staticmethod]

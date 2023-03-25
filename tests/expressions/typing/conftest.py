@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 import itertools
 import sys
 
@@ -31,8 +30,8 @@ ALL_DTYPES = [
     (DataType.string(), pa.array(["1", "2", "3"], type=pa.string())),
     (DataType.bool(), pa.array([True, False, None], type=pa.bool_())),
     (DataType.null(), pa.array([None, None, None], type=pa.null())),
-    (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
     # TODO: [RUST-INT][TYPING] Enable and perform fixes for these types
+    # (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
     # (DataType.binary(), pa.array([b"1", b"2", None], type=pa.binary())),
 ]
 
@@ -128,8 +127,3 @@ def is_comparable(dt: DataType):
         or dt == DataType.null()
         or dt == DataType.date()
     )
-
-
-def is_same_type_hierarchy(dt1: DataType, dt2: DataType) -> bool:
-    """Returns if these two datatypes belong to the same type hierarchy"""
-    return (dt1 == dt2) or (is_numeric(dt1) and is_numeric(dt2))

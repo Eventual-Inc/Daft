@@ -7,7 +7,6 @@ from daft.table import Table
 from tests.expressions.typing.conftest import (
     assert_typing_resolve_vs_runtime_behavior,
     is_numeric,
-    is_same_type_hierarchy,
 )
 
 
@@ -26,5 +25,5 @@ def test_if_else(binary_data_fixture):
         ),
         col("predicate").if_else(col(lhs.name()), col(rhs.name())),
         lambda tbl: tbl.get_column("predicate").if_else(tbl.get_column(lhs.name()), tbl.get_column(rhs.name())),
-        is_same_type_hierarchy(lhs.datatype(), rhs.datatype()) and (not kernel_not_implemented),
+        (DataType.supertype(lhs.datatype(), rhs.datatype()) is not None) and (not kernel_not_implemented),
     )
