@@ -892,7 +892,7 @@ class DataFrame:
         return DataFrame(join_op)
 
     @DataframePublicAPI
-    def drop_na(self, *cols: ColumnInputType):
+    def drop_nan(self, *cols: ColumnInputType):
         """drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
         Example:
@@ -912,12 +912,10 @@ class DataFrame:
             columns = self.__column_input_to_expression(self.column_names)
         else:
             columns = self.__column_input_to_expression(cols)
-        return self.where(
-            ~reduce(
-                lambda x, y: x | y,
-                (x.is_nan() for x in columns if x._resolve_type(self.schema()) is PrimitiveExpressionType.float()),
-            )
-        )
+        float_columns = [
+            column for column in columns if column._resolve_type(self.schema()) is PrimitiveExpressionType.float()
+        ]
+        return self.where(~reduce(lambda x, y: x | y, (x.is_nan() for x in float_columns)))
 
     @DataframePublicAPI
     def drop_null(self, *cols: ColumnInputType):
@@ -938,7 +936,6 @@ class DataFrame:
             columns = self.__column_input_to_expression(self.column_names)
         else:
             columns = self.__column_input_to_expression(cols)
-        columns = self.__column_input_to_expression(cols)
         return self.where(~reduce(lambda x, y: x | y, (x.is_null() for x in columns)))
 
     @DataframePublicAPI

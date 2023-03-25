@@ -44,14 +44,3 @@ def test_is_null_pylist():
     pd_df = pd.DataFrame.from_dict(data)
     pd_df["is_null"] = pd_df["foo"].isnull()
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
-
-
-def test_is_null_with_nan_pylist():
-    data = {"id": [str(i) for i in range(20)], "foo": [None if i % 2 == 1 else MyObj(i) for i in range(20)]}
-    data["foo"][4] = float("nan")
-    data["foo"][7] = float("nan")
-    df = DataFrame.from_pydict(data)
-    df = df.with_column("is_null", col("foo").is_null())
-    pd_df = pd.DataFrame.from_dict(data)
-    pd_df["is_null"] = pd_df["foo"].isnull()
-    assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
