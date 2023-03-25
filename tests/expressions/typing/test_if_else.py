@@ -7,17 +7,8 @@ from daft.table import Table
 from tests.expressions.typing.conftest import (
     assert_typing_resolve_vs_runtime_behavior,
     is_numeric,
+    is_same_type_hierarchy,
 )
-
-
-def is_same_type_hierarchy(lhs: DataType, rhs: DataType) -> bool:
-    return (
-        # (numeric == numeric = bool)
-        (is_numeric(lhs) and is_numeric(rhs))
-        or
-        # (T == T = bool)
-        (lhs == rhs)
-    )
 
 
 def test_if_else(binary_data_fixture):

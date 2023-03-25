@@ -154,16 +154,6 @@ impl DataType {
     }
 
     #[inline]
-    pub fn is_comparable(&self) -> bool {
-        match self {
-            dt if dt.is_numeric() => true,
-            dt if dt.is_temporal() => true,
-            DataType::Utf8 | DataType::Null | DataType::Boolean => true,
-            _ => false,
-        }
-    }
-
-    #[inline]
     pub fn is_temporal(&self) -> bool {
         matches!(self, DataType::Date)
     }
