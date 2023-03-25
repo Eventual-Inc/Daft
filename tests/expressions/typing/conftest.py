@@ -118,6 +118,10 @@ def is_numeric(dt: DataType) -> bool:
     )
 
 
+def is_temporal(dt: DataType) -> bool:
+    return dt == DataType.date()
+
+
 def is_comparable(dt: DataType):
     """Returns if this datatype supports comparisons between elements"""
     return (
@@ -127,3 +131,33 @@ def is_comparable(dt: DataType):
         or dt == DataType.null()
         or dt == DataType.date()
     )
+
+
+def has_supertype(dt1: DataType, dt2: DataType) -> bool:
+    # super(T, T) = T
+    if dt1 == dt2:
+        return True
+
+    for x, y in ((dt1, dt2), (dt2, dt1)):
+        if (
+            # super(null, T) = T
+            (x == DataType.null())
+            or
+            # super(str, T) = str, if T != binary
+            (x == DataType.string() and y != DataType.binary())
+            or
+            # super(num, num) = num
+            (is_numeric(x) and is_numeric(y))
+            or
+            # super(temporal, temporal) = temporal
+            (is_temporal(x) and is_temporal(y))
+            or
+            # super(temporal, num) = num
+            (is_temporal(x) and is_numeric(y))
+            or
+            # super(bool, num) = num
+            ((x == DataType.bool()) and is_numeric(y))
+        ):
+            return True
+
+    return False

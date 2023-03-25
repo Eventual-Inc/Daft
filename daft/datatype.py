@@ -27,10 +27,6 @@ class DataType:
         return dt
 
     @staticmethod
-    def supertype(dt1: DataType, dt2: DataType) -> DataType | None:
-        return DataType._from_pydatatype(PyDataType.supertype(dt1._dtype, dt2._dtype))
-
-    @staticmethod
     def int8() -> DataType:
         return DataType._from_pydatatype(PyDataType.int8())
 

@@ -9,13 +9,14 @@ from daft.expressions import col
 from daft.table import Table
 from tests.expressions.typing.conftest import (
     assert_typing_resolve_vs_runtime_behavior,
+    has_supertype,
     is_numeric,
 )
 
 
 def plus_resolvable(lhs: DataType, rhs: DataType) -> bool:
     """Checks whether these input types are resolvable for the + operation"""
-    return DataType.supertype(lhs, rhs) is not None
+    return has_supertype(lhs, rhs)
 
 
 def test_plus(binary_data_fixture):
