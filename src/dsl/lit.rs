@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum LiteralValue {
     Null,
     /// A binary true or false.

@@ -12,7 +12,7 @@ use self::temporal::TemporalExpr;
 
 use super::Expr;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FunctionExpr {
     Numeric(NumericExpr),
     Utf8(Utf8Expr),

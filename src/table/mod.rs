@@ -241,6 +241,8 @@ impl Table {
             Agg(agg_expr) => self.eval_agg_expression(agg_expr),
             Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             Column(name) => self.get_column(name).cloned(),
+            Not(child) => !(self.eval_expression(child)?),
+            IsNull(child) => self.eval_expression(child)?.is_null(),
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
@@ -272,6 +274,16 @@ impl Table {
                 func.evaluate(evaluated_inputs.as_slice())
             }
             Literal(lit_value) => Ok(lit_value.to_series()),
+            IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => {
+                let if_true_series = self.eval_expression(if_true)?;
+                let if_false_series = self.eval_expression(if_false)?;
+                let predicate_series = self.eval_expression(predicate)?;
+                Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
+            }
         }?;
         if expected_field.name != series.field().name {
             return Err(DaftError::ComputeError(format!(

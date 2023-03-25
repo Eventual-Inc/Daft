@@ -54,8 +54,8 @@ class Expression:
 
     def __bool__(self) -> bool:
         raise ValueError(
-            "Expressions don't have a truth value until executed. "
-            "If you reached this error using `and` / `or`, use `&` / `|` instead."
+            "Expressions don't have a truth value. "
+            "If you used Python keywords `and` `not` `or` on an expression, use `&` `~` `|` instead."
         )
 
     def __abs__(self) -> Expression:
@@ -164,7 +164,8 @@ class Expression:
 
     def __invert__(self) -> Expression:
         """Inverts a bool expression (``~e``)"""
-        raise NotImplementedError("[RUST-INT] Implement expression")
+        expr = self._expr.__invert__()
+        return Expression._from_pyexpr(expr)
 
     def alias(self, name: builtins.str) -> Expression:
         assert isinstance(name, str)
@@ -197,35 +198,22 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression")
+        if_true = Expression._to_expression(if_true)
+        if_false = Expression._to_expression(if_false)
+        return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
     def apply(self, func: Callable, return_dtype: DataType | None = None) -> Expression:
         raise NotImplementedError("[RUST-INT][UDF] Implement .apply")
 
     def is_null(self) -> Expression:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement expression")
+        expr = self._expr.is_null()
+        return Expression._from_pyexpr(expr)
 
     def name(self) -> builtins.str:
         return self._expr.name()
 
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
-
-    def _input_mapping(self) -> builtins.str | None:
-        raise NotImplementedError(
-            "[RUST-INT][TPCH] Implement for checking if expression is a no-op and returning the input name it maps to if so"
-        )
-
-    def _required_columns(self) -> set[builtins.str]:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement for getting required columns in an Expression")
-
-    def _is_column(self) -> bool:
-        raise NotImplementedError("[RUST-INT][TPCH] Implement for checking if this Expression is a Column")
-
-    def _replace_column_with_expression(self, column: builtins.str, new_expr: Expression) -> Expression:
-        raise NotImplementedError(
-            "[RUST-INT][TPCH] Implement replacing a Column with an Expression - used in optimizer"
-        )
 
     def _to_field(self, schema: Schema) -> Field:
         return Field._from_pyfield(self._expr.to_field(schema._schema))
@@ -236,6 +224,23 @@ class Expression:
     def __setstate__(self, state: bytes) -> None:
         self._expr = _PyExpr.__new__(_PyExpr)
         self._expr.__setstate__(state)
+
+    ###
+    # Helper methods required by optimizer:
+    # These should be removed from the Python API for Expressions when logical plans and optimizer are migrated to Rust
+    ###
+
+    def _input_mapping(self) -> builtins.str | None:
+        return self._expr._input_mapping()
+
+    def _required_columns(self) -> set[builtins.str]:
+        return self._expr._required_columns()
+
+    def _is_column(self) -> bool:
+        return self._expr._is_column()
+
+    def _replace_column_with_expression(self, column: builtins.str, new_expr: Expression) -> Expression:
+        return Expression._from_pyexpr(self._expr._replace_column_with_expression(column, new_expr._expr))
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
@@ -301,7 +306,7 @@ class ExpressionsProjection(Iterable[Expression]):
         seen: set[str] = set()
         for e in exprs:
             if e.name() in seen:
-                raise ValueError("Expressions must all have unique names")
+                raise ValueError(f"Expressions must all have unique names; saw {e.name()} twice")
             seen.add(e.name())
 
         self._output_name_to_exprs = {e.name(): e for e in exprs}

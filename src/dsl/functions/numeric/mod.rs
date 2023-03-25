@@ -7,7 +7,7 @@ use crate::dsl::Expr;
 
 use super::FunctionEvaluator;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum NumericExpr {
     Abs,
 }

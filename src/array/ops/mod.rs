@@ -14,8 +14,10 @@ mod downcast;
 mod filter;
 mod full;
 mod hash;
+mod if_else;
 mod len;
 mod mean;
+mod null;
 mod pairwise;
 mod search_sorted;
 mod sort;
@@ -58,6 +60,11 @@ pub trait DaftLogical<Rhs> {
 
     /// xor.
     fn xor(&self, rhs: Rhs) -> Self::Output;
+}
+
+pub trait DaftIsNull {
+    type Output;
+    fn is_null(&self) -> Self::Output;
 }
 
 pub trait DaftCountAggable {

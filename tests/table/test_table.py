@@ -328,15 +328,14 @@ def test_table_count(idx_dtype, case) -> None:
     assert res == expected
 
 
-@pytest.mark.parametrize("length", [1, 10])
+@pytest.mark.parametrize("length", [0, 1, 10])
 def test_table_count_nulltype(length) -> None:
-    """Count on NullType in Arrow counts the nulls (instead of ignoring them)."""
     daft_table = Table.from_pydict({"input": [None] * length})
     daft_table = daft_table.eval_expression_list([col("input").cast(DataType.null())])
     daft_table = daft_table.eval_expression_list([col("input").alias("count")._count()])
 
     res = daft_table.to_pydict()["count"]
-    assert res == [length]
+    assert res == [0]
 
 
 test_table_minmax_numerics_cases = [
@@ -466,6 +465,48 @@ def test_table_sum_badtype() -> None:
     daft_table = Table.from_pydict({"a": ["str1", "str2"]})
     with pytest.raises(ValueError):
         daft_table = daft_table.eval_expression_list([col("a")._sum()])
+
+
+@pytest.mark.parametrize(
+    "input,expr,expected",
+    [
+        pytest.param([True, False, None], ~col("input"), [False, True, None], id="BooleanColumn"),
+        pytest.param(["apple", None, "banana"], ~(col("input") != "banana"), [False, None, True], id="BooleanExpr"),
+        pytest.param([], ~(col("input").cast(DataType.bool())), [], id="EmptyColumn"),
+    ],
+)
+def test_table_expr_not(input, expr, expected) -> None:
+    """Test logical not expression."""
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([expr])
+    pydict = daft_table.to_pydict()
+
+    assert pydict["input"] == expected
+
+
+def test_table_expr_not_wrong() -> None:
+    daft_table = Table.from_pydict({"input": [None, 0, 1]})
+
+    with pytest.raises(ValueError):
+        daft_table = daft_table.eval_expression_list([~col("input")])
+
+
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        pytest.param([True, False, None], [False, False, True], id="BooleanColumn"),
+        pytest.param(["a", "b", "c"], [False, False, False], id="StringColumn"),
+        pytest.param([None, None], [True, True], id="NullColumn"),
+        pytest.param([], [], id="EmptyColumn"),
+    ],
+)
+def test_table_expr_is_null(input, expected) -> None:
+    """Test logical not expression."""
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").is_null()])
+    pydict = daft_table.to_pydict()
+
+    assert pydict["input"] == expected
 
 
 test_table_agg_global_cases = [
@@ -1061,3 +1102,9 @@ def test_table_filter_with_date_years() -> None:
     result = new_table.to_pydict()
     assert result["days"] == [date(4000, 1, 1), date(2022, 1, 1)]
     assert result["enum"] == [1, 4]
+
+
+def test_table_if_else() -> None:
+    table = Table.from_arrow(pa.Table.from_pydict({"ones": [1, 1, 1], "zeros": [0, 0, 0], "pred": [True, False, None]}))
+    result_table = table.eval_expression_list([col("pred").if_else(col("ones"), col("zeros"))])
+    result_table.to_pydict() == {"ones": [1, 0, None]}
