@@ -4,7 +4,6 @@ import pytest
 
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.table import Table
 from tests.expressions.typing.conftest import assert_typing_resolve_vs_runtime_behavior
 
 
@@ -19,8 +18,8 @@ from tests.expressions.typing.conftest import assert_typing_resolve_vs_runtime_b
 def test_str_compares(binary_data_fixture, op):
     lhs, rhs = binary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
-        Table.from_pydict({s.name(): s for s in binary_data_fixture}),
-        op(col(lhs.name()), col(rhs.name())),
-        lambda tbl: op(tbl.get_column(lhs.name()), tbl.get_column(rhs.name())),
-        (lhs.datatype() == DataType.string()) and (rhs.datatype() == DataType.string()),
+        data=binary_data_fixture,
+        expr=op(col(lhs.name()), col(rhs.name())),
+        run_kernel=lambda: op(lhs, rhs),
+        resolvable=(lhs.datatype() == DataType.string()) and (rhs.datatype() == DataType.string()),
     )

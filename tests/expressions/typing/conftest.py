@@ -4,9 +4,10 @@ import itertools
 import sys
 
 if sys.version_info < (3, 8):
-    from typing_extensions import Protocol
+    pass
 else:
-    from typing import Protocol
+    pass
+from typing import Callable
 
 import pyarrow as pa
 import pytest
@@ -59,37 +60,44 @@ def binary_data_fixture(request) -> tuple[Series, Series]:
     ids=[f"{dt}" for (dt, _) in ALL_DTYPES],
 )
 def unary_data_fixture(request) -> tuple[Series, Series]:
-    """Returns binary permutation of Series' of all DataType pairs"""
+    """Returns unary permutation of Series' of all DataType pairs"""
     (dt, data) = request.param
-    s = Series.from_arrow(data, name="lhs")
+    s = Series.from_arrow(data, name="arg")
     assert s.datatype() == dt
     return s
 
 
-class TableLambda(Protocol):
-    def __call__(self, table: Table) -> Series:
-        ...
-
-
 def assert_typing_resolve_vs_runtime_behavior(
-    table: Table,
+    data: tuple[Series],
     expr: Expression,
-    runtime_expr: TableLambda,
+    run_kernel: Callable[[], Series],
     resolvable: bool,
 ):
     """Asserts that typing behavior during schema resolution matches behavior during runtime on Series'
 
+    Example Usage:
+
+        >>> def my_test(binary_data_fixture):
+        >>>     lhs, rhs = binary_data_fixture  # unwrap the generated Series data
+        >>>     assert_typing_resolve_vs_runtime_behavior(
+        >>>         data=binary_data_fixture,
+        >>>         expr=col(lhs.name()) + col(rhs.name()),
+        >>>         run_kernel=lambda: lhs + rhs,
+        >>>         resolvable=can_add_dtypes(lhs.datatype(), rhs.datatype()),
+        >>>     )
+
     Args:
-        table: data to test against
-        expr (Expression): Expression to run the kernel on the table
-        runtime_expr (TableLambda): Function that takes the table as input and runs the kernel manually on the table's Series'
-        resolvable (bool): Whether the expression should be resolvable against the table's schema
+        data: data to test against (generated using one of the provided fixtures, `{unary, binary}_data_fixture`)
+        expr (Expression): Expression used to run the kernel in a Table (use `.name()` of the generated data to refer to columns)
+        run_kernel (Callable): A lambda that will run the kernel directly on the generated Series' without going through the Expressions API
+        resolvable (bool): Whether this kernel should be valid, given the datatypes of the generated Series'
     """
+    table = Table.from_pydict({s.name(): s for s in data})
     projection = ExpressionsProjection([expr.alias("result")])
     if resolvable:
         # Check that schema resolution and Series runtime return the same datatype
         resolved_schema = projection.resolve_schema(table.schema())
-        result = runtime_expr(table)
+        result = run_kernel()
         assert (
             resolved_schema["result"].dtype == result.datatype()
         ), "Should have matching result types at runtime and schema-resolve-time"
@@ -99,11 +107,11 @@ def assert_typing_resolve_vs_runtime_behavior(
             projection.resolve_schema(table.schema())
         # TODO: check that types also fail to resolve at runtime
         # with pytest.raises(ValueError):
-        #     runtime_func(table)
+        #     run_kernel()
 
 
 def is_numeric(dt: DataType) -> bool:
-    """Returns if this datatype is a numeric types that supports arithmetic"""
+    """Checks if this type is a numeric type"""
     return (
         dt == DataType.int8()
         or dt == DataType.int16()
@@ -119,11 +127,12 @@ def is_numeric(dt: DataType) -> bool:
 
 
 def is_temporal(dt: DataType) -> bool:
+    """Checks if this type is a temporal type"""
     return dt == DataType.date()
 
 
 def is_comparable(dt: DataType):
-    """Returns if this datatype supports comparisons between elements"""
+    """Checks if this type is a comparable type"""
     return (
         is_numeric(dt)
         or dt == DataType.bool()
@@ -134,30 +143,28 @@ def is_comparable(dt: DataType):
 
 
 def has_supertype(dt1: DataType, dt2: DataType) -> bool:
+    """Checks if two DataTypes have supertypes - note that this is a simplified
+    version of `supertype.rs`, since it only defines "reachability" within the supertype
+    tree in a more human-readable way for testing purposes.
+    """
     # super(T, T) = T
     if dt1 == dt2:
         return True
 
     for x, y in ((dt1, dt2), (dt2, dt1)):
-        if (
-            # super(null, T) = T
-            (x == DataType.null())
-            or
-            # super(str, T) = str, if T != binary
-            (x == DataType.string() and y != DataType.binary())
-            or
-            # super(num, num) = num
-            (is_numeric(x) and is_numeric(y))
-            or
-            # super(temporal, temporal) = temporal
-            (is_temporal(x) and is_temporal(y))
-            or
-            # super(temporal, num) = num
-            (is_temporal(x) and is_numeric(y))
-            or
-            # super(bool, num) = num
-            ((x == DataType.bool()) and is_numeric(y))
-        ):
+
+        # --- Common types across hierarchies ---
+        either_null = x == DataType.null()
+        either_string_and_other_not_binary = x == DataType.string() and y != DataType.binary()
+
+        # --- Within type hierarchies ---
+        both_numeric = (is_numeric(x) and is_numeric(y)) or ((x == DataType.bool()) and is_numeric(y))
+        both_temporal = is_temporal(x) and is_temporal(y)
+
+        # --- Across type hierarchies ---
+        temporal_and_numeric = is_temporal(x) and is_numeric(y)
+
+        if either_null or either_string_and_other_not_binary or both_numeric or both_temporal or temporal_and_numeric:
             return True
 
     return False

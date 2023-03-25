@@ -6,7 +6,6 @@ import pytest
 
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.table import Table
 from tests.expressions.typing.conftest import (
     assert_typing_resolve_vs_runtime_behavior,
     has_supertype,
@@ -27,10 +26,10 @@ def test_plus(binary_data_fixture):
         return
 
     assert_typing_resolve_vs_runtime_behavior(
-        Table.from_pydict({s.name(): s for s in binary_data_fixture}),
-        col(lhs.name()) + col(rhs.name()),
-        lambda tbl: tbl.get_column(lhs.name()) + tbl.get_column(rhs.name()),
-        plus_resolvable(lhs.datatype(), rhs.datatype()),
+        data=binary_data_fixture,
+        expr=col(lhs.name()) + col(rhs.name()),
+        run_kernel=lambda: lhs + rhs,
+        resolvable=plus_resolvable(lhs.datatype(), rhs.datatype()),
     )
 
 
@@ -52,18 +51,18 @@ def arithmetic_resolvable(lhs: DataType, rhs: DataType) -> bool:
 def test_arithmetic(binary_data_fixture, op):
     lhs, rhs = binary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
-        Table.from_pydict({s.name(): s for s in binary_data_fixture}),
-        op(col(lhs.name()), col(rhs.name())),
-        lambda tbl: op(tbl.get_column(lhs.name()), tbl.get_column(rhs.name())),
-        arithmetic_resolvable(lhs.datatype(), rhs.datatype()),
+        data=binary_data_fixture,
+        expr=op(col(lhs.name()), col(rhs.name())),
+        run_kernel=lambda: op(lhs, rhs),
+        resolvable=arithmetic_resolvable(lhs.datatype(), rhs.datatype()),
     )
 
 
 def test_abs(unary_data_fixture):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
-        Table.from_pydict({arg.name(): arg}),
-        abs(col(arg.name())),
-        lambda tbl: abs(tbl.get_column(arg.name())),
-        is_numeric(arg.datatype()),
+        data=(unary_data_fixture,),
+        expr=abs(col(arg.name())),
+        run_kernel=lambda: abs(arg),
+        resolvable=is_numeric(arg.datatype()),
     )

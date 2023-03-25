@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from daft.expressions import col
-from daft.table import Table
 from tests.expressions.typing.conftest import (
     assert_typing_resolve_vs_runtime_behavior,
     is_comparable,
@@ -21,10 +20,10 @@ from tests.expressions.typing.conftest import (
 def test_comparable_aggs(unary_data_fixture, op):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
-        Table.from_pydict({arg.name(): arg}),
-        op(col(arg.name())),
-        lambda tbl: op(tbl.get_column(arg.name())),
-        is_comparable(arg.datatype()),
+        data=(unary_data_fixture,),
+        expr=op(col(arg.name())),
+        run_kernel=lambda: op(arg),
+        resolvable=is_comparable(arg.datatype()),
     )
 
 
@@ -38,18 +37,18 @@ def test_comparable_aggs(unary_data_fixture, op):
 def test_arithmetic_aggs(unary_data_fixture, op):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
-        Table.from_pydict({arg.name(): arg}),
-        op(col(arg.name())),
-        lambda tbl: op(tbl.get_column(arg.name())),
-        is_numeric(arg.datatype()),
+        data=(unary_data_fixture,),
+        expr=op(col(arg.name())),
+        run_kernel=lambda: op(arg),
+        resolvable=is_numeric(arg.datatype()),
     )
 
 
 def test_count(unary_data_fixture):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
-        Table.from_pydict({arg.name(): arg}),
-        col(arg.name())._count(),
-        lambda tbl: tbl.get_column(arg.name())._count(),
-        True,
+        data=(unary_data_fixture,),
+        expr=col(arg.name())._count(),
+        run_kernel=lambda: arg._count(),
+        resolvable=True,
     )

@@ -6,7 +6,6 @@ import pytest
 
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.table import Table
 from tests.expressions.typing.conftest import (
     assert_typing_resolve_vs_runtime_behavior,
     has_supertype,
@@ -22,8 +21,8 @@ def comparable_resolvable(lhs: DataType, rhs: DataType) -> bool:
 def test_comparable(binary_data_fixture, op):
     lhs, rhs = binary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
-        Table.from_pydict({s.name(): s for s in binary_data_fixture}),
-        op(col(lhs.name()), col(rhs.name())),
-        lambda tbl: op(tbl.get_column(lhs.name()), tbl.get_column(rhs.name())),
-        comparable_resolvable(lhs.datatype(), rhs.datatype()),
+        data=binary_data_fixture,
+        expr=op(col(lhs.name()), col(rhs.name())),
+        run_kernel=lambda: op(lhs, rhs),
+        resolvable=comparable_resolvable(lhs.datatype(), rhs.datatype()),
     )
