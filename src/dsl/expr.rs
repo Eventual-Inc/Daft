@@ -125,6 +125,12 @@ impl AggExpr {
             }
             Min(expr) | Max(expr) => {
                 let field = expr.to_field(schema)?;
+                if !field.dtype.is_comparable() {
+                    return Err(DaftError::TypeError(format!(
+                        "Expected a comparable type but received {:?}",
+                        field.dtype
+                    )));
+                }
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
         }
