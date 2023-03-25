@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import datetime
 import itertools
-from typing import Protocol
+import sys
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Protocol
+else:
+    from typing import Protocol
 
 import pyarrow as pa
 import pytest
