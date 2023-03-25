@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import itertools
 from typing import Protocol
 
@@ -24,9 +25,9 @@ ALL_DTYPES = [
     (DataType.float64(), pa.array([1, 2, None], type=pa.float64())),
     (DataType.string(), pa.array(["1", "2", "3"], type=pa.string())),
     (DataType.bool(), pa.array([True, False, None], type=pa.bool_())),
-    # TODO: [RUST-INT][TYPING] Enable and perform fixes for these types
     (DataType.null(), pa.array([None, None, None], type=pa.null())),
-    # (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
+    (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
+    # TODO: [RUST-INT][TYPING] Enable and perform fixes for these types
     # (DataType.binary(), pa.array([b"1", b"2", None], type=pa.binary())),
 ]
 
@@ -115,7 +116,13 @@ def is_numeric(dt: DataType) -> bool:
 
 def is_comparable(dt: DataType):
     """Returns if this datatype supports comparisons between elements"""
-    return is_numeric(dt) or dt == DataType.bool() or dt == DataType.string() or dt == DataType.null()
+    return (
+        is_numeric(dt)
+        or dt == DataType.bool()
+        or dt == DataType.string()
+        or dt == DataType.null()
+        or dt == DataType.date()
+    )
 
 
 def is_same_type_hierarchy(dt1: DataType, dt2: DataType) -> bool:
