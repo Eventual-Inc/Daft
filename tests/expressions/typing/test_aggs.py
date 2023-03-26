@@ -34,7 +34,7 @@ def test_comparable_aggs(unary_data_fixture, op):
         pytest.param(lambda x: x._mean(), id="mean"),
     ],
 )
-def test_arithmetic_aggs(unary_data_fixture, op):
+def test_numeric_aggs(unary_data_fixture, op):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
         data=(unary_data_fixture,),

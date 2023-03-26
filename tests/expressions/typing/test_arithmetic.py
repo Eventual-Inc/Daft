@@ -13,7 +13,7 @@ from tests.expressions.typing.conftest import (
 )
 
 
-def plus_resolvable(lhs: DataType, rhs: DataType) -> bool:
+def plus_type_validation(lhs: DataType, rhs: DataType) -> bool:
     """Checks whether these input types are resolvable for the + operation"""
     return has_supertype(lhs, rhs)
 
@@ -29,14 +29,14 @@ def test_plus(binary_data_fixture):
         data=binary_data_fixture,
         expr=col(lhs.name()) + col(rhs.name()),
         run_kernel=lambda: lhs + rhs,
-        resolvable=plus_resolvable(lhs.datatype(), rhs.datatype()),
+        resolvable=plus_type_validation(lhs.datatype(), rhs.datatype()),
     )
 
 
-def arithmetic_resolvable(lhs: DataType, rhs: DataType) -> bool:
+def binary_numeric_arithmetic_type_validation(lhs: DataType, rhs: DataType) -> bool:
     """Checks whether these input types are resolvable for arithmetic operations"""
     # (numeric <op> numeric = numeric)
-    return is_numeric(lhs) and is_numeric(rhs)
+    return is_numeric(lhs) and is_numeric(rhs) and has_supertype(lhs, rhs)
 
 
 @pytest.mark.parametrize(
@@ -48,13 +48,13 @@ def arithmetic_resolvable(lhs: DataType, rhs: DataType) -> bool:
         pytest.param(ops.sub, id="mod"),
     ],
 )
-def test_arithmetic(binary_data_fixture, op):
+def test_binary_numeric_arithmetic(binary_data_fixture, op):
     lhs, rhs = binary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
         data=binary_data_fixture,
         expr=op(col(lhs.name()), col(rhs.name())),
         run_kernel=lambda: op(lhs, rhs),
-        resolvable=arithmetic_resolvable(lhs.datatype(), rhs.datatype()),
+        resolvable=binary_numeric_arithmetic_type_validation(lhs.datatype(), rhs.datatype()),
     )
 
 

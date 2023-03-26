@@ -13,7 +13,7 @@ from tests.expressions.typing.conftest import (
 )
 
 
-def comparable_resolvable(lhs: DataType, rhs: DataType) -> bool:
+def comparable_type_validation(lhs: DataType, rhs: DataType) -> bool:
     return is_comparable(lhs) and is_comparable(rhs) and has_supertype(lhs, rhs)
 
 
@@ -24,5 +24,5 @@ def test_comparable(binary_data_fixture, op):
         data=binary_data_fixture,
         expr=op(col(lhs.name()), col(rhs.name())),
         run_kernel=lambda: op(lhs, rhs),
-        resolvable=comparable_resolvable(lhs.datatype(), rhs.datatype()),
+        resolvable=comparable_type_validation(lhs.datatype(), rhs.datatype()),
     )
