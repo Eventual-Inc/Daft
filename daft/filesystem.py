@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -11,6 +12,7 @@ if sys.version_info < (3, 8):
 else:
     from typing import Literal
 
+import string
 from typing import Any
 
 import pyarrow as pa
@@ -73,8 +75,23 @@ def get_filesystem(protocol: str, **kwargs) -> AbstractFileSystem:
 
 def get_protocol_from_path(path: str, **kwargs) -> str:
     split = path.split(":")
-    assert len(split) <= 2, f"too many colons found in {path}"
-    protocol = split[0] if len(split) == 2 else "file"
+    # We need to handle windows os separately since colons are not allowed in a file path
+    if os.name == "nt":
+        # if there is no colon we have a relative path, therefore file protocol
+        if len(split) == 1:
+            protocol = "file"
+        else:
+            # if the first two chars after the colon are "//" then we encountered any protocol
+            if split[1][:2] == "//":
+                protocol = split[0]
+                # if the first part is of length one, we assume it to be the device letter, which can only be a single
+                # letter on windows os.
+            elif len(split[0].lower()) == 1 and split[0].lower() in string.ascii_lowercase:
+                protocol = "file"
+            else:
+                raise AssertionError(f"We encountered a path, that could not be parsed: {path}")
+    else:
+        protocol = split[0] if len(split) == 2 else "file"
     return protocol
 
 
