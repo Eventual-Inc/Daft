@@ -29,7 +29,7 @@ from daft.datasources import (
 )
 from daft.errors import ExpressionTypeError
 from daft.execution.operators import ExpressionType
-from daft.expressions import Expression, ExpressionList, col
+from daft.expressions import Expression, ExpressionList, col, lit
 from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
@@ -915,7 +915,13 @@ class DataFrame:
         float_columns = [
             column for column in columns if column._resolve_type(self.schema()) is PrimitiveExpressionType.float()
         ]
-        return self.where(~reduce(lambda x, y: x | y, (x.is_nan() for x in float_columns)))
+
+        return self.where(
+            ~reduce(
+                lambda x, y: x.is_null().if_else(lit(False), x) | y.is_null().if_else(lit(False), y),
+                (x.is_nan() for x in float_columns),
+            )
+        )
 
     @DataframePublicAPI
     def drop_null(self, *cols: ColumnInputType):
