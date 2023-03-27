@@ -9,6 +9,8 @@ import ray.data
 from daft import DataFrame
 from daft.context import get_context
 
+RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
+
 
 class MyObj:
     def __init__(self, x: int):
@@ -31,7 +33,10 @@ def test_ray_dataset_all_arrow(n_partitions: int):
     df = df.with_column("floatcol", df["intcol"].cast(float))
     ds = df.to_ray_dataset()
 
-    assert ds.dataset_format() == "arrow", "Ray Dataset format should be arrow"
+    if RAY_VERSION >= (2, 2, 0):
+        assert ds.dataset_format() == "arrow", "Ray Dataset format should be arrow"
+    elif RAY_VERSION >= (2, 0, 0):
+        assert ds._dataset_format() == "arrow", "Ray Dataset format should be arrow"
 
     rows = [row for row in ds.iter_rows()]
     assert rows == [
@@ -48,7 +53,10 @@ def test_ray_dataset_with_py(n_partitions: int):
     df = df.with_column("pycol", df["intcol"].apply(lambda x: MyObj(x)))
     ds = df.to_ray_dataset()
 
-    assert ds.dataset_format() == "simple", "Ray Dataset format should be simple because it has Python objects"
+    if RAY_VERSION >= (2, 2, 0):
+        assert ds.dataset_format() == "simple", "Ray Dataset format should be simple because it has Python objects"
+    elif RAY_VERSION >= (2, 0, 0):
+        assert ds._dataset_format() == "simple", "Ray Dataset format should be simple because it has Python objects"
 
     rows = [row for row in ds.iter_rows()]
     assert rows == [
@@ -65,7 +73,14 @@ def test_ray_dataset_with_numpy(n_partitions: int):
     df = df.with_column("npcol", df["intcol"].apply(lambda x: np.ones((x, 3))))
     ds = df.to_ray_dataset()
 
-    assert ds.dataset_format() == "arrow", "Ray Dataset format should be arrow because it uses a Tensor extension type"
+    if RAY_VERSION >= (2, 2, 0):
+        assert (
+            ds.dataset_format() == "arrow"
+        ), "Ray Dataset format should be arrow because it uses a Tensor extension type"
+    elif RAY_VERSION >= (2, 0, 0):
+        assert (
+            ds._dataset_format() == "simple"
+        ), "In old versions of Ray, we drop down to `simple` format because ArrowTensorType is not compatible with ragged tensors"
 
     rows = [dict(row) for row in ds.iter_rows()]
     np.testing.assert_equal(
@@ -82,9 +97,7 @@ def test_ray_dataset_with_numpy(n_partitions: int):
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_from_ray_dataset(n_partitions: int):
     ds = ray.data.range(8)
-    ds = ds.map(lambda i: {"int": i, "np": np.ones((3, 3)), "np_variable": np.ones((i + 1, 3))}).repartition(
-        n_partitions
-    )
+    ds = ds.map(lambda i: {"int": i, "np": np.ones((3, 3))}).repartition(n_partitions)
 
     df = DataFrame.from_ray_dataset(ds)
     np.testing.assert_equal(
@@ -92,6 +105,5 @@ def test_from_ray_dataset(n_partitions: int):
         {
             "int": list(range(8)),
             "np": [np.ones((3, 3)) for i in range(8)],
-            "np_variable": [np.ones((i + 1, 3)) for i in range(8)],
         },
     )

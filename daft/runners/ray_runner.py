@@ -73,6 +73,9 @@ except ImportError:
     _NUMPY_AVAILABLE = False
 
 
+RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
+
+
 @ray.remote
 def _glob_path_into_details_vpartitions(
     path: str, schema: Schema, source_info: SourceInfo | None
@@ -112,7 +115,10 @@ def _make_ray_block_from_vpartition(partition: vPartition) -> RayDatasetBlock:
             raise NotImplementedError(f"Cannot convert column {cname} because it is a scalar literal value")
         if isinstance(tile.block, ArrowDataBlock):
             arrow_data[cname] = tile.block.data
-        elif _NUMPY_AVAILABLE and isinstance(next(iter(tile.block.data), None), np.ndarray):
+        # Only Ray >= 2.2.0 supports variable-shaped ArrowTensorArrays
+        elif (
+            RAY_VERSION >= (2, 2, 0) and _NUMPY_AVAILABLE and isinstance(next(iter(tile.block.data), None), np.ndarray)
+        ):
             arrow_data[cname] = ArrowTensorArray.from_numpy(tile.block.data)
         else:
             break
