@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+import itertools
+
+import pyarrow as pa
+import pytest
+
+from daft.datatype import DataType
+from daft.series import Series
+from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
+
+
+@pytest.mark.parametrize("dtype, size", itertools.product(ARROW_INT_TYPES + ARROW_FLOAT_TYPES, [0, 1, 2, 8, 9, 16]))
+def test_series_numeric_size_bytes(dtype, size) -> None:
+    pydata = list(range(size))
+    data = pa.array(pydata, dtype)
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.from_arrow_type(dtype)
+    assert s.size_bytes() == data.nbytes
+
+    ## with nulls
+    if size > 0:
+        pydata = pydata[:-1] + [None]
+    data = pa.array(pydata, dtype)
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.from_arrow_type(dtype)
+    assert s.size_bytes() == data.nbytes
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
+def test_series_string_size_bytes(size) -> None:
+
+    pydata = list(str(i) for i in range(size))
+    data = pa.array(pydata, pa.large_string())
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.string()
+    assert s.size_bytes() == data.nbytes
+
+    ## with nulls
+    if size > 0:
+        pydata = pydata[:-1] + [None]
+    data = pa.array(pydata, pa.large_string())
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.string()
+    assert s.size_bytes() == data.nbytes
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
+def test_series_boolean_size_bytes(size) -> None:
+
+    pydata = [True if i % 2 else False for i in range(size)]
+
+    data = pa.array(pydata, pa.bool_())
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.bool()
+    assert s.size_bytes() == data.nbytes
+
+    ## with nulls
+    if size > 0:
+        pydata = pydata[:-1] + [None]
+    data = pa.array(pydata, pa.bool_())
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.bool()
+    assert s.size_bytes() == data.nbytes
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
+def test_series_date_size_bytes(size) -> None:
+    from datetime import date
+
+    pydata = [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)]
+    data = pa.array(pydata)
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.date()
+    assert s.size_bytes() == data.nbytes
+
+    ## with nulls
+    if size > 0:
+        pydata = pydata[:-1] + [None]
+    data = pa.array(pydata, pa.date32())
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.date()
+    assert s.size_bytes() == data.nbytes
