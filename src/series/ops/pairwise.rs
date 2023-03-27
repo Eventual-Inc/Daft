@@ -34,8 +34,8 @@ impl Series {
         let mut left_idx = vec![];
         let mut right_idx = vec![];
 
-        for i in 0..lhs.len() {
-            for j in 0..rhs.len() {
+        for i in 0..lhs[0].len() {
+            for j in 0..rhs[0].len() {
                 if comp(i, j).is_eq() {
                     left_idx.push(i as u64);
                     right_idx.push(j as u64);
