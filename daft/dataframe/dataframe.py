@@ -912,14 +912,18 @@ class DataFrame:
         else:
             columns = self.__column_input_to_expression(cols)
         float_columns = [
-            column for column in columns if
-            (column._to_field(self.schema()).dtype == DataType.float32() or column._to_field(self.schema()).dtype == DataType.float64())
+            column
+            for column in columns
+            if (
+                column._to_field(self.schema()).dtype == DataType.float32()
+                or column._to_field(self.schema()).dtype == DataType.float64()
+            )
         ]
 
         return self.where(
             ~reduce(
                 lambda x, y: x.is_null().if_else(lit(False), x) | y.is_null().if_else(lit(False), y),
-                (x.is_nan() for x in float_columns),
+                (x.float.is_nan() for x in float_columns),
             )
         )
 
