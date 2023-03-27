@@ -4,6 +4,7 @@ import itertools
 
 import pytest
 
+from daft import utils
 from daft.datatype import DataType
 from daft.expressions2 import col
 from daft.table import Table
@@ -81,12 +82,98 @@ def test_table_join_mismatch_column() -> None:
         left_table.join(right_table, left_on=[col("x"), col("y")], right_on=[col("a")])
 
 
-def test_table_join_multicolumn() -> None:
-    left_table = Table.from_pydict({"x": [1, 2, 3, 4], "y": [2, 3, 4, 5]})
-    right_table = Table.from_pydict({"a": [1, 2, 3, 4], "b": [2, 3, 4, 5]})
+@pytest.mark.parametrize(
+    "left",
+    [
+        {"a": [], "b": []},
+        {"a": ["apple", "banana"], "b": [3, 4]},
+    ],
+)
+@pytest.mark.parametrize(
+    "right",
+    [
+        {"x": [], "y": []},
+        {"x": ["banana", "apple"], "y": [3, 4]},
+    ],
+)
+def test_table_join_multicolumn_empty_result(left, right) -> None:
+    """Various multicol joins that should all produce an empty result."""
+    left_table = Table.from_pydict(left).eval_expression_list(
+        [col("a").cast(DataType.string()), col("b").cast(DataType.int32())]
+    )
+    right_table = Table.from_pydict(right).eval_expression_list(
+        [col("x").cast(DataType.string()), col("y").cast(DataType.int32())]
+    )
 
-    result = left_table.join(right_table, left_on=[col("x"), col("y")], right_on=[col("a"), col("b")])
-    assert result.to_pydict() == {"x": [1, 2], "y": [2, 3], "a": [1, 2], "b": [2, 3]}
+    result = left_table.join(right_table, left_on=[col("a"), col("b")], right_on=[col("x"), col("y")])
+    assert result.to_pydict() == {"a": [], "b": [], "x": [], "y": []}
+
+
+def test_table_join_multicolumn_nocross() -> None:
+    """A multicol join that should produce two rows and no cross product results.
+
+    Input has duplicate join values and overlapping single-column values,
+    but there should only be two correct matches, both not cross.
+    """
+    left_table = Table.from_pydict(
+        {
+            "a": ["apple", "apple", "banana", "banana", "carrot"],
+            "b": [1, 2, 2, 2, 3],
+            "c": [1, 2, 3, 4, 5],
+        }
+    )
+    right_table = Table.from_pydict(
+        {
+            "x": ["banana", "carrot", "apple", "banana", "apple", "durian"],
+            "y": [1, 3, 2, 1, 3, 6],
+            "z": [1, 2, 3, 4, 5, 6],
+        }
+    )
+
+    result = left_table.join(right_table, left_on=[col("a"), col("b")], right_on=[col("x"), col("y")])
+    assert set(utils.freeze(utils.pydict_to_rows(result.to_pydict()))) == set(
+        utils.freeze(
+            [
+                {"a": "apple", "b": 2, "c": 2, "x": "apple", "y": 2, "z": 3},
+                {"a": "carrot", "b": 3, "c": 5, "x": "carrot", "y": 3, "z": 2},
+            ]
+        )
+    )
+
+
+def test_table_join_multicolumn_cross() -> None:
+    """A multicol join that should produce a cross product and a non-cross product."""
+
+    left_table = Table.from_pydict(
+        {
+            "a": ["apple", "apple", "banana", "banana", "banana"],
+            "b": [1, 0, 1, 1, 1],
+            "c": [1, 2, 3, 4, 5],
+        }
+    )
+    right_table = Table.from_pydict(
+        {
+            "x": ["apple", "apple", "banana", "banana", "banana"],
+            "y": [1, 0, 1, 1, 0],
+            "z": [1, 2, 3, 4, 5],
+        }
+    )
+
+    result = left_table.join(right_table, left_on=[col("a"), col("b")], right_on=[col("x"), col("y")])
+    assert set(utils.freeze(utils.pydict_to_rows(result.to_pydict()))) == set(
+        utils.freeze(
+            [
+                {"a": "apple", "b": 1, "c": 1, "x": "apple", "y": 1, "z": 1},
+                {"a": "apple", "b": 0, "c": 2, "x": "apple", "y": 0, "z": 2},
+                {"a": "banana", "b": 1, "c": 3, "x": "banana", "y": 1, "z": 3},
+                {"a": "banana", "b": 1, "c": 3, "x": "banana", "y": 1, "z": 4},
+                {"a": "banana", "b": 1, "c": 4, "x": "banana", "y": 1, "z": 3},
+                {"a": "banana", "b": 1, "c": 4, "x": "banana", "y": 1, "z": 4},
+                {"a": "banana", "b": 1, "c": 5, "x": "banana", "y": 1, "z": 3},
+                {"a": "banana", "b": 1, "c": 5, "x": "banana", "y": 1, "z": 4},
+            ]
+        )
+    )
 
 
 def test_table_join_no_columns() -> None:
