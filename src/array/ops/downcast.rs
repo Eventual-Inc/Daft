@@ -2,7 +2,7 @@ use arrow2::array;
 
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BooleanArray, DaftNumericType, Utf8Array},
+    datatypes::{BinaryArray, BooleanArray, DaftNumericType, Utf8Array},
 };
 
 impl<T> DataArray<T>
@@ -25,6 +25,13 @@ impl Utf8Array {
 impl BooleanArray {
     // downcasts a DataArray<T> to an Arrow BooleanArray.
     pub fn downcast(&self) -> &array::BooleanArray {
+        self.data().as_any().downcast_ref().unwrap()
+    }
+}
+
+impl BinaryArray {
+    // downcasts a DataArray<T> to an Arrow BinaryArray.
+    pub fn downcast(&self) -> &array::BinaryArray<i64> {
         self.data().as_any().downcast_ref().unwrap()
     }
 }
