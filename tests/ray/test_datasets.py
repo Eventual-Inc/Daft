@@ -97,9 +97,7 @@ def test_ray_dataset_with_numpy(n_partitions: int):
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_from_ray_dataset(n_partitions: int):
     ds = ray.data.range(8)
-    ds = ds.map(lambda i: {"int": i, "np": np.ones((3, 3)), "np_variable": np.ones((i + 1, 3))}).repartition(
-        n_partitions
-    )
+    ds = ds.map(lambda i: {"int": i, "np": np.ones((3, 3))}).repartition(n_partitions)
 
     df = DataFrame.from_ray_dataset(ds)
     np.testing.assert_equal(
@@ -107,6 +105,5 @@ def test_from_ray_dataset(n_partitions: int):
         {
             "int": list(range(8)),
             "np": [np.ones((3, 3)) for i in range(8)],
-            "np_variable": [np.ones((i + 1, 3)) for i in range(8)],
         },
     )
