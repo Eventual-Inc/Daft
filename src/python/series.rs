@@ -152,6 +152,31 @@ impl PySeries {
         }
     }
 
+    pub fn __invert__(&self) -> PyResult<Self> {
+        use std::ops::Not;
+        Ok((&self.series).not()?.into())
+    }
+
+    pub fn _count(&self) -> PyResult<Self> {
+        Ok((self.series).count()?.into())
+    }
+
+    pub fn _sum(&self) -> PyResult<Self> {
+        Ok((self.series).sum()?.into())
+    }
+
+    pub fn _mean(&self) -> PyResult<Self> {
+        Ok((self.series).mean()?.into())
+    }
+
+    pub fn _min(&self) -> PyResult<Self> {
+        Ok((self.series).min()?.into())
+    }
+
+    pub fn _max(&self) -> PyResult<Self> {
+        Ok((self.series).max()?.into())
+    }
+
     pub fn cast(&self, dtype: PyDataType) -> PyResult<Self> {
         Ok(self.series.cast(&dtype.into())?.into())
     }
@@ -203,6 +228,10 @@ impl PySeries {
             .series
             .if_else(&other.series, &predicate.series)?
             .into())
+    }
+
+    pub fn is_null(&self) -> PyResult<Self> {
+        Ok(self.series.is_null()?.into())
     }
 }
 
