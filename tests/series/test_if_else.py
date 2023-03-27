@@ -96,6 +96,28 @@ def test_series_if_else_binary(if_true, if_false) -> None:
 
 
 @pytest.mark.parametrize(
+    ["if_true", "if_false"],
+    [
+        # Same length, same type
+        (pa.array([None, None, None], type=pa.null()), pa.array([None, None, None], type=pa.null())),
+        # Same length, different super-castable type
+        (pa.array([None, None, None], type=pa.null()), pa.array([None, None, None], type=pa.null())),
+        # Broadcast left
+        (pa.array([None], type=pa.null()), pa.array([None, None, None], type=pa.null())),
+        # Broadcast right
+        (pa.array([None, None, None], type=pa.null()), pa.array([None], type=pa.null())),
+    ],
+)
+def test_series_if_else_nulls(if_true, if_false) -> None:
+    if_true_series = Series.from_arrow(if_true)
+    if_false_series = Series.from_arrow(if_false)
+    predicate_series = Series.from_arrow(pa.array([True, False, None]))
+    result = predicate_series.if_else(if_true_series, if_false_series)
+    assert result.datatype() == DataType.null()
+    assert result.to_pylist() == [None for _ in range(len(if_true))]
+
+
+@pytest.mark.parametrize(
     ["predicate_value", "expected_results"], [(True, [1, 1, 1]), (False, [0, 0, 0]), (None, [None, None, None])]
 )
 def test_series_if_else_predicate_broadcast_numeric(predicate_value, expected_results) -> None:
@@ -143,6 +165,19 @@ def test_series_if_else_predicate_broadcast_binary(predicate_value, expected_res
     predicate_series = Series.from_arrow(pa.array([predicate_value], type=pa.bool_()))
     result = predicate_series.if_else(if_true_series, if_false_series)
     assert result.datatype() == DataType.binary()
+    assert result.to_pylist() == expected_results
+
+
+@pytest.mark.parametrize(
+    ["predicate_value", "expected_results"],
+    [(True, [None, None, None]), (False, [None, None, None]), (None, [None, None, None])],
+)
+def test_series_if_else_predicate_broadcast_null(predicate_value, expected_results) -> None:
+    if_true_series = Series.from_arrow(pa.array([None, None, None], type=pa.null()))
+    if_false_series = Series.from_arrow(pa.array([None, None, None], type=pa.null()))
+    predicate_series = Series.from_arrow(pa.array([predicate_value], type=pa.bool_()))
+    result = predicate_series.if_else(if_true_series, if_false_series)
+    assert result.datatype() == DataType.null()
     assert result.to_pylist() == expected_results
 
 
