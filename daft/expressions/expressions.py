@@ -39,6 +39,10 @@ class Expression:
     def dt(self) -> ExpressionDatetimeNamespace:
         return ExpressionDatetimeNamespace.from_expression(self)
 
+    @property
+    def float(self) -> ExpressionFloatNamespace:
+        return ExpressionFloatNamespace.from_expression(self)
+
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)
@@ -257,6 +261,11 @@ class ExpressionNamespace:
         ns = cls.__new__(cls)
         ns._expr = expr._expr
         return ns
+
+
+class ExpressionFloatNamespace(ExpressionNamespace):
+    def is_nan(self) -> Expression:
+        raise NotImplementedError("[RUST-INT] Implement float is_nan expression")
 
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
