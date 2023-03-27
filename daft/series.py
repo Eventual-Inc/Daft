@@ -195,6 +195,10 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series <= other._series)
 
+    def __invert__(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.__invert__())
+
     def __and__(self, other: object) -> Series:
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")
@@ -213,6 +217,26 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)
 
+    def _count(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series._count())
+
+    def _min(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series._min())
+
+    def _max(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series._max())
+
+    def _mean(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series._mean())
+
+    def _sum(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series._sum())
+
     def if_else(self, if_true: object, if_false: object) -> Series:
         if not isinstance(if_true, Series):
             raise ValueError(f"expected another Series but got {type(if_true)}")
@@ -221,6 +245,10 @@ class Series:
         assert self._series is not None and if_true._series is not None and if_false._series is not None
         # NOTE: Rust Series has a different ordering for if_else because of better static typing
         return Series._from_pyseries(if_true._series.if_else(if_false._series, self._series))
+
+    def is_null(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.is_null())
 
     @property
     def str(self) -> SeriesStringNamespace:
