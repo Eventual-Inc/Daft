@@ -59,7 +59,7 @@ def binary_data_fixture(request) -> tuple[Series, Series]:
     params=ALL_DTYPES,
     ids=[f"{dt}" for (dt, _) in ALL_DTYPES],
 )
-def unary_data_fixture(request) -> tuple[Series, Series]:
+def unary_data_fixture(request) -> Series:
     """Returns unary permutation of Series' of all DataType pairs"""
     (dt, data) = request.param
     s = Series.from_arrow(data, name="arg")
