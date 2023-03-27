@@ -567,18 +567,6 @@ def _should_truncate_chunk(arr: pa.Array) -> bool:
     return arr.get_total_buffer_size() > (arr.nbytes * 1.1)
 
 
-def _get_arrow_array_estimated_nbytes(arr: pa.Array) -> float:
-    """Returns the estimated number of bytes required to represent all elements of this Array
-
-    Unfortunately, `pa.Array.nbytes` was only introduced in Arrow>=7.0.0, and prior to that its behavior was
-    actually the behavior of the API `pa.Array.get_total_buffer_size()` that was introduced in Arrow 7.0.0.
-
-    To ensure consistent behavior across Arrow versions, we implement our own estimated_nbytes API here. This is
-    a very
-    """
-    return ((arr.type.bit_width) / 8) * len(arr)
-
-
 class ArrowDataBlock(DataBlock[ArrowArrType]):
     def __init__(self, data: ArrowArrType) -> None:
         assert not pa.types.is_nested(
