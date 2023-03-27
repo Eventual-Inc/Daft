@@ -31,9 +31,9 @@ ALL_DTYPES = [
     (DataType.string(), pa.array(["1", "2", "3"], type=pa.string())),
     (DataType.bool(), pa.array([True, False, None], type=pa.bool_())),
     (DataType.null(), pa.array([None, None, None], type=pa.null())),
+    (DataType.binary(), pa.array([b"1", b"2", None], type=pa.binary())),
     # TODO: [RUST-INT][TYPING] Enable and perform fixes for these types
     # (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
-    # (DataType.binary(), pa.array([b"1", b"2", None], type=pa.binary())),
 ]
 
 ALL_DATATYPES_BINARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=2))
@@ -139,6 +139,7 @@ def is_comparable(dt: DataType):
         or dt == DataType.string()
         or dt == DataType.null()
         or dt == DataType.date()
+        or dt == DataType.binary()
     )
 
 
