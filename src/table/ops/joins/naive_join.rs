@@ -22,8 +22,5 @@ pub(super) fn naive_inner_join(left: &Table, right: &Table) -> DaftResult<(Serie
         let right_series = right.get_column_by_index(0)?;
         return left_series.pairwise_equal(right_series);
     }
-
-    Err(DaftError::ValueError(
-        "Multicolumn naive join not implemented".to_string(),
-    ))
+    Series::pairwise_multi_equal(left.columns.as_slice(), right.columns.as_slice())
 }

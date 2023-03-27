@@ -21,11 +21,20 @@ pub fn build_multi_array_compare(
     arrays: &[Series],
     descending: &[bool],
 ) -> DaftResult<DynComparator> {
-    let mut cmp_list = Vec::with_capacity(arrays.len());
-    for (s, desc) in arrays.iter().zip(descending.iter()) {
+    build_multi_array_bicompare(arrays, arrays, descending)
+}
+
+pub fn build_multi_array_bicompare(
+    left: &[Series],
+    right: &[Series],
+    descending: &[bool],
+) -> DaftResult<DynComparator> {
+    let mut cmp_list = Vec::with_capacity(left.len());
+
+    for ((l, r), desc) in left.iter().zip(right.iter()).zip(descending.iter()) {
         cmp_list.push(build_compare_with_nulls(
-            s.array().data(),
-            s.array().data(),
+            l.array().data(),
+            r.array().data(),
             *desc,
         )?);
     }
