@@ -107,6 +107,7 @@ macro_rules! with_match_physical_daft_types {(
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
+    #[allow(unused_imports)]
     use $crate::datatypes::*;
 
     match $key_type {
