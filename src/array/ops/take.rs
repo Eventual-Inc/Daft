@@ -174,7 +174,8 @@ impl BinaryArray {
         let val = self.get(idx);
         match val {
             None => Ok("None".to_string()),
-            // TODO: proper display of bytes as string here
+            // TODO: [RUST-INT] proper display of bytes as string here, preferably similar to how Python displays it
+            // See discussion: https://stackoverflow.com/questions/54358833/how-does-bytes-repr-representation-work
             Some(v) => Ok(format!("b\"{:?}\"", v)),
         }
     }
