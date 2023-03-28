@@ -9,7 +9,7 @@ from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES + ARROW_STRING_TYPES)
-def test_series_take_numeric(dtype) -> None:
+def test_series_take(dtype) -> None:
     data = pa.array([1, 2, 3, None, 5, None])
 
     s = Series.from_arrow(data.cast(dtype))
@@ -38,3 +38,19 @@ def test_series_date_take() -> None:
     taken = s.take(Series.from_pylist([5, 4, 3, 2, 1, 0]))
     assert taken.datatype() == DataType.date()
     assert taken.to_pylist() == days[::-1]
+
+
+def test_series_binary_take() -> None:
+    data = pa.array([b"1", b"2", b"3", None, b"5", None])
+
+    s = Series.from_arrow(data)
+    pyidx = [2, 0, None, 5]
+    idx = Series.from_pylist(pyidx)
+
+    result = s.take(idx)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 4
+
+    original_data = s.to_pylist()
+    expected = [original_data[i] if i is not None else None for i in pyidx]
+    assert result.to_pylist() == expected
