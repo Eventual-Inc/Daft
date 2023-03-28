@@ -125,6 +125,13 @@ impl AggExpr {
             }
             Min(expr) | Max(expr) => {
                 let field = expr.to_field(schema)?;
+                // TODO: [ISSUE-688] Make Binary type comparable
+                if field.dtype == DataType::Binary {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot get min/max of Binary type: {:?}",
+                        field
+                    )));
+                }
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
         }
@@ -240,6 +247,15 @@ impl Expr {
                     | Operator::NotEq
                     | Operator::LtEq
                     | Operator::GtEq => {
+                        // TODO: [ISSUE-688] Make Binary type comparable
+                        if left_field.dtype == DataType::Binary
+                            || right_field.dtype == DataType::Binary
+                        {
+                            return Err(DaftError::TypeError(format!(
+                                "Binary types cannot be compared: {:?} {op} {:?}",
+                                left_field, right_field
+                            )));
+                        }
                         match try_get_supertype(&left_field.dtype, &right_field.dtype) {
                             Ok(_) => Ok(Field::new(
                                 left.to_field(schema)?.name.as_str(),
@@ -249,17 +265,20 @@ impl Expr {
                         }
                     }
 
-                    // Plus operation: special-cased as it has semantic meaning for string types
+                    // Plus operation: special-cased as it has semantic meaning for some other types
                     Operator::Plus => {
-                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
-                            Ok(supertype) => Ok(Field::new(
-                                left.to_field(schema)?.name.as_str(),
-                                supertype,
-                            )),
-                            Err(_) if left_field.dtype == DataType::Utf8 => Err(DaftError::TypeError(format!("Expected right argument to {op} to be castable to string for string concatenation, but received {:?}", right_field))),
-                            Err(_) if right_field.dtype == DataType::Utf8 => Err(DaftError::TypeError(format!("Expected left argument to {op} to be castable to string for string concatenation, but received {:?}", left_field))),
-                            Err(_) => Err(DaftError::TypeError(format!("Expected left and right arguments to both be numeric for {op}, but received {:?} and {:?}", right_field, left_field))),
+                        let (lhs, rhs) = (&left_field.dtype, &right_field.dtype);
+                        for dt in [lhs, rhs] {
+                            if !(dt.is_numeric()
+                                || dt.eq(&DataType::Utf8)
+                                || dt.eq(&DataType::Boolean)
+                                || dt.eq(&DataType::Null))
+                            {
+                                return Err(DaftError::TypeError(format!("Expected left and right arguments to both be numeric for {op}, but received {:?} and {:?}", right_field, left_field)));
+                            }
                         }
+                        let supertype = try_get_supertype(lhs, rhs)?;
+                        Ok(Field::new(left.to_field(schema)?.name.as_str(), supertype))
                     }
 
                     // True divide operation
