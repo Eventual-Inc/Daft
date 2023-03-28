@@ -139,7 +139,6 @@ def is_comparable(dt: DataType):
         or dt == DataType.string()
         or dt == DataType.null()
         or dt == DataType.date()
-        or dt == DataType.binary()
     )
 
 

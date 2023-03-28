@@ -125,6 +125,13 @@ impl AggExpr {
             }
             Min(expr) | Max(expr) => {
                 let field = expr.to_field(schema)?;
+                // TODO: [ISSUE-688] Make Binary type comparable
+                if field.dtype == DataType::Binary {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot get min/max of Binary type: {:?}",
+                        field
+                    )));
+                }
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
         }
@@ -240,6 +247,15 @@ impl Expr {
                     | Operator::NotEq
                     | Operator::LtEq
                     | Operator::GtEq => {
+                        // TODO: [ISSUE-688] Make Binary type comparable
+                        if left_field.dtype == DataType::Binary
+                            || right_field.dtype == DataType::Binary
+                        {
+                            return Err(DaftError::TypeError(format!(
+                                "Binary types cannot be compared: {:?} {op} {:?}",
+                                left_field, right_field
+                            )));
+                        }
                         match try_get_supertype(&left_field.dtype, &right_field.dtype) {
                             Ok(_) => Ok(Field::new(
                                 left.to_field(schema)?.name.as_str(),
