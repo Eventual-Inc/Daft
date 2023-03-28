@@ -47,7 +47,7 @@ impl Series {
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         let s = self.as_physical()?;
-        with_match_comparable_daft_types!(s.data_type(), |$T| {
+        with_match_physical_daft_types!(s.data_type(), |$T| {
             s.downcast::<$T>()?.str_value(idx)
         })
     }
