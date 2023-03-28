@@ -98,7 +98,6 @@ def test_tpch_q4(tmp_path, check_answer, get_df):
     check_answer(daft_pd_df, 4, tmp_path)
 
 
-@pytest.mark.skip(reason="[RUST-INT][TPCH] Multi-col joins not implemented")
 def test_tpch_q5(tmp_path, check_answer, get_df):
     daft_df = answers.q5(get_df)
     daft_pd_df = daft_df.to_pandas()
@@ -123,7 +122,6 @@ def test_tpch_q8(tmp_path, check_answer, get_df):
     check_answer(daft_pd_df, 8, tmp_path)
 
 
-@pytest.mark.skip(reason="[RUST-INT][TPCH] Multi-col joins not implemented")
 def test_tpch_q9(tmp_path, check_answer, get_df):
     daft_df = answers.q9(get_df)
     daft_pd_df = daft_df.to_pandas()
