@@ -4,7 +4,7 @@ import pytest
 
 from daft.dataframe import DataFrame
 from tests.conftest import assert_df_equals
-from tests_legacy.dataframe_cookbook.conftest import SERVICE_REQUESTS_CSV
+from tests.cookbook.conftest import SERVICE_REQUESTS_CSV
 
 
 def test_parquet_write(tmp_path):

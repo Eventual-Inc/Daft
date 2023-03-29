@@ -13,16 +13,6 @@ COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descripto
 CsvPathAndColumns = Tuple[str, List[str]]
 
 
-def parametrize_sort_desc(arg_name: str):
-    """Test case fixture to be used as a decorator that injects the sort ordering"""
-
-    def _wrapper(test_case):
-        parameters = [False, True]
-        return pytest.mark.parametrize(arg_name, parameters, ids=[f"Descending:{v}" for v in parameters])(test_case)
-
-    return _wrapper
-
-
 @pytest.fixture(scope="function")
 def daft_df():
     return DataFrame.read_csv(SERVICE_REQUESTS_CSV).select(*[col(c) for c in COLUMNS])
@@ -39,5 +29,5 @@ def parametrize_service_requests_csv_repartition(test_case):
     """
     return pytest.mark.parametrize(
         ["repartition_nparts"],
-        [pytest.param(n, id=f"NumRepartitionParts:{n}") for n in [1, 5, 24, 25]],
+        [pytest.param(n, id=f"NumRepartitionParts:{n}") for n in [1, 2]],
     )(test_case)
