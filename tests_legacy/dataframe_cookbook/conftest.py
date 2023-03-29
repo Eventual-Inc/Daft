@@ -7,7 +7,7 @@ import pytest
 
 from daft.dataframe import DataFrame
 from daft.expressions import col
-from tests.assets.assets import SERVICE_REQUESTS_CSV
+from tests_legacy.assets.assets import SERVICE_REQUESTS_CSV
 
 COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
 CsvPathAndColumns = Tuple[str, List[str]]
