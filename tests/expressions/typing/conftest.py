@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import itertools
 import sys
 
@@ -32,8 +33,7 @@ ALL_DTYPES = [
     (DataType.bool(), pa.array([True, False, None], type=pa.bool_())),
     (DataType.null(), pa.array([None, None, None], type=pa.null())),
     (DataType.binary(), pa.array([b"1", b"2", None], type=pa.binary())),
-    # TODO: [RUST-INT][TYPING] Enable and perform fixes for these types
-    # (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
+    (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
 ]
 
 ALL_DATATYPES_BINARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=2))
@@ -161,10 +161,11 @@ def has_supertype(dt1: DataType, dt2: DataType) -> bool:
         both_numeric = (is_numeric(x) and is_numeric(y)) or ((x == DataType.bool()) and is_numeric(y))
         both_temporal = is_temporal(x) and is_temporal(y)
 
+        # DISABLE FOR NOW: Should we allow this?
         # --- Across type hierarchies ---
-        temporal_and_numeric = is_temporal(x) and is_numeric(y)
+        # temporal_and_numeric = is_temporal(x) and is_numeric(y)
 
-        if either_null or either_string_and_other_not_binary or both_numeric or both_temporal or temporal_and_numeric:
+        if either_null or either_string_and_other_not_binary or both_numeric or both_temporal:
             return True
 
     return False
