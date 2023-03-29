@@ -4,12 +4,15 @@ import contextlib
 import io
 import pathlib
 from typing import IO, Iterator, Union
+from uuid import uuid4
 
 import pyarrow as pa
 from pyarrow import csv as pacsv
+from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
 
+from daft.expressions import ExpressionsProjection
 from daft.filesystem import get_filesystem_from_path
 from daft.runners.partitioning import (
     vPartitionParseCSVOptions,
@@ -169,17 +172,70 @@ def read_csv(
 
 def write_csv(
     table: Table,
+    path: str | pathlib.Path,
     compression: str | None = None,
+    partition_cols: ExpressionsProjection | None = None,
 ) -> list[str]:
-    raise NotImplementedError(
-        "[RUST-INT] Implement tableio writes (will require some refactoring work to integrate with DataFrame writes)"
+    return _to_file(
+        table=table,
+        file_format="csv",
+        path=path,
+        partition_cols=partition_cols,
+        compression=compression,
     )
 
 
 def write_parquet(
     table: Table,
+    path: str | pathlib.Path,
+    compression: str | None = None,
+    partition_cols: ExpressionsProjection | None = None,
+) -> list[str]:
+    return _to_file(
+        table=table,
+        file_format="parquet",
+        path=path,
+        partition_cols=partition_cols,
+        compression=compression,
+    )
+
+
+def _to_file(
+    table: Table,
+    file_format: str,
+    path: str | pathlib.Path,
+    partition_cols: ExpressionsProjection | None = None,
     compression: str | None = None,
 ) -> list[str]:
-    raise NotImplementedError(
-        "[RUST-INT] Implement tableio write (will require some refactoring work to integrate with DataFrame writes)"
+    partition_cols = partition_cols or ExpressionsProjection([])
+
+    arrow_table = table.to_arrow()
+
+    if file_format == "parquet":
+        format = pads.ParquetFileFormat()
+        opts = format.make_write_options(compression=compression)
+    elif file_format == "csv":
+        format = pads.CsvFileFormat()
+        opts = None
+        assert compression is None
+    else:
+        raise ValueError(f"Unsupported file format {file_format}")
+
+    visited_paths = []
+
+    def file_visitor(written_file):
+        visited_paths.append(written_file.path)
+
+    pads.write_dataset(
+        arrow_table,
+        base_dir=path,
+        basename_template=str(uuid4()) + "-{i}." + format.default_extname,
+        format=format,
+        partitioning=[e.name() for e in partition_cols],
+        file_options=opts,
+        file_visitor=file_visitor,
+        use_threads=False,
+        existing_data_behavior="overwrite_or_ignore",
     )
+
+    return visited_paths

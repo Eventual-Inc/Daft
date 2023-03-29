@@ -89,12 +89,16 @@ class LogicalPartitionOpRunner:
         if file_write._storage_type == StorageType.PARQUET:
             file_names = table_io.write_parquet(
                 inputs[child_id],
+                path=file_write._root_dir,
                 compression=file_write._compression,
+                partition_cols=file_write._partition_cols,
             )
         else:
             file_names = table_io.write_csv(
                 inputs[child_id],
+                path=file_write._root_dir,
                 compression=file_write._compression,
+                partition_cols=file_write._partition_cols,
             )
 
         output_schema = file_write.schema()
