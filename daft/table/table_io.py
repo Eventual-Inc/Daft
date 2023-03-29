@@ -12,7 +12,7 @@ from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
 
-from daft.expressions2.expressions import ExpressionsProjection
+from daft.expressions import ExpressionsProjection
 from daft.filesystem import get_filesystem_from_path
 from daft.runners.partitioning import (
     vPartitionParseCSVOptions,
