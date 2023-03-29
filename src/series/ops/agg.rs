@@ -60,16 +60,30 @@ impl Series {
     pub fn min(&self) -> DaftResult<Series> {
         use crate::array::ops::DaftCompareAggable;
 
-        with_match_comparable_daft_types!(self.data_type(), |$T| {
-            Ok(DaftCompareAggable::min(&self.downcast::<$T>()?)?.into_series())
-        })
+        let s = self.as_physical()?;
+
+        let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
+            DaftCompareAggable::min(&s.downcast::<$T>()?)?.into_series()
+        });
+
+        if result.data_type() != self.data_type() {
+            return result.cast(self.data_type());
+        }
+        Ok(result)
     }
 
     pub fn max(&self) -> DaftResult<Series> {
         use crate::array::ops::DaftCompareAggable;
 
-        with_match_comparable_daft_types!(self.data_type(), |$T| {
-            Ok(DaftCompareAggable::max(&self.downcast::<$T>()?)?.into_series())
-        })
+        let s = self.as_physical()?;
+
+        let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
+            DaftCompareAggable::max(&s.downcast::<$T>()?)?.into_series()
+        });
+
+        if result.data_type() != self.data_type() {
+            return result.cast(self.data_type());
+        }
+        Ok(result)
     }
 }

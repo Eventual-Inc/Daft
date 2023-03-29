@@ -55,7 +55,7 @@ where
 
         if !dtype.is_arrow() || !self.data_type().is_arrow() {
             return Err(DaftError::TypeError(format!(
-                "can not cast {:?} to type: {:?}",
+                "Can not cast {:?} to type: {:?}: not convertible to Arrow",
                 T::get_dtype(),
                 dtype
             )));
@@ -65,7 +65,7 @@ where
         let target_arrow_type = dtype.to_arrow()?;
         if !can_cast_types(&self_arrow_type, &target_arrow_type) {
             return Err(DaftError::TypeError(format!(
-                "can not cast {:?} to type: {:?}",
+                "can not cast {:?} to type: {:?}: Arrow types not castable",
                 T::get_dtype(),
                 dtype
             )));

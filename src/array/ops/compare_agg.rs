@@ -93,3 +93,26 @@ impl DaftCompareAggable for &DataArray<NullType> {
         Self::min(self)
     }
 }
+
+impl DaftCompareAggable for &DataArray<DateType> {
+    type Output = DaftResult<DataArray<DateType>>;
+
+    fn min(&self) -> Self::Output {
+        let arrow_array: &arrow2::array::PrimitiveArray<i32> =
+            self.data().as_any().downcast_ref().unwrap();
+
+        let result = arrow2::compute::aggregate::min_primitive(arrow_array);
+        let res_arrow_array = arrow2::array::PrimitiveArray::<i32>::from([result]);
+
+        DataArray::new(self.field.clone(), Arc::new(res_arrow_array))
+    }
+    fn max(&self) -> Self::Output {
+        let arrow_array: &arrow2::array::PrimitiveArray<i32> =
+            self.data().as_any().downcast_ref().unwrap();
+
+        let result = arrow2::compute::aggregate::max_primitive(arrow_array);
+        let res_arrow_array = arrow2::array::PrimitiveArray::<i32>::from([result]);
+
+        DataArray::new(self.field.clone(), Arc::new(res_arrow_array))
+    }
+}
