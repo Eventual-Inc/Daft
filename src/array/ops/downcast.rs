@@ -1,8 +1,9 @@
+use arrow2;
 use arrow2::array;
 
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BinaryArray, BooleanArray, DaftNumericType, Utf8Array},
+    datatypes::{BinaryArray, BooleanArray, DaftNumericType, DateArray, Utf8Array},
 };
 
 impl<T> DataArray<T>
@@ -32,6 +33,13 @@ impl BooleanArray {
 impl BinaryArray {
     // downcasts a DataArray<T> to an Arrow BinaryArray.
     pub fn downcast(&self) -> &array::BinaryArray<i64> {
+        self.data().as_any().downcast_ref().unwrap()
+    }
+}
+
+impl DateArray {
+    // downcasts a DataArray<T> to an Arrow DateArray.
+    pub fn downcast(&self) -> &array::PrimitiveArray<i32> {
         self.data().as_any().downcast_ref().unwrap()
     }
 }
