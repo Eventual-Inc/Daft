@@ -319,7 +319,7 @@ test_table_count_cases = [
 def test_table_count(idx_dtype, case) -> None:
     input, expected = case
     if idx_dtype == DataType.date():
-        input = [datetime.datetime.utcfromtimestamp(_) if _ is not None else None for _ in input]
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
     daft_table = Table.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
     daft_table = daft_table.eval_expression_list([col("input").alias("count")._count()])
