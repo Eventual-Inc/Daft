@@ -118,8 +118,12 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
             (Float64, Float32) => Some(Float64),
 
+            (Date, UInt8) => Some(Int64),
+            (Date, UInt16) => Some(Int64),
             (Date, UInt32) => Some(Int64),
             (Date, UInt64) => Some(Int64),
+            (Date, Int8) => Some(Int32),
+            (Date, Int16) => Some(Int32),
             (Date, Int32) => Some(Int32),
             (Date, Int64) => Some(Int64),
             (Date, Float32) => Some(Float32),
