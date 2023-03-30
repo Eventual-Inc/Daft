@@ -207,9 +207,26 @@ def _to_file(
     partition_cols: ExpressionsProjection | None = None,
     compression: str | None = None,
 ) -> list[str]:
-    partition_cols = partition_cols or ExpressionsProjection([])
-
     arrow_table = table.to_arrow()
+
+    partitioning = [e.name() for e in (partition_cols or [])]
+    if partitioning:
+        # In partition cols, downcast large_string to string,
+        # since pyarrow.dataset.write_dataset breaks for large_string partitioning columns.
+        downcasted_schema = pa.schema(
+            [
+                pa.field(
+                    name=field.name,
+                    type=pa.string(),
+                    nullable=field.nullable,
+                    metadata=field.metadata,
+                )
+                if field.name in partitioning and field.type == pa.large_string()
+                else field
+                for field in arrow_table.schema
+            ]
+        )
+        arrow_table = arrow_table.cast(downcasted_schema)
 
     if file_format == "parquet":
         format = pads.ParquetFileFormat()
@@ -231,7 +248,7 @@ def _to_file(
         base_dir=path,
         basename_template=str(uuid4()) + "-{i}." + format.default_extname,
         format=format,
-        partitioning=[e.name() for e in partition_cols],
+        partitioning=partitioning,
         file_options=opts,
         file_visitor=file_visitor,
         use_threads=False,
