@@ -1,112 +1,229 @@
 from __future__ import annotations
 
+import random
+from uuid import uuid4
+
 import numpy as np
 import pytest
 
 from daft import DataFrame
 
 
-@pytest.mark.benchmark(group="join")
-def test_join_groupby_agg_sort_limit(benchmark) -> None:
-    """Hash Join where RHS has no projection
+@pytest.mark.benchmark(group="joins")
+@pytest.mark.parametrize(
+    "num_samples, num_partitions",
+    [(10_000, 1), (10_000, 100)],
+    ids=["10_000/1", "10_000/100"],
+)
+def test_join_simple(benchmark, num_samples, num_partitions) -> None:
+    """Test simple join performance.
 
-    Adapted from: https://github.com/duckdb/duckdb/blob/master/benchmark/micro/join/hashjoin_benno_norhsfetch.benchmark
+    Keys are consecutive integers; no data payload; one-to-one matches.
     """
-    num_samples = 1_000_000
-    word_df = DataFrame.from_pydict(
+
+    left_arr = np.arange(num_samples)
+    np.random.shuffle(left_arr)
+    right_arr = np.arange(num_samples)
+    np.random.shuffle(right_arr)
+
+    left_table = DataFrame.from_pydict(
         {
-            "a": np.arange(num_samples, dtype=np.int64) % 5000,
-            "b": np.arange(num_samples, dtype=np.int64) % 15000,
+            "mycol": left_arr,
         }
-    ).collect()
+    ).into_partitions(num_partitions)
+    right_table = DataFrame.from_pydict(
+        {
+            "mycol": right_arr,
+        }
+    ).into_partitions(num_partitions)
 
+    # Run the benchmark.
     def bench_join() -> DataFrame:
-        return (
-            word_df.join(
-                word_df,
-                on="b",
-            )
-            .groupby("a")
-            .agg([(word_df["a"].alias("a_sum"), "sum")])
-            .sort(
-                "a_sum",
-                desc=True,
-            )
-            .limit(10)
-            .collect()
-        )
+        return left_table.join(right_table, on=["mycol"])
 
     result = benchmark(bench_join)
-    assert result.to_pydict() == {
-        "a": [4999, 4998, 4997, 4996, 4995, 4994, 4993, 4992, 4991, 4990],
-        "a_sum": [
-            66656666,
-            66643332,
-            66629998,
-            66616664,
-            66603330,
-            66589996,
-            66576662,
-            66563328,
-            66549994,
-            66536660,
-        ],
+
+    # Make sure the result is correct.
+    assert (result.sort("mycol").to_pandas()["mycol"].to_numpy() == np.arange(num_samples)).all()
+
+
+@pytest.mark.benchmark(group="joins")
+@pytest.mark.parametrize(
+    "num_samples, num_partitions",
+    [(10_000, 1), (10_000, 100)],
+    ids=["10_000/1", "10_000/100"],
+)
+def test_join_largekey(benchmark, num_samples, num_partitions) -> None:
+    """Test the impact of string keys vs integer keys."""
+
+    keys = [str(uuid4()) for _ in range(num_samples)]
+
+    left_keys = keys.copy()
+    random.shuffle(left_keys)
+    right_keys = keys.copy()
+    random.shuffle(right_keys)
+
+    left_table = DataFrame.from_pydict(
+        {
+            "mycol": left_keys,
+        }
+    ).into_partitions(num_partitions)
+    right_table = DataFrame.from_pydict(
+        {
+            "mycol": right_keys,
+        }
+    ).into_partitions(num_partitions)
+
+    # Run the benchmark.
+    def bench_join() -> DataFrame:
+        return left_table.join(right_table, on=["mycol"])
+
+    result = benchmark(bench_join)
+
+    # Make sure the result is correct.
+    result_keys = result.to_pydict()["mycol"]
+    result_keys.sort()
+    keys.sort()
+    assert result_keys == keys
+
+
+@pytest.mark.benchmark(group="joins")
+@pytest.mark.parametrize(
+    "num_samples, num_partitions",
+    [(10_000, 1), (10_000, 100)],
+    ids=["10_000/1", "10_000/100"],
+)
+def test_join_withdata(benchmark, num_samples, num_partitions) -> None:
+    """Test the impact of data payloads."""
+
+    left_arr = np.arange(num_samples)
+    np.random.shuffle(left_arr)
+    right_arr = np.arange(num_samples)
+    np.random.shuffle(right_arr)
+
+    long_A = "A" * 1024
+    long_B = "B" * 1024
+
+    left_table = DataFrame.from_pydict(
+        {
+            "mykey": left_arr,
+            "left_data": [long_A for _ in range(num_samples)],
+        }
+    ).into_partitions(num_partitions)
+    right_table = DataFrame.from_pydict(
+        {
+            "mykey": right_arr,
+            "right_data": [long_B for _ in range(num_samples)],
+        }
+    ).into_partitions(num_partitions)
+
+    # Run the benchmark.
+    def bench_join() -> DataFrame:
+        return left_table.join(right_table, on=["mykey"])
+
+    result = benchmark(bench_join)
+
+    # Make sure the result is correct.
+    assert (result.sort("mykey").to_pandas()["mykey"].to_numpy() == np.arange(num_samples)).all()
+    assert result.groupby("left_data", "right_data").agg([("mykey", "count")]).to_pydict() == {
+        "left_data": [long_A],
+        "right_data": [long_B],
+        "mykey": [num_samples],
     }
 
 
-@pytest.mark.benchmark(group="join")
-def test_join_rhs_high_cardinality(benchmark) -> None:
-    """Hash Join where RHS has high cardinality
+@pytest.mark.benchmark(group="joins")
+@pytest.mark.parametrize(
+    "left_bigger",
+    [True, False],
+    ids=["left_bigger", "right_bigger"],
+)
+@pytest.mark.parametrize("num_partitions", [1, 10], ids=["1part", "10part"])
+def test_broadcast_join(benchmark, left_bigger, num_partitions) -> None:
+    """Test the performance of joining a smaller table to a bigger table.
 
-    Adapted from: https://github.com/duckdb/duckdb/blob/master/benchmark/micro/join/hashjoin_highcardinality.benchmark
+    The cardinality is one-to-many.
     """
-    lhs = DataFrame.from_pydict({"v1": np.arange(1000), "v2": np.arange(1000)})
-    rhs = DataFrame.from_pydict({"v1": np.arange(10_000_000), "v2": np.arange(10_000_000)})
 
+    small_length = 1_000
+    big_factor = 10
+
+    small_arr = np.arange(small_length)
+    np.random.shuffle(small_arr)
+
+    big_arr = np.concatenate([np.arange(small_length) for _ in range(big_factor)])
+    np.random.shuffle(big_arr)
+
+    small_table = DataFrame.from_pydict(
+        {
+            "keys": small_arr,
+            "data": [str(x) for x in small_arr],
+        }
+    )
+    big_table = DataFrame.from_pydict(
+        {
+            "keys": big_arr,
+        }
+    ).into_partitions(num_partitions)
+
+    # Run the benchmark.
     def bench_join() -> DataFrame:
-        return lhs.join(rhs, on="v1").groupby("v2", "right.v2").count().sort("v2").limit(5).collect()
+        if left_bigger:
+            return big_table.join(small_table, on=["keys"])
+        else:
+            return small_table.join(big_table, on=["keys"])
 
     result = benchmark(bench_join)
-    assert result.to_pydict() == {"v1": [1, 1, 1, 1, 1], "v2": [0, 1, 2, 3, 4], "right.v2": [0, 1, 2, 3, 4]}
+
+    # Make sure the result is correct.
+    data = result.sort("keys").to_pydict()["data"]
+    assert data[:big_factor] == ["0"] * big_factor
+    assert data[-big_factor:] == [str(small_length - 1)] * big_factor
 
 
-@pytest.mark.benchmark(group="join")
-def test_join_lhs_arithmetic(benchmark) -> None:
-    """Hash Join where LHS performs if_else operation
+@pytest.mark.benchmark(group="joins")
+@pytest.mark.parametrize(
+    "num_samples, num_partitions",
+    [(10_000, 1), (10_000, 100)],
+    ids=["10_000/1", "10_000/100"],
+)
+@pytest.mark.parametrize("num_columns", [1, 4])
+def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions) -> None:
+    """Evaluate the performance impact of using additional columns in the join.
 
-    Adapted from: https://github.com/duckdb/duckdb/blob/master/benchmark/micro/join/hashjoin_lhsarithmetic.benchmark
+    The join cardinality is the same for all cases;
+    redundant columns are used for the multicolumn joins.
     """
-    lhs = DataFrame.from_pydict({"v1": np.arange(10_000), "v2": np.arange(10_000)})
-    rhs = DataFrame.from_pydict({"v1": np.arange(10_000_000), "v2": np.arange(10_000_000)})
 
+    left_arr = np.arange(num_samples)
+    np.random.shuffle(left_arr)
+    right_arr = np.arange(num_samples)
+    np.random.shuffle(right_arr)
+
+    left_table = DataFrame.from_pydict(
+        {
+            "nums_5": left_arr % 5,
+            "nums_3": left_arr % 3,
+            "nums_2": left_arr % 2,
+            "nums": left_arr,
+        }
+    ).into_partitions(num_partitions)
+    right_table = DataFrame.from_pydict(
+        {
+            "nums_5": right_arr % 5,
+            "nums_3": right_arr % 3,
+            "nums_2": right_arr % 2,
+            "nums": right_arr,
+        }
+    ).into_partitions(num_partitions)
+
+    # Run the benchmark.
     def bench_join() -> DataFrame:
-        return (
-            lhs.join(rhs, on="v1")
-            .select((lhs["v1"] > 50).if_else(lhs["v1"] + lhs["v2"], lhs["v1"] * lhs["v2"]))
-            .collect()
-        )
+        # Use the unique column "nums" plus some redundant columns.
+        join_on = ["nums_5", "nums_3", "nums_2", "nums"][-num_columns:]
+        return left_table.join(right_table, on=join_on)
 
     result = benchmark(bench_join)
-    assert result.to_pydict() == {
-        "v1": [i**2 for i in range(51)] + [i * 2 for i in range(51, 10000)],
-    }
 
-
-@pytest.mark.benchmark(group="join")
-def test_many_inner_joins(benchmark) -> None:
-    """Tests many inner joins
-
-    Adapted from: https://github.com/duckdb/duckdb/blob/master/benchmark/micro/join/many_inner_joins.benchmark
-    """
-    n_rows = 1_000_000
-    main_df = DataFrame.from_pydict({"id": np.arange(n_rows), **{f"value{i}_id": np.arange(n_rows) for i in range(20)}})
-    value_df = DataFrame.from_pydict({"id": np.arange(n_rows), "value": np.arange(n_rows)})
-
-    def bench_join() -> DataFrame:
-        df = main_df
-        for i in range(20):
-            df = df.join(value_df, left_on=f"value{i}_id", right_on="id")
-        return df.select("id").collect()
-
-    result = benchmark(bench_join)
-    assert result.to_pydict() == {"id": list(range(n_rows))}
+    # Make sure the result is correct.
+    assert (result.sort("nums").to_pandas()["nums"].to_numpy() == np.arange(num_samples)).all()
