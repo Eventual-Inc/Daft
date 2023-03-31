@@ -53,6 +53,7 @@ def test_count(daft_df, service_requests_csv_pd_df, repartition_nparts):
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_mean": service_requests_csv_pd_df["Unique Key"].count()}]
     )
+    service_requests_csv_pd_df["unique_key_mean"] = service_requests_csv_pd_df["unique_key_mean"].astype("uint64")
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_mean")
 
@@ -142,6 +143,9 @@ def test_count_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, 
     """count across groups"""
     daft_df = daft_df.repartition(repartition_nparts).groupby(*[col(k) for k in keys]).count()
     service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).count().reset_index()
+    for cname in service_requests_csv_pd_df:
+        if cname not in keys:
+            service_requests_csv_pd_df[cname] = service_requests_csv_pd_df[cname].astype("uint64")
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
 
