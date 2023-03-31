@@ -26,20 +26,28 @@ def test_join_simple(benchmark, num_samples, num_partitions) -> None:
     right_arr = np.arange(num_samples)
     np.random.shuffle(right_arr)
 
-    left_table = DataFrame.from_pydict(
-        {
-            "mycol": left_arr,
-        }
-    ).into_partitions(num_partitions)
-    right_table = DataFrame.from_pydict(
-        {
-            "mycol": right_arr,
-        }
-    ).into_partitions(num_partitions)
+    left_table = (
+        DataFrame.from_pydict(
+            {
+                "mycol": left_arr,
+            }
+        )
+        .into_partitions(num_partitions)
+        .collect()
+    )
+    right_table = (
+        DataFrame.from_pydict(
+            {
+                "mycol": right_arr,
+            }
+        )
+        .into_partitions(num_partitions)
+        .collect()
+    )
 
     # Run the benchmark.
     def bench_join() -> DataFrame:
-        return left_table.join(right_table, on=["mycol"])
+        return left_table.join(right_table, on=["mycol"]).collect()
 
     result = benchmark(bench_join)
 
@@ -63,20 +71,28 @@ def test_join_largekey(benchmark, num_samples, num_partitions) -> None:
     right_keys = keys.copy()
     random.shuffle(right_keys)
 
-    left_table = DataFrame.from_pydict(
-        {
-            "mycol": left_keys,
-        }
-    ).into_partitions(num_partitions)
-    right_table = DataFrame.from_pydict(
-        {
-            "mycol": right_keys,
-        }
-    ).into_partitions(num_partitions)
+    left_table = (
+        DataFrame.from_pydict(
+            {
+                "mycol": left_keys,
+            }
+        )
+        .into_partitions(num_partitions)
+        .collect()
+    )
+    right_table = (
+        DataFrame.from_pydict(
+            {
+                "mycol": right_keys,
+            }
+        )
+        .into_partitions(num_partitions)
+        .collect()
+    )
 
     # Run the benchmark.
     def bench_join() -> DataFrame:
-        return left_table.join(right_table, on=["mycol"])
+        return left_table.join(right_table, on=["mycol"]).collect()
 
     result = benchmark(bench_join)
 
@@ -104,22 +120,30 @@ def test_join_withdata(benchmark, num_samples, num_partitions) -> None:
     long_A = "A" * 1024
     long_B = "B" * 1024
 
-    left_table = DataFrame.from_pydict(
-        {
-            "mykey": left_arr,
-            "left_data": [long_A for _ in range(num_samples)],
-        }
-    ).into_partitions(num_partitions)
-    right_table = DataFrame.from_pydict(
-        {
-            "mykey": right_arr,
-            "right_data": [long_B for _ in range(num_samples)],
-        }
-    ).into_partitions(num_partitions)
+    left_table = (
+        DataFrame.from_pydict(
+            {
+                "mykey": left_arr,
+                "left_data": [long_A for _ in range(num_samples)],
+            }
+        )
+        .into_partitions(num_partitions)
+        .collect()
+    )
+    right_table = (
+        DataFrame.from_pydict(
+            {
+                "mykey": right_arr,
+                "right_data": [long_B for _ in range(num_samples)],
+            }
+        )
+        .into_partitions(num_partitions)
+        .collect()
+    )
 
     # Run the benchmark.
     def bench_join() -> DataFrame:
-        return left_table.join(right_table, on=["mykey"])
+        return left_table.join(right_table, on=["mykey"]).collect()
 
     result = benchmark(bench_join)
 
@@ -159,19 +183,23 @@ def test_broadcast_join(benchmark, left_bigger, num_partitions) -> None:
             "keys": small_arr,
             "data": [str(x) for x in small_arr],
         }
+    ).collect()
+    big_table = (
+        DataFrame.from_pydict(
+            {
+                "keys": big_arr,
+            }
+        )
+        .into_partitions(num_partitions)
+        .collect()
     )
-    big_table = DataFrame.from_pydict(
-        {
-            "keys": big_arr,
-        }
-    ).into_partitions(num_partitions)
 
     # Run the benchmark.
     def bench_join() -> DataFrame:
         if left_bigger:
-            return big_table.join(small_table, on=["keys"])
+            return big_table.join(small_table, on=["keys"]).collect()
         else:
-            return small_table.join(big_table, on=["keys"])
+            return small_table.join(big_table, on=["keys"]).collect()
 
     result = benchmark(bench_join)
 
@@ -200,28 +228,36 @@ def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions) 
     right_arr = np.arange(num_samples)
     np.random.shuffle(right_arr)
 
-    left_table = DataFrame.from_pydict(
-        {
-            "nums_5": left_arr % 5,
-            "nums_3": left_arr % 3,
-            "nums_2": left_arr % 2,
-            "nums": left_arr,
-        }
-    ).into_partitions(num_partitions)
-    right_table = DataFrame.from_pydict(
-        {
-            "nums_5": right_arr % 5,
-            "nums_3": right_arr % 3,
-            "nums_2": right_arr % 2,
-            "nums": right_arr,
-        }
-    ).into_partitions(num_partitions)
+    left_table = (
+        DataFrame.from_pydict(
+            {
+                "nums_5": left_arr % 5,
+                "nums_3": left_arr % 3,
+                "nums_2": left_arr % 2,
+                "nums": left_arr,
+            }
+        )
+        .into_partitions(num_partitions)
+        .collect()
+    )
+    right_table = (
+        DataFrame.from_pydict(
+            {
+                "nums_5": right_arr % 5,
+                "nums_3": right_arr % 3,
+                "nums_2": right_arr % 2,
+                "nums": right_arr,
+            }
+        )
+        .into_partitions(num_partitions)
+        .collect()
+    )
 
     # Run the benchmark.
     def bench_join() -> DataFrame:
         # Use the unique column "nums" plus some redundant columns.
         join_on = ["nums_5", "nums_3", "nums_2", "nums"][-num_columns:]
-        return left_table.join(right_table, on=join_on)
+        return left_table.join(right_table, on=join_on).collect()
 
     result = benchmark(bench_join)
 
