@@ -139,9 +139,9 @@ def test_multicolumn_sort(benchmark, num_columns, num_samples, num_partitions) -
         DataFrame.from_pydict(
             {
                 # all coprime
-                "nums_9": arr % 9,
-                "nums_10": arr % 10,
-                "nums_11": arr % 11,
+                "nums_9": arr * 17 % 9,
+                "nums_10": arr * 17 % 10,
+                "nums_11": arr * 17 % 11,
                 "nums": arr,
             }
         )

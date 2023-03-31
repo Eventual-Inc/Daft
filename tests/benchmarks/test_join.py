@@ -231,9 +231,9 @@ def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions) 
     left_table = (
         DataFrame.from_pydict(
             {
-                "nums_5": left_arr % 5,
-                "nums_3": left_arr % 3,
-                "nums_2": left_arr % 2,
+                "nums_a": left_arr * 17 % 9,
+                "nums_b": left_arr * 17 % 10,
+                "nums_c": left_arr * 17 % 11,
                 "nums": left_arr,
             }
         )
@@ -243,9 +243,9 @@ def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions) 
     right_table = (
         DataFrame.from_pydict(
             {
-                "nums_5": right_arr % 5,
-                "nums_3": right_arr % 3,
-                "nums_2": right_arr % 2,
+                "nums_a": right_arr * 17 % 9,
+                "nums_b": right_arr * 17 % 10,
+                "nums_c": right_arr * 17 % 11,
                 "nums": right_arr,
             }
         )
@@ -256,7 +256,7 @@ def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions) 
     # Run the benchmark.
     def bench_join() -> DataFrame:
         # Use the unique column "nums" plus some redundant columns.
-        join_on = ["nums_5", "nums_3", "nums_2", "nums"][-num_columns:]
+        join_on = ["nums_a", "nums_b", "nums_c", "nums"][-num_columns:]
         return left_table.join(right_table, on=join_on).collect()
 
     result = benchmark(bench_join)
