@@ -5,10 +5,8 @@ import pytest
 
 from daft.expressions import col
 from tests.conftest import assert_df_equals
-from tests.cookbook.conftest import parametrize_service_requests_csv_repartition
 
 
-@parametrize_service_requests_csv_repartition
 def test_sorted_by_expr(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Sort by a column that undergoes an expression"""
     daft_df = daft_df.repartition(repartition_nparts)
@@ -31,7 +29,6 @@ def test_sorted_by_expr(daft_df, service_requests_csv_pd_df, repartition_nparts)
     )
 
 
-@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "sort_keys",
     [
@@ -52,7 +49,6 @@ def test_get_sorted(daft_df, service_requests_csv_pd_df, repartition_nparts, sor
     )
 
 
-@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "sort_keys",
     [
@@ -73,7 +69,6 @@ def test_get_sorted_top_n(daft_df, service_requests_csv_pd_df, repartition_npart
     )
 
 
-@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "sort_keys",
     [
@@ -96,7 +91,6 @@ def test_get_sorted_top_n_flipped_desc(daft_df, service_requests_csv_pd_df, repa
     )
 
 
-@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "daft_df_ops",
     [

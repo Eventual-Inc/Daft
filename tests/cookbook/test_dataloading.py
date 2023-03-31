@@ -3,38 +3,16 @@ from __future__ import annotations
 import pathlib
 
 import pandas as pd
-import pytest
 
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
-from daft.expressions import col
 from daft.filesystem import get_filesystem_from_path
-from tests.assets.assets import (
-    IRIS_CSV,
-    SERVICE_REQUESTS_PARQUET,
-    SERVICE_REQUESTS_PARQUET_FOLDER,
-)
 from tests.conftest import assert_df_equals
-from tests.dataframe_cookbook.conftest import (
-    COLUMNS,
-    parametrize_service_requests_csv_repartition,
-)
+from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
 
-@parametrize_service_requests_csv_repartition
 def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Loading data from a CSV or Parquet works"""
-    pd_slice = service_requests_csv_pd_df
-    daft_slice = daft_df.repartition(repartition_nparts)
-    daft_pd_df = daft_slice.to_pandas()
-    assert_df_equals(daft_pd_df, pd_slice)
-
-
-@pytest.mark.parametrize("parquet_path", [SERVICE_REQUESTS_PARQUET, SERVICE_REQUESTS_PARQUET_FOLDER])
-@parametrize_service_requests_csv_repartition
-def test_load_parquet(parquet_path, service_requests_csv_pd_df, repartition_nparts):
-    """Loading data from a CSV or Parquet works"""
-    daft_df = DataFrame.read_parquet(parquet_path).select(*[col(c) for c in COLUMNS])
     pd_slice = service_requests_csv_pd_df
     daft_slice = daft_df.repartition(repartition_nparts)
     daft_pd_df = daft_slice.to_pandas()
@@ -44,7 +22,7 @@ def test_load_parquet(parquet_path, service_requests_csv_pd_df, repartition_npar
 def test_load_csv_no_headers(tmp_path: pathlib.Path):
     """Generate a default set of headers `f0, f1, ... f{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
-    csv.write_text("\n".join(pathlib.Path(IRIS_CSV).read_text().split("\n")[1:]))
+    csv.write_text("\n".join(pathlib.Path(COOKBOOK_DATA_CSV).read_text().split("\n")[1:]))
     daft_df = DataFrame.read_csv(str(csv), has_headers=False)
     pd_df = pd.read_csv(csv, header=None)
     pd_df.columns = [f"f{i}" for i in range(5)]
@@ -55,7 +33,7 @@ def test_load_csv_no_headers(tmp_path: pathlib.Path):
 def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
     """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
-    csv.write_text(pathlib.Path(IRIS_CSV).read_text().replace(",", "\t"))
+    csv.write_text(pathlib.Path(COOKBOOK_DATA_CSV).read_text().replace(",", "\t"))
     daft_df = DataFrame.read_csv(str(csv), delimiter="\t")
     pd_df = pd.read_csv(csv, delimiter="\t")
     daft_pd_df = daft_df.to_pandas()
@@ -65,7 +43,7 @@ def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
 def test_load_json(tmp_path: pathlib.Path):
     """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a JSON file"""
     json_file = tmp_path / "iris.json"
-    pd_df = pd.read_csv(IRIS_CSV)
+    pd_df = pd.read_csv(COOKBOOK_DATA_CSV)
 
     # Test that nested types like lists and dicts get loaded as Python objects
     pd_df["dicts"] = pd.Series([{"foo": i} for i in range(len(pd_df))])

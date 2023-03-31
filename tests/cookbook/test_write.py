@@ -4,11 +4,11 @@ import pytest
 
 from daft.dataframe import DataFrame
 from tests.conftest import assert_df_equals
-from tests.cookbook.conftest import SERVICE_REQUESTS_CSV
+from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
 
 def test_parquet_write(tmp_path):
-    df = DataFrame.read_csv(SERVICE_REQUESTS_CSV)
+    df = DataFrame.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_parquet(tmp_path)
     read_back_pd_df = DataFrame.read_parquet(tmp_path.as_posix() + "/*.parquet").to_pandas()
@@ -18,7 +18,7 @@ def test_parquet_write(tmp_path):
 
 
 def test_parquet_write_with_partitioning(tmp_path):
-    df = DataFrame.read_csv(SERVICE_REQUESTS_CSV)
+    df = DataFrame.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_parquet(tmp_path, partition_cols=["Borough"])
 
@@ -29,7 +29,7 @@ def test_parquet_write_with_partitioning(tmp_path):
 
 
 def test_csv_write(tmp_path):
-    df = DataFrame.read_csv(SERVICE_REQUESTS_CSV)
+    df = DataFrame.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_csv(tmp_path)
 
@@ -41,7 +41,7 @@ def test_csv_write(tmp_path):
 
 @pytest.mark.skip()
 def test_csv_write_with_partitioning(tmp_path):
-    df = DataFrame.read_csv(SERVICE_REQUESTS_CSV)
+    df = DataFrame.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_csv(tmp_path, partition_cols=["Borough"]).to_pandas()
     read_back_pd_df = DataFrame.read_csv(tmp_path.as_posix() + "/**/*.csv").to_pandas()
