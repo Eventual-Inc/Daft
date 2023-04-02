@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::{dsl::Expr, error::DaftResult, schema::Schema, table::Table};
 
@@ -36,10 +36,26 @@ impl Table {
             }
         }
 
+        // Zip the names of the left and right expressions into a HashMap
+        let left_names = left_on.iter().map(|e| e.name());
+        let right_names = right_on.iter().map(|e| e.name());
+        let zipped_names: DaftResult<_> = left_names
+            .zip(right_names)
+            .map(|(l, r)| Ok((l?, r?)))
+            .collect();
+        let zipped_names: Vec<(&str, &str)> = zipped_names?;
+        let right_to_left_keys: HashMap<&str, &str> =
+            HashMap::from_iter(zipped_names.iter().copied());
+
         for field in right.schema.fields.values() {
-            if ltable.get_column(&field.name).is_ok() {
-                continue;
+            // Skip fields if they were used in the join and have the same name as the corresponding left field
+            match right_to_left_keys.get(field.name.as_str()) {
+                Some(val) if val.eq(&field.name.as_str()) => {
+                    continue;
+                }
+                _ => (),
             }
+
             let mut curr_name = field.name.clone();
             while names_so_far.contains(&curr_name) {
                 curr_name = "right.".to_string() + &curr_name;
