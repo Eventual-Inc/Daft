@@ -196,6 +196,21 @@ def test_table_join_single_column_name_conflicts() -> None:
     assert result_sorted.get_column("right.y").to_pylist() == [9, 8, 7, 6]
 
 
+def test_table_join_single_column_name_conflicts_different_named_join() -> None:
+    left_table = Table.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5]})
+    right_table = Table.from_pydict({"y": [3, 2, 1, 0], "x": [6, 7, 8, 9]})
+
+    result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("y")])
+
+    # NOTE: right.y is not dropped because it has a different name from the corresponding left
+    # column it is joined on, left_table["x"]
+    assert result_table.column_names() == ["x", "y", "right.y", "right.x"]
+
+    result_sorted = result_table.sort([col("x")])
+    assert result_sorted.get_column("y").to_pylist() == [2, 3, 4, 5]
+    assert result_sorted.get_column("right.x").to_pylist() == [9, 8, 7, 6]
+
+
 def test_table_join_single_column_name_multiple_conflicts() -> None:
 
     left_table = Table.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5], "right.y": [6, 7, 8, 9]})
