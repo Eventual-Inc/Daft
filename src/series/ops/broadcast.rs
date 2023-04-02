@@ -1,4 +1,4 @@
-use crate::{error::DaftResult, series::Series, with_match_numeric_and_utf_daft_types};
+use crate::{error::DaftResult, series::Series, with_match_physical_daft_types};
 
 use crate::array::BaseArray;
 
@@ -11,10 +11,17 @@ impl Series {
             )));
         }
 
-        with_match_numeric_and_utf_daft_types!(self.data_type(), |$T| {
-            let array = self.downcast::<$T>()?;
-            Ok(array.broadcast(num)?.into_series())
-        })
+        let s = self.as_physical()?;
+        let result = with_match_physical_daft_types!(self.data_type(), |$T| {
+            let array = s.downcast::<$T>()?;
+            array.broadcast(num)?.into_series()
+        });
+
+        if result.data_type() != self.data_type() {
+            return result.cast(self.data_type());
+        }
+
+        Ok(result)
     }
 }
 
