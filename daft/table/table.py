@@ -94,7 +94,7 @@ class Table:
             elif isinstance(v, pa.Array) or isinstance(v, pa.ChunkedArray):
                 series = Series.from_arrow(v)
             else:
-                raise NotImplementedError(f"Creating a Table from {type(data)} not implemented")
+                raise ValueError(f"Creating a Series from data of type {type(v)} not implemented")
             series_dict[k] = series._series
         return Table._from_pytable(_PyTable.from_pylist_series(series_dict))
 

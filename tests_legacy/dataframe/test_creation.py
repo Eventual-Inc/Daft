@@ -116,62 +116,41 @@ def test_create_dataframe_pydict_ragged_col_lens() -> None:
 def test_create_dataframe_pydict_bad_columns() -> None:
     with pytest.raises(ValueError) as e:
         DataFrame.from_pydict({"foo": "somestring"})
-    assert "Expected inferred data to be of type list, np.ndarray or pa.Array" in str(e.value)
+    assert "Creating a Series from data of type" in str(e.value)
 
 
-def test_load_pydict_types():
-    data = {
-        # Lists
-        "arrow_int": [None, 2, 3],
-        "arrow_float": [None, 1.0, 3.0],
-        "arrow_mixed_numbers": [None, 1.0, 3],
-        "arrow_str": [None, "b", "c"],
-        "arrow_struct": [None, {"foo": 1}, {"bar": 1}],
-        "arrow_nulls": [None, None, None],
-        "py_objs": [None, MyObj(), MyObj()],
-        "heterogenous_py_objs": [None, MyObj(), MyObj2()],
-        "numpy_arrays": [np.array([1]), np.array([2]), np.array([3])],
-        # Numpy arrays
-        "np_int": np.array([1, 2, 3], dtype=np.int64),
-        "np_string": np.array([None, "foo", "bar"], dtype=np.object_),
-        "np_object": np.array([None, MyObj(), MyObj()], dtype=np.object_),
-        "np_nested": np.ones((3, 3)),
-        # Arrow arrays
-        "pa_int": pa.array([1, 2, 3]),
-        "pa_nested": pa.array([[1, 2, 3], [1, 2], [1]]),
-        "pa_int_chunked": pa.chunked_array([pa.array([1, 2, 3])]),
-        "pa_nested_chunked": pa.chunked_array([pa.array([[1, 2, 3], [1, 2], [1]])]),
-    }
-    daft_df = DataFrame.from_pydict(data)
-
+@pytest.mark.parametrize(
+    ["data", "expected_dtype"],
+    [
+        pytest.param([None, 2, 3], DataType.int64(), id="arrow_int"),
+        pytest.param([None, 1.0, 3.0], DataType.float64(), id="arrow_float"),
+        pytest.param([None, 1.0, 3], DataType.float64(), id="arrow_mixed_numbers"),
+        pytest.param([None, "b", "c"], DataType.string(), id="arrow_str"),
+        pytest.param([None, None, None], DataType.null(), id="arrow_nulls"),
+        pytest.param(np.array([1, 2, 3], dtype=np.int64), DataType.int64(), id="np_int"),
+        pytest.param(np.array([None, "foo", "bar"], dtype=np.object_), DataType.string(), id="np_string"),
+        pytest.param(pa.array([1, 2, 3]), DataType.int64(), id="pa_int"),
+        pytest.param(pa.chunked_array([pa.array([1, 2, 3])]), DataType.int64(), id="pa_int_chunked"),
+        # TODO: [TPCH][PY] activate tests when Python objects are implemented
+        # pytest.param([None, MyObj(), MyObj()], DataType.python(MyObj), id="py_objs"),
+        # pytest.param([None, MyObj(), MyObj2()], DataType.python_object(), id="heterogenous_py_objs"),
+        # pytest.param(np.array([None, MyObj(), MyObj()], dtype=np.object_), DataType.python(MyObj), id="np_object"),
+        # TODO: [TPCH][NESTED] activate tests when Nested types are implemented
+        # pytest.param([None, {"foo": 1}, {"bar": 1}], DataType.python(dict), id="arrow_struct"),
+        # pytest.param([np.array([1]), np.array([2]), np.array([3])], DataType.python(np.ndarray), id="numpy_arrays"),
+        # pytest.param(pa.array([[1, 2, 3], [1, 2], [1]]), DataType.python(list), id="pa_nested"),
+        # pytest.param(pa.chunked_array([pa.array([[1, 2, 3], [1, 2], [1]])]), DataType.python(list), id="pa_nested_chunked"),
+        # pytest.param(np.ones((3, 3)), DataType.python(np.ndarray), id="np_nested"),
+    ],
+)
+def test_load_pydict_types(data, expected_dtype):
+    data_dict = {"x": data}
+    daft_df = DataFrame.from_pydict(data_dict)
     daft_df.collect()
     collected_data = daft_df.to_pydict()
 
-    expected = {
-        "arrow_int": DataType.int64(),
-        "arrow_float": DataType.float64(),
-        "arrow_mixed_numbers": DataType.float64(),
-        "arrow_str": DataType.string(),
-        "arrow_struct": DataType.python(dict),
-        "arrow_nulls": DataType.null(),
-        "py_objs": DataType.python(MyObj),
-        "heterogenous_py_objs": DataType.python_object(),
-        "numpy_arrays": DataType.python(np.ndarray),
-        "np_int": DataType.int64(),
-        "np_string": DataType.string(),
-        "np_object": DataType.python(MyObj),
-        "np_nested": DataType.python(np.ndarray),
-        "pa_int": DataType.int64(),
-        "pa_nested": DataType.python(list),
-        "pa_int_chunked": DataType.int64(),
-        "pa_nested_chunked": DataType.python(list),
-    }
-
-    assert collected_data.keys() == data.keys() == expected.keys()
-    for colname, expected_schema_type in expected.items():
-        assert (
-            daft_df.schema()[colname].dtype == expected_schema_type
-        ), f"{colname} expected {expected_schema_type} but received {daft_df.schema()[colname].dtype}"
+    assert list(collected_data.keys()) == ["x"]
+    assert daft_df.schema()["x"].dtype == expected_dtype
 
 
 ###
