@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from daft.dataframe import DataFrame
+from daft.datatype import DataType
 from daft.expressions import col, lit
 from tests.conftest import assert_df_equals
 
@@ -92,7 +93,9 @@ def test_multi_criteria_or(repartition_nparts):
 def test_multi_criteria_or_assignment(repartition_nparts):
     daft_df = DataFrame.from_pydict(BUILDING_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
-    daft_df = daft_df.with_column("AAA", ((col("BBB") > 25) | (col("CCC") >= 75)).if_else(0.1, col("AAA").cast(float)))
+    daft_df = daft_df.with_column(
+        "AAA", ((col("BBB") > 25) | (col("CCC") >= 75)).if_else(0.1, col("AAA").cast(DataType.float32()))
+    )
     pd_df.loc[(pd_df["BBB"] > 25) | (pd_df["CCC"] >= 75), "AAA"] = 0.1
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="BBB")
@@ -204,7 +207,7 @@ def test_applying_to_different_items_in_group(repartition_nparts):
     daft_df = DataFrame.from_pydict(GROUPBY_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(GROUPBY_DATA)
     daft_df = daft_df.with_column(
-        "weight", (col("size") == "S").if_else(col("weight") * 1.5, col("weight").cast(float))
+        "weight", (col("size") == "S").if_else(col("weight") * 1.5, col("weight").cast(DataType.float32()))
     )
     daft_df = daft_df.with_column("weight", (col("size") == "M").if_else(col("weight") * 1.25, col("weight")))
     daft_df = daft_df.with_column("weight", (col("size") == "L").if_else(col("weight"), col("weight")))
