@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
 import pandas as pd
-import daft.errors
+import pytest
+
 from daft import DataFrame
 
 
@@ -16,7 +16,9 @@ def test_fill_nan_data_frame(missing_value_data: list[dict[str, Any]]) -> None:
 
 
 def test_fill_nan_data_frame_with_none(missing_value_data: list[dict[str, Any]]) -> None:
-    pytest.skip("This tests is skiped until None will be resolved to nan in float columns in rust with the next release")
+    pytest.skip(
+        "This tests is skiped until None will be resolved to nan in float columns in rust with the next release"
+    )
     df = DataFrame.from_pylist(missing_value_data)
     df = df.with_column("sepal_width_none", df["sepal_width"].fillnan(None))
     pd_df = df.to_pandas()
@@ -28,4 +30,3 @@ def test_fill_null_data_frame(missing_value_data: list[dict[str, Any]]) -> None:
     df = df.with_column("sepal_length", df["sepal_length"].fillnull(3.1))
     pd_df = df.to_pandas()
     assert pd_df.loc[0, "sepal_length"] == 3.1
-
