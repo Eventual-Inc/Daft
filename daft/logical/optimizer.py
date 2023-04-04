@@ -340,11 +340,12 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
         scan_columns = child.schema()
         if required_columns == scan_columns.to_name_set():
             return None
+        ordered_required_columns = [f.name for f in scan_columns if f.name in required_columns]
 
         new_scan = TabularFilesScan(
             schema=child._schema,
             predicate=child._predicate,
-            columns=list(required_columns),
+            columns=ordered_required_columns,
             source_info=child._source_info,
             filepaths_child=child._filepaths_child,
             filepaths_column_name=child._filepaths_column_name,
