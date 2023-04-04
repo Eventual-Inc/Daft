@@ -16,23 +16,23 @@ impl FunctionEvaluator for YearEvaluator {
     }
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
-        if inputs.len() != 1 {
-            return Err(DaftError::SchemaMismatch(format!(
+        match inputs {
+            [input] => match input.to_field(schema) {
+                Ok(field) if field.dtype.is_temporal() => Ok(Field {
+                    name: field.name,
+                    dtype: DataType::Int32,
+                }),
+                Ok(field) => Err(DaftError::TypeError(format!(
+                    "Expected input to year to be temporal, got {}",
+                    field.dtype
+                ))),
+                Err(e) => Err(e),
+            },
+            _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
-            )));
+            ))),
         }
-        let field = inputs.first().unwrap().to_field(schema)?;
-        if !field.dtype.is_temporal() {
-            return Err(DaftError::TypeError(format!(
-                "Expected input to year to be temporal, got {}",
-                field.dtype
-            )));
-        }
-        Ok(Field {
-            name: field.name,
-            dtype: DataType::Int32,
-        })
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
