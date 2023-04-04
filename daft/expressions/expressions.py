@@ -296,7 +296,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.utf8_startswith(prefix_expr._expr))
 
     def concat(self, other: str) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement string expression")
+        # Delegate to + operator implementation.
+        return Expression._from_pyexpr(self._expr) + other
 
     def length(self) -> Expression:
         raise NotImplementedError("[RUST-INT] Implement string expression")
