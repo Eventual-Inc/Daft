@@ -8,11 +8,11 @@ use crate::{
 
 use super::super::FunctionEvaluator;
 
-pub(super) struct YearEvaluator {}
+pub(super) struct MonthEvaluator {}
 
-impl FunctionEvaluator for YearEvaluator {
+impl FunctionEvaluator for MonthEvaluator {
     fn fn_name(&self) -> &'static str {
-        "year"
+        "month"
     }
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
@@ -20,10 +20,10 @@ impl FunctionEvaluator for YearEvaluator {
             [input] => match input.to_field(schema) {
                 Ok(field) if field.dtype.is_temporal() => Ok(Field {
                     name: field.name,
-                    dtype: DataType::Int32,
+                    dtype: DataType::UInt32,
                 }),
                 Ok(field) => Err(DaftError::TypeError(format!(
-                    "Expected input to year to be temporal, got {}",
+                    "Expected input to month to be temporal, got {}",
                     field.dtype
                 ))),
                 Err(e) => Err(e),
@@ -37,7 +37,7 @@ impl FunctionEvaluator for YearEvaluator {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.dt_year(),
+            [input] => input.dt_month(),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

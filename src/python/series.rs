@@ -219,8 +219,20 @@ impl PySeries {
         Ok(self.series.utf8_contains(&pattern.series)?.into())
     }
 
+    pub fn dt_day(&self) -> PyResult<Self> {
+        Ok(self.series.dt_day()?.into())
+    }
+
+    pub fn dt_month(&self) -> PyResult<Self> {
+        Ok(self.series.dt_month()?.into())
+    }
+
     pub fn dt_year(&self) -> PyResult<Self> {
         Ok(self.series.dt_year()?.into())
+    }
+
+    pub fn dt_day_of_week(&self) -> PyResult<Self> {
+        Ok(self.series.dt_day_of_week()?.into())
     }
 
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {
