@@ -10,7 +10,10 @@ from tests.expressions.typing.conftest import assert_typing_resolve_vs_runtime_b
 @pytest.mark.parametrize(
     "op",
     [
+        pytest.param(lambda x: x.dt.day(), id="day"),
+        pytest.param(lambda x: x.dt.month(), id="month"),
         pytest.param(lambda x: x.dt.year(), id="year"),
+        pytest.param(lambda x: x.dt.day_of_week(), id="day_of_week"),
     ],
 )
 def test_dt_extraction_ops(unary_data_fixture, op):

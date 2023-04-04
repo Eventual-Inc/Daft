@@ -269,17 +269,17 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
+    def day(self) -> Expression:
+        return Expression._from_pyexpr(self._expr.dt_day())
+
+    def month(self) -> Expression:
+        return Expression._from_pyexpr(self._expr.dt_month())
+
     def year(self) -> Expression:
         return Expression._from_pyexpr(self._expr.dt_year())
 
-    def month(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement date expression")
-
-    def day(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement date expression")
-
     def day_of_week(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement date expression")
+        return Expression._from_pyexpr(self._expr.dt_day_of_week())
 
 
 class ExpressionStringNamespace(ExpressionNamespace):

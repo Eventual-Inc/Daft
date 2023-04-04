@@ -1081,6 +1081,52 @@ def test_table_filter_with_dates() -> None:
     assert result["enum"] == [1]
 
 
+def test_table_filter_with_date_days() -> None:
+    from datetime import date
+
+    def date_maker(d):
+        if d is None:
+            return None
+        return date(2023, 1, d)
+
+    days = list(map(date_maker, [3, 28, None, 9, 18, None]))
+    pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 6
+    assert daft_table.column_names() == ["days", "enum"]
+
+    exprs = [col("days").dt.day() > 15]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 2
+    assert new_table.column_names() == ["days", "enum"]
+    result = new_table.to_pydict()
+    assert result["days"] == [date(2023, 1, 28), date(2023, 1, 18)]
+    assert result["enum"] == [1, 4]
+
+
+def test_table_filter_with_date_months() -> None:
+    from datetime import date
+
+    def date_maker(m):
+        if m is None:
+            return None
+        return date(2023, m, 1)
+
+    days = list(map(date_maker, [2, 6, None, 4, 11, None]))
+    pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 6
+    assert daft_table.column_names() == ["days", "enum"]
+
+    exprs = [col("days").dt.month() > 5]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 2
+    assert new_table.column_names() == ["days", "enum"]
+    result = new_table.to_pydict()
+    assert result["days"] == [date(2023, 6, 1), date(2023, 11, 1)]
+    assert result["enum"] == [1, 4]
+
+
 def test_table_filter_with_date_years() -> None:
     from datetime import date
 
@@ -1101,6 +1147,30 @@ def test_table_filter_with_date_years() -> None:
     assert new_table.column_names() == ["days", "enum"]
     result = new_table.to_pydict()
     assert result["days"] == [date(4000, 1, 1), date(2022, 1, 1)]
+    assert result["enum"] == [1, 4]
+
+
+def test_table_filter_with_date_days_of_week() -> None:
+    from datetime import date
+
+    def date_maker(d):
+        if d is None:
+            return None
+        return date(2023, 4, d)
+
+    # 04/03/2023 is a Monday.
+    days = list(map(date_maker, [8, 5, None, 15, 12, None]))
+    pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 6
+    assert daft_table.column_names() == ["days", "enum"]
+
+    exprs = [col("days").dt.day_of_week() == 2]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 2
+    assert new_table.column_names() == ["days", "enum"]
+    result = new_table.to_pydict()
+    assert result["days"] == [date(2023, 4, 5), date(2023, 4, 12)]
     assert result["enum"] == [1, 4]
 
 
