@@ -299,5 +299,14 @@ class SeriesStringNamespace(SeriesNamespace):
 
 
 class SeriesDateNamespace(SeriesNamespace):
+    def day(self) -> Series:
+        return Series._from_pyseries(self._series.dt_day())
+
+    def month(self) -> Series:
+        return Series._from_pyseries(self._series.dt_month())
+
     def year(self) -> Series:
         return Series._from_pyseries(self._series.dt_year())
+
+    def day_of_week(self) -> Series:
+        return Series._from_pyseries(self._series.dt_day_of_week())

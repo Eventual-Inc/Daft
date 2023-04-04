@@ -82,11 +82,38 @@ def test_repr_functions_abs() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_day() -> None:
+    a = col("a")
+    y = a.dt.day()
+    repr_out = repr(y)
+    assert repr_out == "day(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_month() -> None:
+    a = col("a")
+    y = a.dt.month()
+    repr_out = repr(y)
+    assert repr_out == "month(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_year() -> None:
     a = col("a")
     y = a.dt.year()
     repr_out = repr(y)
     assert repr_out == "year(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_day_of_week() -> None:
+    a = col("a")
+    y = a.dt.day_of_week()
+    repr_out = repr(y)
+    assert repr_out == "day_of_week(col(a))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
