@@ -5,14 +5,10 @@ import pytest
 from daft import DataFrame
 from daft.expressions import col
 from tests.conftest import assert_df_equals
-from tests.dataframe_cookbook.conftest import (
-    parametrize_service_requests_csv_repartition,
-)
 
 COL_SUBSET = ["Unique Key", "Complaint Type", "Borough", "Descriptor"]
 
 
-@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
@@ -46,7 +42,6 @@ def test_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_np
     assert_df_equals(daft_pd_df, pd_noise_complaints)
 
 
-@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "daft_df_ops",
     [
@@ -103,7 +98,6 @@ def test_complex_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repart
     assert_df_equals(daft_pd_df, pd_noise_complaints_brooklyn)
 
 
-@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "daft_df_ops",
     [

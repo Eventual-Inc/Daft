@@ -2,12 +2,8 @@ from __future__ import annotations
 
 from daft.expressions import col
 from tests.conftest import assert_df_equals
-from tests.dataframe_cookbook.conftest import (
-    parametrize_service_requests_csv_repartition,
-)
 
 
-@parametrize_service_requests_csv_repartition
 def test_simple_join(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df = daft_df.repartition(repartition_nparts)
     daft_df_left = daft_df.select(col("Unique Key"), col("Borough"))
@@ -25,7 +21,6 @@ def test_simple_join(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
-@parametrize_service_requests_csv_repartition
 def test_simple_self_join(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df = daft_df.repartition(repartition_nparts)
     daft_df = daft_df.select(col("Unique Key"), col("Borough"))
@@ -43,7 +38,6 @@ def test_simple_self_join(daft_df, service_requests_csv_pd_df, repartition_npart
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
-@parametrize_service_requests_csv_repartition
 def test_simple_join_missing_rvalues(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df_right = daft_df.sort("Unique Key").limit(25).repartition(repartition_nparts)
     daft_df_left = daft_df.repartition(repartition_nparts)
@@ -64,7 +58,6 @@ def test_simple_join_missing_rvalues(daft_df, service_requests_csv_pd_df, repart
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
-@parametrize_service_requests_csv_repartition
 def test_simple_join_missing_lvalues(daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df_right = daft_df.repartition(repartition_nparts)
     daft_df_left = daft_df.sort(col("Unique Key")).limit(25).repartition(repartition_nparts)

@@ -38,6 +38,20 @@ macro_rules! broadcast_if_else{(
                 }
             }
         }
+        // CASE: Broadcast both arrays
+        (1, 1, _) => {
+            let self_scalar = $if_true.get(0);
+            let other_scalar = $if_false.get(0);
+            let predicate_arr = $predicate.downcast();
+            let predicate_values = predicate_arr.values();
+            let naive_if_else: $array_type = predicate_values.iter().map(
+                |pred_val| match pred_val {
+                    true => self_scalar,
+                    false => other_scalar,
+                }
+            ).collect();
+            DataArray::new($if_true.field.clone(), Arc::new(naive_if_else.with_validity(predicate_arr.validity().cloned())))
+        }
         // CASE: Broadcast truthy array
         (1, o, p)  if o == p => {
             let self_scalar = $if_true.get(0);
