@@ -14,7 +14,7 @@ def test_datetime_year():
     df = DataFrame.from_pydict(data)
     df = df.with_column("year", col("dt").dt.year())
     pd_df = pd.DataFrame.from_dict(data)
-    pd_df["year"] = pd.to_datetime(pd_df["dt"]).dt.year
+    pd_df["year"] = pd.to_datetime(pd_df["dt"]).dt.year.astype("int64")
     assert_df_equals(df.to_pandas(), pd_df, sort_key="dt")
 
 
@@ -23,7 +23,7 @@ def test_datetime_month():
     df = DataFrame.from_pydict(data)
     df = df.with_column("month", col("dt").dt.month())
     pd_df = pd.DataFrame.from_dict(data)
-    pd_df["month"] = pd.to_datetime(pd_df["dt"]).dt.month
+    pd_df["month"] = pd.to_datetime(pd_df["dt"]).dt.month.astype("int64")
     assert_df_equals(df.to_pandas(), pd_df, sort_key="dt")
 
 
@@ -32,7 +32,7 @@ def test_datetime_day():
     df = DataFrame.from_pydict(data)
     df = df.with_column("day", col("dt").dt.day())
     pd_df = pd.DataFrame.from_dict(data)
-    pd_df["day"] = pd.to_datetime(pd_df["dt"]).dt.day
+    pd_df["day"] = pd.to_datetime(pd_df["dt"]).dt.day.astype("int64")
     assert_df_equals(df.to_pandas(), pd_df, sort_key="dt")
 
 
@@ -41,5 +41,5 @@ def test_datetime_day_of_week():
     df = DataFrame.from_pydict(data)
     df = df.with_column("day_of_week", col("dt").dt.day_of_week())
     pd_df = pd.DataFrame.from_dict(data)
-    pd_df["day_of_week"] = pd.to_datetime(pd_df["dt"]).dt.day_of_week
+    pd_df["day_of_week"] = pd.to_datetime(pd_df["dt"]).dt.day_of_week.astype("int64")
     assert_df_equals(df.to_pandas(), pd_df, sort_key="dt")
