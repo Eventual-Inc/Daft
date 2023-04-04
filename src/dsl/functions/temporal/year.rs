@@ -36,12 +36,12 @@ impl FunctionEvaluator for YearEvaluator {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        if inputs.len() != 1 {
-            return Err(DaftError::ValueError(format!(
+        match inputs {
+            [input] => input.dt_year(),
+            _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
-            )));
+            ))),
         }
-        inputs.first().unwrap().dt_year()
     }
 }
