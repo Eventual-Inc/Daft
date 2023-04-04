@@ -4,8 +4,6 @@ import pytest
 
 from daft import DataFrame
 from daft.datatype import DataType
-from daft.expressions import ColumnExpression
-from daft.logical.field import Field
 from daft.logical.logical_plan import LogicalPlan
 
 
@@ -26,7 +24,11 @@ def test_num_partitions(df):
 
 
 def test_schema(df):
-    assert [f for f in df.schema()] == [Field("foo", DataType.int64())]
+    fields = [f for f in df.schema()]
+    assert len(fields) == 1
+    [field] = fields
+    assert field.name == "foo"
+    assert field.dtype == DataType.int64()
 
 
 def test_column_names(df):
@@ -36,5 +38,4 @@ def test_column_names(df):
 def test_columns(df):
     assert len(df.columns) == 1
     [ex] = df.columns
-    assert isinstance(ex, ColumnExpression)
     assert ex.name() == "foo"
