@@ -18,6 +18,8 @@ from daft.datatype import DataType
         (pa.array([1], type=pa.int64()), pa.array([0, 0, 0], type=pa.int64())),
         # Broadcast right
         (pa.array([1, 1, 1], type=pa.int64()), pa.array([0], type=pa.int64())),
+        # Broadcast both
+        (pa.array([1], type=pa.int64()), pa.array([0], type=pa.int64())),
     ],
 )
 def test_series_if_else_numeric(if_true, if_false) -> None:
@@ -40,6 +42,8 @@ def test_series_if_else_numeric(if_true, if_false) -> None:
         (pa.array(["1"], type=pa.string()), pa.array(["0", "0", "0"], type=pa.string())),
         # Broadcast right
         (pa.array(["1", "1", "1"], type=pa.string()), pa.array(["0"], type=pa.string())),
+        # Broadcast both
+        (pa.array(["1"], type=pa.string()), pa.array(["0"], type=pa.string())),
     ],
 )
 def test_series_if_else_string(if_true, if_false) -> None:
@@ -62,6 +66,8 @@ def test_series_if_else_string(if_true, if_false) -> None:
         (pa.array([True], type=pa.bool_()), pa.array([False, False, False], type=pa.bool_())),
         # Broadcast right
         (pa.array([True, True, True], type=pa.bool_()), pa.array([False], type=pa.bool_())),
+        # Broadcast both
+        (pa.array([True], type=pa.bool_()), pa.array([False], type=pa.bool_())),
     ],
 )
 def test_series_if_else_bool(if_true, if_false) -> None:
@@ -84,6 +90,8 @@ def test_series_if_else_bool(if_true, if_false) -> None:
         (pa.array([b"Y"], type=pa.binary()), pa.array([b"N", b"N", b"N"], type=pa.binary())),
         # Broadcast right
         (pa.array([b"Y", b"Y", b"Y"], type=pa.binary()), pa.array([b"N"], type=pa.binary())),
+        # Broadcast both
+        (pa.array([b"Y"], type=pa.binary()), pa.array([b"N"], type=pa.binary())),
     ],
 )
 def test_series_if_else_binary(if_true, if_false) -> None:
@@ -106,6 +114,8 @@ def test_series_if_else_binary(if_true, if_false) -> None:
         (pa.array([None], type=pa.null()), pa.array([None, None, None], type=pa.null())),
         # Broadcast right
         (pa.array([None, None, None], type=pa.null()), pa.array([None], type=pa.null())),
+        # Broadcast right
+        (pa.array([None], type=pa.null()), pa.array([None], type=pa.null())),
     ],
 )
 def test_series_if_else_nulls(if_true, if_false) -> None:

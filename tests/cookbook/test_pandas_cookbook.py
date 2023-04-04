@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from daft.dataframe import DataFrame
+from daft.datatype import DataType
 from daft.expressions import col, lit
 from tests.conftest import assert_df_equals
 
@@ -16,10 +17,8 @@ from tests.conftest import assert_df_equals
 ###
 
 IF_THEN_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50, -30, -50]}
-IF_THEN_PARTITIONING = [1, 2, 3, 4, 5]
 
 
-@pytest.mark.parametrize("repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in IF_THEN_PARTITIONING])
 def test_if_then(repartition_nparts):
     daft_df = DataFrame.from_pydict(IF_THEN_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(IF_THEN_DATA)
@@ -29,7 +28,6 @@ def test_if_then(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
-@pytest.mark.parametrize("repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in IF_THEN_PARTITIONING])
 def test_if_then_2_cols(repartition_nparts):
     daft_df = DataFrame.from_pydict(IF_THEN_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(IF_THEN_DATA)
@@ -42,7 +40,6 @@ def test_if_then_2_cols(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
-@pytest.mark.parametrize("repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in IF_THEN_PARTITIONING])
 def test_if_then_numpy_where(repartition_nparts):
     daft_df = DataFrame.from_pydict(IF_THEN_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(IF_THEN_DATA)
@@ -57,12 +54,8 @@ def test_if_then_numpy_where(repartition_nparts):
 ###
 
 SPLITTING_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50, -30, -50]}
-SPLITTING_DATA_PARTITIONING = [1, 2, 3, 4, 5]
 
 
-@pytest.mark.parametrize(
-    "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in SPLITTING_DATA_PARTITIONING]
-)
 def test_split_frame_boolean_criterion(repartition_nparts):
     daft_df = DataFrame.from_pydict(SPLITTING_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(SPLITTING_DATA)
@@ -77,12 +70,8 @@ def test_split_frame_boolean_criterion(repartition_nparts):
 ###
 
 BUILDING_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50, -30, -50]}
-BUILDING_DATA_PARTITIONING = [1, 2, 3, 4, 5]
 
 
-@pytest.mark.parametrize(
-    "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in BUILDING_DATA_PARTITIONING]
-)
 def test_multi_criteria_and(repartition_nparts):
     daft_df = DataFrame.from_pydict(BUILDING_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
@@ -92,9 +81,6 @@ def test_multi_criteria_and(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
-@pytest.mark.parametrize(
-    "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in BUILDING_DATA_PARTITIONING]
-)
 def test_multi_criteria_or(repartition_nparts):
     daft_df = DataFrame.from_pydict(BUILDING_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
@@ -104,21 +90,17 @@ def test_multi_criteria_or(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
-@pytest.mark.parametrize(
-    "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in BUILDING_DATA_PARTITIONING]
-)
 def test_multi_criteria_or_assignment(repartition_nparts):
     daft_df = DataFrame.from_pydict(BUILDING_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
-    daft_df = daft_df.with_column("AAA", ((col("BBB") > 25) | (col("CCC") >= 75)).if_else(0.1, col("AAA").cast(float)))
+    daft_df = daft_df.with_column(
+        "AAA", ((col("BBB") > 25) | (col("CCC") >= 75)).if_else(0.1, col("AAA").cast(DataType.float32()))
+    )
     pd_df.loc[(pd_df["BBB"] > 25) | (pd_df["CCC"] >= 75), "AAA"] = 0.1
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="BBB")
 
 
-@pytest.mark.parametrize(
-    "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in BUILDING_DATA_PARTITIONING]
-)
 def test_select_rows_closest_to_certain_value_using_argsort(repartition_nparts):
     daft_df = DataFrame.from_pydict(BUILDING_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
@@ -134,13 +116,9 @@ def test_select_rows_closest_to_certain_value_using_argsort(repartition_nparts):
 ###
 
 SELECTION_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50, -30, -50]}
-SELECTION_DATA_PARTITIONING = [1, 2, 3, 4, 5]
 
 
 @pytest.mark.skip(reason="Requires F.row_number() and Expression.is_in(...)")
-@pytest.mark.parametrize(
-    "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in SELECTION_DATA_PARTITIONING]
-)
 def test_splitting_by_row_index(repartition_nparts):
     daft_df = DataFrame.from_pydict(SELECTION_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(SELECTION_DATA)
@@ -151,9 +129,6 @@ def test_splitting_by_row_index(repartition_nparts):
 
 
 @pytest.mark.skip(reason="Requires F.row_number()")
-@pytest.mark.parametrize(
-    "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in SELECTION_DATA_PARTITIONING]
-)
 def test_splitting_by_row_range(repartition_nparts):
     daft_df = DataFrame.from_pydict(SELECTION_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(SELECTION_DATA)
@@ -168,13 +143,9 @@ def test_splitting_by_row_range(repartition_nparts):
 ###
 
 APPLYMAP_DATA = {"AAA": [1, 2, 1, 3], "BBB": [1, 1, 2, 2], "CCC": [2, 1, 3, 1]}
-APPLYMAP_DATA_PARTITIONING = [1, 2, 3, 4, 5]
 
 
 @pytest.mark.skip(reason="Requires Expression.applymap((val) => result)")
-@pytest.mark.parametrize(
-    "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in APPLYMAP_DATA_PARTITIONING]
-)
 def test_efficiently_and_dynamically_creating_new_columns_using_applymap(repartition_nparts):
     daft_df = DataFrame.from_pydict(APPLYMAP_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(APPLYMAP_DATA)
@@ -192,13 +163,9 @@ def test_efficiently_and_dynamically_creating_new_columns_using_applymap(reparti
 
 
 MIN_WITH_GROUPBY_DATA = {"AAA": [1, 1, 1, 2, 2, 2, 3, 3], "BBB": [2, 1, 3, 4, 5, 1, 2, 3]}
-MIN_WITH_GROUPBY_DATA_PARTITIONING = [1, 2, 3, 8, 9]
 
 
 @pytest.mark.skip(reason="Requires .first() aggregations")
-@pytest.mark.parametrize(
-    "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in APPLYMAP_DATA_PARTITIONING]
-)
 def test_keep_other_columns_when_using_min_with_groupby(repartition_nparts):
     daft_df = DataFrame.from_pydict(APPLYMAP_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(APPLYMAP_DATA)
@@ -226,7 +193,6 @@ GROUPBY_DATA = {
     "weight": [8, 10, 11, 1, 20, 12, 12],
     "adult": [False] * 5 + [True] * 2,
 }
-GROUPBY_DATA_PARTITIONING = [1, 2, 7, 8]
 
 # TODO: We can't do this yet, since it requires getting the first row for every Group, ordered by some column
 # @pytest.mark.tdd
@@ -237,14 +203,11 @@ GROUPBY_DATA_PARTITIONING = [1, 2, 7, 8]
 #     assert_df_equals(daft_df, pd_df, sort_key="animal")
 
 
-@pytest.mark.parametrize(
-    "repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in GROUPBY_DATA_PARTITIONING]
-)
 def test_applying_to_different_items_in_group(repartition_nparts):
     daft_df = DataFrame.from_pydict(GROUPBY_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(GROUPBY_DATA)
     daft_df = daft_df.with_column(
-        "weight", (col("size") == "S").if_else(col("weight") * 1.5, col("weight").cast(float))
+        "weight", (col("size") == "S").if_else(col("weight") * 1.5, col("weight").cast(DataType.float32()))
     )
     daft_df = daft_df.with_column("weight", (col("size") == "M").if_else(col("weight") * 1.25, col("weight")))
     daft_df = daft_df.with_column("weight", (col("size") == "L").if_else(col("weight"), col("weight")))
@@ -274,10 +237,8 @@ JOIN_DATA = {
     "Test_0": [0, 1, 0, 1, 2, 0, 1],
     "Data": np.random.randn(7),
 }
-JOIN_DATA_PARTITIONING = [1, 3, 7, 8]
 
 
-@pytest.mark.parametrize("repartition_nparts", [pytest.param(n, id=f"Repartition:{n}") for n in JOIN_DATA_PARTITIONING])
 def test_self_join(repartition_nparts):
     daft_df = DataFrame.from_pydict(JOIN_DATA).repartition(repartition_nparts)
     daft_df = daft_df.with_column("Test_1", col("Test_0") - 1)

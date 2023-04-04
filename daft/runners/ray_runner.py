@@ -102,7 +102,7 @@ def _glob_path_into_details_vpartitions(
 
 @ray.remote
 def _make_ray_block_from_vpartition(partition: Table) -> RayDatasetBlock:
-    # TODO: [RUST-INT] properly implement Ray Datasets integrations once we have nested tensor types
+    # TODO: [RUST-INT][NESTED] properly implement Ray Datasets integrations once we have nested tensor types
     return partition.to_arrow()
 
 
@@ -114,7 +114,7 @@ def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_sc
     for cname, column in zip(ray_dataset_block.column_names, ray_dataset_block):
         daft_field = daft_schema[cname]
 
-        # [RUST-INT] Properly handle nested arrow types here and build Ray Dataset's extension types
+        # [[RUST-INT][NESTED] Properly handle nested arrow types here and build Ray Dataset's extension types
         # NOTE: Since we only handle Arrow Ray Datasets, all Python-type fields should be Ray's Tensor extension types
         # We convert that to a Daft Python block here by invoking `np.array` on each item to convert it to numpy
         if daft_field.dtype._is_python_type():

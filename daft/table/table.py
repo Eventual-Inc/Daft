@@ -122,12 +122,7 @@ class Table:
     def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
         if not _PANDAS_AVAILABLE:
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
-
-        # TODO: [RUST-INT][TPCH] implement and test better - this is used in test validations
-        pd_df = pd.DataFrame(self.to_pydict())
-        if schema is not None:
-            pd_df = pd_df[schema.column_names()]
-        return pd_df
+        return self.to_arrow().to_pandas()
 
     ###
     # Compute methods (Table -> Table)

@@ -3,19 +3,14 @@ from __future__ import annotations
 import pytest
 
 from daft.expressions import col
-from tests.dataframe_cookbook.conftest import (
-    parametrize_service_requests_csv_repartition,
-)
 
 
-@parametrize_service_requests_csv_repartition
 def test_count_rows(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Count rows for the entire table"""
     daft_df_row_count = daft_df.repartition(repartition_nparts).count_rows()
     assert daft_df_row_count == service_requests_csv_pd_df.shape[0]
 
 
-@parametrize_service_requests_csv_repartition
 def test_filtered_count_rows(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Count rows on a table filtered by a certain condition"""
     daft_df_row_count = daft_df.repartition(repartition_nparts).where(col("Borough") == "BROOKLYN").count_rows()
@@ -24,7 +19,6 @@ def test_filtered_count_rows(daft_df, service_requests_csv_pd_df, repartition_np
     assert daft_df_row_count == pd_df_row_count
 
 
-@parametrize_service_requests_csv_repartition
 @pytest.mark.parametrize(
     "keys",
     [
@@ -39,7 +33,6 @@ def test_groupby_count_rows(daft_df, service_requests_csv_pd_df, repartition_npa
     assert daft_df.count_rows() == len(service_requests_csv_pd_df)
 
 
-@parametrize_service_requests_csv_repartition
 def test_dataframe_length_after_collect(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Count rows after group by"""
     daft_df = daft_df.repartition(repartition_nparts).collect()

@@ -8,6 +8,7 @@ def assert_df_equals(
     pd_df: pd.DataFrame,
     sort_key: str | list[str] = "Unique Key",
     assert_ordering: bool = False,
+    check_dtype: bool = True,
 ):
     """Asserts that a Daft Dataframe is equal to a Pandas Dataframe.
 
@@ -41,7 +42,7 @@ def assert_df_equals(
         pd_series = pd_df[col]
 
         try:
-            pd.testing.assert_series_equal(df_series, pd_series)
+            pd.testing.assert_series_equal(df_series, pd_series, check_dtype=check_dtype)
         except AssertionError:
             print(f"Failed assertion for col: {col}")
             raise
