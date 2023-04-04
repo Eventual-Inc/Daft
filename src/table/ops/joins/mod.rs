@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{dsl::Expr, error::DaftResult, schema::Schema, table::Table};
 
+mod hash_join;
 mod naive_join;
 
 impl Table {
@@ -9,7 +10,7 @@ impl Table {
         let ltable = self.eval_expression_list(left_on)?;
         let rtable = right.eval_expression_list(right_on)?;
 
-        let (lidx, ridx) = naive_join::naive_inner_join(&ltable, &rtable)?;
+        let (lidx, ridx) = hash_join::hash_inner_join(&ltable, &rtable)?;
 
         let mut join_fields = ltable
             .schema
