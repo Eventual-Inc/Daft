@@ -165,7 +165,7 @@ def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
         .min(col("Unique Key"), col("Created Date"))
     )
     service_requests_csv_pd_df = (
-        service_requests_csv_pd_df.groupby(keys)["Unique Key", "Created Date"].min().reset_index()
+        service_requests_csv_pd_df.groupby(keys)[["Unique Key", "Created Date"]].min().reset_index()
     )
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
@@ -186,7 +186,7 @@ def test_max_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
         .max(col("Unique Key"), col("Created Date"))
     )
     service_requests_csv_pd_df = (
-        service_requests_csv_pd_df.groupby(keys)["Unique Key", "Created Date"].max().reset_index()
+        service_requests_csv_pd_df.groupby(keys)[["Unique Key", "Created Date"]].max().reset_index()
     )
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
