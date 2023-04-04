@@ -69,7 +69,13 @@ def check_answer(gen_tpch):
         res = cursor.execute(query)
         sqlite_results = res.fetchall()
         sqlite_pd_results = pd.DataFrame.from_records(sqlite_results, columns=daft_pd_df.columns)
-        assert_df_equals(daft_pd_df, sqlite_pd_results, assert_ordering=True)
+        assert_df_equals(
+            daft_pd_df,
+            sqlite_pd_results,
+            assert_ordering=True,
+            # We lose fine-grained dtype information from the sqlite3 API
+            check_dtype=False,
+        )
 
     return _check_answer
 
