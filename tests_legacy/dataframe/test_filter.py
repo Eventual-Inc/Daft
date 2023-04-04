@@ -13,6 +13,7 @@ def test_filter_missing_column(valid_data: list[dict[str, Any]]) -> None:
         df.select("sepal_width").where(df["petal_length"] > 4.8)
 
 
+@pytest.mark.skip(reason="Requires Expression.float.is_nan()")
 def test_drop_na(missing_value_data: list[dict[str, Any]]) -> None:
     df: DataFrame = DataFrame.from_pylist(missing_value_data)
     df_len_no_col = len(df.drop_nan().collect())
