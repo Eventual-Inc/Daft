@@ -3,14 +3,14 @@ use std::cmp::Ordering;
 use crate::{
     array::{ops::build_multi_array_compare, BaseArray},
     datatypes::{UInt64Array, UInt64Type},
-    dsl::{AggExpr, Expr},
+    dsl::Expr,
     error::DaftResult,
     series::Series,
     table::Table,
 };
 
 impl Table {
-    pub fn agg(&self, to_agg: &[(Expr, &str)], group_by: &[Expr]) -> DaftResult<Table> {
+    pub fn agg(&self, to_agg: &[Expr], group_by: &[Expr]) -> DaftResult<Table> {
         // Dispatch depending on whether we're doing groupby or just a global agg.
         match group_by.len() {
             0 => self.agg_global(to_agg),
@@ -18,25 +18,11 @@ impl Table {
         }
     }
 
-    pub fn agg_global(&self, to_agg: &[(Expr, &str)]) -> DaftResult<Table> {
-        // Convert the input (child, name) exprs to the enum form.
-        //  e.g. (expr, "sum") to Expr::Agg(AggExpr::Sum(expr))
-        //
-        // NOTE: We may want to do this elsewhere later.
-        // See https://github.com/Eventual-Inc/Daft/pull/702#discussion_r1136597811
-        let agg_expr_list = to_agg
-            .iter()
-            .map(|(e, s)| AggExpr::from_name_and_child_expr(s, e))
-            .collect::<DaftResult<Vec<AggExpr>>>()?;
-        let expr_list = agg_expr_list
-            .iter()
-            .map(|ae| Expr::Agg(ae.clone()))
-            .collect::<Vec<Expr>>();
-
-        self.eval_expression_list(&expr_list)
+    pub fn agg_global(&self, to_agg: &[Expr]) -> DaftResult<Table> {
+        self.eval_expression_list(to_agg)
     }
 
-    pub fn agg_groupby(&self, to_agg: &[(Expr, &str)], group_by: &[Expr]) -> DaftResult<Table> {
+    pub fn agg_groupby(&self, to_agg: &[Expr], group_by: &[Expr]) -> DaftResult<Table> {
         // Table with just the groupby columns.
         let groupby_table = self.eval_expression_list(group_by)?;
 

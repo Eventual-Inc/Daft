@@ -175,17 +175,17 @@ class PruneColumns(Rule[LogicalPlan]):
         Projection-LocalAggregate-* -> Projection-<LocalAggregate with pruned columns>-*
         """
         parent_required_set = parent.required_columns()[0]
-        agg_op_pairs = child._agg
-        agg_ids = {e.name() for e, _ in agg_op_pairs}
+        agg_exprs = child._agg
+        agg_ids = {e.name() for e in agg_exprs}
         if agg_ids.issubset(parent_required_set):
             return None
 
-        new_agg_pairs = [(e, op) for e, op in agg_op_pairs if e.name() in parent_required_set]
+        new_agg_exprs = [e for e in agg_exprs if e.name() in parent_required_set]
         grandchild = child._children()[0]
 
         logger.debug(f"Pruning Columns:  {agg_ids - parent_required_set} in projection aggregate")
         return parent.copy_with_new_children(
-            [LocalAggregate(input=grandchild, agg=new_agg_pairs, group_by=child._group_by)]
+            [LocalAggregate(input=grandchild, agg=new_agg_exprs, group_by=child._group_by)]
         )
 
     def _aggregate_logical_plan(self, parent: LocalAggregate, child: LogicalPlan) -> LogicalPlan | None:

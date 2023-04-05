@@ -63,9 +63,8 @@ impl PyTable {
             .into())
     }
 
-    pub fn agg(&self, to_agg: Vec<(PyExpr, &str)>, group_by: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_agg: Vec<(dsl::Expr, &str)> =
-            to_agg.into_iter().map(|(e, s)| (e.into(), s)).collect();
+    pub fn agg(&self, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
+        let converted_to_agg: Vec<dsl::Expr> = to_agg.into_iter().map(|e| e.into()).collect();
         let converted_group_by: Vec<dsl::Expr> = group_by.into_iter().map(|e| e.into()).collect();
         Ok(self
             .table
