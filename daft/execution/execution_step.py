@@ -667,7 +667,17 @@ class FanoutRange(FanoutInstruction, Generic[PartitionT]):
         [boundaries, input] = inputs
         if self._num_outputs == 1:
             return [input]
-        return input.partition_by_range(self.sort_by, boundaries, self.descending)
+        partitioned_tables = input.partition_by_range(self.sort_by, boundaries, self.descending)
+
+        # Pad the partitioned_tables with empty tables if fewer than self._num_outputs were returned
+        # This can happen when all values are null or empty, which leads to an empty `boundaries` input
+        assert len(partitioned_tables) >= 1, "Should have at least one returned table"
+        schema = partitioned_tables[0].schema()
+        partitioned_tables = partitioned_tables + [
+            Table.empty(schema=schema) for _ in range(self._num_outputs - len(partitioned_tables))
+        ]
+
+        return partitioned_tables
 
 
 @dataclass(frozen=True)

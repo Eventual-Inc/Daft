@@ -56,8 +56,8 @@ class Table:
     ###
 
     @staticmethod
-    def empty() -> Table:
-        pyt = _PyTable.empty()
+    def empty(schema: Schema | None = None) -> Table:
+        pyt = _PyTable.empty(None) if schema is None else _PyTable.empty(schema._schema)
         return Table._from_pytable(pyt)
 
     @staticmethod
