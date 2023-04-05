@@ -774,24 +774,24 @@ class LocalAggregate(UnaryNode):
     def __init__(
         self,
         input: LogicalPlan,
-        agg: list[tuple[Expression, str]],
+        agg: list[Expression],
         group_by: ExpressionsProjection | None = None,
     ) -> None:
-        self._cols_to_agg = ExpressionsProjection([e for e, _ in agg])
+        self._cols_to_agg = ExpressionsProjection(agg)
         self._group_by = group_by
 
         if group_by is not None:
-            group_and_agg_cols = ExpressionsProjection(list(group_by) + [e for e, _ in agg])
+            group_and_agg_cols = ExpressionsProjection(list(group_by) + agg)
             schema = group_and_agg_cols.resolve_schema(input.schema())
         else:
             schema = self._cols_to_agg.resolve_schema(input.schema())
 
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
         self._register_child(input)
-        self._agg = [(e, op) for e, (_, op) in zip(self._cols_to_agg, agg)]
+        self._agg = agg
 
     def __repr__(self) -> str:
-        return self._repr_helper(agg=[e for e, _ in self._agg], group_by=self._group_by)
+        return self._repr_helper(agg=self._agg, group_by=self._group_by)
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1
@@ -813,14 +813,14 @@ class LocalAggregate(UnaryNode):
         return (
             isinstance(other, LocalAggregate)
             and self.schema() == other.schema()
-            and all(expr_structurally_equal(l[0], (r[0])) and l[1] == r[1] for l, r in zip(self._agg, other._agg))
+            and all(expr_structurally_equal(l, r) for l, r in zip(self._agg, other._agg))
             and self._group_by == other._group_by
         )
 
     def rebuild(self) -> LogicalPlan:
         return LocalAggregate(
             input=self._children()[0].rebuild(),
-            agg=[(e, op) for e, op in self._agg],
+            agg=self._agg,
             group_by=self._group_by if self._group_by is not None else None,
         )
 
