@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow2;
 
 use crate::{array::DataArray, datatypes::*, error::DaftResult};

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::datatypes::{
     BinaryArray, BooleanArray, DaftDataType, DaftNumericType, DataType, Field, Utf8Array, Utf8Type,
 };

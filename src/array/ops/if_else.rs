@@ -4,7 +4,6 @@ use crate::error::DaftError;
 use crate::{array::DataArray, error::DaftResult};
 use arrow2::compute::if_then_else::if_then_else;
 use std::convert::identity;
-use std::sync::Arc;
 
 use crate::array::BaseArray;
 
