@@ -15,10 +15,11 @@ where
     fn count(&self) -> Self::Output {
         let arrow_array = &self.data;
         let count = arrow_array.len() - arrow_array.null_count();
-        let result_arrow_array = arrow2::array::PrimitiveArray::from([Some(count as u64)]);
+        let result_arrow_array =
+            Box::new(arrow2::array::PrimitiveArray::from([Some(count as u64)]));
         DataArray::<UInt64Type>::new(
             Arc::new(Field::new(self.field.name.clone(), DataType::UInt64)),
-            Arc::new(result_arrow_array),
+            result_arrow_array,
         )
     }
 }

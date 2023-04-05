@@ -17,11 +17,11 @@ impl DaftMeanAggable for &DataArray<Float64Type> {
             0 => None,
             count_value => Some(sum_value / count_value as f64),
         };
-        let arrow_array = arrow2::array::PrimitiveArray::from([result]);
+        let arrow_array = Box::new(arrow2::array::PrimitiveArray::from([result]));
 
         DataArray::new(
             Arc::new(Field::new(self.field.name.clone(), DataType::Float64)),
-            Arc::new(arrow_array),
+            arrow_array,
         )
     }
 }

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow2;
 
 use crate::{array::DataArray, datatypes::*, error::DaftResult};
@@ -14,8 +12,8 @@ macro_rules! impl_daft_numeric_agg {
             fn sum(&self) -> Self::Output {
                 let primitive_arr = self.downcast();
                 let sum_value = arrow2::compute::aggregate::sum_primitive(primitive_arr);
-                let arrow_array = arrow2::array::PrimitiveArray::from([sum_value]);
-                DataArray::new(self.field.clone(), Arc::new(arrow_array))
+                let arrow_array = Box::new(arrow2::array::PrimitiveArray::from([sum_value]));
+                DataArray::new(self.field.clone(), arrow_array)
             }
         }
     };

@@ -91,8 +91,9 @@ impl BinaryArray {
                 let repeated_values: Vec<&[u8]> = std::iter::repeat(val).take(num).collect();
                 BinaryArray::new(
                     self.field.clone(),
-                    arrow2::array::BinaryArray::<i64>::from_slice(repeated_values.as_slice())
-                        .arced(),
+                    Box::new(arrow2::array::BinaryArray::<i64>::from_slice(
+                        repeated_values.as_slice(),
+                    )),
                 )
             }
             None => Ok(DataArray::full_null(self.name(), num)),

@@ -18,7 +18,7 @@ where
         }
         let arr = new_null_array(T::get_dtype().to_arrow().unwrap(), length);
 
-        DataArray::new(Arc::new(Field::new(name, T::get_dtype())), Arc::from(arr)).unwrap()
+        DataArray::new(Arc::new(Field::new(name, T::get_dtype())), arr).unwrap()
     }
 
     pub fn empty(name: &str) -> Self {
@@ -27,6 +27,6 @@ where
         }
         let arr = new_empty_array(T::get_dtype().to_arrow().unwrap());
 
-        DataArray::new(Arc::new(Field::new(name, T::get_dtype())), Arc::from(arr)).unwrap()
+        DataArray::new(Arc::new(Field::new(name, T::get_dtype())), arr).unwrap()
     }
 }
