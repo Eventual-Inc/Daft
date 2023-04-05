@@ -8,31 +8,21 @@ import pytest
 
 from daft import DataFrame
 
+NUM_SAMPLES = 1_000_000
+
 
 @pytest.mark.benchmark(group="sorts")
-@pytest.mark.parametrize(
-    "num_samples, num_partitions",
-    [(10_000, 1), (10_000, 100)],
-    ids=["10_000/1", "10_000/100"],
-)
-def test_sort_simple(benchmark, num_samples, num_partitions) -> None:
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+def test_sort_simple(benchmark, num_samples) -> None:
     """Test simple sort performance.
 
-    Keys are consecutive integers; no data payload.
+    Keys are unique integers; no data payload.
     """
 
     arr = np.arange(num_samples)
     np.random.shuffle(arr)
 
-    df = (
-        DataFrame.from_pydict(
-            {
-                "mykey": arr,
-            }
-        )
-        .into_partitions(num_partitions)
-        .collect()
-    )
+    df = DataFrame.from_pydict({"mykey": arr}).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -45,26 +35,50 @@ def test_sort_simple(benchmark, num_samples, num_partitions) -> None:
 
 
 @pytest.mark.benchmark(group="sorts")
-@pytest.mark.parametrize(
-    "num_samples, num_partitions",
-    [(10_000, 1), (10_000, 100)],
-    ids=["10_000/1", "10_000/100"],
-)
-def test_sort_strings(benchmark, num_samples, num_partitions) -> None:
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+def test_sort_skew(benchmark, num_samples) -> None:
+    """Test sort performance with skewed key distribution."""
+
+    arr = np.arange(num_samples)
+    arr[: num_samples // 2] = 0
+    np.random.shuffle(arr)
+
+    df = DataFrame.from_pydict({"mykey": arr}).collect()
+
+    # Run the benchmark.
+    def bench() -> DataFrame:
+        return df.sort("mykey").collect()
+
+    benchmark(bench)
+
+
+@pytest.mark.benchmark(group="sorts")
+@pytest.mark.parametrize("num_partitions", [10])
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+def test_sort_multipart(benchmark, num_samples, num_partitions) -> None:
+    """Test the performance impact of multiple partitions."""
+
+    arr = np.arange(num_samples)
+    np.random.shuffle(arr)
+
+    df = DataFrame.from_pydict({"mykey": arr}).into_partitions(num_partitions).collect()
+
+    # Run the benchmark.
+    def bench() -> DataFrame:
+        return df.sort("mykey").collect()
+
+    benchmark(bench)
+
+
+@pytest.mark.benchmark(group="sorts")
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+def test_sort_strings(benchmark, num_samples) -> None:
     """Test the impact of string keys vs integer keys."""
 
     keys = [str(uuid4()) for _ in range(num_samples)]
     random.shuffle(keys)
 
-    df = (
-        DataFrame.from_pydict(
-            {
-                "mykey": keys,
-            }
-        )
-        .into_partitions(num_partitions)
-        .collect()
-    )
+    df = DataFrame.from_pydict({"mykey": keys}).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -78,12 +92,8 @@ def test_sort_strings(benchmark, num_samples, num_partitions) -> None:
 
 
 @pytest.mark.benchmark(group="sorts")
-@pytest.mark.parametrize(
-    "num_samples, num_partitions",
-    [(10_000, 1), (10_000, 100)],
-    ids=["10_000/1", "10_000/100"],
-)
-def test_sort_withdata(benchmark, num_samples, num_partitions) -> None:
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+def test_sort_withdata(benchmark, num_samples) -> None:
     """Test the impact of data payloads."""
 
     arr = np.arange(num_samples)
@@ -91,16 +101,12 @@ def test_sort_withdata(benchmark, num_samples, num_partitions) -> None:
 
     long_A = "A" * 1024
 
-    df = (
-        DataFrame.from_pydict(
-            {
-                "mykey": arr,
-                "data": [long_A for _ in range(num_samples)],
-            }
-        )
-        .into_partitions(num_partitions)
-        .collect()
-    )
+    df = DataFrame.from_pydict(
+        {
+            "mykey": arr,
+            "data": [long_A for _ in range(num_samples)],
+        }
+    ).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -117,40 +123,32 @@ def test_sort_withdata(benchmark, num_samples, num_partitions) -> None:
 
 
 @pytest.mark.benchmark(group="sorts")
-@pytest.mark.parametrize(
-    "num_samples, num_partitions",
-    [(10_000, 1), (10_000, 100)],
-    ids=["10_000/1", "10_000/100"],
-)
-@pytest.mark.parametrize("num_columns", [1, 4], ids=["1col", "4cols"])
-def test_multicolumn_sort(benchmark, num_columns, num_samples, num_partitions) -> None:
+@pytest.mark.parametrize("num_columns", [1, 4])
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+def test_multicolumn_sort(benchmark, num_columns, num_samples) -> None:
     """Evaluate the performance impact of sorting multiple columns.
 
     Each additional sort column increases the sort key cardinality by approximately the same factor of ~10
     (i.e. each additional sort column should be doing around the same additional amount of work).
 
-    Using all columns produces a unique sort key.
+    Using the last column produces a unique sort key.
     """
 
     arr = np.arange(num_samples)
     np.random.shuffle(arr)
 
-    df = (
-        DataFrame.from_pydict(
-            {
-                # all coprime
-                "nums_9": arr * 17 % 9,
-                "nums_10": arr * 17 % 10,
-                "nums_11": arr * 17 % 11,
-                "nums": arr,
-            }
-        )
-        .into_partitions(num_partitions)
-        .collect()
-    )
+    df = DataFrame.from_pydict(
+        {
+            # all coprime
+            "nums_9": arr * 7 % 9,
+            "nums_10": arr * 7 % 10,
+            "nums_11": arr * 7 % 11,
+            "nums": arr,
+        }
+    ).collect()
 
     # Run the benchmark.
-    sort_on = ["nums_9", "nums_10", "nums_11", "nums"][:num_columns]
+    sort_on = ["nums_9", "nums_10", "nums_11", "nums"][-num_columns:]
 
     def bench() -> DataFrame:
         return df.sort(sort_on).collect()
