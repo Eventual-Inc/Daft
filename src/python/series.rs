@@ -39,6 +39,11 @@ impl PySeries {
         Ok(series.into())
     }
 
+    #[staticmethod]
+    pub fn from_pylist(_name: &str, _pylist: &PyAny) -> PyResult<Self> {
+        todo!("active WIP")
+    }
+
     pub fn to_arrow(&self) -> PyResult<PyObject> {
         let arrow_array = self.series.array().data().to_boxed();
         Python::with_gil(|py| {
