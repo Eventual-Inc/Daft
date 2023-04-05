@@ -1,7 +1,5 @@
-use std::cmp::Ordering;
-
 use crate::{
-    array::{ops::build_multi_array_compare, BaseArray},
+    array::{ops::arrow2::comparison::build_multi_array_is_equal, BaseArray},
     datatypes::{UInt64Array, UInt64Type},
     dsl::{AggExpr, Expr},
     error::DaftResult,
@@ -105,8 +103,12 @@ impl Table {
         let mut key_indices: Vec<u64> = vec![];
         let mut values_indices: Vec<UInt64Array> = vec![];
 
-        let comparator =
-            build_multi_array_compare(self.columns.as_slice(), &vec![false; self.columns.len()])?;
+        let comparator = build_multi_array_is_equal(
+            self.columns.as_slice(),
+            self.columns.as_slice(),
+            true,
+            true,
+        )?;
 
         // To group the argsort values together, we will traverse the table in argsort order,
         // collecting the indices traversed whenever the table value changes.
@@ -122,8 +124,8 @@ impl Table {
             match group_begin_indices {
                 None => group_begin_indices = Some((table_index, argarray_index)),
                 Some((begin_table_index, begin_argarray_index)) => {
-                    let comp_result = comparator(begin_table_index, table_index);
-                    if comp_result != Ordering::Equal {
+                    let is_equal = comparator(begin_table_index, table_index);
+                    if !is_equal {
                         // The value has changed.
                         // Record results for the previous group.
                         key_indices.push(begin_table_index as u64);

@@ -1,24 +1,57 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{dsl::Expr, error::DaftResult, schema::Schema, table::Table};
+use crate::{
+    dsl::Expr,
+    error::{DaftError, DaftResult},
+    schema::Schema,
+    table::Table,
+    utils::supertype::try_get_supertype,
+};
 
+mod hash_join;
 mod naive_join;
+
+fn match_types_for_tables(left: &Table, right: &Table) -> DaftResult<(Table, Table)> {
+    let mut lseries = vec![];
+    let mut rseries = vec![];
+
+    for (ls, rs) in left.columns.iter().zip(right.columns.iter()) {
+        let st = try_get_supertype(ls.data_type(), rs.data_type());
+        if let Ok(st) = st {
+            lseries.push(ls.cast(&st)?);
+            rseries.push(rs.cast(&st)?);
+        } else {
+            return Err(DaftError::SchemaMismatch(format!(
+                "Can not perform join between due to mismatch of types of left: {} vs right: {}",
+                ls.field(),
+                rs.field()
+            )));
+        }
+    }
+    Ok((Table::from_columns(lseries)?, Table::from_columns(rseries)?))
+}
 
 impl Table {
     pub fn join(&self, right: &Self, left_on: &[Expr], right_on: &[Expr]) -> DaftResult<Self> {
         let ltable = self.eval_expression_list(left_on)?;
         let rtable = right.eval_expression_list(right_on)?;
 
-        let (lidx, ridx) = naive_join::naive_inner_join(&ltable, &rtable)?;
+        let (ltable, rtable) = match_types_for_tables(&ltable, &rtable)?;
+
+        let (lidx, ridx) = hash_join::hash_inner_join(&ltable, &rtable)?;
 
         let mut join_fields = ltable
-            .schema
-            .fields
-            .clone()
-            .into_values()
-            .collect::<Vec<_>>();
+            .column_names()
+            .iter()
+            .map(|s| self.schema.get_field(s).cloned())
+            .collect::<DaftResult<Vec<_>>>()?;
 
-        let mut join_series = ltable.take(&lidx)?.columns;
+        let mut join_series = self
+            .get_columns(ltable.column_names().as_slice())?
+            .take(&lidx)?
+            .columns;
+        drop(ltable);
+        drop(rtable);
 
         let mut names_so_far = HashSet::new();
 
@@ -35,6 +68,8 @@ impl Table {
                 names_so_far.insert(field.name.clone());
             }
         }
+
+        drop(lidx);
 
         // Zip the names of the left and right expressions into a HashMap
         let left_names = left_on.iter().map(|e| e.name());
@@ -70,6 +105,7 @@ impl Table {
             names_so_far.insert(curr_name.clone());
         }
 
+        drop(ridx);
         Table::new(Schema::new(join_fields), join_series)
     }
 }
