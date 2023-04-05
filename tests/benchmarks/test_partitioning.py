@@ -39,7 +39,7 @@ def test_coalesce(benchmark, num_samples, start_partitions) -> None:
 
 @pytest.mark.benchmark(group="partitioning")
 @pytest.mark.parametrize("end_partitions", [NUM_PARTITIONS])
-@pytest.mark.parametrize("start_partitions", [1, NUM_PARTITIONS])
+@pytest.mark.parametrize("start_partitions", [NUM_PARTITIONS])
 @pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
 def test_repartition_random(benchmark, num_samples, start_partitions, end_partitions) -> None:
     """Test performance of random repartitioning."""
@@ -55,7 +55,7 @@ def test_repartition_random(benchmark, num_samples, start_partitions, end_partit
 @pytest.mark.benchmark(group="partitioning")
 @pytest.mark.parametrize("distribution", ["uniform", "skewed"])
 @pytest.mark.parametrize("end_partitions", [NUM_PARTITIONS])
-@pytest.mark.parametrize("start_partitions", [NUM_PARTITIONS])
+@pytest.mark.parametrize("start_partitions", [1, NUM_PARTITIONS])
 @pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
 def test_repartition_hash(benchmark, num_samples, start_partitions, end_partitions, distribution) -> None:
     """Test performance of hash repartitioning."""
