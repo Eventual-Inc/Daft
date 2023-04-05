@@ -33,4 +33,14 @@ impl Series {
             ))),
         }
     }
+
+    pub fn utf8_length(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::Utf8 => Ok(self.utf8()?.length()?.into_series()),
+            DataType::Null => Ok(self.clone()),
+            dt => Err(DaftError::TypeError(format!(
+                "Length not implemented for type {dt}"
+            ))),
+        }
+    }
 }

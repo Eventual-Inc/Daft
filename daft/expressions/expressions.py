@@ -300,7 +300,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr) + other
 
     def length(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement string expression")
+        return Expression._from_pyexpr(self._expr.utf8_length())
 
 
 class ExpressionsProjection(Iterable[Expression]):

@@ -262,6 +262,11 @@ impl PyExpr {
         use dsl::functions::utf8::contains;
         Ok(contains(&self.expr, &pattern.expr).into())
     }
+
+    pub fn utf8_length(&self) -> PyResult<Self> {
+        use dsl::functions::utf8::length;
+        Ok(length(&self.expr).into())
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

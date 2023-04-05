@@ -219,6 +219,10 @@ impl PySeries {
         Ok(self.series.utf8_contains(&pattern.series)?.into())
     }
 
+    pub fn utf8_length(&self) -> PyResult<Self> {
+        Ok(self.series.utf8_length()?.into())
+    }
+
     pub fn dt_day(&self) -> PyResult<Self> {
         Ok(self.series.dt_day()?.into())
     }

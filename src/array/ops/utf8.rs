@@ -1,5 +1,5 @@
 use crate::array::BaseArray;
-use crate::datatypes::{BooleanArray, Utf8Array};
+use crate::datatypes::{BooleanArray, UInt64Array, Utf8Array};
 use arrow2;
 
 use crate::error::{DaftError, DaftResult};
@@ -15,6 +15,19 @@ impl Utf8Array {
 
     pub fn contains(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
         self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| data.contains(pat))
+    }
+
+    pub fn length(&self) -> DaftResult<UInt64Array> {
+        let self_arrow = self.downcast();
+        let arrow_result = self_arrow
+            .iter()
+            .map(|val| {
+                let v = val?;
+                Some(v.len() as u64)
+            })
+            .collect::<arrow2::array::UInt64Array>()
+            .with_validity(self_arrow.validity().cloned());
+        Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
     }
 
     fn binary_broadcasted_compare<ScalarKernel>(
