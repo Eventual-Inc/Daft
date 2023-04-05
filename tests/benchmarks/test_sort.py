@@ -13,7 +13,7 @@ NUM_SAMPLES = 1_000_000
 
 @pytest.mark.benchmark(group="sorts")
 @pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
-def test_sort_simple(benchmark, num_samples) -> None:
+def test_sort_baseline(benchmark, num_samples) -> None:
     """Test simple sort performance.
 
     Keys are unique integers; no data payload.
@@ -53,7 +53,7 @@ def test_sort_skew(benchmark, num_samples) -> None:
 
 
 @pytest.mark.benchmark(group="sorts")
-@pytest.mark.parametrize("num_partitions", [10])
+@pytest.mark.parametrize("num_partitions", [2])
 @pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
 def test_sort_multipart(benchmark, num_samples, num_partitions) -> None:
     """Test the performance impact of multiple partitions."""
