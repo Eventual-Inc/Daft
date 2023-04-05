@@ -17,19 +17,20 @@ impl FunctionEvaluator for ContainsEvaluator {
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
         match inputs {
-            [data, pattern] => {
-                let data_field = data.to_field(schema)?;
-                let pattern_field = pattern.to_field(schema)?;
-                if !matches!(data_field.dtype, DataType::Utf8)
-                    || !matches!(pattern_field.dtype, DataType::Utf8)
-                {
-                    return Err(DaftError::TypeError(format!(
-                        "Expects inputs to endwith to be utf8, but received {:?} and {:?}",
-                        data_field, pattern_field
-                    )));
+            [data, pattern] => match (data.to_field(schema), pattern.to_field(schema)) {
+                (Ok(data_field), Ok(pattern_field)) => {
+                    match (&data_field.dtype, &pattern_field.dtype) {
+                        (DataType::Utf8, DataType::Utf8) => {
+                            Ok(Field::new(data_field.name, DataType::Boolean))
+                        }
+                        _ => Err(DaftError::TypeError(format!(
+                            "Expects inputs to contains to be utf8, but received {:?} and {:?}",
+                            data_field, pattern_field
+                        ))),
+                    }
                 }
-                Ok(Field::new(data_field.name, DataType::Boolean))
-            }
+                (Err(e), _) | (_, Err(e)) => Err(e),
+            },
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()
