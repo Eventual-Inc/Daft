@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::{
-    array::BaseArray,
-    datatypes::UInt64Array,
+    array::{ops::arrow2::comparison::build_multi_array_is_equal, BaseArray},
+    datatypes::{DataType, UInt64Array},
     error::{DaftError, DaftResult},
     series::Series,
     table::Table,
@@ -48,6 +48,14 @@ pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series
         ));
     }
 
+    let has_null_type = left.columns.iter().any(|s| s.data_type().is_null())
+        || right.columns.iter().any(|s| s.data_type().is_null());
+    if has_null_type {
+        return Ok((
+            Series::empty("left_indices", &DataType::UInt64)?,
+            Series::empty("right_indices", &DataType::UInt64)?,
+        ));
+    }
     let hashes = left.hash_rows()?;
 
     const DEFAULT_SIZE: usize = 20;
@@ -72,17 +80,17 @@ pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series
     let r_hashes = right.hash_rows()?;
     let mut left_idx = vec![];
     let mut right_idx = vec![];
-    use crate::array::ops::build_multi_array_bicompare;
-    let comp = build_multi_array_bicompare(
+    let is_equal = build_multi_array_is_equal(
         left.columns.as_slice(),
         right.columns.as_slice(),
-        vec![false; left.num_columns()].as_slice(),
+        false,
+        false,
     )?;
 
     for (i, h) in r_hashes.downcast().values_iter().enumerate() {
         if let Some(indices) = probe_table.get(h) {
             for j in indices {
-                if comp(*j as usize, i).is_eq() {
+                if is_equal(*j as usize, i) {
                     left_idx.push(*j);
                     right_idx.push(i as u64);
                 }

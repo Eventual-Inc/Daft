@@ -2,7 +2,7 @@ mod abs;
 mod apply;
 mod arange;
 mod arithmetic;
-mod arrow2;
+pub mod arrow2;
 mod broadcast;
 mod cast;
 mod compare_agg;

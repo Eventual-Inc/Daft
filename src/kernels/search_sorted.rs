@@ -174,7 +174,7 @@ macro_rules! with_match_primitive_type {(
 })}
 
 type IsValid = Box<dyn Fn(usize) -> bool + Send + Sync>;
-fn build_is_valid(array: &dyn Array) -> IsValid {
+pub fn build_is_valid(array: &dyn Array) -> IsValid {
     if let Some(validity) = array.validity() {
         let validity = validity.clone();
         Box::new(move |x| unsafe { validity.get_bit_unchecked(x) })
