@@ -176,6 +176,9 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         # Reject if filtering on a null column - not a meaningful operation
         elif col_daft_type == DataType.null():
             reject()
+        # Reject for binary types because they are not comparable yet (TODO: https://github.com/Eventual-Inc/Daft/issues/688)
+        elif col_daft_type == DataType.binary():
+            reject()
         else:
             filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
             self.df = self.df.where(self.df[col_name_to_filter] == filter_value)
