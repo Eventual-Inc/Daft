@@ -5,6 +5,7 @@ use crate::{
 };
 
 pub(super) fn naive_inner_join(left: &Table, right: &Table) -> DaftResult<(Series, Series)> {
+    #![allow(dead_code)]
     if left.num_columns() != right.num_columns() {
         return Err(DaftError::ValueError(format!(
             "Mismatch of join on clauses: left: {:?} vs right: {:?}",

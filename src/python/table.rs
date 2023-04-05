@@ -184,8 +184,8 @@ impl PyTable {
         Ok(self.table.size_bytes()?)
     }
 
-    pub fn column_names(&self) -> PyResult<Vec<String>> {
-        Ok(self.table.column_names()?)
+    pub fn column_names(&self) -> Vec<String> {
+        self.table.column_names()
     }
 
     pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
