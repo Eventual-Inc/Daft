@@ -12,14 +12,14 @@ impl<T: DaftNumericType> From<(&str, Box<arrow2::array::PrimitiveArray<T::Native
 {
     fn from(item: (&str, Box<arrow2::array::PrimitiveArray<T::Native>>)) -> Self {
         let (name, array) = item;
-        DataArray::new(Field::new(name, T::get_dtype()).into(), array.arced()).unwrap()
+        DataArray::new(Field::new(name, T::get_dtype()).into(), array).unwrap()
     }
 }
 
 impl From<(&str, Box<arrow2::array::Utf8Array<i64>>)> for Utf8Array {
     fn from(item: (&str, Box<arrow2::array::Utf8Array<i64>>)) -> Self {
         let (name, array) = item;
-        DataArray::new(Field::new(name, DataType::Utf8).into(), array.arced()).unwrap()
+        DataArray::new(Field::new(name, DataType::Utf8).into(), array).unwrap()
     }
 }
 
@@ -29,8 +29,10 @@ where
 {
     fn from(item: (&str, &[T::Native])) -> Self {
         let (name, slice) = item;
-        let arrow_array = arrow2::array::PrimitiveArray::<T::Native>::from_slice(slice);
-        DataArray::new(Field::new(name, T::get_dtype()).into(), arrow_array.arced()).unwrap()
+        let arrow_array = Box::new(arrow2::array::PrimitiveArray::<T::Native>::from_slice(
+            slice,
+        ));
+        DataArray::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
     }
 }
 
@@ -40,20 +42,16 @@ where
 {
     fn from(item: (&str, Vec<T::Native>)) -> Self {
         let (name, v) = item;
-        let arrow_array = arrow2::array::PrimitiveArray::<T::Native>::from_vec(v);
-        DataArray::new(Field::new(name, T::get_dtype()).into(), arrow_array.arced()).unwrap()
+        let arrow_array = Box::new(arrow2::array::PrimitiveArray::<T::Native>::from_vec(v));
+        DataArray::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
     }
 }
 
 impl From<(&str, &[bool])> for BooleanArray {
     fn from(item: (&str, &[bool])) -> Self {
         let (name, slice) = item;
-        let arrow_array = arrow2::array::BooleanArray::from_slice(slice);
-        DataArray::new(
-            Field::new(name, DataType::Boolean).into(),
-            arrow_array.arced(),
-        )
-        .unwrap()
+        let arrow_array = Box::new(arrow2::array::BooleanArray::from_slice(slice));
+        DataArray::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
     }
 }
 
@@ -62,7 +60,7 @@ impl From<(&str, arrow2::array::BooleanArray)> for BooleanArray {
         let (name, arrow_array) = item;
         DataArray::new(
             Field::new(name, DataType::Boolean).into(),
-            arrow_array.arced(),
+            Box::new(arrow_array),
         )
         .unwrap()
     }
@@ -71,20 +69,16 @@ impl From<(&str, arrow2::array::BooleanArray)> for BooleanArray {
 impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
     fn from(item: (&str, &[T])) -> Self {
         let (name, slice) = item;
-        let arrow_array = arrow2::array::Utf8Array::<i64>::from_slice(slice);
-        DataArray::new(Field::new(name, DataType::Utf8).into(), arrow_array.arced()).unwrap()
+        let arrow_array = Box::new(arrow2::array::Utf8Array::<i64>::from_slice(slice));
+        DataArray::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
     }
 }
 
 impl From<(&str, &[u8])> for BinaryArray {
     fn from(item: (&str, &[u8])) -> Self {
         let (name, slice) = item;
-        let arrow_array = arrow2::array::BinaryArray::<i64>::from_slice([slice]);
-        DataArray::new(
-            Field::new(name, DataType::Binary).into(),
-            arrow_array.arced(),
-        )
-        .unwrap()
+        let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from_slice([slice]));
+        DataArray::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
     }
 }
 
@@ -101,9 +95,6 @@ impl<T: DaftDataType> TryFrom<(&str, Box<dyn arrow2::array::Array>)> for DataArr
                 self_arrow_type
             )));
         }
-        DataArray::new(
-            Field::new(name, array.data_type().into()).into(),
-            Arc::from(array),
-        )
+        DataArray::new(Field::new(name, array.data_type().into()).into(), array)
     }
 }

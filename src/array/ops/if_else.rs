@@ -50,7 +50,7 @@ macro_rules! broadcast_if_else{(
                     false => other_scalar,
                 }
             ).collect();
-            DataArray::new($if_true.field.clone(), Arc::new(naive_if_else.with_validity(predicate_arr.validity().cloned())))
+            DataArray::new($if_true.field.clone(), Box::new(naive_if_else.with_validity(predicate_arr.validity().cloned())))
         }
         // CASE: Broadcast truthy array
         (1, o, p)  if o == p => {
@@ -63,7 +63,7 @@ macro_rules! broadcast_if_else{(
                     false => $scalar_copy(other_val),
                 }
             ).collect();
-            DataArray::new($if_true.field.clone(), Arc::new(naive_if_else.with_validity(predicate_arr.validity().cloned())))
+            DataArray::new($if_true.field.clone(), Box::new(naive_if_else.with_validity(predicate_arr.validity().cloned())))
         }
         // CASE: Broadcast falsey array
         (s, 1, p)  if s == p => {
@@ -76,7 +76,7 @@ macro_rules! broadcast_if_else{(
                     false => other_scalar,
                 }
             ).collect();
-            DataArray::new($if_true.field.clone(), Arc::new(naive_if_else.with_validity(predicate_arr.validity().cloned())))
+            DataArray::new($if_true.field.clone(), Box::new(naive_if_else.with_validity(predicate_arr.validity().cloned())))
         }
         (s, o, p) => Err(DaftError::ValueError(format!("Cannot run if_else against arrays with mismatched lengths: self={s}, other={o}, predicate={p}")))
     }
