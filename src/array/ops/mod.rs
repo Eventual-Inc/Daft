@@ -12,6 +12,7 @@ mod count;
 mod date;
 mod downcast;
 mod filter;
+mod float;
 mod full;
 mod hash;
 mod if_else;
@@ -65,6 +66,11 @@ pub trait DaftLogical<Rhs> {
 pub trait DaftIsNull {
     type Output;
     fn is_null(&self) -> Self::Output;
+}
+
+pub trait DaftIsNan {
+    type Output;
+    fn is_nan(&self) -> Self::Output;
 }
 
 pub trait DaftCountAggable {

@@ -214,6 +214,11 @@ impl PyExpr {
         Ok(format!("{}", self.expr))
     }
 
+    pub fn is_nan(&self) -> PyResult<Self> {
+        use functions::float::is_nan;
+        Ok(is_nan(&self.expr).into())
+    }
+
     pub fn dt_day(&self) -> PyResult<Self> {
         use functions::temporal::day;
         Ok(day(&self.expr).into())

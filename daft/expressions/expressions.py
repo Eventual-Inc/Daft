@@ -265,7 +265,7 @@ class ExpressionNamespace:
 
 class ExpressionFloatNamespace(ExpressionNamespace):
     def is_nan(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement float is_nan expression")
+        return Expression._from_pyexpr(self._expr.is_nan())
 
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):

@@ -251,6 +251,10 @@ class Series:
         return Series._from_pyseries(self._series.is_null())
 
     @property
+    def float(self) -> SeriesFloatNamespace:
+        return SeriesFloatNamespace.from_series(self)
+
+    @property
     def str(self) -> SeriesStringNamespace:
         return SeriesStringNamespace.from_series(self)
 
@@ -276,6 +280,11 @@ class SeriesNamespace:
         ns = cls.__new__(cls)
         ns._series = series._series
         return ns
+
+
+class SeriesFloatNamespace(SeriesNamespace):
+    def is_nan(self) -> Series:
+        return Series._from_pyseries(self._series.is_nan())
 
 
 class SeriesStringNamespace(SeriesNamespace):

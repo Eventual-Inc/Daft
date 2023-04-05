@@ -134,3 +134,10 @@ def test_str_concat_delegation() -> None:
     assert expr_structurally_equal(c, expected)
     output = repr(c)
     assert output == 'col(a) + lit("foo")'
+
+
+def test_float_is_nan() -> None:
+    a = col("a")
+    c = a.float.is_nan()
+    output = repr(c)
+    assert output == "is_nan(col(a))"
