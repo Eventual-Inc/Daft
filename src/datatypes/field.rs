@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter, Result};
+
 use arrow2::datatypes::Field as ArrowField;
 
 use crate::{datatypes::dtype::DataType, error::DaftResult};
@@ -35,5 +37,11 @@ impl From<&ArrowField> for Field {
             name: af.name.clone(),
             dtype: af.data_type().into(),
         }
+    }
+}
+
+impl Display for Field {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "{}#{}", self.name, self.dtype)
     }
 }
