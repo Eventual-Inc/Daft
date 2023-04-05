@@ -7,6 +7,27 @@ AggregationOp = str
 ColName = str
 
 
+def _agg_tuple_to_expr(child_ex: Expression, agg_str: str) -> Expression:
+    """Helper method that converts the user-facing tuple API for aggregations (Expression, str)
+    to our internal representation of aggregations which is just an Expression
+    """
+    if agg_str == "sum":
+        return child_ex._sum()
+    elif agg_str == "count":
+        return child_ex._count()
+    elif agg_str == "min":
+        return child_ex._min()
+    elif agg_str == "max":
+        return child_ex._max()
+    elif agg_str == "mean":
+        return child_ex._mean()
+    elif agg_str == "list":
+        raise NotImplementedError(f"[RUST-INT][NESTED] List aggregation not implemented yet")
+    elif agg_str == "concat":
+        raise NotImplementedError(f"[RUST-INT][NESTED] Concat aggregation not implemented yet")
+    raise NotImplementedError(f"Aggregation {agg_str} not implemented.")
+
+
 class AggregationPlanBuilder:
     """Builder class to build the appropriate LogicalPlan tree for aggregations
 
@@ -44,12 +65,17 @@ class AggregationPlanBuilder:
         """Special-case for when the LogicalPlan has only one partition - there is no longer a need for
         a shuffle step and everything can happen in a single LocalAggregate.
         """
-        aggs = [(ex.alias(colname), op) for colname, (ex, op) in self._single_partition_shortcut_aggs.items()]
+        aggs = [
+            _agg_tuple_to_expr(ex.alias(colname), op)
+            for colname, (ex, op) in self._single_partition_shortcut_aggs.items()
+        ]
         return logical_plan.LocalAggregate(self._plan, agg=aggs, group_by=self.group_by)
 
     def _build_for_multi_partition_plan(self) -> logical_plan.LogicalPlan:
         # 1. Pre-shuffle aggregations to reduce the size of the data before the shuffle
-        pre_shuffle_aggregations = [(ex.alias(colname), op) for colname, (ex, op) in self._preshuffle_aggs.items()]
+        pre_shuffle_aggregations = [
+            _agg_tuple_to_expr(ex.alias(colname), op) for colname, (ex, op) in self._preshuffle_aggs.items()
+        ]
         preshuffle_agg_plan = logical_plan.LocalAggregate(
             self._plan, agg=pre_shuffle_aggregations, group_by=self.group_by
         )
@@ -67,7 +93,9 @@ class AggregationPlanBuilder:
             )
 
         # 3. Perform post-shuffle aggregations (this is effectively now global aggregation)
-        post_shuffle_aggregations = [(ex.alias(colname), op) for colname, (ex, op) in self._postshuffle_aggs.items()]
+        post_shuffle_aggregations = [
+            _agg_tuple_to_expr(ex.alias(colname), op) for colname, (ex, op) in self._postshuffle_aggs.items()
+        ]
         postshuffle_agg_plan = logical_plan.LocalAggregate(
             shuffle_plan, agg=post_shuffle_aggregations, group_by=self.group_by
         )

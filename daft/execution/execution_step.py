@@ -492,7 +492,7 @@ class Sample(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class Aggregate(SingleOutputInstruction):
-    to_agg: list[tuple[Expression, str]]
+    to_agg: list[Expression]
     group_by: ExpressionsProjection | None
 
     def run(self, inputs: list[Table]) -> list[Table]:

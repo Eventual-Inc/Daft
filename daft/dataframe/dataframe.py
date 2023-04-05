@@ -776,7 +776,7 @@ class DataFrame:
         """
         local_count_op = logical_plan.LocalCount(self._plan)
         coalease_op = logical_plan.Coalesce(local_count_op, 1)
-        local_sum_op = logical_plan.LocalAggregate(coalease_op, [(col("count")._sum(), "sum")])
+        local_sum_op = logical_plan.LocalAggregate(coalease_op, [col("count")._sum()])
         num_rows = DataFrame(local_sum_op).to_pydict()["count"][0]
         return num_rows
 
