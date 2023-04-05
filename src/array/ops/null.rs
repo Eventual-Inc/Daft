@@ -14,7 +14,7 @@ where
 
     fn is_null(&self) -> Self::Output {
         let arrow_array = &self.data;
-        let result_arrow_array = match arrow_array.validity() {
+        let result_arrow_array = Box::new(match arrow_array.validity() {
             // If the bitmap is None, the arrow array doesn't have null values
             // (unless it's a NullArray - so check the null count)
             None => match arrow_array.null_count() {
@@ -26,10 +26,10 @@ where
                 !bitmap,
                 None,
             ),
-        };
+        });
         DataArray::<BooleanType>::new(
             Arc::new(Field::new(self.field.name.clone(), DataType::Boolean)),
-            Arc::new(result_arrow_array),
+            result_arrow_array,
         )
     }
 }
