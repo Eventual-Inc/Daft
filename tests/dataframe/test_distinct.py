@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import pyarrow as pa
 import pytest
 
 from daft import DataFrame
-from tests.conftest import assert_pydict_equals
+from daft.datatype import DataType
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
@@ -20,9 +21,9 @@ def test_distinct_with_nulls(repartition_nparts):
         "id": [1, None, None],
         "values": ["a1", "b1", "c1"],
     }
-    daft_df.collect()
-
-    assert_pydict_equals(daft_df.to_pydict(), expected, sort_key="values")
+    assert pa.Table.from_pydict(daft_df.to_pydict()).sort_by("values") == pa.Table.from_pydict(expected).sort_by(
+        "values"
+    )
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
@@ -33,15 +34,15 @@ def test_distinct_with_all_nulls(repartition_nparts):
             "values": ["a1", "b1", "b1", "c1"],
         }
     ).repartition(repartition_nparts)
-    daft_df = daft_df.with_column("id", daft_df["id"].cast(int)).distinct()
+    daft_df = daft_df.select(daft_df["id"].cast(DataType.int64()), daft_df["values"]).distinct()
 
     expected = {
         "id": [None, None, None],
         "values": ["a1", "b1", "c1"],
     }
-    daft_df.collect()
-
-    assert_pydict_equals(daft_df.to_pydict(), expected, sort_key="values")
+    assert pa.Table.from_pydict(daft_df.to_pydict()).sort_by("values") == pa.Table.from_pydict(expected).sort_by(
+        "values"
+    )
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2])

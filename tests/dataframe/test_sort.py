@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import math
 
+import pyarrow as pa
 import pytest
 
 import daft
+from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 
 ###
@@ -116,3 +118,115 @@ def test_single_string_col_sort(desc: bool, n_partitions: int):
         expected = list(reversed(expected))
 
     assert sorted_data["A"] == expected
+
+
+###
+# Null tests
+###
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_int_sort_with_nulls(repartition_nparts):
+    daft_df = daft.DataFrame.from_pydict(
+        {
+            "id": [2, None, 1],
+            "values": ["a1", "b1", "c1"],
+        }
+    ).repartition(repartition_nparts)
+    daft_df = daft_df.sort(daft_df["id"])
+
+    expected = pa.Table.from_pydict(
+        {
+            "id": [1, 2, None],
+            "values": ["c1", "a1", "b1"],
+        }
+    )
+    daft_df.collect()
+
+    assert pa.Table.from_pydict(daft_df.to_pydict()) == expected
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_str_sort_with_nulls(repartition_nparts):
+    daft_df = daft.DataFrame.from_pydict(
+        {
+            "id": [1, None, 2],
+            "values": ["c1", None, "a1"],
+        }
+    ).repartition(repartition_nparts)
+    daft_df = daft_df.sort(daft_df["values"])
+
+    expected = pa.Table.from_pydict(
+        {
+            "id": [2, 1, None],
+            "values": ["a1", "c1", None],
+        }
+    )
+    daft_df.collect()
+    assert pa.Table.from_pydict(daft_df.to_pydict()) == expected
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 4, 6])
+def test_sort_with_nulls_multikey(repartition_nparts):
+    daft_df = daft.DataFrame.from_pydict(
+        {
+            "id1": [2, None, 2, None, 1],
+            "id2": [2, None, 1, 1, None],
+            "values": ["a1", "b1", "c1", "d1", "e1"],
+        }
+    ).repartition(repartition_nparts)
+    daft_df = daft_df.sort([daft_df["id1"], daft_df["id2"]])
+
+    expected = pa.Table.from_pydict(
+        {
+            "id1": [1, 2, 2, None, None],
+            "id2": [None, 1, 2, 1, None],
+            "values": ["e1", "c1", "a1", "d1", "b1"],
+        }
+    )
+    daft_df.collect()
+    assert pa.Table.from_pydict(daft_df.to_pydict()) == expected
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_sort_with_all_nulls(repartition_nparts):
+    daft_df = daft.DataFrame.from_pydict(
+        {
+            "id": [None, None, None],
+            "values": ["c1", None, "a1"],
+        }
+    ).repartition(repartition_nparts)
+    daft_df = daft_df.with_column("id", daft_df["id"].cast(DataType.int64())).sort(daft_df["id"])
+    daft_df.collect()
+
+    resultset = daft_df.to_pydict()
+    assert len(resultset["id"]) == 3
+    assert len(resultset["values"]) == 3
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2])
+def test_sort_with_empty(repartition_nparts):
+    daft_df = daft.DataFrame.from_pydict(
+        {
+            "id": [1],
+            "values": ["a1"],
+        }
+    ).repartition(repartition_nparts)
+    daft_df = daft_df.where(daft_df["id"] != 1).sort(daft_df["id"])
+    daft_df.collect()
+
+    resultset = daft_df.to_pydict()
+    assert len(resultset["id"]) == 0
+    assert len(resultset["values"]) == 0
+
+
+def test_sort_with_all_null_type_column():
+    daft_df = daft.DataFrame.from_pydict(
+        {
+            "id": [None, None, None],
+            "values": ["a1", "b1", "c1"],
+        }
+    )
+
+    with pytest.raises(ExpressionTypeError):
+        daft_df = daft_df.sort(daft_df["id"])
