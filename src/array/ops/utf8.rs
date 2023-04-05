@@ -1,6 +1,9 @@
 use crate::array::BaseArray;
-use crate::datatypes::{BooleanArray, UInt64Array, Utf8Array};
+use crate::datatypes::{
+    BooleanArray, DataArray, DataType, Field, UInt64Array, UInt64Type, Utf8Array,
+};
 use arrow2;
+use std::sync::Arc;
 
 use crate::error::{DaftError, DaftResult};
 
@@ -27,7 +30,10 @@ impl Utf8Array {
             })
             .collect::<arrow2::array::UInt64Array>()
             .with_validity(self_arrow.validity().cloned());
-        Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
+        DataArray::<UInt64Type>::new(
+            Arc::new(Field::new(self.field.name.clone(), DataType::UInt64)),
+            Arc::new(arrow_result),
+        )
     }
 
     fn binary_broadcasted_compare<ScalarKernel>(
