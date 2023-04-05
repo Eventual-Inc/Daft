@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import math
 
-import pytest
 import pyarrow as pa
+import pytest
 
 import daft
 from daft.datatype import DataType
@@ -119,9 +119,11 @@ def test_single_string_col_sort(desc: bool, n_partitions: int):
 
     assert sorted_data["A"] == expected
 
+
 ###
 # Null tests
 ###
+
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 def test_int_sort_with_nulls(repartition_nparts):
@@ -133,10 +135,12 @@ def test_int_sort_with_nulls(repartition_nparts):
     ).repartition(repartition_nparts)
     daft_df = daft_df.sort(daft_df["id"])
 
-    expected = pa.Table.from_pydict({
-        "id": [1, 2, None],
-        "values": ["c1", "a1", "b1"],
-    })
+    expected = pa.Table.from_pydict(
+        {
+            "id": [1, 2, None],
+            "values": ["c1", "a1", "b1"],
+        }
+    )
     daft_df.collect()
 
     assert pa.Table.from_pydict(daft_df.to_pydict()) == expected
@@ -152,10 +156,12 @@ def test_str_sort_with_nulls(repartition_nparts):
     ).repartition(repartition_nparts)
     daft_df = daft_df.sort(daft_df["values"])
 
-    expected = pa.Table.from_pydict({
-        "id": [2, 1, None],
-        "values": ["a1", "c1", None],
-    })
+    expected = pa.Table.from_pydict(
+        {
+            "id": [2, 1, None],
+            "values": ["a1", "c1", None],
+        }
+    )
     daft_df.collect()
     assert pa.Table.from_pydict(daft_df.to_pydict()) == expected
 
@@ -171,11 +177,13 @@ def test_sort_with_nulls_multikey(repartition_nparts):
     ).repartition(repartition_nparts)
     daft_df = daft_df.sort([daft_df["id1"], daft_df["id2"]])
 
-    expected = pa.Table.from_pydict({
-        "id1": [1, 2, 2, None, None],
-        "id2": [None, 1, 2, 1, None],
-        "values": ["e1", "c1", "a1", "d1", "b1"],
-    })
+    expected = pa.Table.from_pydict(
+        {
+            "id1": [1, 2, 2, None, None],
+            "id2": [None, 1, 2, 1, None],
+            "values": ["e1", "c1", "a1", "d1", "b1"],
+        }
+    )
     daft_df.collect()
     assert pa.Table.from_pydict(daft_df.to_pydict()) == expected
 
@@ -222,4 +230,3 @@ def test_sort_with_all_null_type_column():
 
     with pytest.raises(ExpressionTypeError):
         daft_df = daft_df.sort(daft_df["id"])
-
