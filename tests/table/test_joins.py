@@ -7,6 +7,7 @@ import pytest
 from daft import utils
 from daft.datatype import DataType
 from daft.expressions import col
+from daft.series import Series
 from daft.table import Table
 
 daft_int_types = [
@@ -174,6 +175,26 @@ def test_table_join_multicolumn_cross() -> None:
             ]
         )
     )
+
+
+def test_table_join_multicolumn_all_nulls() -> None:
+    left_table = Table.from_pydict(
+        {
+            "a": Series.from_pylist([None, None, None]).cast(DataType.int64()),
+            "b": Series.from_pylist([None, None, None]).cast(DataType.string()),
+            "c": [1, 2, 3],
+        }
+    )
+    right_table = Table.from_pydict(
+        {
+            "x": Series.from_pylist([None, None, None]).cast(DataType.int64()),
+            "y": Series.from_pylist([None, None, None]).cast(DataType.string()),
+            "z": [1, 2, 3],
+        }
+    )
+
+    result = left_table.join(right_table, left_on=[col("a"), col("b")], right_on=[col("x"), col("y")])
+    assert set(utils.freeze(utils.pydict_to_rows(result.to_pydict()))) == set(utils.freeze([]))
 
 
 def test_table_join_no_columns() -> None:

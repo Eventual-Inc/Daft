@@ -36,8 +36,8 @@ impl PySchema {
         Ok(self.schema.get_field(name)?.clone().into())
     }
 
-    pub fn names(&self) -> PyResult<Vec<String>> {
-        Ok(self.schema.names()?)
+    pub fn names(&self) -> Vec<String> {
+        self.schema.names()
     }
 
     pub fn union(&self, other: &PySchema) -> PyResult<PySchema> {

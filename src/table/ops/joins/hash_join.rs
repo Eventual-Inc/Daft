@@ -34,6 +34,7 @@ impl Hasher for IdentityHasher {
 pub type IdentityBuildHasher = BuildHasherDefault<IdentityHasher>;
 
 pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series, Series)> {
+    // TODO(sammy) add tests for mismatched types for multiple columns for joins
     if left.num_columns() != right.num_columns() {
         return Err(DaftError::ValueError(format!(
             "Mismatch of join on clauses: left: {:?} vs right: {:?}",
@@ -48,11 +49,15 @@ pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series
     }
 
     let hashes = left.hash_rows()?;
-    let mut probe_table =
-        HashMap::<u64, Vec<u64>, IdentityBuildHasher>::with_hasher(Default::default());
+
+    const DEFAULT_SIZE: usize = 20;
+
+    let mut probe_table = HashMap::<u64, Vec<u64>, IdentityBuildHasher>::with_capacity_and_hasher(
+        DEFAULT_SIZE,
+        Default::default(),
+    );
 
     for (i, h) in hashes.downcast().values_iter().enumerate() {
-        // let entry = probe_table.raw_entry_mut().from_hash(h, ||);
         let entry = probe_table.entry(*h);
         match entry {
             Entry::Vacant(entry) => {

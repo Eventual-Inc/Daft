@@ -59,8 +59,8 @@ impl Schema {
         }
     }
 
-    pub fn names(&self) -> DaftResult<Vec<String>> {
-        return Ok(self.fields.keys().cloned().collect());
+    pub fn names(&self) -> Vec<String> {
+        self.fields.keys().cloned().collect()
     }
 
     pub fn union(&self, other: &Schema) -> DaftResult<Schema> {

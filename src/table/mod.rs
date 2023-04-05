@@ -67,7 +67,7 @@ impl Table {
         self.columns.len()
     }
 
-    pub fn column_names(&self) -> DaftResult<Vec<String>> {
+    pub fn column_names(&self) -> Vec<String> {
         self.schema.names()
     }
 
@@ -216,6 +216,14 @@ impl Table {
     pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<&Series> {
         let i = self.schema.get_index(name.as_ref())?;
         Ok(self.columns.get(i).unwrap())
+    }
+
+    pub fn get_columns<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Self> {
+        let series_by_name = names
+            .iter()
+            .map(|s| self.get_column(s).cloned())
+            .collect::<DaftResult<Vec<_>>>()?;
+        Self::from_columns(series_by_name)
     }
 
     pub fn get_column_by_index(&self, idx: usize) -> DaftResult<&Series> {
