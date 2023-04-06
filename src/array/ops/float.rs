@@ -1,11 +1,11 @@
-use std::sync::Arc;
-
 use crate::{
     array::DataArray,
-    datatypes::{BooleanType, DaftFloatType, DaftNumericType, DataType, Field, NullType},
+    datatypes::{BooleanArray, BooleanType, DaftFloatType, DaftNumericType, NullType},
     error::DaftResult,
 };
 use num_traits::Float;
+
+use crate::array::BaseArray;
 
 use super::DaftIsNan;
 
@@ -22,10 +22,7 @@ where
             arrow_array.values_iter().map(|v| v.is_nan()),
         )
         .with_validity(arrow_array.validity().cloned());
-        DataArray::<BooleanType>::new(
-            Arc::new(Field::new(self.field.name.clone(), DataType::Boolean)),
-            Arc::new(result_arrow_array),
-        )
+        Ok(BooleanArray::from((self.name(), result_arrow_array)))
     }
 }
 
@@ -34,12 +31,10 @@ impl DaftIsNan for &DataArray<NullType> {
 
     fn is_nan(&self) -> Self::Output {
         // Entire array is null; since we don't consider nulls to be NaNs, return an all null (invalid) boolean array.
-        DataArray::<BooleanType>::new(
-            Arc::new(Field::new(self.field.name.clone(), DataType::Boolean)),
-            Arc::new(
-                arrow2::array::BooleanArray::from_slice(vec![false; self.len()])
-                    .with_validity(Some(arrow2::bitmap::Bitmap::from(vec![false; self.len()]))),
-            ),
-        )
+        Ok(BooleanArray::from((
+            self.name(),
+            arrow2::array::BooleanArray::from_slice(vec![false; self.len()])
+                .with_validity(Some(arrow2::bitmap::Bitmap::from(vec![false; self.len()]))),
+        )))
     }
 }
