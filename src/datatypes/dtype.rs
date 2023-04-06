@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 // pub type TimeZone = String;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum DataType {
     // Start ArrowTypes
     /// Null type

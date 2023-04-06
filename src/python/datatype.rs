@@ -126,6 +126,15 @@ impl PyDataType {
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         Ok(PyBytes::new(py, &bincode::serialize(&self.dtype).unwrap()).to_object(py))
     }
+
+    pub fn __hash__(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hash;
+        use std::hash::Hasher;
+        let mut hasher = DefaultHasher::new();
+        self.dtype.hash(&mut hasher);
+        hasher.finish()
+    }
 }
 
 impl From<DataType> for PyDataType {
