@@ -143,3 +143,6 @@ class DataType:
     def __setstate__(self, state: bytes) -> None:
         self._dtype = PyDataType.__new__(PyDataType)
         self._dtype.__setstate__(state)
+
+    def __hash__(self) -> int:
+        return self._dtype.__hash__()
