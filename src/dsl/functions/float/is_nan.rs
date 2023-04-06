@@ -23,8 +23,7 @@ impl FunctionEvaluator for IsNanEvaluator {
                         Ok(Field::new(data_field.name, DataType::Boolean))
                     }
                     _ => Err(DaftError::TypeError(format!(
-                        "Expects input to is_nan to be float, but received {:?}",
-                        data_field
+                        "Expects input to is_nan to be float, but received {data_field}",
                     ))),
                 },
                 Err(e) => Err(e),

@@ -24,8 +24,7 @@ impl FunctionEvaluator for StartswithEvaluator {
                             Ok(Field::new(data_field.name, DataType::Boolean))
                         }
                         _ => Err(DaftError::TypeError(format!(
-                            "Expects inputs to startswith to be utf8, but received {:?} and {:?}",
-                            data_field, pattern_field
+                            "Expects inputs to startswith to be utf8, but received {data_field} and {pattern_field}",
                         ))),
                     }
                 }
