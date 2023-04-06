@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 
-import pyarrow as pa
 from hypothesis.strategies import (
     SearchStrategy,
     binary,
@@ -19,24 +18,7 @@ from hypothesis.strategies import (
 )
 
 from daft.datatype import DataType
-
-
-class UserObject:
-    def __init__(self, x: str, y: int):
-        self.x = x
-        self.y = y
-
-    def __repr__(self):
-        return f"UserObject(x={self.x}, y={self.y})"
-
-    def add(self, other: UserObject) -> UserObject:
-        return UserObject(x=self.x + other.x, y=self.y + other.y)
-
-
-@composite
-def user_object(draw) -> UserObject:
-    return UserObject(x=draw(text(), label="UserObject.x"), y=draw(integers(), "UserObject.y"))
-
+from daft.series import Series
 
 ###
 # Various strategies for dtypes and their corresponding Daft type
@@ -44,20 +26,20 @@ def user_object(draw) -> UserObject:
 
 _strat_allstr = text()
 _strat_int64 = integers(min_value=-(2**63), max_value=(2**63) - 1)
+_strat_int32 = integers(min_value=-(2**31), max_value=(2**31) - 1)
 _strat_double = floats()
 _strat_boolean = booleans()
 _strat_byte = binary()
 _strat_date = dates(min_value=datetime.date(2000, 1, 1), max_value=datetime.date(2100, 1, 1))
-_strat_user_object = user_object()
 
 _default_strategies = {
     DataType.string(): _strat_allstr,
     DataType.int64(): _strat_int64,
+    DataType.int32(): _strat_int32,
     DataType.float64(): _strat_double,
     DataType.bool(): _strat_boolean,
     DataType.binary(): _strat_byte,
     DataType.date(): _strat_date,
-    DataType.python(UserObject): _strat_user_object,
     DataType.null(): none(),
 }
 
@@ -79,7 +61,7 @@ all_dtypes = sampled_from(
         DataType.bool(),
         DataType.binary(),
         DataType.date(),
-        DataType.python(UserObject),
+        DataType.null(),
     ]
 )
 
@@ -95,8 +77,6 @@ total_order_dtypes = sampled_from(
     ]
 )
 
-ColumnData = "list[Any] | pa.Array"
-
 
 ###
 # Strategies for creation of column data
@@ -104,12 +84,12 @@ ColumnData = "list[Any] | pa.Array"
 
 
 @composite
-def column(
+def series(
     draw,
     length: int = 64,
     dtypes: SearchStrategy[DataType] = all_dtypes,
     strategies: dict[DataType, SearchStrategy] = _default_strategies,
-) -> ColumnData:
+) -> Series:
     """Generate a column of data
 
     Args:
@@ -132,55 +112,35 @@ def column(
         ),
         label=f"Column data",
     )
-
-    # Convert sampled data to appropriate underlying format
-    if daft_type._is_python_type():
-        return col_data
-    return pa.array(col_data, type=daft_type.to_arrow_type())
-
-
-@composite
-def row_nums_column(draw, length: int = 64) -> ColumnData:
-    return pa.array([i for i in range(length)], type=pa.int64())
+    return Series.from_pylist(col_data).cast(daft_type)
 
 
 @composite
 def columns_dict(
     draw,
     generate_columns_with_type: dict[str, SearchStrategy[DataType]] = {},
-    generate_columns_with_strategy: dict[str, SearchStrategy[ColumnData]] = {},
     num_rows_strategy: SearchStrategy[int] = integers(min_value=0, max_value=8),
-    num_other_generated_columns_strategy: SearchStrategy[int] = integers(min_value=0, max_value=2),
-) -> dict[str, ColumnData]:
+) -> dict[str, Series]:
     """Hypothesis composite strategy for generating in-memory Daft DataFrames.
 
     Args:
         draw: Hypothesis draw function
         num_rows_strategy: strategy for generating number of rows
         generate_columns_with_type: {col_name: column_strategy} for specific strategies (e.g. hashable columns, numeric columns etc)
-        num_other_generated_columns_strategy: generate N more columns with random names and data according to this strategy
     """
     df_len = draw(num_rows_strategy, label="Number of rows")
 
     # Generate requested columns according to requested types
     requested_columns = {
-        col_name: draw(column(length=df_len, dtypes=daft_type_strategy), label=f"Requested column {col_name} by type")
+        col_name: draw(series(length=df_len, dtypes=daft_type_strategy), label=f"Requested column {col_name} by type")
         for col_name, daft_type_strategy in generate_columns_with_type.items()
     }
 
-    # Generate requested columns according to requested strategies
-    requested_strategy_columns = {
-        col_name: draw(col_strategy(length=df_len), label=f"Requested column {col_name} by strategy")
-        for col_name, col_strategy in generate_columns_with_strategy.items()
-    }
-
     # Generate additional columns with random types and names
-    num_cols = draw(num_other_generated_columns_strategy, label="Number of additional columns")
+    num_cols = draw(integers(min_value=0, max_value=2), label="Number of additional columns")
     additional_column_names = draw(
         lists(
-            text().filter(
-                lambda name: name not in requested_columns.keys() and name not in requested_strategy_columns.keys()
-            ),
+            text().filter(lambda name: name not in requested_columns.keys()),
             min_size=num_cols,
             max_size=num_cols,
             unique=True,
@@ -188,8 +148,8 @@ def columns_dict(
         label="Additional column names",
     )
     additional_columns = {
-        col_name: draw(column(length=df_len), label=f"Additional column {col_name}")
+        col_name: draw(series(length=df_len), label=f"Additional column {col_name}")
         for col_name in additional_column_names
     }
 
-    return {**requested_columns, **requested_strategy_columns, **additional_columns}
+    return {**requested_columns, **additional_columns}
