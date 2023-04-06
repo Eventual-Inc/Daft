@@ -265,7 +265,7 @@ class ExpressionNamespace:
 
 class ExpressionFloatNamespace(ExpressionNamespace):
     def is_nan(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement float is_nan expression")
+        return Expression._from_pyexpr(self._expr.is_nan())
 
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
@@ -296,10 +296,11 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.utf8_startswith(prefix_expr._expr))
 
     def concat(self, other: str) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement string expression")
+        # Delegate to + operator implementation.
+        return Expression._from_pyexpr(self._expr) + other
 
     def length(self) -> Expression:
-        raise NotImplementedError("[RUST-INT] Implement string expression")
+        return Expression._from_pyexpr(self._expr.utf8_length())
 
 
 class ExpressionsProjection(Iterable[Expression]):
