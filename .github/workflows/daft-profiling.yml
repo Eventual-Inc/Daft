@@ -27,7 +27,7 @@ jobs:
         override: true
     - uses: actions/cache@v3
       env:
-        cache-name: cache-cargo
+        cache-name: cache-cargo-profile
       with:
         path: |
           ~/.cargo/registry
@@ -54,6 +54,9 @@ jobs:
         pip install -r requirements-dev.txt
 
     - name: Build Rust Library
+      env:
+        RUSTFLAGS: -g
+
       run: |
         source activate
         maturin develop --release
@@ -91,7 +94,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [NIGHTLY] Property-Based Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                  "text": ":rotating_light: Run Profiling on the TPCH Benchmark <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
                 }
               }
             ]
