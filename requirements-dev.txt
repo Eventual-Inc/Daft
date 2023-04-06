@@ -19,6 +19,7 @@ orjson
 
 pandas
 pre-commit
+py-spy
 pyarrow
 pytest>=7.1.2
 pytest-benchmark
