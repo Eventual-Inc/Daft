@@ -1,7 +1,9 @@
-name: Run property based tests with Hypothesis
+name: Run Profiling on the TPCH Benchmark
 
 on:
   push:
+    branches: [rust-main]
+  pull_request:
     branches: [rust-main]
   workflow_dispatch:
 
@@ -69,17 +71,16 @@ jobs:
     - name: Generate TPCH Data
       run: python benchmarking/tpch/data_generation.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --generate_parquet
 
-    
+
     - name: Run Profiling on TPCH Benchmark
-      run:  py-spy record --native -o tpch-${{GITHUB_RUN_ID}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup
-    env:
-      DAFT_DEVELOPER_USE_THREAD_POOL: '0'
-    
+      run: |
+        DAFT_DEVELOPER_USE_THREAD_POOL=0 py-spy record --native -o tpch-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup
+
     - name: Upload Profile
       uses: actions/upload-artifact@v2
       with:
         name: speedscope-profile
-        path: tpch-${{GITHUB_RUN_ID}}.txt
+        path: tpch-${{github.run_id}}.txt
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.23.0
