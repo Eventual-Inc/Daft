@@ -18,7 +18,7 @@ from hypothesis.strategies import (
 
 from daft import DataFrame
 from daft.datatype import DataType
-from tests_legacy.property_based_testing.strategies import (
+from tests.property_based_testing.strategies import (
     columns_dict,
     generate_data,
     total_order_dtypes,
