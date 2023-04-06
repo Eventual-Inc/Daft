@@ -6,7 +6,7 @@ use crate::{datatypes::dtype::DataType, error::DaftResult};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
 pub struct Field {
     pub name: String,
     pub dtype: DataType,
