@@ -21,8 +21,7 @@ impl FunctionEvaluator for LengthEvaluator {
                 Ok(data_field) => match &data_field.dtype {
                     DataType::Utf8 => Ok(Field::new(data_field.name, DataType::UInt64)),
                     _ => Err(DaftError::TypeError(format!(
-                        "Expects input to length to be utf8, but received {:?}",
-                        data_field
+                        "Expects input to length to be utf8, but received {data_field}",
                     ))),
                 },
                 Err(e) => Err(e),
