@@ -50,6 +50,20 @@ def test_series_filter_on_bool() -> None:
     assert result.to_pylist() == expected
 
 
+def test_series_filter_on_binary() -> None:
+
+    s = Series.from_pylist([b"Y", b"N", None, b"Y", None, b"N"])
+    pymask = [False, True, True, None, False, False]
+    mask = Series.from_pylist(pymask)
+
+    result = s.filter(mask)
+
+    assert s.datatype() == result.datatype()
+
+    expected = [b"N", None]
+    assert result.to_pylist() == expected
+
+
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES + ARROW_STRING_TYPES)
 def test_series_filter_broadcast(dtype) -> None:
     data = pa.array([1, 2, 3, None, 5, None])

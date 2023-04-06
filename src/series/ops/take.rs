@@ -1,7 +1,7 @@
 use crate::array::BaseArray;
 use crate::{
-    error::DaftResult, series::Series, with_match_comparable_daft_types,
-    with_match_integer_daft_types, with_match_physical_daft_types,
+    error::DaftResult, series::Series, with_match_integer_daft_types,
+    with_match_physical_daft_types,
 };
 
 impl Series {
@@ -11,7 +11,7 @@ impl Series {
         }
         let s = self.as_physical()?;
 
-        let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
+        let result = with_match_physical_daft_types!(s.data_type(), |$T| {
             s.downcast::<$T>()?.head(num)?.into_series()
         });
         if result.data_type() != self.data_type() {
