@@ -19,15 +19,13 @@ from hypothesis.strategies import (
 from daft import DataFrame
 from daft.datatype import DataType
 from tests.property_based_testing.strategies import (
-    UserObject,
     columns_dict,
     generate_data,
     total_order_dtypes,
 )
 
-# TODO: multi-column sorts' null placement currently broken: https://github.com/Eventual-Inc/Daft/issues/546
-# This property-based test only tests single-column sorts for now
-MAX_NUM_SORT_COLS = 1
+# Maximum number of sort columns to generate
+MAX_NUM_SORT_COLS = 3
 
 
 def _is_nan(obj: Any) -> bool:
@@ -62,7 +60,6 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         """Start node of the state machine, creates an initial dataframe"""
         self.sort_keys = [f"sort_key_{i}" for i in range(num_sort_cols)]
 
-        # Generate N number of sort key columns, and one "row_num" column which enumerates the original row number
         columns_dict_data = data.draw(
             columns_dict(
                 generate_columns_with_type={
@@ -175,12 +172,11 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         # Logical types do not accept equality operators, but can be filtered on by themselves
         if col_daft_type == DataType.bool():
             self.df = self.df.where(self.df[col_name_to_filter])
-        # Python object columns return another PY column after equality, so we have to cast to bool
-        elif col_daft_type == DataType.python(UserObject):
-            filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
-            self.df = self.df.where((self.df[col_name_to_filter] == filter_value).cast(bool))
         # Reject if filtering on a null column - not a meaningful operation
         elif col_daft_type == DataType.null():
+            reject()
+        # Reject for binary types because they are not comparable yet (TODO: https://github.com/Eventual-Inc/Daft/issues/688)
+        elif col_daft_type == DataType.binary():
             reject()
         else:
             filter_value = data.draw(generate_data(col_daft_type), label="Filter value")
@@ -194,13 +190,11 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         column_name = data.draw(sampled_from(self.df.schema().column_names()), label="Column to filter on")
         column_daft_type = self.df.schema()[column_name].dtype
         type_to_op_mapping = {
-            DataType.string(): lambda e, other: e.str.concat(other),
+            DataType.string(): lambda e, other: e + other,
             DataType.int64(): lambda e, other: e + other,
+            DataType.int32(): lambda e, other: e + other,
             DataType.float64(): lambda e, other: e + other,
-            DataType.bool(): lambda e, other: e & other,
-            DataType.python(UserObject): lambda e, other: e.apply(
-                lambda x: x.add(other) if x is not None else None, return_dtype=UserObject
-            ),
+            DataType.bool(): lambda e, other: e | other,
             # No meaningful binary operations supported for these yet
             DataType.date(): lambda e, other: e.dt.year(),
             DataType.binary(): lambda e, other: e,
@@ -210,7 +204,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         other_binary_value = data.draw(generate_data(column_daft_type), label="Binary *other* value")
         self.df = self.df.with_column(column_name, op(self.df[column_name], other_binary_value))
 
-        # Some of the projections change the ordering of the data, so we cannot sort after this step
+        # Some of the projections change the ordering of the data, so data is no longer sorted
         self.sorted_on = None
 
 

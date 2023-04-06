@@ -1,6 +1,6 @@
 use crate::{
     array::DataArray,
-    datatypes::{BooleanArray, DaftNumericType, NullArray, Utf8Array},
+    datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, Utf8Array},
     error::DaftResult,
 };
 
@@ -17,6 +17,13 @@ where
 }
 
 impl Utf8Array {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
+        DataArray::try_from((self.name(), result))
+    }
+}
+
+impl BinaryArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
         DataArray::try_from((self.name(), result))

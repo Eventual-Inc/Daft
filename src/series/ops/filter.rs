@@ -2,10 +2,10 @@ use crate::{
     datatypes::BooleanArray,
     error::{DaftError, DaftResult},
     series::Series,
+    with_match_physical_daft_types,
 };
 
 use crate::array::BaseArray;
-use crate::with_match_comparable_daft_types;
 
 impl Series {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Series> {
@@ -20,7 +20,7 @@ impl Series {
             (n, m) if n == m => {
                 let s = self.as_physical()?;
 
-                let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
+                let result = with_match_physical_daft_types!(s.data_type(), |$T| {
                     let downcasted = s.downcast::<$T>()?;
                     downcasted.filter(mask)?.into_series()
                 });

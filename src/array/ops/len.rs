@@ -2,7 +2,7 @@ use arrow2::bitmap::Bitmap;
 
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BooleanArray, DaftDataType, DaftNumericType, NullArray, Utf8Array},
+    datatypes::{BinaryArray, BooleanArray, DaftDataType, DaftNumericType, NullArray, Utf8Array},
 };
 
 impl<T> DataArray<T>
@@ -41,6 +41,19 @@ impl BooleanArray {
 }
 
 impl Utf8Array {
+    pub fn size_bytes(&self) -> usize {
+        use core::mem::size_of;
+
+        let arrow_array = self.downcast();
+        let buffer_size = (arrow_array.offsets().last().unwrap()
+            - arrow_array.offsets().first().unwrap()) as usize;
+        let offset_size = self.len() * size_of::<i64>();
+
+        buffer_size + offset_size + validity_byte_size(self.data().validity())
+    }
+}
+
+impl BinaryArray {
     pub fn size_bytes(&self) -> usize {
         use core::mem::size_of;
 
