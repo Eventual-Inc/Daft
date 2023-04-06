@@ -1184,4 +1184,4 @@ def test_table_float_is_nan() -> None:
 def test_table_if_else() -> None:
     table = Table.from_arrow(pa.Table.from_pydict({"ones": [1, 1, 1], "zeros": [0, 0, 0], "pred": [True, False, None]}))
     result_table = table.eval_expression_list([col("pred").if_else(col("ones"), col("zeros"))])
-    result_table.to_pydict() == {"ones": [1, 0, None]}
+    assert result_table.to_pydict() == {"ones": [1, 0, None]}
