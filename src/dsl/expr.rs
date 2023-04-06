@@ -93,8 +93,7 @@ impl AggExpr {
                         DataType::Float64 => DataType::Float64,
                         _other => {
                             return Err(DaftError::TypeError(format!(
-                                "Expected input to sum() to be numeric but received {:?}",
-                                field
+                                "Expected input to sum() to be numeric but received {field}",
                             )))
                         }
                     },
@@ -128,8 +127,7 @@ impl AggExpr {
                 // TODO: [ISSUE-688] Make Binary type comparable
                 if field.dtype == DataType::Binary {
                     return Err(DaftError::TypeError(format!(
-                        "Cannot get min/max of Binary type: {:?}",
-                        field
+                        "Cannot get min/max of Binary type: {field}",
                     )));
                 }
                 Ok(Field::new(field.name.as_str(), field.dtype))
@@ -214,8 +212,7 @@ impl Expr {
                 match child_field.dtype {
                     DataType::Boolean => Ok(Field::new(expr.name()?, DataType::Boolean)),
                     _ => Err(DaftError::TypeError(format!(
-                        "Expected argument to be a Boolean expression, but received {:?}",
-                        child_field
+                        "Expected argument to be a Boolean expression, but received {child_field}",
                     ))),
                 }
             }
@@ -233,8 +230,7 @@ impl Expr {
                             || right_field.dtype != DataType::Boolean
                         {
                             return Err(DaftError::TypeError(format!(
-                                "Expected all boolean arguments for {op} but received {:?} {op} {:?}",
-                                left_field, right_field
+                                "Expected all boolean arguments for {op} but received {left_field} {op} {right_field}",
                             )));
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Boolean))
@@ -252,8 +248,7 @@ impl Expr {
                             || right_field.dtype == DataType::Binary
                         {
                             return Err(DaftError::TypeError(format!(
-                                "Binary types cannot be compared: {:?} {op} {:?}",
-                                left_field, right_field
+                                "Binary types cannot be compared: {left_field} {op} {right_field}",
                             )));
                         }
                         match try_get_supertype(&left_field.dtype, &right_field.dtype) {
@@ -261,7 +256,7 @@ impl Expr {
                                 left.to_field(schema)?.name.as_str(),
                                 DataType::Boolean,
                             )),
-                            Err(_) => Err(DaftError::TypeError(format!("Expected left and right arguments to be castable to the same supertype for comparison {op}, but received {:?} and {:?}", left_field, right_field))),
+                            Err(_) => Err(DaftError::TypeError(format!("Expected left and right arguments to be castable to the same supertype for comparison {op}, but received {left_field} and {right_field}"))),
                         }
                     }
 
@@ -274,7 +269,7 @@ impl Expr {
                                 || dt.eq(&DataType::Boolean)
                                 || dt.eq(&DataType::Null))
                             {
-                                return Err(DaftError::TypeError(format!("Expected left and right arguments to both be numeric for {op}, but received {:?} and {:?}", right_field, left_field)));
+                                return Err(DaftError::TypeError(format!("Expected left and right arguments to both be numeric for {op}, but received {right_field} and {left_field}")));
                             }
                         }
                         let supertype = try_get_supertype(lhs, rhs)?;
@@ -288,7 +283,7 @@ impl Expr {
                             || !left_field.dtype.is_numeric()
                             || !right_field.dtype.is_numeric()
                         {
-                            return Err(DaftError::TypeError(format!("Expected left and right arguments for {op} to both be numeric and castable to {}, but received {:?} and {:?}", DataType::Float64, left_field, right_field)));
+                            return Err(DaftError::TypeError(format!("Expected left and right arguments for {op} to both be numeric and castable to {}, but received {left_field} and {right_field}", DataType::Float64)));
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Float64))
                     }
@@ -299,7 +294,7 @@ impl Expr {
                     | Operator::Modulus
                     | Operator::FloorDivide => {
                         if !&left_field.dtype.is_numeric() || !&right_field.dtype.is_numeric() {
-                            return Err(DaftError::TypeError(format!("Expected left and right arguments for {op} to both be numeric but received {:?} and {:?}", left_field, right_field)));
+                            return Err(DaftError::TypeError(format!("Expected left and right arguments for {op} to both be numeric but received {left_field} and {right_field}")));
                         }
                         Ok(Field::new(
                             left_field.name.as_str(),
@@ -318,13 +313,12 @@ impl Expr {
                 let predicate_field = predicate.to_field(schema)?;
                 if predicate_field.dtype != DataType::Boolean {
                     return Err(DaftError::TypeError(format!(
-                        "Expected predicate for if_else to be boolean but received {:?}",
-                        predicate_field
+                        "Expected predicate for if_else to be boolean but received {predicate_field}",
                     )));
                 }
                 match try_get_supertype(&if_true_field.dtype, &if_false_field.dtype) {
                     Ok(supertype) => Ok(Field::new(if_true_field.name, supertype)),
-                    Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {:?} and {:?}", if_true_field, if_false_field)))
+                    Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {if_true_field} and {if_false_field}")))
                 }
             }
         }
