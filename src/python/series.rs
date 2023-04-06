@@ -3,8 +3,8 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 
 use crate::{
-    array::{ops::DaftLogical, BaseArray},
-    datatypes::{DataType, UInt64Type},
+    array::{ops::DaftLogical, vec_backed::VecBackedArray, BaseArray, DataArray},
+    datatypes::{DataType, Field, PythonType, UInt64Type},
     ffi,
     series::{self, Series},
 };
@@ -40,9 +40,14 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn from_pylist(_name: &str, pylist: &PyAny) -> PyResult<Self> {
-        let _as_vec: Vec<&PyAny> = pylist.extract()?;
-        todo!("active WIP")
+    pub fn from_pylist(name: &str, pylist: &PyAny) -> PyResult<Self> {
+        let vec_pyobj: Vec<PyObject> = pylist.extract()?;
+        let arrow_array: Box<dyn arrow2::array::Array> =
+            Box::new(VecBackedArray::new(vec_pyobj, None));
+        let field = Field::new(name, DataType::Python);
+
+        let data_array = DataArray::<PythonType>::new(field.into(), arrow_array.into())?;
+        Ok(data_array.into_series().into())
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
