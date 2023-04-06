@@ -1,7 +1,9 @@
+pub mod float;
 pub mod numeric;
 pub mod temporal;
 pub mod utf8;
 
+use float::FloatExpr;
 use numeric::NumericExpr;
 use serde::{Deserialize, Serialize};
 use utf8::Utf8Expr;
@@ -15,6 +17,7 @@ use super::Expr;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FunctionExpr {
     Numeric(NumericExpr),
+    Float(FloatExpr),
     Utf8(Utf8Expr),
     Temporal(TemporalExpr),
 }
@@ -31,6 +34,7 @@ impl FunctionExpr {
         use FunctionExpr::*;
         match self {
             Numeric(expr) => expr.get_evaluator(),
+            Float(expr) => expr.get_evaluator(),
             Utf8(expr) => expr.get_evaluator(),
             Temporal(expr) => expr.get_evaluator(),
         }
