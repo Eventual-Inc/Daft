@@ -40,7 +40,8 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn from_pylist(_name: &str, _pylist: &PyAny) -> PyResult<Self> {
+    pub fn from_pylist(_name: &str, pylist: &PyAny) -> PyResult<Self> {
+        let _as_vec: Vec<&PyAny> = pylist.extract()?;
         todo!("active WIP")
     }
 
