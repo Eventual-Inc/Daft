@@ -24,9 +24,8 @@ from tests_legacy.property_based_testing.strategies import (
     total_order_dtypes,
 )
 
-# TODO: multi-column sorts' null placement currently broken: https://github.com/Eventual-Inc/Daft/issues/546
-# This property-based test only tests single-column sorts for now
-MAX_NUM_SORT_COLS = 1
+# Maximum number of sort columns to generate
+MAX_NUM_SORT_COLS = 3
 
 
 def _is_nan(obj: Any) -> bool:
