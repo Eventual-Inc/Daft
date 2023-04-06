@@ -214,6 +214,11 @@ impl PyExpr {
         Ok(format!("{}", self.expr))
     }
 
+    pub fn is_nan(&self) -> PyResult<Self> {
+        use functions::float::is_nan;
+        Ok(is_nan(&self.expr).into())
+    }
+
     pub fn dt_day(&self) -> PyResult<Self> {
         use functions::temporal::day;
         Ok(day(&self.expr).into())
@@ -261,6 +266,11 @@ impl PyExpr {
     pub fn utf8_contains(&self, pattern: &Self) -> PyResult<Self> {
         use dsl::functions::utf8::contains;
         Ok(contains(&self.expr, &pattern.expr).into())
+    }
+
+    pub fn utf8_length(&self) -> PyResult<Self> {
+        use dsl::functions::utf8::length;
+        Ok(length(&self.expr).into())
     }
 }
 

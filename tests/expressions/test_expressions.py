@@ -124,3 +124,20 @@ def test_expr_structurally_equal() -> None:
     e3 = (col("a")._max() == col("b").alias("moo") - 4).is_null()
     assert expr_structurally_equal(e1, e2)
     assert not expr_structurally_equal(e2, e3)
+
+
+def test_str_concat_delegation() -> None:
+    a = col("a")
+    b = "foo"
+    c = a.str.concat(b)
+    expected = a + lit(b)
+    assert expr_structurally_equal(c, expected)
+    output = repr(c)
+    assert output == 'col(a) + lit("foo")'
+
+
+def test_float_is_nan() -> None:
+    a = col("a")
+    c = a.float.is_nan()
+    output = repr(c)
+    assert output == "is_nan(col(a))"
