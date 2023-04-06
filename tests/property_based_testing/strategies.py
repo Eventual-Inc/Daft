@@ -61,6 +61,7 @@ all_dtypes = sampled_from(
         DataType.bool(),
         DataType.binary(),
         DataType.date(),
+        DataType.null(),
     ]
 )
 
