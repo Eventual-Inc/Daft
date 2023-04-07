@@ -31,10 +31,7 @@ impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
     }
 
     fn data_type(&self) -> &DataType {
-        // You need to define the `DataType` for `VecBackedArray`.
-        // For example, if `T` is `i32`, you can use:
-        // &DataType::Int32
-        unimplemented!()
+        unimplemented!("VecBackedArray does not hold real Arrow DataTypes")
     }
 
     fn validity(&self) -> Option<&Bitmap> {
