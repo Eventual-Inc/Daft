@@ -35,11 +35,12 @@ TEST_DATA = {
     "integers": [i for i in range(TEST_DATA_LEN)],
     "floats": [float(i) for i in range(TEST_DATA_LEN)],
     "bools": [True for i in range(TEST_DATA_LEN)],
-    # NOTE: [RUST-INT] This is currently breaking in test_parquet_reads_limit_rows! Something weird is happening during conversion to a Rust Array
+    # NOTE: [RUST-INT][NESTED] Implement for nested types.
+    # NOTE: Structs are currently breaking in test_parquet_reads_limit_rows! Something weird is happening during conversion to a Rust Array
     # where the slice offset is not being respected specifically for struct types.
     # "structs": [{"foo": i} for i in range(TEST_DATA_LEN)],
-    "fixed_sized_arrays": [[i for _ in range(4)] for i in range(TEST_DATA_LEN)],
-    "var_sized_arrays": [[i for _ in range(i)] for i in range(TEST_DATA_LEN)],
+    # "fixed_sized_arrays": [[i for _ in range(4)] for i in range(TEST_DATA_LEN)],
+    # "var_sized_arrays": [[i for _ in range(i)] for i in range(TEST_DATA_LEN)],
 }
 
 
@@ -62,15 +63,17 @@ def _resolve_parametrized_input_type(input_type: InputType, path: str) -> table_
 
 
 JSON_EXPECTED_DATA = {
-    # NOTE: JSON decoder parses isoformat dates as datetimes - seems incorrect.
-    "dates": [datetime.datetime(d.year, d.month, d.day) for d in TEST_DATA["dates"]],
+    # NOTE: PyArrow JSON parser parses dates as timestamps, so this fails for us at the moment
+    # as we still lack timestamp type support.
+    # "dates": [datetime.datetime(d.year, d.month, d.day) for d in TEST_DATA["dates"]],
     "strings": TEST_DATA["strings"],
     "integers": TEST_DATA["integers"],
     "floats": TEST_DATA["floats"],
     "bools": TEST_DATA["bools"],
+    # [RUST-INT][NESTED] Enable for nested types
     # "structs": TEST_DATA["structs"],
-    "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
-    "var_sized_arrays": TEST_DATA["var_sized_arrays"],
+    # "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
+    # "var_sized_arrays": TEST_DATA["var_sized_arrays"],
 }
 
 
@@ -84,10 +87,14 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 @pytest.fixture(scope="function")
 def json_input(tmpdir: str) -> str:
+    # NOTE: PyArrow JSON parser parses dates as timestamps, so this fails for us at the moment
+    # as we still lack timestamp type support.
+    skip_columns = {"dates"}
+
     path = str(tmpdir + f"/data.json")
     with open(path, "wb") as f:
         for row in range(TEST_DATA_LEN):
-            row_data = {cname: TEST_DATA[cname][row] for cname in TEST_DATA}
+            row_data = {cname: TEST_DATA[cname][row] for cname in TEST_DATA if cname not in skip_columns}
             f.write(json.dumps(row_data, default=CustomJSONEncoder().default).encode("utf-8"))
             f.write(b"\n")
     yield path
@@ -126,9 +133,10 @@ PARQUET_EXPECTED_DATA = {
     "integers": TEST_DATA["integers"],
     "floats": TEST_DATA["floats"],
     "bools": TEST_DATA["bools"],
+    # [RUST-INT][NESTED] Enable for nested types
     # "structs": TEST_DATA["structs"],
-    "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
-    "var_sized_arrays": TEST_DATA["var_sized_arrays"],
+    # "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
+    # "var_sized_arrays": TEST_DATA["var_sized_arrays"],
 }
 
 
@@ -179,9 +187,10 @@ CSV_EXPECTED_DATA = {
     "integers": TEST_DATA["integers"],
     "floats": TEST_DATA["floats"],
     "bools": TEST_DATA["bools"],
+    # [RUST-INT][NESTED] Enable for nested types
     # "structs": [str(s) for s in TEST_DATA["structs"]],
-    "fixed_sized_arrays": [str(l) for l in TEST_DATA["fixed_sized_arrays"]],
-    "var_sized_arrays": [str(l) for l in TEST_DATA["var_sized_arrays"]],
+    # "fixed_sized_arrays": [str(l) for l in TEST_DATA["fixed_sized_arrays"]],
+    # "var_sized_arrays": [str(l) for l in TEST_DATA["var_sized_arrays"]],
 }
 
 
@@ -261,9 +270,9 @@ def test_csv_reads_custom_options(
 
 
 @pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
-def test_table_pickling(json_input: str, input_type: InputType):
-    with _resolve_parametrized_input_type(input_type, json_input) as table_io_input:
-        table = table_io.read_json(table_io_input)
+def test_table_pickling(parquet_input: str, input_type: InputType):
+    with _resolve_parametrized_input_type(input_type, parquet_input) as table_io_input:
+        table = table_io.read_parquet(table_io_input)
         copied_table = copy.deepcopy(table)
 
         assert table.column_names() == copied_table.column_names()

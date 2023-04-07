@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from daft.daft import PyTable as _PyTable
+from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
@@ -70,15 +71,10 @@ class Table:
     @staticmethod
     def from_arrow(arrow_table: pa.Table) -> Table:
         assert isinstance(arrow_table, pa.Table)
-        # TODO: [RUST-INT][TPCH] _PyTable.from_arrow_record_batches only supports single-batch inputs at the moment
-        # so we hack around it by combining the chunks first. We should fix this and remove arrow_table.combine_chunks() here.
-        arrow_table = arrow_table.combine_chunks()
-        record_batch = pa.record_batch(
-            data=[col.combine_chunks() for col in arrow_table.columns],
-            schema=arrow_table.schema,
+        schema = Schema._from_field_name_and_types(
+            [(f.name, DataType.from_arrow_type(f.type)) for f in arrow_table.schema]
         )
-        record_batches = [record_batch]
-        pyt = _PyTable.from_arrow_record_batches(record_batches)
+        pyt = _PyTable.from_arrow_record_batches(arrow_table.to_batches(), schema._schema)
         return Table._from_pytable(pyt)
 
     @staticmethod
