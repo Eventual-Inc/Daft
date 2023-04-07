@@ -12,6 +12,9 @@ impl<T> VecBackedArray<T> {
     pub fn new(values: Vec<T>, validity: Option<Bitmap>) -> Self {
         VecBackedArray { values, validity }
     }
+    pub fn vec(&self) -> &Vec<T> {
+        &self.values
+    }
 }
 
 impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {

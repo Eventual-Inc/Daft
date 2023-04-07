@@ -1,6 +1,6 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
 
 use crate::{
     array::{ops::DaftLogical, vec_backed::VecBackedArray, BaseArray, DataArray},
@@ -48,6 +48,22 @@ impl PySeries {
 
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array.into())?;
         Ok(data_array.into_series().into())
+    }
+
+    pub fn to_pylist(&self) -> PyResult<PyObject> {
+        let maybe_vec_backed_array = self
+            .series
+            .array()
+            .data()
+            .as_any()
+            .downcast_ref::<VecBackedArray<PyObject>>();
+        if let Some(vec_backed_array) = maybe_vec_backed_array {
+            Python::with_gil(|py| Ok(PyList::new(py, vec_backed_array.vec()).into()))
+        } else {
+            Err(PyValueError::new_err(
+                "Series is not a PyObject series, cannot call to_pylist".to_string(),
+            ))
+        }
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
