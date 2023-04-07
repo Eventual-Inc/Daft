@@ -116,6 +116,8 @@ class DataType:
             return DataType.bool()
         elif pa.types.is_null(arrow_type):
             return DataType.null()
+        elif pa.types.is_date32(arrow_type):
+            return DataType.date()
         else:
             raise NotImplementedError(f"we cant convert arrow type: {arrow_type} to a daft type")
 
