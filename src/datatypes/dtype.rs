@@ -219,6 +219,17 @@ impl From<&ArrowType> for DataType {
 impl Display for DataType {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{self:?}")
+        match self {
+            DataType::List(nested) => write!(f, "List[{}]", nested.dtype),
+            DataType::Struct(fields) => {
+                let fields: String = fields
+                    .iter()
+                    .map(|f| format!("{}: {}", f.name, f.dtype))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "Struct[{fields}]")
+            }
+            _ => write!(f, "{self:?}"),
+        }
     }
 }
