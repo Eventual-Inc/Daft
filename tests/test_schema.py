@@ -62,10 +62,7 @@ def test_schema_to_name_set():
 
 def test_repr():
     schema = TABLE.schema()
-    assert (
-        repr(schema)
-        == "[('int', DataType[Int64]), ('float', DataType[Float64]), ('string', DataType[Utf8]), ('bool', DataType[Boolean])]"
-    )
+    assert repr(schema) == "[('int', Int64), ('float', Float64), ('string', Utf8), ('bool', Boolean)]"
 
 
 def test_to_col_expr():
