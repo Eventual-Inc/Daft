@@ -78,7 +78,10 @@ class Series:
         return self._series.to_arrow()
 
     def to_pylist(self) -> list:
-        return self._series.to_arrow().to_pylist()
+        if self.datatype()._is_python_type():
+            return self._series.to_pylist()
+        else:
+            return self._series.to_arrow().to_pylist()
 
     def filter(self, mask: Series) -> Series:
         if not isinstance(mask, Series):
