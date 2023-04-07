@@ -66,6 +66,14 @@ def test_from_pydict_bad_input() -> None:
         Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7]})
 
 
+def test_pyobjects_roundtrip() -> None:
+    o0, o1 = object(), object()
+    table = Table.from_pydict({"objs": [o0, o1]})
+    objs = table.to_pydict()["objs"]
+    assert objs[0] is o0
+    assert objs[1] is o1
+
+
 def test_table_head() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
     daft_table = Table.from_arrow(pa_table)

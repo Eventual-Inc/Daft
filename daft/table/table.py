@@ -108,12 +108,13 @@ class Table:
     ###
 
     def to_arrow(self) -> pa.Table:
-        # TODO: [RUST-INT][PY] throw error for Python object types
+        python_fields = [field for field in self.schema() if field.dtype == DataType.python()]
+        if python_fields:
+            raise ValueError(f"Cannot convert table to Arrow due to presence of Python columns f{python_fields}")
         return pa.Table.from_batches([self._table.to_arrow_record_batch()])
 
     def to_pydict(self) -> dict[str, list]:
-        # TODO: [RUST-INT][PY] support for Python object types
-        return self.to_arrow().to_pydict()
+        return {colname: self.get_column(colname).to_pylist() for colname in self.column_names()}
 
     def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
         if not _PANDAS_AVAILABLE:
