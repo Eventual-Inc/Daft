@@ -100,3 +100,27 @@ def test_series_utf8_compare_invalid_inputs(funcname, bad_series) -> None:
     s = Series.from_arrow(pa.array(["x_foo", "y_foo", "z_bar"]))
     with pytest.raises(ValueError):
         getattr(s.str, funcname)(bad_series)
+
+
+def test_series_utf8_length() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    result = s.str.length()
+    assert result.to_pylist() == [3, 6, 4]
+
+
+def test_series_utf8_length_with_nulls() -> None:
+    s = Series.from_arrow(pa.array(["foo", None, "barbaz", "quux"]))
+    result = s.str.length()
+    assert result.to_pylist() == [3, None, 6, 4]
+
+
+def test_series_utf8_length_empty() -> None:
+    s = Series.from_arrow(pa.array([], type=pa.string()))
+    result = s.str.length()
+    assert result.to_pylist() == []
+
+
+def test_series_utf8_length_all_null() -> None:
+    s = Series.from_arrow(pa.array([None, None, None]))
+    result = s.str.length()
+    assert result.to_pylist() == [None, None, None]

@@ -1182,7 +1182,14 @@ def test_table_filter_with_date_days_of_week() -> None:
     assert result["enum"] == [1, 4]
 
 
+def test_table_float_is_nan() -> None:
+    table = Table.from_pydict({"a": [1.0, np.nan, 3.0, None, float("nan")]})
+    result_table = table.eval_expression_list([col("a").float.is_nan()])
+    # Note that null entries are _not_ treated as float NaNs.
+    assert result_table.to_pydict() == {"a": [False, True, False, None, True]}
+
+
 def test_table_if_else() -> None:
     table = Table.from_arrow(pa.Table.from_pydict({"ones": [1, 1, 1], "zeros": [0, 0, 0], "pred": [True, False, None]}))
     result_table = table.eval_expression_list([col("pred").if_else(col("ones"), col("zeros"))])
-    result_table.to_pydict() == {"ones": [1, 0, None]}
+    assert result_table.to_pydict() == {"ones": [1, 0, None]}

@@ -46,7 +46,7 @@ impl PySeries {
             Box::new(VecBackedArray::new(vec_pyobj, None));
         let field = Field::new(name, DataType::Python);
 
-        let data_array = DataArray::<PythonType>::new(field.into(), arrow_array.into())?;
+        let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
         Ok(data_array.into_series().into())
     }
 
@@ -244,6 +244,14 @@ impl PySeries {
 
     pub fn utf8_contains(&self, pattern: &Self) -> PyResult<Self> {
         Ok(self.series.utf8_contains(&pattern.series)?.into())
+    }
+
+    pub fn utf8_length(&self) -> PyResult<Self> {
+        Ok(self.series.utf8_length()?.into())
+    }
+
+    pub fn is_nan(&self) -> PyResult<Self> {
+        Ok(self.series.is_nan()?.into())
     }
 
     pub fn dt_day(&self) -> PyResult<Self> {

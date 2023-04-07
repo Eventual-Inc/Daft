@@ -231,8 +231,13 @@ if __name__ == "__main__":
         default=None,
         help="Path to pip-style requirements.txt file to bootstrap environment on remote Ray cluster",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--skip_warmup",
+        action="store_true",
+        help="Skip warming up data before benchmark",
+    )
 
+    args = parser.parse_args()
     if args.output_csv_headers:
         warnings.warn("Detected --output_csv_headers flag, but this flag is deprecated - CSVs always output headers")
 
@@ -248,7 +253,10 @@ if __name__ == "__main__":
     else:
         parquet_folder = generate_parquet_data(args.tpch_gen_folder, args.scale_factor, num_parts)
 
-    warmup_environment(args.requirements, parquet_folder)
+    if args.skip_warmup:
+        warnings.warn("Detected --skip_warmup flag, skipping warm up task")
+    else:
+        warmup_environment(args.requirements, parquet_folder)
 
     run_all_benchmarks(
         parquet_folder,

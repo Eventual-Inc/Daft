@@ -41,7 +41,7 @@ impl std::fmt::Debug for dyn BaseArray {
 #[derive(Debug)]
 pub struct DataArray<T: DaftDataType> {
     field: Arc<Field>,
-    data: Arc<dyn arrow2::array::Array>,
+    data: Box<dyn arrow2::array::Array>,
     marker_: PhantomData<T>,
 }
 
@@ -55,7 +55,7 @@ impl<T> DataArray<T>
 where
     T: DaftDataType,
 {
-    pub fn new(field: Arc<Field>, data: Arc<dyn arrow2::array::Array>) -> DaftResult<DataArray<T>> {
+    pub fn new(field: Arc<Field>, data: Box<dyn arrow2::array::Array>) -> DaftResult<DataArray<T>> {
         if let Ok(arrow_dtype) = field.dtype.to_arrow() {
             if !arrow_dtype.eq(data.data_type()) {
                 return Err(DaftError::SchemaMismatch(format!(
@@ -83,7 +83,7 @@ where
         }
         use arrow2::bitmap::Bitmap;
         let with_bitmap = self.data.with_validity(Some(Bitmap::from(validity)));
-        DataArray::new(self.field.clone(), with_bitmap.into())
+        DataArray::new(self.field.clone(), with_bitmap)
     }
 
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
@@ -93,7 +93,7 @@ where
             )));
         }
         let sliced = self.data.slice(start, end - start);
-        Self::new(self.field.clone(), Arc::from(sliced))
+        Self::new(self.field.clone(), sliced)
     }
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {

@@ -9,6 +9,7 @@ use crate::dsl::{AggExpr, Expr};
 use crate::error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
 use crate::series::Series;
+use crate::with_match_daft_types;
 
 mod ops;
 #[derive(Clone)]
@@ -25,7 +26,7 @@ impl Table {
         let mut num_rows = 1;
         for (field, series) in schema.fields.values().zip(columns.iter()) {
             if field != series.field() {
-                return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {:?} vs series field: {:?}", field, series.field())));
+                return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
             }
             if (series.len() != 1) && (series.len() != num_rows) {
                 if num_rows == 1 {
@@ -53,8 +54,19 @@ impl Table {
         })
     }
 
-    pub fn empty() -> DaftResult<Self> {
-        Self::new(Schema::empty(), vec![])
+    pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
+        match schema {
+            Some(schema) => {
+                let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
+                for (field_name, field) in schema.fields.iter() {
+                    with_match_daft_types!(field.dtype, |$T| {
+                        columns.push(DataArray::<$T>::full_null(field_name, 0).into_series())
+                    })
+                }
+                Ok(Table { schema, columns })
+            }
+            None => Self::new(Schema::empty(), vec![]),
+        }
     }
 
     pub fn from_columns(columns: Vec<Series>) -> DaftResult<Self> {

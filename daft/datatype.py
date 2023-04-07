@@ -131,7 +131,7 @@ class DataType:
         return self == DataType.python()
 
     def __repr__(self) -> str:
-        return f"DataType[{self._dtype}]"
+        return self._dtype.__repr__()
 
     def __eq__(self, other: object) -> builtins.bool:
         return isinstance(other, DataType) and self._dtype.is_equal(other._dtype)
@@ -142,3 +142,6 @@ class DataType:
     def __setstate__(self, state: bytes) -> None:
         self._dtype = PyDataType.__new__(PyDataType)
         self._dtype.__setstate__(state)
+
+    def __hash__(self) -> int:
+        return self._dtype.__hash__()

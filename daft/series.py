@@ -258,6 +258,10 @@ class Series:
         return Series._from_pyseries(self._series.is_null())
 
     @property
+    def float(self) -> SeriesFloatNamespace:
+        return SeriesFloatNamespace.from_series(self)
+
+    @property
     def str(self) -> SeriesStringNamespace:
         return SeriesStringNamespace.from_series(self)
 
@@ -285,6 +289,11 @@ class SeriesNamespace:
         return ns
 
 
+class SeriesFloatNamespace(SeriesNamespace):
+    def is_nan(self) -> Series:
+        return Series._from_pyseries(self._series.is_nan())
+
+
 class SeriesStringNamespace(SeriesNamespace):
     def endswith(self, suffix: Series) -> Series:
         if not isinstance(suffix, Series):
@@ -303,6 +312,16 @@ class SeriesStringNamespace(SeriesNamespace):
             raise ValueError(f"expected another Series but got {type(pattern)}")
         assert self._series is not None and pattern._series is not None
         return Series._from_pyseries(self._series.utf8_contains(pattern._series))
+
+    def concat(self, other: Series) -> Series:
+        if not isinstance(other, Series):
+            raise ValueError(f"expected another Series but got {type(other)}")
+        assert self._series is not None and other._series is not None
+        return Series._from_pyseries(self._series) + other
+
+    def length(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_length())
 
 
 class SeriesDateNamespace(SeriesNamespace):

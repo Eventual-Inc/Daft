@@ -13,6 +13,7 @@ pub mod concat;
 pub mod date;
 pub mod downcast;
 pub mod filter;
+pub mod float;
 pub mod full;
 pub mod hash;
 pub mod if_else;
@@ -206,5 +207,22 @@ macro_rules! with_match_integer_daft_types {(
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
         _ => panic!("Only Integer Types are supported, {:?} not implemented", $key_type)
+    }
+})}
+
+#[macro_export]
+macro_rules! with_match_float_and_null_daft_types {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::*;
+
+    match $key_type {
+        Null => __with_ty__! { NullType },
+        // Float16 => __with_ty__! { Float16Type },
+        Float32 => __with_ty__! { Float32Type },
+        Float64 => __with_ty__! { Float64Type },
+        _ => panic!("Only Float Types are supported, {:?} not implemented", $key_type)
     }
 })}

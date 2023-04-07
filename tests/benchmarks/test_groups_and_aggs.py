@@ -1,0 +1,148 @@
+from __future__ import annotations
+
+import random
+from uuid import uuid4
+
+import numpy as np
+import pytest
+
+from daft import DataFrame
+
+
+@pytest.mark.benchmark(group="aggregations")
+@pytest.mark.parametrize(
+    "num_samples, num_partitions",
+    [(10_000, 1), (10_000, 100)],
+    ids=["10_000/1", "10_000/100"],
+)
+def test_simple_agg(benchmark, num_samples, num_partitions) -> None:
+    """Test baseline aggregation performance.
+
+    No groups, simplest aggregation (count).
+    """
+    df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).into_partitions(num_partitions).collect()
+
+    # Run the benchmark.
+    def bench() -> DataFrame:
+        return df.count("mycol").collect()
+
+    result = benchmark(bench)
+
+    # Make sure the result is correct.
+    assert result.to_pydict()["mycol"][0] == num_samples
+
+
+@pytest.mark.benchmark(group="aggregations")
+@pytest.mark.parametrize(
+    "num_samples, num_partitions",
+    [(10_000, 1), (10_000, 100)],
+    ids=["10_000/1", "10_000/100"],
+)
+def test_comparable_agg(benchmark, num_samples, num_partitions) -> None:
+    """Test aggregation performance for comparisons against string types."""
+
+    data = [str(uuid4()) for _ in range(num_samples)] + ["ffffffff-ffff-ffff-ffff-ffffffffffff"]
+    random.shuffle(data)
+
+    df = DataFrame.from_pydict({"mycol": data}).into_partitions(num_partitions).collect()
+
+    # Run the benchmark.
+    def bench() -> DataFrame:
+        return df.max("mycol").collect()
+
+    result = benchmark(bench)
+
+    # Make sure the result is correct.
+    assert result.to_pydict()["mycol"][0] == "ffffffff-ffff-ffff-ffff-ffffffffffff"
+
+
+@pytest.mark.benchmark(group="aggregations")
+@pytest.mark.parametrize(
+    "num_samples, num_partitions",
+    [(10_000, 1), (10_000, 100)],
+    ids=["10_000/1", "10_000/100"],
+)
+def test_numeric_agg(benchmark, num_samples, num_partitions) -> None:
+    """Test aggregation performance for numeric aggregation ops."""
+
+    df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).into_partitions(num_partitions).collect()
+
+    # Run the benchmark.
+    def bench() -> DataFrame:
+        return df.mean("mycol").collect()
+
+    result = benchmark(bench)
+
+    # Make sure the result is correct.
+    assert result.to_pydict()["mycol"][0] == (num_samples - 1) / 2.0
+
+
+@pytest.mark.benchmark(group="aggregations")
+@pytest.mark.parametrize(
+    "num_samples, num_partitions",
+    [(10_000, 1), (10_000, 100)],
+    ids=["10_000/1", "10_000/100"],
+)
+@pytest.mark.parametrize("num_groups", [1, 100])
+def test_groupby(benchmark, num_samples, num_partitions, num_groups) -> None:
+    """Test performance of grouping to one group vs many."""
+
+    keys = np.arange(num_samples) % num_groups
+    np.random.shuffle(keys)
+
+    df = DataFrame.from_pydict(
+        {
+            "keys": keys,
+            "data": np.arange(num_samples),
+        }
+    )
+
+    # Run the benchmark.
+    def bench() -> DataFrame:
+        return df.groupby("keys").agg([("data", "count")]).collect()
+
+    result = benchmark(bench)
+
+    # Make sure the result is correct.
+    assert len(result) == num_groups
+    assert (result.to_pandas()["data"].to_numpy() == (np.ones(num_groups) * (num_samples / num_groups))).all()
+
+
+@pytest.mark.benchmark(group="aggregations")
+@pytest.mark.parametrize(
+    "num_samples, num_partitions",
+    [(10_000, 1), (10_000, 100)],
+    ids=["10_000/1", "10_000/100"],
+)
+@pytest.mark.parametrize("num_columns", [1, 2])
+def test_multicolumn_groupby(benchmark, num_columns, num_samples, num_partitions) -> None:
+    """Evaluates the impact of an additional column in the groupby.
+
+    The group cardinality is the same in both cases;
+    a redundant column is used for the multicolumn group.
+    """
+
+    num_groups = 100
+
+    keys = np.arange(num_samples) % num_groups
+    np.random.shuffle(keys)
+
+    df = DataFrame.from_pydict(
+        {
+            "keys_a": keys * 7 % 10,
+            "keys": keys,
+            "data": np.arange(num_samples),
+        }
+    )
+
+    # Run the benchmark.
+    group_cols = ["keys_a", "keys"][-num_columns:]
+
+    def bench() -> DataFrame:
+        return df.groupby(*group_cols).agg([("data", "count")]).collect()
+
+    result = benchmark(bench)
+
+    # Make sure the result is correct.
+    assert len(result) == num_groups
+    assert (result.to_pandas()["data"].to_numpy() == (np.ones(num_groups) * (num_samples / num_groups))).all()

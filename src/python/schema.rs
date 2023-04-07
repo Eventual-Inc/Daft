@@ -12,6 +12,7 @@ use crate::schema;
 use crate::schema::Schema;
 
 #[pyclass]
+#[derive(Clone)]
 pub struct PySchema {
     pub schema: schema::SchemaRef,
 }

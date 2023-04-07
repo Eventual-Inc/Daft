@@ -1,22 +1,23 @@
-name: Run property based tests with Hypothesis
+name: Run Profiling on the TPCH Benchmark
 
 on:
-  schedule:
-  - cron: 0 20 * * *
+  push:
+    branches: [rust-main]
   workflow_dispatch:
 
 env:
   DAFT_ANALYTICS_ENABLED: '0'
+  TPCH_SCALE_FACTOR: '4'
+  TPCH_NUM_PARTS: '32'
+  PYTHON_VERSION: '3.7'
+
 
 jobs:
-  test:
+  profile-daft:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
-      matrix:
-        python-version: ['3.7']
-        daft_runner: [py]
     steps:
     - uses: actions/checkout@v3
     - uses: actions-rs/toolchain@v1
@@ -24,10 +25,9 @@ jobs:
         profile: minimal
         toolchain: stable
         override: true
-        ref: rust-main
     - uses: actions/cache@v3
       env:
-        cache-name: cache-cargo
+        cache-name: cache-cargo-profile
       with:
         path: |
           ~/.cargo/registry
@@ -38,10 +38,10 @@ jobs:
           ${{ runner.os }}-build-
           ${{ runner.os }}-
 
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v3
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: ${{ env.PYTHON_VERSION }}
 
     - name: Setup Virtual Env
       run: |
@@ -54,15 +54,34 @@ jobs:
         pip install -r requirements-dev.txt
 
     - name: Build Rust Library
+      env:
+        RUSTFLAGS: -g
+
       run: |
         source activate
         maturin develop --release
 
-    - name: Run Hypothesis property based tests
-      run: pytest tests/property_based_testing -m 'hypothesis' --hypothesis-seed=0
+    - uses: actions/cache@v3
       env:
-        DAFT_RUNNER: ${{ matrix.daft_runner }}
-        HYPOTHESIS_MAX_EXAMPLES: 10000
+        cache-name: profiling-cache-tpch-data
+      with:
+        path: data/tpch-dbgen
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ env.TPCH_SCALE_FACTOR }}-${{ env.TPCH_NUM_PARTS }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
+
+    - name: Generate TPCH Data
+      run: python benchmarking/tpch/data_generation.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --generate_parquet
+
+    - name: Run Profiling on TPCH Benchmark
+      env:
+        DAFT_DEVELOPER_USE_THREAD_POOL: '0'
+      run: |
+        py-spy record --native -o tpch-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup
+
+    - name: Upload Profile
+      uses: actions/upload-artifact@v2
+      with:
+        name: speedscope-profile
+        path: tpch-${{github.run_id}}.txt
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.23.0
@@ -75,7 +94,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [NIGHTLY] Property-Based Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                  "text": ":rotating_light: Run Profiling on the TPCH Benchmark <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
                 }
               }
             ]

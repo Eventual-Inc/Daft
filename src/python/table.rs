@@ -260,8 +260,12 @@ impl PyTable {
     }
 
     #[staticmethod]
-    pub fn empty() -> PyResult<Self> {
-        Ok(table::Table::empty()?.into())
+    pub fn empty(schema: Option<PySchema>) -> PyResult<Self> {
+        Ok(table::Table::empty(match schema {
+            Some(s) => Some(s.schema),
+            None => None,
+        })?
+        .into())
     }
 }
 
