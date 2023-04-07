@@ -57,6 +57,7 @@ impl_daft_datatype!(Utf8Type, Utf8);
 impl_daft_datatype!(FixedSizeListType, Unknown);
 impl_daft_datatype!(ListType, Unknown);
 impl_daft_datatype!(StructType, Unknown);
+impl_daft_datatype!(PythonType, Python);
 
 pub trait NumericNative:
     PartialOrd

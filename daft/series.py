@@ -42,8 +42,12 @@ class Series:
     def from_pylist(data: list, name: str = "list_series") -> Series:
         if not isinstance(data, list):
             raise TypeError(f"expected a python list, got {type(data)}")
-        arrow_array = pa.array(data)
-        return Series.from_arrow(arrow_array, name=name)
+        try:
+            arrow_array = pa.array(data)
+            return Series.from_arrow(arrow_array, name=name)
+        except pa.lib.ArrowInvalid:
+            pys = PySeries.from_pylist(name, data)
+            return Series._from_pyseries(pys)
 
     @staticmethod
     def from_numpy(data: np.ndarray, name: str = "numpy_series") -> Series:
@@ -74,7 +78,10 @@ class Series:
         return self._series.to_arrow()
 
     def to_pylist(self) -> list:
-        return self._series.to_arrow().to_pylist()
+        if self.datatype()._is_python_type():
+            return self._series.to_pylist()
+        else:
+            return self._series.to_arrow().to_pylist()
 
     def filter(self, mask: Series) -> Series:
         if not isinstance(mask, Series):

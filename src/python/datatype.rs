@@ -104,6 +104,11 @@ impl PyDataType {
         Ok(DataType::Date.into())
     }
 
+    #[staticmethod]
+    pub fn python() -> PyResult<Self> {
+        Ok(DataType::Python.into())
+    }
+
     pub fn is_equal(&self, other: &PyAny) -> PyResult<bool> {
         if other.is_instance_of::<PyDataType>()? {
             let other = other.extract::<PyDataType>()?;

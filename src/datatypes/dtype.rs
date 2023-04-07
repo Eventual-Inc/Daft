@@ -74,7 +74,7 @@ pub enum DataType {
     Struct(Vec<Field>),
     // Stop ArrowTypes
     DaftType(Box<DataType>),
-    PythonType(String),
+    Python,
     Unknown,
 }
 

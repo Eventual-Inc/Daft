@@ -1,6 +1,7 @@
 pub mod from;
 pub mod iterator;
 pub mod ops;
+pub mod vec_backed;
 use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use crate::{
@@ -55,12 +56,14 @@ where
     T: DaftDataType,
 {
     pub fn new(field: Arc<Field>, data: Box<dyn arrow2::array::Array>) -> DaftResult<DataArray<T>> {
-        if !field.dtype.to_arrow()?.eq(data.data_type()) {
-            return Err(DaftError::SchemaMismatch(format!(
-                "expected {:?}, got {:?}",
-                field.dtype.to_arrow(),
-                data.data_type()
-            )));
+        if let Ok(arrow_dtype) = field.dtype.to_arrow() {
+            if !arrow_dtype.eq(data.data_type()) {
+                return Err(DaftError::SchemaMismatch(format!(
+                    "expected {:?}, got {:?}",
+                    arrow_dtype,
+                    data.data_type()
+                )));
+            }
         }
 
         Ok(DataArray {
