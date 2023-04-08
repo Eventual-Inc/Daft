@@ -14,10 +14,10 @@ pub enum FloatExpr {
 
 impl FloatExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         use FloatExpr::*;
         match self {
-            IsNan => &IsNanEvaluator {},
+            IsNan => Box::new(IsNanEvaluator {}),
         }
     }
 }
