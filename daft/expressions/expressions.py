@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import builtins
 from datetime import date
-from typing import Callable, Iterable, Iterator, TypeVar, overload
+from typing import Any, Callable, Iterable, Iterator, TypeVar, overload
 
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
+from daft.daft import udf as _udf
 from daft.datatype import DataType
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
@@ -55,6 +56,18 @@ class Expression:
             return obj
         else:
             return lit(obj)
+
+    @staticmethod
+    def udf(func: Callable, input_types: dict[str, str], args: dict[str, Any], kwargs: dict[str, Any]) -> Expression:
+        expressions = {}
+        pyvalues = {}
+        for func_args in (args, kwargs):
+            for key in func_args:
+                if key not in input_types:
+                    expressions[key] = func_args[key]
+                else:
+                    pyvalues[key] = func_args[key]
+        return _udf(func, args.keys(), kwargs.keys(), expressions, pyvalues)
 
     def __bool__(self) -> bool:
         raise ValueError(
