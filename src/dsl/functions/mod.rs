@@ -1,12 +1,12 @@
 pub mod float;
 pub mod numeric;
+pub mod python;
 pub mod temporal;
 pub mod utf8;
-pub mod python;
 
-use python::PythonExpr;
 use float::FloatExpr;
 use numeric::NumericExpr;
+use python::PythonExpr;
 use serde::{Deserialize, Serialize};
 use utf8::Utf8Expr;
 
@@ -33,7 +33,7 @@ pub trait FunctionEvaluator {
 
 impl FunctionExpr {
     #[inline]
-    fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         use FunctionExpr::*;
         match self {
             Numeric(expr) => expr.get_evaluator(),

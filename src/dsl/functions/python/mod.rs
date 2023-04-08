@@ -2,11 +2,11 @@ mod udf;
 
 use std::collections::HashMap;
 
+use crate::error::DaftResult;
 use indexmap::IndexMap;
-use udf::PythonUDFEvaluator;
-use serde::{Deserialize, Serialize, Serializer, Deserializer};
 use pyo3::{PyObject, Python};
-use crate::error::{DaftResult};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use udf::PythonUDFEvaluator;
 
 use crate::dsl::Expr;
 
@@ -25,11 +25,11 @@ pub enum PyUdfInputType {
 pub struct SerializablePyObject(PyObject);
 
 impl Serialize for SerializablePyObject {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             // TODO: Call pickler
             todo!();
             // serializer.serialize_bytes(pickled_bytes)
@@ -38,11 +38,11 @@ impl Serialize for SerializablePyObject {
 }
 
 impl<'de> Deserialize<'de> for SerializablePyObject {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>
+        D: Deserializer<'de>,
     {
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             // TODO: Call depickling
             todo!();
         })
@@ -50,8 +50,8 @@ impl<'de> Deserialize<'de> for SerializablePyObject {
 }
 
 impl<Rhs> PartialEq<Rhs> for SerializablePyObject {
-    fn eq(&self, other: &Rhs) -> bool {
-        Python::with_gil(|py| {
+    fn eq(&self, _other: &Rhs) -> bool {
+        Python::with_gil(|_py| {
             // TODO: Call __eq__
             todo!();
         })
@@ -75,21 +75,38 @@ pub enum PythonExpr {
 
 impl PythonExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         match self {
-            PythonExpr::PythonUDF{pyfunc, args, kwargs} => &PythonUDFEvaluator {pyfunc: pyfunc.clone(), args: args.clone(), kwargs: kwargs.clone()},
+            PythonExpr::PythonUDF {
+                pyfunc,
+                args,
+                kwargs,
+            } => Box::new(PythonUDFEvaluator::new(
+                pyfunc.clone(),
+                args.clone(),
+                kwargs.clone(),
+            )),
         }
     }
 }
 
-pub fn udf(func: PyObject, arg_keys: &Vec<&str>, kwarg_keys: &Vec<&str>, expressions_map: &HashMap<&str, &Expr>, pyvalues_map: &HashMap<&str, PyObject>) -> DaftResult<Expr> {
+pub fn udf(
+    func: PyObject,
+    arg_keys: &Vec<&str>,
+    kwarg_keys: &Vec<&str>,
+    expressions_map: &HashMap<&str, &Expr>,
+    pyvalues_map: &HashMap<&str, PyObject>,
+) -> DaftResult<Expr> {
     let mut expressions: Vec<Expr> = vec![];
     let mut parsed_args = vec![];
     let mut parsed_kwargs = IndexMap::new();
 
     for arg_key in arg_keys {
         if let Some(&e) = expressions_map.get(arg_key) {
-            parsed_args.push(PyUdfInput::ExprAtIndex(expressions.len(), PyUdfInputType::PyList));
+            parsed_args.push(PyUdfInput::ExprAtIndex(
+                expressions.len(),
+                PyUdfInputType::PyList,
+            ));
             expressions.push(e.clone());
         } else if let Some(pyobj) = pyvalues_map.get(arg_key) {
             parsed_args.push(PyUdfInput::PyValue(SerializablePyObject(pyobj.clone())));
@@ -99,18 +116,24 @@ pub fn udf(func: PyObject, arg_keys: &Vec<&str>, kwarg_keys: &Vec<&str>, express
     }
     for kwarg_key in kwarg_keys {
         if let Some(&e) = expressions_map.get(kwarg_key) {
-            parsed_kwargs.insert(kwarg_key.to_string(), PyUdfInput::ExprAtIndex(expressions.len(), PyUdfInputType::PyList));
+            parsed_kwargs.insert(
+                kwarg_key.to_string(),
+                PyUdfInput::ExprAtIndex(expressions.len(), PyUdfInputType::PyList),
+            );
             expressions.push(e.clone());
         } else if let Some(pyobj) = pyvalues_map.get(kwarg_key) {
-            parsed_kwargs.insert(kwarg_key.to_string(), PyUdfInput::PyValue(SerializablePyObject(pyobj.clone())));
+            parsed_kwargs.insert(
+                kwarg_key.to_string(),
+                PyUdfInput::PyValue(SerializablePyObject(pyobj.clone())),
+            );
         } else {
             panic!("Internal error occurred when constructing UDF")
         }
     }
 
     Ok(Expr::Function {
-        func: super::FunctionExpr::Python(PythonExpr::PythonUDF{
-            pyfunc: SerializablePyObject(func.clone()),
+        func: super::FunctionExpr::Python(PythonExpr::PythonUDF {
+            pyfunc: SerializablePyObject(func),
             args: parsed_args,
             kwargs: parsed_kwargs,
         }),
