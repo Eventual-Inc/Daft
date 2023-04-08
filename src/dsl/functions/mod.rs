@@ -2,7 +2,9 @@ pub mod float;
 pub mod numeric;
 pub mod temporal;
 pub mod utf8;
+pub mod python;
 
+use python::PythonExpr;
 use float::FloatExpr;
 use numeric::NumericExpr;
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,7 @@ pub enum FunctionExpr {
     Float(FloatExpr),
     Utf8(Utf8Expr),
     Temporal(TemporalExpr),
+    Python(PythonExpr),
 }
 
 pub trait FunctionEvaluator {
@@ -37,6 +40,7 @@ impl FunctionExpr {
             Float(expr) => expr.get_evaluator(),
             Utf8(expr) => expr.get_evaluator(),
             Temporal(expr) => expr.get_evaluator(),
+            Python(expr) => expr.get_evaluator(),
         }
     }
 }

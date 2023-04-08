@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 
 use super::field::PyField;
 use super::{datatype::PyDataType, schema::PySchema};
@@ -56,6 +56,20 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
         )))
     }
 }
+
+#[pyfunction]
+pub fn udf(py: Python, func: &PyAny, arg_keys: Vec<&str>, kwarg_keys: Vec<&str>, expressions: HashMap<&str, PyExpr>, pyvalues: HashMap<&str, &PyAny>) -> PyResult<PyExpr> {
+    use dsl::functions::python::udf;
+
+    // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
+    // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
+    let pyobjects_map: HashMap<&str, PyObject> = HashMap::from_iter(pyvalues.iter().map(|(key, val)| (*key, val.to_object(py))));
+    let func = func.to_object(py);
+    let expressions_map: HashMap<&str, &Expr> = HashMap::from_iter(expressions.iter().map(|(key, pyexpr)| (*key, &pyexpr.expr)));
+
+    Ok(PyExpr { expr: udf(func, &arg_keys, &kwarg_keys, &expressions_map, &pyobjects_map)? })
+}
+
 
 #[pyclass]
 #[derive(Clone)]
