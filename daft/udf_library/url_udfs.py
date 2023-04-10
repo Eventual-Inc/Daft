@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Optional
 
 from daft import filesystem
 from daft.datatype import DataType
@@ -27,7 +26,7 @@ def _download(path: str | None) -> bytes | None:
     return fs.cat_file(path)
 
 
-@udf(return_dtype=DataType.binary(), input_columns={"urls": List[Optional[str]]})
+@udf(return_dtype=DataType.binary(), expr_inputs=["urls"])
 def download_udf(urls: list[str | None], max_worker_threads: int = 8) -> list[bytes | None]:
     """Downloads the contents of the supplied URLs."""
 
