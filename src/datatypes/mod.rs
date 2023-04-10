@@ -1,5 +1,6 @@
 mod dtype;
 mod field;
+mod matching;
 mod time_unit;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
