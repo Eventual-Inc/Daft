@@ -59,21 +59,32 @@ class Expression:
             return lit(obj)
 
     @staticmethod
-    def udf(func: Callable, expr_inputs: list[builtins.str], bound_args: inspect.BoundArguments) -> Expression:
+    def udf(func: Callable, expr_inputs: list[builtins.str], args: tuple, kwargs: dict) -> Expression:
         """Creates a new UDF Expression
 
         Args:
             func: User-provided Python function to run
             expr_inputs: List of argument names in the function that should be Expressions
-            bound_args: Arguments to the invoked UDFs, where values are either Expressions or Python values
+            args: Non-named arguments (potentially Expressions) to the function
+            kwargs: Named arguments (potentially Expressions) to the function
         """
+        bound_args = inspect.signature(func).bind(*args, **kwargs)
+        bound_args.apply_defaults()
+
         expressions = {}
         pyvalues = {}
         for key, val in bound_args.arguments.items():
             if key in expr_inputs:
-                assert isinstance(val, Expression), f"Expected Expression for input {key}"
+                if not isinstance(val, Expression):
+                    raise TypeError(
+                        f"UDF expects an Expression as input for the parameter `{key}` but received instead: {val}"
+                    )
                 expressions[key] = val._expr
             else:
+                if isinstance(val, Expression):
+                    raise TypeError(
+                        f"UDF expects a non-Expression as input for the parameter `{key}` but received instead: {val}"
+                    )
                 assert not isinstance(val, Expression), f"Expected non-Expression for input {key}"
                 pyvalues[key] = val
 

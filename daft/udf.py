@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from typing import Callable, Sequence
 
 from daft.datatype import DataType
@@ -14,7 +13,6 @@ class UDF:
         self._f = f
         self._expr_inputs = expr_inputs
         self._func_ret_type = return_dtype
-        self._func_signature = inspect.signature(f)
 
     @property
     def func(self) -> _PythonFunction:
@@ -42,24 +40,11 @@ class UDF:
         Returns:
             UdfExpression: The resulting UDFExpression representing an execution of the UDF on its inputs
         """
-        bound_args = self._func_signature.bind(*args, **kwargs)
-        bound_args.apply_defaults()
-
-        # Validate that arguments specified in input_columns receive Expressions as input
-        for arg_name, arg in bound_args.arguments.items():
-            if arg_name in self._expr_inputs and not isinstance(arg, Expression):
-                raise TypeError(
-                    f"`{arg_name}` is an input_column. UDF expects an Expression as input but received instead: {arg}"
-                )
-            if arg_name not in self._expr_inputs and isinstance(arg, Expression):
-                raise TypeError(
-                    f"`{arg_name}` is not an input_column. UDF expects a non-Expression as input but received: {arg}"
-                )
-
         return Expression.udf(
             func=self._f,
             expr_inputs=self._expr_inputs,
-            bound_args=bound_args,
+            args=args,
+            kwargs=kwargs,
         )
 
 
