@@ -1,9 +1,10 @@
 use arrow2;
 use arrow2::array;
+use pyo3::PyObject;
 
 use crate::{
-    array::{BaseArray, DataArray},
-    datatypes::{BinaryArray, BooleanArray, DaftNumericType, DateArray, Utf8Array},
+    array::{vec_backed::VecBackedArray, BaseArray, DataArray},
+    datatypes::{BinaryArray, BooleanArray, DaftNumericType, DateArray, PythonArray, Utf8Array},
 };
 
 impl<T> DataArray<T>
@@ -40,6 +41,13 @@ impl BinaryArray {
 impl DateArray {
     // downcasts a DataArray<T> to an Arrow DateArray.
     pub fn downcast(&self) -> &array::PrimitiveArray<i32> {
+        self.data().as_any().downcast_ref().unwrap()
+    }
+}
+
+impl PythonArray {
+    // downcasts a DataArray<T> to a VecBackedArray of PyObject.
+    pub fn downcast(&self) -> &VecBackedArray<PyObject> {
         self.data().as_any().downcast_ref().unwrap()
     }
 }
