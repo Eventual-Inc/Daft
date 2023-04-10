@@ -1,66 +1,18 @@
 from __future__ import annotations
 
 import inspect
-import sys
-from typing import Callable, List, Sequence
+from typing import Callable, Sequence
 
 from daft.datatype import DataType
 from daft.expressions import Expression
 
-if sys.version_info < (3, 8):
-    from typing_extensions import get_origin
-else:
-    from typing import get_origin
-
-
-_POLARS_AVAILABLE = True
-try:
-    import polars  # noqa: F401
-except ImportError:
-    _POLARS_AVAILABLE = False
-
-_NUMPY_AVAILABLE = True
-try:
-    import numpy as np  # noqa: F401
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
-_PANDAS_AVAILABLE = True
-try:
-    import pandas as pd  # noqa: F401
-except ImportError:
-    _PANDAS_AVAILABLE = False
-
-_PYARROW_AVAILABLE = True
-try:
-    import pyarrow as pa  # noqa: F401
-except ImportError:
-    _PYARROW_AVAILABLE = False
-
-
 _PythonFunction = Callable[..., Sequence]
 
 
-def udf_input_type_from_type_hint(hint: type) -> str:
-    if hint == list or hint == List or get_origin(hint) == list or get_origin(hint) == List:
-        return "list"
-    elif _NUMPY_AVAILABLE and (hint == np.ndarray or get_origin(hint) == np.ndarray):
-        return "numpy"
-    elif _PANDAS_AVAILABLE and hint == pd.Series:
-        return "pandas"
-    elif _PYARROW_AVAILABLE and hint == pa.Array:
-        return "pyarrow"
-    elif _POLARS_AVAILABLE and hint == polars.Series:
-        return "polars"
-    raise ValueError(f"UDF input array type {hint} is not supported")
-
-
 class UDF:
-    def __init__(self, f: _PythonFunction, input_columns: dict[str, type], return_dtype: DataType):
+    def __init__(self, f: _PythonFunction, expr_inputs: list[str], return_dtype: DataType):
         self._f = f
-        self._input_types = {
-            arg_name: udf_input_type_from_type_hint(type_hint) for arg_name, type_hint in input_columns.items()
-        }
+        self._expr_inputs = expr_inputs
         self._func_ret_type = return_dtype
         self._func_signature = inspect.signature(f)
 
@@ -95,18 +47,18 @@ class UDF:
 
         # Validate that arguments specified in input_columns receive Expressions as input
         for arg_name, arg in bound_args.arguments.items():
-            if arg_name in self._input_types and not isinstance(arg, Expression):
+            if arg_name in self._expr_inputs and not isinstance(arg, Expression):
                 raise TypeError(
                     f"`{arg_name}` is an input_column. UDF expects an Expression as input but received instead: {arg}"
                 )
-            if arg_name not in self._input_types and isinstance(arg, Expression):
+            if arg_name not in self._expr_inputs and isinstance(arg, Expression):
                 raise TypeError(
                     f"`{arg_name}` is not an input_column. UDF expects a non-Expression as input but received: {arg}"
                 )
 
         return Expression.udf(
             func=self._f,
-            input_types=self._input_types,
+            expr_inputs=self._expr_inputs,
             bound_args=bound_args,
         )
 
@@ -114,12 +66,45 @@ class UDF:
 def udf(
     *,
     return_dtype: DataType,
-    input_columns: dict[str, type],
+    expr_inputs: list[str],
 ) -> Callable[[_PythonFunction], UDF]:
+    """Decorator to convert a Python function into a UDF
+
+    UDFs allow users to run arbitrary Python code on the outputs of Expressions.
+
+    .. NOTE::
+        In most cases, UDFs will be slower than a native kernel/expression because of the required Rust and Python overheads. If
+        your computation can be expressed using Daft expressions, you should do so instead of writing a UDF. If your UDF expresses a
+        common use-case that isn't already covered by Daft, you should file a ticket or contribute this functionality back to Daft
+        as a kernel!
+
+    In the example below, we create a UDF that:
+
+    1. Receives data under the argument name ``x`` (specified with the ``expr_inputs`` keyword argument)
+    2. Converts the ``x`` Daft Series into a Python list using ``x.to_pylist()``
+    3. Adds a Python constant value ``c`` to every element in ``x``
+    3. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
+    4. We can call our UDF on a dataframe using any of the dataframe projection operations (``with_column``, ``select`` etc)
+
+    Example:
+        >>> @udf(return_dtype=DataType.int64(), expr_args=["x"])
+        >>> def add_constant(x: Series, c=10):
+        >>>     return [v + c for v in x.to_pylist()]
+        >>>
+        >>> df = df.with_column("new_x", add_constant(df["x"], c=20))
+
+    Args:
+        return_dtype (DataType): Returned type of the UDF
+        expr_args (list[str]): Function parameter names we expect to be Expressions
+
+    Returns:
+        Callable[[_PythonFunction], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
+    """
+
     def _udf(f: _PythonFunction) -> UDF:
         return UDF(
             f,
-            input_columns,
+            expr_inputs,
             return_dtype,
         )
 

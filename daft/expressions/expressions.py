@@ -59,13 +59,18 @@ class Expression:
             return lit(obj)
 
     @staticmethod
-    def udf(
-        func: Callable, input_types: dict[builtins.str, builtins.str], bound_args: inspect.BoundArguments
-    ) -> Expression:
+    def udf(func: Callable, expr_inputs: list[builtins.str], bound_args: inspect.BoundArguments) -> Expression:
+        """Creates a new UDF Expression
+
+        Args:
+            func: User-provided Python function to run
+            expr_inputs: List of argument names in the function that should be Expressions
+            bound_args: Arguments to the invoked UDFs, where values are either Expressions or Python values
+        """
         expressions = {}
         pyvalues = {}
         for key, val in bound_args.arguments.items():
-            if key in input_types:
+            if key in expr_inputs:
                 assert isinstance(val, Expression), f"Expected Expression for input {key}"
                 expressions[key] = val._expr
             else:

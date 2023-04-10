@@ -12,15 +12,6 @@ use crate::dsl::Expr;
 
 use super::FunctionEvaluator;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum PyUdfInputType {
-    PyList,
-    Numpy,
-    Pandas,
-    PyArrow,
-    Polars,
-}
-
 #[derive(Debug, Clone)]
 pub struct SerializablePyObject(PyObject);
 
@@ -32,7 +23,6 @@ impl Serialize for SerializablePyObject {
         Python::with_gil(|_py| {
             // TODO: Call pickler
             todo!();
-            // serializer.serialize_bytes(pickled_bytes)
         })
     }
 }
@@ -60,7 +50,7 @@ impl<Rhs> PartialEq<Rhs> for SerializablePyObject {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PyUdfInput {
-    ExprAtIndex(usize, PyUdfInputType),
+    ExprAtIndex(usize),
     PyValue(SerializablePyObject),
 }
 
@@ -103,10 +93,7 @@ pub fn udf(
 
     for arg_key in arg_keys {
         if let Some(&e) = expressions_map.get(arg_key) {
-            parsed_args.push(PyUdfInput::ExprAtIndex(
-                expressions.len(),
-                PyUdfInputType::PyList,
-            ));
+            parsed_args.push(PyUdfInput::ExprAtIndex(expressions.len()));
             expressions.push(e.clone());
         } else if let Some(pyobj) = pyvalues_map.get(arg_key) {
             parsed_args.push(PyUdfInput::PyValue(SerializablePyObject(pyobj.clone())));
@@ -118,7 +105,7 @@ pub fn udf(
         if let Some(&e) = expressions_map.get(kwarg_key) {
             parsed_kwargs.insert(
                 kwarg_key.to_string(),
-                PyUdfInput::ExprAtIndex(expressions.len(), PyUdfInputType::PyList),
+                PyUdfInput::ExprAtIndex(expressions.len()),
             );
             expressions.push(e.clone());
         } else if let Some(pyobj) = pyvalues_map.get(kwarg_key) {
