@@ -9,7 +9,7 @@ from daft.udf import udf
 
 
 def test_no_args_udf():
-    @udf(return_dtype=DataType.int64(), input_columns={})
+    @udf(return_dtype=DataType.int64(), expr_inputs=[])
     def udf_no_args():
         pass
 
@@ -23,7 +23,7 @@ def test_no_args_udf():
 
 
 def test_full_udf():
-    @udf(return_dtype=DataType.int64(), input_columns={"e_arg": list})
+    @udf(return_dtype=DataType.int64(), expr_inputs=["e_arg"])
     def full_udf(e_arg, val, kwarg_val=None):
         pass
 
@@ -43,7 +43,7 @@ def test_full_udf():
     reason="[RUST-INT][UDF] repr is very naive at the moment py_udf(...exprs), we should fix to show all parameters and use the function name"
 )
 def test_udf_repr():
-    @udf(return_dtype=DataType.int64(), input_columns={"x": list})
+    @udf(return_dtype=DataType.int64(), expr_inputs=["x"])
     def single_arg_udf(x, y, z=10):
         pass
 
