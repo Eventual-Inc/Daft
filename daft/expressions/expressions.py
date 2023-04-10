@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import builtins
+import inspect
 from datetime import date
-from typing import Any, Callable, Iterable, Iterator, TypeVar, overload
+from typing import Callable, Iterable, Iterator, TypeVar, overload
 
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
@@ -58,16 +59,22 @@ class Expression:
             return lit(obj)
 
     @staticmethod
-    def udf(func: Callable, input_types: dict[str, str], args: dict[str, Any], kwargs: dict[str, Any]) -> Expression:
+    def udf(
+        func: Callable, input_types: dict[builtins.str, builtins.str], bound_args: inspect.BoundArguments
+    ) -> Expression:
         expressions = {}
         pyvalues = {}
-        for func_args in (args, kwargs):
-            for key in func_args:
-                if key not in input_types:
-                    expressions[key] = func_args[key]
-                else:
-                    pyvalues[key] = func_args[key]
-        return _udf(func, args.keys(), kwargs.keys(), expressions, pyvalues)
+        for key, val in bound_args.arguments.items():
+            if key in input_types:
+                assert isinstance(val, Expression), f"Expected Expression for input {key}"
+                expressions[key] = val._expr
+            else:
+                assert not isinstance(val, Expression), f"Expected non-Expression for input {key}"
+                pyvalues[key] = val
+
+        kwarg_keys = list(bound_args.kwargs.keys())
+        arg_keys = list(bound_args.arguments.keys() - bound_args.kwargs.keys())
+        return Expression._from_pyexpr(_udf(func, arg_keys, kwarg_keys, expressions, pyvalues))
 
     def __bool__(self) -> bool:
         raise ValueError(

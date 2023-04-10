@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-from daft.datatype import DataType
-
-import enum
-import functools
-
-from typing import Any, Callable, Sequence, Union, List
-
-from daft.series import Series
-from daft.expressions import Expression
-
 import inspect
 import sys
+from typing import Callable, List, Sequence
+
+from daft.datatype import DataType
+from daft.expressions import Expression
+
 if sys.version_info < (3, 8):
     from typing_extensions import get_origin
 else:
@@ -43,66 +38,31 @@ except ImportError:
     _PYARROW_AVAILABLE = False
 
 
-_StatefulPythonFunction = type  # stateful UDFs are provided as Python Classes
-_StatelessPythonFunction = Callable[..., Sequence]
-_PythonFunction = Union[_StatefulPythonFunction, _StatelessPythonFunction]
+_PythonFunction = Callable[..., Sequence]
 
 
-class UdfInputType(enum.Enum):
-    """Enum for the different types a UDF can pass inputs in as"""
-
-    LIST = "list"
-    NUMPY = "np"
-    PANDAS = "pandas"
-    PYARROW = "pyarrow"
-    POLARS = "polars"
-
-    @classmethod
-    def from_type_hint(cls, hint: type | str) -> UdfInputType:
-        if hint == list or hint == List or get_origin(hint) == list or get_origin(hint) == List:
-            return UdfInputType.LIST
-        elif _NUMPY_AVAILABLE and (hint == np.ndarray or get_origin(hint) == np.ndarray):
-            return UdfInputType.NUMPY
-        elif _PANDAS_AVAILABLE and hint == pd.Series:
-            return UdfInputType.PANDAS
-        elif _PYARROW_AVAILABLE and hint == pa.Array:
-            return UdfInputType.PYARROW
-        elif _POLARS_AVAILABLE and hint == polars.Series:
-            return UdfInputType.POLARS
-        raise ValueError(f"UDF input array type {hint} is not supported")
-
-
-#     def convert_series(self, arg: Series) -> Any:
-#         """Converts a UDF argument input to the appropriate user-facing container type"""
-#         if self == UdfInputType.LIST:
-#             return arg.to_pylist()
-#         elif self == UdfInputType.NUMPY:
-#             # TODO: [RUST-INT][PY] For Python types, we should do a arg.to_pylist() first instead of arrow
-#             return np.array(arg.to_arrow())
-#         elif self == UdfInputType.PANDAS:
-#             return pd.Series(arg.to_numpy())
-#         elif self == UdfInputType.PYARROW:
-#             # TODO: [RUST-INT][PY] For Python types, we should throw an error early here
-#             return arg.to_arrow()
-#         elif self == UdfInputType.POLARS:
-#             # TODO: [RUST-INT][PY] For Python types, we should do a arg.to_pylist() first instead of arrow
-#             return polars.Series(arg.to_arrow())
-#         raise NotImplementedError(f"Unsupported UDF input type {self}")
+def udf_input_type_from_type_hint(hint: type) -> str:
+    if hint == list or hint == List or get_origin(hint) == list or get_origin(hint) == List:
+        return "list"
+    elif _NUMPY_AVAILABLE and (hint == np.ndarray or get_origin(hint) == np.ndarray):
+        return "numpy"
+    elif _PANDAS_AVAILABLE and hint == pd.Series:
+        return "pandas"
+    elif _PYARROW_AVAILABLE and hint == pa.Array:
+        return "pyarrow"
+    elif _POLARS_AVAILABLE and hint == polars.Series:
+        return "polars"
+    raise ValueError(f"UDF input array type {hint} is not supported")
 
 
 class UDF:
     def __init__(self, f: _PythonFunction, input_columns: dict[str, type], return_dtype: DataType):
         self._f = f
         self._input_types = {
-            arg_name: UdfInputType.from_type_hint(type_hint) for arg_name, type_hint in input_columns.items()
+            arg_name: udf_input_type_from_type_hint(type_hint) for arg_name, type_hint in input_columns.items()
         }
         self._func_ret_type = return_dtype
-
-        # Get function argument names, excluding `self` if it is a class method
-        call_method = f.__call__ if isinstance(f, type) else f
-        self._ordered_func_arg_names = list(inspect.signature(call_method).parameters.keys())
-        if isinstance(f, type):
-            self._ordered_func_arg_names = self._ordered_func_arg_names[1:]
+        self._func_signature = inspect.signature(f)
 
     @property
     def func(self) -> _PythonFunction:
@@ -130,22 +90,24 @@ class UDF:
         Returns:
             UdfExpression: The resulting UDFExpression representing an execution of the UDF on its inputs
         """
+        bound_args = self._func_signature.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+
         # Validate that arguments specified in input_columns receive Expressions as input
-        arg_names_and_args = list(zip(self._ordered_func_arg_names, args)) + list(kwargs.items())
-        for arg_name, arg in arg_names_and_args:
+        for arg_name, arg in bound_args.arguments.items():
             if arg_name in self._input_types and not isinstance(arg, Expression):
-                raise ValueError(
+                raise TypeError(
                     f"`{arg_name}` is an input_column. UDF expects an Expression as input but received instead: {arg}"
                 )
             if arg_name not in self._input_types and isinstance(arg, Expression):
-                raise ValueError(
+                raise TypeError(
                     f"`{arg_name}` is not an input_column. UDF expects a non-Expression as input but received: {arg}"
                 )
+
         return Expression.udf(
             func=self._f,
             input_types=self._input_types,
-            args=args,
-            kwargs=kwargs,
+            bound_args=bound_args,
         )
 
 
@@ -153,11 +115,12 @@ def udf(
     *,
     return_dtype: DataType,
     input_columns: dict[str, type],
-) -> UDF:
+) -> Callable[[_PythonFunction], UDF]:
     def _udf(f: _PythonFunction) -> UDF:
         return UDF(
             f,
             input_columns,
             return_dtype,
         )
+
     return _udf
