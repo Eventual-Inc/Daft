@@ -116,7 +116,7 @@ fn hash_utf8<O: Offset>(
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
-macro_rules! with_match_primitive_type {(
+macro_rules! with_match_hashing_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
@@ -165,7 +165,7 @@ pub fn hash(array: &dyn Array, seed: Option<&PrimitiveArray<u64>>) -> Result<Pri
     Ok(match array.data_type().to_physical_type() {
         Null => hash_null(array.as_any().downcast_ref().unwrap(), seed),
         Boolean => hash_boolean(array.as_any().downcast_ref().unwrap(), seed),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_hashing_primitive_type!(primitive, |$T| {
             hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed)
         }),
         Binary => hash_binary::<i32>(array.as_any().downcast_ref().unwrap(), seed),
