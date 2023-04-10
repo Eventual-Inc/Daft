@@ -146,7 +146,7 @@ fn search_sorted_utf_array<O: Offset>(
     PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
 }
 
-macro_rules! with_match_primitive_type {(
+macro_rules! with_match_searching_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
@@ -352,7 +352,7 @@ pub fn search_sorted(
     }
     Ok(match sorted_array.data_type().to_physical_type() {
         // Boolean => hash_boolean(array.as_any().downcast_ref().unwrap()),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_searching_primitive_type!(primitive, |$T| {
             search_sorted_primitive_array::<$T>(sorted_array.as_any().downcast_ref().unwrap(), keys.as_any().downcast_ref().unwrap(), input_reversed)
         }),
         Utf8 => search_sorted_utf_array::<i32>(
