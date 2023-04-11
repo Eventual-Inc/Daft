@@ -1,7 +1,8 @@
 use crate::{
     array::{BaseArray, DataArray},
     datatypes::{
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, NullArray, PythonArray,
+        Utf8Array,
     },
     error::DaftResult,
 };
@@ -178,5 +179,16 @@ impl BinaryArray {
             // See discussion: https://stackoverflow.com/questions/54358833/how-does-bytes-repr-representation-work
             Some(v) => Ok(format!("b\"{:?}\"", v)),
         }
+    }
+}
+
+impl PythonArray {
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        Self::try_from((self.name(), result))
     }
 }
