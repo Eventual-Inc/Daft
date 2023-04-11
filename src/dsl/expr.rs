@@ -481,8 +481,8 @@ mod tests {
     use crate::dsl::lit;
     #[test]
     fn check_comparision_type() -> DaftResult<()> {
-        let x = lit(10.);
-        let y = lit(12);
+        let x = Expr::Literal(lit(10.));
+        let y = Expr::Literal(lit(12));
         let schema = Schema::empty();
 
         let z = Expr::BinaryOp {
@@ -508,8 +508,8 @@ mod tests {
 
     #[test]
     fn check_arithmetic_type() -> DaftResult<()> {
-        let x = lit(10.);
-        let y = lit(12);
+        let x = Expr::Literal(lit(10.));
+        let y = Expr::Literal(lit(12));
         let schema = Schema::empty();
 
         let z = Expr::BinaryOp {
@@ -519,8 +519,8 @@ mod tests {
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
 
-        let x = lit(10.);
-        let y = lit(12);
+        let x = Expr::Literal(lit(10.));
+        let y = Expr::Literal(lit(12));
 
         let z = Expr::BinaryOp {
             left: y.into(),

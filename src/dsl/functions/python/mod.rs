@@ -1,13 +1,11 @@
 mod udf;
 
-use std::collections::HashMap;
-
-use crate::error::DaftResult;
+use crate::dsl;
+use crate::{dsl::lit::LiteralValue, error::DaftResult};
 use indexmap::IndexMap;
 use pyo3::{PyObject, Python};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-use crate::dsl::Expr;
+use std::collections::HashMap;
 
 use super::FunctionEvaluator;
 
@@ -50,7 +48,7 @@ impl<Rhs> PartialEq<Rhs> for SerializablePyObject {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PyUdfInput {
     ExprAtIndex(usize),
-    PyValue(SerializablePyObject),
+    LitValue(LiteralValue),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -75,10 +73,10 @@ pub fn udf(
     func: PyObject,
     arg_keys: &Vec<&str>,
     kwarg_keys: &Vec<&str>,
-    expressions_map: &HashMap<&str, &Expr>,
-    pyvalues_map: &HashMap<&str, PyObject>,
-) -> DaftResult<Expr> {
-    let mut expressions: Vec<Expr> = vec![];
+    expressions_map: &HashMap<&str, &dsl::Expr>,
+    pyvalues_literal_map: &HashMap<&str, LiteralValue>,
+) -> DaftResult<dsl::Expr> {
+    let mut expressions: Vec<dsl::Expr> = vec![];
     let mut parsed_args = vec![];
     let mut parsed_kwargs = IndexMap::new();
 
@@ -86,8 +84,8 @@ pub fn udf(
         if let Some(&e) = expressions_map.get(arg_key) {
             parsed_args.push(PyUdfInput::ExprAtIndex(expressions.len()));
             expressions.push(e.clone());
-        } else if let Some(pyobj) = pyvalues_map.get(arg_key) {
-            parsed_args.push(PyUdfInput::PyValue(SerializablePyObject(pyobj.clone())));
+        } else if let Some(literal) = pyvalues_literal_map.get(arg_key) {
+            parsed_args.push(PyUdfInput::LitValue(literal.to_owned()));
         } else {
             panic!("Internal error occurred when constructing UDF")
         }
@@ -99,17 +97,17 @@ pub fn udf(
                 PyUdfInput::ExprAtIndex(expressions.len()),
             );
             expressions.push(e.clone());
-        } else if let Some(pyobj) = pyvalues_map.get(kwarg_key) {
+        } else if let Some(literal) = pyvalues_literal_map.get(kwarg_key) {
             parsed_kwargs.insert(
                 kwarg_key.to_string(),
-                PyUdfInput::PyValue(SerializablePyObject(pyobj.clone())),
+                PyUdfInput::LitValue(literal.to_owned()),
             );
         } else {
             panic!("Internal error occurred when constructing UDF")
         }
     }
 
-    Ok(Expr::Function {
+    Ok(dsl::Expr::Function {
         func: super::FunctionExpr::Python(PythonExpr::PythonUDF {
             pyfunc: SerializablePyObject(func),
             args: parsed_args,

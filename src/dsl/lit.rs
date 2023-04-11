@@ -1,7 +1,6 @@
 use std::fmt::{Display, Formatter, Result};
 
 use crate::datatypes::DataType;
-use crate::dsl::expr::Expr;
 use crate::series::Series;
 use serde::{Deserialize, Serialize};
 
@@ -82,35 +81,34 @@ impl LiteralValue {
 }
 
 pub trait Literal {
-    /// [Literal](Expr::Literal) expression.
-    fn lit(self) -> Expr;
+    fn lit(self) -> LiteralValue;
 }
 
 impl Literal for String {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Utf8(self))
+    fn lit(self) -> LiteralValue {
+        LiteralValue::Utf8(self)
     }
 }
 
 impl<'a> Literal for &'a str {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Utf8(self.to_owned()))
+    fn lit(self) -> LiteralValue {
+        LiteralValue::Utf8(self.to_owned())
     }
 }
 
 macro_rules! make_literal {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
-            fn lit(self) -> Expr {
-                Expr::Literal(LiteralValue::$SCALAR(self))
+            fn lit(self) -> LiteralValue {
+                LiteralValue::$SCALAR(self)
             }
         }
     };
 }
 
 impl<'a> Literal for &'a [u8] {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Binary(self.to_vec()))
+    fn lit(self) -> LiteralValue {
+        LiteralValue::Binary(self.to_vec())
     }
 }
 
@@ -121,10 +119,10 @@ make_literal!(i64, Int64);
 make_literal!(u64, UInt64);
 make_literal!(f64, Float64);
 
-pub fn lit<L: Literal>(t: L) -> Expr {
+pub fn lit<L: Literal>(t: L) -> LiteralValue {
     t.lit()
 }
 
-pub fn null_lit() -> Expr {
-    Expr::Literal(LiteralValue::Null)
+pub fn null_lit() -> LiteralValue {
+    LiteralValue::Null
 }

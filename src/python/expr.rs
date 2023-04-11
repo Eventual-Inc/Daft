@@ -2,13 +2,51 @@ use std::collections::{HashMap, HashSet};
 
 use super::field::PyField;
 use super::{datatype::PyDataType, schema::PySchema};
-use crate::dsl::{self, functions, optimization, Expr};
+use crate::dsl::{self, functions, optimization, Expr, LiteralValue};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyBool, PyBytes, PyFloat, PyInt, PyString, PyTuple},
 };
+
+fn pyany_to_literal(item: &PyAny) -> PyResult<LiteralValue> {
+    if let Ok(true) = item.is_instance_of::<PyBool>() {
+        let val = item.extract::<bool>()?;
+        Ok(dsl::lit(val))
+    } else if let Ok(int) = item.downcast::<PyInt>() {
+        match int.extract::<i64>() {
+            Ok(val) => {
+                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
+                    Ok(dsl::lit(val as i32))
+                } else {
+                    Ok(dsl::lit(val))
+                }
+            }
+            _ => {
+                let val = int.extract::<u64>()?;
+                Ok(dsl::lit(val))
+            }
+        }
+    } else if let Ok(float) = item.downcast::<PyFloat>() {
+        let val = float.extract::<f64>()?;
+        Ok(dsl::lit(val))
+    } else if let Ok(pystr) = item.downcast::<PyString>() {
+        Ok(dsl::lit(pystr.to_str().expect(
+            "could not transform Python string to Rust Unicode",
+        )))
+    } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
+        let bytes = pybytes.as_bytes();
+        Ok(dsl::lit(bytes))
+    } else if item.is_none() {
+        Ok(dsl::null_lit())
+    } else {
+        Err(PyValueError::new_err(format!(
+            "could not convert value {:?} as a Literal",
+            item.str()?
+        )))
+    }
+}
 
 #[pyfunction]
 pub fn col(name: &str) -> PyResult<PyExpr> {
@@ -17,44 +55,7 @@ pub fn col(name: &str) -> PyResult<PyExpr> {
 
 #[pyfunction]
 pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
-    if let Ok(true) = item.is_instance_of::<PyBool>() {
-        let val = item.extract::<bool>()?;
-        Ok(dsl::lit(val).into())
-    } else if let Ok(int) = item.downcast::<PyInt>() {
-        match int.extract::<i64>() {
-            Ok(val) => {
-                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
-                    Ok(dsl::lit(val as i32).into())
-                } else {
-                    Ok(dsl::lit(val).into())
-                }
-            }
-            _ => {
-                let val = int.extract::<u64>()?;
-                Ok(dsl::lit(val).into())
-            }
-        }
-    } else if let Ok(float) = item.downcast::<PyFloat>() {
-        let val = float.extract::<f64>()?;
-        Ok(dsl::lit(val).into())
-    } else if let Ok(pystr) = item.downcast::<PyString>() {
-        Ok(dsl::lit(
-            pystr
-                .to_str()
-                .expect("could not transform Python string to Rust Unicode"),
-        )
-        .into())
-    } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
-        let bytes = pybytes.as_bytes();
-        Ok(dsl::lit(bytes).into())
-    } else if item.is_none() {
-        Ok(dsl::null_lit().into())
-    } else {
-        Err(PyValueError::new_err(format!(
-            "could not convert value {:?} as a Literal",
-            item.str()?
-        )))
-    }
+    Ok(Expr::Literal(pyany_to_literal(item)?).into())
 }
 
 #[pyfunction]
@@ -70,8 +71,14 @@ pub fn udf(
 
     // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
     // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
-    let pyobjects_map: HashMap<&str, PyObject> =
-        HashMap::from_iter(pyvalues.iter().map(|(key, val)| (*key, val.to_object(py))));
+    let pyvalues_literals: PyResult<Vec<(&str, dsl::LiteralValue)>> = pyvalues
+        .iter()
+        .map(|(&key, &val)| match pyany_to_literal(val) {
+            Ok(literal) => Ok((key, literal)),
+            Err(e) => Err(e),
+        })
+        .collect();
+    let pyvalues_literal_map = HashMap::from_iter(pyvalues_literals?);
     let func = func.to_object(py);
     let expressions_map: HashMap<&str, &Expr> =
         HashMap::from_iter(expressions.iter().map(|(key, pyexpr)| (*key, &pyexpr.expr)));
@@ -82,7 +89,7 @@ pub fn udf(
             &arg_keys,
             &kwarg_keys,
             &expressions_map,
-            &pyobjects_map,
+            &pyvalues_literal_map,
         )?,
     })
 }
@@ -104,7 +111,7 @@ impl PyExpr {
     #[args(args = "*")]
     pub fn new(args: &PyTuple) -> PyResult<Self> {
         match args.len() {
-            0 => Ok(dsl::null_lit().into()),
+            0 => Ok(Expr::Literal(dsl::null_lit()).into()),
             _ => Err(PyValueError::new_err(format!(
                 "expected no arguments to make new PyExpr, got : {}",
                 args.len()
