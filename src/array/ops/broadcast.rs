@@ -1,6 +1,8 @@
+use pyo3::Python;
+
 use crate::{
-    array::{BaseArray, DataArray},
-    datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, Utf8Array},
+    array::{vec_backed::VecBackedArray, BaseArray, DataArray},
+    datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, PythonArray, Utf8Array},
     error::DaftResult,
 };
 
@@ -98,5 +100,22 @@ impl BinaryArray {
             }
             None => Ok(DataArray::full_null(self.name(), num)),
         }
+    }
+}
+
+impl PythonArray {
+    pub fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        if self.len() != 1 {
+            return Err(crate::error::DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
+        let val = self.downcast().vec().iter().next().unwrap();
+        let mut repeated_values = Vec::with_capacity(num);
+        Python::with_gil(|py| repeated_values.fill(val.clone_ref(py)));
+        let repeated_values_array: Box<dyn arrow2::array::Array> =
+            Box::new(VecBackedArray::new(repeated_values, None));
+        PythonArray::new(self.field.clone(), repeated_values_array)
     }
 }
