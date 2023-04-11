@@ -191,4 +191,8 @@ impl PythonArray {
         let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
         Self::try_from((self.name(), result))
     }
+
+    pub fn str_value(&self, _idx: usize) -> DaftResult<String> {
+        todo!("[RUST-INT][PY]");
+    }
 }

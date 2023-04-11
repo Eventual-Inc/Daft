@@ -2,7 +2,9 @@ use arrow2::bitmap::Bitmap;
 
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BinaryArray, BooleanArray, DaftDataType, DaftNumericType, NullArray, Utf8Array},
+    datatypes::{
+        BinaryArray, BooleanArray, DaftDataType, DaftNumericType, NullArray, PythonArray, Utf8Array,
+    },
 };
 
 impl<T> DataArray<T>
@@ -69,5 +71,11 @@ impl BinaryArray {
 impl NullArray {
     pub fn size_bytes(&self) -> usize {
         0
+    }
+}
+
+impl PythonArray {
+    pub fn size_bytes(&self) -> usize {
+        todo!("[RUST-INT][PY]")
     }
 }
