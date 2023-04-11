@@ -33,7 +33,7 @@ pub trait FunctionEvaluator {
 
 impl FunctionExpr {
     #[inline]
-    fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
+    fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use FunctionExpr::*;
         match self {
             Numeric(expr) => expr.get_evaluator(),
