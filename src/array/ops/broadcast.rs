@@ -1,5 +1,3 @@
-use pyo3::Python;
-
 use crate::{
     array::{vec_backed::VecBackedArray, BaseArray, DataArray},
     datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, PythonArray, Utf8Array},
@@ -113,7 +111,7 @@ impl PythonArray {
         }
         let val = self.downcast().vec().iter().next().unwrap();
         let mut repeated_values = Vec::with_capacity(num);
-        Python::with_gil(|py| repeated_values.fill(val.clone_ref(py)));
+        repeated_values.fill(val.clone());
         let repeated_values_array: Box<dyn arrow2::array::Array> =
             Box::new(VecBackedArray::new(repeated_values, None));
         PythonArray::new(self.field.clone(), repeated_values_array)
