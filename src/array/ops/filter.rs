@@ -1,6 +1,6 @@
 use crate::{
     array::DataArray,
-    datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, Utf8Array},
+    datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, PythonArray, Utf8Array},
     error::DaftResult,
 };
 
@@ -41,5 +41,12 @@ impl NullArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let set_bits = mask.len() - mask.downcast().values().unset_bits();
         Ok(NullArray::full_null(self.name(), set_bits))
+    }
+}
+
+impl PythonArray {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
+        DataArray::try_from((self.name(), result))
     }
 }
