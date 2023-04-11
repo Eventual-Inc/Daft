@@ -18,6 +18,7 @@ version = "0.2"
 
 [dependencies.pyo3]
 features = ["extension-module", "abi3-py37"]
+optional = true
 version = "0.17.3"
 
 [dependencies.serde]
@@ -27,6 +28,10 @@ version = "1.0.152"
 [dependencies.xxhash-rust]
 features = ["xxh3", "const_xxh3"]
 version = "0.8.5"
+
+[features]
+default = ["python"]
+python = ["dep:pyo3"]
 
 [lib]
 crate-type = ["cdylib"]
