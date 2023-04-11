@@ -6,7 +6,6 @@ use crate::error::DaftResult;
 use indexmap::IndexMap;
 use pyo3::{PyObject, Python};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use udf::PythonUDFEvaluator;
 
 use crate::dsl::Expr;
 
@@ -65,17 +64,9 @@ pub enum PythonExpr {
 
 impl PythonExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
+    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         match self {
-            PythonExpr::PythonUDF {
-                pyfunc,
-                args,
-                kwargs,
-            } => Box::new(PythonUDFEvaluator::new(
-                pyfunc.clone(),
-                args.clone(),
-                kwargs.clone(),
-            )),
+            PythonExpr::PythonUDF { .. } => self,
         }
     }
 }
