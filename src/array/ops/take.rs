@@ -193,13 +193,14 @@ impl PythonArray {
         use pyo3::PyObject;
 
         let indices = idx.downcast();
-        let indices_has_validity = indices.null_count() > 0;
-        let values_vec = if indices_has_validity {
+        let indices_iter = if indices.null_count() > 0 {
             unimplemented!()
         } else {
-            indices
-                .values()
-                .iter()
+            indices.values().iter()
+        };
+
+        let values_vec = {
+            indices_iter
                 .map(|index| self.downcast().vec()[index.to_usize()].clone())
                 .collect::<Vec<PyObject>>()
         };
