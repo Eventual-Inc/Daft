@@ -1,8 +1,8 @@
 use crate::{
-    array::{BaseArray, DataArray},
+    array::{vec_backed::VecBackedArray, BaseArray, DataArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, NullArray, PythonArray,
-        Utf8Array,
+        PythonType, Utf8Array,
     },
     error::DaftResult,
 };
@@ -188,8 +188,24 @@ impl PythonArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
-        Self::try_from((self.name(), result))
+        use arrow2::array::Array;
+        use arrow2::types::Index;
+        use pyo3::PyObject;
+
+        let indices = idx.downcast();
+        let indices_has_validity = indices.null_count() > 0;
+        let values_vec = if indices_has_validity {
+            unimplemented!()
+        } else {
+            indices
+                .values()
+                .iter()
+                .map(|index| self.downcast().vec()[index.to_usize()].clone())
+                .collect::<Vec<PyObject>>()
+        };
+        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(VecBackedArray::new(values_vec));
+
+        DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
     }
 
     pub fn str_value(&self, _idx: usize) -> DaftResult<String> {
