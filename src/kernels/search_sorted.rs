@@ -10,11 +10,6 @@ use arrow2::{
 };
 use num_traits::Float;
 
-use crate::ffi;
-use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
-use pyo3::types::PyList;
-
 #[allow(clippy::eq_op)]
 fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
     sorted_array: &PrimitiveArray<T>,
@@ -371,68 +366,4 @@ pub fn search_sorted(
             )))
         }
     })
-}
-
-#[pyfunction]
-pub fn search_sorted_pyarrow_array(
-    sorted_array: &PyAny,
-    keys: &PyAny,
-    input_reversed: bool,
-    py: Python,
-    pyarrow: &PyModule,
-) -> PyResult<PyObject> {
-    let rsorted_array = ffi::array_to_rust(sorted_array)?;
-    let rkeys_array = ffi::array_to_rust(keys)?;
-    let result_idx = py.allow_threads(move || {
-        search_sorted(rsorted_array.as_ref(), rkeys_array.as_ref(), input_reversed)
-    });
-
-    match result_idx {
-        Err(e) => Err(PyValueError::new_err(e.to_string())),
-        Ok(s) => ffi::to_py_array(Box::new(s), py, pyarrow),
-    }
-}
-
-#[pyfunction]
-pub fn search_sorted_multiple_pyarrow_array(
-    sorted_arrays: &PyList,
-    key_arrays: &PyList,
-    descending_array: Vec<bool>,
-    py: Python,
-    pyarrow: &PyModule,
-) -> PyResult<PyObject> {
-    if sorted_arrays.len() != key_arrays.len() {
-        return Err(PyValueError::new_err(
-            "number of columns for sorted arrays and key arrays does not match",
-        ));
-    }
-    if sorted_arrays.len() != descending_array.len() {
-        return Err(PyValueError::new_err(
-            "number of columns for sorted arrays and descending_array does not match",
-        ));
-    }
-    let mut rsorted_arrays: Vec<Box<dyn Array>> = Vec::with_capacity(sorted_arrays.len());
-    let mut rkeys_arrays: Vec<Box<dyn Array>> = Vec::with_capacity(key_arrays.len());
-
-    for (sorted_arr, key_arr) in zip(sorted_arrays.iter(), key_arrays.iter()) {
-        rsorted_arrays.push(ffi::array_to_rust(sorted_arr)?);
-        rkeys_arrays.push(ffi::array_to_rust(key_arr)?);
-    }
-
-    let rsorted_arrays_refs = rsorted_arrays
-        .iter()
-        .map(Box::as_ref)
-        .collect::<Vec<&dyn Array>>();
-    let key_arrays_refs = rkeys_arrays
-        .iter()
-        .map(Box::as_ref)
-        .collect::<Vec<&dyn Array>>();
-
-    let result_idx = py.allow_threads(move || {
-        search_sorted_multi_array(&rsorted_arrays_refs, &key_arrays_refs, &descending_array)
-    });
-    match result_idx {
-        Err(e) => Err(PyValueError::new_err(e.to_string())),
-        Ok(s) => ffi::to_py_array(Box::new(s), py, pyarrow),
-    }
 }

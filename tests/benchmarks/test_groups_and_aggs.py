@@ -8,18 +8,33 @@ import pytest
 
 from daft import DataFrame
 
+NUM_SAMPLES = 1_000_000
+
 
 @pytest.mark.benchmark(group="aggregations")
-@pytest.mark.parametrize(
-    "num_samples, num_partitions",
-    [(10_000, 1), (10_000, 100)],
-    ids=["10_000/1", "10_000/100"],
-)
-def test_simple_agg(benchmark, num_samples, num_partitions) -> None:
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+def test_agg_baseline(benchmark, num_samples) -> None:
     """Test baseline aggregation performance.
 
     No groups, simplest aggregation (count).
     """
+    df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).collect()
+
+    # Run the benchmark.
+    def bench() -> DataFrame:
+        return df.count("mycol").collect()
+
+    result = benchmark(bench)
+
+    # Make sure the result is correct.
+    assert result.to_pydict()["mycol"][0] == num_samples
+
+
+@pytest.mark.benchmark(group="aggregations")
+@pytest.mark.parametrize("num_partitions", [2])
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+def test_agg_multipart(benchmark, num_samples, num_partitions) -> None:
+    """Evaluate the impact of multiple partitions."""
     df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).into_partitions(num_partitions).collect()
 
     # Run the benchmark.
@@ -33,18 +48,14 @@ def test_simple_agg(benchmark, num_samples, num_partitions) -> None:
 
 
 @pytest.mark.benchmark(group="aggregations")
-@pytest.mark.parametrize(
-    "num_samples, num_partitions",
-    [(10_000, 1), (10_000, 100)],
-    ids=["10_000/1", "10_000/100"],
-)
-def test_comparable_agg(benchmark, num_samples, num_partitions) -> None:
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+def test_comparable_agg(benchmark, num_samples) -> None:
     """Test aggregation performance for comparisons against string types."""
 
     data = [str(uuid4()) for _ in range(num_samples)] + ["ffffffff-ffff-ffff-ffff-ffffffffffff"]
     random.shuffle(data)
 
-    df = DataFrame.from_pydict({"mycol": data}).into_partitions(num_partitions).collect()
+    df = DataFrame.from_pydict({"mycol": data}).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -57,15 +68,11 @@ def test_comparable_agg(benchmark, num_samples, num_partitions) -> None:
 
 
 @pytest.mark.benchmark(group="aggregations")
-@pytest.mark.parametrize(
-    "num_samples, num_partitions",
-    [(10_000, 1), (10_000, 100)],
-    ids=["10_000/1", "10_000/100"],
-)
-def test_numeric_agg(benchmark, num_samples, num_partitions) -> None:
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+def test_numeric_agg(benchmark, num_samples) -> None:
     """Test aggregation performance for numeric aggregation ops."""
 
-    df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).into_partitions(num_partitions).collect()
+    df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -78,13 +85,9 @@ def test_numeric_agg(benchmark, num_samples, num_partitions) -> None:
 
 
 @pytest.mark.benchmark(group="aggregations")
-@pytest.mark.parametrize(
-    "num_samples, num_partitions",
-    [(10_000, 1), (10_000, 100)],
-    ids=["10_000/1", "10_000/100"],
-)
 @pytest.mark.parametrize("num_groups", [1, 100])
-def test_groupby(benchmark, num_samples, num_partitions, num_groups) -> None:
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+def test_groupby(benchmark, num_samples, num_groups) -> None:
     """Test performance of grouping to one group vs many."""
 
     keys = np.arange(num_samples) % num_groups
@@ -95,7 +98,7 @@ def test_groupby(benchmark, num_samples, num_partitions, num_groups) -> None:
             "keys": keys,
             "data": np.arange(num_samples),
         }
-    )
+    ).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -109,13 +112,9 @@ def test_groupby(benchmark, num_samples, num_partitions, num_groups) -> None:
 
 
 @pytest.mark.benchmark(group="aggregations")
-@pytest.mark.parametrize(
-    "num_samples, num_partitions",
-    [(10_000, 1), (10_000, 100)],
-    ids=["10_000/1", "10_000/100"],
-)
+@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
 @pytest.mark.parametrize("num_columns", [1, 2])
-def test_multicolumn_groupby(benchmark, num_columns, num_samples, num_partitions) -> None:
+def test_multicolumn_groupby(benchmark, num_columns, num_samples) -> None:
     """Evaluates the impact of an additional column in the groupby.
 
     The group cardinality is the same in both cases;
@@ -133,7 +132,7 @@ def test_multicolumn_groupby(benchmark, num_columns, num_samples, num_partitions
             "keys": keys,
             "data": np.arange(num_samples),
         }
-    )
+    ).collect()
 
     # Run the benchmark.
     group_cols = ["keys_a", "keys"][-num_columns:]
