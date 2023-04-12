@@ -8,9 +8,9 @@ use crate::dsl::Expr;
 
 // A curried Python function that takes as input a list of Series objects for execution
 #[derive(Debug, Clone)]
-pub struct PythonPartialUDFFunction(PyObject);
+pub struct PartialUDF(PyObject);
 
-impl Serialize for PythonPartialUDFFunction {
+impl Serialize for PartialUDF {
     fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -22,7 +22,7 @@ impl Serialize for PythonPartialUDFFunction {
     }
 }
 
-impl<'de> Deserialize<'de> for PythonPartialUDFFunction {
+impl<'de> Deserialize<'de> for PartialUDF {
     fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -34,7 +34,7 @@ impl<'de> Deserialize<'de> for PythonPartialUDFFunction {
     }
 }
 
-impl<Rhs> PartialEq<Rhs> for PythonPartialUDFFunction {
+impl<Rhs> PartialEq<Rhs> for PartialUDF {
     fn eq(&self, _other: &Rhs) -> bool {
         Python::with_gil(|_py| {
             // TODO: Call __eq__
@@ -44,11 +44,11 @@ impl<Rhs> PartialEq<Rhs> for PythonPartialUDFFunction {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PythonUDF(PythonPartialUDFFunction);
+pub struct PythonUDF(PartialUDF);
 
 pub fn udf(func: PyObject, expressions: &[Expr]) -> DaftResult<Expr> {
     Ok(Expr::Function {
-        func: super::FunctionExpr::Python(PythonUDF(PythonPartialUDFFunction(func))),
+        func: super::FunctionExpr::Python(PythonUDF(PartialUDF(func))),
         inputs: expressions.into(),
     })
 }
