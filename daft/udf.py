@@ -55,6 +55,7 @@ class UDF:
         return Expression.udf(
             func=partial_udf,
             expressions=expressions,
+            return_dtype=self._func_ret_type,
         )
 
 
