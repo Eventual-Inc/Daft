@@ -74,8 +74,8 @@ repos:
   hooks:
   - id: fmt
   - id: cargo-check
-    args: [--no-default-features]
   - id: cargo-check
+    args: [--no-default-features]
   - id: clippy
 
 - repo: https://github.com/abravalheri/validate-pyproject
