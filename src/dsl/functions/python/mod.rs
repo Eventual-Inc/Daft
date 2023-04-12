@@ -6,12 +6,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::dsl::Expr;
 
-use super::FunctionEvaluator;
-
+// A curried Python function that takes as input a list of Series objects for execution
 #[derive(Debug, Clone)]
-pub struct SerializablePyObject(PyObject);
+pub struct PythonPartialUDFFunction(PyObject);
 
-impl Serialize for SerializablePyObject {
+impl Serialize for PythonPartialUDFFunction {
     fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -23,7 +22,7 @@ impl Serialize for SerializablePyObject {
     }
 }
 
-impl<'de> Deserialize<'de> for SerializablePyObject {
+impl<'de> Deserialize<'de> for PythonPartialUDFFunction {
     fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -35,7 +34,7 @@ impl<'de> Deserialize<'de> for SerializablePyObject {
     }
 }
 
-impl<Rhs> PartialEq<Rhs> for SerializablePyObject {
+impl<Rhs> PartialEq<Rhs> for PythonPartialUDFFunction {
     fn eq(&self, _other: &Rhs) -> bool {
         Python::with_gil(|_py| {
             // TODO: Call __eq__
@@ -45,30 +44,11 @@ impl<Rhs> PartialEq<Rhs> for SerializablePyObject {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum PyUdfInput {
-    ExprAtIndex(usize),
-    PyValue(SerializablePyObject),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum PythonExpr {
-    PythonUDF { pyfunc: SerializablePyObject },
-}
-
-impl PythonExpr {
-    #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        match self {
-            PythonExpr::PythonUDF { .. } => self,
-        }
-    }
-}
+pub struct PythonUDF(PythonPartialUDFFunction);
 
 pub fn udf(func: PyObject, expressions: &[Expr]) -> DaftResult<Expr> {
     Ok(Expr::Function {
-        func: super::FunctionExpr::Python(PythonExpr::PythonUDF {
-            pyfunc: SerializablePyObject(func),
-        }),
+        func: super::FunctionExpr::Python(PythonUDF(PythonPartialUDFFunction(func))),
         inputs: expressions.into(),
     })
 }

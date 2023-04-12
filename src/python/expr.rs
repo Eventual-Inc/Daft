@@ -57,6 +57,9 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
     }
 }
 
+// Create a UDF Expression using:
+// * `func` - a Python function that takes as input an ordered list of Python Series to execute the user's UDF.
+// * `expressions` - an ordered list of Expressions, each representing computation that will be performed, producing a Series to pass into `func`
 #[pyfunction]
 pub fn udf(py: Python, func: &PyAny, expressions: Vec<PyExpr>) -> PyResult<PyExpr> {
     use dsl::functions::python::udf;

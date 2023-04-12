@@ -13,7 +13,7 @@ use utf8::Utf8Expr;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]
-use python::PythonExpr;
+use python::PythonUDF;
 
 use super::Expr;
 
@@ -24,7 +24,7 @@ pub enum FunctionExpr {
     Utf8(Utf8Expr),
     Temporal(TemporalExpr),
     #[cfg(feature = "python")]
-    Python(PythonExpr),
+    Python(PythonUDF),
 }
 
 pub trait FunctionEvaluator {
@@ -43,7 +43,7 @@ impl FunctionExpr {
             Utf8(expr) => expr.get_evaluator(),
             Temporal(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
-            Python(expr) => expr.get_evaluator(),
+            Python(expr) => expr,
         }
     }
 }
