@@ -113,7 +113,7 @@ impl PythonArray {
         let mut repeated_values = Vec::with_capacity(num);
         repeated_values.fill(val.clone());
         let repeated_values_array: Box<dyn arrow2::array::Array> =
-            Box::new(VecBackedArray::new(repeated_values, None));
+            Box::new(VecBackedArray::new(repeated_values));
         PythonArray::new(self.field.clone(), repeated_values_array)
     }
 }

@@ -5,12 +5,14 @@ use std::marker::{Send, Sync};
 #[derive(Clone)]
 pub struct VecBackedArray<T> {
     values: Vec<T>,
-    validity: Option<Bitmap>,
+    // Special handling for None is TODO.
+    // For now, it's far simpler to treat them as any other Python object.
+    // validity: Option<Bitmap>,
 }
 
 impl<T> VecBackedArray<T> {
-    pub fn new(values: Vec<T>, validity: Option<Bitmap>) -> Self {
-        VecBackedArray { values, validity }
+    pub fn new(values: Vec<T>) -> Self {
+        VecBackedArray { values }
     }
     pub fn vec(&self) -> &Vec<T> {
         &self.values
@@ -35,21 +37,15 @@ impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
     }
 
     fn validity(&self) -> Option<&Bitmap> {
-        self.validity.as_ref()
+        None
     }
 
     fn null_count(&self) -> usize {
-        self.validity()
-            .as_ref()
-            .map(|x| x.unset_bits())
-            .unwrap_or(0)
+        unimplemented!()
     }
 
-    fn is_null(&self, i: usize) -> bool {
-        self.validity()
-            .as_ref()
-            .map(|x| !x.get_bit(i))
-            .unwrap_or(false)
+    fn is_null(&self, _i: usize) -> bool {
+        unimplemented!()
     }
 
     fn is_valid(&self, i: usize) -> bool {
@@ -58,8 +54,7 @@ impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
 
     fn slice(&self, offset: usize, length: usize) -> Box<dyn Array> {
         let values = self.values[offset..(offset + length)].to_vec();
-        let validity = self.validity.clone();
-        Box::new(VecBackedArray { values, validity })
+        Box::new(VecBackedArray { values })
     }
 
     unsafe fn slice_unchecked(&self, offset: usize, length: usize) -> Box<dyn Array> {
@@ -67,21 +62,16 @@ impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
             .values
             .get_unchecked(offset..(offset + length))
             .to_vec();
-        let validity = self.validity.clone();
-        Box::new(VecBackedArray { values, validity })
+        Box::new(VecBackedArray { values })
     }
 
-    fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
-        Box::new(VecBackedArray {
-            values: self.values.clone(),
-            validity,
-        })
+    fn with_validity(&self, _validity: Option<Bitmap>) -> Box<dyn Array> {
+        unimplemented!()
     }
 
     fn to_boxed(&self) -> Box<dyn Array> {
         Box::new(VecBackedArray {
             values: self.values.clone(),
-            validity: self.validity.clone(),
         })
     }
 }

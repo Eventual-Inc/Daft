@@ -42,8 +42,7 @@ impl PySeries {
     #[staticmethod]
     pub fn from_pylist(name: &str, pylist: &PyAny) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
-        let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(VecBackedArray::new(vec_pyobj, None));
+        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(VecBackedArray::new(vec_pyobj));
         let field = Field::new(name, DataType::Python);
 
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
