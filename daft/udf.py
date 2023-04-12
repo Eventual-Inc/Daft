@@ -4,7 +4,6 @@ import dataclasses
 import inspect
 from typing import Callable
 
-from daft.daft import PySeries
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.series import Series
@@ -25,20 +24,29 @@ class PartialUDF:
 
     def __call__(self, evaluated_expressions: list[Series]) -> Series:
         kwarg_keys = list(self.bound_args.kwargs.keys())
-        arg_keys = list(self.bound_args.arguments.keys() - self.bound_args.kwargs.keys())
+        arg_keys = [k for k in self.bound_args.arguments.keys() if k not in self.bound_args.kwargs.keys()]
         pyvalues = {key: val for key, val in self.bound_args.arguments.items() if not isinstance(val, Expression)}
         expressions = self.expressions()
         assert len(evaluated_expressions) == len(
             expressions
         ), "Computed series must map 1:1 to the expressions that were evaluated"
         function_parameter_name_to_index = {name: i for i, name in enumerate(expressions)}
-        args = tuple(
-            pyvalues.get(name, evaluated_expressions[function_parameter_name_to_index[name]]) for name in arg_keys
-        )
-        kwargs = {
-            name: pyvalues.get(name, evaluated_expressions[function_parameter_name_to_index[name]])
-            for name in kwarg_keys
-        }
+
+        args = []
+        for name in arg_keys:
+            assert name in pyvalues or name in function_parameter_name_to_index
+            if name in pyvalues:
+                args.append(pyvalues[name])
+            else:
+                args.append(evaluated_expressions[function_parameter_name_to_index[name]])
+
+        kwargs = {}
+        for name in kwarg_keys:
+            assert name in pyvalues or name in function_parameter_name_to_index
+            if name in pyvalues:
+                kwargs[name] = pyvalues[name]
+            else:
+                kwargs[name] = evaluated_expressions[function_parameter_name_to_index[name]]
 
         result = self.func(*args, **kwargs)
 

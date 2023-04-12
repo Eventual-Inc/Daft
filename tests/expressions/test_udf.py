@@ -11,19 +11,36 @@ from daft.udf import udf
 
 
 def test_udf():
-    table = Table.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+    table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string())
     def repeat_n(data, n):
-        return Series.from_pylist([d.as_py() * repeat.as_py() for d, repeat in zip(data.to_arrow(), n.to_arrow())])
+        return Series.from_pylist([d.as_py() * n for d in data.to_arrow()])
 
-    expr = repeat_n(col("b"), col("a"))
+    expr = repeat_n(col("a"), 2)
     field = expr._to_field(table.schema())
-    assert field.name == "b"
+    assert field.name == "a"
     assert field.dtype == DataType.string()
 
     result = table.eval_expression_list([expr])
-    assert result.to_pydict() == {"b": ["foo", "barbar", "bazbazbaz"]}
+    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+
+
+def test_udf_error():
+    table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
+
+    @udf(return_dtype=DataType.string())
+    def throw_value_err(x):
+        raise ValueError("AN ERROR OCCURRED!")
+
+    expr = throw_value_err(col("a"))
+
+    with pytest.raises(ValueError, match="DaftError::ComputeError Error occurred when running Python"):
+        table.eval_expression_list([expr])
+
+    # Assert that the error message includes a traceback
+    with pytest.raises(ValueError, match=r"Traceback \(most recent call last\):"):
+        table.eval_expression_list([expr])
 
 
 def test_no_args_udf_call():

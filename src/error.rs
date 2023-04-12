@@ -30,6 +30,13 @@ pub type DaftResult<T> = std::result::Result<T, DaftError>;
 impl Display for DaftError {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{self:?}")
+        match self {
+            Self::NotFound(s) => write!(f, "DaftError::NotFound {s}"),
+            Self::SchemaMismatch(s) => write!(f, "DaftError::SchemaMismatch {s}"),
+            Self::TypeError(s) => write!(f, "DaftError::TypeError {s}"),
+            Self::ComputeError(s) => write!(f, "DaftError::ComputeError {s}"),
+            Self::ArrowError(s) => write!(f, "DaftError::ArrowError {s}"),
+            Self::ValueError(s) => write!(f, "DaftError::ValueError {s}"),
+        }
     }
 }

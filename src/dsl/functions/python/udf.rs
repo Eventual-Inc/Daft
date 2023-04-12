@@ -58,9 +58,7 @@ impl FunctionEvaluator for PythonUDF {
                         Err(e) => Err(DaftError::ValueError(format!("Internal error occurred when coercing the results of running UDF to Series:\n\n{e}"))),
                     }
                 }
-                Err(e) => Err(DaftError::ComputeError(format!(
-                    "Error occurred while running UDF:\n\n{e}"
-                ))),
+                Err(e) => Err(e.into()),
             }
         })
     }
