@@ -195,3 +195,4 @@ pub type Utf8Array = DataArray<Utf8Type>;
 pub type FixedSizeListArray = DataArray<FixedSizeListType>;
 pub type ListArray = DataArray<ListType>;
 pub type StructArray = DataArray<StructType>;
+pub type PythonArray = DataArray<PythonType>;

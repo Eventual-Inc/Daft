@@ -42,8 +42,7 @@ impl PySeries {
     #[staticmethod]
     pub fn from_pylist(name: &str, pylist: &PyAny) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
-        let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(VecBackedArray::new(vec_pyobj, None));
+        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(VecBackedArray::new(vec_pyobj));
         let field = Field::new(name, DataType::Python);
 
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
@@ -51,19 +50,8 @@ impl PySeries {
     }
 
     pub fn to_pylist(&self) -> PyResult<PyObject> {
-        let maybe_vec_backed_array = self
-            .series
-            .array()
-            .data()
-            .as_any()
-            .downcast_ref::<VecBackedArray<PyObject>>();
-        if let Some(vec_backed_array) = maybe_vec_backed_array {
-            Python::with_gil(|py| Ok(PyList::new(py, vec_backed_array.vec()).into()))
-        } else {
-            Err(PyValueError::new_err(
-                "Series is not a PyObject series, cannot call to_pylist".to_string(),
-            ))
-        }
+        let vec_backed_array = self.series.python()?.downcast();
+        Python::with_gil(|py| Ok(PyList::new(py, vec_backed_array.vec()).into()))
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {

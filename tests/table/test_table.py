@@ -74,6 +74,15 @@ def test_pyobjects_roundtrip() -> None:
     assert objs[1] is o1
 
 
+def test_pyobjects_blackbox_kernels() -> None:
+    objects = [object(), object(), object()]
+    table = Table.from_pydict({"keys": [0, 1, 2], "objs": objects})
+    # Head.
+    assert table.head(2).to_pydict()["objs"] == objects[:2]
+    # Filter.
+    assert table.filter([col("keys") > 0]).to_pydict()["objs"] == objects[1:]
+
+
 def test_table_head() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
     daft_table = Table.from_arrow(pa_table)
@@ -320,6 +329,37 @@ test_table_count_cases = [
     ([0], {"count": [1]}),
     ([None, 0, None, 0, None], {"count": [2]}),
 ]
+
+
+def test_table_take_pyobject() -> None:
+    objects = [object(), object(), object(), object()]
+    daft_table = Table.from_pydict({"objs": objects})
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["objs"]
+
+    indices = Series.from_pylist([0, 1])
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 2
+    assert taken.column_names() == ["objs"]
+
+    assert taken.to_pydict()["objs"] == objects[:2]
+
+    indices = Series.from_pylist([3, 2])
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 2
+    assert taken.column_names() == ["objs"]
+
+    assert taken.to_pydict()["objs"] == [objects[3], objects[2]]
+
+    indices = Series.from_pylist([3, 2, 2, 2, 3])
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 5
+    assert taken.column_names() == ["objs"]
+
+    assert taken.to_pydict()["objs"] == [objects[3], objects[2], objects[2], objects[2], objects[3]]
 
 
 @pytest.mark.parametrize("idx_dtype", daft_nonnull_types, ids=[f"{_}" for _ in daft_nonnull_types])
