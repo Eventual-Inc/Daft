@@ -8,6 +8,12 @@ from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.series import Series
 
+_NUMPY_AVAILABLE = True
+try:
+    import numpy as np
+except ImportError:
+    _NUMPY_AVAILABLE = False
+
 UserProvidedPythonFunction = Callable[..., Series]
 
 
@@ -60,6 +66,8 @@ class PartialUDF:
             return result.rename(name).cast(self.return_dtype)._series
         elif isinstance(result, list):
             return Series.from_pylist(result, name=name).cast(self.return_dtype)._series
+        elif _NUMPY_AVAILABLE and isinstance(result, np.ndarray):
+            return Series.from_numpy(result, name=name).cast(self.return_dtype)._series
         else:
             raise NotImplementedError(f"Return type not supported for UDF: {type(result)}")
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from daft import col
@@ -24,6 +25,25 @@ def test_udf():
 
     result = table.eval_expression_list([expr])
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+
+
+@pytest.mark.parametrize("container", [Series, list, np.ndarray])
+def test_udf_return_containers(container):
+    table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
+
+    @udf(return_dtype=DataType.string())
+    def identity(data):
+        if container == Series:
+            return data
+        elif container == list:
+            return data.to_pylist()
+        elif container == np.ndarray:
+            return np.array(data.to_arrow())
+        else:
+            raise NotImplementedError(f"Test not implemented for container type: {container}")
+
+    result = table.eval_expression_list([identity(col("a"))])
+    assert result.to_pydict() == {"a": ["foo", "bar", "baz"]}
 
 
 def test_udf_error():
