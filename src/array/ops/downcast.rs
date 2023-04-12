@@ -2,12 +2,9 @@ use arrow2;
 use arrow2::array;
 
 use crate::{
-    array::{vec_backed::VecBackedArray, BaseArray, DataArray},
-    datatypes::{BinaryArray, BooleanArray, DaftNumericType, DateArray, PythonArray, Utf8Array},
+    array::{BaseArray, DataArray},
+    datatypes::{BinaryArray, BooleanArray, DaftNumericType, DateArray, Utf8Array},
 };
-
-#[cfg(feature = "python")]
-use pyo3::PyObject;
 
 impl<T> DataArray<T>
 where
@@ -48,9 +45,9 @@ impl DateArray {
 }
 
 #[cfg(feature = "python")]
-impl PythonArray {
+impl crate::datatypes::PythonArray {
     // downcasts a DataArray<T> to a VecBackedArray of PyObject.
-    pub fn downcast(&self) -> &VecBackedArray<PyObject> {
+    pub fn downcast(&self) -> &crate::array::vec_backed::VecBackedArray<pyo3::PyObject> {
         self.data().as_any().downcast_ref().unwrap()
     }
 }

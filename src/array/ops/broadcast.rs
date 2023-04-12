@@ -1,6 +1,6 @@
 use crate::{
-    array::{vec_backed::VecBackedArray, BaseArray, DataArray},
-    datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, PythonArray, Utf8Array},
+    array::{BaseArray, DataArray},
+    datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, Utf8Array},
     error::DaftResult,
 };
 
@@ -101,7 +101,8 @@ impl BinaryArray {
     }
 }
 
-impl PythonArray {
+#[cfg(feature = "python")]
+impl crate::datatypes::PythonArray {
     pub fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(crate::error::DaftError::ValueError(format!(
@@ -112,8 +113,9 @@ impl PythonArray {
         let val = self.downcast().vec().iter().next().unwrap();
         let mut repeated_values = Vec::with_capacity(num);
         repeated_values.fill(val.clone());
-        let repeated_values_array: Box<dyn arrow2::array::Array> =
-            Box::new(VecBackedArray::new(repeated_values));
-        PythonArray::new(self.field.clone(), repeated_values_array)
+        let repeated_values_array: Box<dyn arrow2::array::Array> = Box::new(
+            crate::array::vec_backed::VecBackedArray::new(repeated_values),
+        );
+        crate::datatypes::PythonArray::new(self.field.clone(), repeated_values_array)
     }
 }

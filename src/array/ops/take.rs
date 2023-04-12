@@ -1,8 +1,7 @@
 use crate::{
-    array::{vec_backed::VecBackedArray, BaseArray, DataArray},
+    array::{BaseArray, DataArray},
     datatypes::{
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, NullArray, PythonArray,
-        PythonType, Utf8Array,
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, NullArray, Utf8Array,
     },
     error::DaftResult,
 };
@@ -183,7 +182,7 @@ impl BinaryArray {
 }
 
 #[cfg(feature = "python")]
-impl PythonArray {
+impl crate::datatypes::PythonArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
@@ -192,6 +191,8 @@ impl PythonArray {
         use arrow2::array::Array;
         use arrow2::types::Index;
         use pyo3::PyObject;
+
+        use crate::array::vec_backed::VecBackedArray;
 
         let indices = idx.downcast();
         let indices_iter = if indices.null_count() > 0 {
@@ -207,7 +208,7 @@ impl PythonArray {
         };
         let arrow_array: Box<dyn arrow2::array::Array> = Box::new(VecBackedArray::new(values_vec));
 
-        DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
+        DataArray::<crate::datatypes::PythonType>::new(self.field().clone().into(), arrow_array)
     }
 
     pub fn str_value(&self, _idx: usize) -> DaftResult<String> {

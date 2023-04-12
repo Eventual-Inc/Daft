@@ -2,7 +2,7 @@ use arrow2::array::Array;
 
 use crate::{
     array::DataArray,
-    datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, PythonArray, Utf8Array},
+    datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, Utf8Array},
     error::DaftResult,
 };
 
@@ -47,7 +47,7 @@ impl NullArray {
 }
 
 #[cfg(feature = "python")]
-impl PythonArray {
+impl crate::datatypes::PythonArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         use crate::array::vec_backed::VecBackedArray;
         use crate::datatypes::PythonType;
