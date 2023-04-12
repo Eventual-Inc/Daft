@@ -42,9 +42,14 @@ class PartialUDF:
 
         result = self.func(*args, **kwargs)
 
+        # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
+        # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF
+        # and is quite error prone! If our Series naming logic here is wrong, things will break when the UDF is run on a table.
         name = evaluated_expressions[0].name()
+
+        # Post-processing of results into a Series of the appropriate dtype
         if isinstance(result, Series):
-            return Series.from_arrow(result.to_arrow(), name=name).cast(self.return_dtype)._series
+            return result.rename(name).cast(self.return_dtype)._series
         elif isinstance(result, list):
             return Series.from_pylist(result, name=name).cast(self.return_dtype)._series
         else:
