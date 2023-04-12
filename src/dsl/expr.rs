@@ -375,12 +375,13 @@ impl Display for Expr {
             Literal(val) => write!(f, "lit({val})"),
             Function { func, inputs } => {
                 write!(f, "{}(", func.fn_name())?;
-                for i in 0..(inputs.len() - 1) {
-                    write!(f, "{}, ", inputs.get(i).unwrap())?;
+                for (i, input) in inputs.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{input}")?;
                 }
-                if !inputs.is_empty() {
-                    write!(f, "{})", inputs.last().unwrap())?;
-                }
+                write!(f, ")")?;
                 Ok(())
             }
             IfElse {
