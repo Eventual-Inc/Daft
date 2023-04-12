@@ -14,6 +14,8 @@ use crate::{
     with_match_arrow_daft_types,
 };
 
+use super::downcast::Downcastable;
+
 fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
 where
     T: DaftDataType + 'static,

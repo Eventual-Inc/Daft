@@ -59,12 +59,24 @@ impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
         !self.is_null(i)
     }
 
-    fn slice(&self, offset: usize, length: usize) -> Box<dyn Array> {
+    fn slice(&mut self, offset: usize, length: usize) {
+        assert!(
+            offset + length <= self.len(),
+            "offset + length may not exceed length of array"
+        );
+        unsafe { self.slice_unchecked(offset, length) }
+    }
+
+    unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
+        self.values = self.values[offset..(offset + length)].to_vec();
+    }
+
+    fn sliced(&self, offset: usize, length: usize) -> Box<dyn Array> {
         let values = self.values[offset..(offset + length)].to_vec();
         Box::new(VecBackedArray { values })
     }
 
-    unsafe fn slice_unchecked(&self, offset: usize, length: usize) -> Box<dyn Array> {
+    unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Box<dyn Array> {
         let values = self
             .values
             .get_unchecked(offset..(offset + length))

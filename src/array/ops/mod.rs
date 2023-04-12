@@ -10,7 +10,7 @@ mod comparison;
 mod concat;
 mod count;
 mod date;
-mod downcast;
+pub(crate) mod downcast;
 mod filter;
 mod float;
 mod full;

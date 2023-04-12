@@ -59,8 +59,8 @@ macro_rules! with_match_physical_daft_types {(
         Float64 => __with_ty__! { Float64Type },
         Binary => __with_ty__! { BinaryType },
         Utf8 => __with_ty__! { Utf8Type },
+        FixedSizeList(_, _) => __with_ty__! { FixedSizeListType },
         // TODO: [RUST-INT][NESTED]: implement for nested types
-        // FixedSizeList(_, _) => __with_ty__! { FixedSizeListType },
         // List(_) => __with_ty__! { ListType },
         // Struct(_) => __with_ty__! { StructType },
         #[cfg(feature = "python")]

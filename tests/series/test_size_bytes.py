@@ -50,7 +50,7 @@ def test_series_string_size_bytes(size) -> None:
     s = Series.from_arrow(data)
 
     assert s.datatype() == DataType.string()
-    assert s.size_bytes() == data.nbytes
+    assert s.size_bytes() == data.nbytes + 8
 
     ## with nulls
     if size > 0:
@@ -60,7 +60,7 @@ def test_series_string_size_bytes(size) -> None:
     s = Series.from_arrow(data)
 
     assert s.datatype() == DataType.string()
-    assert s.size_bytes() == data.nbytes
+    assert s.size_bytes() == data.nbytes + 8
 
 
 @pytest.mark.skipif(
@@ -126,7 +126,7 @@ def test_series_binary_size_bytes(size) -> None:
     s = Series.from_arrow(data)
 
     assert s.datatype() == DataType.binary()
-    assert s.size_bytes() == data.nbytes
+    assert s.size_bytes() == data.nbytes + 8
 
     ## with nulls
     if size > 0:
@@ -135,4 +135,30 @@ def test_series_binary_size_bytes(size) -> None:
     s = Series.from_arrow(data)
 
     assert s.datatype() == DataType.binary()
+    assert s.size_bytes() == data.nbytes + 8
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_7_0_0,
+    reason="Array.nbytes behavior changed in versions >= 7.0.0. Old behavior is incompatible with our tests and is renamed to Array.get_total_buffer_size()",
+)
+@pytest.mark.parametrize("dtype, size", itertools.product(ARROW_INT_TYPES + ARROW_FLOAT_TYPES, [0, 1, 2, 8, 9, 16]))
+def test_series_fixed_size_list_size_bytes(dtype, size) -> None:
+    list_dtype = pa.list_(dtype, 2)
+    pydata = [[2 * i, 2 * i + 1] for i in range(size)]
+    data = pa.array(pydata, list_dtype)
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.from_arrow_type(list_dtype)
+    assert s.size_bytes() == data.nbytes
+
+    ## with nulls
+    if size > 0:
+        pydata = pydata[:-1] + [None]
+    data = pa.array(pydata, list_dtype)
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.from_arrow_type(list_dtype)
     assert s.size_bytes() == data.nbytes

@@ -1,11 +1,15 @@
-use crate::datatypes::{BinaryArray, DaftNumericType, NullArray, PythonArray};
-use crate::datatypes::{BooleanArray, Utf8Array};
+use crate::datatypes::{
+    BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, NullArray, PythonArray,
+    Utf8Array,
+};
 use crate::error::DaftError;
 use crate::{array::DataArray, error::DaftResult};
 use arrow2::compute::if_then_else::if_then_else;
 use std::convert::identity;
 
 use crate::array::BaseArray;
+
+use super::downcast::Downcastable;
 
 // Helper macro for broadcasting if/else across the if_true/if_false/predicate DataArrays
 //
@@ -70,14 +74,14 @@ macro_rules! broadcast_if_else{(
             let predicate_arr = $predicate.downcast();
             let predicate_values = predicate_arr.values();
             let naive_if_else: $array_type = $if_true.downcast().iter().zip(predicate_values.iter()).map(
-            |(self_val, pred_val)| match pred_val {
+                |(self_val, pred_val)| match pred_val {
                     true => $scalar_copy(self_val),
                     false => other_scalar,
                 }
             ).collect();
             DataArray::new($if_true.field.clone(), Box::new(naive_if_else.with_validity(predicate_arr.validity().cloned())))
         }
-        (s, o, p) => Err(DaftError::ValueError(format!("Cannot run if_else against arrays with mismatched lengths: self={s}, other={o}, predicate={p}")))
+        (s, o, p) => Err(DaftError::ValueError(format!("Cannot run if_else against arrays with non-broadcastable lengths: self={s}, other={o}, predicate={p}")))
     }
 })}
 
@@ -162,5 +166,60 @@ impl PythonArray {
         _predicate: &BooleanArray,
     ) -> DaftResult<PythonArray> {
         todo!("[RUST-INT][PY]");
+    }
+}
+
+fn from_arrow_if_then_else(
+    predicate: &BooleanArray,
+    if_true: &FixedSizeListArray,
+    if_false: &FixedSizeListArray,
+) -> DaftResult<FixedSizeListArray> {
+    let result = if_then_else(
+        predicate.downcast(),
+        if_true.downcast(),
+        if_false.downcast(),
+    )?;
+    DataArray::try_from((if_true.name(), result))
+}
+
+impl FixedSizeListArray {
+    pub fn if_else(
+        &self,
+        other: &FixedSizeListArray,
+        predicate: &BooleanArray,
+    ) -> DaftResult<FixedSizeListArray> {
+        // TODO(Clark): Support streaming broadcasting, i.e. broadcasting without inflating scalars to full array length.
+        match (predicate.len(), self.len(), other.len()) {
+            (predicate_len, self_len, other_len)
+                if predicate_len == self_len && self_len == other_len => from_arrow_if_then_else(predicate, self, other),
+            (1, self_len, 1) => from_arrow_if_then_else(
+                &predicate.broadcast(self_len)?,
+                self,
+                &other.broadcast(self_len)?,
+            ),
+            (1, 1, other_len) => from_arrow_if_then_else(
+                &predicate.broadcast(other_len)?,
+                &self.broadcast(other_len)?,
+                other,
+            ),
+            (predicate_len, 1, 1) => from_arrow_if_then_else(
+                predicate,
+                &self.broadcast(predicate_len)?,
+                &other.broadcast(predicate_len)?,
+            ),
+            (predicate_len, self_len, 1) if predicate_len == self_len => from_arrow_if_then_else(
+                predicate,
+                self,
+                &other.broadcast(predicate_len)?,
+            ),
+            (predicate_len, 1, other_len) if predicate_len == other_len => from_arrow_if_then_else(
+                predicate,
+                &self.broadcast(predicate_len)?,
+                other,
+            ),
+            (p, s, o) => {
+                Err(DaftError::ValueError(format!("Cannot run if_else against arrays with non-broadcastable lengths: self={s}, other={o}, predicate={p}")))
+            }
+        }
     }
 }
