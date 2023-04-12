@@ -183,6 +183,14 @@ impl BinaryArray {
 
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> pyo3::PyObject {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        self.downcast().vec()[idx].clone()
+    }
+
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
@@ -211,7 +219,16 @@ impl crate::datatypes::PythonArray {
         DataArray::<crate::datatypes::PythonType>::new(self.field().clone().into(), arrow_array)
     }
 
-    pub fn str_value(&self, _idx: usize) -> DaftResult<String> {
-        todo!("[RUST-INT][PY]");
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        use pyo3::prelude::*;
+
+        let val = self.get(idx);
+
+        let call_result =
+            Python::with_gil(|py| val.call_method0(py, pyo3::intern!(py, "__str__")))?;
+
+        let extracted = Python::with_gil(|py| call_result.extract(py))?;
+
+        Ok(extracted)
     }
 }
