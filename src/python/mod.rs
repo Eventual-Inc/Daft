@@ -7,6 +7,8 @@ mod schema;
 mod series;
 mod table;
 
+pub use series::PySeries;
+
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<expr::PyExpr>()?;
     parent.add_class::<table::PyTable>()?;

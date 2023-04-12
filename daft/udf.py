@@ -4,6 +4,7 @@ import dataclasses
 import inspect
 from typing import Callable
 
+from daft.daft import PySeries
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.series import Series
@@ -38,7 +39,16 @@ class PartialUDF:
             name: pyvalues.get(name, evaluated_expressions[function_parameter_name_to_index[name]])
             for name in kwarg_keys
         }
-        return self.func(*args, **kwargs)
+
+        result = self.func(*args, **kwargs)
+
+        name = evaluated_expressions[0].name()
+        if isinstance(result, Series):
+            return Series.from_arrow(result.to_arrow(), name=name).cast(self.return_dtype)._series
+        elif isinstance(result, list):
+            return Series.from_pylist(result, name=name).cast(self.return_dtype)._series
+        else:
+            raise NotImplementedError(f"Return type not supported for UDF: {type(result)}")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -55,7 +65,7 @@ class UDF:
         return Expression.udf(
             func=partial_udf,
             expressions=expressions,
-            return_dtype=self._func_ret_type,
+            return_dtype=self.return_dtype,
         )
 
 

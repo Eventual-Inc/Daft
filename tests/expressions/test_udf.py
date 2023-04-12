@@ -15,9 +15,14 @@ def test_udf():
 
     @udf(return_dtype=DataType.string())
     def repeat_n(data, n):
-        return Series.from_pylist([d * repeat for d, repeat in zip(data.to_pylist(), n.to_pylist())])
+        return Series.from_pylist([d.as_py() * repeat.as_py() for d, repeat in zip(data.to_arrow(), n.to_arrow())])
 
-    result = table.eval_expression_list([repeat_n(col("b"), col("a"))])
+    expr = repeat_n(col("b"), col("a"))
+    field = expr._to_field(table.schema())
+    assert field.name == "b"
+    assert field.dtype == DataType.string()
+
+    result = table.eval_expression_list([expr])
     assert result.to_pydict() == {"b": ["foo", "barbar", "bazbazbaz"]}
 
 
