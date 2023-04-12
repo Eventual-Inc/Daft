@@ -71,11 +71,11 @@ class UDF:
 
         Example:
 
-            >>> @udf(return_dtype=int, input_columns={"x": list})
-            >>> def my_udf(x: list, y: int):
-            >>>     return [i + y for i in x]
+            >>> @udf(return_dtype=int)
+            >>> def my_udf(x, y):
+            >>>     return [i + y for i in x.to_pylist()]
             >>>
-            >>> assert my_udf.func([1, 2, 3], 1) == [2, 3, 4]
+            >>> assert my_udf.func(Series.from_pylist([1, 2, 3]), 1) == [2, 3, 4]
 
         Returns:
             _PythonFunction: The function (or class!) wrapped by the @udf decorator
