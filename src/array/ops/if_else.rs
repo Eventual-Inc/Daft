@@ -1,4 +1,4 @@
-use crate::datatypes::{BinaryArray, DaftNumericType, NullArray};
+use crate::datatypes::{BinaryArray, DaftNumericType, NullArray, PythonArray};
 use crate::datatypes::{BooleanArray, Utf8Array};
 use crate::error::DaftError;
 use crate::{array::DataArray, error::DaftResult};
@@ -152,5 +152,15 @@ impl BinaryArray {
 impl NullArray {
     pub fn if_else(&self, _other: &NullArray, _predicate: &BooleanArray) -> DaftResult<NullArray> {
         Ok(DataArray::full_null(self.name(), self.len()))
+    }
+}
+
+impl PythonArray {
+    pub fn if_else(
+        &self,
+        _other: &PythonArray,
+        _predicate: &BooleanArray,
+    ) -> DaftResult<PythonArray> {
+        todo!("[RUST-INT][PY]");
     }
 }

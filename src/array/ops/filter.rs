@@ -1,3 +1,5 @@
+use arrow2::array::Array;
+
 use crate::{
     array::DataArray,
     datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, Utf8Array},
@@ -41,5 +43,33 @@ impl NullArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let set_bits = mask.len() - mask.downcast().values().unset_bits();
         Ok(NullArray::full_null(self.name(), set_bits))
+    }
+}
+
+#[cfg(feature = "python")]
+impl crate::datatypes::PythonArray {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        use crate::array::vec_backed::VecBackedArray;
+        use crate::datatypes::PythonType;
+        use pyo3::PyObject;
+
+        let mask = mask.downcast();
+        let mask_iter = if mask.null_count() > 0 {
+            unimplemented!()
+        } else {
+            mask.values().iter()
+        };
+
+        let values_vec = {
+            let self_values = self.downcast().vec().iter();
+            mask_iter
+                .zip(self_values)
+                .filter_map(|(f, item)| if f { Some(item.clone()) } else { None })
+                .collect::<Vec<PyObject>>()
+        };
+
+        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(VecBackedArray::new(values_vec));
+
+        DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
     }
 }

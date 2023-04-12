@@ -180,3 +180,55 @@ impl BinaryArray {
         }
     }
 }
+
+#[cfg(feature = "python")]
+impl crate::datatypes::PythonArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> pyo3::PyObject {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        self.downcast().vec()[idx].clone()
+    }
+
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        use arrow2::array::Array;
+        use arrow2::types::Index;
+        use pyo3::PyObject;
+
+        use crate::array::vec_backed::VecBackedArray;
+
+        let indices = idx.downcast();
+        let indices_iter = if indices.null_count() > 0 {
+            unimplemented!()
+        } else {
+            indices.values().iter()
+        };
+
+        let values_vec = {
+            indices_iter
+                .map(|index| self.downcast().vec()[index.to_usize()].clone())
+                .collect::<Vec<PyObject>>()
+        };
+        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(VecBackedArray::new(values_vec));
+
+        DataArray::<crate::datatypes::PythonType>::new(self.field().clone().into(), arrow_array)
+    }
+
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        use pyo3::prelude::*;
+
+        let val = self.get(idx);
+
+        let call_result =
+            Python::with_gil(|py| val.call_method0(py, pyo3::intern!(py, "__str__")))?;
+
+        let extracted = Python::with_gil(|py| call_result.extract(py))?;
+
+        Ok(extracted)
+    }
+}
