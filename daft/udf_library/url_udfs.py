@@ -26,7 +26,7 @@ def _download(path: str | None) -> bytes | None:
     return fs.cat_file(path)
 
 
-@udf(return_dtype=DataType.binary(), expr_inputs=["urls"])
+@udf(return_dtype=DataType.binary())
 def download_udf(urls: list[str | None], max_worker_threads: int = 8) -> list[bytes | None]:
     """Downloads the contents of the supplied URLs."""
 

@@ -9,7 +9,7 @@ from daft.udf import udf
 
 
 def test_no_args_udf():
-    @udf(return_dtype=DataType.int64(), expr_inputs=[])
+    @udf(return_dtype=DataType.int64())
     def udf_no_args():
         pass
 
@@ -23,20 +23,14 @@ def test_no_args_udf():
 
 
 def test_full_udf():
-    @udf(return_dtype=DataType.int64(), expr_inputs=["e_arg"])
-    def full_udf(e_arg, val, kwarg_val=None):
+    @udf(return_dtype=DataType.int64())
+    def full_udf(e_arg, val, kwarg_val=None, kwarg_ex=None):
         pass
 
-    assert isinstance(full_udf(col("x"), 1, kwarg_val=0), Expression)
+    assert isinstance(full_udf(col("x"), 1, kwarg_val=0, kwarg_ex=col("y")), Expression)
 
     with pytest.raises(TypeError):
         full_udf()
-    with pytest.raises(TypeError):
-        # Args specified in input_columns must be expressions
-        full_udf("invalid", 1, kwarg_val=0)
-    with pytest.raises(TypeError):
-        # Args not specified in input_columns must not be expressions
-        full_udf(col("x"), col("invalid"), kwarg_val=0)
 
 
 @pytest.mark.skip(
