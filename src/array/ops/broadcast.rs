@@ -104,7 +104,7 @@ impl BinaryArray {
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {
     pub fn broadcast(&self, _num: usize) -> DaftResult<Self> {
-        todo!("[RUST-INT][PY]")
+        todo!("[RUST-INT][PY] Need to implement Lit for Python objects to test this")
         // if self.len() != 1 {
         //     return Err(crate::error::DaftError::ValueError(format!(
         //         "Attempting to broadcast non-unit length Array named: {}",
