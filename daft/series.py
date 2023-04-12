@@ -270,7 +270,10 @@ class Series:
         return SeriesDateNamespace.from_series(self)
 
     def __reduce__(self) -> tuple:
-        return (Series.from_arrow, (self.to_arrow(), self.name()))
+        if self.datatype()._is_python_type():
+            return (Series.from_pylist, (self.to_pylist(), self.name()))
+        else:
+            return (Series.from_arrow, (self.to_arrow(), self.name()))
 
 
 SomeSeriesNamespace = TypeVar("SomeSeriesNamespace", bound="SeriesNamespace")
