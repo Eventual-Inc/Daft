@@ -1,11 +1,63 @@
 from __future__ import annotations
 
+import functools
+import inspect
 from typing import Callable, Sequence
 
 from daft.datatype import DataType
 from daft.expressions import Expression
+from daft.series import Series
 
 _PythonFunction = Callable[..., Sequence]
+
+
+def _apply_partial(
+    func: Callable,
+    bound_args: inspect.BoundArguments,
+) -> tuple[Callable[[list[Series]], Series], list[Expression]]:
+    """Converts a function that takes a mixture of symbolic (Expression) and literal arguments to one that is executable by the Daft Rust runtime.
+
+    Before: (x: Expression, y: Any, ...) -> Series
+    After:  (evaluated_expressions: list[Series]) -> Series
+
+    We do this by:
+        1. Partially applying any non-Expression arguments by including it inside the wrapped function's scope
+        2. Keeping track of the ordering of expressions and applying the correct Series to the correct arg/kwarg at runtime
+
+    Args:
+        func: User function to curry
+        bound_args: the bound symbolic arguments that the user called the UDF with
+
+    Returns:
+        Callable[[list[Series]], Series]: a new function that takes a list of Series (evaluted Expressions) and produces a new Series
+        list[Expression]: list of Expressions that should be evaluated, should map 1:1 to the inputs of the produced partial function
+    """
+    kwarg_keys = list(bound_args.kwargs.keys())
+    arg_keys = list(bound_args.arguments.keys() - bound_args.kwargs.keys())
+    expressions = {key: val for key, val in bound_args.arguments.items() if isinstance(val, Expression)}
+    pyvalues = {key: val for key, val in bound_args.arguments.items() if not isinstance(val, Expression)}
+    for name in arg_keys + kwarg_keys:
+        assert name in expressions or name in pyvalues, f"Function parameter `{name}` not found in parameter registries"
+
+    # Compute a mapping of {parameter_name: expression_index}
+    # NOTE: This assumes that the ordering of `expressions` corresponds to the ordering of the computed_series at runtime
+    function_parameter_name_to_index = {name: i for i, name in enumerate(expressions)}
+
+    @functools.wraps(func)
+    def partial_func(evaluated_expressions: list[Series]):
+        assert len(evaluated_expressions) == len(
+            function_parameter_name_to_index
+        ), "Computed series must map 1:1 to the expressions that were evaluated"
+        args = tuple(
+            pyvalues.get(name, evaluated_expressions[function_parameter_name_to_index[name]]) for name in arg_keys
+        )
+        kwargs = {
+            name: pyvalues.get(name, evaluated_expressions[function_parameter_name_to_index[name]])
+            for name in kwarg_keys
+        }
+        return func(*args, **kwargs)
+
+    return partial_func, list(expressions.values())
 
 
 class UDF:
@@ -39,10 +91,12 @@ class UDF:
         Returns:
             UdfExpression: The resulting UDFExpression representing an execution of the UDF on its inputs
         """
+        bound_args = inspect.signature(self._f).bind(*args, **kwargs)
+        bound_args.apply_defaults()
+        curried_function, expressions = _apply_partial(self._f, bound_args)
         return Expression.udf(
-            func=self._f,
-            args=args,
-            kwargs=kwargs,
+            func=curried_function,
+            expressions=expressions,
         )
 
 

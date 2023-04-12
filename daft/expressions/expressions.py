@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import builtins
-import functools
-import inspect
 from datetime import date
-from typing import Any, Callable, Iterable, Iterator, TypeVar, overload
+from typing import Callable, Iterable, Iterator, TypeVar, overload
 
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
@@ -13,7 +11,6 @@ from daft.daft import udf as _udf
 from daft.datatype import DataType
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
-from daft.series import Series
 
 
 def lit(value: object) -> Expression:
@@ -27,29 +24,6 @@ def lit(value: object) -> Expression:
 
 def col(name: str) -> Expression:
     return Expression._from_pyexpr(_col(name))
-
-
-def _apply_partial(
-    func,
-    pyvalues: dict[str, Any],
-    expression_name_to_index: dict[str, int],
-    arg_kwarg_keys: tuple[list[str], list[str]],
-):
-    @functools.wraps(func)
-    def partial_func(computed_series: list[Series]):
-        arg_keys, kwarg_keys = arg_kwarg_keys
-
-        for name in arg_keys + kwarg_keys:
-            assert name in expression_name_to_index, f"Expression for function parameter `{name}` not found"
-            assert expression_name_to_index[name] < len(
-                computed_series
-            ), f"Index {expression_name_to_index[name]} for function parameter `{name}` is out of range"
-
-        args = tuple(pyvalues.get(name, computed_series[expression_name_to_index[name]]) for name in arg_keys)
-        kwargs = {name: pyvalues.get(name, computed_series[expression_name_to_index[name]]) for name in kwarg_keys}
-        return func(*args, **kwargs)
-
-    return partial_func
 
 
 class Expression:
@@ -84,34 +58,8 @@ class Expression:
             return lit(obj)
 
     @staticmethod
-    def udf(func: Callable, args: tuple, kwargs: dict) -> Expression:
-        """Creates a new UDF Expression
-
-        Args:
-            func: User-provided Python function to run
-            expr_inputs: List of argument names in the function that should be Expressions
-            args: Non-named arguments (potentially Expressions) to the function
-            kwargs: Named arguments (potentially Expressions) to the function
-        """
-        bound_args = inspect.signature(func).bind(*args, **kwargs)
-        bound_args.apply_defaults()
-        kwarg_keys = list(bound_args.kwargs.keys())
-        arg_keys = list(bound_args.arguments.keys() - bound_args.kwargs.keys())
-
-        expressions = {}
-        pyvalues = {}
-        for key, val in bound_args.arguments.items():
-            if isinstance(val, Expression):
-                expressions[key] = val
-            else:
-                pyvalues[key] = val
-
-        expression_items = [(name, e) for name, e in expressions.items()]
-        expression_name_to_index = {name: i for i, (name, _) in enumerate(expression_items)}
-        oredered_expressions = [e._expr for _, e in expression_items]
-
-        curried_function = _apply_partial(func, pyvalues, expression_name_to_index, (arg_keys, kwarg_keys))
-        return Expression._from_pyexpr(_udf(curried_function, oredered_expressions))
+    def udf(func: Callable, expressions: list[Expression]) -> Expression:
+        return Expression._from_pyexpr(_udf(func, [e._expr for e in expressions]))
 
     def __bool__(self) -> bool:
         raise ValueError(
