@@ -182,6 +182,7 @@ impl BinaryArray {
     }
 }
 
+#[cfg(feature = "python")]
 impl PythonArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where

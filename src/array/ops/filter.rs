@@ -46,6 +46,7 @@ impl NullArray {
     }
 }
 
+#[cfg(feature = "python")]
 impl PythonArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         use crate::array::vec_backed::VecBackedArray;
