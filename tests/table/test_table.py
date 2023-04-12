@@ -79,6 +79,8 @@ def test_pyobjects_blackbox_kernels() -> None:
     table = Table.from_pydict({"keys": [0, 1, 2], "objs": objects})
     # Head.
     assert table.head(2).to_pydict()["objs"] == objects[:2]
+    # Filter.
+    assert table.filter([col("keys") > 0]).to_pydict()["objs"] == objects[1:]
 
 
 def test_table_head() -> None:
