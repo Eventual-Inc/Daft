@@ -3,14 +3,17 @@ pub mod numeric;
 pub mod temporal;
 pub mod utf8;
 
+use self::temporal::TemporalExpr;
+use crate::{datatypes::Field, error::DaftResult, schema::Schema, series::Series};
 use float::FloatExpr;
 use numeric::NumericExpr;
 use serde::{Deserialize, Serialize};
 use utf8::Utf8Expr;
 
-use crate::{datatypes::Field, error::DaftResult, schema::Schema, series::Series};
-
-use self::temporal::TemporalExpr;
+#[cfg(feature = "python")]
+pub mod python;
+#[cfg(feature = "python")]
+use python::PythonUDF;
 
 use super::Expr;
 
@@ -20,6 +23,8 @@ pub enum FunctionExpr {
     Float(FloatExpr),
     Utf8(Utf8Expr),
     Temporal(TemporalExpr),
+    #[cfg(feature = "python")]
+    Python(PythonUDF),
 }
 
 pub trait FunctionEvaluator {
@@ -37,6 +42,8 @@ impl FunctionExpr {
             Float(expr) => expr.get_evaluator(),
             Utf8(expr) => expr.get_evaluator(),
             Temporal(expr) => expr.get_evaluator(),
+            #[cfg(feature = "python")]
+            Python(expr) => expr,
         }
     }
 }
