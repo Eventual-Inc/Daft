@@ -43,3 +43,11 @@ impl DateArray {
         self.data().as_any().downcast_ref().unwrap()
     }
 }
+
+#[cfg(feature = "python")]
+impl crate::datatypes::PythonArray {
+    // downcasts a DataArray<T> to a VecBackedArray of PyObject.
+    pub fn downcast(&self) -> &crate::array::vec_backed::VecBackedArray<pyo3::PyObject> {
+        self.data().as_any().downcast_ref().unwrap()
+    }
+}

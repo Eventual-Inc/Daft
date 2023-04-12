@@ -100,3 +100,23 @@ impl BinaryArray {
         }
     }
 }
+
+#[cfg(feature = "python")]
+impl crate::datatypes::PythonArray {
+    pub fn broadcast(&self, _num: usize) -> DaftResult<Self> {
+        todo!("[RUST-INT][PY] Need to implement Lit for Python objects to test this")
+        // if self.len() != 1 {
+        //     return Err(crate::error::DaftError::ValueError(format!(
+        //         "Attempting to broadcast non-unit length Array named: {}",
+        //         self.name()
+        //     )));
+        // }
+        // let val = self.downcast().vec().iter().next().unwrap();
+        // let mut repeated_values = Vec::with_capacity(num);
+        // repeated_values.fill(val.clone());
+        // let repeated_values_array: Box<dyn arrow2::array::Array> = Box::new(
+        //     crate::array::vec_backed::VecBackedArray::new(repeated_values),
+        // );
+        // crate::datatypes::PythonArray::new(self.field.clone(), repeated_values_array)
+    }
+}

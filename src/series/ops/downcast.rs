@@ -190,4 +190,12 @@ impl Series {
             t => Err(DaftError::SchemaMismatch(format!("{t:?} not struct"))),
         }
     }
+
+    pub fn python(&self) -> DaftResult<&PythonArray> {
+        use crate::datatypes::DataType::*;
+        match self.data_type() {
+            Python => Ok(self.array().as_any().downcast_ref().unwrap()),
+            t => Err(DaftError::SchemaMismatch(format!("{t:?} not Python"))),
+        }
+    }
 }
