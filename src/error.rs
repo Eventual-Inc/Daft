@@ -37,6 +37,8 @@ impl Display for DaftError {
             Self::ComputeError(s) => write!(f, "DaftError::ComputeError {s}"),
             Self::ArrowError(s) => write!(f, "DaftError::ArrowError {s}"),
             Self::ValueError(s) => write!(f, "DaftError::ValueError {s}"),
+            #[cfg(feature = "python")]
+            Self::PyO3Error(e) => write!(f, "DaftError::PyO3Error {e}"),
         }
     }
 }

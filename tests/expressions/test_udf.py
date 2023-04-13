@@ -71,11 +71,7 @@ def test_udf_error():
 
     expr = throw_value_err(col("a"))
 
-    with pytest.raises(ValueError, match="DaftError::ComputeError Error occurred when running Python"):
-        table.eval_expression_list([expr])
-
-    # Assert that the error message includes a traceback
-    with pytest.raises(ValueError, match=r"Traceback \(most recent call last\):"):
+    with pytest.raises(ValueError, match="AN ERROR OCCURRED!"):
         table.eval_expression_list([expr])
 
 
