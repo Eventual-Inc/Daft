@@ -24,9 +24,10 @@ def test_series_arrow_chunked_array_round_trip() -> None:
     assert arrow.combine_chunks() == back_to_arrow
 
 
-def test_series_pylist_round_trip() -> None:
+@pytest.mark.parametrize("strict_arrow", [True, False])
+def test_series_pylist_round_trip(strict_arrow) -> None:
     data = [1, 2, 3, 4, None]
-    s = Series.from_pylist(data)
+    s = Series.from_pylist(data, strict_arrow=strict_arrow)
     back_to_list = s.to_pylist()
     assert data == back_to_list
 
@@ -41,6 +42,43 @@ def test_series_pylist_round_trip(dtype) -> None:
     assert s.name() in words
     assert words[s.name()] == 1
     assert words["None"] == 2
+
+
+def test_series_pyobj_roundtrip() -> None:
+    class CustomObject:
+        def __init__(self, a):
+            self.a = a
+
+    objects = [CustomObject(0), CustomObject(1)]
+
+    s = Series.from_pylist(objects)
+    result = s.to_pylist()
+
+    assert result[0] is objects[0]
+    assert result[1] is objects[1]
+
+
+def test_series_pyobj_strict_arrow_err() -> None:
+    class CustomObject:
+        def __init__(self, a):
+            self.a = a
+
+    objects = [0, CustomObject(1)]
+
+    with pytest.raises(pa.lib.ArrowInvalid):
+        s = Series.from_pylist(objects, strict_arrow=True)
+
+
+def test_series_pyobj_explicit_roundtrip() -> None:
+    objects = [0, 1.1, "foo"]
+
+    s = Series.from_pylist_as_pyobjects(objects)
+
+    result = s.to_pylist()
+
+    assert result[0] is objects[0]
+    assert result[1] is objects[1]
+    assert result[2] is objects[2]
 
 
 def test_series_pylist_round_trip_null() -> None:
