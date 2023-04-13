@@ -75,7 +75,7 @@ jobs:
       env:
         DAFT_DEVELOPER_USE_THREAD_POOL: '0'
       run: |
-        py-spy record --native -o tpch-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup
+        py-spy record --native -o tpch-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup || true
 
     - name: Upload Profile
       uses: actions/upload-artifact@v2
