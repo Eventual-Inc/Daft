@@ -71,6 +71,9 @@ class Series:
     def name(self) -> str:
         return self._series.name()
 
+    def rename(self, name: str) -> Series:
+        return Series._from_pyseries(self._series.rename(name))
+
     def datatype(self) -> DataType:
         return DataType._from_pydatatype(self._series.data_type())
 

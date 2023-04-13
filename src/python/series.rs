@@ -218,6 +218,10 @@ impl PySeries {
         Ok(self.series.name().to_string())
     }
 
+    pub fn rename(&self, name: &str) -> PyResult<Self> {
+        Ok(self.series.rename(name).into())
+    }
+
     pub fn data_type(&self) -> PyResult<PyDataType> {
         Ok(self.series.data_type().clone().into())
     }

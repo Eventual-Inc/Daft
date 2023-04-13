@@ -1,6 +1,6 @@
 mod udf;
 
-use crate::error::DaftResult;
+use crate::{datatypes::DataType, error::DaftResult};
 use pyo3::{PyObject, Python};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -44,11 +44,19 @@ impl<Rhs> PartialEq<Rhs> for PartialUDF {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PythonUDF(PartialUDF);
+pub struct PythonUDF {
+    func: PartialUDF,
+    num_expressions: usize,
+    return_dtype: DataType,
+}
 
-pub fn udf(func: PyObject, expressions: &[Expr]) -> DaftResult<Expr> {
+pub fn udf(func: PyObject, expressions: &[Expr], return_dtype: DataType) -> DaftResult<Expr> {
     Ok(Expr::Function {
-        func: super::FunctionExpr::Python(PythonUDF(PartialUDF(func))),
+        func: super::FunctionExpr::Python(PythonUDF {
+            func: PartialUDF(func),
+            num_expressions: expressions.len(),
+            return_dtype,
+        }),
         inputs: expressions.into(),
     })
 }
