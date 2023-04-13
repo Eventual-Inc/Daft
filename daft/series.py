@@ -39,15 +39,26 @@ class Series:
             raise TypeError(f"expected either PyArrow Array or Chunked Array, got {type(array)}")
 
     @staticmethod
-    def from_pylist(data: list, name: str = "list_series") -> Series:
+    def from_pylist(data: list, name: str = "list_series", strict_arrow: bool = False) -> Series:
         if not isinstance(data, list):
             raise TypeError(f"expected a python list, got {type(data)}")
         try:
             arrow_array = pa.array(data)
             return Series.from_arrow(arrow_array, name=name)
         except pa.lib.ArrowInvalid:
-            pys = PySeries.from_pylist(name, data)
-            return Series._from_pyseries(pys)
+            if strict_arrow:
+                raise
+            else:
+                return Series.from_pylist_as_pyobjects(data, name)
+
+    @staticmethod
+    def from_pylist_as_pyobjects(data: list, name: str = "list_series") -> Series:
+        """Make a PyObject series from the data.
+
+        Keeps all the elements as PyObjects, even if they would be coercible to another Daft type.
+        """
+        pys = PySeries.from_pylist(name, data)
+        return Series._from_pyseries(pys)
 
     @staticmethod
     def from_numpy(data: np.ndarray, name: str = "numpy_series") -> Series:
@@ -274,7 +285,7 @@ class Series:
 
     def __reduce__(self) -> tuple:
         if self.datatype()._is_python_type():
-            return (Series.from_pylist, (self.to_pylist(), self.name()))
+            return (Series.from_pylist_as_pyobjects, (self.to_pylist(), self.name()))
         else:
             return (Series.from_arrow, (self.to_arrow(), self.name()))
 
