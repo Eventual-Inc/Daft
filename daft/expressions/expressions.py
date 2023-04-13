@@ -58,8 +58,8 @@ class Expression:
             return lit(obj)
 
     @staticmethod
-    def udf(func: Callable, expressions: list[Expression]) -> Expression:
-        return Expression._from_pyexpr(_udf(func, [e._expr for e in expressions]))
+    def udf(func: Callable, expressions: list[Expression], return_dtype: DataType) -> Expression:
+        return Expression._from_pyexpr(_udf(func, [e._expr for e in expressions], return_dtype._dtype))
 
     def __bool__(self) -> bool:
         raise ValueError(
