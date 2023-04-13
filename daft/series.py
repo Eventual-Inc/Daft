@@ -39,26 +39,33 @@ class Series:
             raise TypeError(f"expected either PyArrow Array or Chunked Array, got {type(array)}")
 
     @staticmethod
-    def from_pylist(data: list, name: str = "list_series", strict_arrow: bool = False) -> Series:
+    def from_pylist(data: list, name: str = "list_series", pyobj: str = "allow") -> Series:
+        """Make a series from the given data.
+
+        The resulting type depends on the setting of pyobjects:
+            - "allow": Arrow-backed types if possible, else PyObject;
+            - "disallow": Arrow-backed types only, raising error if not convertible;
+            - "force": Store as PyObject types.
+        """
+
         if not isinstance(data, list):
             raise TypeError(f"expected a python list, got {type(data)}")
+
+        if pyobj not in {"allow", "disallow", "force"}:
+            raise ValueError(f"pyobj: expected either 'allow', 'disallow', or 'force', but got {pyobj})")
+
+        if pyobj == "force":
+            pys = PySeries.from_pylist(name, data)
+            return Series._from_pyseries(pys)
+
         try:
             arrow_array = pa.array(data)
             return Series.from_arrow(arrow_array, name=name)
         except pa.lib.ArrowInvalid:
-            if strict_arrow:
+            if pyobj == "disallow":
                 raise
-            else:
-                return Series.from_pylist_as_pyobjects(data, name)
-
-    @staticmethod
-    def from_pylist_as_pyobjects(data: list, name: str = "list_series") -> Series:
-        """Make a PyObject series from the data.
-
-        Keeps all the elements as PyObjects, even if they would be coercible to another Daft type.
-        """
-        pys = PySeries.from_pylist(name, data)
-        return Series._from_pyseries(pys)
+            pys = PySeries.from_pylist(name, data)
+            return Series._from_pyseries(pys)
 
     @staticmethod
     def from_numpy(data: np.ndarray, name: str = "numpy_series") -> Series:
@@ -285,7 +292,7 @@ class Series:
 
     def __reduce__(self) -> tuple:
         if self.datatype()._is_python_type():
-            return (Series.from_pylist_as_pyobjects, (self.to_pylist(), self.name()))
+            return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
         else:
             return (Series.from_arrow, (self.to_arrow(), self.name()))
 

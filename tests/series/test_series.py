@@ -24,10 +24,10 @@ def test_series_arrow_chunked_array_round_trip() -> None:
     assert arrow.combine_chunks() == back_to_arrow
 
 
-@pytest.mark.parametrize("strict_arrow", [True, False])
-def test_series_pylist_round_trip(strict_arrow) -> None:
+@pytest.mark.parametrize("pyobj", ["allow", "disallow", "force"])
+def test_series_pylist_round_trip(pyobj) -> None:
     data = [1, 2, 3, 4, None]
-    s = Series.from_pylist(data, strict_arrow=strict_arrow)
+    s = Series.from_pylist(data, pyobj=pyobj)
     back_to_list = s.to_pylist()
     assert data == back_to_list
 
@@ -66,13 +66,13 @@ def test_series_pyobj_strict_arrow_err() -> None:
     objects = [0, CustomObject(1)]
 
     with pytest.raises(pa.lib.ArrowInvalid):
-        s = Series.from_pylist(objects, strict_arrow=True)
+        s = Series.from_pylist(objects, pyobj="disallow")
 
 
 def test_series_pyobj_explicit_roundtrip() -> None:
     objects = [0, 1.1, "foo"]
 
-    s = Series.from_pylist_as_pyobjects(objects)
+    s = Series.from_pylist(objects, pyobj="force")
 
     result = s.to_pylist()
 
