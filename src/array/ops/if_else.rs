@@ -168,22 +168,6 @@ impl PythonArray {
     }
 }
 
-// fn from_arrow_if_then_else<T>(
-//     predicate: &BooleanArray,
-//     if_true: &DataArray<T>,
-//     if_false: &DataArray<T>,
-// ) -> DaftResult<DataArray<T>>
-// where
-//     T: DaftDataType,
-// {
-//     let result = if_then_else(
-//         predicate.downcast(),
-//         if_true.downcast(),
-//         if_false.downcast(),
-//     )?;
-//     DataArray::try_from((if_true.name(), result))
-// }
-
 fn from_arrow_if_then_else<T>(predicate: &BooleanArray, if_true: &T, if_false: &T) -> DaftResult<T>
 where
     T: BaseArray

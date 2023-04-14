@@ -1,7 +1,9 @@
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::DaftDataType,
+    datatypes::{DaftArrowBackedType, DaftDataType, PythonArray},
 };
+
+use super::downcast::Downcastable;
 
 impl<T> DataArray<T>
 where
@@ -14,9 +16,30 @@ where
 
 impl<T> DataArray<T>
 where
-    T: DaftDataType + 'static,
+    T: DaftArrowBackedType + 'static,
 {
     pub fn size_bytes(&self) -> usize {
         arrow2::compute::aggregate::estimated_bytes_size(self.data())
+    }
+}
+
+#[cfg(feature = "python")]
+impl PythonArray {
+    pub fn size_bytes(&self) -> usize {
+        use pyo3::prelude::*;
+        use pyo3::types::PyList;
+
+        let vector = self.downcast().vec();
+        Python::with_gil(|py| {
+            let daft_utils = PyModule::import(py, "daft.utils").unwrap();
+            let estimate_size_bytes_pylist =
+                daft_utils.getattr("estimate_size_bytes_pylist").unwrap();
+            let size_bytes: usize = estimate_size_bytes_pylist
+                .call1((PyList::new(py, vector),))
+                .unwrap()
+                .extract()
+                .unwrap();
+            size_bytes
+        })
     }
 }
