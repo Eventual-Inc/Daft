@@ -10,6 +10,11 @@ from daft import DataType, Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 
+class CustomTestObject:
+    def __init__(self, a):
+        self.a = a
+
+
 def test_series_arrow_array_round_trip() -> None:
     arrow = pa.array([1, 2, 3, None, 5, None])
     s = Series.from_arrow(arrow)
@@ -32,6 +37,12 @@ def test_series_pylist_round_trip(pyobj) -> None:
     assert data == back_to_list
 
 
+def test_series_pyobj_wrong_parameter() -> None:
+    data = [1, 2, 3, 4, None]
+    with pytest.raises(ValueError):
+        Series.from_pylist(data, pyobj="blah")
+
+
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES + ARROW_STRING_TYPES)
 def test_series_pylist_round_trip(dtype) -> None:
     data = pa.array([1, 2, 3, None, 5, None])
@@ -45,11 +56,7 @@ def test_series_pylist_round_trip(dtype) -> None:
 
 
 def test_series_pyobj_roundtrip() -> None:
-    class CustomObject:
-        def __init__(self, a):
-            self.a = a
-
-    objects = [CustomObject(0), CustomObject(1)]
+    objects = [CustomTestObject(0), CustomTestObject(1)]
 
     s = Series.from_pylist(objects)
     result = s.to_pylist()
@@ -59,11 +66,7 @@ def test_series_pyobj_roundtrip() -> None:
 
 
 def test_series_pyobj_strict_arrow_err() -> None:
-    class CustomObject:
-        def __init__(self, a):
-            self.a = a
-
-    objects = [0, CustomObject(1)]
+    objects = [0, CustomTestObject(1)]
 
     with pytest.raises(pa.lib.ArrowInvalid):
         s = Series.from_pylist(objects, pyobj="disallow")
@@ -79,6 +82,21 @@ def test_series_pyobj_explicit_roundtrip() -> None:
     assert result[0] is objects[0]
     assert result[1] is objects[1]
     assert result[2] is objects[2]
+
+
+def test_serialize_with_pyobjects() -> None:
+
+    objects = [CustomTestObject(1)]
+
+    s = Series.from_pylist(objects)
+    import pickle
+
+    s = pickle.loads(pickle.dumps(s))
+
+    result = s.to_pylist()
+
+    assert isinstance(result[0], CustomTestObject)
+    assert result[0].a == 1
 
 
 def test_series_pylist_round_trip_null() -> None:
