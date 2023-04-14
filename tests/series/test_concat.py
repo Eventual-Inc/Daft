@@ -8,6 +8,11 @@ from daft import DataType, Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 
+class TestObject:
+    def __init__(self, test_val):
+        self.test_val = test_val
+
+
 @pytest.mark.parametrize(
     "dtype, chunks", itertools.product(ARROW_FLOAT_TYPES + ARROW_INT_TYPES + ARROW_STRING_TYPES, [1, 2, 3, 10])
 )
@@ -26,6 +31,25 @@ def test_series_concat(dtype, chunks) -> None:
         for j in range(i):
             val = i * j
             assert float(concated_list[counter]) == val
+            counter += 1
+
+
+@pytest.mark.parametrize("chunks", [1, 2, 3, 10])
+def test_series_concat_pyobj(chunks) -> None:
+    series = []
+    for i in range(chunks):
+        series.append(Series.from_pylist([TestObject(i * j) for j in range(i)], pyobj="force"))
+
+    concated = Series.concat(series)
+
+    assert concated.datatype() == DataType.python()
+    concated_list = concated.to_pylist()
+
+    counter = 0
+    for i in range(chunks):
+        for j in range(i):
+            val = i * j
+            assert concated_list[counter].test_val == val
             counter += 1
 
 
