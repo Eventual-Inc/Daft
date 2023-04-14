@@ -1,7 +1,4 @@
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    hash::{BuildHasherDefault, Hasher},
-};
+use std::hash::{Hasher, BuildHasherDefault};
 
 use crate::{
     array::{ops::arrow2::comparison::build_multi_array_is_equal, BaseArray},
@@ -58,26 +55,18 @@ pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series
             Series::empty("right_indices", &DataType::UInt64)?,
         ));
     }
-    let hashes = left.hash_rows()?;
-
-    const DEFAULT_SIZE: usize = 20;
-
-    let mut probe_table = HashMap::<u64, Vec<u64>, IdentityBuildHasher>::with_capacity_and_hasher(
-        DEFAULT_SIZE,
-        Default::default(),
-    );
-
-    for (i, h) in hashes.downcast().values_iter().enumerate() {
-        let entry = probe_table.entry(*h);
-        match entry {
-            Entry::Vacant(entry) => {
-                entry.insert(vec![i as u64]);
-            }
-            Entry::Occupied(mut entry) => {
-                entry.get_mut().push(i as u64);
-            }
-        }
+    let types_not_match = left
+        .columns
+        .iter()
+        .zip(right.columns.iter())
+        .any(|(l, r)| l.data_type() != r.data_type());
+    if types_not_match {
+        return Err(DaftError::SchemaMismatch(
+            "Types between left and right do not match".to_string(),
+        ));
     }
+
+    let probe_table = left.to_probe_hash_table()?;
 
     let r_hashes = right.hash_rows()?;
     let mut left_idx = vec![];
@@ -88,14 +77,16 @@ pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series
         false,
         false,
     )?;
-
     for (i, h) in r_hashes.downcast().values_iter().enumerate() {
-        if let Some(indices) = probe_table.get(h) {
+        if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
+            *h == other.hash && {
+                let j = other.idx;
+                is_equal(j as usize, i)
+            }
+        }) {
             for j in indices {
-                if is_equal(*j as usize, i) {
-                    left_idx.push(*j);
-                    right_idx.push(i as u64);
-                }
+                left_idx.push(*j);
+                right_idx.push(i as u64);
             }
         }
     }

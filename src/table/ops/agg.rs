@@ -135,4 +135,20 @@ impl Table {
 
         Ok((key_indices, values_indices))
     }
+
+    // fn hash_grouper(&self) -> DaftResult<(Vec<u64>, Vec<UInt64Array>)> {
+    //     // Group equal rows together.
+    //     //
+    //     // Given a table, returns a tuple:
+    //     // 1. Indices of the table, deduplicated.
+    //     // 2. Indices of the entire table, with identical values grouped.
+    //     //
+    //     // e.g. given a table [B, B, A, B, C, C]
+    //     // returns: (
+    //     //      [2, 0, 4]  <-- indices of A, B, and C
+    //     //      [[2], [0, 1, 3], [4, 5]]  <--- indices of all A, all B, all C
+    //     // )
+    //     let probe_table = self.to_probe_hash_table()?;
+
+    // }
 }
