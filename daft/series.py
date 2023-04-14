@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pickle
+import random
+import statistics
 from typing import TypeVar
 
 import pyarrow as pa
@@ -135,6 +138,30 @@ class Series:
 
     def size_bytes(self) -> int:
         return self._series.size_bytes()
+
+    def _size_bytes_python(self) -> int:
+        assert (
+            self.datatype()._is_python_type()
+        ), "_size_bytes_python should only be called on Series holding PythonType"
+        pylist = self.to_pylist()
+
+        if len(pylist) == 0:
+            return 0
+
+        # The pylist is non-empty.
+        # Sample up to 100 of the items (to keep the operation fast) to determine total size.
+        sample_quantity = min(len(pylist), 100)
+
+        samples = random.sample(pylist, sample_quantity)
+        sample_sizes = [len(pickle.dumps(sample)) for sample in samples]
+
+        if sample_quantity == len(pylist):
+            return sum(sample_sizes)
+
+        mean, stdev = statistics.mean(sample_sizes), statistics.stdev(sample_sizes)
+        one_item_size_estimate = int(mean + stdev)
+
+        return one_item_size_estimate * len(pylist)
 
     def __abs__(self) -> Series:
         return Series._from_pyseries(abs(self._series))
