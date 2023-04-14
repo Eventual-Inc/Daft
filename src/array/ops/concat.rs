@@ -1,5 +1,7 @@
+use arrow2::array::Array;
+
 use crate::{
-    array::DataArray,
+    array::{vec_backed::VecBackedArray, DataArray},
     datatypes::DaftDataType,
     error::{DaftError, DaftResult},
 };
@@ -21,14 +23,26 @@ where
             return Ok((*arrays.first().unwrap()).clone());
         }
         let dtype = arrays.first().unwrap().data_type();
-        if !dtype.is_arrow() {
-            return Err(DaftError::TypeError(format!(
-                "We can only perform concat on arrow types, got  {dtype}"
-            )));
-        }
 
         let arrow_arrays: Vec<_> = arrays.iter().map(|s| s.data.as_ref()).collect();
-        let cat_array = arrow2::compute::concatenate::concatenate(arrow_arrays.as_slice())?;
+        let cat_array: Box<dyn Array> = match dtype {
+            #[cfg(feature = "python")]
+            crate::datatypes::DataType::Python => {
+                use pyo3::prelude::*;
+
+                Box::new(VecBackedArray::concatenate(
+                    arrow_arrays
+                        .iter()
+                        .map(|s| {
+                            s.as_any()
+                                .downcast_ref::<VecBackedArray<PyObject>>()
+                                .unwrap()
+                        })
+                        .collect(),
+                ))
+            }
+            _ => arrow2::compute::concatenate::concatenate(arrow_arrays.as_slice())?,
+        };
         let name = arrays.first().unwrap().name();
         DataArray::try_from((name, cat_array))
     }

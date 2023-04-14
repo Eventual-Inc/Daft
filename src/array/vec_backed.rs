@@ -17,6 +17,9 @@ impl<T> VecBackedArray<T> {
     pub fn vec(&self) -> &Vec<T> {
         &self.values
     }
+    pub fn concatenate(_arrays: Vec<&Self>) -> Self {
+        todo!()
+    }
 }
 
 impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
