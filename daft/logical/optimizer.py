@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import copy
-
 from loguru import logger
 
 from daft import resource_request
@@ -50,7 +48,6 @@ class PushDownPredicates(Rule[LogicalPlan]):
         for pred in filter_predicate:
             required_names = {e for e in pred._required_columns()}
             if all(name in child_input_mapping for name in required_names):
-                pred = copy.deepcopy(pred)
                 for name in required_names:
                     pred = pred._replace_column_with_expression(name, col(child_input_mapping[name]))
                 can_push_down.append(pred)
@@ -98,12 +95,10 @@ class PushDownPredicates(Rule[LogicalPlan]):
         for pred in filter_predicate:
             required_names = pred._required_columns()
             if all(name in left_input_mapping for name in required_names):
-                pred = copy.deepcopy(pred)
                 for name in required_names:
                     pred = pred._replace_column_with_expression(name, col(left_input_mapping[name]))
                 left_push_down.append(pred)
             elif all(name in right_input_mapping for name in required_names):
-                pred = copy.deepcopy(pred)
                 for name in required_names:
                     pred = pred._replace_column_with_expression(name, col(right_input_mapping[name]))
                 right_push_down.append(pred)
@@ -385,7 +380,6 @@ class FoldProjections(Rule[LogicalPlan]):
                     assert name is not None
                     e = child_projection.get_expression_by_name(name)
                 else:
-                    e = copy.deepcopy(e)
                     to_replace = e._required_columns()
                     for name in to_replace:
                         e = e._replace_column_with_expression(name, child_projection.get_expression_by_name(name))
