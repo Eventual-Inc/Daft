@@ -28,6 +28,8 @@ mod utf8;
 
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
+use crate::datatypes::UInt64Array;
+
 pub trait DaftCompare<Rhs> {
     type Output;
 
@@ -73,9 +75,12 @@ pub trait DaftIsNan {
     fn is_nan(&self) -> Self::Output;
 }
 
+type GroupIndices = Vec<UInt64Array>;
+
 pub trait DaftCountAggable {
     type Output;
     fn count(&self) -> Self::Output;
+    fn grouped_count(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftSumAggable {

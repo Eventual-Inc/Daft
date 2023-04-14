@@ -32,11 +32,10 @@ impl Table {
 
         // Table with the aggregated (deduplicated) group keys.
         let groupkeys_table = {
-            let indices_as_arrow = arrow2::array::PrimitiveArray::from_vec(groupkey_indices);
-            let indices_as_series =
-                UInt64Array::from(("", Box::new(indices_as_arrow))).into_series();
+            let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
             groupby_table.take(&indices_as_series)?
         };
+        drop(groupby_table);
 
         // Table with the aggregated values, one row for each group.
         let agged_values_table = {
