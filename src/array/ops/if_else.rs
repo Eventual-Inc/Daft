@@ -166,13 +166,87 @@ impl NullArray {
     }
 }
 
+#[cfg(feature = "python")]
 impl PythonArray {
     pub fn if_else(
         &self,
-        _other: &PythonArray,
-        _predicate: &BooleanArray,
+        other: &PythonArray,
+        predicate: &BooleanArray,
     ) -> DaftResult<PythonArray> {
-        todo!("[RUST-INT][PY]");
+        use crate::array::vec_backed::VecBackedArray;
+        use pyo3::prelude::*;
+        match (self.len(), other.len(), predicate.len()) {
+            // CASE: Equal lengths across all 3 arguments
+            (self_len, other_len, predicate_len) if self_len == other_len && other_len == predicate_len => {
+                let predicate_arr = predicate.downcast();
+                let predicate_values = predicate_arr.values();
+                let result_vec: Vec<PyObject> = self.downcast().vec().iter()
+                    .zip(other.downcast().vec().iter())
+                    .zip(predicate_values.iter())
+                    .map(
+                        |((self_val, other_val), pred_val)| match pred_val {
+                            true => self_val.clone(),
+                            false => other_val.clone(),
+                        }
+                    ).collect();
+                DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
+            },
+            // CASE: Broadcast predicate
+            (self_len, _, 1) => {
+                let predicate_scalar = predicate.get(0);
+                match predicate_scalar {
+                    None => Ok(DataArray::full_null(self.name(), self_len)),
+                    Some(predicate_scalar_value) => {
+                        if predicate_scalar_value {
+                            Ok(self.clone())
+                        } else {
+                            Ok(other.clone())
+                        }
+                    }
+                }
+            }
+            // CASE: Broadcast both arrays
+            (1, 1, _) => {
+                let self_scalar = self.get(0);
+                let other_scalar = other.get(0);
+                let predicate_arr = predicate.downcast();
+                let predicate_values = predicate_arr.values();
+                let result_vec: Vec<PyObject> = predicate_values.iter().map(
+                    |pred_val| match pred_val {
+                        true => self_scalar.clone(),
+                        false => other_scalar.clone(),
+                    }
+                ).collect();
+                DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
+            }
+            // CASE: Broadcast truthy array
+            (1, o, p)  if o == p => {
+                let self_scalar = self.get(0);
+                let predicate_arr = predicate.downcast();
+                let predicate_values = predicate_arr.values();
+                let result_vec: Vec<PyObject> = other.downcast().vec().iter().zip(predicate_values.iter()).map(
+                    |(other_val, pred_val)| match pred_val {
+                        true => self_scalar.clone(),
+                        false => other_val.clone(),
+                    }
+                ).collect();
+                DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
+            }
+            // CASE: Broadcast falsey array
+            (s, 1, p)  if s == p => {
+                let other_scalar = other.get(0);
+                let predicate_arr = predicate.downcast();
+                let predicate_values = predicate_arr.values();
+                let result_vec: Vec<PyObject> = self.downcast().vec().iter().zip(predicate_values.iter()).map(
+                |(self_val, pred_val)| match pred_val {
+                        true => self_val.clone(),
+                        false => other_scalar.clone(),
+                    }
+                ).collect();
+                DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
+            }
+            (s, o, p) => Err(DaftError::ValueError(format!("Cannot run if_else against arrays with mismatched lengths: self={s}, other={o}, predicate={p}")))
+        }
     }
 }
 
