@@ -3,6 +3,7 @@ ignore:
 - tests
 - tutorials
 - tools
+- daft/pickle
 
 comment:
   layout: reach, diff, flags, files

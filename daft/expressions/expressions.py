@@ -44,6 +44,10 @@ class Expression:
     def float(self) -> ExpressionFloatNamespace:
         return ExpressionFloatNamespace.from_expression(self)
 
+    @property
+    def url(self) -> ExpressionUrlNamespace:
+        return ExpressionUrlNamespace.from_expression(self)
+
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)
@@ -266,6 +270,13 @@ class ExpressionNamespace:
         ns = cls.__new__(cls)
         ns._expr = expr._expr
         return ns
+
+
+class ExpressionUrlNamespace(ExpressionNamespace):
+    def download(self) -> Expression:
+        from daft.udf_library import url_udfs
+
+        return url_udfs.download_udf(Expression._from_pyexpr(self._expr))
 
 
 class ExpressionFloatNamespace(ExpressionNamespace):

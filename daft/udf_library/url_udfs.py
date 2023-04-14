@@ -37,11 +37,12 @@ def download_udf(urls, max_worker_threads: int = 8):
 
     executor = ThreadPoolExecutor(max_workers=max_worker_threads, initializer=_worker_thread_initializer)
     results = [None for _ in range(len(urls))]
-    future_to_idx = {executor.submit(_download, urls[i]): i for i in range(len(urls))}
+    urls_pylist = urls.to_arrow().to_pylist()
+    future_to_idx = {executor.submit(_download, urls_pylist[i]): i for i in range(len(urls))}
     for future in as_completed(future_to_idx):
         try:
             results[future_to_idx[future]] = future.result()
         except Exception as e:
-            logger.error(f"Encountered error during download from URL {urls[future_to_idx[future]]}: {str(e)}")
+            logger.error(f"Encountered error during download from URL {urls_pylist[future_to_idx[future]]}: {str(e)}")
 
     return Series.from_pylist(results)

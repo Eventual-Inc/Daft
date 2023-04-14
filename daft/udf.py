@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import inspect
 from typing import Callable
 
@@ -19,8 +20,7 @@ UserProvidedPythonFunction = Callable[..., Series]
 
 @dataclasses.dataclass(frozen=True)
 class PartialUDF:
-    func: UserProvidedPythonFunction
-    return_dtype: DataType
+    udf: UDF
 
     # Arguments that UDF was called with, potentially symbolic (i.e. containing Expressions)
     bound_args: inspect.BoundArguments
@@ -54,7 +54,7 @@ class PartialUDF:
             else:
                 kwargs[name] = evaluated_expressions[function_parameter_name_to_index[name]]
 
-        result = self.func(*args, **kwargs)
+        result = self.udf.func(*args, **kwargs)
 
         # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
         # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF
@@ -63,25 +63,33 @@ class PartialUDF:
 
         # Post-processing of results into a Series of the appropriate dtype
         if isinstance(result, Series):
-            return result.rename(name).cast(self.return_dtype)._series
+            return result.rename(name).cast(self.udf.return_dtype)._series
         elif isinstance(result, list):
-            return Series.from_pylist(result, name=name).cast(self.return_dtype)._series
+            return Series.from_pylist(result, name=name).cast(self.udf.return_dtype)._series
         elif _NUMPY_AVAILABLE and isinstance(result, np.ndarray):
-            return Series.from_numpy(result, name=name).cast(self.return_dtype)._series
+            return Series.from_numpy(result, name=name).cast(self.udf.return_dtype)._series
         else:
             raise NotImplementedError(f"Return type not supported for UDF: {type(result)}")
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass
 class UDF:
     func: UserProvidedPythonFunction
     return_dtype: DataType
+
+    def __post_init__(self):
+        """Analagous to the @functools.wraps(self.func) pattern
+
+        This will swap out identifiers on `self` to match `self.func`. Most notably, this swaps out
+        self.__module__ and self.__qualname__, which is used in `__reduce__` during serialization.
+        """
+        functools.update_wrapper(self, self.func)
 
     def __call__(self, *args, **kwargs) -> Expression:
         bound_args = inspect.signature(self.func).bind(*args, **kwargs)
         bound_args.apply_defaults()
 
-        partial_udf = PartialUDF(self.func, self.return_dtype, bound_args)
+        partial_udf = PartialUDF(self, bound_args)
         expressions = list(partial_udf.expressions().values())
         return Expression.udf(
             func=partial_udf,
