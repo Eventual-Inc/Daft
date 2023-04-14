@@ -1,7 +1,7 @@
 use crate::{
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_arrow_daft_types,
+    with_match_daft_types,
 };
 
 use crate::array::BaseArray;
@@ -28,14 +28,8 @@ impl Series {
                 )));
             }
         }
-        if !first_dtype.is_arrow() {
-            return Err(DaftError::TypeError(format!(
-                "Series concat is only implemented for arrow types, got {}",
-                first_dtype,
-            )));
-        }
 
-        with_match_arrow_daft_types!(first_dtype, |$T| {
+        with_match_daft_types!(first_dtype, |$T| {
             let downcasted = series.into_iter().map(|s| s.downcast::<$T>()).collect::<DaftResult<Vec<_>>>()?;
             Ok(DataArray::<$T>::concat(downcasted.as_slice())?.into_series())
         })
