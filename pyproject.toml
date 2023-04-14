@@ -57,6 +57,7 @@ target-version = ['py38']
 profile = "black"
 
 [tool.mypy]
+exclude = ['daft/pickle/*.py$']
 files = ["daft/**/*.py", "daft/**/*.pyx", "tests/**/*.py"]
 python_version = "3.8"
 warn_return_any = true
