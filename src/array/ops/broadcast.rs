@@ -1,19 +1,25 @@
 use crate::{
     array::{BaseArray, DataArray},
     datatypes::{
-        BinaryArray, BooleanArray, DaftNumericType, DataType, FixedSizeListArray, NullArray,
-        Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, DataType, FixedSizeListArray, ListArray,
+        NullArray, Utf8Array,
     },
     error::DaftResult,
 };
 
 use super::downcast::Downcastable;
 
-impl<T> DataArray<T>
+pub trait Broadcastable {
+    fn broadcast(&self, num: usize) -> DaftResult<Self>
+    where
+        Self: Sized;
+}
+
+impl<T> Broadcastable for DataArray<T>
 where
     T: DaftNumericType,
 {
-    pub fn broadcast(&self, num: usize) -> DaftResult<Self> {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(crate::error::DaftError::ValueError(format!(
                 "Attempting to broadcast non-unit length Array named: {}",
@@ -32,8 +38,8 @@ where
     }
 }
 
-impl Utf8Array {
-    pub fn broadcast(&self, num: usize) -> DaftResult<Self> {
+impl Broadcastable for Utf8Array {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(crate::error::DaftError::ValueError(format!(
                 "Attempting to broadcast non-unit length Array named: {}",
@@ -51,8 +57,8 @@ impl Utf8Array {
     }
 }
 
-impl NullArray {
-    pub fn broadcast(&self, num: usize) -> DaftResult<Self> {
+impl Broadcastable for NullArray {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(crate::error::DaftError::ValueError(format!(
                 "Attempting to broadcast non-unit length Array named: {}",
@@ -63,8 +69,8 @@ impl NullArray {
     }
 }
 
-impl BooleanArray {
-    pub fn broadcast(&self, num: usize) -> DaftResult<Self> {
+impl Broadcastable for BooleanArray {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(crate::error::DaftError::ValueError(format!(
                 "Attempting to broadcast non-unit length Array named: {}",
@@ -82,8 +88,8 @@ impl BooleanArray {
     }
 }
 
-impl BinaryArray {
-    pub fn broadcast(&self, num: usize) -> DaftResult<Self> {
+impl Broadcastable for BinaryArray {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(crate::error::DaftError::ValueError(format!(
                 "Attempting to broadcast non-unit length Array named: {}",
@@ -106,8 +112,62 @@ impl BinaryArray {
     }
 }
 
-impl FixedSizeListArray {
-    pub fn broadcast(&self, num: usize) -> DaftResult<Self> {
+impl Broadcastable for ListArray {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        if self.len() != 1 {
+            return Err(crate::error::DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
+        let maybe_val = self.downcast().iter().next().unwrap();
+        match maybe_val {
+            Some(val) => {
+                let repeated_values = arrow2::compute::concatenate::concatenate(
+                    std::iter::repeat(val.as_ref())
+                        .take(num)
+                        .collect::<Vec<&dyn arrow2::array::Array>>()
+                        .as_slice(),
+                )?;
+                match i64::try_from(val.len()) {
+                    Ok(array_length) => {
+                        let offsets = arrow2::offset::OffsetsBuffer::<i64>::try_from(
+                            std::iter::repeat(array_length)
+                                .take(num)
+                                .fold(vec![0], |mut acc, x| {
+                                    acc.push(x + acc.last().unwrap());
+                                    acc
+                                }),
+                        )?;
+                        if let DataType::List(field) = self.data_type() {
+                            let arrow_arr = Box::new(arrow2::array::ListArray::<i64>::new(
+                                    arrow2::datatypes::DataType::LargeList(Box::new(field.to_arrow()?)),
+                                    offsets,
+                                    repeated_values,
+                                    None,
+                                )
+                            );
+                            ListArray::new(
+                                self.field.clone(),
+                                arrow_arr,
+                            )
+                        } else {
+                            unreachable!("should never be reached");
+                        }
+                    }
+                    Err(e) => Err(crate::error::DaftError::ValueError(format!(
+                        "Unable to create ListArray during broadcasting for array named {} due to being unable to cast array length to i64: {}",
+                        self.name(), e,
+                    ))),
+                }
+            }
+            None => Ok(DataArray::full_null(self.name(), num)),
+        }
+    }
+}
+
+impl Broadcastable for FixedSizeListArray {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(crate::error::DaftError::ValueError(format!(
                 "Attempting to broadcast non-unit length Array named: {}",
@@ -145,8 +205,8 @@ impl FixedSizeListArray {
 }
 
 #[cfg(feature = "python")]
-impl crate::datatypes::PythonArray {
-    pub fn broadcast(&self, _num: usize) -> DaftResult<Self> {
+impl Broadcastable for crate::datatypes::PythonArray {
+    fn broadcast(&self, _num: usize) -> DaftResult<Self> {
         todo!("[RUST-INT][PY] Need to implement Lit for Python objects to test this")
         // if self.len() != 1 {
         //     return Err(crate::error::DaftError::ValueError(format!(

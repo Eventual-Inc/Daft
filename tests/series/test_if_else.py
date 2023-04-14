@@ -108,6 +108,57 @@ def test_series_if_else_binary(if_true, if_false) -> None:
     [
         # Same length, same type
         (
+            pa.array([[1, 2], [None], None, [5, 6, 7, 8]], type=pa.list_(pa.int64())),
+            pa.array([[9], [10, None, 12, 13], None, [15, 16]], type=pa.list_(pa.int64())),
+            [[1, 2], [10, None, 12, 13], None, [5, 6, 7, 8]],
+        ),
+        # Same length, different super-castable data type
+        (
+            pa.array([[1, 2], [None], None, [5, 6, 7, 8]], type=pa.list_(pa.int32())),
+            pa.array([[9], [10, None, 12, 13], None, [15, 16]], type=pa.list_(pa.int64())),
+            [[1, 2], [10, None, 12, 13], None, [5, 6, 7, 8]],
+        ),
+        # TODO(Clark): Uncomment this case when Arrow2 supports casting between FixedSizeList and LargeLists.
+        # # Same length, different super-castable list type (FixedSizeList + List)
+        # (
+        #     pa.array([[1, 2], [None, 4], None, [7, 8]], type=pa.list_(pa.int64(), 2)),
+        #     pa.array([[9], [10, None, 12, 13], None, [15, 16]], type=pa.list_(pa.int64())),
+        #     [[1, 2], [10, None, 12, 13], None, [5, 6, 7, 8]],
+        # ),
+        # Broadcast left
+        (
+            pa.array([[1, 2]], type=pa.list_(pa.int64())),
+            pa.array([[9], [10, None, 12, 13], None, [15, 16]], type=pa.list_(pa.int64())),
+            [[1, 2], [10, None, 12, 13], None, [1, 2]],
+        ),
+        # Broadcast right
+        (
+            pa.array([[1, 2], [None], None, [5, 6, 7, 8]], type=pa.list_(pa.int64())),
+            pa.array([[9]], type=pa.list_(pa.int64())),
+            [[1, 2], [9], None, [5, 6, 7, 8]],
+        ),
+        # Broadcast both
+        (
+            pa.array([[1, 2]], type=pa.list_(pa.int64())),
+            pa.array([[9]], type=pa.list_(pa.int64())),
+            [[1, 2], [9], None, [1, 2]],
+        ),
+    ],
+)
+def test_series_if_else_list(if_true, if_false, expected) -> None:
+    if_true_series = Series.from_arrow(if_true)
+    if_false_series = Series.from_arrow(if_false)
+    predicate_series = Series.from_arrow(pa.array([True, False, None, True]))
+    result = predicate_series.if_else(if_true_series, if_false_series)
+    assert result.datatype() == DataType.list("item", DataType.int64())
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["if_true", "if_false", "expected"],
+    [
+        # Same length, same type
+        (
             pa.array([[1, 2], [None, 4], None, [7, 8]], type=pa.list_(pa.int64(), 2)),
             pa.array([[9, 10], [None, 12], None, [15, 16]], type=pa.list_(pa.int64(), 2)),
             [[1, 2], [None, 12], None, [7, 8]],

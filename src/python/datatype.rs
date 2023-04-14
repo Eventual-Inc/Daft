@@ -105,6 +105,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn list(name: &str, data_type: Self) -> PyResult<Self> {
+        Ok(DataType::List(Box::new(Field::new(name, data_type.dtype))).into())
+    }
+
+    #[staticmethod]
     pub fn fixed_size_list(name: &str, data_type: Self, size: usize) -> PyResult<Self> {
         Ok(DataType::FixedSizeList(Box::new(Field::new(name, data_type.dtype)), size).into())
     }

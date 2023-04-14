@@ -4,7 +4,8 @@ use arrow2::array;
 use crate::{
     array::{BaseArray, DataArray},
     datatypes::{
-        BinaryArray, BooleanArray, DaftNumericType, DateArray, FixedSizeListArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, DateArray, FixedSizeListArray, ListArray,
+        Utf8Array,
     },
 };
 
@@ -62,10 +63,19 @@ impl Downcastable for DateArray {
     }
 }
 
+impl Downcastable for ListArray {
+    type Output = array::ListArray<i64>;
+
+    // downcasts a DataArray<T> to an Arrow ListArray.
+    fn downcast(&self) -> &Self::Output {
+        self.data().as_any().downcast_ref().unwrap()
+    }
+}
+
 impl Downcastable for FixedSizeListArray {
     type Output = array::FixedSizeListArray;
 
-    // downcasts a DataArray<T> to an Arrow Array.
+    // downcasts a DataArray<T> to an Arrow FixedSizeListArray.
     fn downcast(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }

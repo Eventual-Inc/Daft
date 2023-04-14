@@ -34,6 +34,13 @@ impl PySeries {
                 arrow2::datatypes::DataType::LargeBinary,
             )
             .boxed(),
+            arrow2::datatypes::DataType::List(field) => cast::cast(
+                arrow_array.as_ref(),
+                &arrow2::datatypes::DataType::LargeList(field.clone()),
+                Default::default(),
+            )
+            .unwrap()
+            .to_boxed(),
             _ => arrow_array,
         };
         let series = series::Series::try_from((name, arrow_array))?;

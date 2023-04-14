@@ -187,15 +187,20 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             //TODO(sammy): add time, struct related dtypes
             (Boolean, Float32) => Some(Float32),
             (Boolean, Float64) => Some(Float64),
+            (List(inner_left_field), List(inner_right_field)) => {
+                let inner_st = get_supertype(&inner_left_field.dtype, &inner_right_field.dtype)?;
+                Some(DataType::List(Box::new(Field::new(inner_left_field.name.clone(), inner_st))))
+            }
             // TODO(Clark): Add support for getting supertype for two fixed size lists once Arrow2 supports such a cast.
             // (FixedSizeList(inner_left_field, inner_left_size), FixedSizeList(inner_right_field, inner_right_size)) if inner_left_size == inner_right_size => {
             //     let inner_st = inner(&inner_left_field.dtype, &inner_right_field.dtype)?;
             //     Some(DataType::FixedSizeList(Box::new(Field::new(inner_left_field.name.clone(), inner_st)), *inner_left_size))
             // }
-            (FixedSizeList(inner_left_field, _inner_left_size), List(inner_right_field)) => {
-                let inner_st = get_supertype(&inner_left_field.dtype, &inner_right_field.dtype)?;
-                Some(DataType::List(Box::new(Field::new(inner_left_field.name.clone(), inner_st))))
-            }
+            // TODO(Clark): Add support for getting supertype for a fixed size list and a list once Arrow2 supports such a cast.
+            // (FixedSizeList(inner_left_field, _inner_left_size), List(inner_right_field)) => {
+            //     let inner_st = get_supertype(&inner_left_field.dtype, &inner_right_field.dtype)?;
+            //     Some(DataType::List(Box::new(Field::new(inner_left_field.name.clone(), inner_st))))
+            // }
 
             // every known type can be casted to a string except binary
             (dt, Utf8) if dt.ne(&Binary) => Some(Utf8),

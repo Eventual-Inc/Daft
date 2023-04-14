@@ -87,6 +87,10 @@ class DataType:
         return cls._from_pydatatype(PyDataType.date())
 
     @classmethod
+    def list(cls, name: str, dtype: DataType) -> DataType:
+        return cls._from_pydatatype(PyDataType.list(name, dtype._dtype))
+
+    @classmethod
     def fixed_size_list(cls, name: str, dtype: DataType, size: int) -> DataType:
         return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
 
@@ -118,14 +122,18 @@ class DataType:
             return cls.binary()
         elif pa.types.is_boolean(arrow_type):
             return cls.bool()
-        elif pa.types.is_fixed_size_list(arrow_type):
-            assert isinstance(arrow_type, pa.FixedSizeListType)
-            field = arrow_type.value_field
-            return cls.fixed_size_list(field.name, cls.from_arrow_type(field.type), arrow_type.list_size)
         elif pa.types.is_null(arrow_type):
             return cls.null()
         elif pa.types.is_date32(arrow_type):
             return cls.date()
+        elif pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
+            assert isinstance(arrow_type, (pa.ListType, pa.LargeListType))
+            field = arrow_type.value_field
+            return cls.list(field.name, cls.from_arrow_type(field.type))
+        elif pa.types.is_fixed_size_list(arrow_type):
+            assert isinstance(arrow_type, pa.FixedSizeListType)
+            field = arrow_type.value_field
+            return cls.fixed_size_list(field.name, cls.from_arrow_type(field.type), arrow_type.list_size)
         else:
             raise NotImplementedError(f"we cant convert arrow type: {arrow_type} to a daft type")
 
