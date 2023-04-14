@@ -101,13 +101,13 @@ class UDF:
         if isinstance(global_var, UDF):
             return self.__qualname__
 
-        # CASE 2: User function was not overriden by UDF
+        # CASE 2: User function was not overridden by UDF
         #
         # This is the case if a user wraps their function into a different variable: `f2 = udf(...)(f1)`
         #
         # Here self.__module__ and self.__qualname__ does NOT point to a UDF. It still points to the
-        # user's function and we can pickle the UDF as per how normal types are pickled.
-        return (UDF, (self.func, self.return_dtype))
+        # user's function and we can pickle the UDF as per how normal objects are pickled.
+        return super().__reduce__()
 
     def __call__(self, *args, **kwargs) -> Expression:
         bound_args = inspect.signature(self.func).bind(*args, **kwargs)
