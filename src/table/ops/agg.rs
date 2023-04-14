@@ -28,7 +28,7 @@ impl Table {
 
         // Get the unique group keys (by indices)
         // and the grouped values (also by indices, one array of indices per group).
-        let (groupkey_indices, groupvals_indices) = groupby_table.sort_grouper()?;
+        let (groupkey_indices, groupvals_indices) = groupby_table.hash_grouper()?;
 
         // Table with the aggregated (deduplicated) group keys.
         let groupkeys_table = {
@@ -136,19 +136,26 @@ impl Table {
         Ok((key_indices, values_indices))
     }
 
-    // fn hash_grouper(&self) -> DaftResult<(Vec<u64>, Vec<UInt64Array>)> {
-    //     // Group equal rows together.
-    //     //
-    //     // Given a table, returns a tuple:
-    //     // 1. Indices of the table, deduplicated.
-    //     // 2. Indices of the entire table, with identical values grouped.
-    //     //
-    //     // e.g. given a table [B, B, A, B, C, C]
-    //     // returns: (
-    //     //      [2, 0, 4]  <-- indices of A, B, and C
-    //     //      [[2], [0, 1, 3], [4, 5]]  <--- indices of all A, all B, all C
-    //     // )
-    //     let probe_table = self.to_probe_hash_table()?;
+    fn hash_grouper(&self) -> DaftResult<(Vec<u64>, Vec<UInt64Array>)> {
+        // Group equal rows together.
+        //
+        // Given a table, returns a tuple:
+        // 1. Indices of the table, deduplicated.
+        // 2. Indices of the entire table, with identical values grouped.
+        //
+        // e.g. given a table [B, B, A, B, C, C]
+        // returns: (
+        //      [2, 0, 4]  <-- indices of A, B, and C
+        //      [[2], [0, 1, 3], [4, 5]]  <--- indices of all A, all B, all C
+        // )
+        let probe_table = self.to_probe_hash_table()?;
+        let mut key_indices: Vec<u64> = Vec::with_capacity(probe_table.len());
+        let mut values_indices: Vec<UInt64Array> = Vec::with_capacity(probe_table.len());
 
-    // }
+        for (idx_hash, val_idx) in probe_table.into_iter() {
+            key_indices.push(idx_hash.idx);
+            values_indices.push(UInt64Array::from(("idx", val_idx)));
+        }
+        Ok((key_indices, values_indices))
+    }
 }
