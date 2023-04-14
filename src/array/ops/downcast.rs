@@ -64,6 +64,7 @@ impl Downcastable for DateArray {
 
 impl Downcastable for FixedSizeListArray {
     type Output = array::FixedSizeListArray;
+
     // downcasts a DataArray<T> to an Arrow Array.
     fn downcast(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
@@ -71,9 +72,11 @@ impl Downcastable for FixedSizeListArray {
 }
 
 #[cfg(feature = "python")]
-impl crate::datatypes::PythonArray {
+impl Downcastable for crate::datatypes::PythonArray {
+    type Output = crate::array::vec_backed::VecBackedArray<pyo3::PyObject>;
+
     // downcasts a DataArray<T> to a VecBackedArray of PyObject.
-    pub fn downcast(&self) -> &crate::array::vec_backed::VecBackedArray<pyo3::PyObject> {
+    fn downcast(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
 }

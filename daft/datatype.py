@@ -79,16 +79,16 @@ class DataType:
         return cls._from_pydatatype(PyDataType.binary())
 
     @classmethod
-    def fixed_size_list(cls, name: str, dtype: DataType, size: int) -> DataType:
-        return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
-
-    @classmethod
     def null(cls) -> DataType:
         return cls._from_pydatatype(PyDataType.null())
 
     @classmethod
     def date(cls) -> DataType:
         return cls._from_pydatatype(PyDataType.date())
+
+    @classmethod
+    def fixed_size_list(cls, name: str, dtype: DataType, size: int) -> DataType:
+        return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:

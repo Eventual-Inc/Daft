@@ -10,6 +10,7 @@ use crate::{
 };
 
 use super::datatype::PyDataType;
+use crate::array::ops::downcast::Downcastable;
 
 #[pyclass]
 #[derive(Clone)]

@@ -192,9 +192,9 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             //     let inner_st = inner(&inner_left_field.dtype, &inner_right_field.dtype)?;
             //     Some(DataType::FixedSizeList(Box::new(Field::new(inner_left_field.name.clone(), inner_st)), *inner_left_size))
             // }
-            (FixedSizeList(inner_left_field, inner_left_size), List(inner_right_field)) => {
-                let inner_st = inner(&inner_left_field.dtype, &inner_right_field.dtype)?;
-                Some(DataType::FixedSizeList(Box::new(Field::new(inner_left_field.name.clone(), inner_st)), *inner_left_size))
+            (FixedSizeList(inner_left_field, _inner_left_size), List(inner_right_field)) => {
+                let inner_st = get_supertype(&inner_left_field.dtype, &inner_right_field.dtype)?;
+                Some(DataType::List(Box::new(Field::new(inner_left_field.name.clone(), inner_st))))
             }
 
             // every known type can be casted to a string except binary
