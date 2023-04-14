@@ -2,9 +2,7 @@ use arrow2::bitmap::Bitmap;
 
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{
-        BinaryArray, BooleanArray, DaftDataType, DaftNumericType, NullArray, PythonArray, Utf8Array,
-    },
+    datatypes::{BinaryArray, BooleanArray, DaftDataType, DaftNumericType, NullArray, Utf8Array},
 };
 
 impl<T> DataArray<T>
@@ -74,8 +72,23 @@ impl NullArray {
     }
 }
 
-impl PythonArray {
+#[cfg(feature = "python")]
+impl crate::datatypes::PythonArray {
     pub fn size_bytes(&self) -> usize {
-        todo!("[RUST-INT][PY]")
+        use pyo3::prelude::*;
+        use pyo3::types::PyList;
+
+        let vector = self.downcast().vec();
+        Python::with_gil(|py| {
+            let daft_utils = PyModule::import(py, "daft.utils").unwrap();
+            let estimate_size_bytes_pylist =
+                daft_utils.getattr("estimate_size_bytes_pylist").unwrap();
+            let size_bytes: usize = estimate_size_bytes_pylist
+                .call1((PyList::new(py, vector),))
+                .unwrap()
+                .extract()
+                .unwrap();
+            size_bytes
+        })
     }
 }
