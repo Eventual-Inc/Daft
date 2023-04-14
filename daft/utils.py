@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pickle
+import random
+import statistics
 from typing import Any
 
 
@@ -32,3 +35,24 @@ def freeze(input: dict | list | Any) -> frozenset | tuple | Any:
 
     else:
         return input
+
+
+def estimate_size_bytes_pylist(pylist: list) -> int:
+    """Estimate the size of this list by sampling and pickling its objects."""
+    if len(pylist) == 0:
+        return 0
+
+    # The pylist is non-empty.
+    # Sample up to 100 of the items (to keep the operation fast) to determine total size.
+    sample_quantity = min(len(pylist), 100)
+
+    samples = random.sample(pylist, sample_quantity)
+    sample_sizes = [len(pickle.dumps(sample)) for sample in samples]
+
+    if sample_quantity == len(pylist):
+        return sum(sample_sizes)
+
+    mean, stdev = statistics.mean(sample_sizes), statistics.stdev(sample_sizes)
+    one_item_size_estimate = int(mean + stdev)
+
+    return one_item_size_estimate * len(pylist)
