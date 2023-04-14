@@ -1,8 +1,5 @@
 use std::{
-    collections::{
-        hash_map::{Entry, RawEntryMut},
-        HashMap,
-    },
+    collections::{hash_map::RawEntryMut, HashMap},
     hash::{BuildHasherDefault, Hash, Hasher},
 };
 
@@ -83,7 +80,7 @@ impl Table {
             let entry = probe_table.raw_entry_mut().from_hash(*h, |other| {
                 (*h == other.hash) && {
                     let j = other.idx;
-                    comparator(i as usize, j as usize)
+                    comparator(i, j as usize)
                 }
             });
             match entry {
