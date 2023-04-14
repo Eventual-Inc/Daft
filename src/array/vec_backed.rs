@@ -10,15 +10,19 @@ pub struct VecBackedArray<T> {
     // validity: Option<Bitmap>,
 }
 
-impl<T> VecBackedArray<T> {
+impl<T: Clone> VecBackedArray<T> {
     pub fn new(values: Vec<T>) -> Self {
         VecBackedArray { values }
     }
     pub fn vec(&self) -> &Vec<T> {
         &self.values
     }
-    pub fn concatenate(_arrays: Vec<&Self>) -> Self {
-        todo!()
+    pub fn concatenate(arrays: Vec<&Self>) -> Self {
+        let mut concatenated_values: Vec<T> = Vec::new();
+        for array in arrays {
+            concatenated_values.extend_from_slice(array.vec());
+        }
+        VecBackedArray::new(concatenated_values)
     }
 }
 
