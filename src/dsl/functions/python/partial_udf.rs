@@ -57,11 +57,8 @@ impl<'de> Deserialize<'de> for PartialUDF {
     }
 }
 
-impl<Rhs> PartialEq<Rhs> for PartialUDF {
-    fn eq(&self, _other: &Rhs) -> bool {
-        Python::with_gil(|_py| {
-            // TODO: Call __eq__
-            todo!();
-        })
+impl PartialEq for PartialUDF {
+    fn eq(&self, other: &Self) -> bool {
+        Python::with_gil(|py| self.0.as_ref(py).eq(other.0.as_ref(py)).unwrap())
     }
 }
