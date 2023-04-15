@@ -9,6 +9,8 @@ use crate::{
 use std::ops::Not;
 
 use super::{DaftCompare, DaftLogical};
+
+use super::downcast::Downcastable;
 use arrow2::{compute::comparison, scalar::PrimitiveScalar};
 
 fn arrow_bitmap_validity(

@@ -4,6 +4,8 @@ use crate::{
     error::DaftResult,
 };
 
+use super::downcast::Downcastable;
+
 impl<T> DataArray<T>
 where
     T: DaftNumericType,

@@ -6,6 +6,8 @@ use crate::{array::DataArray, datatypes::*, error::DaftResult};
 
 use super::{DaftCountAggable, DaftMeanAggable, DaftSumAggable};
 
+use super::downcast::Downcastable;
+
 impl DaftMeanAggable for &DataArray<Float64Type> {
     type Output = DaftResult<DataArray<Float64Type>>;
 

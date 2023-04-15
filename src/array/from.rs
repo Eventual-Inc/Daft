@@ -85,14 +85,6 @@ impl<T: DaftDataType> TryFrom<(&str, Box<dyn arrow2::array::Array>)> for DataArr
 
     fn try_from(item: (&str, Box<dyn arrow2::array::Array>)) -> DaftResult<Self> {
         let (name, array) = item;
-        let self_arrow_type = T::get_dtype().to_arrow().unwrap();
-        if !array.data_type().eq(&self_arrow_type) {
-            return Err(DaftError::TypeError(format!(
-                "mismatch in expected data type {:?} vs {:?}",
-                array.data_type(),
-                self_arrow_type
-            )));
-        }
         DataArray::new(Field::new(name, array.data_type().into()).into(), array)
     }
 }

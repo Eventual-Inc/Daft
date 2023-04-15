@@ -3,51 +3,90 @@ use arrow2::array;
 
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BinaryArray, BooleanArray, DaftNumericType, DateArray, Utf8Array},
+    datatypes::{
+        BinaryArray, BooleanArray, DaftNumericType, DateArray, FixedSizeListArray, ListArray,
+        Utf8Array,
+    },
 };
 
-impl<T> DataArray<T>
+pub trait Downcastable {
+    type Output;
+
+    fn downcast(&self) -> &Self::Output;
+}
+
+impl<T> Downcastable for DataArray<T>
 where
     T: DaftNumericType,
 {
+    type Output = array::PrimitiveArray<T::Native>;
+
     // downcasts a DataArray<T> to an Arrow PrimitiveArray.
-    pub fn downcast(&self) -> &array::PrimitiveArray<T::Native> {
+    fn downcast(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
 }
 
-impl Utf8Array {
+impl Downcastable for Utf8Array {
+    type Output = array::Utf8Array<i64>;
+
     // downcasts a DataArray<T> to an Arrow Utf8Array.
-    pub fn downcast(&self) -> &array::Utf8Array<i64> {
+    fn downcast(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
 }
 
-impl BooleanArray {
+impl Downcastable for BooleanArray {
+    type Output = array::BooleanArray;
+
     // downcasts a DataArray<T> to an Arrow BooleanArray.
-    pub fn downcast(&self) -> &array::BooleanArray {
+    fn downcast(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
 }
 
-impl BinaryArray {
+impl Downcastable for BinaryArray {
+    type Output = array::BinaryArray<i64>;
+
     // downcasts a DataArray<T> to an Arrow BinaryArray.
-    pub fn downcast(&self) -> &array::BinaryArray<i64> {
+    fn downcast(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
 }
 
-impl DateArray {
+impl Downcastable for DateArray {
+    type Output = array::PrimitiveArray<i32>;
+
     // downcasts a DataArray<T> to an Arrow DateArray.
-    pub fn downcast(&self) -> &array::PrimitiveArray<i32> {
+    fn downcast(&self) -> &Self::Output {
+        self.data().as_any().downcast_ref().unwrap()
+    }
+}
+
+impl Downcastable for ListArray {
+    type Output = array::ListArray<i64>;
+
+    // downcasts a DataArray<T> to an Arrow ListArray.
+    fn downcast(&self) -> &Self::Output {
+        self.data().as_any().downcast_ref().unwrap()
+    }
+}
+
+impl Downcastable for FixedSizeListArray {
+    type Output = array::FixedSizeListArray;
+
+    // downcasts a DataArray<T> to an Arrow FixedSizeListArray.
+    fn downcast(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
 }
 
 #[cfg(feature = "python")]
-impl crate::datatypes::PythonArray {
+impl Downcastable for crate::datatypes::PythonArray {
+    type Output = crate::array::vec_backed::VecBackedArray<pyo3::PyObject>;
+
     // downcasts a DataArray<T> to a VecBackedArray of PyObject.
-    pub fn downcast(&self) -> &crate::array::vec_backed::VecBackedArray<pyo3::PyObject> {
+    fn downcast(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
 }
