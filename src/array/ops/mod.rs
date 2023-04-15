@@ -92,6 +92,7 @@ pub trait DaftSumAggable {
 pub trait DaftMeanAggable {
     type Output;
     fn mean(&self) -> Self::Output;
+    fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftCompareAggable {
