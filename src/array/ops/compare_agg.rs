@@ -8,6 +8,8 @@ use crate::{
 
 use super::DaftCompareAggable;
 
+use super::downcast::Downcastable;
+
 impl<T> DaftCompareAggable for &DataArray<T>
 where
     T: DaftDataType + DaftNumericType,

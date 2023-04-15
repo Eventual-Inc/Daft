@@ -11,6 +11,8 @@ use crate::{
     table::Table,
 };
 
+use crate::array::ops::downcast::Downcastable;
+
 #[derive(Default)]
 pub struct IdentityHasher {
     hash: u64,

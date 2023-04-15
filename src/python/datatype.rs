@@ -1,4 +1,4 @@
-use crate::datatypes::DataType;
+use crate::datatypes::{DataType, Field};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -102,6 +102,26 @@ impl PyDataType {
     #[staticmethod]
     pub fn date() -> PyResult<Self> {
         Ok(DataType::Date.into())
+    }
+
+    #[staticmethod]
+    pub fn list(name: &str, data_type: Self) -> PyResult<Self> {
+        Ok(DataType::List(Box::new(Field::new(name, data_type.dtype))).into())
+    }
+
+    #[staticmethod]
+    pub fn fixed_size_list(name: &str, data_type: Self, size: i64) -> PyResult<Self> {
+        if size <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "The size for fixed-size list types must be a positive integer, but got: {}",
+                size
+            )));
+        }
+        Ok(DataType::FixedSizeList(
+            Box::new(Field::new(name, data_type.dtype)),
+            usize::try_from(size)?,
+        )
+        .into())
     }
 
     #[staticmethod]

@@ -4,6 +4,8 @@ use arrow2;
 
 use crate::error::{DaftError, DaftResult};
 
+use super::downcast::Downcastable;
+
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
         self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| data.ends_with(pat))

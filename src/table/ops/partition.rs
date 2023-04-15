@@ -11,6 +11,8 @@ use crate::{
     table::Table,
 };
 
+use crate::array::ops::downcast::Downcastable;
+
 impl Table {
     fn partition_by_index(
         &self,

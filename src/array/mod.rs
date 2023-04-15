@@ -92,7 +92,7 @@ where
                 "Trying to slice array with negative length, start: {start} vs end: {end}"
             )));
         }
-        let sliced = self.data.slice(start, end - start);
+        let sliced = self.data.sliced(start, end - start);
         Self::new(self.field.clone(), sliced)
     }
 

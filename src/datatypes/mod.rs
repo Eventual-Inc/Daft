@@ -23,7 +23,24 @@ pub trait DaftDataType: Sync + Send {
         Self: Sized;
 }
 
-macro_rules! impl_daft_datatype {
+pub trait DaftArrowBackedType: Send + Sync + DaftDataType {}
+
+macro_rules! impl_daft_arrow_datatype {
+    ($ca:ident, $variant:ident) => {
+        pub struct $ca {}
+
+        impl DaftDataType for $ca {
+            #[inline]
+            fn get_dtype() -> DataType {
+                DataType::$variant
+            }
+        }
+
+        impl DaftArrowBackedType for $ca {}
+    };
+}
+
+macro_rules! impl_daft_non_arrow_datatype {
     ($ca:ident, $variant:ident) => {
         pub struct $ca {}
 
@@ -36,29 +53,29 @@ macro_rules! impl_daft_datatype {
     };
 }
 
-impl_daft_datatype!(NullType, Null);
-impl_daft_datatype!(BooleanType, Boolean);
-impl_daft_datatype!(Int8Type, Int8);
-impl_daft_datatype!(Int16Type, Int16);
-impl_daft_datatype!(Int32Type, Int32);
-impl_daft_datatype!(Int64Type, Int64);
-impl_daft_datatype!(UInt8Type, UInt8);
-impl_daft_datatype!(UInt16Type, UInt16);
-impl_daft_datatype!(UInt32Type, UInt32);
-impl_daft_datatype!(UInt64Type, UInt64);
-impl_daft_datatype!(Float16Type, Float16);
-impl_daft_datatype!(Float32Type, Float32);
-impl_daft_datatype!(Float64Type, Float64);
-impl_daft_datatype!(TimestampType, Unknown);
-impl_daft_datatype!(DateType, Date);
-impl_daft_datatype!(TimeType, Unknown);
-impl_daft_datatype!(DurationType, Unknown);
-impl_daft_datatype!(BinaryType, Binary);
-impl_daft_datatype!(Utf8Type, Utf8);
-impl_daft_datatype!(FixedSizeListType, Unknown);
-impl_daft_datatype!(ListType, Unknown);
-impl_daft_datatype!(StructType, Unknown);
-impl_daft_datatype!(PythonType, Python);
+impl_daft_arrow_datatype!(NullType, Null);
+impl_daft_arrow_datatype!(BooleanType, Boolean);
+impl_daft_arrow_datatype!(Int8Type, Int8);
+impl_daft_arrow_datatype!(Int16Type, Int16);
+impl_daft_arrow_datatype!(Int32Type, Int32);
+impl_daft_arrow_datatype!(Int64Type, Int64);
+impl_daft_arrow_datatype!(UInt8Type, UInt8);
+impl_daft_arrow_datatype!(UInt16Type, UInt16);
+impl_daft_arrow_datatype!(UInt32Type, UInt32);
+impl_daft_arrow_datatype!(UInt64Type, UInt64);
+impl_daft_arrow_datatype!(Float16Type, Float16);
+impl_daft_arrow_datatype!(Float32Type, Float32);
+impl_daft_arrow_datatype!(Float64Type, Float64);
+impl_daft_arrow_datatype!(TimestampType, Unknown);
+impl_daft_arrow_datatype!(DateType, Date);
+impl_daft_arrow_datatype!(TimeType, Unknown);
+impl_daft_arrow_datatype!(DurationType, Unknown);
+impl_daft_arrow_datatype!(BinaryType, Binary);
+impl_daft_arrow_datatype!(Utf8Type, Utf8);
+impl_daft_arrow_datatype!(FixedSizeListType, Unknown);
+impl_daft_arrow_datatype!(ListType, Unknown);
+impl_daft_arrow_datatype!(StructType, Unknown);
+impl_daft_non_arrow_datatype!(PythonType, Python);
 
 pub trait NumericNative:
     PartialOrd

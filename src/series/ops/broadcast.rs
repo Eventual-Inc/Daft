@@ -1,5 +1,6 @@
 use crate::{error::DaftResult, series::Series, with_match_physical_daft_types};
 
+use crate::array::ops::broadcast::Broadcastable;
 use crate::array::BaseArray;
 
 impl Series {

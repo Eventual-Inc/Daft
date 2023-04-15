@@ -10,14 +10,13 @@ impl Series {
     where
         T: DaftDataType + 'static,
     {
-        if self.data_type().eq(&T::get_dtype()) {
-            Ok(self.array().as_any().downcast_ref().unwrap())
-        } else {
-            Err(DaftError::SchemaMismatch(format!(
+        match self.array().as_any().downcast_ref() {
+            Some(arr) => Ok(arr),
+            None => Err(DaftError::SchemaMismatch(format!(
                 "{:?} not {:?}",
                 self.data_type(),
                 T::get_dtype()
-            )))
+            ))),
         }
     }
 
