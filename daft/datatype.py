@@ -92,6 +92,8 @@ class DataType:
 
     @classmethod
     def fixed_size_list(cls, name: str, dtype: DataType, size: int) -> DataType:
+        if not isinstance(size, int) or size <= 0:
+            raise ValueError("The size for a fixed-size list must be a positive integer, but got: ", size)
         return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
 
     @classmethod
