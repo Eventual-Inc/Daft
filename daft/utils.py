@@ -43,16 +43,28 @@ def estimate_size_bytes_pylist(pylist: list) -> int:
         return 0
 
     # The pylist is non-empty.
-    # Sample up to 100 of the items (to keep the operation fast) to determine total size.
-    sample_quantity = min(len(pylist), 100)
+    # Sample up to 1MB or 10000 items to determine total size.
+    MAX_SAMPLE_QUANTITY = 10000
+    MAX_SAMPLE_SIZE = 1024 * 1024
 
-    samples = random.sample(pylist, sample_quantity)
-    sample_sizes = [len(pickle.dumps(sample)) for sample in samples]
+    sample_candidates = random.sample(pylist, min(len(pylist), MAX_SAMPLE_QUANTITY))
 
-    if sample_quantity == len(pylist):
-        return sum(sample_sizes)
+    sampled_sizes = []
+    sample_size_allowed = MAX_SAMPLE_SIZE
+    for sample in sample_candidates:
+        size = len(pickle.dumps(sample))
+        sampled_sizes.append(size)
+        sample_size_allowed -= size
+        if sample_size_allowed <= 0:
+            break
 
-    mean, stdev = statistics.mean(sample_sizes), statistics.stdev(sample_sizes)
+    # Sampling complete.
+    # If we ended up measuring the entire list, just return the exact value.
+    if len(sampled_sizes) == len(pylist):
+        return sum(sampled_sizes)
+
+    # Otherwise, reduce to a one-item estimate and extrapolate.
+    mean, stdev = statistics.mean(sampled_sizes), statistics.stdev(sampled_sizes)
     one_item_size_estimate = int(mean + stdev)
 
     return one_item_size_estimate * len(pylist)
