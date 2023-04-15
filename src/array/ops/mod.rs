@@ -86,6 +86,7 @@ pub trait DaftCountAggable {
 pub trait DaftSumAggable {
     type Output;
     fn sum(&self) -> Self::Output;
+    fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftMeanAggable {
