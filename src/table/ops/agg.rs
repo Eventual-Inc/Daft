@@ -1,8 +1,11 @@
 use crate::{
-    array::{ops::arrow2::comparison::build_multi_array_is_equal, BaseArray},
+    array::{
+        ops::{arrow2::comparison::build_multi_array_is_equal, GroupIndices},
+        BaseArray,
+    },
     datatypes::{UInt64Array, UInt64Type},
-    dsl::Expr,
-    error::DaftResult,
+    dsl::{AggExpr, Expr},
+    error::{DaftError, DaftResult},
     series::Series,
     table::Table,
 };
@@ -38,34 +41,41 @@ impl Table {
         drop(groupby_table);
 
         // Table with the aggregated values, one row for each group.
-        let agged_values_table = {
-            // Agg each group into its own table.
-            let mut agged_groups: Vec<Self> = vec![];
-            for group_indices_array in groupvals_indices.iter() {
-                let group = {
-                    let indices_as_arrow = group_indices_array.downcast();
-                    let indices_as_series =
-                        UInt64Array::from(("", Box::new(indices_as_arrow.clone()))).into_series();
-                    self.take(&indices_as_series)?
-                };
-                let agged_group = group.agg_global(to_agg)?;
-                agged_groups.push(agged_group.to_owned());
-            }
+        // let agged_values_table = {
+        //     // Agg each group into its own table.
+        //     let mut agged_groups: Vec<Self> = vec![];
+        //     for group_indices_array in groupvals_indices.iter() {
+        //         let group = {
+        //             let indices_as_arrow = group_indices_array.downcast();
+        //             let indices_as_series =
+        //                 UInt64Array::from(("", Box::new(indices_as_arrow.clone()))).into_series();
+        //             self.take(&indices_as_series)?
+        //         };
+        //         let agged_group = group.agg_global(to_agg)?;
+        //         agged_groups.push(agged_group.to_owned());
+        //     }
 
-            match agged_groups.len() {
-                0 => self.head(0)?.agg_global(to_agg)?.head(0)?,
-                _ => Self::concat(agged_groups.iter().collect::<Vec<&Self>>().as_slice())?,
-            }
-        };
+        //     match agged_groups.len() {
+        //         0 => self.head(0)?.agg_global(to_agg)?.head(0)?,
+        //         _ => Self::concat(agged_groups.iter().collect::<Vec<&Self>>().as_slice())?,
+        //     }
+        // };
+        let agg_exprs = to_agg
+            .iter()
+            .map(|e| match e {
+                Expr::Agg(e) => Ok(e),
+                _ => Err(DaftError::ValueError(format!(
+                    "Trying to run non-Agg expression in Grouped Agg! {e}"
+                ))),
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
 
+        let grouped_cols = agg_exprs
+            .iter()
+            .map(|e| self.eval_grouped_agg_expression(e, &groupvals_indices))
+            .collect::<DaftResult<Vec<_>>>()?;
         // Combine the groupkey columns and the aggregation result columns.
-        Self::from_columns(
-            [
-                &groupkeys_table.columns[..],
-                &agged_values_table.columns[..],
-            ]
-            .concat(),
-        )
+        Self::from_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
     }
 
     fn sort_grouper(&self) -> DaftResult<(Vec<u64>, Vec<UInt64Array>)> {
@@ -135,7 +145,7 @@ impl Table {
         Ok((key_indices, values_indices))
     }
 
-    fn hash_grouper(&self) -> DaftResult<(Vec<u64>, Vec<UInt64Array>)> {
+    fn hash_grouper(&self) -> DaftResult<(Vec<u64>, GroupIndices)> {
         // Group equal rows together.
         //
         // Given a table, returns a tuple:

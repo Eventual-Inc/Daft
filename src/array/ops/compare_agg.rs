@@ -1,55 +1,64 @@
-use arrow2::{self, array::{Array}};
+use super::{DaftCompareAggable, GroupIndices};
 use crate::{
     array::{BaseArray, DataArray},
     datatypes::*,
     error::DaftResult,
 };
 use arrow2::array::PrimitiveArray;
-use super::{DaftCompareAggable, GroupIndices}; 
+use arrow2::{self, array::Array};
 
-fn grouped_cmp_native<T, F>(data_array: &DataArray<T>, op: F, groups: &GroupIndices) -> DaftResult<DataArray<T>>
-where 
+fn grouped_cmp_native<T, F>(
+    data_array: &DataArray<T>,
+    op: F,
+    groups: &GroupIndices,
+) -> DaftResult<DataArray<T>>
+where
     T: DaftNumericType,
-    F: Fn(T::Native, T::Native) -> T::Native
+    F: Fn(T::Native, T::Native) -> T::Native,
 {
     let arrow_array = data_array.downcast();
     let cmp_per_group = if arrow_array.null_count() > 0 {
-        let cmp_values_iter = groups.iter().map(
-            |g| {
-                let reduced_val = g.downcast().values_iter().map(|i| {
-                    let idx = *i as usize; 
+        let cmp_values_iter = groups.iter().map(|g| {
+            let reduced_val = g
+                .downcast()
+                .values_iter()
+                .map(|i| {
+                    let idx = *i as usize;
                     match arrow_array.is_null(idx) {
-                        false => Some(unsafe {arrow_array.value_unchecked(idx)}),
-                        true => None
+                        false => Some(unsafe { arrow_array.value_unchecked(idx) }),
+                        true => None,
                     }
-                }).reduce(|l, r| {
-                    match (l, r) {
-                        (None, None) => None,
-                        (None, Some(r)) => Some(r),
-                        (Some(l), None) => Some(l),
-                        (Some(l), Some(r)) => Some(op(l, r))
-                    }
+                })
+                .reduce(|l, r| match (l, r) {
+                    (None, None) => None,
+                    (None, Some(r)) => Some(r),
+                    (Some(l), None) => Some(l),
+                    (Some(l), Some(r)) => Some(op(l, r)),
                 });
-                match reduced_val {
-                    None => None,
-                    Some(v) => v
-                }
+            match reduced_val {
+                None => None,
+                Some(v) => v,
             }
-        );
+        });
         Box::new(PrimitiveArray::from_trusted_len_iter(cmp_values_iter))
     } else {
         Box::new(PrimitiveArray::from_trusted_len_values_iter(
             groups.iter().map(|g| {
                 g.downcast()
-                    .values_iter().map(|i| {
-                        let idx = *i as usize; 
-                        unsafe {arrow_array.value_unchecked(idx)}
-                    }).reduce(|l, r| op(l, r)).unwrap()
+                    .values_iter()
+                    .map(|i| {
+                        let idx = *i as usize;
+                        unsafe { arrow_array.value_unchecked(idx) }
+                    })
+                    .reduce(|l, r| op(l, r))
+                    .unwrap()
             }),
         ))
     };
-    Ok(DataArray::from((data_array.field.name.as_ref(), cmp_per_group)))
-
+    Ok(DataArray::from((
+        data_array.field.name.as_ref(),
+        cmp_per_group,
+    )))
 }
 
 
@@ -82,70 +91,81 @@ where
         DataArray::new(self.field.clone(), arrow_array)
     }
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
-        grouped_cmp_native(self, |l,r| 
-            {
-                match l.lt(&r) {
-                    true => l,
-                    false => r
-                }
-            }, groups)
+        grouped_cmp_native(
+            self,
+            |l, r| match l.lt(&r) {
+                true => l,
+                false => r,
+            },
+            groups,
+        )
     }
 
     fn grouped_max(&self, groups: &GroupIndices) -> Self::Output {
-        grouped_cmp_native(self, |l,r| 
-            {
-                match l.gt(&r) {
-                    true => l,
-                    false => r,
-                }
-            }, groups)
+        grouped_cmp_native(
+            self,
+            |l, r| match l.gt(&r) {
+                true => l,
+                false => r,
+            },
+            groups,
+        )
     }
-
-
 }
 
-fn grouped_cmp_utf8<'a, F>(data_array: &'a Utf8Array, op: F, groups: &GroupIndices) -> DaftResult<Utf8Array>
-where 
-    F: Fn(&'a str, &'a str) -> &'a str
+fn grouped_cmp_utf8<'a, F>(
+    data_array: &'a Utf8Array,
+    op: F,
+    groups: &GroupIndices,
+) -> DaftResult<Utf8Array>
+where
+    F: Fn(&'a str, &'a str) -> &'a str,
 {
     let arrow_array = data_array.downcast();
     let cmp_per_group = if arrow_array.null_count() > 0 {
-        let cmp_values_iter = groups.iter().map(
-            |g| {
-                let reduced_val = g.downcast().values_iter().map(|i| {
-                    let idx = *i as usize; 
+        let cmp_values_iter = groups.iter().map(|g| {
+            let reduced_val = g
+                .downcast()
+                .values_iter()
+                .map(|i| {
+                    let idx = *i as usize;
                     match arrow_array.is_null(idx) {
-                        false => Some(unsafe {arrow_array.value_unchecked(idx)}),
-                        true => None
+                        false => Some(unsafe { arrow_array.value_unchecked(idx) }),
+                        true => None,
                     }
-                }).reduce(|l, r| {
-                    match (l, r) {
-                        (None, None) => None,
-                        (None, Some(r)) => Some(r),
-                        (Some(l), None) => Some(l),
-                        (Some(l), Some(r)) => Some(op(l, r))
-                    }
+                })
+                .reduce(|l, r| match (l, r) {
+                    (None, None) => None,
+                    (None, Some(r)) => Some(r),
+                    (Some(l), None) => Some(l),
+                    (Some(l), Some(r)) => Some(op(l, r)),
                 });
-                match reduced_val {
-                    None => None,
-                    Some(v) => v
-                }
+            match reduced_val {
+                None => None,
+                Some(v) => v,
             }
-        );
-        Box::new(arrow2::array::Utf8Array::<i64>::from_trusted_len_iter(cmp_values_iter))
-    } else {
-        Box::new(arrow2::array::Utf8Array::<i64>::from_trusted_len_values_iter(
-            groups.iter().map(|g| {
-                g.downcast()
-                    .values_iter().map(|i| {
-                        let idx = *i as usize; 
-                        unsafe {arrow_array.value_unchecked(idx)}
-                    }).reduce(|l, r| op(l, r)).unwrap()
-            }),
+        });
+        Box::new(arrow2::array::Utf8Array::<i64>::from_trusted_len_iter(
+            cmp_values_iter,
         ))
+    } else {
+        Box::new(
+            arrow2::array::Utf8Array::<i64>::from_trusted_len_values_iter(groups.iter().map(|g| {
+                g.downcast()
+                    .values_iter()
+                    .map(|i| {
+                        let idx = *i as usize;
+                        unsafe { arrow_array.value_unchecked(idx) }
+                    })
+                    .reduce(|l, r| op(l, r))
+                    .unwrap()
+            })),
+        )
     };
-    Ok(DataArray::from((data_array.field.name.as_ref(), cmp_per_group)))
-
+    Ok(DataArray::from((
+        data_array.field.name.as_ref(),
+        cmp_per_group,
+    )))
 }
 
 impl DaftCompareAggable for &DataArray<Utf8Type> {
@@ -170,60 +190,69 @@ impl DaftCompareAggable for &DataArray<Utf8Type> {
     }
 
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
-        grouped_cmp_utf8(self, |l,r|  l.min(r), groups)
+        grouped_cmp_utf8(self, |l, r| l.min(r), groups)
     }
 
     fn grouped_max(&self, groups: &GroupIndices) -> Self::Output {
-        grouped_cmp_utf8(self, |l,r| l.max(r), groups)
+        grouped_cmp_utf8(self, |l, r| l.max(r), groups)
     }
 }
 
-
-fn grouped_cmp_bool(data_array: &BooleanArray, val_to_find: bool, groups: &GroupIndices) -> DaftResult<BooleanArray> {
+fn grouped_cmp_bool(
+    data_array: &BooleanArray,
+    val_to_find: bool,
+    groups: &GroupIndices,
+) -> DaftResult<BooleanArray> {
     let arrow_array = data_array.downcast();
     let cmp_per_group = if arrow_array.null_count() > 0 {
-        let cmp_values_iter = groups.iter().map(
-            |g| {
-                let reduced_val = g.downcast().values_iter().map(|i| {
-                    let idx = *i as usize; 
+        let cmp_values_iter = groups.iter().map(|g| {
+            let reduced_val = g
+                .downcast()
+                .values_iter()
+                .map(|i| {
+                    let idx = *i as usize;
                     match arrow_array.is_null(idx) {
-                        false => Some(unsafe {arrow_array.value_unchecked(idx)}),
-                        true => None
+                        false => Some(unsafe { arrow_array.value_unchecked(idx) }),
+                        true => None,
                     }
-                }).reduce(|l, r| {
-                    match (l, r) {
-                        (None, None) => None,
-                        (None, Some(r)) => Some(r),
-                        (Some(l), None) => Some(l),
-                        (Some(l), Some(r)) => Some((l | r) ^ val_to_find)
-                    }
+                })
+                .reduce(|l, r| match (l, r) {
+                    (None, None) => None,
+                    (None, Some(r)) => Some(r),
+                    (Some(l), None) => Some(l),
+                    (Some(l), Some(r)) => Some((l | r) ^ val_to_find),
                 });
-                match reduced_val {
-                    None => None,
-                    Some(v) => v
-                }
+            match reduced_val {
+                None => None,
+                Some(v) => v,
             }
-        );
-        Box::new(arrow2::array::BooleanArray::from_trusted_len_iter(cmp_values_iter))
+        });
+        Box::new(arrow2::array::BooleanArray::from_trusted_len_iter(
+            cmp_values_iter,
+        ))
     } else {
         Box::new(arrow2::array::BooleanArray::from_trusted_len_values_iter(
             groups.iter().map(|g| {
-                let reduced_val = g.downcast()
-                    .values_iter().map(|i| {
-                        let idx = *i as usize; 
-                        unsafe {arrow_array.value_unchecked(idx)}
-                    }).find(|v| *v == val_to_find);
+                let reduced_val = g
+                    .downcast()
+                    .values_iter()
+                    .map(|i| {
+                        let idx = *i as usize;
+                        unsafe { arrow_array.value_unchecked(idx) }
+                    })
+                    .find(|v| *v == val_to_find);
                 match reduced_val {
                     None => !val_to_find,
-                    Some(v) => val_to_find
+                    Some(v) => v,
                 }
             }),
         ))
     };
-    Ok(DataArray::from((data_array.field.name.as_ref(), cmp_per_group)))
-
+    Ok(DataArray::from((
+        data_array.field.name.as_ref(),
+        cmp_per_group,
+    )))
 }
-
 
 impl DaftCompareAggable for &DataArray<BooleanType> {
     type Output = DaftResult<DataArray<BooleanType>>;
@@ -251,10 +280,8 @@ impl DaftCompareAggable for &DataArray<BooleanType> {
     }
 
     fn grouped_max(&self, groups: &GroupIndices) -> Self::Output {
-        grouped_cmp_bool(self,  true, groups)
+        grouped_cmp_bool(self, true, groups)
     }
-
-
 }
 
 impl DaftCompareAggable for &DataArray<NullType> {
@@ -271,11 +298,10 @@ impl DaftCompareAggable for &DataArray<NullType> {
     }
 
     fn grouped_min(&self, groups: &super::GroupIndices) -> Self::Output {
-        Ok(DataArray::full_null(self.name(), groups.len()))
+        Ok(DataArray::full_null(self.name(),self.data_type(), groups.len()))
     }
 
     fn grouped_max(&self, groups: &super::GroupIndices) -> Self::Output {
-        Ok(DataArray::full_null(self.name(), groups.len()))
+        Ok(DataArray::full_null(self.name(), self.data_type(), groups.len()))
     }
-
 }

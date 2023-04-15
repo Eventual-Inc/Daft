@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter, Result};
 
 use num_traits::ToPrimitive;
 
+use crate::array::ops::GroupIndices;
 use crate::array::BaseArray;
 use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
 use crate::dsl::functions::FunctionEvaluator;
@@ -250,6 +251,21 @@ impl Table {
             Mean(expr) => Series::mean(&self.eval_expression(expr)?),
             Min(expr) => Series::min(&self.eval_expression(expr)?),
             Max(expr) => Series::max(&self.eval_expression(expr)?),
+        }
+    }
+
+    fn eval_grouped_agg_expression(
+        &self,
+        agg_expr: &AggExpr,
+        groups: &GroupIndices,
+    ) -> DaftResult<Series> {
+        use crate::dsl::AggExpr::*;
+        match agg_expr {
+            Count(expr) => Series::grouped_count(&self.eval_expression(expr)?, groups),
+            Sum(expr) => Series::grouped_sum(&self.eval_expression(expr)?, groups),
+            Mean(expr) => Series::grouped_mean(&self.eval_expression(expr)?, groups),
+            Min(expr) => Series::grouped_min(&self.eval_expression(expr)?, groups),
+            Max(expr) => Series::grouped_max(&self.eval_expression(expr)?, groups),
         }
     }
 

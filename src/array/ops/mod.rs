@@ -75,7 +75,7 @@ pub trait DaftIsNan {
     fn is_nan(&self) -> Self::Output;
 }
 
-type GroupIndices = Vec<UInt64Array>;
+pub type GroupIndices = Vec<UInt64Array>;
 
 pub trait DaftCountAggable {
     type Output;
