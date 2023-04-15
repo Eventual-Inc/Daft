@@ -1,18 +1,65 @@
-use arrow2;
-
+use arrow2::{self, array::{Array}};
 use crate::{
     array::{BaseArray, DataArray},
     datatypes::*,
     error::DaftResult,
 };
+use arrow2::array::PrimitiveArray;
+use super::{DaftCompareAggable, GroupIndices}; 
 
-use super::DaftCompareAggable;
+fn grouped_cmp_native<T, F>(data_array: &DataArray<T>, op: F, groups: &GroupIndices) -> DaftResult<DataArray<T>>
+where 
+    T: DaftNumericType,
+    F: Fn(T::Native, T::Native) -> T::Native
+{
+    let arrow_array = data_array.downcast();
+    let cmp_per_group = if arrow_array.null_count() > 0 {
+        let cmp_values_iter = groups.iter().map(
+            |g| {
+                let reduced_val = g.downcast().values_iter().map(|i| {
+                    let idx = *i as usize; 
+                    match arrow_array.is_null(idx) {
+                        false => Some(unsafe {arrow_array.value_unchecked(idx)}),
+                        true => None
+                    }
+                }).reduce(|l, r| {
+                    match (l, r) {
+                        (None, None) => None,
+                        (None, Some(r)) => Some(r),
+                        (Some(l), None) => Some(l),
+                        (Some(l), Some(r)) => Some(op(l, r))
+                    }
+                });
+                match reduced_val {
+                    None => None,
+                    Some(v) => v
+                }
+            }
+        );
+        Box::new(PrimitiveArray::from_trusted_len_iter(cmp_values_iter))
+    } else {
+        Box::new(PrimitiveArray::from_trusted_len_values_iter(
+            groups.iter().map(|g| {
+                g.downcast()
+                    .values_iter().map(|i| {
+                        let idx = *i as usize; 
+                        unsafe {arrow_array.value_unchecked(idx)}
+                    }).reduce(|l, r| op(l, r)).unwrap()
+            }),
+        ))
+    };
+    Ok(DataArray::from((data_array.field.name.as_ref(), cmp_per_group)))
+
+}
+
+
 
 use super::downcast::Downcastable;
 
 impl<T> DaftCompareAggable for &DataArray<T>
 where
     T: DaftDataType + DaftNumericType,
+    T::Native: PartialOrd,
     <T::Native as arrow2::types::simd::Simd>::Simd: arrow2::compute::aggregate::SimdOrd<T::Native>,
 {
     type Output = DaftResult<DataArray<T>>;
@@ -34,6 +81,71 @@ where
 
         DataArray::new(self.field.clone(), arrow_array)
     }
+    fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
+        grouped_cmp_native(self, |l,r| 
+            {
+                match l.lt(&r) {
+                    true => l,
+                    false => r
+                }
+            }, groups)
+    }
+
+    fn grouped_max(&self, groups: &GroupIndices) -> Self::Output {
+        grouped_cmp_native(self, |l,r| 
+            {
+                match l.gt(&r) {
+                    true => l,
+                    false => r,
+                }
+            }, groups)
+    }
+
+
+}
+
+fn grouped_cmp_utf8<'a, F>(data_array: &'a Utf8Array, op: F, groups: &GroupIndices) -> DaftResult<Utf8Array>
+where 
+    F: Fn(&'a str, &'a str) -> &'a str
+{
+    let arrow_array = data_array.downcast();
+    let cmp_per_group = if arrow_array.null_count() > 0 {
+        let cmp_values_iter = groups.iter().map(
+            |g| {
+                let reduced_val = g.downcast().values_iter().map(|i| {
+                    let idx = *i as usize; 
+                    match arrow_array.is_null(idx) {
+                        false => Some(unsafe {arrow_array.value_unchecked(idx)}),
+                        true => None
+                    }
+                }).reduce(|l, r| {
+                    match (l, r) {
+                        (None, None) => None,
+                        (None, Some(r)) => Some(r),
+                        (Some(l), None) => Some(l),
+                        (Some(l), Some(r)) => Some(op(l, r))
+                    }
+                });
+                match reduced_val {
+                    None => None,
+                    Some(v) => v
+                }
+            }
+        );
+        Box::new(arrow2::array::Utf8Array::<i64>::from_trusted_len_iter(cmp_values_iter))
+    } else {
+        Box::new(arrow2::array::Utf8Array::<i64>::from_trusted_len_values_iter(
+            groups.iter().map(|g| {
+                g.downcast()
+                    .values_iter().map(|i| {
+                        let idx = *i as usize; 
+                        unsafe {arrow_array.value_unchecked(idx)}
+                    }).reduce(|l, r| op(l, r)).unwrap()
+            }),
+        ))
+    };
+    Ok(DataArray::from((data_array.field.name.as_ref(), cmp_per_group)))
+
 }
 
 impl DaftCompareAggable for &DataArray<Utf8Type> {
@@ -56,7 +168,62 @@ impl DaftCompareAggable for &DataArray<Utf8Type> {
 
         DataArray::new(self.field.clone(), Box::new(res_arrow_array))
     }
+
+    fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
+        grouped_cmp_utf8(self, |l,r|  l.min(r), groups)
+    }
+
+    fn grouped_max(&self, groups: &GroupIndices) -> Self::Output {
+        grouped_cmp_utf8(self, |l,r| l.max(r), groups)
+    }
 }
+
+
+fn grouped_cmp_bool(data_array: &BooleanArray, val_to_find: bool, groups: &GroupIndices) -> DaftResult<BooleanArray> {
+    let arrow_array = data_array.downcast();
+    let cmp_per_group = if arrow_array.null_count() > 0 {
+        let cmp_values_iter = groups.iter().map(
+            |g| {
+                let reduced_val = g.downcast().values_iter().map(|i| {
+                    let idx = *i as usize; 
+                    match arrow_array.is_null(idx) {
+                        false => Some(unsafe {arrow_array.value_unchecked(idx)}),
+                        true => None
+                    }
+                }).reduce(|l, r| {
+                    match (l, r) {
+                        (None, None) => None,
+                        (None, Some(r)) => Some(r),
+                        (Some(l), None) => Some(l),
+                        (Some(l), Some(r)) => Some((l | r) ^ val_to_find)
+                    }
+                });
+                match reduced_val {
+                    None => None,
+                    Some(v) => v
+                }
+            }
+        );
+        Box::new(arrow2::array::BooleanArray::from_trusted_len_iter(cmp_values_iter))
+    } else {
+        Box::new(arrow2::array::BooleanArray::from_trusted_len_values_iter(
+            groups.iter().map(|g| {
+                let reduced_val = g.downcast()
+                    .values_iter().map(|i| {
+                        let idx = *i as usize; 
+                        unsafe {arrow_array.value_unchecked(idx)}
+                    }).find(|v| *v == val_to_find);
+                match reduced_val {
+                    None => !val_to_find,
+                    Some(v) => val_to_find
+                }
+            }),
+        ))
+    };
+    Ok(DataArray::from((data_array.field.name.as_ref(), cmp_per_group)))
+
+}
+
 
 impl DaftCompareAggable for &DataArray<BooleanType> {
     type Output = DaftResult<DataArray<BooleanType>>;
@@ -78,6 +245,16 @@ impl DaftCompareAggable for &DataArray<BooleanType> {
 
         DataArray::new(self.field.clone(), Box::new(res_arrow_array))
     }
+
+    fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
+        grouped_cmp_bool(self, false, groups)
+    }
+
+    fn grouped_max(&self, groups: &GroupIndices) -> Self::Output {
+        grouped_cmp_bool(self,  true, groups)
+    }
+
+
 }
 
 impl DaftCompareAggable for &DataArray<NullType> {
@@ -92,4 +269,13 @@ impl DaftCompareAggable for &DataArray<NullType> {
         // Min and max are the same for NullArray.
         Self::min(self)
     }
+
+    fn grouped_min(&self, groups: &super::GroupIndices) -> Self::Output {
+        Ok(DataArray::full_null(self.name(), groups.len()))
+    }
+
+    fn grouped_max(&self, groups: &super::GroupIndices) -> Self::Output {
+        Ok(DataArray::full_null(self.name(), groups.len()))
+    }
+
 }

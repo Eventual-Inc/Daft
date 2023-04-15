@@ -99,4 +99,6 @@ pub trait DaftCompareAggable {
     type Output;
     fn min(&self) -> Self::Output;
     fn max(&self) -> Self::Output;
+    fn grouped_min(&self, groups: &GroupIndices) -> Self::Output;
+    fn grouped_max(&self, groups: &GroupIndices) -> Self::Output;
 }
