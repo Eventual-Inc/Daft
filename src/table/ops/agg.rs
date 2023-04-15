@@ -38,8 +38,7 @@ impl Table {
             let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
             groupby_table.take(&indices_as_series)?
         };
-        drop(groupby_table);
-
+        let ll = groupvals_indices.len();
         // Table with the aggregated values, one row for each group.
         // let agged_values_table = {
         //     // Agg each group into its own table.
