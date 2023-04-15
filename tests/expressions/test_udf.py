@@ -6,6 +6,7 @@ import pytest
 from daft import col
 from daft.datatype import DataType
 from daft.expressions import Expression
+from daft.expressions.testing import expr_structurally_equal
 from daft.series import Series
 from daft.table import Table
 from daft.udf import udf
@@ -98,6 +99,15 @@ def test_full_udf_call():
 
     with pytest.raises(TypeError):
         full_udf()
+
+
+def test_udf_equality():
+    @udf(return_dtype=DataType.int64())
+    def udf1(x):
+        pass
+
+    assert expr_structurally_equal(udf1("x"), udf1("x"))
+    assert not expr_structurally_equal(udf1("x"), udf1("y"))
 
 
 @pytest.mark.skip(
