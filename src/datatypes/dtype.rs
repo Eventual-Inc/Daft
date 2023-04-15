@@ -109,7 +109,7 @@ impl DataType {
             DataType::FixedSizeList(field, size) => {
                 Ok(ArrowType::FixedSizeList(Box::new(field.to_arrow()?), *size))
             }
-            DataType::List(field) => Ok(ArrowType::List(Box::new(field.to_arrow()?))),
+            DataType::List(field) => Ok(ArrowType::LargeList(Box::new(field.to_arrow()?))),
             DataType::Struct(fields) => Ok({
                 let fields: DaftResult<Vec<arrow2::datatypes::Field>> =
                     fields.iter().map(|f| f.to_arrow()).collect();

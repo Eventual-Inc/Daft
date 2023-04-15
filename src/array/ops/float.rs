@@ -9,6 +9,8 @@ use crate::array::BaseArray;
 
 use super::DaftIsNan;
 
+use super::downcast::Downcastable;
+
 impl<T> DaftIsNan for &DataArray<T>
 where
     T: DaftFloatType,

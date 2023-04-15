@@ -4,6 +4,8 @@ use crate::{array::DataArray, datatypes::*, error::DaftResult};
 
 use super::DaftSumAggable;
 
+use super::downcast::Downcastable;
+
 macro_rules! impl_daft_numeric_agg {
     ($T:ident) => {
         impl DaftSumAggable for &DataArray<$T> {

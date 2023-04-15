@@ -17,6 +17,8 @@ use arrow2::{
 
 use super::arrow2::sort::primitive::common::multi_column_idx_sort;
 
+use super::downcast::Downcastable;
+
 pub fn build_multi_array_compare(
     arrays: &[Series],
     descending: &[bool],

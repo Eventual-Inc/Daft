@@ -26,104 +26,122 @@ class DataType:
         dt._dtype = pydt
         return dt
 
-    @staticmethod
-    def int8() -> DataType:
-        return DataType._from_pydatatype(PyDataType.int8())
+    @classmethod
+    def int8(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.int8())
 
-    @staticmethod
-    def int16() -> DataType:
-        return DataType._from_pydatatype(PyDataType.int16())
+    @classmethod
+    def int16(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.int16())
 
-    @staticmethod
-    def int32() -> DataType:
-        return DataType._from_pydatatype(PyDataType.int32())
+    @classmethod
+    def int32(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.int32())
 
-    @staticmethod
-    def int64() -> DataType:
-        return DataType._from_pydatatype(PyDataType.int64())
+    @classmethod
+    def int64(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.int64())
 
-    @staticmethod
-    def uint8() -> DataType:
-        return DataType._from_pydatatype(PyDataType.uint8())
+    @classmethod
+    def uint8(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.uint8())
 
-    @staticmethod
-    def uint16() -> DataType:
-        return DataType._from_pydatatype(PyDataType.uint16())
+    @classmethod
+    def uint16(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.uint16())
 
-    @staticmethod
-    def uint32() -> DataType:
-        return DataType._from_pydatatype(PyDataType.uint32())
+    @classmethod
+    def uint32(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.uint32())
 
-    @staticmethod
-    def uint64() -> DataType:
-        return DataType._from_pydatatype(PyDataType.uint64())
+    @classmethod
+    def uint64(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.uint64())
 
-    @staticmethod
-    def float32() -> DataType:
-        return DataType._from_pydatatype(PyDataType.float32())
+    @classmethod
+    def float32(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.float32())
 
-    @staticmethod
-    def float64() -> DataType:
-        return DataType._from_pydatatype(PyDataType.float64())
+    @classmethod
+    def float64(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.float64())
 
-    @staticmethod
-    def string() -> DataType:
-        return DataType._from_pydatatype(PyDataType.string())
+    @classmethod
+    def string(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.string())
 
-    @staticmethod
-    def bool() -> DataType:
-        return DataType._from_pydatatype(PyDataType.bool())
+    @classmethod
+    def bool(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.bool())
 
-    @staticmethod
-    def binary() -> DataType:
-        return DataType._from_pydatatype(PyDataType.binary())
+    @classmethod
+    def binary(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.binary())
 
-    @staticmethod
-    def null() -> DataType:
-        return DataType._from_pydatatype(PyDataType.null())
+    @classmethod
+    def null(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.null())
 
-    @staticmethod
-    def date() -> DataType:
-        return DataType._from_pydatatype(PyDataType.date())
+    @classmethod
+    def date(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.date())
 
-    @staticmethod
-    def from_arrow_type(arrow_type: pa.lib.DataType) -> DataType:
+    @classmethod
+    def list(cls, name: str, dtype: DataType) -> DataType:
+        return cls._from_pydatatype(PyDataType.list(name, dtype._dtype))
+
+    @classmethod
+    def fixed_size_list(cls, name: str, dtype: DataType, size: int) -> DataType:
+        if not isinstance(size, int) or size <= 0:
+            raise ValueError("The size for a fixed-size list must be a positive integer, but got: ", size)
+        return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
+
+    @classmethod
+    def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
         if pa.types.is_int8(arrow_type):
-            return DataType.int8()
+            return cls.int8()
         elif pa.types.is_int16(arrow_type):
-            return DataType.int16()
+            return cls.int16()
         elif pa.types.is_int32(arrow_type):
-            return DataType.int32()
+            return cls.int32()
         elif pa.types.is_int64(arrow_type):
-            return DataType.int64()
+            return cls.int64()
         elif pa.types.is_uint8(arrow_type):
-            return DataType.uint8()
+            return cls.uint8()
         elif pa.types.is_uint16(arrow_type):
-            return DataType.uint16()
+            return cls.uint16()
         elif pa.types.is_uint32(arrow_type):
-            return DataType.uint32()
+            return cls.uint32()
         elif pa.types.is_uint64(arrow_type):
-            return DataType.uint64()
+            return cls.uint64()
         elif pa.types.is_float32(arrow_type):
-            return DataType.float32()
+            return cls.float32()
         elif pa.types.is_float64(arrow_type):
-            return DataType.float64()
+            return cls.float64()
         elif pa.types.is_string(arrow_type) or pa.types.is_large_string(arrow_type):
-            return DataType.string()
+            return cls.string()
         elif pa.types.is_binary(arrow_type) or pa.types.is_large_binary(arrow_type):
-            return DataType.binary()
+            return cls.binary()
         elif pa.types.is_boolean(arrow_type):
-            return DataType.bool()
+            return cls.bool()
         elif pa.types.is_null(arrow_type):
-            return DataType.null()
+            return cls.null()
         elif pa.types.is_date32(arrow_type):
-            return DataType.date()
+            return cls.date()
+        elif pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
+            assert isinstance(arrow_type, (pa.ListType, pa.LargeListType))
+            field = arrow_type.value_field
+            return cls.list(field.name, cls.from_arrow_type(field.type))
+        elif pa.types.is_fixed_size_list(arrow_type):
+            assert isinstance(arrow_type, pa.FixedSizeListType)
+            field = arrow_type.value_field
+            return cls.fixed_size_list(field.name, cls.from_arrow_type(field.type), arrow_type.list_size)
         else:
             raise NotImplementedError(f"we cant convert arrow type: {arrow_type} to a daft type")
 
-    @staticmethod
-    def python() -> DataType:
-        return DataType._from_pydatatype(PyDataType.python())
+    @classmethod
+    def python(cls) -> DataType:
+        return cls._from_pydatatype(PyDataType.python())
 
     def _is_python_type(self) -> builtins.bool:
         # NOTE: This is currently used in a few places still. We can get rid of it once these are refactored away. To be discussed.

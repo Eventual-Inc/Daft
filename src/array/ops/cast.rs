@@ -6,13 +6,15 @@ use arrow2::compute::{
 use crate::{
     array::{BaseArray, DataArray},
     datatypes::{
-        BinaryArray, BooleanArray, DaftDataType, DaftNumericType, DataType, DateArray, NullArray,
-        Utf8Array,
+        BinaryArray, BooleanArray, DaftDataType, DaftNumericType, DataType, DateArray,
+        FixedSizeListArray, ListArray, NullArray, Utf8Array,
     },
     error::{DaftError, DaftResult},
     series::Series,
     with_match_arrow_daft_types,
 };
+
+use super::downcast::Downcastable;
 
 fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
 where
@@ -29,7 +31,7 @@ where
     if !dtype.is_arrow() || !to_cast.data_type().is_arrow() {
         return Err(DaftError::TypeError(format!(
             "Can not cast {:?} to type: {:?}: not convertible to Arrow",
-            T::get_dtype(),
+            to_cast.data_type(),
             dtype
         )));
     }
@@ -39,7 +41,7 @@ where
     if !can_cast_types(&self_arrow_type, &target_arrow_type) {
         return Err(DaftError::TypeError(format!(
             "can not cast {:?} to type: {:?}: Arrow types not castable",
-            T::get_dtype(),
+            to_cast.data_type(),
             dtype
         )));
     }
@@ -116,5 +118,17 @@ impl DateArray {
             DataType::Float64 => self.cast(&DataType::Int32)?.cast(&DataType::Float64),
             _ => arrow_cast(self, dtype),
         }
+    }
+}
+
+impl ListArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        arrow_cast(self, dtype)
+    }
+}
+
+impl FixedSizeListArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        arrow_cast(self, dtype)
     }
 }

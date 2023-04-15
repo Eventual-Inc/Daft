@@ -8,6 +8,8 @@ use crate::{
     error::{DaftError, DaftResult},
     kernels::utf8::add_utf8_arrays,
 };
+
+use super::downcast::Downcastable;
 /// Helper function to perform arithmetic operations on a DataArray
 /// Takes both Kernel (array x array operation) and operation (scalar x scalar) functions
 /// The Kernel is used for when both arrays are non-unit length and the operation is used when broadcasting

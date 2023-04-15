@@ -7,6 +7,8 @@ use crate::{
     table::Table,
 };
 
+use crate::array::ops::downcast::Downcastable;
+
 impl Table {
     pub fn agg(&self, to_agg: &[Expr], group_by: &[Expr]) -> DaftResult<Table> {
         // Dispatch depending on whether we're doing groupby or just a global agg.
