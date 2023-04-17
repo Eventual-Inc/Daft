@@ -291,6 +291,32 @@ def test_series_if_else_nulls(if_true, if_false) -> None:
 
 
 @pytest.mark.parametrize(
+    ["if_true", "if_false"],
+    [
+        # Same length, same type
+        ([object(), object(), object()], [object(), object(), object()]),
+        # Broadcast left
+        ([object()], [object(), object(), object()]),
+        # Broadcast right
+        ([object(), object(), object()], [object()]),
+        # Broadcast both
+        ([object()], [object()]),
+    ],
+)
+def test_series_if_else_python(if_true, if_false) -> None:
+    if_true_series = Series.from_pylist(if_true)
+    if_false_series = Series.from_pylist(if_false)
+    predicate_series = Series.from_arrow(pa.array([True, False, None]))
+
+    result = predicate_series.if_else(if_true_series, if_false_series)
+
+    left_expected = if_true[0]
+    right_expected = if_false[1] if len(if_false) > 1 else if_false[0]
+    assert result.datatype() == DataType.python()
+    assert result.to_pylist() == [left_expected, right_expected, None]
+
+
+@pytest.mark.parametrize(
     ["predicate_value", "expected_results"], [(True, [1, 1, 1]), (False, [0, 0, 0]), (None, [None, None, None])]
 )
 def test_series_if_else_predicate_broadcast_numeric(predicate_value, expected_results) -> None:

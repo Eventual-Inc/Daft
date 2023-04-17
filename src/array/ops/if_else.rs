@@ -179,12 +179,12 @@ impl PythonArray {
             // CASE: Equal lengths across all 3 arguments
             (self_len, other_len, predicate_len) if self_len == other_len && other_len == predicate_len => {
                 let predicate_arr = predicate.downcast();
-                let predicate_values = predicate_arr.values();
                 let result_vec: Vec<PyObject> = self.downcast().vec().iter()
                     .zip(other.downcast().vec().iter())
-                    .zip(predicate_values.iter())
+                    .zip(predicate_arr.iter())
                     .map(
                         |((self_val, other_val), pred_val)| match pred_val {
+                            None => None,
                             true => self_val.clone(),
                             false => other_val.clone(),
                         }
