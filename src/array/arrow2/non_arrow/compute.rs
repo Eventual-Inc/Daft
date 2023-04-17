@@ -1,4 +1,4 @@
-impl<T: Clone> VecBackedArray<T> {
+impl<T: Clone> NonArrowArray<T> {
     pub fn concatenate(arrays: Vec<&Self>) -> Self {
         todo!()
         // let mut concatenated_values: Vec<T> = Vec::new();

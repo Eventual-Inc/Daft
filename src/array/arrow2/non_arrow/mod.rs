@@ -1,8 +1,8 @@
-// Implementation of an Arrow2 array that holds PyObjects,
-// which are not a real Arrow2 data type.
+// Implementation of an Arrow2 array that holds non Arrow2 data types.
 
 // Modified from the implementation of real Arrow2 Arrays here:
 // https://docs.rs/arrow2/latest/src/arrow2/array/mod.rs.html
+// https://docs.rs/arrow2/latest/src/arrow2/array/primitive/mod.rs.html
 
 // The license for Arrow2 is as follows:
 
@@ -199,19 +199,45 @@
 
 pub mod compute;
 
-use arrow2::{array::Array, bitmap::Bitmap, datatypes::DataType};
+use arrow2::{
+    array::Array, 
+    bitmap::Bitmap, 
+    buffer::Buffer,
+    datatypes::DataType,
+    error::Error,
+};
 use std::marker::{Send, Sync};
 
 #[derive(Clone)]
-pub struct VecBackedArray<T> {
-    values: Vec<T>,
+pub struct NonArrowArray<T> {
+    values: Buffer<T>,
     validity: Option<Bitmap>,
 }
 
-impl<T: Clone> VecBackedArray<T> {
-    pub fn new(values: Vec<T>, validity: Option<Bitmap>) -> Self {
-        VecBackedArray { values, validity }
+impl<T> NonArrowArray<T> {
+
+    pub fn try_new(
+        values: Buffer<T>,
+        validity: Option<Bitmap>,
+    ) -> Result<Self, Error> {
+
+        if validity.map_or(false, |vd| vd.len() != values.len()) {
+            Err(Error::oos(
+                "validity mask length must match the number of values",
+            ))
+        } else {}
+            Ok(Self {
+                values,
+                validity,
+            })
+        }
+
     }
+
+    pub fn new(values: Buffer<T>, validity: Option<Bitmap>) -> Self {
+        Self::try_new(values, validity).unwrap()
+    }
+
     pub fn vec(&self) -> &Vec<T> {
         &self.values
     }
