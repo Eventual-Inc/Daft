@@ -33,7 +33,7 @@ where
                     std::iter::repeat(*val).take(num).collect();
                 return Ok(DataArray::from((self.name(), repeated_values.as_slice())));
             }
-            None => Ok(DataArray::full_null(self.name(), num)),
+            None => Ok(DataArray::full_null(self.name(), self.data_type(), num)),
         }
     }
 }
@@ -52,7 +52,7 @@ impl Broadcastable for Utf8Array {
                 let repeated_values: Vec<&str> = std::iter::repeat(val).take(num).collect();
                 Ok(DataArray::from((self.name(), repeated_values.as_slice())))
             }
-            None => Ok(DataArray::full_null(self.name(), num)),
+            None => Ok(DataArray::full_null(self.name(), self.data_type(), num)),
         }
     }
 }
@@ -65,7 +65,7 @@ impl Broadcastable for NullArray {
                 self.name()
             )));
         }
-        Ok(DataArray::full_null(self.name(), num))
+        Ok(DataArray::full_null(self.name(), self.data_type(), num))
     }
 }
 
@@ -83,7 +83,7 @@ impl Broadcastable for BooleanArray {
                 let repeated_values: Vec<bool> = std::iter::repeat(val).take(num).collect();
                 Ok(DataArray::from((self.name(), repeated_values.as_slice())))
             }
-            None => Ok(DataArray::full_null(self.name(), num)),
+            None => Ok(DataArray::full_null(self.name(), self.data_type(), num)),
         }
     }
 }
@@ -107,7 +107,7 @@ impl Broadcastable for BinaryArray {
                     )),
                 )
             }
-            None => Ok(DataArray::full_null(self.name(), num)),
+            None => Ok(DataArray::full_null(self.name(), self.data_type(), num)),
         }
     }
 }
@@ -160,7 +160,7 @@ impl Broadcastable for ListArray {
                     self.name(), e,
                 ))),
             }
-            None => Ok(DataArray::full_null(self.name(), num)),
+            None => Ok(DataArray::full_null(self.name(), self.data_type(), num)),
         }
     }
 }
@@ -200,7 +200,7 @@ impl Broadcastable for FixedSizeListArray {
                     ),
                 }
             }
-            None => Ok(DataArray::full_null(self.name(), num)),
+            None => Ok(DataArray::full_null(self.name(), self.data_type(), num)),
         }
     }
 }

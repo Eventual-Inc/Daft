@@ -2,7 +2,7 @@ use num_traits::{NumCast, ToPrimitive};
 
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BooleanArray, DaftNumericType, NullArray, Utf8Array},
+    datatypes::{BooleanArray, DaftNumericType, DataType, NullArray, Utf8Array},
     error::{DaftError, DaftResult},
 };
 
@@ -45,14 +45,22 @@ where
                 if let Some(value) = rhs.get(0) {
                     Ok(self.equal(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     Ok(rhs.equal(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -77,14 +85,22 @@ where
                 if let Some(value) = rhs.get(0) {
                     Ok(self.not_equal(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     Ok(rhs.not_equal(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -109,14 +125,22 @@ where
                 if let Some(value) = rhs.get(0) {
                     Ok(self.lt(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     Ok(rhs.gt(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -141,14 +165,22 @@ where
                 if let Some(value) = rhs.get(0) {
                     Ok(self.lte(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     Ok(rhs.gte(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -173,14 +205,22 @@ where
                 if let Some(value) = rhs.get(0) {
                     Ok(self.gt(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     Ok(rhs.lt(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -205,14 +245,22 @@ where
                 if let Some(value) = rhs.get(0) {
                     Ok(self.gte(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     Ok(rhs.lte(value))
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -308,14 +356,22 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -340,14 +396,22 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.not_equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.not_equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -372,14 +436,22 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.lt(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -404,14 +476,22 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.lte(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.gte(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -436,14 +516,22 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.gt(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.lt(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -468,14 +556,22 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.gte(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.lte(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -575,14 +671,22 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.and(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.and(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -614,14 +718,22 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.or(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.or(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -653,14 +765,22 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.xor(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.xor(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -676,9 +796,17 @@ macro_rules! null_array_comparision_method {
     ($func_name:ident) => {
         fn $func_name(&self, rhs: &NullArray) -> Self::Output {
             match (self.len(), rhs.len()) {
-                (x, y) if x == y => Ok(BooleanArray::full_null(self.name(), x)),
-                (l_size, 1) => Ok(BooleanArray::full_null(self.name(), l_size)),
-                (1, r_size) => Ok(BooleanArray::full_null(self.name(), r_size)),
+                (x, y) if x == y => Ok(BooleanArray::full_null(self.name(), &DataType::Boolean, x)),
+                (l_size, 1) => Ok(BooleanArray::full_null(
+                    self.name(),
+                    &DataType::Boolean,
+                    l_size,
+                )),
+                (1, r_size) => Ok(BooleanArray::full_null(
+                    self.name(),
+                    &DataType::Boolean,
+                    r_size,
+                )),
                 (l, r) => Err(DaftError::ValueError(format!(
                     "trying to compare different length arrays: {}: {l} vs {}: {r}",
                     self.name(),
@@ -757,14 +885,22 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
                 if let Some(value) = rhs.get(0) {
                     self.equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -789,14 +925,22 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
                 if let Some(value) = rhs.get(0) {
                     self.not_equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.not_equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -821,14 +965,22 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
                 if let Some(value) = rhs.get(0) {
                     self.lt(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -853,14 +1005,22 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
                 if let Some(value) = rhs.get(0) {
                     self.lte(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.gte(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -885,14 +1045,22 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
                 if let Some(value) = rhs.get(0) {
                     self.gt(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.lt(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -917,14 +1085,22 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
                 if let Some(value) = rhs.get(0) {
                     self.gte(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), l_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.lte(value)
                 } else {
-                    Ok(BooleanArray::full_null(self.name(), r_size))
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(

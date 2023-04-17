@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn broadcast_int_null() -> DaftResult<()> {
-        let a = Int64Array::full_null("a", 1).into_series();
+        let a = Int64Array::full_null("a", &DataType::Int64, 1).into_series();
         let a = a.broadcast(10)?;
         assert_eq!(a.len(), 10);
         assert_eq!(*a.data_type(), DataType::Int64);
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn broadcast_utf8_null() -> DaftResult<()> {
-        let a = Utf8Array::full_null("a", 1).into_series();
+        let a = Utf8Array::full_null("a", &DataType::Utf8, 1).into_series();
         let a = a.broadcast(10)?;
         assert_eq!(a.len(), 10);
         assert_eq!(*a.data_type(), DataType::Utf8);

@@ -60,7 +60,7 @@ impl Table {
                 let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
                 for (field_name, field) in schema.fields.iter() {
                     with_match_daft_types!(field.dtype, |$T| {
-                        columns.push(DataArray::<$T>::full_null(field_name, 0).into_series())
+                        columns.push(DataArray::<$T>::full_null(field_name, &field.dtype, 0).into_series())
                     })
                 }
                 Ok(Table { schema, columns })
@@ -124,7 +124,7 @@ impl Table {
         }
 
         if num == 0 {
-            let indices = UInt64Array::empty("idx");
+            let indices = UInt64Array::empty("idx", &DataType::UInt64);
             return self.take(&indices.into_series());
         }
 

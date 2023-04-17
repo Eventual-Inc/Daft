@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn add_int_and_int_full_null() -> DaftResult<()> {
         let a = Int64Array::from(("a", vec![1, 2, 3]));
-        let b = Int64Array::full_null("b", 3);
+        let b = Int64Array::full_null("b", &DataType::Int64, 3);
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Int64);
         Ok(())

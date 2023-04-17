@@ -30,7 +30,7 @@ macro_rules! broadcast_if_else{(
         (self_len, _, 1) => {
             let predicate_scalar = $predicate.get(0);
             match predicate_scalar {
-                None => Ok(DataArray::full_null($if_true.name(), self_len)),
+                None => Ok(DataArray::full_null($if_true.name(), $if_true.data_type(), self_len)),
                 Some(predicate_scalar_value) => {
                     if predicate_scalar_value {
                         Ok($if_true.clone())
@@ -154,7 +154,11 @@ impl BinaryArray {
 
 impl NullArray {
     pub fn if_else(&self, _other: &NullArray, _predicate: &BooleanArray) -> DaftResult<NullArray> {
-        Ok(DataArray::full_null(self.name(), self.len()))
+        Ok(DataArray::full_null(
+            self.name(),
+            self.data_type(),
+            self.len(),
+        ))
     }
 }
 
