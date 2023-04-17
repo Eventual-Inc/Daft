@@ -1,8 +1,10 @@
-// Implementation of an Arrow2 Array that does not hold a real Arrow2 DataType.
+// Implementation of an Arrow2 array that holds PyObjects,
+// which are not a real Arrow2 data type.
 
-// Modified from the implementation of real Arrow2 Arrays here: https://docs.rs/arrow2/latest/src/arrow2/array/mod.rs.html.
+// Modified from the implementation of real Arrow2 Arrays here:
+// https://docs.rs/arrow2/latest/src/arrow2/array/mod.rs.html
 
-// The license for arrow2 is as follows:
+// The license for Arrow2 is as follows:
 
 //     Apache License
 //     Version 2.0, January 2004
@@ -194,6 +196,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+pub mod compute;
 
 use arrow2::{array::Array, bitmap::Bitmap, datatypes::DataType};
 use std::marker::{Send, Sync};
