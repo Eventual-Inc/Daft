@@ -215,14 +215,6 @@ impl<T: Clone> VecBackedArray<T> {
     pub fn vec(&self) -> &Vec<T> {
         &self.values
     }
-    pub fn concatenate(arrays: Vec<&Self>) -> Self {
-        todo!()
-        // let mut concatenated_values: Vec<T> = Vec::new();
-        // for array in arrays {
-        //     concatenated_values.extend_from_slice(array.vec());
-        // }
-        // VecBackedArray::new(concatenated_values)
-    }
 }
 
 impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
