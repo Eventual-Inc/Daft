@@ -200,22 +200,24 @@ use std::marker::{Send, Sync};
 
 #[derive(Clone)]
 pub struct VecBackedArray<T> {
-    values: Vec<Option<T>>,
+    values: Vec<T>,
+    validity: Option<Bitmap>,
 }
 
 impl<T: Clone> VecBackedArray<T> {
-    pub fn new(values: Vec<Option<T>>) -> Self {
-        VecBackedArray { values }
+    pub fn new(values: Vec<T>, validity: Option<Bitmap>) -> Self {
+        VecBackedArray { values, validity }
     }
-    pub fn vec(&self) -> &Vec<Option<T>> {
+    pub fn vec(&self) -> &Vec<T> {
         &self.values
     }
     pub fn concatenate(arrays: Vec<&Self>) -> Self {
-        let mut concatenated_values: Vec<Option<T>> = Vec::new();
-        for array in arrays {
-            concatenated_values.extend_from_slice(array.vec());
-        }
-        VecBackedArray::new(concatenated_values)
+        todo!()
+        // let mut concatenated_values: Vec<T> = Vec::new();
+        // for array in arrays {
+        //     concatenated_values.extend_from_slice(array.vec());
+        // }
+        // VecBackedArray::new(concatenated_values)
     }
 }
 
@@ -236,6 +238,11 @@ impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
     }
 
     #[inline]
+    fn data_type(&self) -> &DataType {
+        unimplemented!("VecBackedArray does not hold real Arrow DataTypes")
+    }
+
+    #[inline]
     fn slice(&mut self, offset: usize, length: usize) {
         self.slice(offset, length);
     }
@@ -250,15 +257,14 @@ impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
         Box::new(self.clone())
     }
 
-    fn data_type(&self) -> &DataType {
-        unimplemented!("VecBackedArray does not hold real Arrow DataTypes")
-    }
-
     fn validity(&self) -> Option<&Bitmap> {
-        unimplemented!()
+        self.validity.as_ref()
     }
 
-    fn with_validity(&self, _validity: Option<Bitmap>) -> Box<dyn Array> {
-        unimplemented!()
+    fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
+        Box::new(VecBackedArray {
+            values: self.values.clone(),
+            validity,
+        })
     }
 }
