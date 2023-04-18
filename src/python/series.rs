@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
 
 use crate::{
-    array::{ops::DaftLogical, pseudo_arrow::NonArrowArray, BaseArray, DataArray},
+    array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, BaseArray, DataArray},
     datatypes::{DataType, Field, PythonType, UInt64Type},
     ffi,
     series::{self, Series},
@@ -51,7 +51,7 @@ impl PySeries {
     pub fn from_pylist(name: &str, pylist: &PyAny) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
         let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(NonArrowArray::<PyObject>::from_pyobj_vec(vec_pyobj));
+            Box::new(PseudoArrowArray::<PyObject>::from_pyobj_vec(vec_pyobj));
         let field = Field::new(name, DataType::Python);
 
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
