@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
 
 use crate::{
-    array::{non_arrow::NonArrowArray, ops::DaftLogical, BaseArray, DataArray},
+    array::{ops::DaftLogical, pseudo_arrow::NonArrowArray, BaseArray, DataArray},
     datatypes::{DataType, Field, PythonType, UInt64Type},
     ffi,
     series::{self, Series},
@@ -59,8 +59,8 @@ impl PySeries {
     }
 
     pub fn to_pylist(&self) -> PyResult<PyObject> {
-        let non_arrow_array = self.series.python()?.downcast();
-        let pyobj_vec = non_arrow_array.to_pyobj_vec();
+        let pseudo_arrow_array = self.series.python()?.downcast();
+        let pyobj_vec = pseudo_arrow_array.to_pyobj_vec();
         Python::with_gil(|py| Ok(PyList::new(py, pyobj_vec).into()))
     }
 
