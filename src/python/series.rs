@@ -1,6 +1,5 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use arrow2::array::Array;
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
 
 use crate::{
@@ -51,11 +50,8 @@ impl PySeries {
     #[staticmethod]
     pub fn from_pylist(name: &str, pylist: &PyAny) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
-        let validity: arrow2::bitmap::Bitmap = Python::with_gil(|py| {
-            arrow2::bitmap::Bitmap::from_iter(vec_pyobj.iter().map(|pyobj| !pyobj.is_none(py)))
-        });
         let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(NonArrowArray::new(vec_pyobj.into(), Some(validity)));
+            Box::new(NonArrowArray::<PyObject>::from_pyobj_vec(vec_pyobj));
         let field = Field::new(name, DataType::Python);
 
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
@@ -64,27 +60,8 @@ impl PySeries {
 
     pub fn to_pylist(&self) -> PyResult<PyObject> {
         let non_arrow_array = self.series.python()?.downcast();
-
-        Python::with_gil(|py| {
-            if let Some(validity) = non_arrow_array.validity() {
-                let pyobj_vec: Vec<PyObject> = validity
-                    .iter()
-                    .zip(non_arrow_array.values().iter())
-                    .map(
-                        |(valid, pyobj)| {
-                            if valid {
-                                pyobj.clone()
-                            } else {
-                                py.None()
-                            }
-                        },
-                    )
-                    .collect();
-                Ok(PyList::new(py, pyobj_vec).into())
-            } else {
-                Ok(PyList::new(py, non_arrow_array.values().to_vec()).into())
-            }
-        })
+        let pyobj_vec = non_arrow_array.to_pyobj_vec();
+        Python::with_gil(|py| Ok(PyList::new(py, pyobj_vec).into()))
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
