@@ -38,27 +38,6 @@ impl Table {
             let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
             groupby_table.take(&indices_as_series)?
         };
-        let ll = groupvals_indices.len();
-        // Table with the aggregated values, one row for each group.
-        // let agged_values_table = {
-        //     // Agg each group into its own table.
-        //     let mut agged_groups: Vec<Self> = vec![];
-        //     for group_indices_array in groupvals_indices.iter() {
-        //         let group = {
-        //             let indices_as_arrow = group_indices_array.downcast();
-        //             let indices_as_series =
-        //                 UInt64Array::from(("", Box::new(indices_as_arrow.clone()))).into_series();
-        //             self.take(&indices_as_series)?
-        //         };
-        //         let agged_group = group.agg_global(to_agg)?;
-        //         agged_groups.push(agged_group.to_owned());
-        //     }
-
-        //     match agged_groups.len() {
-        //         0 => self.head(0)?.agg_global(to_agg)?.head(0)?,
-        //         _ => Self::concat(agged_groups.iter().collect::<Vec<&Self>>().as_slice())?,
-        //     }
-        // };
         let agg_exprs = to_agg
             .iter()
             .map(|e| match e {
