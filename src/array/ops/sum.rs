@@ -25,7 +25,7 @@ macro_rules! impl_daft_numeric_agg {
                 let sum_per_group = if arrow_array.null_count() > 0 {
                     Box::new(PrimitiveArray::from_trusted_len_iter(groups.iter().map(
                         |g| {
-                            g.downcast().values_iter().fold(None, |acc, index| {
+                            g.iter().fold(None, |acc, index| {
                                 let idx = *index as usize;
                                 match (acc, arrow_array.is_null(idx)) {
                                     (acc, true) => acc,
@@ -38,12 +38,10 @@ macro_rules! impl_daft_numeric_agg {
                 } else {
                     Box::new(PrimitiveArray::from_trusted_len_values_iter(
                         groups.iter().map(|g| {
-                            g.downcast()
-                                .values_iter()
-                                .fold(0 as $AggType, |acc, index| {
-                                    let idx = *index as usize;
-                                    acc + unsafe { arrow_array.value_unchecked(idx) }
-                                })
+                            g.iter().fold(0 as $AggType, |acc, index| {
+                                let idx = *index as usize;
+                                acc + unsafe { arrow_array.value_unchecked(idx) }
+                            })
                         }),
                     ))
                 };

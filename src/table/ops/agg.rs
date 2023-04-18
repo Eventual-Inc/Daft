@@ -138,11 +138,11 @@ impl Table {
         // )
         let probe_table = self.to_probe_hash_table()?;
         let mut key_indices: Vec<u64> = Vec::with_capacity(probe_table.len());
-        let mut values_indices: Vec<UInt64Array> = Vec::with_capacity(probe_table.len());
+        let mut values_indices: Vec<Vec<u64>> = Vec::with_capacity(probe_table.len());
 
         for (idx_hash, val_idx) in probe_table.into_iter() {
             key_indices.push(idx_hash.idx);
-            values_indices.push(UInt64Array::from(("idx", val_idx)));
+            values_indices.push(val_idx);
         }
         Ok((key_indices, values_indices))
     }

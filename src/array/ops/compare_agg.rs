@@ -20,8 +20,7 @@ where
     let cmp_per_group = if arrow_array.null_count() > 0 {
         let cmp_values_iter = groups.iter().map(|g| {
             let reduced_val = g
-                .downcast()
-                .values_iter()
+                .iter()
                 .map(|i| {
                     let idx = *i as usize;
                     match arrow_array.is_null(idx) {
@@ -44,8 +43,7 @@ where
     } else {
         Box::new(PrimitiveArray::from_trusted_len_values_iter(
             groups.iter().map(|g| {
-                g.downcast()
-                    .values_iter()
+                g.iter()
                     .map(|i| {
                         let idx = *i as usize;
                         unsafe { arrow_array.value_unchecked(idx) }
@@ -123,8 +121,7 @@ where
     let cmp_per_group = if arrow_array.null_count() > 0 {
         let cmp_values_iter = groups.iter().map(|g| {
             let reduced_val = g
-                .downcast()
-                .values_iter()
+                .iter()
                 .map(|i| {
                     let idx = *i as usize;
                     match arrow_array.is_null(idx) {
@@ -149,8 +146,7 @@ where
     } else {
         Box::new(
             arrow2::array::Utf8Array::<i64>::from_trusted_len_values_iter(groups.iter().map(|g| {
-                g.downcast()
-                    .values_iter()
+                g.iter()
                     .map(|i| {
                         let idx = *i as usize;
                         unsafe { arrow_array.value_unchecked(idx) }
@@ -205,8 +201,7 @@ fn grouped_cmp_bool(
     let cmp_per_group = if arrow_array.null_count() > 0 {
         let cmp_values_iter = groups.iter().map(|g| {
             let reduced_val = g
-                .downcast()
-                .values_iter()
+                .iter()
                 .map(|i| {
                     let idx = *i as usize;
                     match arrow_array.is_null(idx) {
@@ -232,8 +227,7 @@ fn grouped_cmp_bool(
         Box::new(arrow2::array::BooleanArray::from_trusted_len_values_iter(
             groups.iter().map(|g| {
                 let reduced_val = g
-                    .downcast()
-                    .values_iter()
+                    .iter()
                     .map(|i| {
                         let idx = *i as usize;
                         unsafe { arrow_array.value_unchecked(idx) }

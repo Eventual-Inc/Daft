@@ -31,8 +31,7 @@ where
             .iter()
             .map(|g| {
                 let null_count = g
-                    .downcast()
-                    .values_iter()
+                    .iter()
                     .fold(0u64, |acc, v| acc + arrow_array.is_null(*v as usize) as u64);
                 (g.len() as u64) - null_count
             })
