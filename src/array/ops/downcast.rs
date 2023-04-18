@@ -83,7 +83,7 @@ impl Downcastable for FixedSizeListArray {
 
 #[cfg(feature = "python")]
 impl Downcastable for crate::datatypes::PythonArray {
-    type Output = crate::array::non_arrow::NonArrowArray<pyo3::PyObject>;
+    type Output = crate::array::pseudo_arrow::PseudoArrowArray<pyo3::PyObject>;
 
     // downcasts a DataArray<T> to a VecBackedArray of PyObject.
     fn downcast(&self) -> &Self::Output {
