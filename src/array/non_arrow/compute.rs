@@ -1,3 +1,5 @@
+use crate::array::non_arrow::NonArrowArray;
+
 impl<T: Clone> NonArrowArray<T> {
     pub fn concatenate(arrays: Vec<&Self>) -> Self {
         todo!()

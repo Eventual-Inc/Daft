@@ -197,16 +197,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod compute;
-
-use arrow2::{
-    array::Array, 
-    bitmap::Bitmap, 
-    buffer::Buffer,
-    datatypes::DataType,
-    error::Error,
-};
+use arrow2::{array::Array, bitmap::Bitmap, buffer::Buffer, datatypes::DataType};
 use std::marker::{Send, Sync};
+
+use crate::error::{DaftError, DaftResult};
+
+pub mod compute;
 
 #[derive(Clone)]
 pub struct NonArrowArray<T> {
@@ -215,35 +211,29 @@ pub struct NonArrowArray<T> {
 }
 
 impl<T> NonArrowArray<T> {
-
-    pub fn try_new(
-        values: Buffer<T>,
-        validity: Option<Bitmap>,
-    ) -> Result<Self, Error> {
-
+    pub fn try_new(values: Buffer<T>, validity: Option<Bitmap>) -> DaftResult<Self> {
         if validity.map_or(false, |vd| vd.len() != values.len()) {
-            Err(Error::oos(
-                "validity mask length must match the number of values",
-            ))
-        } else {}
-            Ok(Self {
-                values,
-                validity,
-            })
+            Err(DaftError::ValueError(format!(
+                "validity mask length {} must match the number of values {}",
+                validity.unwrap().len(),
+                values.len(),
+            )))
+        } else {
+            Ok(Self { values, validity })
         }
-
     }
 
     pub fn new(values: Buffer<T>, validity: Option<Bitmap>) -> Self {
         Self::try_new(values, validity).unwrap()
     }
 
-    pub fn vec(&self) -> &Vec<T> {
+    #[inline]
+    pub fn values(&self) -> &Buffer<T> {
         &self.values
     }
 }
 
-impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
+impl<T: Send + Sync + Clone + 'static> Array for NonArrowArray<T> {
     #[inline]
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -256,7 +246,7 @@ impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
 
     #[inline]
     fn len(&self) -> usize {
-        self.len()
+        self.values.len()
     }
 
     #[inline]
@@ -266,12 +256,20 @@ impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
 
     #[inline]
     fn slice(&mut self, offset: usize, length: usize) {
-        self.slice(offset, length);
+        assert!(
+            offset + length <= self.len(),
+            "offset + length may not exceed length of array"
+        );
+        unsafe { self.slice_unchecked(offset, length) }
     }
 
     #[inline]
     unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
-        self.slice_unchecked(offset, length);
+        self.validity.as_mut().and_then(|bitmap| {
+            bitmap.slice_unchecked(offset, length);
+            (bitmap.unset_bits() > 0).then(|| bitmap)
+        });
+        self.values.slice_unchecked(offset, length);
     }
 
     #[inline]
@@ -284,7 +282,7 @@ impl<T: Send + Sync + Clone + 'static> Array for VecBackedArray<T> {
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
-        Box::new(VecBackedArray {
+        Box::new(NonArrowArray {
             values: self.values.clone(),
             validity,
         })

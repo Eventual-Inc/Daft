@@ -1,7 +1,7 @@
 pub mod from;
 pub mod iterator;
+pub mod non_arrow;
 pub mod ops;
-pub mod arrow2;
 use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use crate::{
