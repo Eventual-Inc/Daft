@@ -85,7 +85,7 @@ def test_numeric_agg(benchmark, num_samples) -> None:
 
 
 @pytest.mark.benchmark(group="aggregations")
-@pytest.mark.parametrize("num_groups", [1, 100])
+@pytest.mark.parametrize("num_groups", [1, 1_000, 1_000_000])
 @pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_groupby(benchmark, num_samples, num_groups) -> None:
     """Test performance of grouping to one group vs many."""
