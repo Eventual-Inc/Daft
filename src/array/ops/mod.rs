@@ -28,7 +28,7 @@ mod utf8;
 
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
-use crate::datatypes::UInt64Array;
+
 
 pub trait DaftCompare<Rhs> {
     type Output;
