@@ -126,7 +126,7 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |Latest Tag| image:: https://img.shields.io/github/v/tag/Eventual-Inc/Daft?label=latest&logo=GitHub
    :target: https://github.com/Eventual-Inc/Daft/tags
    :alt: latest tag
-   
+
 .. |Slack| image:: https://img.shields.io/badge/slack-@distdata-purple.svg?logo=slack
    :target: https://join.slack.com/t/dist-data/shared_invite/zt-1t44ss4za-1rtsJNIsQOnjlf8BlG05yw
    :alt: slack community
