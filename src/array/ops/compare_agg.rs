@@ -9,7 +9,7 @@ use arrow2::{self, array::Array};
 
 fn grouped_cmp_native<T, F>(
     data_array: &DataArray<T>,
-    op: F,
+    mut op: F,
     groups: &GroupIndices,
 ) -> DaftResult<DataArray<T>>
 where
@@ -50,7 +50,7 @@ where
                         let idx = *i as usize;
                         unsafe { arrow_array.value_unchecked(idx) }
                     })
-                    .reduce(|l, r| op(l, r))
+                    .reduce(&mut op)
                     .unwrap()
             }),
         ))

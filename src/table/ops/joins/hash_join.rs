@@ -1,5 +1,3 @@
-use std::hash::{BuildHasherDefault, Hasher};
-
 use crate::{
     array::{ops::arrow2::comparison::build_multi_array_is_equal, BaseArray},
     datatypes::{DataType, UInt64Array},
@@ -9,28 +7,6 @@ use crate::{
 };
 
 use crate::array::ops::downcast::Downcastable;
-
-#[derive(Default)]
-pub struct IdentityHasher {
-    hash: u64,
-}
-
-impl Hasher for IdentityHasher {
-    fn finish(&self) -> u64 {
-        self.hash
-    }
-
-    fn write(&mut self, _bytes: &[u8]) {
-        unreachable!("IdentityHasher should be used by u64")
-    }
-
-    #[inline]
-    fn write_u64(&mut self, i: u64) {
-        self.hash = i;
-    }
-}
-
-pub type IdentityBuildHasher = BuildHasherDefault<IdentityHasher>;
 
 pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series, Series)> {
     // TODO(sammy) add tests for mismatched types for multiple columns for joins

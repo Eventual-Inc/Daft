@@ -4,7 +4,7 @@ use crate::{
         BaseArray,
     },
     datatypes::{UInt64Array, UInt64Type},
-    dsl::{AggExpr, Expr},
+    dsl::Expr,
     error::{DaftError, DaftResult},
     series::Series,
     table::Table,
@@ -57,6 +57,7 @@ impl Table {
     }
 
     fn sort_grouper(&self) -> DaftResult<(Vec<u64>, Vec<UInt64Array>)> {
+        #![allow(dead_code)]
         // Argsort the table, but also group identical values together.
         //
         // Given a table, returns a tuple:
