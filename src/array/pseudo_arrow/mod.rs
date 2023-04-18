@@ -215,12 +215,12 @@ pub mod compute;
 pub mod python;
 
 #[derive(Clone)]
-pub struct NonArrowArray<T> {
+pub struct PseudoArrowArray<T> {
     values: Buffer<T>,
     validity: Option<Bitmap>,
 }
 
-impl<T: Send + Sync + Clone> NonArrowArray<T> {
+impl<T: Send + Sync + Clone> PseudoArrowArray<T> {
     pub fn try_new(values: Buffer<T>, validity: Option<Bitmap>) -> DaftResult<Self> {
         if validity.map_or(false, |vd| vd.len() != values.len()) {
             Err(DaftError::ValueError(format!(
@@ -248,7 +248,7 @@ impl<T: Send + Sync + Clone> NonArrowArray<T> {
     }
 }
 
-impl<T: Send + Sync + Clone + 'static> Array for NonArrowArray<T> {
+impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
     #[inline]
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -297,7 +297,7 @@ impl<T: Send + Sync + Clone + 'static> Array for NonArrowArray<T> {
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
-        Box::new(NonArrowArray {
+        Box::new(PseudoArrowArray {
             values: self.values.clone(),
             validity,
         })

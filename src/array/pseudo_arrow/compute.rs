@@ -1,6 +1,6 @@
-use crate::array::non_arrow::NonArrowArray;
+use crate::array::pseudo_arrow::PseudoArrowArray;
 
-impl<T: Clone> NonArrowArray<T> {
+impl<T: Clone> PseudoArrowArray<T> {
     pub fn concatenate(arrays: Vec<&Self>) -> Self {
         todo!()
         // let mut concatenated_values: Vec<T> = Vec::new();
