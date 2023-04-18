@@ -197,7 +197,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use arrow2::{array::Array, bitmap::{Bitmap, utils::{ZipValidity, BitmapIter}}, buffer::Buffer, datatypes::DataType};
+use arrow2::{
+    array::Array,
+    bitmap::{
+        utils::{BitmapIter, ZipValidity},
+        Bitmap,
+    },
+    buffer::Buffer,
+    datatypes::DataType,
+};
 use std::marker::{Send, Sync};
 
 use crate::error::{DaftError, DaftResult};

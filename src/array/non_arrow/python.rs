@@ -4,7 +4,6 @@ use arrow2::array::Array;
 use pyo3::prelude::*;
 
 impl NonArrowArray<PyObject> {
-
     pub fn from_pyobj_vec(pyobj_vec: Vec<PyObject>) -> Self {
         // Converts this Vec<PyObject> into a NonArrowArray<PyObject>.
         // PyNones will be marked as invalid bits in the validity bitmap.
