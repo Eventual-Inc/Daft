@@ -1,7 +1,7 @@
 use crate::array::{BaseArray, DataArray};
 use crate::datatypes::{
     BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, NullArray,
-    PythonArray, Utf8Array,
+    PythonArray, StructArray, Utf8Array,
 };
 use crate::error::{DaftError, DaftResult};
 use arrow2::compute::if_then_else::if_then_else;
@@ -242,6 +242,16 @@ impl FixedSizeListArray {
         other: &FixedSizeListArray,
         predicate: &BooleanArray,
     ) -> DaftResult<FixedSizeListArray> {
+        nested_if_then_else(predicate, self, other)
+    }
+}
+
+impl StructArray {
+    pub fn if_else(
+        &self,
+        other: &StructArray,
+        predicate: &BooleanArray,
+    ) -> DaftResult<StructArray> {
         nested_if_then_else(predicate, self, other)
     }
 }
