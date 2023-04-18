@@ -56,7 +56,11 @@ impl Utf8Array {
             (self_len, 1) => {
                 let other_scalar_value = other.get(0);
                 match other_scalar_value {
-                    None => Ok(BooleanArray::full_null(self.name(), self_len)),
+                    None => Ok(BooleanArray::full_null(
+                        self.name(),
+                        self.data_type(),
+                        self_len,
+                    )),
                     Some(other_v) => {
                         let arrow_result: arrow2::array::BooleanArray = self_arrow
                             .into_iter()
@@ -70,7 +74,11 @@ impl Utf8Array {
             (1, other_len) => {
                 let self_scalar_value = self.get(0);
                 match self_scalar_value {
-                    None => Ok(BooleanArray::full_null(self.name(), other_len)),
+                    None => Ok(BooleanArray::full_null(
+                        self.name(),
+                        self.data_type(),
+                        other_len,
+                    )),
                     Some(self_v) => {
                         let arrow_result: arrow2::array::BooleanArray = other_arrow
                             .into_iter()

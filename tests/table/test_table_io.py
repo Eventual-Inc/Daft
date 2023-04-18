@@ -35,11 +35,11 @@ TEST_DATA = {
     "integers": [i for i in range(TEST_DATA_LEN)],
     "floats": [float(i) for i in range(TEST_DATA_LEN)],
     "bools": [True for i in range(TEST_DATA_LEN)],
+    "fixed_sized_arrays": [[i for _ in range(4)] for i in range(TEST_DATA_LEN)],
     # NOTE: [RUST-INT][NESTED] Implement for nested types.
     # NOTE: Structs are currently breaking in test_parquet_reads_limit_rows! Something weird is happening during conversion to a Rust Array
     # where the slice offset is not being respected specifically for struct types.
     # "structs": [{"foo": i} for i in range(TEST_DATA_LEN)],
-    # "fixed_sized_arrays": [[i for _ in range(4)] for i in range(TEST_DATA_LEN)],
     # "var_sized_arrays": [[i for _ in range(i)] for i in range(TEST_DATA_LEN)],
 }
 
@@ -70,9 +70,9 @@ JSON_EXPECTED_DATA = {
     "integers": TEST_DATA["integers"],
     "floats": TEST_DATA["floats"],
     "bools": TEST_DATA["bools"],
+    "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
     # [RUST-INT][NESTED] Enable for nested types
     # "structs": TEST_DATA["structs"],
-    # "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
     # "var_sized_arrays": TEST_DATA["var_sized_arrays"],
 }
 
@@ -133,9 +133,9 @@ PARQUET_EXPECTED_DATA = {
     "integers": TEST_DATA["integers"],
     "floats": TEST_DATA["floats"],
     "bools": TEST_DATA["bools"],
+    "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
     # [RUST-INT][NESTED] Enable for nested types
     # "structs": TEST_DATA["structs"],
-    # "fixed_sized_arrays": TEST_DATA["fixed_sized_arrays"],
     # "var_sized_arrays": TEST_DATA["var_sized_arrays"],
 }
 
@@ -187,9 +187,9 @@ CSV_EXPECTED_DATA = {
     "integers": TEST_DATA["integers"],
     "floats": TEST_DATA["floats"],
     "bools": TEST_DATA["bools"],
+    "fixed_sized_arrays": [str(l) for l in TEST_DATA["fixed_sized_arrays"]],
     # [RUST-INT][NESTED] Enable for nested types
     # "structs": [str(s) for s in TEST_DATA["structs"]],
-    # "fixed_sized_arrays": [str(l) for l in TEST_DATA["fixed_sized_arrays"]],
     # "var_sized_arrays": [str(l) for l in TEST_DATA["var_sized_arrays"]],
 }
 
