@@ -1,4 +1,4 @@
-use std::hash::{Hasher, BuildHasherDefault};
+use std::hash::{BuildHasherDefault, Hasher};
 
 use crate::{
     array::{ops::arrow2::comparison::build_multi_array_is_equal, BaseArray},

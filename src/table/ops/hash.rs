@@ -10,6 +10,8 @@ use crate::{
     table::Table,
 };
 
+use crate::array::ops::downcast::Downcastable;
+
 pub struct IndexHash {
     pub idx: u64,
     pub hash: u64,

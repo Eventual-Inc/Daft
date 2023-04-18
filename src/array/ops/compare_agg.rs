@@ -61,8 +61,6 @@ where
     )))
 }
 
-
-
 use super::downcast::Downcastable;
 
 impl<T> DaftCompareAggable for &DataArray<T>
@@ -298,10 +296,18 @@ impl DaftCompareAggable for &DataArray<NullType> {
     }
 
     fn grouped_min(&self, groups: &super::GroupIndices) -> Self::Output {
-        Ok(DataArray::full_null(self.name(),self.data_type(), groups.len()))
+        Ok(DataArray::full_null(
+            self.name(),
+            self.data_type(),
+            groups.len(),
+        ))
     }
 
     fn grouped_max(&self, groups: &super::GroupIndices) -> Self::Output {
-        Ok(DataArray::full_null(self.name(), self.data_type(), groups.len()))
+        Ok(DataArray::full_null(
+            self.name(),
+            self.data_type(),
+            groups.len(),
+        ))
     }
 }
