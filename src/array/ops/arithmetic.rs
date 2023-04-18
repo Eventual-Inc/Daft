@@ -54,14 +54,14 @@ where
         (_, 1) => {
             let opt_rhs = rhs.get(0);
             match opt_rhs {
-                None => Ok(DataArray::full_null(lhs.name(), lhs.len())),
+                None => Ok(DataArray::full_null(lhs.name(), lhs.data_type(), lhs.len())),
                 Some(rhs) => lhs.apply(|lhs| operation(lhs, rhs)),
             }
         }
         (1, _) => {
             let opt_lhs = lhs.get(0);
             match opt_lhs {
-                None => Ok(DataArray::full_null(rhs.name(), rhs.len())),
+                None => Ok(DataArray::full_null(rhs.name(), lhs.data_type(), rhs.len())),
                 // NOTE: naming logic here is wrong, and assigns the rhs name. However, renaming is handled at the Series level so this
                 // error is obfuscated.
                 Some(lhs) => rhs.apply(|rhs| operation(lhs, rhs)),
@@ -162,14 +162,18 @@ where
                 (_, 1) => {
                     let opt_rhs = rhs.get(0);
                     match opt_rhs {
-                        None => Ok(DataArray::full_null(self.name(), self.len())),
+                        None => Ok(DataArray::full_null(
+                            self.name(),
+                            self.data_type(),
+                            self.len(),
+                        )),
                         Some(rhs) => self.apply(|lhs| lhs % rhs),
                     }
                 }
                 (1, _) => {
                     let opt_lhs = self.get(0);
                     Ok(match opt_lhs {
-                        None => DataArray::full_null(rhs.name(), rhs.len()),
+                        None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
                         Some(lhs) => {
                             let values_iter = rhs.downcast().iter().map(|v| v.map(|v| lhs % *v));
                             let arrow_array = unsafe {
