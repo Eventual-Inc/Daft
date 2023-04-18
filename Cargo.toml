@@ -47,3 +47,6 @@ version = "0.0.23"
 
 [profile.dev]
 overflow-checks = false
+
+[target.'cfg(all(target_os = "linux", not(use_mimalloc)))'.dependencies]
+jemallocator = {version = "0.5", features = ["disable_initial_exec_tls"]}
