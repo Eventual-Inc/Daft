@@ -9,17 +9,10 @@ mod series;
 mod table;
 mod utils;
 
-#[cfg(all(target_os = "linux", not(use_mimalloc)))]
-use jemallocator::Jemalloc;
-
 #[cfg(feature = "python")]
 mod ffi;
 #[cfg(feature = "python")]
 mod python;
-
-#[global_allocator]
-#[cfg(all(target_os = "linux", not(use_mimalloc)))]
-static ALLOC: Jemalloc = Jemalloc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const BUILD_TYPE_DEV: &str = "dev";
