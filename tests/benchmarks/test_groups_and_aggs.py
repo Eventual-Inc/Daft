@@ -8,11 +8,11 @@ import pytest
 
 from daft import DataFrame
 
-NUM_SAMPLES = 1_000_000
+NUM_SAMPLES = [1_000_000, 10_000_000]
 
 
 @pytest.mark.benchmark(group="aggregations")
-@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+@pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_agg_baseline(benchmark, num_samples) -> None:
     """Test baseline aggregation performance.
 
@@ -32,7 +32,7 @@ def test_agg_baseline(benchmark, num_samples) -> None:
 
 @pytest.mark.benchmark(group="aggregations")
 @pytest.mark.parametrize("num_partitions", [2])
-@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+@pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_agg_multipart(benchmark, num_samples, num_partitions) -> None:
     """Evaluate the impact of multiple partitions."""
     df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).into_partitions(num_partitions).collect()
@@ -48,7 +48,7 @@ def test_agg_multipart(benchmark, num_samples, num_partitions) -> None:
 
 
 @pytest.mark.benchmark(group="aggregations")
-@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+@pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_comparable_agg(benchmark, num_samples) -> None:
     """Test aggregation performance for comparisons against string types."""
 
@@ -68,7 +68,7 @@ def test_comparable_agg(benchmark, num_samples) -> None:
 
 
 @pytest.mark.benchmark(group="aggregations")
-@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+@pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_numeric_agg(benchmark, num_samples) -> None:
     """Test aggregation performance for numeric aggregation ops."""
 
@@ -86,7 +86,7 @@ def test_numeric_agg(benchmark, num_samples) -> None:
 
 @pytest.mark.benchmark(group="aggregations")
 @pytest.mark.parametrize("num_groups", [1, 100])
-@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+@pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_groupby(benchmark, num_samples, num_groups) -> None:
     """Test performance of grouping to one group vs many."""
 
@@ -112,7 +112,7 @@ def test_groupby(benchmark, num_samples, num_groups) -> None:
 
 
 @pytest.mark.benchmark(group="aggregations")
-@pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
+@pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 @pytest.mark.parametrize("num_columns", [1, 2])
 def test_multicolumn_groupby(benchmark, num_columns, num_samples) -> None:
     """Evaluates the impact of an additional column in the groupby.
