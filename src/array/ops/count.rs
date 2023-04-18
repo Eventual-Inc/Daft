@@ -6,8 +6,6 @@ use crate::{array::DataArray, datatypes::*, error::DaftResult};
 
 use super::{DaftCountAggable, GroupIndices};
 
-
-
 impl<T> DaftCountAggable for &DataArray<T>
 where
     T: DaftDataType,
