@@ -53,16 +53,16 @@ pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series
         false,
         false,
     )?;
-    for (i, h) in r_hashes.downcast().values_iter().enumerate() {
+    for (r_idx, h) in r_hashes.downcast().values_iter().enumerate() {
         if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
             *h == other.hash && {
-                let j = other.idx;
-                is_equal(j as usize, i)
+                let l_idx = other.idx;
+                is_equal(l_idx as usize, r_idx)
             }
         }) {
-            for j in indices {
-                left_idx.push(*j);
-                right_idx.push(i as u64);
+            for l_idx in indices {
+                left_idx.push(*l_idx);
+                right_idx.push(r_idx as u64);
             }
         }
     }
