@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
 
 use crate::{
-    array::{ops::DaftLogical, vec_backed::VecBackedArray, BaseArray, DataArray},
+    array::{non_arrow::NonArrowArray, ops::DaftLogical, BaseArray, DataArray},
     datatypes::{DataType, Field, PythonType, UInt64Type},
     ffi,
     series::{self, Series},
@@ -50,7 +50,11 @@ impl PySeries {
     #[staticmethod]
     pub fn from_pylist(name: &str, pylist: &PyAny) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
-        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(VecBackedArray::new(vec_pyobj));
+        let validity: arrow2::bitmap::Bitmap = Python::with_gil(|py| {
+            arrow2::bitmap::Bitmap::from_iter(vec_pyobj.iter().map(|pyobj| !pyobj.is_none(py)))
+        });
+        let arrow_array: Box<dyn arrow2::array::Array> =
+            Box::new(NonArrowArray::new(vec_pyobj.into(), Some(validity)));
         let field = Field::new(name, DataType::Python);
 
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
