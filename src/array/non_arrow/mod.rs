@@ -197,12 +197,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use arrow2::{array::Array, bitmap::Bitmap, buffer::Buffer, datatypes::DataType};
+use arrow2::{array::Array, bitmap::{Bitmap, utils::{ZipValidity, BitmapIter}}, buffer::Buffer, datatypes::DataType};
 use std::marker::{Send, Sync};
 
 use crate::error::{DaftError, DaftResult};
 
 pub mod compute;
+#[cfg(feature = "python")]
+pub mod python;
 
 #[derive(Clone)]
 pub struct NonArrowArray<T> {
@@ -210,7 +212,7 @@ pub struct NonArrowArray<T> {
     validity: Option<Bitmap>,
 }
 
-impl<T> NonArrowArray<T> {
+impl<T: Send + Sync + Clone> NonArrowArray<T> {
     pub fn try_new(values: Buffer<T>, validity: Option<Bitmap>) -> DaftResult<Self> {
         if validity.map_or(false, |vd| vd.len() != values.len()) {
             Err(DaftError::ValueError(format!(
@@ -230,6 +232,11 @@ impl<T> NonArrowArray<T> {
     #[inline]
     pub fn values(&self) -> &Buffer<T> {
         &self.values
+    }
+
+    #[inline]
+    pub fn iter(&self) -> ZipValidity<&T, std::slice::Iter<T>, BitmapIter> {
+        ZipValidity::new_with_validity(self.values().iter(), self.validity())
     }
 }
 
