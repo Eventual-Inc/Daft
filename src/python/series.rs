@@ -1,5 +1,6 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
+use arrow2::array::Array;
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
 
 use crate::{
@@ -62,8 +63,28 @@ impl PySeries {
     }
 
     pub fn to_pylist(&self) -> PyResult<PyObject> {
-        let vec_backed_array = self.series.python()?.downcast();
-        Python::with_gil(|py| Ok(PyList::new(py, vec_backed_array.vec()).into()))
+        let non_arrow_array = self.series.python()?.downcast();
+
+        Python::with_gil(|py| {
+            if let Some(validity) = non_arrow_array.validity() {
+                let pyobj_vec: Vec<PyObject> = validity
+                    .iter()
+                    .zip(non_arrow_array.values().iter())
+                    .map(
+                        |(valid, pyobj)| {
+                            if valid {
+                                pyobj.clone()
+                            } else {
+                                py.None()
+                            }
+                        },
+                    )
+                    .collect();
+                Ok(PyList::new(py, pyobj_vec).into())
+            } else {
+                Ok(PyList::new(py, non_arrow_array.values().to_vec()).into())
+            }
+        })
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
