@@ -47,7 +47,11 @@ impl BooleanArray {
 impl NullArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let set_bits = mask.len() - mask.downcast().values().unset_bits();
-        Ok(NullArray::full_null(self.name(), set_bits))
+        Ok(NullArray::full_null(
+            self.name(),
+            self.data_type(),
+            set_bits,
+        ))
     }
 }
 

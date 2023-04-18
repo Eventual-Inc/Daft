@@ -57,6 +57,22 @@ pub fn record_batches_to_table(batches: &[&PyAny], schema: SchemaRef) -> PyResul
                         arrow2::datatypes::DataType::LargeBinary,
                     )
                     .boxed(),
+                    arrow2::datatypes::DataType::List(child) => {
+                        // Code adapted from cast::utf8_to_large_utf8
+                        let from = arr
+                            .as_ref()
+                            .as_any()
+                            .downcast_ref::<arrow2::array::ListArray<i32>>()
+                            .unwrap();
+                        let data_type = arrow2::array::ListArray::<i64>::default_datatype(
+                            child.data_type().clone(),
+                        );
+                        let validity = from.validity().cloned();
+                        let values = from.values().clone();
+                        let offsets = from.offsets().into();
+                        arrow2::array::ListArray::<i64>::new(data_type, offsets, values, validity)
+                            .boxed()
+                    }
                     _ => arr,
                 };
 
