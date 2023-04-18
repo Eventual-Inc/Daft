@@ -5,7 +5,7 @@ use crate::{
     array::{BaseArray, DataArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DateArray, FixedSizeListArray, ListArray,
-        Utf8Array,
+        StructArray, Utf8Array,
     },
 };
 
@@ -76,6 +76,15 @@ impl Downcastable for FixedSizeListArray {
     type Output = array::FixedSizeListArray;
 
     // downcasts a DataArray<T> to an Arrow FixedSizeListArray.
+    fn downcast(&self) -> &Self::Output {
+        self.data().as_any().downcast_ref().unwrap()
+    }
+}
+
+impl Downcastable for StructArray {
+    type Output = array::StructArray;
+
+    // downcasts a DataArray<T> to an Arrow StructArray.
     fn downcast(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }

@@ -2,7 +2,7 @@ use crate::{
     array::{BaseArray, DataArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeListArray, ListArray,
-        NullArray, Utf8Array,
+        NullArray, StructArray, Utf8Array,
     },
     error::DaftResult,
 };
@@ -235,6 +235,50 @@ impl FixedSizeListArray {
         };
         if is_valid {
             Some(unsafe { arrow_array.value_unchecked(idx) })
+        } else {
+            None
+        }
+    }
+
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        Self::try_from((self.name(), result))
+    }
+
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            // TODO: [RUST-INT] proper display of bytes as string here, preferably similar to how Python displays it
+            // See discussion: https://stackoverflow.com/questions/54358833/how-does-bytes-repr-representation-work
+            Some(v) => Ok(format!("b\"{:?}\"", v)),
+        }
+    }
+}
+
+impl StructArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<Vec<Box<dyn arrow2::array::Array>>> {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        let arrow_array = self.downcast();
+        let is_valid = match arrow_array.validity() {
+            Some(validity) => validity.get_bit(idx),
+            None => true,
+        };
+        if is_valid {
+            Some(
+                arrow_array
+                    .values()
+                    .iter()
+                    .map(|v| unsafe { v.sliced_unchecked(idx, 1) })
+                    .collect(),
+            )
         } else {
             None
         }

@@ -4,7 +4,7 @@ use crate::{
     array::DataArray,
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, NullArray,
-        Utf8Array,
+        StructArray, Utf8Array,
     },
     error::DaftResult,
 };
@@ -59,6 +59,13 @@ impl ListArray {
 }
 
 impl FixedSizeListArray {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
+        DataArray::try_from((self.name(), result))
+    }
+}
+
+impl StructArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
         DataArray::try_from((self.name(), result))

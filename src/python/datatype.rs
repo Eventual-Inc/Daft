@@ -2,7 +2,7 @@ use crate::datatypes::{DataType, Field};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
-    types::{PyBytes, PyTuple},
+    types::{PyBytes, PyDict, PyString, PyTuple},
 };
 
 #[pyclass]
@@ -120,6 +120,22 @@ impl PyDataType {
         Ok(DataType::FixedSizeList(
             Box::new(Field::new(name, data_type.dtype)),
             usize::try_from(size)?,
+        )
+        .into())
+    }
+
+    #[staticmethod]
+    pub fn r#struct(fields: &PyDict) -> PyResult<Self> {
+        Ok(DataType::Struct(
+            fields
+                .iter()
+                .map(|(name, dtype)| {
+                    Ok(Field::new(
+                        name.downcast::<PyString>()?.to_str()?,
+                        dtype.extract::<PyDataType>()?.dtype,
+                    ))
+                })
+                .collect::<PyResult<Vec<Field>>>()?,
         )
         .into())
     }

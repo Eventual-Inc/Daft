@@ -94,6 +94,22 @@ def test_series_filter_on_fixed_size_list_array(dtype) -> None:
     assert result.to_pylist() == expected
 
 
+def test_series_filter_on_struct_array() -> None:
+    dtype1, dtype2, dtype3 = pa.int64(), pa.float64(), pa.string()
+    dtype = pa.struct({"a": dtype1, "b": dtype2, "c": dtype3})
+    data = pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, None, {"a": 5, "b": 6, "c": 7}, {"a": 8, "b": None, "c": 10}])
+
+    s = Series.from_arrow(data.cast(dtype))
+    pymask = [False, True, True, None, False]
+    mask = Series.from_pylist(pymask)
+
+    result = s.filter(mask)
+
+    assert s.datatype() == result.datatype()
+    expected = [val for val, keep in zip(s.to_pylist(), pymask) if keep]
+    assert result.to_pylist() == expected
+
+
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES + ARROW_STRING_TYPES)
 def test_series_filter_broadcast(dtype) -> None:
     data = pa.array([1, 2, 3, None, 5, None])
