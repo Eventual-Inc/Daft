@@ -20,7 +20,11 @@ where
     T: Hash,
     T: std::cmp::Eq,
 {
-    let mut tbl = FnvHashMap::<T, (u64, Vec<u64>)>::default();
+    const DEFAULT_SIZE: usize = 256;
+    let mut tbl = FnvHashMap::<T, (u64, Vec<u64>)>::with_capacity_and_hasher(
+        DEFAULT_SIZE,
+        Default::default(),
+    );
     for (idx, val) in iter.enumerate() {
         let idx = idx as u64;
         let e = tbl.entry(val);
