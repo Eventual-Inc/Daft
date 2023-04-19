@@ -264,10 +264,22 @@ impl FixedSizeListArray {
 impl crate::datatypes::PythonArray {
     #[inline]
     pub fn get(&self, idx: usize) -> pyo3::PyObject {
+        use arrow2::array::Array;
+        use pyo3::prelude::*;
+
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
-        self.downcast().vec()[idx].clone()
+        let valid = self
+            .downcast()
+            .validity()
+            .map(|vd| vd.get_bit(idx))
+            .unwrap_or(true);
+        if valid {
+            self.downcast().values().get(idx).unwrap().clone()
+        } else {
+            Python::with_gil(|py| py.None())
+        }
     }
 
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
@@ -275,27 +287,61 @@ impl crate::datatypes::PythonArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
+        use crate::array::pseudo_arrow::PseudoArrowArray;
+        use crate::datatypes::PythonType;
+
         use arrow2::array::Array;
         use arrow2::types::Index;
-        use pyo3::PyObject;
-
-        use crate::array::vec_backed::VecBackedArray;
+        use pyo3::prelude::*;
 
         let indices = idx.downcast();
-        let indices_iter = if indices.null_count() > 0 {
-            unimplemented!()
-        } else {
-            indices.values().iter()
+
+        let old_values = self.downcast().values();
+
+        // Execute take on the data values, ignoring validity.
+        let new_values: Vec<PyObject> = {
+            let py_none = Python::with_gil(|py| py.None());
+
+            indices
+                .iter()
+                .map(|maybe_idx| match maybe_idx {
+                    Some(idx) => old_values[idx.to_usize()].clone(),
+                    None => py_none.clone(),
+                })
+                .collect()
         };
 
-        let values_vec = {
-            indices_iter
-                .map(|index| self.downcast().vec()[index.to_usize()].clone())
-                .collect::<Vec<PyObject>>()
+        // Execute take on the validity bitmap using arrow2::compute.
+        let new_validity = {
+            self.downcast()
+                .validity()
+                .map(|old_validity| {
+                    let old_validity_array = {
+                        &arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            old_validity.clone(),
+                            None,
+                        )
+                    };
+                    arrow2::compute::take::take(old_validity_array, indices)
+                })
+                .transpose()?
+                .map(|new_validity_dynarray| {
+                    let new_validity_iter = new_validity_dynarray
+                        .as_any()
+                        .downcast_ref::<arrow2::array::BooleanArray>()
+                        .unwrap()
+                        .iter();
+                    arrow2::bitmap::Bitmap::from_iter(
+                        new_validity_iter.map(|valid| valid.unwrap_or(false)),
+                    )
+                })
         };
-        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(VecBackedArray::new(values_vec));
 
-        DataArray::<crate::datatypes::PythonType>::new(self.field().clone().into(), arrow_array)
+        let arrow_array: Box<dyn arrow2::array::Array> =
+            Box::new(PseudoArrowArray::new(new_values.into(), new_validity));
+
+        DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {

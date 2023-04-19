@@ -8,7 +8,7 @@ from daft import DataType, Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 
-class TestObject:
+class MockObject:
     def __init__(self, test_val):
         self.test_val = test_val
 
@@ -38,7 +38,7 @@ def test_series_concat(dtype, chunks) -> None:
 def test_series_concat_pyobj(chunks) -> None:
     series = []
     for i in range(chunks):
-        series.append(Series.from_pylist([TestObject(i * j) for j in range(i)], pyobj="force"))
+        series.append(Series.from_pylist([MockObject(i * j) for j in range(i)], pyobj="force"))
 
     concated = Series.concat(series)
 
