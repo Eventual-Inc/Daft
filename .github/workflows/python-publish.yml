@@ -46,9 +46,6 @@ jobs:
     - run: python tools/patch_package_version.py
     - name: Install Rust toolchain
       uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-
     - name: Build wheels - x86_64
       uses: messense/maturin-action@v1
       with:

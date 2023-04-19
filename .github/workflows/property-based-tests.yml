@@ -20,9 +20,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        ref: rust-main
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo

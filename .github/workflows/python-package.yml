@@ -24,8 +24,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
     - uses: actions/cache@v3
@@ -107,8 +105,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
     - uses: actions/cache@v3
@@ -185,8 +181,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo
@@ -276,8 +270,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo
@@ -355,9 +347,6 @@ jobs:
         pip install pre-commit
 
     - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        components: clippy
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo
