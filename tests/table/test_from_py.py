@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute as pac
 import pytest
 
 from daft.series import Series
@@ -24,6 +25,27 @@ def test_from_pydict_arrow() -> None:
     daft_table = Table.from_pydict({"a": pa.array([1, 2, 3], type=pa.int8())})
     assert "a" in daft_table.column_names()
     assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int8())
+
+
+def test_from_pydict_arrow_list_array() -> None:
+    arrow_arr = pa.array([[1, 2], [3], None, [None, 6]], pa.list_(pa.int64()))
+    daft_table = Table.from_pydict({"a": arrow_arr})
+    assert "a" in daft_table.column_names()
+    assert daft_table.to_arrow()["a"].combine_chunks() == pac.cast(arrow_arr, pa.large_list(pa.int64()))
+
+
+def test_from_pydict_arrow_fixed_size_list_array() -> None:
+    arrow_arr = pa.array([[1, 2], [3, 4], None, [None, 6]], pa.list_(pa.int64(), 2))
+    daft_table = Table.from_pydict({"a": arrow_arr})
+    assert "a" in daft_table.column_names()
+    assert daft_table.to_arrow()["a"].combine_chunks() == arrow_arr
+
+
+def test_from_pydict_arrow_struct_array() -> None:
+    arrow_arr = pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}])
+    daft_table = Table.from_pydict({"a": arrow_arr})
+    assert "a" in daft_table.column_names()
+    assert daft_table.to_arrow()["a"].combine_chunks() == arrow_arr
 
 
 def test_from_pydict_series() -> None:

@@ -7,6 +7,7 @@ use crate::{
     datatypes::{DataType, Field, PythonType, UInt64Type},
     ffi,
     series::{self, Series},
+    utils::arrow::cast_array_if_needed,
 };
 
 use super::datatype::PyDataType;
@@ -16,51 +17,6 @@ use crate::array::ops::downcast::Downcastable;
 #[derive(Clone)]
 pub struct PySeries {
     pub series: series::Series,
-}
-
-fn cast_array_if_needed(
-    arrow_array: Box<dyn arrow2::array::Array>,
-) -> Box<dyn arrow2::array::Array> {
-    use arrow2::compute::cast;
-    match arrow_array.data_type() {
-        arrow2::datatypes::DataType::Utf8 => {
-            cast::utf8_to_large_utf8(arrow_array.as_any().downcast_ref().unwrap()).boxed()
-        }
-        arrow2::datatypes::DataType::Binary => cast::binary_to_large_binary(
-            arrow_array.as_any().downcast_ref().unwrap(),
-            arrow2::datatypes::DataType::LargeBinary,
-        )
-        .boxed(),
-        arrow2::datatypes::DataType::List(field) => cast::cast(
-            arrow_array.as_ref(),
-            &arrow2::datatypes::DataType::LargeList(field.clone()),
-            Default::default(),
-        )
-        .unwrap()
-        .to_boxed(),
-        arrow2::datatypes::DataType::Struct(fields) => {
-            let new_arrays = arrow_array
-                .as_any()
-                .downcast_ref::<arrow2::array::StructArray>()
-                .unwrap()
-                .values()
-                .iter()
-                .map(|field_arr| cast_array_if_needed(field_arr.clone()))
-                .collect::<Vec<Box<dyn arrow2::array::Array>>>();
-            let new_fields = fields
-                .iter()
-                .map(|field| field.name.clone())
-                .zip(new_arrays.iter().map(|arr| arr.data_type().clone()))
-                .map(|(name, dtype)| arrow2::datatypes::Field::new(name, dtype, true))
-                .collect();
-            Box::new(arrow2::array::StructArray::new(
-                arrow2::datatypes::DataType::Struct(new_fields),
-                new_arrays,
-                arrow_array.validity().cloned(),
-            ))
-        }
-        _ => arrow_array,
-    }
 }
 
 #[pymethods]

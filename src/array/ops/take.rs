@@ -19,10 +19,9 @@ where
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
         let arrow_array = self.downcast();
-        let is_valid = match arrow_array.validity() {
-            Some(validity) => validity.get_bit(idx),
-            None => true,
-        };
+        let is_valid = arrow_array
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
         if is_valid {
             Some(unsafe { arrow_array.value_unchecked(idx) })
         } else {
@@ -55,10 +54,9 @@ impl Utf8Array {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
         let arrow_array = self.downcast();
-        let is_valid = match arrow_array.validity() {
-            Some(validity) => validity.get_bit(idx),
-            None => true,
-        };
+        let is_valid = arrow_array
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
         if is_valid {
             Some(unsafe { arrow_array.value_unchecked(idx) })
         } else {
@@ -91,10 +89,9 @@ impl BooleanArray {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
         let arrow_array = self.downcast();
-        let is_valid = match arrow_array.validity() {
-            Some(validity) => validity.get_bit(idx),
-            None => true,
-        };
+        let is_valid = arrow_array
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
         if is_valid {
             Some(unsafe { arrow_array.value_unchecked(idx) })
         } else {
@@ -153,10 +150,9 @@ impl BinaryArray {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
         let arrow_array = self.downcast();
-        let is_valid = match arrow_array.validity() {
-            Some(validity) => validity.get_bit(idx),
-            None => true,
-        };
+        let is_valid = arrow_array
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
         if is_valid {
             Some(unsafe { arrow_array.value_unchecked(idx) })
         } else {
@@ -191,10 +187,9 @@ impl ListArray {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
         let arrow_array = self.downcast();
-        let is_valid = match arrow_array.validity() {
-            Some(validity) => validity.get_bit(idx),
-            None => true,
-        };
+        let is_valid = arrow_array
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
         if is_valid {
             Some(unsafe { arrow_array.value_unchecked(idx) })
         } else {
@@ -215,9 +210,7 @@ impl ListArray {
         let val = self.get(idx);
         match val {
             None => Ok("None".to_string()),
-            // TODO: [RUST-INT] proper display of bytes as string here, preferably similar to how Python displays it
-            // See discussion: https://stackoverflow.com/questions/54358833/how-does-bytes-repr-representation-work
-            Some(v) => Ok(format!("b\"{:?}\"", v)),
+            Some(v) => Ok(format!("{v:?}")),
         }
     }
 }
@@ -229,10 +222,9 @@ impl FixedSizeListArray {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
         let arrow_array = self.downcast();
-        let is_valid = match arrow_array.validity() {
-            Some(validity) => validity.get_bit(idx),
-            None => true,
-        };
+        let is_valid = arrow_array
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
         if is_valid {
             Some(unsafe { arrow_array.value_unchecked(idx) })
         } else {
@@ -253,9 +245,7 @@ impl FixedSizeListArray {
         let val = self.get(idx);
         match val {
             None => Ok("None".to_string()),
-            // TODO: [RUST-INT] proper display of bytes as string here, preferably similar to how Python displays it
-            // See discussion: https://stackoverflow.com/questions/54358833/how-does-bytes-repr-representation-work
-            Some(v) => Ok(format!("b\"{:?}\"", v)),
+            Some(v) => Ok(format!("{v:?}")),
         }
     }
 }
@@ -267,10 +257,9 @@ impl StructArray {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
         let arrow_array = self.downcast();
-        let is_valid = match arrow_array.validity() {
-            Some(validity) => validity.get_bit(idx),
-            None => true,
-        };
+        let is_valid = arrow_array
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
         if is_valid {
             Some(
                 arrow_array
@@ -297,9 +286,7 @@ impl StructArray {
         let val = self.get(idx);
         match val {
             None => Ok("None".to_string()),
-            // TODO: [RUST-INT] proper display of bytes as string here, preferably similar to how Python displays it
-            // See discussion: https://stackoverflow.com/questions/54358833/how-does-bytes-repr-representation-work
-            Some(v) => Ok(format!("b\"{:?}\"", v)),
+            Some(v) => Ok(format!("{v:?}")),
         }
     }
 }

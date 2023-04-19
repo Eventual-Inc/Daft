@@ -71,9 +71,36 @@ class Table:
     @staticmethod
     def from_arrow(arrow_table: pa.Table) -> Table:
         assert isinstance(arrow_table, pa.Table)
+        arrow_schema = arrow_table.schema
         schema = Schema._from_field_name_and_types(
             [(f.name, DataType.from_arrow_type(f.type)) for f in arrow_table.schema]
         )
+        # TODO(Clark): For pyarrow < 12.0.0, struct array slice offsets are dropped
+        # when converting to record batches. We work around this below by flattening
+        # the field arrays for all struct arrays, which propagates said offsets to
+        # the child (field) arrays. Note that this flattening is zero-copy unless
+        # the column contains a validity bitmap (i.e. the column has one or more nulls).
+        #
+        # We should enforce a lower Arrow version bound once the upstream fix is
+        # released.
+        #
+        # See:
+        #  - https://github.com/apache/arrow/issues/34639
+        #  - https://github.com/apache/arrow/pull/34691
+        for idx, name in enumerate(arrow_schema.names):
+            field = arrow_schema.field(name)
+            dtype = field.type
+            if pa.types.is_struct(dtype):
+                fields = [dtype.field(i) for i in range(dtype.num_fields)]
+                new_chunks = []
+                # Flatten each chunk to propagate slice offsets to child arrays.
+                for chunk in arrow_table.column(name).chunks:
+                    new_field_arrays = chunk.flatten()
+                    new_chunk = pa.StructArray.from_arrays(new_field_arrays, fields=fields)
+                    new_chunks.append(new_chunk)
+                new_column = pa.chunked_array(new_chunks)
+                arrow_table = arrow_table.set_column(idx, field, new_column)
+
         pyt = _PyTable.from_arrow_record_batches(arrow_table.to_batches(), schema._schema)
         return Table._from_pytable(pyt)
 
