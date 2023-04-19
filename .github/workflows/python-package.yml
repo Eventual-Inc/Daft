@@ -26,8 +26,6 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: stable
-        override: true
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
     - uses: actions/cache@v3
@@ -111,8 +109,6 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: stable
-        override: true
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
     - uses: actions/cache@v3
@@ -191,8 +187,6 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: stable
-        override: true
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo
@@ -284,8 +278,6 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: stable
-        override: true
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo
@@ -365,8 +357,6 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: stable
-        override: true
         components: clippy
     - uses: actions/cache@v3
       env:

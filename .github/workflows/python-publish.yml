@@ -47,9 +47,7 @@ jobs:
     - name: Install Rust toolchain
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
         profile: minimal
-        default: true
 
     - name: Build wheels - x86_64
       uses: messense/maturin-action@v1
