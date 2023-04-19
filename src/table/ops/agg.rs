@@ -1,6 +1,6 @@
 use crate::{
     array::{
-        ops::{arrow2::comparison::build_multi_array_is_equal, GroupIndices},
+        ops::{arrow2::comparison::build_multi_array_is_equal, GroupIndicesPair},
         BaseArray,
     },
     datatypes::{UInt64Array, UInt64Type},
@@ -124,7 +124,7 @@ impl Table {
         Ok((key_indices, values_indices))
     }
 
-    fn hash_grouper(&self) -> DaftResult<(Vec<u64>, GroupIndices)> {
+    fn hash_grouper(&self) -> DaftResult<GroupIndicesPair> {
         // Group equal rows together.
         //
         // Given a table, returns a tuple:
