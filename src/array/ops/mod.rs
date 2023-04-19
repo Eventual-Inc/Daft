@@ -82,7 +82,7 @@ pub type GroupIndices = Vec<VecIndices>;
 pub type GroupIndicesPair = (VecIndices, GroupIndices);
 
 pub trait IntoGroups {
-    fn into_groups(&self) -> DaftResult<GroupIndicesPair>;
+    fn make_groups(&self) -> DaftResult<GroupIndicesPair>;
 }
 
 pub trait DaftCountAggable {
