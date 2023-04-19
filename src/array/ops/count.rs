@@ -25,15 +25,19 @@ where
     fn grouped_count(&self, groups: &GroupIndices) -> Self::Output {
         let arrow_array = self.data.as_ref();
 
-        let counts_per_group: Vec<_> = groups
-            .iter()
-            .map(|g| {
-                let null_count = g
-                    .iter()
-                    .fold(0u64, |acc, v| acc + arrow_array.is_null(*v as usize) as u64);
-                (g.len() as u64) - null_count
-            })
-            .collect();
+        let counts_per_group: Vec<_> = if arrow_array.null_count() > 0 {
+            groups
+                .iter()
+                .map(|g| {
+                    let null_count = g
+                        .iter()
+                        .fold(0u64, |acc, v| acc + arrow_array.is_null(*v as usize) as u64);
+                    (g.len() as u64) - null_count
+                })
+                .collect()
+        } else {
+            groups.iter().map(|g| g.len() as u64).collect()
+        };
 
         Ok(DataArray::<UInt64Type>::from((
             self.field.name.as_ref(),
