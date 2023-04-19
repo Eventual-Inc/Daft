@@ -263,24 +263,23 @@ impl FixedSizeListArray {
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {
     #[inline]
-    pub fn get(&self, _idx: usize) -> pyo3::PyObject {
-        todo!()
-        // use pyo3::prelude::*;
+    pub fn get(&self, idx: usize) -> pyo3::PyObject {
+        use arrow2::array::Array;
+        use pyo3::prelude::*;
 
-        // if idx >= self.len() {
-        //     panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        // }
-        // let valid = self
-        //     .downcast()
-        //     .validity()
-        //     .map(|vd| vd.get_bit(idx))
-        //     .or(Some(true))
-        //     .unwrap();
-        // if valid {
-        //     self.downcast().values().get(idx).unwrap().clone()
-        // } else {
-        //     Python::with_gil(|py| py.None())
-        // }
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        let valid = self
+            .downcast()
+            .validity()
+            .map(|vd| vd.get_bit(idx))
+            .unwrap_or(true);
+        if valid {
+            self.downcast().values().get(idx).unwrap().clone()
+        } else {
+            Python::with_gil(|py| py.None())
+        }
     }
 
     pub fn take<I>(&self, _idx: &DataArray<I>) -> DaftResult<Self>
