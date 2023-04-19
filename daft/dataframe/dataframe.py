@@ -987,7 +987,8 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with exploded column
         """
-        raise NotImplementedError(f"[RUST-INT][NESTED] Implement explode for nested types")
+        parsed_exprs = self.__column_input_to_expression(columns)
+        return DataFrame(logical_plan.Explode(self._plan, parsed_exprs))
 
     def _agg(
         self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionsProjection] = None
