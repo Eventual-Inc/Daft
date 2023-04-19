@@ -66,10 +66,11 @@ impl FixedSizeListArray {
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        use crate::array::pseudo_arrow::PseudoArrowArray;
-        use crate::datatypes::PythonType;
         use arrow2::array::Array;
         use pyo3::PyObject;
+
+        use crate::array::pseudo_arrow::PseudoArrowArray;
+        use crate::datatypes::PythonType;
 
         let mask = mask.downcast();
 

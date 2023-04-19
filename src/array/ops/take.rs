@@ -282,62 +282,66 @@ impl crate::datatypes::PythonArray {
         }
     }
 
-    pub fn take<I>(&self, _idx: &DataArray<I>) -> DaftResult<Self>
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        todo!()
-        // use arrow2::types::Index;
-        // use pyo3::prelude::*;
+        use crate::array::pseudo_arrow::PseudoArrowArray;
+        use crate::datatypes::PythonType;
 
-        // use crate::array::pseudo_arrow::PseudoArrowArray;
+        use arrow2::array::Array;
+        use arrow2::types::Index;
+        use pyo3::prelude::*;
 
-        // let indices = idx.downcast();
+        let indices = idx.downcast();
 
-        // let old_values = self.downcast().values();
+        let old_values = self.downcast().values();
 
-        // let new_values: Vec<PyObject> = {
-        //     let py_none = Python::with_gil(|py| {
-        //         py.None()
-        //     });
+        // Execute take on the data values, ignoring validity.
+        let new_values: Vec<PyObject> = {
+            let py_none = Python::with_gil(|py| py.None());
 
-        //     indices
-        //         .iter()
-        //         .map(|maybe_idx| match maybe_idx {
-        //             Some(idx) => old_values[idx.to_usize()].clone(),
-        //             None => py_none.clone(),
-        //         })
-        //         .collect()
-        // };
+            indices
+                .iter()
+                .map(|maybe_idx| match maybe_idx {
+                    Some(idx) => old_values[idx.to_usize()].clone(),
+                    None => py_none.clone(),
+                })
+                .collect()
+        };
 
-        // let new_validity = {
-        //     self.downcast().validity().map(|old_validity| {
-        //         let old_validity_array = {
-        //             &arrow2::array::BooleanArray::new(
-        //                 arrow2::datatypes::DataType::Boolean,
-        //                 old_validity.clone(),
-        //                 None,
-        //             )
-        //         };
-        //         let new_validity_array = {
-        //             arrow2::compute::take::take(old_validity_array, indices)?
-        //                 .as_any()
-        //                 .downcast_ref::<arrow2::array::BooleanArray>()
-        //                 .unwrap()
-        //         };
-        //         arrow2::bitmap::Bitmap::from_iter(
-        //             new_validity_array
-        //                 .iter()
-        //                 .map(|valid| valid.unwrap_or(false)),
-        //         )
-        //     })
-        // };
+        // Execute take on the validity bitmap using arrow2::compute.
+        let new_validity = {
+            self.downcast()
+                .validity()
+                .map(|old_validity| {
+                    let old_validity_array = {
+                        &arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            old_validity.clone(),
+                            None,
+                        )
+                    };
+                    arrow2::compute::take::take(old_validity_array, indices)
+                })
+                .transpose()?
+                .map(|new_validity_dynarray| {
+                    let new_validity_iter = new_validity_dynarray
+                        .as_any()
+                        .downcast_ref::<arrow2::array::BooleanArray>()
+                        .unwrap()
+                        .iter();
+                    arrow2::bitmap::Bitmap::from_iter(
+                        new_validity_iter.map(|valid| valid.unwrap_or(false)),
+                    )
+                })
+        };
 
-        // let arrow_array: Box<dyn arrow2::array::Array> =
-        //     Box::new(PseudoArrowArray::<PyObject>::from_pyobj_vec(values_vec));
+        let arrow_array: Box<dyn arrow2::array::Array> =
+            Box::new(PseudoArrowArray::new(new_values.into(), new_validity));
 
-        // DataArray::<crate::datatypes::PythonType>::new(self.field().clone().into(), arrow_array)
+        DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
