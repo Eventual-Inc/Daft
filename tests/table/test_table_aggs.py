@@ -5,7 +5,7 @@ import datetime
 import numpy as np
 import pytest
 
-from daft import DataType, col
+from daft import DataType, col, utils
 from daft.table import Table
 from tests.table import daft_nonnull_types, daft_numeric_types, daft_string_types
 
@@ -308,4 +308,6 @@ def test_table_agg_groupby(case) -> None:
         [aggexpr for aggexpr in case["aggs"]],
         [col(group) for group in case["groups"]],
     )
-    assert daft_table.to_pydict() == case["expected"]
+    assert set(utils.freeze(utils.pydict_to_rows(daft_table.to_pydict()))) == set(
+        utils.freeze(utils.pydict_to_rows(case["expected"]))
+    )

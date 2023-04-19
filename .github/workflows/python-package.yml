@@ -23,11 +23,7 @@ jobs:
         daft_runner: [py, ray]
     steps:
     - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
+    - uses: moonrepo/setup-rust@v0
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
     - uses: actions/cache@v3
@@ -108,11 +104,7 @@ jobs:
         daft_runner: [py, ray]
     steps:
     - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
+    - uses: moonrepo/setup-rust@v0
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
     - uses: actions/cache@v3
@@ -188,11 +180,7 @@ jobs:
       fail-fast: false
     steps:
     - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
+    - uses: moonrepo/setup-rust@v0
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo
@@ -281,11 +269,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
+    - uses: moonrepo/setup-rust@v0
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo
@@ -362,12 +346,7 @@ jobs:
         pip install --upgrade pip
         pip install pre-commit
 
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
-        components: clippy
+    - uses: moonrepo/setup-rust@v0
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo
