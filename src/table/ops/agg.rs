@@ -50,7 +50,7 @@ impl Table {
 
         let grouped_cols = agg_exprs
             .iter()
-            .map(|e| self.eval_grouped_agg_expression(e, &groupvals_indices))
+            .map(|e| self.eval_agg_expression(e, Some(&groupvals_indices)))
             .collect::<DaftResult<Vec<_>>>()?;
         // Combine the groupkey columns and the aggregation result columns.
         Self::from_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
