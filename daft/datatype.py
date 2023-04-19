@@ -151,9 +151,6 @@ class DataType:
     def python(cls) -> DataType:
         return cls._from_pydatatype(PyDataType.python())
 
-    def get_exploded_dtype(self) -> DataType:
-        return self._dtype.get_exploded_dtype()
-
     def _is_python_type(self) -> builtins.bool:
         # NOTE: This is currently used in a few places still. We can get rid of it once these are refactored away. To be discussed.
         # 1. Visualizations - we can get rid of it if we do all our repr and repr_html logic in a Series instead of in Python

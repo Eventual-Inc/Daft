@@ -145,10 +145,6 @@ impl PyDataType {
         Ok(DataType::Python.into())
     }
 
-    pub fn get_exploded_dtype(&self) -> PyResult<PyDataType> {
-        Ok(self.dtype.get_exploded_dtype()?.into())
-    }
-
     pub fn is_equal(&self, other: &PyAny) -> PyResult<bool> {
         if other.is_instance_of::<PyDataType>()? {
             let other = other.extract::<PyDataType>()?;

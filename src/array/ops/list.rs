@@ -25,21 +25,6 @@ impl ListArray {
             dtype: child_type.clone(),
         });
 
-        // Calculate the "take indices" to correctly repeat the other columns of the table to match the exploded list column
-        let idx_to_take = arr
-            .offsets()
-            .windows(2)
-            .map(|range| range[1] - range[0])
-            .map(|list_len| std::cmp::max(list_len, 1))
-            .enumerate()
-            .flat_map(|(row_idx, num_row_repeats)| {
-                std::iter::repeat(Some(row_idx as i64)).take(num_row_repeats as usize)
-            });
-        let idx_to_take = Int64Array::from((
-            "repeat_idx",
-            Box::new(arrow2::array::Int64Array::from_iter(idx_to_take)),
-        ));
-
         // Explode the list column:
         //   1. Elements which are null are replaced with a null value
         //   2. Elements with len=0 are replaced with a null value
@@ -63,6 +48,19 @@ impl ListArray {
         let new_arr =
             arrow2::compute::concatenate::concatenate(collected_children_view.as_slice())?;
         let new_data_arr = DataArray::new(child_field, new_arr)?;
+
+        // Use lengths of the collected children to calculate the indices to repeat other columns by
+        let idx_to_take = Int64Array::from((
+            "repeat_idx",
+            collected_children_view
+                .iter()
+                .map(|x| x.len() as i64)
+                .enumerate()
+                .flat_map(|(row_idx, num_row_repeats)| {
+                    std::iter::repeat(row_idx as i64).take(num_row_repeats as usize)
+                })
+                .collect::<Vec<i64>>(),
+        ));
 
         Ok((new_data_arr, idx_to_take))
     }
