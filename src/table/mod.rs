@@ -192,20 +192,35 @@ impl Table {
     }
 
     pub fn explode(&self, expr: &Expr) -> DaftResult<Self> {
-        let exploded_name = expr.name()?;
-        let evaluated = self.eval_expression(expr)?;
-        let (exploded, take_idx) = evaluated.explode()?;
-        let table_to_repeat = self.get_columns(
-            self.column_names()
-                .iter()
-                .filter(|name| !name.as_str().eq(exploded_name))
-                .collect::<Vec<&String>>()
-                .as_slice(),
-        )?;
-        let mut table_to_repeat = table_to_repeat.take(&take_idx)?;
-        let mut cols: Vec<Series> = table_to_repeat.columns.drain(..).collect();
-        cols.push(exploded);
-        Self::from_columns(cols)
+        use crate::dsl::functions::{list::ListExpr, FunctionExpr};
+        match expr {
+            Expr::Function {
+                func: FunctionExpr::List(ListExpr::Explode),
+                inputs,
+            } => {
+                if inputs.len() != 1 {
+                    return Err(DaftError::ValueError(format!("ListExpr::Explode function expression must have one input only, received: {}", inputs.len())));
+                }
+                let expr = inputs.get(0).unwrap();
+                let exploded_name = expr.name()?;
+                let evaluated = self.eval_expression(expr)?;
+                let (exploded, take_idx) = evaluated.explode()?;
+                let table_to_repeat = self.get_columns(
+                    self.column_names()
+                        .iter()
+                        .filter(|name| !name.as_str().eq(exploded_name))
+                        .collect::<Vec<&String>>()
+                        .as_slice(),
+                )?;
+                let mut table_to_repeat = table_to_repeat.take(&take_idx)?;
+                let mut cols: Vec<Series> = table_to_repeat.columns.drain(..).collect();
+                cols.push(exploded);
+                Self::from_columns(cols)
+            }
+            _ => Err(DaftError::ValueError(
+                "Can only explode a ListExpr::Explode function expression".to_string(),
+            )),
+        }
     }
 
     pub fn concat(tables: &[&Table]) -> DaftResult<Self> {
