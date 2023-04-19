@@ -45,12 +45,7 @@ jobs:
     - run: pip install -U twine toml
     - run: python tools/patch_package_version.py
     - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        profile: minimal
-        default: true
-
+      uses: moonrepo/setup-rust@v0
     - name: Build wheels - x86_64
       uses: messense/maturin-action@v1
       with:

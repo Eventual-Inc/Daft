@@ -73,23 +73,30 @@ pub trait DaftIsNan {
     fn is_nan(&self) -> Self::Output;
 }
 
+pub type GroupIndices = Vec<Vec<u64>>;
+
 pub trait DaftCountAggable {
     type Output;
     fn count(&self) -> Self::Output;
+    fn grouped_count(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftSumAggable {
     type Output;
     fn sum(&self) -> Self::Output;
+    fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftMeanAggable {
     type Output;
     fn mean(&self) -> Self::Output;
+    fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftCompareAggable {
     type Output;
     fn min(&self) -> Self::Output;
     fn max(&self) -> Self::Output;
+    fn grouped_min(&self, groups: &GroupIndices) -> Self::Output;
+    fn grouped_max(&self, groups: &GroupIndices) -> Self::Output;
 }
