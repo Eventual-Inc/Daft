@@ -29,7 +29,7 @@ impl PythonArray {
         use pyo3::prelude::*;
         use pyo3::types::PyList;
 
-        let vector = self.downcast().vec();
+        let vector = self.downcast().values().to_vec();
         Python::with_gil(|py| {
             let daft_utils = PyModule::import(py, "daft.utils").unwrap();
             let estimate_size_bytes_pylist =

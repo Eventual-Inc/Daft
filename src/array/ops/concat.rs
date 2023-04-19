@@ -1,7 +1,7 @@
 use arrow2::array::Array;
 
 use crate::{
-    array::{vec_backed::VecBackedArray, DataArray},
+    array::{pseudo_arrow::PseudoArrowArray, DataArray},
     datatypes::{DaftDataType, DataType},
     error::{DaftError, DaftResult},
 };
@@ -32,12 +32,12 @@ where
                 use crate::datatypes::Field;
                 use pyo3::prelude::*;
 
-                let cat_array = Box::new(VecBackedArray::concatenate(
+                let cat_array = Box::new(PseudoArrowArray::concatenate(
                     arrow_arrays
                         .iter()
                         .map(|s| {
                             s.as_any()
-                                .downcast_ref::<VecBackedArray<PyObject>>()
+                                .downcast_ref::<PseudoArrowArray<PyObject>>()
                                 .unwrap()
                         })
                         .collect(),

@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
 
 use crate::{
-    array::{ops::DaftLogical, vec_backed::VecBackedArray, BaseArray, DataArray},
+    array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, BaseArray, DataArray},
     datatypes::{DataType, Field, PythonType, UInt64Type},
     ffi,
     series::{self, Series},
@@ -50,7 +50,8 @@ impl PySeries {
     #[staticmethod]
     pub fn from_pylist(name: &str, pylist: &PyAny) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
-        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(VecBackedArray::new(vec_pyobj));
+        let arrow_array: Box<dyn arrow2::array::Array> =
+            Box::new(PseudoArrowArray::<PyObject>::from_pyobj_vec(vec_pyobj));
         let field = Field::new(name, DataType::Python);
 
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
@@ -58,8 +59,9 @@ impl PySeries {
     }
 
     pub fn to_pylist(&self) -> PyResult<PyObject> {
-        let vec_backed_array = self.series.python()?.downcast();
-        Python::with_gil(|py| Ok(PyList::new(py, vec_backed_array.vec()).into()))
+        let pseudo_arrow_array = self.series.python()?.downcast();
+        let pyobj_vec = pseudo_arrow_array.to_pyobj_vec();
+        Python::with_gil(|py| Ok(PyList::new(py, pyobj_vec).into()))
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {

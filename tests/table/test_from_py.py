@@ -48,7 +48,8 @@ def test_from_pydict_bad_input() -> None:
 
 def test_pyobjects_roundtrip() -> None:
     o0, o1 = object(), object()
-    table = Table.from_pydict({"objs": [o0, o1]})
+    table = Table.from_pydict({"objs": [o0, o1, None]})
     objs = table.to_pydict()["objs"]
     assert objs[0] is o0
     assert objs[1] is o1
+    assert objs[2] is None

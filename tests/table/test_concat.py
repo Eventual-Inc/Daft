@@ -6,8 +6,8 @@ from daft.table import Table
 
 
 def test_table_concat() -> None:
-    objs1 = [object(), object(), object()]
-    objs2 = [object(), object(), object()]
+    objs1 = [None, object(), object()]
+    objs2 = [object(), None, object()]
     tables = [
         Table.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"], "z": objs1}),
         Table.from_pydict({"x": [4, 5, 6], "y": ["d", "e", "f"], "z": objs2}),

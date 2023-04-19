@@ -1,7 +1,7 @@
 pub mod from;
 pub mod iterator;
 pub mod ops;
-pub mod vec_backed;
+pub mod pseudo_arrow;
 use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use crate::{
