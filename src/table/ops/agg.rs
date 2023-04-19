@@ -1,6 +1,6 @@
 use crate::{
     array::{
-        ops::{arrow2::comparison::build_multi_array_is_equal, GroupIndicesPair},
+        ops::{arrow2::comparison::build_multi_array_is_equal, GroupIndicesPair, IntoGroups},
         BaseArray,
     },
     datatypes::{UInt64Array, UInt64Type},
@@ -136,6 +136,11 @@ impl Table {
         //      [2, 0, 4]  <-- indices of A, B, and C
         //      [[2], [0, 1, 3], [4, 5]]  <--- indices of all A, all B, all C
         // )
+
+        if self.num_columns() == 1 {
+            return self.columns.first().unwrap().make_groups();
+        }
+
         let probe_table = self.to_probe_hash_table()?;
         let mut key_indices: Vec<u64> = Vec::with_capacity(probe_table.len());
         let mut values_indices: Vec<Vec<u64>> = Vec::with_capacity(probe_table.len());

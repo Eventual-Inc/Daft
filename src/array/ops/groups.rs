@@ -1,11 +1,13 @@
-use std::collections::{
-    hash_map::Entry::{Occupied, Vacant},
-    HashMap,
-};
+use std::collections::hash_map::Entry::{Occupied, Vacant};
+
+use fnv::FnvHashMap;
 
 use crate::{
     array::DataArray,
-    datatypes::{BooleanArray, DaftNumericType, NullArray, Utf8Array},
+    datatypes::{
+        BooleanArray, DaftIntegerType, DaftNumericType, Float32Array, Float64Array, NullArray,
+        Utf8Array,
+    },
     error::DaftResult,
 };
 
@@ -18,7 +20,7 @@ where
     T: Hash,
     T: std::cmp::Eq,
 {
-    let mut tbl = HashMap::<T, (u64, Vec<u64>)>::with_capacity(512);
+    let mut tbl = FnvHashMap::<T, (u64, Vec<u64>)>::default();
     for (idx, val) in iter.enumerate() {
         let idx = idx as u64;
         let e = tbl.entry(val);
@@ -44,12 +46,25 @@ where
 
 impl<T> IntoGroups for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftIntegerType,
+    <T as DaftNumericType>::Native: arrow2::types::Index,
     <T as DaftNumericType>::Native: Hash,
     <T as DaftNumericType>::Native: std::cmp::Eq,
 {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         make_groups(self.downcast().values_iter())
+    }
+}
+
+impl IntoGroups for Float32Array {
+    fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
+        make_groups(self.downcast().values_iter().map(move |f| f.to_bits()))
+    }
+}
+
+impl IntoGroups for Float64Array {
+    fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
+        make_groups(self.downcast().values_iter().map(move |f| f.to_bits()))
     }
 }
 
