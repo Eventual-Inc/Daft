@@ -573,6 +573,30 @@ class Expression(TreeNode["Expression"]):
             )
         raise NotImplementedError(f"Casting to a non-primitive Python object {to} not yet implemented")
 
+    def fillnan(self, val: float | None) -> Expression:
+        """Fills any NaN with the value of the val argument.
+        This method can only be applied to float columns!
+
+        Args:
+            val: value which replaces NaN values
+
+        Returns:
+            Expression: new expression with all NaN values replaced with `val`
+
+        """
+        return self.is_nan().if_else(lit(val), self)
+
+    def fillnull(self, val: Any) -> Expression:
+        """Fills any NULL with the value of the val argument.
+
+        Args:
+            val: value which replaces NULL values
+
+        Returns:
+            Expression: new expression with all NULL values replaced with `val`
+        """
+        return self.is_null().if_else(lit(val), self)
+
     ###
     # Accessors
     ###

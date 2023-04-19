@@ -102,3 +102,15 @@ def test_expression_bool_and_value() -> None:
     a = col("a")
     with pytest.raises(ValueError):
         a and 1
+
+
+def test_expression_fill_nan() -> None:
+    a = col("a")
+    act_expr = a.fillnan("5.1").__repr__()
+    assert act_expr == "if_else(is_nan(col(a)), lit(5.1), col(a))"
+
+
+def test_expression_fill_null() -> None:
+    a = col("a")
+    act_expr = a.fillnull("5").__repr__()
+    assert act_expr == "if_else(is_null(col(a)), lit(5), col(a))"
