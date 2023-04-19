@@ -19,7 +19,7 @@ impl PseudoArrowArray<PyObject> {
         // Invalid slots will be set to py.None().
 
         Python::with_gil(|py| {
-            if let Some(_) = self.validity() {
+            if self.validity().is_some() {
                 self.iter()
                     .map(|opt_val| match opt_val {
                         Some(pyobj) => pyobj.clone_ref(py),

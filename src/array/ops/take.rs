@@ -263,39 +263,82 @@ impl FixedSizeListArray {
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {
     #[inline]
-    pub fn get(&self, idx: usize) -> pyo3::PyObject {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
-        self.downcast().vec()[idx].clone()
+    pub fn get(&self, _idx: usize) -> pyo3::PyObject {
+        todo!()
+        // use pyo3::prelude::*;
+
+        // if idx >= self.len() {
+        //     panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        // }
+        // let valid = self
+        //     .downcast()
+        //     .validity()
+        //     .map(|vd| vd.get_bit(idx))
+        //     .or(Some(true))
+        //     .unwrap();
+        // if valid {
+        //     self.downcast().values().get(idx).unwrap().clone()
+        // } else {
+        //     Python::with_gil(|py| py.None())
+        // }
     }
 
-    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    pub fn take<I>(&self, _idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        use arrow2::array::Array;
-        use arrow2::types::Index;
-        use pyo3::PyObject;
+        todo!()
+        // use arrow2::types::Index;
+        // use pyo3::prelude::*;
 
-        use crate::array::vec_backed::VecBackedArray;
+        // use crate::array::pseudo_arrow::PseudoArrowArray;
 
-        let indices = idx.downcast();
-        let indices_iter = if indices.null_count() > 0 {
-            unimplemented!()
-        } else {
-            indices.values().iter()
-        };
+        // let indices = idx.downcast();
 
-        let values_vec = {
-            indices_iter
-                .map(|index| self.downcast().vec()[index.to_usize()].clone())
-                .collect::<Vec<PyObject>>()
-        };
-        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(VecBackedArray::new(values_vec));
+        // let old_values = self.downcast().values();
 
-        DataArray::<crate::datatypes::PythonType>::new(self.field().clone().into(), arrow_array)
+        // let new_values: Vec<PyObject> = {
+        //     let py_none = Python::with_gil(|py| {
+        //         py.None()
+        //     });
+
+        //     indices
+        //         .iter()
+        //         .map(|maybe_idx| match maybe_idx {
+        //             Some(idx) => old_values[idx.to_usize()].clone(),
+        //             None => py_none.clone(),
+        //         })
+        //         .collect()
+        // };
+
+        // let new_validity = {
+        //     self.downcast().validity().map(|old_validity| {
+        //         let old_validity_array = {
+        //             &arrow2::array::BooleanArray::new(
+        //                 arrow2::datatypes::DataType::Boolean,
+        //                 old_validity.clone(),
+        //                 None,
+        //             )
+        //         };
+        //         let new_validity_array = {
+        //             arrow2::compute::take::take(old_validity_array, indices)?
+        //                 .as_any()
+        //                 .downcast_ref::<arrow2::array::BooleanArray>()
+        //                 .unwrap()
+        //         };
+        //         arrow2::bitmap::Bitmap::from_iter(
+        //             new_validity_array
+        //                 .iter()
+        //                 .map(|valid| valid.unwrap_or(false)),
+        //         )
+        //     })
+        // };
+
+        // let arrow_array: Box<dyn arrow2::array::Array> =
+        //     Box::new(PseudoArrowArray::<PyObject>::from_pyobj_vec(values_vec));
+
+        // DataArray::<crate::datatypes::PythonType>::new(self.field().clone().into(), arrow_array)
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {

@@ -220,9 +220,12 @@ pub struct PseudoArrowArray<T> {
     validity: Option<Bitmap>,
 }
 
-impl<T: Send + Sync + Clone> PseudoArrowArray<T> {
+impl<T: Send + Sync + Clone + 'static> PseudoArrowArray<T> {
     pub fn try_new(values: Buffer<T>, validity: Option<Bitmap>) -> DaftResult<Self> {
-        if validity.map_or(false, |vd| vd.len() != values.len()) {
+        if validity
+            .clone()
+            .map_or(false, |vd| vd.len() != values.len())
+        {
             Err(DaftError::ValueError(format!(
                 "validity mask length {} must match the number of values {}",
                 validity.unwrap().len(),
@@ -282,7 +285,7 @@ impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
     unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         self.validity.as_mut().and_then(|bitmap| {
             bitmap.slice_unchecked(offset, length);
-            (bitmap.unset_bits() > 0).then(|| bitmap)
+            (bitmap.unset_bits() > 0).then_some(bitmap)
         });
         self.values.slice_unchecked(offset, length);
     }
