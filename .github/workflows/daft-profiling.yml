@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
     steps:
     - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
+    - uses: moonrepo/setup-rust@v0
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo-profile
