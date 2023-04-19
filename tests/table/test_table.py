@@ -68,14 +68,15 @@ def test_from_pydict_bad_input() -> None:
 
 def test_pyobjects_roundtrip() -> None:
     o0, o1 = object(), object()
-    table = Table.from_pydict({"objs": [o0, o1]})
+    table = Table.from_pydict({"objs": [o0, o1, None]})
     objs = table.to_pydict()["objs"]
     assert objs[0] is o0
     assert objs[1] is o1
+    assert objs[2] is None
 
 
 def test_pyobjects_blackbox_kernels() -> None:
-    objects = [object(), object(), object()]
+    objects = [object(), None, object()]
     table = Table.from_pydict({"keys": [0, 1, 2], "objs": objects})
     # Head.
     assert table.head(2).to_pydict()["objs"] == objects[:2]
@@ -332,7 +333,7 @@ test_table_count_cases = [
 
 
 def test_table_take_pyobject() -> None:
-    objects = [object(), object(), object(), object()]
+    objects = [object(), None, object(), object()]
     daft_table = Table.from_pydict({"objs": objects})
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["objs"]
