@@ -4,7 +4,7 @@ use crate::{datatypes::DataType, error::DaftResult, series::Series, with_match_d
 impl Series {
     pub fn empty(name: &str, datatype: &DataType) -> DaftResult<Self> {
         with_match_daft_types!(datatype, |$T| {
-            Ok(DataArray::<$T>::empty(name).into_series())
+            Ok(DataArray::<$T>::empty(name, datatype).into_series())
         })
     }
 }

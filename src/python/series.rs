@@ -183,23 +183,23 @@ impl PySeries {
     }
 
     pub fn _count(&self) -> PyResult<Self> {
-        Ok((self.series).count()?.into())
+        Ok((self.series).count(None)?.into())
     }
 
     pub fn _sum(&self) -> PyResult<Self> {
-        Ok((self.series).sum()?.into())
+        Ok((self.series).sum(None)?.into())
     }
 
     pub fn _mean(&self) -> PyResult<Self> {
-        Ok((self.series).mean()?.into())
+        Ok((self.series).mean(None)?.into())
     }
 
     pub fn _min(&self) -> PyResult<Self> {
-        Ok((self.series).min()?.into())
+        Ok((self.series).min(None)?.into())
     }
 
     pub fn _max(&self) -> PyResult<Self> {
-        Ok((self.series).max()?.into())
+        Ok((self.series).max(None)?.into())
     }
 
     pub fn cast(&self, dtype: PyDataType) -> PyResult<Self> {

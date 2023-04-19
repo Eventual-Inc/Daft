@@ -215,8 +215,13 @@ class Expression:
         if_false = Expression._to_expression(if_false)
         return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
-    def apply(self, func: Callable, return_dtype: DataType | None = None) -> Expression:
-        raise NotImplementedError("[RUST-INT][UDF] Implement .apply")
+    def apply(self, func: Callable, return_dtype: DataType) -> Expression:
+        from daft.udf import UDF
+
+        def batch_func(self_series):
+            return [func(x) for x in self_series.to_pylist()]
+
+        return UDF(func=batch_func, return_dtype=return_dtype)(self)
 
     def is_null(self) -> Expression:
         expr = self._expr.is_null()

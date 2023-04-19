@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter, Result};
 
 use num_traits::ToPrimitive;
 
+use crate::array::ops::GroupIndices;
 use crate::array::BaseArray;
 use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
 use crate::dsl::functions::FunctionEvaluator;
@@ -60,7 +61,7 @@ impl Table {
                 let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
                 for (field_name, field) in schema.fields.iter() {
                     with_match_daft_types!(field.dtype, |$T| {
-                        columns.push(DataArray::<$T>::full_null(field_name, 0).into_series())
+                        columns.push(DataArray::<$T>::full_null(field_name, &field.dtype, 0).into_series())
                     })
                 }
                 Ok(Table { schema, columns })
@@ -124,7 +125,7 @@ impl Table {
         }
 
         if num == 0 {
-            let indices = UInt64Array::empty("idx");
+            let indices = UInt64Array::empty("idx", &DataType::UInt64);
             return self.take(&indices.into_series());
         }
 
@@ -242,14 +243,18 @@ impl Table {
         Ok(self.columns.get(idx).unwrap())
     }
 
-    fn eval_agg_expression(&self, agg_expr: &AggExpr) -> DaftResult<Series> {
+    fn eval_agg_expression(
+        &self,
+        agg_expr: &AggExpr,
+        groups: Option<&GroupIndices>,
+    ) -> DaftResult<Series> {
         use crate::dsl::AggExpr::*;
         match agg_expr {
-            Count(expr) => Series::count(&self.eval_expression(expr)?),
-            Sum(expr) => Series::sum(&self.eval_expression(expr)?),
-            Mean(expr) => Series::mean(&self.eval_expression(expr)?),
-            Min(expr) => Series::min(&self.eval_expression(expr)?),
-            Max(expr) => Series::max(&self.eval_expression(expr)?),
+            Count(expr) => Series::count(&self.eval_expression(expr)?, groups),
+            Sum(expr) => Series::sum(&self.eval_expression(expr)?, groups),
+            Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
+            Min(expr) => Series::min(&self.eval_expression(expr)?, groups),
+            Max(expr) => Series::max(&self.eval_expression(expr)?, groups),
         }
     }
 
@@ -258,7 +263,7 @@ impl Table {
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
             Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
-            Agg(agg_expr) => self.eval_agg_expression(agg_expr),
+            Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
             Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             Column(name) => self.get_column(name).cloned(),
             Not(child) => !(self.eval_expression(child)?),
