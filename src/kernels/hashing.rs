@@ -6,20 +6,21 @@ use arrow2::{
     types::{NativeType, Offset},
 };
 
+use xxhash_rust::const_xxh3;
 use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
 
 fn hash_primitive<T: NativeType>(
     array: &PrimitiveArray<T>,
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
-    let null_hash = xxh3_64(b"");
+    const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
     let hashes = if let Some(seed) = seed {
         array
             .iter()
             .zip(seed.values_iter())
             .map(|(v, s)| match v {
                 Some(v) => xxh3_64_with_seed(v.to_le_bytes().as_ref(), *s),
-                None => null_hash,
+                None => NULL_HASH,
             })
             .collect::<Vec<_>>()
     } else {
@@ -27,7 +28,7 @@ fn hash_primitive<T: NativeType>(
             .iter()
             .map(|v| match v {
                 Some(v) => xxh3_64(v.to_le_bytes().as_ref()),
-                None => null_hash,
+                None => NULL_HASH,
             })
             .collect::<Vec<_>>()
     };
@@ -35,10 +36,10 @@ fn hash_primitive<T: NativeType>(
 }
 
 fn hash_boolean(array: &BooleanArray, seed: Option<&PrimitiveArray<u64>>) -> PrimitiveArray<u64> {
-    let null_hash = xxh3_64(b"");
+    const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
 
-    let false_hash = xxh3_64(b"0");
-    let true_hash = xxh3_64(b"1");
+    const FALSE_HASH: u64 = const_xxh3::xxh3_64(b"0");
+    const TRUE_HASH: u64 = const_xxh3::xxh3_64(b"1");
 
     let hashes = if let Some(seed) = seed {
         array
@@ -47,16 +48,16 @@ fn hash_boolean(array: &BooleanArray, seed: Option<&PrimitiveArray<u64>>) -> Pri
             .map(|(v, s)| match v {
                 Some(true) => xxh3_64_with_seed(b"1", *s),
                 Some(false) => xxh3_64_with_seed(b"0", *s),
-                None => null_hash,
+                None => NULL_HASH,
             })
             .collect::<Vec<_>>()
     } else {
         array
             .iter()
             .map(|v| match v {
-                Some(true) => true_hash,
-                Some(false) => false_hash,
-                None => null_hash,
+                Some(true) => TRUE_HASH,
+                Some(false) => FALSE_HASH,
+                None => NULL_HASH,
             })
             .collect::<Vec<_>>()
     };
@@ -64,14 +65,14 @@ fn hash_boolean(array: &BooleanArray, seed: Option<&PrimitiveArray<u64>>) -> Pri
 }
 
 fn hash_null(array: &NullArray, seed: Option<&PrimitiveArray<u64>>) -> PrimitiveArray<u64> {
-    let null_hash = xxh3_64(b"");
+    const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
 
     let hashes = if let Some(seed) = seed {
         seed.values_iter()
             .map(|s| xxh3_64_with_seed(b"", *s))
             .collect::<Vec<_>>()
     } else {
-        (0..array.len()).map(|_| null_hash).collect::<Vec<_>>()
+        (0..array.len()).map(|_| NULL_HASH).collect::<Vec<_>>()
     };
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }

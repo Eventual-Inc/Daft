@@ -1,3 +1,4 @@
+#![feature(hash_raw_entry)]
 mod array;
 mod datatypes;
 mod dsl;
