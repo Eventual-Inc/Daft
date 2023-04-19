@@ -17,6 +17,7 @@ mod full;
 mod hash;
 mod if_else;
 mod len;
+mod list;
 mod mean;
 mod null;
 mod pairwise;
