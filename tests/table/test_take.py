@@ -126,7 +126,7 @@ def test_table_take_null(idx_dtype) -> None:
 
 
 def test_table_take_pyobject() -> None:
-    objects = [object(), object(), object(), object()]
+    objects = [object(), None, object(), object()]
     daft_table = Table.from_pydict({"objs": objects})
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["objs"]

@@ -56,13 +56,14 @@ def test_series_pylist_round_trip(dtype) -> None:
 
 
 def test_series_pyobj_roundtrip() -> None:
-    objects = [CustomTestObject(0), CustomTestObject(1)]
+    objects = [CustomTestObject(0), CustomTestObject(1), None]
 
     s = Series.from_pylist(objects)
     result = s.to_pylist()
 
     assert result[0] is objects[0]
     assert result[1] is objects[1]
+    assert result[2] is None
 
 
 def test_series_pyobj_strict_arrow_err() -> None:
@@ -86,7 +87,7 @@ def test_series_pyobj_explicit_roundtrip() -> None:
 
 def test_serialize_with_pyobjects() -> None:
 
-    objects = [CustomTestObject(1)]
+    objects = [CustomTestObject(1), None]
 
     s = Series.from_pylist(objects)
     import pickle
@@ -97,6 +98,7 @@ def test_serialize_with_pyobjects() -> None:
 
     assert isinstance(result[0], CustomTestObject)
     assert result[0].a == 1
+    assert result[1] is None
 
 
 def test_series_pylist_round_trip_null() -> None:
