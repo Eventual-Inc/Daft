@@ -184,9 +184,6 @@ jobs:
       fail-fast: false
     steps:
     - uses: actions/checkout@v3
-
-    - name: LS
-      run: ls -lh
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
