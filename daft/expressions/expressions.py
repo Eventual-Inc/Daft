@@ -210,6 +210,10 @@ class Expression:
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
+    def _explode(self) -> Expression:
+        expr = self._expr.explode()
+        return Expression._from_pyexpr(expr)
+
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
         if_true = Expression._to_expression(if_true)
         if_false = Expression._to_expression(if_false)

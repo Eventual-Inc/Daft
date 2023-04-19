@@ -1,4 +1,5 @@
 pub mod float;
+pub mod list;
 pub mod numeric;
 pub mod temporal;
 pub mod utf8;
@@ -6,6 +7,7 @@ pub mod utf8;
 use self::temporal::TemporalExpr;
 use crate::{datatypes::Field, error::DaftResult, schema::Schema, series::Series};
 use float::FloatExpr;
+use list::ListExpr;
 use numeric::NumericExpr;
 use serde::{Deserialize, Serialize};
 use utf8::Utf8Expr;
@@ -23,6 +25,7 @@ pub enum FunctionExpr {
     Float(FloatExpr),
     Utf8(Utf8Expr),
     Temporal(TemporalExpr),
+    List(ListExpr),
     #[cfg(feature = "python")]
     Python(PythonUDF),
 }
@@ -42,6 +45,7 @@ impl FunctionExpr {
             Float(expr) => expr.get_evaluator(),
             Utf8(expr) => expr.get_evaluator(),
             Temporal(expr) => expr.get_evaluator(),
+            List(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
             Python(expr) => expr,
         }

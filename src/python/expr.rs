@@ -167,6 +167,11 @@ impl PyExpr {
         Ok(self.expr.max().into())
     }
 
+    pub fn explode(&self) -> PyResult<Self> {
+        use functions::list::explode;
+        Ok(explode(&self.expr).into())
+    }
+
     pub fn __abs__(&self) -> PyResult<Self> {
         use functions::numeric::abs;
         Ok(abs(&self.expr).into())

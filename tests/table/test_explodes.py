@@ -35,6 +35,19 @@ def test_explode_multiple_cols(data):
         table = table.explode([col("nested"), col("nested2")])
 
 
+@pytest.mark.parametrize(
+    "data",
+    [
+        Series.from_arrow(pa.array([[1, 2], [3, 4], None, []], type=pa.list_(pa.int64()))),
+        Series.from_arrow(pa.array([[1, 2], [3, 4], None, []], type=pa.large_list(pa.int64()))),
+    ],
+)
+def test_explode_eval_expr(data):
+    table = Table.from_pydict({"nested": data})
+    table = table.eval_expression_list([col("nested")._explode()])
+    assert table.to_pydict() == {"nested": [1, 2, 3, 4, None, None]}
+
+
 def test_explode_bad_col_type():
     table = Table.from_pydict({"a": [1, 2, 3]})
     with pytest.raises(ValueError, match="explode not implemented for"):

@@ -166,6 +166,18 @@ impl DataType {
     }
 
     #[inline]
+    pub fn get_exploded_dtype(&self) -> DaftResult<DataType> {
+        match self {
+            DataType::List(child_field) | DataType::FixedSizeList(child_field, _) => {
+                Ok(child_field.dtype.clone())
+            }
+            _ => Err(DaftError::ValueError(format!(
+                "Datatype cannot be exploded: {self}"
+            ))),
+        }
+    }
+
+    #[inline]
     pub fn is_castable(&self, cast_to: &DataType) -> bool {
         match (self.to_arrow(), cast_to.to_arrow()) {
             (Ok(self_arrow_type), Ok(cast_to_arrow_type)) => {
