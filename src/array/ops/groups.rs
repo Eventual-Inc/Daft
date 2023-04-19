@@ -13,7 +13,7 @@ use super::{downcast::Downcastable, IntoGroups};
 
 use std::hash::Hash;
 
-fn into_groups<T>(iter: impl Iterator<Item = T>) -> DaftResult<super::GroupIndicesPair>
+fn make_groups<T>(iter: impl Iterator<Item = T>) -> DaftResult<super::GroupIndicesPair>
 where
     T: Hash,
     T: std::cmp::Eq,
@@ -48,30 +48,30 @@ where
     <T as DaftNumericType>::Native: Hash,
     <T as DaftNumericType>::Native: std::cmp::Eq,
 {
-    fn into_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        into_groups(self.downcast().values_iter())
+    fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
+        make_groups(self.downcast().values_iter())
     }
 }
 
 impl IntoGroups for Utf8Array {
-    fn into_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        into_groups(self.downcast().values_iter())
+    fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
+        make_groups(self.downcast().values_iter())
     }
 }
 
 impl IntoGroups for BooleanArray {
-    fn into_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        into_groups(self.downcast().values_iter())
+    fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
+        make_groups(self.downcast().values_iter())
     }
 }
 
 impl IntoGroups for NullArray {
-    fn into_groups(&self) -> DaftResult<super::GroupIndicesPair> {
+    fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let l = self.len() as u64;
         if l == 0 {
             return Ok((vec![], vec![]));
         }
         let v = (0u64..l).collect::<Vec<u64>>();
-        return Ok((vec![0], vec![v]));
+        Ok((vec![0], vec![v]))
     }
 }
