@@ -1,4 +1,5 @@
 [dependencies]
+fnv = "1.0.7"
 prettytable-rs = "^0.10"
 rand = "^0.8"
 
