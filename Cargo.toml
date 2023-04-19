@@ -48,3 +48,15 @@ version = "0.0.23"
 
 [profile.dev]
 overflow-checks = false
+
+[profile.dev-bench]
+codegen-units = 16
+debug = 1  # include symbols
+inherits = "release"
+lto = 'thin'
+strip = "none"  # dont strip
+
+[profile.release-lto]
+codegen-units = 1
+inherits = "release"
+lto = 'fat'
