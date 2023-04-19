@@ -7,6 +7,7 @@ impl PseudoArrowArray<PyObject> {
     pub fn from_pyobj_vec(pyobj_vec: Vec<PyObject>) -> Self {
         // Converts this Vec<PyObject> into a PseudoArrowArray<PyObject>.
         // PyNones will be marked as invalid bits in the validity bitmap.
+
         let validity: arrow2::bitmap::Bitmap = Python::with_gil(|py| {
             arrow2::bitmap::Bitmap::from_iter(pyobj_vec.iter().map(|pyobj| !pyobj.is_none(py)))
         });

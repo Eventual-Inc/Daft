@@ -269,7 +269,7 @@ impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
 
     #[inline]
     fn data_type(&self) -> &DataType {
-        unimplemented!("VecBackedArray does not hold real Arrow DataTypes")
+        unimplemented!("PseudoArrowArray does not hold real Arrow DataTypes")
     }
 
     #[inline]
