@@ -276,9 +276,9 @@ def _ensure_table_slice_offsets_are_propagated(arrow_table: pa.Table) -> pa.Tabl
     arrow_schema = arrow_table.schema
     for idx, name in enumerate(arrow_schema.names):
         field = arrow_schema.field(name)
-        dtype = field.type
-        if _needs_slice_offset_propagation(dtype):
-            new_column = _propagate_chunked_array_slice_offsets(arrow_table.column(name))
+        column = arrow_table.column(name)
+        if _chunked_array_needs_slice_offset_propagation(column):
+            new_column = _propagate_chunked_array_slice_offsets(column)
             arrow_table = arrow_table.set_column(idx, field, new_column)
     return arrow_table
 
@@ -288,7 +288,7 @@ def _ensure_chunked_array_slice_offsets_are_propagated(chunked_array: pa.Chunked
     Ensures that chunked-array-level slice offsets are properly propagated to child arrays
     to prevent them from being dropped upon record batch conversion and FFI transfer.
     """
-    if _needs_slice_offset_propagation(chunked_array.type):
+    if _chunked_array_needs_slice_offset_propagation(chunked_array):
         return _propagate_chunked_array_slice_offsets(chunked_array)
     else:
         return chunked_array
@@ -299,21 +299,61 @@ def _ensure_array_slice_offsets_are_propagated(array: pa.Array) -> pa.Array:
     Ensures that array-level slice offsets are properly propagated to child arrays
     to prevent them from being dropped upon record batch conversion and FFI transfer.
     """
-    if _needs_slice_offset_propagation(array.type):
+    if _array_needs_slice_offset_propagation(array):
         return _propagate_array_slice_offsets(array)
     else:
         return array
 
 
-def _needs_slice_offset_propagation(dtype: pa.DataType) -> bool:
+def _chunked_array_needs_slice_offset_propagation(chunked_array: pa.ChunkedArray) -> bool:
     """
-    Whether an Arrow array of the provided dtype needs slice offset propagation.
+    Whether an Arrow ChunkedArray needs slice offset propagation.
 
-    This is currently only true for struct arrays and fixed-size list arrays.
+    This is currently only true for struct arrays and fixed-size list arrays that contain
+    slice offsets/truncations.
     """
-    # TODO(Clark): Only propagate slice offsets if slice offsets or length truncations
-    # actually exist.
-    return pa.types.is_struct(dtype) or pa.types.is_fixed_size_list(dtype)
+    if not pa.types.is_struct(chunked_array.type) and not pa.types.is_fixed_size_list(chunked_array.type):
+        return False
+    return any(_array_needs_slice_offset_propagation(chunk) for chunk in chunked_array.chunks)
+
+
+def _array_needs_slice_offset_propagation(array: pa.Array) -> bool:
+    """
+    Whether an Arrow array needs slice offset propagation.
+
+    This is currently only true for struct arrays and fixed-size list arrays that contain
+    slice offsets/truncations.
+    """
+    if pa.types.is_struct(array.type):
+        return _struct_array_needs_slice_offset_propagation(array)
+    elif pa.types.is_fixed_size_list(array.type):
+        return _fixed_size_list_array_needs_slice_offset_propagation(array)
+    else:
+        return False
+
+
+def _struct_array_needs_slice_offset_propagation(array: pa.StructArray) -> bool:
+    """
+    Whether the provided struct array needs slice offset propagation.
+    """
+    assert isinstance(array, pa.StructArray)
+    # TODO(Clark): Only propagate slice offsets if a slice exists; checking whether the
+    # array length has been truncated is currently difficult since StructArray.field()
+    # propagates the slice to the field arrays, and there's no other convenient way to
+    # access the child field arrays other than reconstructing them from the raw buffers,
+    # which is complex.
+    # if array.type.num_fields == 0:
+    #     return False
+    # return array.offset > 0 or len(array) < len(array.field(0))
+    return True
+
+
+def _fixed_size_list_array_needs_slice_offset_propagation(array: pa.FixedSizeListArray) -> bool:
+    """
+    Whether the provided fixed-size list array needs slice offset propagation.
+    """
+    assert isinstance(array, pa.FixedSizeListArray)
+    return array.offset > 0 or len(array) < array.type.list_size * len(array.values)
 
 
 def _propagate_chunked_array_slice_offsets(chunked_array: pa.ChunkedArray) -> pa.ChunkedArray:
@@ -332,8 +372,8 @@ def _propagate_array_slice_offsets(array: pa.Array) -> pa.Array:
     """
     Propagate slice offsets for the provided array to its child arrays.
     """
+    assert _array_needs_slice_offset_propagation(array)
     dtype = array.type
-    assert _needs_slice_offset_propagation(dtype)
     if pa.types.is_struct(dtype):
         fields = [dtype.field(i) for i in range(dtype.num_fields)]
         # StructArray.flatten() will propagate slice offsets to the underlying field arrays
