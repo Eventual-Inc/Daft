@@ -5,6 +5,9 @@ use crate::dsl::expr::Expr;
 use crate::series::Series;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
+
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -26,6 +29,15 @@ pub enum LiteralValue {
     UInt64(u64),
     /// A 64-bit floating point number.
     Float64(f64),
+    /// Python object.
+    #[cfg(feature = "python")]
+    Python(DaftPyObject),
+}
+
+impl PartialEq for DaftPyObject {
+    fn eq(&self, other: &Self) -> bool {
+        todo!()
+    }
 }
 
 impl Display for LiteralValue {
