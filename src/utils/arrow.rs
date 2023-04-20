@@ -52,3 +52,16 @@ pub fn cast_array_if_needed(
         _ => arrow_array,
     }
 }
+
+#[inline]
+pub fn arrow_bitmap_and_helper(
+    l_bitmap: Option<&arrow2::bitmap::Bitmap>,
+    r_bitmap: Option<&arrow2::bitmap::Bitmap>,
+) -> Option<arrow2::bitmap::Bitmap> {
+    match (l_bitmap, r_bitmap) {
+        (None, None) => None,
+        (Some(l), None) => Some(l.clone()),
+        (None, Some(r)) => Some(r.clone()),
+        (Some(l), Some(r)) => Some(arrow2::bitmap::and(l, r)),
+    }
+}

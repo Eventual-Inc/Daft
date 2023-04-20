@@ -4,6 +4,7 @@ use crate::{
     array::{BaseArray, DataArray},
     datatypes::{BooleanArray, DaftNumericType, DataType, NullArray, Utf8Array},
     error::{DaftError, DaftResult},
+    utils::arrow::arrow_bitmap_and_helper,
 };
 
 use std::ops::Not;
@@ -12,18 +13,6 @@ use super::{DaftCompare, DaftLogical};
 
 use super::downcast::Downcastable;
 use arrow2::{compute::comparison, scalar::PrimitiveScalar};
-
-fn arrow_bitmap_validity(
-    l_bitmap: Option<&arrow2::bitmap::Bitmap>,
-    r_bitmap: Option<&arrow2::bitmap::Bitmap>,
-) -> Option<arrow2::bitmap::Bitmap> {
-    match (l_bitmap, r_bitmap) {
-        (None, None) => None,
-        (Some(l), None) => Some(l.clone()),
-        (None, Some(r)) => Some(r.clone()),
-        (Some(l), Some(r)) => Some(arrow2::bitmap::and(l, r)),
-    }
-}
 
 impl<T> DaftCompare<&DataArray<T>> for DataArray<T>
 where
@@ -35,7 +24,7 @@ where
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::eq(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -75,7 +64,7 @@ where
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::neq(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -115,7 +104,7 @@ where
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::lt(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -155,7 +144,7 @@ where
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::lt_eq(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -195,7 +184,7 @@ where
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::gt(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -235,7 +224,7 @@ where
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::gt_eq(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -346,7 +335,7 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::eq(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -386,7 +375,7 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::neq(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -426,7 +415,7 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::lt(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -466,7 +455,7 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::lt_eq(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -506,7 +495,7 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::gt(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -546,7 +535,7 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::gt_eq(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -654,7 +643,7 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
 
                 let result_bitmap =
                     arrow2::bitmap::and(self.downcast().values(), rhs.downcast().values());
@@ -701,7 +690,7 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
 
                 let result_bitmap =
                     arrow2::bitmap::or(self.downcast().values(), rhs.downcast().values());
@@ -748,7 +737,7 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
 
                 let result_bitmap =
                     arrow2::bitmap::xor(self.downcast().values(), rhs.downcast().values());
@@ -875,7 +864,7 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::eq(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -915,7 +904,7 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::neq(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -955,7 +944,7 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::lt(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -995,7 +984,7 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::lt_eq(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -1035,7 +1024,7 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::gt(self.downcast(), rhs.downcast()).with_validity(validity),
@@ -1075,7 +1064,7 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
-                    arrow_bitmap_validity(self.downcast().validity(), rhs.downcast().validity());
+                    arrow_bitmap_and_helper(self.downcast().validity(), rhs.downcast().validity());
                 Ok(BooleanArray::from((
                     self.name(),
                     comparison::gt_eq(self.downcast(), rhs.downcast()).with_validity(validity),
