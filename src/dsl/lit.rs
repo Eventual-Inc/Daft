@@ -6,7 +6,7 @@ use crate::series::Series;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
-use pyo3::prelude::*;
+use crate::dsl::pyobject::DaftPyObject;
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
@@ -34,12 +34,6 @@ pub enum LiteralValue {
     Python(DaftPyObject),
 }
 
-impl PartialEq for DaftPyObject {
-    fn eq(&self, other: &Self) -> bool {
-        todo!()
-    }
-}
-
 impl Display for LiteralValue {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
@@ -54,6 +48,8 @@ impl Display for LiteralValue {
             Int64(val) => write!(f, "{val}"),
             UInt64(val) => write!(f, "{val}"),
             Float64(val) => write!(f, "{val:.1}"),
+            #[cfg(feature = "python")]
+            Python(_pyobj) => todo!(),
         }
     }
 }
@@ -71,6 +67,8 @@ impl LiteralValue {
             Int64(_) => DataType::Int64,
             UInt64(_) => DataType::UInt64,
             Float64(_) => DataType::Float64,
+            #[cfg(feature = "python")]
+            Python(_pyobj) => todo!(),
         }
     }
 
@@ -88,6 +86,8 @@ impl LiteralValue {
             Int64(val) => Int64Array::from(("literal", [*val].as_slice())).into_series(),
             UInt64(val) => UInt64Array::from(("literal", [*val].as_slice())).into_series(),
             Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
+            #[cfg(feature = "python")]
+            Python(_pyobj) => todo!(),
         };
         result
     }

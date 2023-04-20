@@ -1,6 +1,8 @@
 mod arithmetic;
 mod expr;
 mod lit;
+#[cfg(feature = "python")]
+mod pyobject;
 
 pub mod functions;
 pub mod optimization;
