@@ -8,7 +8,7 @@ import pytest
 
 from daft import DataFrame
 
-NUM_SAMPLES = [1_000_000, 10_000_000]
+NUM_SAMPLES = [10_000_000, 100_000_000]
 
 
 @pytest.mark.benchmark(group="aggregations")
@@ -85,12 +85,15 @@ def test_numeric_agg(benchmark, num_samples) -> None:
 
 
 @pytest.mark.benchmark(group="aggregations")
-@pytest.mark.parametrize("num_groups", [1, 1_000, 1_000_000])
+@pytest.mark.parametrize("num_groups", [1, 10, 1000, None])
 @pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_groupby(benchmark, num_samples, num_groups) -> None:
     """Test performance of grouping to one group vs many."""
 
-    keys = np.arange(num_samples) % num_groups
+    keys = np.arange(num_samples)
+    if num_groups is not None:
+        keys = keys % num_groups
+
     np.random.shuffle(keys)
 
     df = DataFrame.from_pydict(
@@ -107,8 +110,45 @@ def test_groupby(benchmark, num_samples, num_groups) -> None:
     result = benchmark(bench)
 
     # Make sure the result is correct.
-    assert len(result) == num_groups
-    assert (result.to_pandas()["data"].to_numpy() == (np.ones(num_groups) * (num_samples / num_groups))).all()
+
+    expected_len = num_groups if num_groups is not None else num_samples
+
+    assert len(result) == expected_len
+
+    assert (result.to_pandas()["data"].to_numpy() == (np.ones(expected_len) * (num_samples / expected_len))).all()
+
+
+@pytest.mark.benchmark(group="aggregations")
+@pytest.mark.parametrize("num_groups", [1, 10, 1_000, None])
+@pytest.mark.parametrize("num_samples", NUM_SAMPLES)
+def test_groupby_string(benchmark, num_samples, num_groups) -> None:
+    """Test performance of grouping to one group vs many."""
+
+    keys = np.arange(num_samples)
+    if num_groups is not None:
+        keys = keys % num_groups
+    np.random.shuffle(keys)
+
+    keys = [f"{i:09}" for i in keys]
+
+    df = DataFrame.from_pydict(
+        {
+            "keys": keys,
+            "data": np.arange(num_samples),
+        }
+    ).collect()
+
+    # Run the benchmark.
+    def bench() -> DataFrame:
+        return df.groupby("keys").agg([("data", "count")]).collect()
+
+    result = benchmark(bench)
+
+    # Make sure the result is correct.
+    expected_len = num_groups if num_groups is not None else num_samples
+
+    assert len(result) == expected_len
+    assert (result.to_pandas()["data"].to_numpy() == (np.ones(expected_len) * (num_samples / expected_len))).all()
 
 
 @pytest.mark.benchmark(group="aggregations")
