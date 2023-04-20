@@ -1,14 +1,13 @@
-use arrow2::compute::cast;
 use arrow2::{array::Array, datatypes::Field, ffi};
 
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::{PyAny, PyObject, PyResult, Python};
 
-use crate::error::DaftResult;
-use crate::schema::SchemaRef;
-use crate::series::Series;
-use crate::table::Table;
+use crate::{
+    error::DaftResult, schema::SchemaRef, series::Series, table::Table,
+    utils::arrow::cast_array_if_needed,
+};
 
 pub type ArrayRef = Box<dyn Array>;
 
@@ -45,36 +44,9 @@ pub fn record_batches_to_table(batches: &[&PyAny], schema: SchemaRef) -> PyResul
     for rb in batches {
         let columns: DaftResult<Vec<Series>> = (0..names.len())
             .map(|i| {
-                let array = rb.call_method1("column", (i,)).unwrap();
-                let arr = array_to_rust(array).unwrap();
-                let arr = match arr.data_type() {
-                    arrow2::datatypes::DataType::Utf8 => {
-                        cast::utf8_to_large_utf8(arr.as_ref().as_any().downcast_ref().unwrap())
-                            .boxed()
-                    }
-                    arrow2::datatypes::DataType::Binary => cast::binary_to_large_binary(
-                        arr.as_ref().as_any().downcast_ref().unwrap(),
-                        arrow2::datatypes::DataType::LargeBinary,
-                    )
-                    .boxed(),
-                    arrow2::datatypes::DataType::List(child) => {
-                        // Code adapted from cast::utf8_to_large_utf8
-                        let from = arr
-                            .as_ref()
-                            .as_any()
-                            .downcast_ref::<arrow2::array::ListArray<i32>>()
-                            .unwrap();
-                        let data_type = arrow2::array::ListArray::<i64>::default_datatype(
-                            child.data_type().clone(),
-                        );
-                        let validity = from.validity().cloned();
-                        let values = from.values().clone();
-                        let offsets = from.offsets().into();
-                        arrow2::array::ListArray::<i64>::new(data_type, offsets, values, validity)
-                            .boxed()
-                    }
-                    _ => arr,
-                };
+                let arr = rb.call_method1("column", (i,)).unwrap();
+                let arr = array_to_rust(arr).unwrap();
+                let arr = cast_array_if_needed(arr);
 
                 Series::try_from((names.get(i).unwrap().as_str(), arr))
             })
