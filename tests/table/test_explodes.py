@@ -7,13 +7,16 @@ from daft.expressions import col
 from daft.series import Series
 from daft.table import Table
 
+TEST_DATA = [
+    Series.from_arrow(pa.array([[1, 2], [3, 4], None, []], type=pa.list_(pa.int64()))),
+    Series.from_arrow(pa.array([[1, 2], [3, 4], None, []], type=pa.large_list(pa.int64()))),
+    Series.from_arrow(pa.array([[1, 2], [3, 4], None, None], type=pa.list_(pa.int64(), list_size=2))),
+]
+
 
 @pytest.mark.parametrize(
     "data",
-    [
-        Series.from_arrow(pa.array([[1, 2], [3, 4], None, []], type=pa.list_(pa.int64()))),
-        Series.from_arrow(pa.array([[1, 2], [3, 4], None, []], type=pa.large_list(pa.int64()))),
-    ],
+    TEST_DATA,
 )
 def test_explode(data):
     table = Table.from_pydict({"nested": data, "sidecar": ["a", "b", "c", "d"]})
@@ -23,10 +26,7 @@ def test_explode(data):
 
 @pytest.mark.parametrize(
     "data",
-    [
-        Series.from_arrow(pa.array([[1, 2], [3, 4], None, []], type=pa.list_(pa.int64()))),
-        Series.from_arrow(pa.array([[1, 2], [3, 4], None, []], type=pa.large_list(pa.int64()))),
-    ],
+    TEST_DATA,
 )
 def test_explode_multiple_cols(data):
     table = Table.from_pydict({"nested": data, "nested2": data, "sidecar": ["a", "b", "c", "d"]})
@@ -37,10 +37,7 @@ def test_explode_multiple_cols(data):
 
 @pytest.mark.parametrize(
     "data",
-    [
-        Series.from_arrow(pa.array([[1, 2], [3, 4], None, []], type=pa.list_(pa.int64()))),
-        Series.from_arrow(pa.array([[1, 2], [3, 4], None, []], type=pa.large_list(pa.int64()))),
-    ],
+    TEST_DATA,
 )
 def test_explode_eval_expr(data):
     table = Table.from_pydict({"nested": data})
