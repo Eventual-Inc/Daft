@@ -42,6 +42,14 @@ def test_table_count_nulltype(length) -> None:
     assert res == [0]
 
 
+def test_table_count_pyobject() -> None:
+    daft_table = Table.from_pydict({"objs": [object(), object(), None, object(), None]})
+    daft_table = daft_table.eval_expression_list([col("objs").alias("count")._count()])
+
+    res = daft_table.to_pydict()["count"]
+    assert res == [3]
+
+
 test_table_minmax_numerics_cases = [
     ([], {"min": [None], "max": [None]}),
     ([None], {"min": [None], "max": [None]}),
