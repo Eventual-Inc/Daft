@@ -49,7 +49,15 @@ impl Display for LiteralValue {
             UInt64(val) => write!(f, "{val}"),
             Float64(val) => write!(f, "{val:.1}"),
             #[cfg(feature = "python")]
-            Python(_pyobj) => todo!(),
+            Python(pyobj) => write!(f, "PyObject({})", {
+                use pyo3::prelude::*;
+                Python::with_gil(|py| {
+                    pyobj
+                        .pyobject
+                        .call_method0(py, pyo3::intern!(py, "__str__"))
+                })
+                .unwrap()
+            }),
         }
     }
 }
@@ -68,7 +76,7 @@ impl LiteralValue {
             UInt64(_) => DataType::UInt64,
             Float64(_) => DataType::Float64,
             #[cfg(feature = "python")]
-            Python(_pyobj) => todo!(),
+            Python(_) => DataType::Python,
         }
     }
 

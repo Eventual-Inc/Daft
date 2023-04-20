@@ -7,7 +7,7 @@ use serde::{
 
 #[derive(Clone, Debug)]
 pub struct DaftPyObject {
-    pyobject: PyObject,
+    pub pyobject: PyObject,
 }
 
 impl PartialEq for DaftPyObject {
