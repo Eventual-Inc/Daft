@@ -305,4 +305,12 @@ impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
             validity,
         })
     }
+
+    #[inline]
+    fn null_count(&self) -> usize {
+        self.validity()
+            .as_ref()
+            .map(|x| x.unset_bits())
+            .unwrap_or(0)
+    }
 }
