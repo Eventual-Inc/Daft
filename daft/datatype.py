@@ -97,6 +97,10 @@ class DataType:
         return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
 
     @classmethod
+    def struct(cls, fields: dict[str, DataType]) -> DataType:
+        return cls._from_pydatatype(PyDataType.struct({name: datatype._dtype for name, datatype in fields.items()}))
+
+    @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
         if pa.types.is_int8(arrow_type):
             return cls.int8()
@@ -136,6 +140,10 @@ class DataType:
             assert isinstance(arrow_type, pa.FixedSizeListType)
             field = arrow_type.value_field
             return cls.fixed_size_list(field.name, cls.from_arrow_type(field.type), arrow_type.list_size)
+        elif pa.types.is_struct(arrow_type):
+            assert isinstance(arrow_type, pa.StructType)
+            fields = [arrow_type.field(i) for i in range(arrow_type.num_fields)]
+            return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
         else:
             raise NotImplementedError(f"we cant convert arrow type: {arrow_type} to a daft type")
 

@@ -2,7 +2,7 @@ use crate::{
     array::{BaseArray, DataArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DataType, FixedSizeListArray, ListArray,
-        NullArray, Utf8Array,
+        NullArray, StructArray, Utf8Array,
     },
     error::{DaftError, DaftResult},
 };
@@ -201,6 +201,52 @@ impl Broadcastable for FixedSizeListArray {
                 }
             }
             None => Ok(DataArray::full_null(self.name(), self.data_type(), num)),
+        }
+    }
+}
+
+impl Broadcastable for StructArray {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        if self.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
+        let arrow_arr: &arrow2::array::StructArray = self.downcast();
+        let arrays = arrow_arr
+            .values()
+            .iter()
+            .map(|field_arr| {
+                arrow2::compute::concatenate::concatenate(
+                    std::iter::repeat(field_arr.as_ref())
+                        .take(num)
+                        .collect::<Vec<&dyn arrow2::array::Array>>()
+                        .as_slice(),
+                )
+            })
+            .collect::<Result<Vec<Box<dyn arrow2::array::Array>>, _>>()?;
+        let validity = arrow_arr.validity().map(|v| {
+            arrow2::bitmap::Bitmap::from_iter(std::iter::repeat(v.iter().next().unwrap()).take(num))
+        });
+        match self.data_type() {
+            DataType::Struct(fields) => StructArray::new(
+                self.field.clone(),
+                Box::new(arrow2::array::StructArray::new(
+                    arrow2::datatypes::DataType::Struct(
+                        fields
+                            .iter()
+                            .map(|field| field.to_arrow())
+                            .collect::<DaftResult<Vec<arrow2::datatypes::Field>>>()?,
+                    ),
+                    arrays,
+                    validity,
+                )),
+            ),
+            other => unreachable!(
+                "Data type for StructArray should always be DataType::Struct, but got: {}",
+                other
+            ),
         }
     }
 }

@@ -7,7 +7,7 @@ use crate::{
     array::{BaseArray, DataArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftDataType, DaftNumericType, DataType, DateArray,
-        FixedSizeListArray, ListArray, NullArray, Utf8Array,
+        FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
     },
     error::{DaftError, DaftResult},
     series::Series,
@@ -128,6 +128,12 @@ impl ListArray {
 }
 
 impl FixedSizeListArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        arrow_cast(self, dtype)
+    }
+}
+
+impl StructArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         arrow_cast(self, dtype)
     }

@@ -62,8 +62,7 @@ macro_rules! with_match_physical_daft_types {(
         Utf8 => __with_ty__! { Utf8Type },
         FixedSizeList(_, _) => __with_ty__! { FixedSizeListType },
         List(_) => __with_ty__! { ListType },
-        // TODO: [RUST-INT][NESTED]: implement for nested types
-        // Struct(_) => __with_ty__! { StructType },
+        Struct(_) => __with_ty__! { StructType },
         #[cfg(feature = "python")]
         Python => __with_ty__! { PythonType },
         _ => panic!("{:?} not implemented for with_match_physical_daft_types", $key_type)
