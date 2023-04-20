@@ -86,3 +86,30 @@ def test_series_fixed_size_list_take() -> None:
     original_data = s.to_pylist()
     expected = [original_data[i] if i is not None else None for i in pyidx]
     assert result.to_pylist() == expected
+
+
+def test_series_struct_take() -> None:
+    dtype1, dtype2, dtype3 = pa.int64(), pa.float64(), pa.string()
+    dtype = pa.struct({"a": dtype1, "b": dtype2, "c": dtype3})
+    data = pa.array(
+        [
+            {"a": 1, "b": 2},
+            {"b": 3, "c": 4},
+            None,
+            {"a": 5, "b": 6, "c": 7},
+            {"a": 8, "b": None, "c": 10},
+            {"b": 11, "c": None},
+        ]
+    ).cast(dtype)
+
+    s = Series.from_arrow(data)
+    pyidx = [2, 0, None, 5]
+    idx = Series.from_pylist(pyidx)
+
+    result = s.take(idx)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 4
+
+    original_data = s.to_pylist()
+    expected = [original_data[i] if i is not None else None for i in pyidx]
+    assert result.to_pylist() == expected

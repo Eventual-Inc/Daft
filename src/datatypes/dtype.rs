@@ -111,9 +111,11 @@ impl DataType {
             }
             DataType::List(field) => Ok(ArrowType::LargeList(Box::new(field.to_arrow()?))),
             DataType::Struct(fields) => Ok({
-                let fields: DaftResult<Vec<arrow2::datatypes::Field>> =
-                    fields.iter().map(|f| f.to_arrow()).collect();
-                ArrowType::Struct(fields?)
+                let fields = fields
+                    .iter()
+                    .map(|f| f.to_arrow())
+                    .collect::<DaftResult<Vec<arrow2::datatypes::Field>>>()?;
+                ArrowType::Struct(fields)
             }),
             _ => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"

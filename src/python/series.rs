@@ -7,6 +7,7 @@ use crate::{
     datatypes::{DataType, Field, PythonType, UInt64Type},
     ffi,
     series::{self, Series},
+    utils::arrow::cast_array_if_needed,
 };
 
 use super::datatype::PyDataType;
@@ -23,26 +24,7 @@ impl PySeries {
     #[staticmethod]
     pub fn from_arrow(name: &str, pyarrow_array: &PyAny) -> PyResult<Self> {
         let arrow_array = ffi::array_to_rust(pyarrow_array)?;
-        use arrow2::compute::cast;
-        let arrow_array = match arrow_array.data_type() {
-            arrow2::datatypes::DataType::Utf8 => {
-                cast::utf8_to_large_utf8(arrow_array.as_ref().as_any().downcast_ref().unwrap())
-                    .boxed()
-            }
-            arrow2::datatypes::DataType::Binary => cast::binary_to_large_binary(
-                arrow_array.as_ref().as_any().downcast_ref().unwrap(),
-                arrow2::datatypes::DataType::LargeBinary,
-            )
-            .boxed(),
-            arrow2::datatypes::DataType::List(field) => cast::cast(
-                arrow_array.as_ref(),
-                &arrow2::datatypes::DataType::LargeList(field.clone()),
-                Default::default(),
-            )
-            .unwrap()
-            .to_boxed(),
-            _ => arrow_array,
-        };
+        let arrow_array = cast_array_if_needed(arrow_array.to_boxed());
         let series = series::Series::try_from((name, arrow_array))?;
         Ok(series.into())
     }
