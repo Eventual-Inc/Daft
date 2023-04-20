@@ -8,7 +8,7 @@ import pytest
 
 from daft import DataFrame
 
-NUM_SAMPLES = [10_000_000, 100_000_000]
+NUM_SAMPLES = [1_000_000, 10_000_000]
 
 
 @pytest.mark.benchmark(group="aggregations")
