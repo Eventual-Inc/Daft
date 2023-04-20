@@ -48,6 +48,63 @@ def test_from_pydict_arrow_struct_array() -> None:
     assert daft_table.to_arrow()["a"].combine_chunks() == arrow_arr
 
 
+@pytest.mark.parametrize(
+    "data,out_dtype",
+    [
+        # Full data.
+        (pa.array([1, 2, 3, 4], type=pa.int64()), pa.int64()),
+        (pa.array(["a", "b", "c", "d"], type=pa.string()), pa.large_string()),
+        (pa.array([b"a", b"b", b"c", b"d"], type=pa.binary()), pa.large_binary()),
+        (pa.array([[1, 2], [3], [4, 5, 6], [None, 7]], pa.list_(pa.int64())), pa.large_list(pa.int64())),
+        (pa.array([[1, 2], [3, None], [4, 5], [None, 6]], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
+        (
+            pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, {"a": 5}, {"a": 6, "c": 7}]),
+            pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
+        ),
+        # Null outside of slice.
+        (pa.array([1, 2, 3, None], type=pa.int64()), pa.int64()),
+        (pa.array(["a", "b", "c", None], type=pa.string()), pa.large_string()),
+        (pa.array([b"a", b"b", b"c", None], type=pa.binary()), pa.large_binary()),
+        (pa.array([[1, 2], [3], [4, 5, 6], None], pa.list_(pa.int64())), pa.large_list(pa.int64())),
+        (pa.array([[1, 2], [3, None], [4, 5], None], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
+        (
+            pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, {"a": 5}, None]),
+            pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
+        ),
+        # Slice contains nulls.
+        (pa.array([1, 2, None, 4], type=pa.int64()), pa.int64()),
+        (pa.array(["a", "b", None, "d"], type=pa.string()), pa.large_string()),
+        (pa.array([b"a", b"b", None, b"d"], type=pa.binary()), pa.large_binary()),
+        (pa.array([[1, 2], [3], None, [None, 4]], pa.list_(pa.int64())), pa.large_list(pa.int64())),
+        (pa.array([[1, 2], [3, 4], None, [None, 6]], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
+        (
+            pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, None, {"a": 5, "c": 6}]),
+            pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
+        ),
+        # Slice is all nulls.
+        (pa.array([1, None, None, 4], type=pa.int64()), pa.int64()),
+        (pa.array(["a", None, None, "d"], type=pa.string()), pa.large_string()),
+        (pa.array([b"a", None, None, b"d"], type=pa.binary()), pa.large_binary()),
+        (pa.array([[1, 2], None, None, [None, 4]], pa.list_(pa.int64())), pa.large_list(pa.int64())),
+        (pa.array([[1, 2], None, None, [None, 6]], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
+        (
+            pa.array([{"a": 1, "b": 2}, None, None, {"a": 5, "c": 6}]),
+            pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
+        ),
+    ],
+)
+@pytest.mark.parametrize("chunked", [False, True])
+def test_from_pydict_arrow_sliced_roundtrip(data, out_dtype, chunked) -> None:
+    sliced_data = data.slice(1, 2)
+    if chunked:
+        sliced_data = pa.chunked_array(sliced_data)
+    daft_table = Table.from_pydict({"a": sliced_data})
+    assert "a" in daft_table.column_names()
+    if chunked:
+        sliced_data = sliced_data.combine_chunks()
+    assert daft_table.to_arrow()["a"].combine_chunks() == pac.cast(sliced_data, out_dtype)
+
+
 def test_from_pydict_series() -> None:
     daft_table = Table.from_pydict({"a": Series.from_arrow(pa.array([1, 2, 3], type=pa.int8()))})
     assert "a" in daft_table.column_names()
@@ -61,6 +118,58 @@ def test_from_arrow_round_trip() -> None:
     assert daft_table.column_names() == ["a", "b"]
     read_back = daft_table.to_arrow()
     assert pa_table == read_back
+
+
+@pytest.mark.parametrize(
+    "data,out_dtype",
+    [
+        # Full data.
+        (pa.array([1, 2, 3, 4], type=pa.int64()), pa.int64()),
+        (pa.array(["a", "b", "c", "d"], type=pa.string()), pa.large_string()),
+        (pa.array([b"a", b"b", b"c", b"d"], type=pa.binary()), pa.large_binary()),
+        (pa.array([[1, 2], [3], [4, 5, 6], [None, 7]], pa.list_(pa.int64())), pa.large_list(pa.int64())),
+        (pa.array([[1, 2], [3, None], [4, 5], [None, 6]], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
+        (
+            pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, {"a": 5}, {"a": 6, "c": 7}]),
+            pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
+        ),
+        # Null outside of slice.
+        (pa.array([1, 2, 3, None], type=pa.int64()), pa.int64()),
+        (pa.array(["a", "b", "c", None], type=pa.string()), pa.large_string()),
+        (pa.array([b"a", b"b", b"c", None], type=pa.binary()), pa.large_binary()),
+        (pa.array([[1, 2], [3], [4, 5, 6], None], pa.list_(pa.int64())), pa.large_list(pa.int64())),
+        (pa.array([[1, 2], [3, None], [4, 5], None], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
+        (
+            pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, {"a": 5}, None]),
+            pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
+        ),
+        # Slice contains nulls.
+        (pa.array([1, 2, None, 4], type=pa.int64()), pa.int64()),
+        (pa.array(["a", "b", None, "d"], type=pa.string()), pa.large_string()),
+        (pa.array([b"a", b"b", None, b"d"], type=pa.binary()), pa.large_binary()),
+        (pa.array([[1, 2], [3], None, [None, 4]], pa.list_(pa.int64())), pa.large_list(pa.int64())),
+        (pa.array([[1, 2], [3, 4], None, [None, 6]], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
+        (
+            pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, None, {"a": 5, "c": 6}]),
+            pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
+        ),
+        # Slice is all nulls.
+        (pa.array([1, None, None, 4], type=pa.int64()), pa.int64()),
+        (pa.array(["a", None, None, "d"], type=pa.string()), pa.large_string()),
+        (pa.array([b"a", None, None, b"d"], type=pa.binary()), pa.large_binary()),
+        (pa.array([[1, 2], None, None, [None, 4]], pa.list_(pa.int64())), pa.large_list(pa.int64())),
+        (pa.array([[1, 2], None, None, [None, 6]], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
+        (
+            pa.array([{"a": 1, "b": 2}, None, None, {"a": 5, "c": 6}]),
+            pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
+        ),
+    ],
+)
+def test_from_arrow_sliced_roundtrip(data, out_dtype) -> None:
+    sliced_data = data.slice(1, 2)
+    daft_table = Table.from_arrow(pa.table({"a": sliced_data}))
+    assert "a" in daft_table.column_names()
+    assert daft_table.to_arrow()["a"].combine_chunks() == pac.cast(sliced_data, out_dtype)
 
 
 def test_from_pydict_bad_input() -> None:

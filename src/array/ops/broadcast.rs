@@ -227,11 +227,7 @@ impl Broadcastable for StructArray {
             })
             .collect::<Result<Vec<Box<dyn arrow2::array::Array>>, _>>()?;
         let validity = arrow_arr.validity().map(|v| {
-            arrow2::bitmap::Bitmap::from_iter(
-                std::iter::repeat(v.iter().next().unwrap())
-                    .take(num)
-                    .collect::<Vec<bool>>(),
-            )
+            arrow2::bitmap::Bitmap::from_iter(std::iter::repeat(v.iter().next().unwrap()).take(num))
         });
         match self.data_type() {
             DataType::Struct(fields) => StructArray::new(

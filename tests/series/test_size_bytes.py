@@ -10,7 +10,7 @@ from daft.datatype import DataType
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
 
-PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".")) >= (7, 0, 0)
+PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
 @pytest.mark.skipif(
