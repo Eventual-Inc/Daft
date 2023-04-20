@@ -137,24 +137,29 @@ impl Table {
         Ok(column_sizes?.iter().sum())
     }
 
+
+    fn create_mask(&self, predicate: &Expr) -> DaftResult<Self> {
+        let mask = self.create_mask(predicate)?;
+        self.mask_filter(&mask)
+    }
+
     pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {
         if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
-            let mask = self.eval_expression(predicate.get(0).unwrap())?;
-            self.mask_filter(&mask)
+            self.create_mask(predicate.get(0).unwrap())
         } else {
             let mut expr = predicate.get(0).unwrap().and(predicate.get(1).unwrap());
             for i in 2..predicate.len() {
                 let next = predicate.get(i).unwrap();
                 expr = expr.and(next);
             }
-            let mask = self.eval_expression(&expr)?;
-            self.mask_filter(&mask)
+            self.create_mask(&expr)
         }
     }
 
-    pub fn mask_filter(&self, mask: &Series) -> DaftResult<Self> {
+
+    pub fn mask_filter(&self, mask: &Table) -> DaftResult<Self> {
         if *mask.data_type() != DataType::Boolean {
             return Err(DaftError::ValueError(format!(
                 "We can only mask a Table with a Boolean Series, but we got {}",
