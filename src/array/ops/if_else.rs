@@ -5,7 +5,6 @@ use crate::datatypes::{
 };
 use crate::error::{DaftError, DaftResult};
 use crate::utils::arrow::arrow_bitmap_and_helper;
-use arrow2::compute::if_then_else::if_then_else;
 use std::convert::identity;
 
 use super::broadcast::Broadcastable;
@@ -19,12 +18,12 @@ use super::downcast::Downcastable;
 // `scalar_copy`: a simple inlined function to run on each borrowed scalar value when iterating through if_true/if_else.
 //   Note that this is potentially the identity function if Arrow2 allows for creation of this Array from borrowed data (e.g. &str)
 macro_rules! broadcast_if_else{(
-    $array_type:ty, $if_true:expr, $if_false:expr, $predicate:expr, $scalar_copy:expr,
+    $array_type:ty, $if_true:expr, $if_false:expr, $predicate:expr, $scalar_copy:expr, $if_then_else:expr,
 ) => ({
     match ($if_true.len(), $if_false.len(), $predicate.len()) {
         // CASE: Equal lengths across all 3 arguments
         (self_len, other_len, predicate_len) if self_len == other_len && other_len == predicate_len => {
-            let result = if_then_else($predicate.downcast(), $if_true.data(), $if_false.data())?;
+            let result = $if_then_else($predicate.downcast(), $if_true.data(), $if_false.data())?;
             DataArray::try_from(($if_true.name(), result))
         },
         // CASE: Broadcast predicate
@@ -108,6 +107,7 @@ where
             other,
             predicate,
             copy_optional_native::<T>,
+            arrow2::compute::if_then_else::if_then_else,
         )
     }
 }
@@ -120,6 +120,7 @@ impl Utf8Array {
             other,
             predicate,
             identity,
+            arrow2::compute::if_then_else::if_then_else,
         )
     }
 }
@@ -136,6 +137,7 @@ impl BooleanArray {
             other,
             predicate,
             identity,
+            arrow2::compute::if_then_else::if_then_else,
         )
     }
 }
@@ -152,6 +154,7 @@ impl BinaryArray {
             other,
             predicate,
             identity,
+            arrow2::compute::if_then_else::if_then_else,
         )
     }
 }
@@ -170,83 +173,84 @@ impl NullArray {
 impl PythonArray {
     pub fn if_else(
         &self,
-        other: &PythonArray,
-        predicate: &BooleanArray,
+        _other: &PythonArray,
+        _predicate: &BooleanArray,
     ) -> DaftResult<PythonArray> {
-        use crate::array::vec_backed::VecBackedArray;
-        use pyo3::prelude::*;
-        match (self.len(), other.len(), predicate.len()) {
-            // CASE: Equal lengths across all 3 arguments
-            (self_len, other_len, predicate_len) if self_len == other_len && other_len == predicate_len => {
-                let predicate_arr = predicate.downcast();
-                let result_vec: Vec<PyObject> = self.downcast().vec().iter()
-                    .zip(other.downcast().vec().iter())
-                    .zip(predicate_arr.iter())
-                    .map(
-                        |((self_val, other_val), pred_val)| match pred_val {
-                            None => None,
-                            true => self_val.clone(),
-                            false => other_val.clone(),
-                        }
-                    ).collect();
-                DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
-            },
-            // CASE: Broadcast predicate
-            (self_len, _, 1) => {
-                let predicate_scalar = predicate.get(0);
-                match predicate_scalar {
-                    None => Ok(DataArray::full_null(self.name(), self_len)),
-                    Some(predicate_scalar_value) => {
-                        if predicate_scalar_value {
-                            Ok(self.clone())
-                        } else {
-                            Ok(other.clone())
-                        }
-                    }
-                }
-            }
-            // CASE: Broadcast both arrays
-            (1, 1, _) => {
-                let self_scalar = self.get(0);
-                let other_scalar = other.get(0);
-                let predicate_arr = predicate.downcast();
-                let predicate_values = predicate_arr.values();
-                let result_vec: Vec<PyObject> = predicate_values.iter().map(
-                    |pred_val| match pred_val {
-                        true => self_scalar.clone(),
-                        false => other_scalar.clone(),
-                    }
-                ).collect();
-                DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
-            }
-            // CASE: Broadcast truthy array
-            (1, o, p)  if o == p => {
-                let self_scalar = self.get(0);
-                let predicate_arr = predicate.downcast();
-                let predicate_values = predicate_arr.values();
-                let result_vec: Vec<PyObject> = other.downcast().vec().iter().zip(predicate_values.iter()).map(
-                    |(other_val, pred_val)| match pred_val {
-                        true => self_scalar.clone(),
-                        false => other_val.clone(),
-                    }
-                ).collect();
-                DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
-            }
-            // CASE: Broadcast falsey array
-            (s, 1, p)  if s == p => {
-                let other_scalar = other.get(0);
-                let predicate_arr = predicate.downcast();
-                let predicate_values = predicate_arr.values();
-                let result_vec: Vec<PyObject> = self.downcast().vec().iter().zip(predicate_values.iter()).map(
-                |(self_val, pred_val)| match pred_val {
-                        true => self_val.clone(),
-                        false => other_scalar.clone(),
-                    }
-                ).collect();
-                DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
-            }
-            (s, o, p) => Err(DaftError::ValueError(format!("Cannot run if_else against arrays with mismatched lengths: self={s}, other={o}, predicate={p}")))
-        }
+        todo!()
+        // use crate::array::vec_backed::VecBackedArray;
+        // use pyo3::prelude::*;
+        // match (self.len(), other.len(), predicate.len()) {
+        //     // CASE: Equal lengths across all 3 arguments
+        //     (self_len, other_len, predicate_len) if self_len == other_len && other_len == predicate_len => {
+        //         let predicate_arr = predicate.downcast();
+        //         let result_vec: Vec<PyObject> = self.downcast().vec().iter()
+        //             .zip(other.downcast().vec().iter())
+        //             .zip(predicate_arr.iter())
+        //             .map(
+        //                 |((self_val, other_val), pred_val)| match pred_val {
+        //                     None => None,
+        //                     true => self_val.clone(),
+        //                     false => other_val.clone(),
+        //                 }
+        //             ).collect();
+        //         DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
+        //     },
+        //     // CASE: Broadcast predicate
+        //     (self_len, _, 1) => {
+        //         let predicate_scalar = predicate.get(0);
+        //         match predicate_scalar {
+        //             None => Ok(DataArray::full_null(self.name(), self_len)),
+        //             Some(predicate_scalar_value) => {
+        //                 if predicate_scalar_value {
+        //                     Ok(self.clone())
+        //                 } else {
+        //                     Ok(other.clone())
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     // CASE: Broadcast both arrays
+        //     (1, 1, _) => {
+        //         let self_scalar = self.get(0);
+        //         let other_scalar = other.get(0);
+        //         let predicate_arr = predicate.downcast();
+        //         let predicate_values = predicate_arr.values();
+        //         let result_vec: Vec<PyObject> = predicate_values.iter().map(
+        //             |pred_val| match pred_val {
+        //                 true => self_scalar.clone(),
+        //                 false => other_scalar.clone(),
+        //             }
+        //         ).collect();
+        //         DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
+        //     }
+        //     // CASE: Broadcast truthy array
+        //     (1, o, p)  if o == p => {
+        //         let self_scalar = self.get(0);
+        //         let predicate_arr = predicate.downcast();
+        //         let predicate_values = predicate_arr.values();
+        //         let result_vec: Vec<PyObject> = other.downcast().vec().iter().zip(predicate_values.iter()).map(
+        //             |(other_val, pred_val)| match pred_val {
+        //                 true => self_scalar.clone(),
+        //                 false => other_val.clone(),
+        //             }
+        //         ).collect();
+        //         DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
+        //     }
+        //     // CASE: Broadcast falsey array
+        //     (s, 1, p)  if s == p => {
+        //         let other_scalar = other.get(0);
+        //         let predicate_arr = predicate.downcast();
+        //         let predicate_values = predicate_arr.values();
+        //         let result_vec: Vec<PyObject> = self.downcast().vec().iter().zip(predicate_values.iter()).map(
+        //         |(self_val, pred_val)| match pred_val {
+        //                 true => self_val.clone(),
+        //                 false => other_scalar.clone(),
+        //             }
+        //         ).collect();
+        //         DataArray::new(self.field.clone(), Box::new(VecBackedArray::new(result_vec)))
+        //     }
+        //     (s, o, p) => Err(DaftError::ValueError(format!("Cannot run if_else against arrays with mismatched lengths: self={s}, other={o}, predicate={p}")))
+        // }
     }
 }
 
@@ -257,7 +261,7 @@ where
         + for<'a> TryFrom<(&'a str, Box<dyn arrow2::array::Array>), Error = DaftError>,
     <T as Downcastable>::Output: arrow2::array::Array,
 {
-    let result = if_then_else(
+    let result = arrow2::compute::if_then_else::if_then_else(
         predicate.downcast(),
         if_true.downcast(),
         if_false.downcast(),
