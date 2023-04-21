@@ -50,10 +50,7 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
     } else if item.is_none() {
         Ok(dsl::null_lit().into())
     } else {
-        Err(PyValueError::new_err(format!(
-            "could not convert value {:?} as a Literal",
-            item.str()?
-        )))
+        Ok(dsl::lit::<PyObject>(item.into()).into())
     }
 }
 
