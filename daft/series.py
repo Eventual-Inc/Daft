@@ -67,12 +67,18 @@ class Series:
             pys = PySeries.from_pylist(name, data)
             return Series._from_pyseries(pys)
 
-    @staticmethod
-    def from_numpy(data: np.ndarray, name: str = "numpy_series") -> Series:
+    @classmethod
+    def from_numpy(cls, data: np.ndarray, name: str = "numpy_series") -> Series:
         if not isinstance(data, np.ndarray):
             raise TypeError(f"expected a numpy ndarray, got {type(data)}")
-        arrow_array = pa.array(data)
-        return Series.from_arrow(arrow_array, name=name)
+        if data.ndim <= 1:
+            arrow_array = pa.array(data)
+            return cls.from_arrow(arrow_array, name=name)
+        else:
+            # TODO(Clark): Represent the tensor series with an Arrow extension type in order
+            # to keep the series data contiguous.
+            list_ndarray = [np.asarray(item) for item in data]
+            return cls.from_pylist(list_ndarray, name=name, pyobj="force")
 
     def cast(self, dtype: DataType) -> Series:
         return Series._from_pyseries(self._series.cast(dtype._dtype))

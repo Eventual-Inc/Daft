@@ -102,6 +102,8 @@ class DataType:
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
+        from ray.data.extensions import ArrowTensorType, ArrowVariableShapedTensorType
+
         if pa.types.is_int8(arrow_type):
             return cls.int8()
         elif pa.types.is_int16(arrow_type):
@@ -144,6 +146,10 @@ class DataType:
             assert isinstance(arrow_type, pa.StructType)
             fields = [arrow_type.field(i) for i in range(arrow_type.num_fields)]
             return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
+        elif isinstance(arrow_type, (ArrowTensorType, ArrowVariableShapedTensorType)):
+            # TODO(Clark): Add an extension type Daft type to be able to represent this tensor extension
+            # type natively.
+            return cls.python()
         else:
             raise NotImplementedError(f"we cant convert arrow type: {arrow_type} to a daft type")
 

@@ -7,6 +7,7 @@ from typing import Any, Generic, TypeVar
 from uuid import uuid4
 
 import pandas as pd
+import pyarrow as pa
 
 from daft.logical.schema import Schema
 from daft.table import Table
@@ -98,6 +99,10 @@ class PartitionSet(Generic[PartitionT]):
     def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pandas(schema=schema)
+
+    def to_arrow(self) -> pa.Table:
+        merged_partition = self._get_merged_vpartition()
+        return merged_partition.to_arrow()
 
     def items(self) -> list[tuple[PartID, PartitionT]]:
         """
