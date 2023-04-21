@@ -28,6 +28,26 @@ def test_udf():
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
+def test_class_udf():
+    table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
+
+    @udf(return_dtype=DataType.string())
+    class RepeatN:
+        def __init__(self):
+            self.n = 2
+
+        def __call__(self, data):
+            return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
+
+    expr = RepeatN(col("a"))
+    field = expr._to_field(table.schema())
+    assert field.name == "a"
+    assert field.dtype == DataType.string()
+
+    result = table.eval_expression_list([expr])
+    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+
+
 def test_udf_kwargs():
     table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
 
@@ -99,6 +119,22 @@ def test_full_udf_call():
 
     with pytest.raises(TypeError):
         full_udf()
+
+
+def test_class_udf_initialization_error():
+    table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
+
+    @udf(return_dtype=DataType.string())
+    class IdentityWithInitError:
+        def __init__(self):
+            raise RuntimeError("UDF INIT ERROR")
+
+        def __call__(self, data):
+            return data
+
+    expr = IdentityWithInitError(col("a"))
+    with pytest.raises(RuntimeError, match="UDF INIT ERROR"):
+        table.eval_expression_list([expr])
 
 
 def test_udf_equality():

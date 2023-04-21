@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
+import types
 from typing import Callable
 
 from daft.datatype import DataType
@@ -40,6 +41,11 @@ class PartialUDF:
 
         args = []
         for name in arg_keys:
+
+            # special-case to skip `self` since that would be a redundant argument in a method call to a class-UDF
+            if name == "self":
+                continue
+
             assert name in pyvalues or name in function_parameter_name_to_index
             if name in pyvalues:
                 args.append(pyvalues[name])
@@ -54,7 +60,11 @@ class PartialUDF:
             else:
                 kwargs[name] = evaluated_expressions[function_parameter_name_to_index[name]]
 
-        result = self.udf.func(*args, **kwargs)
+        # NOTE: We currently initialize the function once for every invocation of the PartialUDF.
+        # This is not ideal and we should cache initializations across calls for the same process.
+        func = self.udf.get_initialized_func()
+
+        result = func(*args, **kwargs)
 
         # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
         # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF
@@ -86,9 +96,7 @@ class UDF:
         functools.update_wrapper(self, self.func)
 
     def __call__(self, *args, **kwargs) -> Expression:
-        bound_args = inspect.signature(self.func).bind(*args, **kwargs)
-        bound_args.apply_defaults()
-
+        bound_args = self.bind_func(*args, **kwargs)
         partial_udf = PartialUDF(self, bound_args)
         expressions = list(partial_udf.expressions().values())
         return Expression.udf(
@@ -96,6 +104,31 @@ class UDF:
             expressions=expressions,
             return_dtype=self.return_dtype,
         )
+
+    def bind_func(self, *args, **kwargs):
+        if isinstance(self.func, types.FunctionType):
+            sig = inspect.signature(self.func)
+            bound_args = sig.bind(*args, **kwargs)
+        elif isinstance(self.func, type):
+            sig = inspect.signature(self.func.__call__)
+            bound_args = sig.bind(
+                # Placeholder for `self`
+                None,
+                *args,
+                **kwargs,
+            )
+        else:
+            raise NotImplementedError(f"UDF type not supported: {type(self.func)}")
+        bound_args.apply_defaults()
+        return bound_args
+
+    def get_initialized_func(self):
+        if isinstance(self.func, types.FunctionType):
+            return self.func
+        elif isinstance(self.func, type):
+            # NOTE: This potentially runs expensive initializations on the class
+            return self.func()
+        raise NotImplementedError(f"UDF type not supported: {type(self.func)}")
 
 
 def udf(
