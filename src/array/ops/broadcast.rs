@@ -253,20 +253,32 @@ impl Broadcastable for StructArray {
 
 #[cfg(feature = "python")]
 impl Broadcastable for crate::datatypes::PythonArray {
-    fn broadcast(&self, _num: usize) -> DaftResult<Self> {
-        todo!("[RUST-INT][PY] Need to implement Lit for Python objects to test this")
-        // if self.len() != 1 {
-        //     return Err(DaftError::ValueError(format!(
-        //         "Attempting to broadcast non-unit length Array named: {}",
-        //         self.name()
-        //     )));
-        // }
-        // let val = self.downcast().vec().iter().next().unwrap();
-        // let mut repeated_values = Vec::with_capacity(num);
-        // repeated_values.fill(val.clone());
-        // let repeated_values_array: Box<dyn arrow2::array::Array> = Box::new(
-        //     crate::array::vec_backed::VecBackedArray::new(repeated_values),
-        // );
-        // crate::datatypes::PythonArray::new(self.field.clone(), repeated_values_array)
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        use pyo3::prelude::*;
+
+        if self.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
+
+        let val = self.get(0);
+
+        let mut repeated_values = Vec::with_capacity(num);
+        repeated_values.fill(val.clone());
+
+        let validity = {
+            let is_none = Python::with_gil(|py| val.is_none(py));
+            match is_none {
+                true => Some(arrow2::bitmap::Bitmap::new_zeroed(num)),
+                false => None,
+            }
+        };
+
+        let repeated_values_array: Box<dyn arrow2::array::Array> = Box::new(
+            crate::array::pseudo_arrow::PseudoArrowArray::new(repeated_values.into(), validity),
+        );
+        crate::datatypes::PythonArray::new(self.field.clone(), repeated_values_array)
     }
 }
