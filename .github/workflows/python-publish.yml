@@ -27,13 +27,13 @@ env:
 jobs:
   build-and-test:
 
-    name: platform wheels for ${{ matrix.os }}
+    name: platform wheels for ${{ matrix.os }}-${{ matrix.compile_arch }}
     runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, macos]
-        arch: [x86_64, aarch64]
+        compile_arch: [x86_64, aarch64]
     steps:
     - uses: actions/checkout@v3
       with:
@@ -52,32 +52,32 @@ jobs:
       if: ${{ matrix.arch == 'x86_64' }}
       uses: messense/maturin-action@v1
       with:
-        target: ${{ matrix.arch }}
+        target: x86_64
         manylinux: auto
         args: --profile release-lto --out dist --sdist
       env:
         RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
 
     - name: Build wheels - Linux aarch64
-      if: ${{ matrix.os == 'ubuntu' && matrix.os == 'aarch64' }}
+      if: ${{ (matrix.os == 'ubuntu') && (matrix.os == 'aarch64') }}
       uses: messense/maturin-action@v1
       with:
-        target: ${{ matrix.arch }}
+        target: aarch64
         manylinux: auto
         args: --profile release-lto --out dist --sdist
 
-    - name: Build wheels - Mac arm64
-      if: ${{ matrix.os == 'macos' && matrix.os == 'aarch64'  }}
+    - name: Build wheels - Mac aarch64
+      if: ${{ (matrix.os == 'macos') && (matrix.os == 'aarch64')  }}
       uses: messense/maturin-action@v1
       with:
-        target: ${{ matrix.arch }}
+        target: aarch64
         manylinux: auto
         args: --profile release-lto --out dist --sdist
       env:
         RUSTFLAGS: -Ctarget-cpu=apple-m1
 
     - name: Install and test built wheel - x86_64
-      if: ${{ matrix.arch == 'x86_64' }}
+      if: ${{ matrix.compile_arch == 'x86_64' }}
       run: |
         pip install -r requirements-dev.txt
         pip install dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
