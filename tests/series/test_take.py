@@ -113,3 +113,21 @@ def test_series_struct_take() -> None:
     original_data = s.to_pylist()
     expected = [original_data[i] if i is not None else None for i in pyidx]
     assert result.to_pylist() == expected
+
+
+def test_series_deeply_nested_take() -> None:
+    # Test take on a Series with a deeply nested type: struct of list of struct of list of strings.
+    data = pa.array([{"a": [{"b": ["foo", "bar"]}]}, {"a": [{"b": ["baz", "quux"]}]}])
+    dtype = pa.struct([("a", pa.large_list(pa.struct([("b", pa.large_list(pa.large_string()))])))])
+
+    s = Series.from_arrow(data)
+    assert s.datatype() == DataType.from_arrow_type(dtype)
+    idx = Series.from_pylist([1])
+
+    result = s.take(idx)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 1
+
+    original_data = s.to_pylist()
+    expected = [original_data[1]]
+    assert result.to_pylist() == expected

@@ -20,8 +20,58 @@ pub fn cast_array_if_needed(
             let new_values = cast_array_if_needed(array.values().clone());
             let offsets = array.offsets().into();
             arrow2::array::ListArray::<i64>::new(
-                arrow2::datatypes::DataType::LargeList(field.clone()),
+                arrow2::datatypes::DataType::LargeList(Box::new(arrow2::datatypes::Field::new(
+                    field.name.clone(),
+                    new_values.data_type().clone(),
+                    field.is_nullable,
+                ))),
                 offsets,
+                new_values,
+                arrow_array.validity().cloned(),
+            )
+            .boxed()
+        }
+        arrow2::datatypes::DataType::LargeList(field) => {
+            // Types nested within LargeList may need casting.
+            let array = arrow_array
+                .as_any()
+                .downcast_ref::<arrow2::array::ListArray<i64>>()
+                .unwrap();
+            let new_values = cast_array_if_needed(array.values().clone());
+            if new_values.data_type() == array.values().data_type() {
+                return arrow_array;
+            }
+            arrow2::array::ListArray::<i64>::new(
+                arrow2::datatypes::DataType::LargeList(Box::new(arrow2::datatypes::Field::new(
+                    field.name.clone(),
+                    new_values.data_type().clone(),
+                    field.is_nullable,
+                ))),
+                array.offsets().clone(),
+                new_values,
+                arrow_array.validity().cloned(),
+            )
+            .boxed()
+        }
+        arrow2::datatypes::DataType::FixedSizeList(field, size) => {
+            // Types nested within FixedSizeList may need casting.
+            let array = arrow_array
+                .as_any()
+                .downcast_ref::<arrow2::array::FixedSizeListArray>()
+                .unwrap();
+            let new_values = cast_array_if_needed(array.values().clone());
+            if new_values.data_type() == array.values().data_type() {
+                return arrow_array;
+            }
+            arrow2::array::FixedSizeListArray::new(
+                arrow2::datatypes::DataType::FixedSizeList(
+                    Box::new(arrow2::datatypes::Field::new(
+                        field.name.clone(),
+                        new_values.data_type().clone(),
+                        field.is_nullable,
+                    )),
+                    *size,
+                ),
                 new_values,
                 arrow_array.validity().cloned(),
             )
