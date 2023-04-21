@@ -265,8 +265,7 @@ impl Broadcastable for crate::datatypes::PythonArray {
 
         let val = self.get(0);
 
-        let mut repeated_values = Vec::with_capacity(num);
-        repeated_values.fill(val.clone());
+        let repeated_values = vec![val.clone(); num];
 
         let validity = {
             let is_none = Python::with_gil(|py| val.is_none(py));
