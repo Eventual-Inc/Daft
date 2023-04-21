@@ -191,6 +191,11 @@ where
 impl DaftFloatType for Float32Type {}
 impl DaftFloatType for Float64Type {}
 
+pub trait DaftListLikeType: DaftDataType {}
+
+impl DaftListLikeType for ListType {}
+impl DaftListLikeType for FixedSizeListType {}
+
 pub type NullArray = DataArray<NullType>;
 pub type BooleanArray = DataArray<BooleanType>;
 pub type Int8Array = DataArray<Int8Type>;

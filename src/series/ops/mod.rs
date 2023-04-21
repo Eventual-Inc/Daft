@@ -18,6 +18,7 @@ pub mod full;
 pub mod hash;
 pub mod if_else;
 pub mod len;
+pub mod list;
 pub mod not;
 pub mod null;
 pub mod pairwise;

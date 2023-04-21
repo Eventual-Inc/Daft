@@ -177,7 +177,9 @@ class Table:
         return Table._from_pytable(self._table.quantiles(num))
 
     def explode(self, columns: ExpressionsProjection) -> Table:
-        raise NotImplementedError("TODO: [RUST-INT][NESTED] Implement for Table")
+        """NOTE: Expressions here must be Explode expressions (Expression._explode())"""
+        to_explode_pyexprs = [e._expr for e in columns]
+        return Table._from_pytable(self._table.explode(to_explode_pyexprs))
 
     def join(
         self,

@@ -87,6 +87,23 @@ impl PyTable {
             .into())
     }
 
+    pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {
+        let converted_to_explode: Vec<dsl::Expr> =
+            to_explode.into_iter().map(|e| e.into()).collect();
+
+        if converted_to_explode.len() != 1 {
+            return Err(DaftError::ValueError(
+                "Exploding more than one column is not yet implemented.".to_string(),
+            )
+            .into());
+        }
+
+        Ok(self
+            .table
+            .explode(converted_to_explode.get(0).unwrap())?
+            .into())
+    }
+
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.table))
     }
