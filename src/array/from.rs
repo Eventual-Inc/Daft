@@ -109,3 +109,23 @@ impl<T: DaftDataType> TryFrom<(&str, Box<dyn arrow2::array::Array>)> for DataArr
         DataArray::new(Field::new(name, array.data_type().into()).into(), array)
     }
 }
+
+#[cfg(feature = "python")]
+impl
+    TryFrom<(
+        &str,
+        crate::array::pseudo_arrow::PseudoArrowArray<pyo3::PyObject>,
+    )> for crate::datatypes::PythonArray
+{
+    type Error = DaftError;
+
+    fn try_from(
+        item: (
+            &str,
+            crate::array::pseudo_arrow::PseudoArrowArray<pyo3::PyObject>,
+        ),
+    ) -> DaftResult<Self> {
+        let (name, array) = item;
+        DataArray::new(Field::new(name, DataType::Python).into(), Box::new(array))
+    }
+}

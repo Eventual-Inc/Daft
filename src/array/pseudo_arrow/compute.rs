@@ -1,7 +1,6 @@
 use std::ops::Not;
 
 use crate::array::pseudo_arrow::PseudoArrowArray;
-
 use arrow2::array::Array;
 use arrow2::bitmap::Bitmap;
 
