@@ -14,21 +14,14 @@
    .. autosummary::
    
       ~Expression.__init__
+      ~Expression.abs
       ~Expression.alias
       ~Expression.apply
-      ~Expression.apply_and_trickle_down
-      ~Expression.as_py
       ~Expression.cast
-      ~Expression.has_call
       ~Expression.if_else
-      ~Expression.is_nan
       ~Expression.is_null
       ~Expression.name
-      ~Expression.post_order
-      ~Expression.to_column_expression
-      ~Expression.to_dot
-      ~Expression.to_dot_file
-      ~Expression.to_field
+      ~Expression.udf
    
    
 
@@ -39,6 +32,7 @@
    .. autosummary::
    
       ~Expression.dt
+      ~Expression.float
       ~Expression.str
       ~Expression.url
    

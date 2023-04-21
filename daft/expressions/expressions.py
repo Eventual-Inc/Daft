@@ -14,6 +14,17 @@ from daft.logical.schema import Field, Schema
 
 
 def lit(value: object) -> Expression:
+    """Creates an Expression representing a column with every value set to the provided value
+
+    Example:
+        >>> col("x") + lit(1)
+
+    Args:
+        val: value of column
+
+    Returns:
+        Expression: Expression representing the value provided
+    """
     if isinstance(value, date):
         epoch_time = value - date(1970, 1, 1)
         return lit(epoch_time.days).cast(DataType.date())
@@ -23,6 +34,17 @@ def lit(value: object) -> Expression:
 
 
 def col(name: str) -> Expression:
+    """Creates an Expression referring to the column with the provided name
+
+    Example:
+        >>> col("x")
+
+    Args:
+        name: Name of column
+
+    Returns:
+        Expression: Expression representing the selected column
+    """
     return Expression._from_pyexpr(_col(name))
 
 
@@ -34,18 +56,22 @@ class Expression:
 
     @property
     def str(self) -> ExpressionStringNamespace:
+        """Access methods that work on columns of strings"""
         return ExpressionStringNamespace.from_expression(self)
 
     @property
     def dt(self) -> ExpressionDatetimeNamespace:
+        """Access methods that work on columns of datetimes"""
         return ExpressionDatetimeNamespace.from_expression(self)
 
     @property
     def float(self) -> ExpressionFloatNamespace:
+        """Access methods that work on columns of floats"""
         return ExpressionFloatNamespace.from_expression(self)
 
     @property
     def url(self) -> ExpressionUrlNamespace:
+        """Access methods that work on columns of URLs"""
         return ExpressionUrlNamespace.from_expression(self)
 
     @staticmethod
@@ -72,15 +98,15 @@ class Expression:
         )
 
     def __abs__(self) -> Expression:
-        "Absolute value of expression"
+        """Absolute of a numeric expression (``abs(expr)``)"""
         return self.abs()
 
     def abs(self) -> Expression:
-        "Absolute value of expression"
+        """Absolute of a numeric expression (``expr.abs()``)"""
         return Expression._from_pyexpr(abs(self._expr))
 
     def __add__(self, other: object) -> Expression:
-        """Adds two numeric expressions (``e1 + e2``)"""
+        """Adds two numeric expressions or concatenates two string expressions (``e1 + e2``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr + expr._expr)
 
@@ -126,22 +152,22 @@ class Expression:
         return Expression._from_pyexpr(expr._expr % self._expr)
 
     def __and__(self, other: Expression) -> Expression:
-        """Takes the logical AND of two expressions (``e1 & e2``)"""
+        """Takes the logical AND of two boolean expressions (``e1 & e2``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr & expr._expr)
 
     def __rand__(self, other: Expression) -> Expression:
-        """Takes the logical reverse AND of two expressions (``e1 & e2``)"""
+        """Takes the logical reverse AND of two boolean expressions (``e1 & e2``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr & self._expr)
 
     def __or__(self, other: Expression) -> Expression:
-        """Takes the logical OR of two expressions (``e1 | e2``)"""
+        """Takes the logical OR of two boolean expressions (``e1 | e2``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr | expr._expr)
 
     def __ror__(self, other: Expression) -> Expression:
-        """Takes the logical reverse OR of two expressions (``e1 | e2``)"""
+        """Takes the logical reverse OR of two boolean expressions (``e1 | e2``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr | self._expr)
 
@@ -176,16 +202,41 @@ class Expression:
         return Expression._from_pyexpr(self._expr >= expr._expr)
 
     def __invert__(self) -> Expression:
-        """Inverts a bool expression (``~e``)"""
+        """Inverts a boolean expression (``~e``)"""
         expr = self._expr.__invert__()
         return Expression._from_pyexpr(expr)
 
     def alias(self, name: builtins.str) -> Expression:
+        """Gives the expression a new name, which is its column's name in the DataFrame schema and the name
+        by which subsequent expressions can refer to the results of this expression.
+
+        Example:
+            >>> col("x").alias("y")
+
+        Args:
+            name: New name for expression
+
+        Returns:
+            Expression: Renamed expression
+        """
         assert isinstance(name, str)
         expr = self._expr.alias(name)
         return Expression._from_pyexpr(expr)
 
     def cast(self, dtype: DataType) -> Expression:
+        """Casts an expression to the given datatype if possible
+
+        Example:
+
+            >>> # [1.0, 2.5, None]: float32 -> [1, 2, None]: int64
+            >>> col("float").cast(DataType.int64())
+            >>>
+            >>> # [Path("/tmp1"), Path("/tmp2"), Path("/tmp3")]: Python -> ["/tmp1", "/tmp1", "/tmp1"]: utf8
+            >>> col("path_obj_col").cast(DataType.string())
+
+        Returns:
+            Expression: Expression with the specified new datatype
+        """
         assert isinstance(dtype, DataType)
         expr = self._expr.cast(dtype._dtype)
         return Expression._from_pyexpr(expr)
@@ -215,11 +266,48 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
+        """Conditionally choose values between two expressions using the current boolean expression as a condition
+
+        Example:
+            >>> # x = [2, 2, 2]
+            >>> # y = [1, 2, 3]
+            >>> # a = ["a", "a", "a"]
+            >>> # b = ["b", "b", "b"]
+            >>> # if_else_result = ["a", "b", "b"]
+            >>> (col("x") > col("y")).if_else(col("a"), col("b"))
+
+        Args:
+            if_true (Expression): Values to choose if condition is true
+            if_false (Expression): Values to choose if condition is false
+
+        Returns:
+            Expression: New expression where values are chosen from `if_true` and `if_false`.
+        """
         if_true = Expression._to_expression(if_true)
         if_false = Expression._to_expression(if_false)
         return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
     def apply(self, func: Callable, return_dtype: DataType) -> Expression:
+        """Apply a function on each value in a given expression
+
+        .. NOTE::
+            This is just syntactic sugar on top of a UDF and is convenient to use when your function only operates
+            on a single column, and does not benefit from executing on batches. For either of those other use-cases,
+            use a UDF instead.
+
+        Example:
+            >>> def f(x_val: str) -> int:
+            >>>     return int(x_val) if x_val.isnumeric() else 0
+            >>>
+            >>> col("x").apply(f, return_dtype=DataType.int64())
+
+        Args:
+            func: Function to run per value of the expression
+            return_dtype: Return datatype of the function that was ran
+
+        Returns:
+            Expression: New expression after having run the function on the expression
+        """
         from daft.udf import UDF
 
         def batch_func(self_series):
@@ -228,6 +316,15 @@ class Expression:
         return UDF(func=batch_func, return_dtype=return_dtype)(self)
 
     def is_null(self) -> Expression:
+        """Checks if values in the Expression are Null (a special value indicating missing data)
+
+        Example:
+            >>> # [1., None, NaN] -> [False, True, False]
+            >>> col("x").is_null()
+
+        Returns:
+            Expression: Boolean Expression indicating whether values are missing
+        """
         expr = self._expr.is_null()
         return Expression._from_pyexpr(expr)
 
@@ -282,49 +379,150 @@ class ExpressionNamespace:
 
 
 class ExpressionUrlNamespace(ExpressionNamespace):
-    def download(self) -> Expression:
+    def download(self, max_worker_threads: int = 8) -> Expression:
+        """Treats each string as a URL, and downloads the bytes contents as a bytes column
+
+        Args:
+            max_worker_threads: The maximum number of threads to use for downloading URLs, defaults to 8
+
+        Returns:
+            UdfExpression: a BYTES expression which is the bytes contents of the URL, or None if an error occured during download
+        """
         from daft.udf_library import url_udfs
 
-        return url_udfs.download_udf(Expression._from_pyexpr(self._expr))
+        return url_udfs.download_udf(Expression._from_pyexpr(self._expr), max_worker_threads=max_worker_threads)
 
 
 class ExpressionFloatNamespace(ExpressionNamespace):
     def is_nan(self) -> Expression:
+        """Checks if values are NaN (a special float value indicating not-a-number)
+
+        .. NOTE::
+            Nulls will be propagated! I.e. this operation will return a null for null values.
+
+        Example:
+            >>> # [1., None, NaN] -> [False, None, True]
+            >>> col("x").is_nan()
+
+        Returns:
+            Expression: Boolean Expression indicating whether values are invalid.
+        """
         return Expression._from_pyexpr(self._expr.is_nan())
 
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
     def day(self) -> Expression:
+        """Retrieves the day for a datetime column
+
+        Example:
+            >>> col("x").dt.day()
+
+        Returns:
+            Expression: a UInt32 expression with just the day extracted from a datetime column
+        """
         return Expression._from_pyexpr(self._expr.dt_day())
 
     def month(self) -> Expression:
+        """Retrieves the month for a datetime column
+
+        Example:
+            >>> col("x").dt.month()
+
+        Returns:
+            Expression: a UInt32 expression with just the month extracted from a datetime column
+        """
         return Expression._from_pyexpr(self._expr.dt_month())
 
     def year(self) -> Expression:
+        """Retrieves the year for a datetime column
+
+        Example:
+            >>> col("x").dt.year()
+
+        Returns:
+            Expression: a UInt32 expression with just the year extracted from a datetime column
+        """
         return Expression._from_pyexpr(self._expr.dt_year())
 
     def day_of_week(self) -> Expression:
+        """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday
+
+        Example:
+            >>> col("x").dt.day_of_week()
+
+        Returns:
+            Expression: a UInt32 expression with just the day_of_week extracted from a datetime column
+        """
         return Expression._from_pyexpr(self._expr.dt_day_of_week())
 
 
 class ExpressionStringNamespace(ExpressionNamespace):
-    def contains(self, substr: str) -> Expression:
+    def contains(self, substr: str | Expression) -> Expression:
+        """Checks whether each string contains the given pattern in a string column
+
+        Example:
+            >>> col("x").str.contains(col("foo"))
+
+        Args:
+            pattern: pattern to search for as a literal string, or as a column to pick values from
+
+        Returns:
+            Expression: a Boolean expression indicating whether each value contains the provided pattern
+        """
         substr_expr = Expression._to_expression(substr)
         return Expression._from_pyexpr(self._expr.utf8_contains(substr_expr._expr))
 
     def endswith(self, suffix: str | Expression) -> Expression:
+        """Checks whether each string ends with the given pattern in a string column
+
+        Example:
+            >>> col("x").str.endswith(col("foo"))
+
+        Args:
+            pattern: pattern to search for as a literal string, or as a column to pick values from
+
+        Returns:
+            Expression: a Boolean expression indicating whether each value ends with the provided pattern
+        """
         suffix_expr = Expression._to_expression(suffix)
         return Expression._from_pyexpr(self._expr.utf8_endswith(suffix_expr._expr))
 
     def startswith(self, prefix: str) -> Expression:
+        """Checks whether each string starts with the given pattern in a string column
+
+        Example:
+            >>> col("x").str.startswith(col("foo"))
+
+        Args:
+            pattern: pattern to search for as a literal string, or as a column to pick values from
+
+        Returns:
+            Expression: a Boolean expression indicating whether each value starts with the provided pattern
+        """
         prefix_expr = Expression._to_expression(prefix)
         return Expression._from_pyexpr(self._expr.utf8_startswith(prefix_expr._expr))
 
     def concat(self, other: str) -> Expression:
+        """Concatenates two string expressions together
+
+        Args:
+            other (Expression): a string expression to concatenate with
+
+        Returns:
+            Expression: a STRING expression which is `self` concatenated with `other`
+        """
         # Delegate to + operator implementation.
         return Expression._from_pyexpr(self._expr) + other
 
     def length(self) -> Expression:
+        """Retrieves the length for a UTF-8 string column
+
+        Example:
+            >>> col("x").str.length()
+
+        Returns:
+            Expression: an UInt64 expression with the length of each string
+        """
         return Expression._from_pyexpr(self._expr.utf8_length())
 
 
