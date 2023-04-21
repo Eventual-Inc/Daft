@@ -102,23 +102,33 @@ def _glob_path_into_details_vpartitions(
 
 @ray.remote
 def _make_ray_block_from_vpartition(partition: Table) -> RayDatasetBlock:
-    # TODO: [RUST-INT][NESTED] properly implement Ray Datasets integrations once we have nested tensor types
-    return partition.to_arrow()
+    try:
+        return partition.to_arrow()
+    except pa.ArrowInvalid:
+        return partition.to_pylist()
 
 
 @ray.remote
 def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_schema: Schema) -> Table:
+    from ray.data.extensions import ArrowTensorType, ArrowVariableShapedTensorType
+
     assert isinstance(ray_dataset_block, pa.Table), "Cannot handle non-arrow Ray Datasets, please file a ticket!"
 
     data = {}
     for cname, column in zip(ray_dataset_block.column_names, ray_dataset_block):
         daft_field = daft_schema[cname]
 
-        # [[RUST-INT][NESTED] Properly handle nested arrow types here and build Ray Dataset's extension types
-        # NOTE: Since we only handle Arrow Ray Datasets, all Python-type fields should be Ray's Tensor extension types
-        # We convert that to a Daft Python block here by invoking `np.array` on each item to convert it to numpy
-        if daft_field.dtype._is_python_type():
-            column = [np.array(item) for item in column]
+        # [[RUST-INT][EXTENSION] Properly handle Ray Datasets' extension types.
+        # We convert Ray Datasets' tensor extension columns to Daft Python block columns here by
+        # converting the column to a NumPy ndarray.
+        if isinstance(column.type, (ArrowTensorType, ArrowVariableShapedTensorType)):
+            # Daft type should have already been coerced to the Python object type.
+            assert daft_field.dtype._is_python_type()
+            column = [np.asarray(arr) for arr in column]
+            # TODO(Clark): Provide the column as a top-level ndarray to ensure it remains contiguous.
+            # ata = column.combine_chunks()
+            # assert isinstance(ata, ArrowTensorArray), type(ata)
+            # column = np.asarray(ata)
 
         data[cname] = column
 
@@ -237,12 +247,17 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
         self,
         ds: RayDataset,
     ) -> tuple[RayPartitionSet, Schema]:
-        arrow_schema = ds.schema()
+        arrow_schema = ds.schema(fetch_if_missing=True)
         if not isinstance(arrow_schema, pa.Schema):
-            raise RuntimeError(
-                f"Schema is {type(arrow_schema)}, required pyarrow.lib.Schema. \n"
-                f"to_spark does not support converting non-arrow ray datasets."
+            # Convert Dataset to an Arrow dataset.
+            ds = ds.map_batches(
+                lambda x: x,
+                batch_size=None,
+                batch_format="pyarrow",
+                zero_copy_batch=True,
             )
+            arrow_schema = ds.schema(fetch_if_missing=True)
+
         daft_schema = Schema._from_field_name_and_types(
             [(arrow_field.name, DataType.from_arrow_type(arrow_field.type)) for arrow_field in arrow_schema]
         )
@@ -352,7 +367,6 @@ class Scheduler:
         plan: logical_plan.LogicalPlan,
         psets: dict[str, ray.ObjectRef],
     ) -> list[ray.ObjectRef]:
-
         from loguru import logger
 
         phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
@@ -373,17 +387,14 @@ class Scheduler:
         )
         with profiler(profile_filename):
             while True:
-
                 while (
                     len(inflight_tasks) < self.max_tasks_per_core * cores
                     and len(inflight_ref_to_task) < self.max_refs_per_core * cores
                 ):
-
                     # Get the next batch of tasks to dispatch.
                     tasks_to_dispatch = []
                     try:
                         for _ in range(batch_dispatch_size):
-
                             next_step = next(phys_plan)
 
                             # If this task is a no-op, just run it locally immediately.
