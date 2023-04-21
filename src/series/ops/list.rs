@@ -1,4 +1,4 @@
-use crate::array::{nested::ExplodableArray, BaseArray};
+use crate::array::BaseArray;
 use crate::datatypes::DataType;
 use crate::error::DaftError;
 use crate::{error::DaftResult, series::Series};

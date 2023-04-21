@@ -1,6 +1,5 @@
 pub mod from;
 pub mod iterator;
-pub mod nested;
 pub mod ops;
 pub mod pseudo_arrow;
 use std::{any::Any, marker::PhantomData, sync::Arc};
