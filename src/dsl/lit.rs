@@ -95,7 +95,7 @@ impl LiteralValue {
             UInt64(val) => UInt64Array::from(("literal", [*val].as_slice())).into_series(),
             Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
             #[cfg(feature = "python")]
-            Python(_pyobj) => todo!(),
+            Python(val) => PythonArray::from(("literal", vec![val.pyobject.clone()])).into_series(),
         };
         result
     }

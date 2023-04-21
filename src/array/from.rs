@@ -71,6 +71,20 @@ impl From<(&str, Box<arrow2::array::BooleanArray>)> for BooleanArray {
     }
 }
 
+#[cfg(feature = "python")]
+impl From<(&str, Vec<pyo3::PyObject>)> for crate::datatypes::PythonArray {
+    fn from(item: (&str, Vec<pyo3::PyObject>)) -> Self {
+        use crate::array::pseudo_arrow::PseudoArrowArray;
+
+        let (name, vec_pyobj) = item;
+        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(
+            PseudoArrowArray::<pyo3::PyObject>::from_pyobj_vec(vec_pyobj),
+        );
+        let field = Field::new(name, DataType::Python);
+        DataArray::new(field.into(), arrow_array).unwrap()
+    }
+}
+
 impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
     fn from(item: (&str, &[T])) -> Self {
         let (name, slice) = item;
