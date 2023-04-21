@@ -5,6 +5,9 @@ use crate::dsl::expr::Expr;
 use crate::series::Series;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
+use crate::dsl::pyobject::DaftPyObject;
+
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -26,6 +29,9 @@ pub enum LiteralValue {
     UInt64(u64),
     /// A 64-bit floating point number.
     Float64(f64),
+    /// Python object.
+    #[cfg(feature = "python")]
+    Python(DaftPyObject),
 }
 
 impl Display for LiteralValue {
@@ -42,6 +48,16 @@ impl Display for LiteralValue {
             Int64(val) => write!(f, "{val}"),
             UInt64(val) => write!(f, "{val}"),
             Float64(val) => write!(f, "{val:.1}"),
+            #[cfg(feature = "python")]
+            Python(pyobj) => write!(f, "PyObject({})", {
+                use pyo3::prelude::*;
+                Python::with_gil(|py| {
+                    pyobj
+                        .pyobject
+                        .call_method0(py, pyo3::intern!(py, "__str__"))
+                })
+                .unwrap()
+            }),
         }
     }
 }
@@ -59,6 +75,8 @@ impl LiteralValue {
             Int64(_) => DataType::Int64,
             UInt64(_) => DataType::UInt64,
             Float64(_) => DataType::Float64,
+            #[cfg(feature = "python")]
+            Python(_) => DataType::Python,
         }
     }
 
@@ -76,6 +94,8 @@ impl LiteralValue {
             Int64(val) => Int64Array::from(("literal", [*val].as_slice())).into_series(),
             UInt64(val) => UInt64Array::from(("literal", [*val].as_slice())).into_series(),
             Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
+            #[cfg(feature = "python")]
+            Python(val) => PythonArray::from(("literal", vec![val.pyobject.clone()])).into_series(),
         };
         result
     }
