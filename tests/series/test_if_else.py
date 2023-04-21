@@ -7,28 +7,36 @@ from daft import Series
 from daft.datatype import DataType
 
 
+@pytest.mark.parametrize("if_true_value", [1, None])
+@pytest.mark.parametrize("if_false_value", [0, None])
 @pytest.mark.parametrize(
-    ["if_true", "if_false"],
-    [
-        # Same length, same type
-        (pa.array([1, 1, 1], type=pa.int64()), pa.array([0, 0, 0], type=pa.int64())),
-        # Same length, different super-castable type
-        (pa.array([1, 1, 1], type=pa.int64()), pa.array([0, 0, 0], type=pa.int8())),
-        # Broadcast left
-        (pa.array([1], type=pa.int64()), pa.array([0, 0, 0], type=pa.int64())),
-        # Broadcast right
-        (pa.array([1, 1, 1], type=pa.int64()), pa.array([0], type=pa.int64())),
-        # Broadcast both
-        (pa.array([1], type=pa.int64()), pa.array([0], type=pa.int64())),
-    ],
+    "if_true_length",
+    [1, 3],
 )
-def test_series_if_else_numeric(if_true, if_false) -> None:
-    if_true_series = Series.from_arrow(if_true)
-    if_false_series = Series.from_arrow(if_false)
+@pytest.mark.parametrize(
+    "if_false_length",
+    [1, 3],
+)
+@pytest.mark.parametrize(
+    # Test supercasting.
+    "true_false_types",
+    [(pa.int64(), pa.int64()), (pa.int64(), pa.int8()), (pa.int8(), pa.int64())],
+)
+def test_series_if_else_numeric(
+    if_true_value,
+    if_false_value,
+    if_true_length,
+    if_false_length,
+    true_false_types,
+) -> None:
+    true_type, false_type = true_false_types
+
+    if_true_series = Series.from_arrow(pa.array([if_true_value] * if_true_length, type=true_type))
+    if_false_series = Series.from_arrow(pa.array([if_false_value] * if_false_length, type=false_type))
     predicate_series = Series.from_arrow(pa.array([True, False, None]))
     result = predicate_series.if_else(if_true_series, if_false_series)
     assert result.datatype() == DataType.int64()
-    assert result.to_pylist() == [1, 0, None]
+    assert result.to_pylist() == [if_true_value, if_false_value, None]
 
 
 @pytest.mark.parametrize(

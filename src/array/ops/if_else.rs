@@ -4,6 +4,7 @@ use crate::datatypes::{
     PythonArray, StructArray, Utf8Array,
 };
 use crate::error::{DaftError, DaftResult};
+use crate::utils::arrow::arrow_bitmap_and_helper;
 use arrow2::compute::if_then_else::if_then_else;
 use std::convert::identity;
 
@@ -52,7 +53,8 @@ macro_rules! broadcast_if_else{(
                     false => other_scalar,
                 }
             ).collect();
-            DataArray::new($if_true.field.clone(), Box::new(naive_if_else.with_validity(predicate_arr.validity().cloned())))
+            let validity = arrow_bitmap_and_helper(predicate_arr.validity(), naive_if_else.validity());
+            DataArray::new($if_true.field.clone(), Box::new(naive_if_else.with_validity(validity)))
         }
         // CASE: Broadcast truthy array
         (1, o, p)  if o == p => {
@@ -65,7 +67,8 @@ macro_rules! broadcast_if_else{(
                     false => $scalar_copy(other_val),
                 }
             ).collect();
-            DataArray::new($if_true.field.clone(), Box::new(naive_if_else.with_validity(predicate_arr.validity().cloned())))
+            let validity = arrow_bitmap_and_helper(predicate_arr.validity(), naive_if_else.validity());
+            DataArray::new($if_true.field.clone(), Box::new(naive_if_else.with_validity(validity)))
         }
         // CASE: Broadcast falsey array
         (s, 1, p)  if s == p => {
@@ -78,7 +81,8 @@ macro_rules! broadcast_if_else{(
                     false => other_scalar,
                 }
             ).collect();
-            DataArray::new($if_true.field.clone(), Box::new(naive_if_else.with_validity(predicate_arr.validity().cloned())))
+            let validity = arrow_bitmap_and_helper(predicate_arr.validity(), naive_if_else.validity());
+            DataArray::new($if_true.field.clone(), Box::new(naive_if_else.with_validity(validity)))
         }
         (s, o, p) => Err(DaftError::ValueError(format!("Cannot run if_else against arrays with non-broadcastable lengths: self={s}, other={o}, predicate={p}")))
     }
