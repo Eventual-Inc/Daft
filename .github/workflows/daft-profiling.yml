@@ -2,7 +2,7 @@ name: Run Profiling on the TPCH Benchmark
 
 on:
   push:
-    branches: [rust-main]
+    branches: [main]
   workflow_dispatch:
 
 env:
