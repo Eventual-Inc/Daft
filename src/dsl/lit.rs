@@ -134,6 +134,13 @@ impl<'a> Literal for &'a [u8] {
     }
 }
 
+#[cfg(feature = "python")]
+impl Literal for pyo3::PyObject {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::Python(DaftPyObject { pyobject: self }))
+    }
+}
+
 make_literal!(bool, Boolean);
 make_literal!(i32, Int32);
 make_literal!(u32, UInt32);
