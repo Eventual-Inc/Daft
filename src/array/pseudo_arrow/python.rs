@@ -1,5 +1,4 @@
 use crate::array::pseudo_arrow::PseudoArrowArray;
-use crate::error::DaftResult;
 use arrow2::array::Array;
 use arrow2::bitmap::Bitmap;
 
@@ -36,15 +35,23 @@ impl PseudoArrowArray<PyObject> {
     }
 
     pub fn if_then_else(
-        &self,
-        other: &Self,
         predicate: &arrow2::array::BooleanArray,
-    ) -> DaftResult<Self> {
+        lhs: &dyn Array,
+        rhs: &dyn Array,
+    ) -> Self {
         let pynone = Python::with_gil(|py| py.None());
 
         let (new_values, new_validity): (Vec<PyObject>, Vec<bool>) = {
-            self.iter()
-                .zip(other.iter())
+            lhs.as_any()
+                .downcast_ref::<PseudoArrowArray<PyObject>>()
+                .unwrap()
+                .iter()
+                .zip(
+                    rhs.as_any()
+                        .downcast_ref::<PseudoArrowArray<PyObject>>()
+                        .unwrap()
+                        .iter(),
+                )
                 .zip(predicate.iter())
                 .map(|((self_val, other_val), pred_val)| match pred_val {
                     None => None,
@@ -60,6 +67,6 @@ impl PseudoArrowArray<PyObject> {
 
         let new_validity: Option<Bitmap> = Some(Bitmap::from_iter(new_validity.into_iter()));
 
-        Ok(PseudoArrowArray::new(new_values.into(), new_validity))
+        PseudoArrowArray::new(new_values.into(), new_validity)
     }
 }
