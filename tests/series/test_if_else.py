@@ -39,6 +39,29 @@ def test_series_if_else_numeric(
     assert result.to_pylist() == [if_true_value, if_false_value, None]
 
 
+@pytest.mark.parametrize("if_true_value", [object(), None])
+@pytest.mark.parametrize("if_false_value", [object(), None])
+@pytest.mark.parametrize(
+    "if_true_length",
+    [1, 3],
+)
+@pytest.mark.parametrize(
+    "if_false_length",
+    [1, 3],
+)
+def test_series_if_else_pyobj(
+    if_true_value,
+    if_false_value,
+    if_true_length,
+    if_false_length,
+) -> None:
+    if_true_series = Series.from_pylist([if_true_value] * if_true_length)
+    if_false_series = Series.from_pylist([if_false_value] * if_false_length)
+    predicate_series = Series.from_arrow(pa.array([True, False, None]))
+    result = predicate_series.if_else(if_true_series, if_false_series)
+    assert result.to_pylist() == [if_true_value, if_false_value, None]
+
+
 @pytest.mark.parametrize(
     ["if_true", "if_false"],
     [
