@@ -39,6 +39,30 @@ def test_series_if_else_numeric(
     assert result.to_pylist() == [if_true_value, if_false_value, None]
 
 
+# TODO(charles): Add None to values after implementing casting to Python
+@pytest.mark.parametrize("if_true_value", [object()])
+@pytest.mark.parametrize("if_false_value", [object()])
+@pytest.mark.parametrize(
+    "if_true_length",
+    [1, 3],
+)
+@pytest.mark.parametrize(
+    "if_false_length",
+    [1, 3],
+)
+def test_series_if_else_pyobj(
+    if_true_value,
+    if_false_value,
+    if_true_length,
+    if_false_length,
+) -> None:
+    if_true_series = Series.from_pylist([if_true_value] * if_true_length)
+    if_false_series = Series.from_pylist([if_false_value] * if_false_length)
+    predicate_series = Series.from_arrow(pa.array([True, False, None]))
+    result = predicate_series.if_else(if_true_series, if_false_series)
+    assert result.to_pylist() == [if_true_value, if_false_value, None]
+
+
 @pytest.mark.parametrize(
     ["if_true", "if_false"],
     [
@@ -288,6 +312,32 @@ def test_series_if_else_nulls(if_true, if_false) -> None:
     result = predicate_series.if_else(if_true_series, if_false_series)
     assert result.datatype() == DataType.null()
     assert result.to_pylist() == [None for _ in range(len(if_true))]
+
+
+@pytest.mark.parametrize(
+    ["if_true", "if_false"],
+    [
+        # Same length, same type
+        ([object(), object(), object()], [object(), object(), object()]),
+        # Broadcast left
+        ([object()], [object(), object(), object()]),
+        # Broadcast right
+        ([object(), object(), object()], [object()]),
+        # Broadcast both
+        ([object()], [object()]),
+    ],
+)
+def test_series_if_else_python(if_true, if_false) -> None:
+    if_true_series = Series.from_pylist(if_true)
+    if_false_series = Series.from_pylist(if_false)
+    predicate_series = Series.from_arrow(pa.array([True, False, None]))
+
+    result = predicate_series.if_else(if_true_series, if_false_series)
+
+    left_expected = if_true[0]
+    right_expected = if_false[1] if len(if_false) > 1 else if_false[0]
+    assert result.datatype() == DataType.python()
+    assert result.to_pylist() == [left_expected, right_expected, None]
 
 
 @pytest.mark.parametrize(

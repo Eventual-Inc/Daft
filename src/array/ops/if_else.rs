@@ -5,7 +5,6 @@ use crate::datatypes::{
 };
 use crate::error::{DaftError, DaftResult};
 use crate::utils::arrow::arrow_bitmap_and_helper;
-use arrow2::compute::if_then_else::if_then_else;
 use std::convert::identity;
 
 use super::broadcast::Broadcastable;
@@ -19,12 +18,12 @@ use super::downcast::Downcastable;
 // `scalar_copy`: a simple inlined function to run on each borrowed scalar value when iterating through if_true/if_else.
 //   Note that this is potentially the identity function if Arrow2 allows for creation of this Array from borrowed data (e.g. &str)
 macro_rules! broadcast_if_else{(
-    $array_type:ty, $if_true:expr, $if_false:expr, $predicate:expr, $scalar_copy:expr,
+    $array_type:ty, $if_true:expr, $if_false:expr, $predicate:expr, $scalar_copy:expr, $if_then_else:expr,
 ) => ({
     match ($if_true.len(), $if_false.len(), $predicate.len()) {
         // CASE: Equal lengths across all 3 arguments
         (self_len, other_len, predicate_len) if self_len == other_len && other_len == predicate_len => {
-            let result = if_then_else($predicate.downcast(), $if_true.data(), $if_false.data())?;
+            let result = $if_then_else($predicate.downcast(), $if_true.data(), $if_false.data())?;
             DataArray::try_from(($if_true.name(), result))
         },
         // CASE: Broadcast predicate
@@ -108,6 +107,7 @@ where
             other,
             predicate,
             copy_optional_native::<T>,
+            arrow2::compute::if_then_else::if_then_else,
         )
     }
 }
@@ -120,6 +120,7 @@ impl Utf8Array {
             other,
             predicate,
             identity,
+            arrow2::compute::if_then_else::if_then_else,
         )
     }
 }
@@ -136,6 +137,7 @@ impl BooleanArray {
             other,
             predicate,
             identity,
+            arrow2::compute::if_then_else::if_then_else,
         )
     }
 }
@@ -152,6 +154,7 @@ impl BinaryArray {
             other,
             predicate,
             identity,
+            arrow2::compute::if_then_else::if_then_else,
         )
     }
 }
@@ -166,13 +169,49 @@ impl NullArray {
     }
 }
 
+#[cfg(feature = "python")]
 impl PythonArray {
     pub fn if_else(
         &self,
-        _other: &PythonArray,
-        _predicate: &BooleanArray,
+        other: &PythonArray,
+        predicate: &BooleanArray,
     ) -> DaftResult<PythonArray> {
-        todo!("[RUST-INT][PY]");
+        use crate::array::pseudo_arrow::PseudoArrowArray;
+        use crate::datatypes::PythonType;
+        use pyo3::prelude::*;
+
+        let input_lengths = [predicate.len(), self.len(), other.len()];
+        let result_len = *input_lengths.iter().max().unwrap();
+        let length_error = Err(DaftError::ValueError(format!("Cannot run if_else against arrays with non-broadcastable lengths: if_true={}, if_false={}, predicate={}", self.len(), other.len(), predicate.len())));
+        for len in input_lengths {
+            if len != 1 && len != result_len {
+                return length_error;
+            }
+        }
+
+        let predicate_arr = match predicate.len() {
+            1 => predicate.broadcast(result_len)?,
+            _ => predicate.clone(),
+        };
+
+        let if_true_arr = match self.len() {
+            1 => self.broadcast(result_len)?,
+            _ => self.clone(),
+        };
+
+        let if_false_arr = match other.len() {
+            1 => other.broadcast(result_len)?,
+            _ => other.clone(),
+        };
+
+        DataArray::<PythonType>::new(
+            self.field.clone(),
+            Box::new(PseudoArrowArray::<PyObject>::if_then_else(
+                predicate_arr.downcast(),
+                if_true_arr.downcast(),
+                if_false_arr.downcast(),
+            )),
+        )
     }
 }
 
@@ -183,7 +222,7 @@ where
         + for<'a> TryFrom<(&'a str, Box<dyn arrow2::array::Array>), Error = DaftError>,
     <T as Downcastable>::Output: arrow2::array::Array,
 {
-    let result = if_then_else(
+    let result = arrow2::compute::if_then_else::if_then_else(
         predicate.downcast(),
         if_true.downcast(),
         if_false.downcast(),

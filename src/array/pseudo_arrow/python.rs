@@ -1,5 +1,6 @@
 use crate::array::pseudo_arrow::PseudoArrowArray;
 use arrow2::array::Array;
+use arrow2::bitmap::Bitmap;
 
 use pyo3::prelude::*;
 
@@ -31,5 +32,41 @@ impl PseudoArrowArray<PyObject> {
                 self.values().to_vec()
             }
         })
+    }
+
+    pub fn if_then_else(
+        predicate: &arrow2::array::BooleanArray,
+        lhs: &dyn Array,
+        rhs: &dyn Array,
+    ) -> Self {
+        let pynone = Python::with_gil(|py| py.None());
+
+        let (new_values, new_validity): (Vec<PyObject>, Vec<bool>) = {
+            lhs.as_any()
+                .downcast_ref::<PseudoArrowArray<PyObject>>()
+                .unwrap()
+                .iter()
+                .zip(
+                    rhs.as_any()
+                        .downcast_ref::<PseudoArrowArray<PyObject>>()
+                        .unwrap()
+                        .iter(),
+                )
+                .zip(predicate.iter())
+                .map(|((self_val, other_val), pred_val)| match pred_val {
+                    None => None,
+                    Some(true) => self_val,
+                    Some(false) => other_val,
+                })
+                .map(|result_val| match result_val {
+                    Some(pyobj) => (pyobj.clone(), true),
+                    None => (pynone.clone(), false),
+                })
+                .unzip()
+        };
+
+        let new_validity: Option<Bitmap> = Some(Bitmap::from_iter(new_validity.into_iter()));
+
+        PseudoArrowArray::new(new_values.into(), new_validity)
     }
 }
