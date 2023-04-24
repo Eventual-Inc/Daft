@@ -22,6 +22,43 @@ def test_series_slice(dtype) -> None:
     assert result.to_pylist() == expected
 
 
+@pytest.mark.parametrize("fixed", [False, True])
+def test_series_slice_list_array(fixed) -> None:
+    dtype = pa.list_(pa.int64(), list_size=2 if fixed else -1)
+    data = pa.array([[10, 20], [33, None], [43, 45], None, [50, 52], None], type=dtype)
+
+    s = Series.from_arrow(data)
+
+    result = s.slice(2, 4)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 2
+
+    if not fixed:
+        data = data.cast(pa.large_list(pa.int64()))
+    assert result.to_arrow() == data.slice(2, 2)
+
+    original_data = s.to_pylist()
+    expected = original_data[2:4]
+    assert result.to_pylist() == expected
+
+
+def test_series_slice_struct_array() -> None:
+    dtype = pa.struct({"a": pa.int64(), "b": pa.float64()})
+    data = pa.array([{"a": 10, "b": 20}, {"a": 33}, {"a": 43, "b": 45}, None, {"a": 50, "b": 52}, None], type=dtype)
+
+    s = Series.from_arrow(data)
+
+    result = s.slice(2, 4)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 2
+
+    assert result.to_arrow() == data.slice(2, 2)
+
+    original_data = s.to_pylist()
+    expected = original_data[2:4]
+    assert result.to_pylist() == expected
+
+
 def test_series_slice_bad_input() -> None:
     data = pa.array([10, 20, 33, None, 50, None])
 

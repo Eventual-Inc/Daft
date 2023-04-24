@@ -23,9 +23,6 @@ TEST_DATA = {
         [[i for _ in range(FIXED_SIZE_LIST_ARRAY_LENGTH)] for i in range(TEST_DATA_LEN - 1)] + [None],
         type=pa.list_(pa.int64(), FIXED_SIZE_LIST_ARRAY_LENGTH),
     ),
-    # NOTE: [RUST-INT][NESTED] Implement for nested types.
-    # NOTE: Structs are currently breaking in test_parquet_reads_limit_rows! Something weird is happening during
-    # conversion to a Rust Array where the slice offset is not being respected specifically for struct types.
     "structs": [{"foo": i} for i in range(TEST_DATA_LEN - 1)] + [None],
 }
 TEST_DATA_SCHEMA = pa.schema(

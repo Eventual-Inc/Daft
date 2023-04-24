@@ -1,3 +1,5 @@
+use std::io::Cursor;
+
 use arrow2::{array::Array, datatypes::Field, ffi};
 
 use pyo3::exceptions::PyValueError;
@@ -87,10 +89,21 @@ pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<
         array.data_type().clone(),
         true,
     )));
-    let array = Box::new(ffi::export_array_to_c(array));
+    let mut new_arr = array;
+    // TODO(Clark): Fix struct array and fixed-size list array slice FFI upstream in arrow2/pyarrow.
+    if [
+        arrow2::datatypes::PhysicalType::Struct,
+        arrow2::datatypes::PhysicalType::FixedSizeList,
+    ]
+    .contains(&new_arr.data_type().to_physical_type())
+    {
+        // TODO(Clark): Only apply this workaround if a slice offset exists for this array.
+        new_arr = fix_child_array_slice_offsets(new_arr);
+    }
+    let arrow_arr = Box::new(ffi::export_array_to_c(new_arr));
 
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
-    let array_ptr: *const ffi::ArrowArray = &*array;
+    let array_ptr: *const ffi::ArrowArray = &*arrow_arr;
 
     let array = pyarrow.getattr(pyo3::intern!(py, "Array"))?.call_method1(
         pyo3::intern!(py, "_import_from_c"),
@@ -117,4 +130,61 @@ pub fn table_to_record_batch(table: &Table, py: Python, pyarrow: &PyModule) -> P
         .call_method1(pyo3::intern!(py, "from_arrays"), (arrays, names.to_vec()))?;
 
     Ok(record.to_object(py))
+}
+
+fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {
+    /* Zero-copy slices of arrow2 struct/fixed-size list arrays are currently not correctly
+    converted to pyarrow struct/fixed-size list arrays when going over the FFI boundary;
+    this helper function ensures that such arrays' slice representation is changed to work
+    around this bug.
+
+    -- The Problem --
+
+    Arrow2 represents struct array and fixed-size list array slices by slicing the valdity bitmap
+    and its children arrays; these slices will eventually propagate down to the underlying data
+    buffers. When converting to the Arrow C Data Interface struct, these offsets exist on the
+    validity bitmap and its children arrays, AND is also lifted to be a top-level offset on the
+    struct/fixed-size -list array. This means that the offset will be double-applied when imported
+    into a pyarrow array, where both the top-level array offset will be applied as well as the child
+    array offset.
+
+    -- The Workaround --
+
+    This helper ensures that such offsets are eliminated by ensuring that the underlying data
+    buffers are truncated to the slice; note that this creates a copy of the underlying data,
+    so FFI is not currently zero-copy for struct arrays or fixed-size list arrays. We accomplish
+    this buffer truncation by doing an IPC roundtrip on the array, which should result in a single
+    copy of the array's underlying data.
+    */
+    // Write the IPC representation to an in-memory buffer.
+    // TODO(Clark): Preallocate the vector with the requisite capacity, based on the array size?
+    let mut cursor = Cursor::new(Vec::new());
+    let options = arrow2::io::ipc::write::WriteOptions { compression: None };
+    let mut writer = arrow2::io::ipc::write::StreamWriter::new(&mut cursor, options);
+    // Construct a single-column schema.
+    let schema = arrow2::datatypes::Schema::from(vec![arrow2::datatypes::Field::new(
+        "struct",
+        array.data_type().clone(),
+        false,
+    )]);
+    // Write the schema to the stream.
+    writer.start(&schema, None).unwrap();
+    // Write the array to the stream.
+    let record = arrow2::chunk::Chunk::new(vec![array]);
+    writer.write(&record, None).unwrap();
+    writer.finish().unwrap();
+    // Reset the cursor to the beginning of the stream.
+    cursor.set_position(0);
+    // Read back the array from the IPC stream.
+    let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
+    let mut reader = arrow2::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
+    // There should only be a single chunk in the stream.
+    let state = reader.next().unwrap();
+    assert!(reader.next().is_none());
+    // Stream should be finished from the reader's perspective.
+    assert!(reader.is_finished());
+    match state {
+        Ok(arrow2::io::ipc::read::StreamState::Some(chunk)) => chunk.arrays()[0].clone(),
+        _ => panic!("shouldn't be reached"),
+    }
 }
