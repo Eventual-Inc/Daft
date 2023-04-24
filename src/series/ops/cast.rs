@@ -34,15 +34,46 @@ impl Series {
     pub fn cast(&self, datatype: &DataType) -> DaftResult<Series> {
         if self.data_type() == datatype {
             return Ok(self.clone());
-        } else if datatype == &DataType::Python {
-            // Convert something to Python.
-            // Simple; just toss it back across the PyO3 boundary and make a PythonArray of the resulting objects.
-            todo!()
-        } else if self.data_type() == &DataType::Python {
-            // Convert something from Python to Arrow.
-            // Complex. Need to apply a Python-side cast to a relevant Python native type,
-            // and then use our existing Python native -> Arrow import logic.
-            todo!()
+        }
+        #[cfg(feature = "python")]
+        {
+            use crate::python::PySeries;
+            use pyo3::prelude::*;
+
+            if datatype == &DataType::Python {
+                // Convert something to Python.
+
+                // Use the existing logic on the Python side of the PyO3 layer
+                // to create a Python list out of this series.
+                let old_pyseries = PySeries::from(self.clone());
+
+                let new_pyseries: PySeries = Python::with_gil(|py| {
+                    PyModule::import(py, pyo3::intern!(py, "daft.series"))
+                        .and_then(|daft_series_mod| {
+                            daft_series_mod.getattr(pyo3::intern!(py, "Series"))
+                        })
+                        .and_then(|daft_series_class| {
+                            daft_series_class.getattr(pyo3::intern!(py, "_from_pyseries"))
+                        })
+                        .and_then(|from_pyseries| from_pyseries.call1((old_pyseries,)))
+                        .and_then(|old_daft_series| {
+                            old_daft_series.call_method0(pyo3::intern!(py, "_cast_to_python"))
+                        })
+                        .and_then(|new_daft_series| {
+                            new_daft_series.getattr(pyo3::intern!(py, "_series"))
+                        })
+                        .and_then(|pyseries_any| -> Result<PySeries, PyErr> {
+                            pyseries_any.extract()
+                        })
+                })?;
+
+                return Ok(new_pyseries.into());
+            } else if self.data_type() == &DataType::Python {
+                // Convert something from Python to Arrow.
+                // Complex. Need to apply a Python-side cast to a relevant Python native type,
+                // and then use our existing Python native -> Arrow import logic.
+                todo!()
+            }
         }
         apply_method_all_arrow_series!(self, cast, datatype)
     }
