@@ -39,9 +39,8 @@ def test_series_if_else_numeric(
     assert result.to_pylist() == [if_true_value, if_false_value, None]
 
 
-# TODO(charles): Add None to values after implementing casting to Python
-@pytest.mark.parametrize("if_true_value", [object()])
-@pytest.mark.parametrize("if_false_value", [object()])
+@pytest.mark.parametrize("if_true_value", [object(), None])
+@pytest.mark.parametrize("if_false_value", [object(), None])
 @pytest.mark.parametrize(
     "if_true_length",
     [1, 3],

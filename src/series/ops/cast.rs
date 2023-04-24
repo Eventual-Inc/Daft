@@ -34,6 +34,15 @@ impl Series {
     pub fn cast(&self, datatype: &DataType) -> DaftResult<Series> {
         if self.data_type() == datatype {
             return Ok(self.clone());
+        } else if datatype == &DataType::Python {
+            // Convert something to Python.
+            // Simple; just toss it back across the PyO3 boundary and make a PythonArray of the resulting objects.
+            todo!()
+        } else if self.data_type() == &DataType::Python {
+            // Convert something from Python to Arrow.
+            // Complex. Need to apply a Python-side cast to a relevant Python native type,
+            // and then use our existing Python native -> Arrow import logic.
+            todo!()
         }
         apply_method_all_arrow_series!(self, cast, datatype)
     }

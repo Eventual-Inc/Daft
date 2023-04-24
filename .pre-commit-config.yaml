@@ -76,6 +76,7 @@ repos:
   - id: fmt
   - id: cargo-check
   - id: cargo-check
+    name: cargo check --no-default-features
     args: [--no-default-features]
   - id: clippy
 
