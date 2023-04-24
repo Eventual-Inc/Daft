@@ -27,8 +27,8 @@ impl Serialize for DaftPyObject {
         S: Serializer,
     {
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "daft.pickle.pickle").unwrap();
-            let dumps = pickle.getattr("dumps").unwrap();
+            let pickle = PyModule::import(py, pyo3::intern!(py, "daft.pickle")).unwrap();
+            let dumps = pickle.getattr(pyo3::intern!(py, "dumps")).unwrap();
             let bytes: &[u8] = dumps
                 .call1((self.pyobject.clone_ref(py),))
                 .unwrap()
@@ -53,8 +53,8 @@ impl<'de> Visitor<'de> for DaftPyObjectVisitor {
         E: de::Error,
     {
         Python::with_gil(|py| {
-            let serde_module = PyModule::import(py, "daft.pickle").unwrap();
-            let loads = serde_module.getattr("loads").unwrap();
+            let serde_module = PyModule::import(py, pyo3::intern!(py, "daft.pickle")).unwrap();
+            let loads = serde_module.getattr(pyo3::intern!(py, "loads")).unwrap();
             let pyobj = loads.call1((v,)).unwrap();
             Ok(DaftPyObject {
                 pyobject: pyobj.to_object(py),

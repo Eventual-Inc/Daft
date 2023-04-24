@@ -31,9 +31,10 @@ impl PythonArray {
 
         let vector = self.downcast().values().to_vec();
         Python::with_gil(|py| {
-            let daft_utils = PyModule::import(py, "daft.utils").unwrap();
-            let estimate_size_bytes_pylist =
-                daft_utils.getattr("estimate_size_bytes_pylist").unwrap();
+            let daft_utils = PyModule::import(py, pyo3::intern!(py, "daft.utils")).unwrap();
+            let estimate_size_bytes_pylist = daft_utils
+                .getattr(pyo3::intern!(py, "estimate_size_bytes_pylist"))
+                .unwrap();
             let size_bytes: usize = estimate_size_bytes_pylist
                 .call1((PyList::new(py, vector),))
                 .unwrap()

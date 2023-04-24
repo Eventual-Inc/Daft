@@ -22,7 +22,7 @@ pub fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
     // make the conversion through PyArrow's private API
     // this changes the pointer's memory and is thus unsafe. In particular, `_export_to_c` can go out of bounds
     arrow_array.call_method1(
-        "_export_to_c",
+        pyo3::intern!(arrow_array.py(), "_export_to_c"),
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
@@ -44,7 +44,9 @@ pub fn record_batches_to_table(batches: &[&PyAny], schema: SchemaRef) -> PyResul
     for rb in batches {
         let columns: DaftResult<Vec<Series>> = (0..names.len())
             .map(|i| {
-                let arr = rb.call_method1("column", (i,)).unwrap();
+                let arr = rb
+                    .call_method1(pyo3::intern!(rb.py(), "column"), (i,))
+                    .unwrap();
                 let arr = array_to_rust(arr).unwrap();
                 let arr = cast_array_if_needed(arr);
 
@@ -70,8 +72,8 @@ pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
     let array_ptr: *const ffi::ArrowArray = &*array;
 
-    let array = pyarrow.getattr("Array")?.call_method1(
-        "_import_from_c",
+    let array = pyarrow.getattr(pyo3::intern!(py, "Array"))?.call_method1(
+        pyo3::intern!(py, "_import_from_c"),
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
@@ -91,8 +93,8 @@ pub fn table_to_record_batch(table: &Table, py: Python, pyarrow: &PyModule) -> P
     }
 
     let record = pyarrow
-        .getattr("RecordBatch")?
-        .call_method1("from_arrays", (arrays, names.to_vec()))?;
+        .getattr(pyo3::intern!(py, "RecordBatch"))?
+        .call_method1(pyo3::intern!(py, "from_arrays"), (arrays, names.to_vec()))?;
 
     Ok(record.to_object(py))
 }

@@ -46,13 +46,13 @@ impl FunctionEvaluator for PythonUDF {
 
         Python::with_gil(|py| {
             // Convert input Rust &[Series] to wrapped Python Vec<&PyAny>
-            let py_series_module = PyModule::import(py, "daft.series")?;
-            let py_series_class = py_series_module.getattr("Series")?;
+            let py_series_module = PyModule::import(py, pyo3::intern!(py, "daft.series"))?;
+            let py_series_class = py_series_module.getattr(pyo3::intern!(py, "Series"))?;
             let pyseries: PyResult<Vec<&PyAny>> = inputs
                 .iter()
                 .map(|s| {
                     py_series_class.call_method(
-                        "_from_pyseries",
+                        pyo3::intern!(py, "_from_pyseries"),
                         (PySeries { series: s.clone() },),
                         None,
                     )
