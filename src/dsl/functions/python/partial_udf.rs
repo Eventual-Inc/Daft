@@ -18,8 +18,8 @@ impl Serialize for PartialUDF {
         S: Serializer,
     {
         Python::with_gil(|py| {
-            let serde_module = PyModule::import(py, "daft.pickle").unwrap();
-            let dumps = serde_module.getattr("dumps").unwrap();
+            let serde_module = PyModule::import(py, pyo3::intern!(py, "daft.pickle")).unwrap();
+            let dumps = serde_module.getattr(pyo3::intern!(py, "dumps")).unwrap();
             let pybytes = dumps.call1((self.0.clone_ref(py).into_ref(py),)).unwrap();
             serializer.serialize_bytes(pybytes.downcast::<PyBytes>().unwrap().as_bytes())
         })
@@ -40,8 +40,8 @@ impl<'de> Visitor<'de> for PartialUDFVisitor {
         E: de::Error,
     {
         Python::with_gil(|py| {
-            let serde_module = PyModule::import(py, "daft.pickle").unwrap();
-            let loads = serde_module.getattr("loads").unwrap();
+            let serde_module = PyModule::import(py, pyo3::intern!(py, "daft.pickle")).unwrap();
+            let loads = serde_module.getattr(pyo3::intern!(py, "loads")).unwrap();
             let py_partial_udf = loads.call1((v,)).unwrap();
             Ok(PartialUDF(py_partial_udf.to_object(py)))
         })
