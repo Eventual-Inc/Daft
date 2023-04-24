@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 
@@ -114,13 +114,38 @@ class Table:
     ###
 
     def to_arrow(self) -> pa.Table:
-        python_fields = [field for field in self.schema() if field.dtype == DataType.python()]
+        python_fields = {field.name for field in self.schema() if field.dtype == DataType.python()}
         if python_fields:
-            raise ValueError(f"Cannot convert table to Arrow due to presence of Python columns f{python_fields}")
-        return pa.Table.from_batches([self._table.to_arrow_record_batch()])
+            table = {}
+            for colname in self.column_names():
+                column_series = self.get_column(colname)
+                if colname in python_fields:
+                    # TODO(Clark): Get the column as a top-level ndarray to ensure it remains contiguous.
+                    column = column_series.to_pylist()
+                    # TODO(Clark): Infer the tensor extension type even when the column is empty.
+                    # This will probably require encoding more information in the Daft type that we use to
+                    # represent tensors.
+                    if len(column) > 0 and isinstance(column[0], np.ndarray):
+                        from ray.data.extensions import ArrowTensorArray
+
+                        column = ArrowTensorArray.from_numpy(column)
+                else:
+                    column = column_series.to_arrow()
+                table[colname] = column
+
+            return pa.Table.from_pydict(table)
+        else:
+            return pa.Table.from_batches([self._table.to_arrow_record_batch()])
 
     def to_pydict(self) -> dict[str, list]:
         return {colname: self.get_column(colname).to_pylist() for colname in self.column_names()}
+
+    def to_pylist(self) -> list[dict[str, Any]]:
+        # TODO(Clark): Avoid a double-materialization of the table once the Rust-side table supports
+        # by-row selection or iteration.
+        table = self.to_pydict()
+        column_names = self.column_names()
+        return [{colname: table[colname][i] for colname in column_names} for i in range(len(self))]
 
     def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
         if not _PANDAS_AVAILABLE:
@@ -189,7 +214,6 @@ class Table:
         output_projection: ExpressionsProjection | None = None,
         how: str = "inner",
     ) -> Table:
-
         if how != "inner":
             raise NotImplementedError("TODO: [RUST] Implement Other Join types")
         if len(left_on) != len(right_on):

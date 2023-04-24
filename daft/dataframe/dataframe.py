@@ -1194,6 +1194,23 @@ class DataFrame:
         return pd_df
 
     @DataframePublicAPI
+    def to_arrow(self) -> "pa.Table":
+        """Converts the current DataFrame to a pyarrow Table.
+        If results have not computed yet, collect will be called.
+
+        Returns:
+            pyarrow.Table: pyarrow Table converted from a Daft DataFrame
+
+            .. NOTE::
+                This call is **blocking** and will execute the DataFrame when called
+        """
+        self.collect()
+        result = self._result
+        assert result is not None
+
+        return result.to_arrow()
+
+    @DataframePublicAPI
     def to_pydict(self) -> Dict[str, List[Any]]:
         """Converts the current DataFrame to a python dictionary. The dictionary contains Python lists of Python objects for each column.
 
