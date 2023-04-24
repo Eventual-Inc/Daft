@@ -6,22 +6,25 @@ Learn Daft with our wide range of resources!
 New to Daft?
 ------------
 
-If you are completely new and just want a quick look through some of the most common APIs, check out the :doc:`10-min` notebook.
+If you are completely new we recommend checking out:
 
-User Guide
-----------
+1. For a practical hands-on introduction, follow the 10-min quickstart notebook at: :doc:`../10-min`
+2. For a conceptual walkthrough of the high level concepts in Daft: :doc:`key_concepts`
 
-Check out :doc:`user_guides` for a deeper in-depth look at Daft concepts and features. This is a great place to look if you are evaluating Daft for your new project, or are curious about specific features that Daft can provide.
+Taking a deep dive?
+-------------------
 
-Example Use-Cases
------------------
+For a much more in-depth exploration of Daft and everything it offers:
 
-Our :doc:`tutorials` section provides notebooks that showcase Daft being used across different projects ranging from computer vision, to basic analytics and NLP. Many of these notebooks are runnable on Google Colab and run on public datasets!
+1. Read our :doc:`user_guides` for deep-dives into specific Daft topics
+2. Check out our :doc:`tutorials` for Daft for various use-cases
+3. Refer to our API documentation: :doc:`../api_docs/index`
+
 
 .. toctree::
     :maxdepth: 1
     :hidden:
 
-    10-min
+    key_concepts
     user_guides
     tutorials

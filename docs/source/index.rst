@@ -47,6 +47,7 @@ Evaluating Daft for a new project or system? Read more about why you should choo
 
    Home <self>
    install
+   10-min
    learn/index
    api_docs/index
    release_notes/index
