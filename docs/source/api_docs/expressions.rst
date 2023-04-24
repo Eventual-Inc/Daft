@@ -33,17 +33,12 @@ Operations on numbers (floats and integers)
 .. autosummary::
     :toctree: expression_methods
 
-    daft.expressions.Expression.__neg__
-    daft.expressions.Expression.__pos__
     daft.expressions.Expression.__abs__
     daft.expressions.Expression.__add__
     daft.expressions.Expression.__sub__
     daft.expressions.Expression.__mul__
-    daft.expressions.Expression.__floordiv__
     daft.expressions.Expression.__truediv__
-    daft.expressions.Expression.__pow__
     daft.expressions.Expression.__mod__
-    daft.expressions.Expression.is_nan
 
 Logical
 *******
@@ -80,6 +75,18 @@ Comparing expressions and values, returning a logical expression
 
 .. _api-string-expression-operations:
 
+Floats
+******
+
+Operations on strings, accessible through the ``Expression.float`` method accessor.
+
+Example: ``e1.float.is_nan()``
+
+.. autosummary::
+    :toctree: expression_methods
+
+    daft.expressions.expressions.ExpressionFloatNamespace.is_nan
+
 Strings
 *******
 
@@ -90,11 +97,11 @@ Example: ``e1.str.concat(e2)``
 .. autosummary::
     :toctree: expression_methods
 
-    daft.expressions.StringMethodAccessor.concat
-    daft.expressions.StringMethodAccessor.contains
-    daft.expressions.StringMethodAccessor.endswith
-    daft.expressions.StringMethodAccessor.startswith
-    daft.expressions.StringMethodAccessor.length
+    daft.expressions.expressions.ExpressionStringNamespace.concat
+    daft.expressions.expressions.ExpressionStringNamespace.contains
+    daft.expressions.expressions.ExpressionStringNamespace.endswith
+    daft.expressions.expressions.ExpressionStringNamespace.startswith
+    daft.expressions.expressions.ExpressionStringNamespace.length
 
 
 Dates
@@ -108,10 +115,10 @@ Example: ``e.dt.day()``
     :nosignatures:
     :toctree: expression_methods
 
-    daft.expressions.DatetimeMethodAccessor.day
-    daft.expressions.DatetimeMethodAccessor.month
-    daft.expressions.DatetimeMethodAccessor.year
-    daft.expressions.DatetimeMethodAccessor.day_of_week
+    daft.expressions.expressions.ExpressionDatetimeNamespace.day
+    daft.expressions.expressions.ExpressionDatetimeNamespace.month
+    daft.expressions.expressions.ExpressionDatetimeNamespace.year
+    daft.expressions.expressions.ExpressionDatetimeNamespace.day_of_week
 
 
 URLs
@@ -125,7 +132,7 @@ Example: ``e.url.download()``
     :nosignatures:
     :toctree: expression_methods
 
-    daft.expressions.UrlMethodAccessor.download
+    daft.expressions.expressions.ExpressionUrlNamespace.download
 
 
 Changing Column Names/Types
@@ -145,5 +152,4 @@ Running Python Functions
     :nosignatures:
     :toctree: expression_methods
 
-    daft.expressions.Expression.as_py
     daft.expressions.Expression.apply

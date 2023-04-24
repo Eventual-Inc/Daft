@@ -3,18 +3,15 @@ Expressions
 
 Expressions are how you can express computations that should be run over columns of data.
 
-.. NOTE::
+Creating Expressions
+--------------------
 
-    Daft Expressions do not change the number of rows of the columns that they run on.
+Referring to a column in a DataFrame
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-    Operations that change the number of rows, or ordering of rows, are DataFrame-level operations since they affect other columns. Those will be covered in the next section on :doc:`dataframe-operations`.
+Most commonly you will be creating expressions by referring to a column from an existing DataFrame.
 
-Column Expressions
-------------------
-
-Column Expressions are an expression that refers to a column. You may think of them as "pointers" to a given dataframe's column.
-
-To obtain a Column Expression, simply index a DataFrame with the string name of the column:
+To do so, simply index a DataFrame with the string name of the column:
 
 .. code:: python
 
@@ -27,9 +24,37 @@ To obtain a Column Expression, simply index a DataFrame with the string name of 
 
 .. code:: none
 
-    col(A#0: INTEGER)
+    col(A)
 
-Note that this Column Expression points to a column with name ("A"), an ID ("#0") and a type (INTEGER)!
+When we evaluate this ``df["A"]`` Expression, it will evaluate to the column from the ``df`` DataFrame with name "A"!
+
+Refer to a column with a certain name
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+You may also find it necessary in certain situations to create an Expression with just the name of a column, without having an existing DataFrame to refer to. You can do this with the ``col`` helper:
+
+.. code:: python
+
+    from daft import col
+
+    # Refers to a column named "A"
+    col("A")
+
+When this Expression is evaluated, it will resolve to "the column named A" in whatever evaluation context it is used within!
+
+Literals
+^^^^^^^^
+
+You may find yourself needing to hardcode a "single value" oftentimes as an expression. Daft provides a ``lit`` helper to do so:
+
+.. code:: python
+
+    from daft import lit
+
+    # Refers to an expression which always evaluates to 42
+    lit(42)
+
+This special ``lit`` expression we just created evaluates always to the value ``42``.
 
 Numeric Expressions
 -------------------
@@ -51,75 +76,98 @@ Since column "A" is an integer, we can run numeric computation such as addition,
 
 .. code:: none
 
-    +-----------+-------------+----------------+-----------+
-    |         A |   A_add_one |   A_divide_two | A_gt_1    |
-    |   INTEGER |     INTEGER |          FLOAT | LOGICAL   |
-    +===========+=============+================+===========+
-    |         1 |           2 |            0.5 | false     |
-    +-----------+-------------+----------------+-----------+
-    |         2 |           3 |            1   | true      |
-    +-----------+-------------+----------------+-----------+
-    |         3 |           4 |            1.5 | true      |
-    +-----------+-------------+----------------+-----------+
+    +---------+-------------+----------------+-----------+
+    |       A |   A_add_one |   A_divide_two | A_gt_1    |
+    |   Int64 |       Int64 |        Float64 | Boolean   |
+    +=========+=============+================+===========+
+    |       1 |           2 |            0.5 | false     |
+    +---------+-------------+----------------+-----------+
+    |       2 |           3 |            1   | true      |
+    +---------+-------------+----------------+-----------+
+    |       3 |           4 |            1.5 | true      |
+    +---------+-------------+----------------+-----------+
     (Showing first 3 of 3 rows)
 
-Notice that the returned types of these operations are also well-typed according to their input types. For example, calling ``df["A"] > 1`` returns a column of type ``LOGICAL``.
+Notice that the returned types of these operations are also well-typed according to their input types. For example, calling ``df["A"] > 1`` returns a column of type ``Boolean``.
 
-Both FLOAT and INTEGER types are numeric types, and inherit many of the same arithmetic Expression operations. You may find the full list of numeric operations in the :ref:`Expressions API reference <api-numeric-expression-operations>`.
+Both The Float and Int types are numeric types, and inherit many of the same arithmetic Expression operations. You may find the full list of numeric operations in the :ref:`Expressions API reference <api-numeric-expression-operations>`.
 
 String Expressions
 ------------------
 
-String Expressions are an expression that refers to a column of type ``STRING``.
+Daft also lets you have columns of strings in a DataFrame. Let's take a look!
 
 .. code:: python
 
     df = DataFrame.from_pydict({"B": ["foo", "bar", "baz"]})
-
-    df["B"]
+    df.show()
 
 .. code:: none
 
-    col(B#0: STRING)
+    +--------+
+    | B      |
+    | Utf8   |
+    +========+
+    | foo    |
+    +--------+
+    | bar    |
+    +--------+
+    | baz    |
+    +--------+
+    (Showing first 3 rows)
 
-Unlike the numeric types, the string type does not support arithmetic operations such as ``*`` and ``/``.
+Unlike the numeric types, the string type does not support arithmetic operations such as ``*`` and ``/``. The one exception to this is the ``+`` operator, which is overridden to concatenate two string expressions as is commonly done in Python. Let's try that!
 
-.. NOTE::
+.. code:: python
 
-    The one exception to this is the ``+`` operator, which is overridden to concatenate two string expressions as is commonly done in Python.
+    df = df.with_column("B2", df["B"] + "foo")
+    df.show()
 
-Instead, many of its operations can be accessed through a "Method Accessor", ``.str.*``.
+.. code:: none
+
+    +--------+--------+
+    | B      | B2     |
+    | Utf8   | Utf8   |
+    +========+========+
+    | foo    | foofoo |
+    +--------+--------+
+    | bar    | barfoo |
+    +--------+--------+
+    | baz    | bazfoo |
+    +--------+--------+
+    (Showing first 3 rows)
+
+There are also many string operators that are accessed through a separate ``Expression.str.*`` "method namespace".
 
 For example, to check if each element in column "B" contains the substring "a", we can use the ``.str.contains`` method:
 
 .. code:: python
 
-    df = df.with_column("B_contains_a", df["B"].str.contains("a"))
-
-    df.collect()
+    df = df.with_column("B2_contains_B", df["B2"].str.contains(df["B"]))
+    df.show()
 
 .. code:: none
 
-    +----------+----------------+
-    | B        | B_contains_a   |
-    | STRING   | LOGICAL        |
-    +==========+================+
-    | foo      | false          |
-    +----------+----------------+
-    | bar      | true           |
-    +----------+----------------+
-    | baz      | true           |
-    +----------+----------------+
-    (Showing first 3 of 3 rows)
+    +--------+--------+-----------------+
+    | B      | B2     | B2_contains_B   |
+    | Utf8   | Utf8   | Boolean         |
+    +========+========+=================+
+    | foo    | foofoo | true            |
+    +--------+--------+-----------------+
+    | bar    | barfoo | true            |
+    +--------+--------+-----------------+
+    | baz    | bazfoo | true            |
+    +--------+--------+-----------------+
+    (Showing first 3 rows)
 
 You may find a full list of string operations in the :ref:`Expressions API reference <api-string-expression-operations>`.
 
 URL Expressions
 ^^^^^^^^^^^^^^^
 
-One special case of a STRING column you may find yourself working with is a column of URL strings.
+One special case of a String column you may find yourself working with is a column of URL strings.
 
-Daft provides the ``.url.*`` method accessor with functionality for working with URL strings. For example, to download data from URLs:
+Daft provides the ``Expression.url.*`` method namespace with functionality for working with URL strings. For example, to download data from URLs:
 
 .. code:: python
 
@@ -136,7 +184,7 @@ Daft provides the ``.url.*`` method accessor with functionality for working with
 
     +----------------------+----------------------+
     | urls                 | data                 |
-    | STRING               | BYTES                |
+    | Utf8                 | Binary               |
     +======================+======================+
     | https://www.google.c | b'<!doctype          |
     | om                   | html><html           |
@@ -152,20 +200,15 @@ Daft provides the ``.url.*`` method accessor with functionality for working with
 
 This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), local filepaths or even paths to a file in an object store such as AWS S3 as well!
 
-Logical Expressions
+Boolean Expressions
 -------------------
 
-Logical Expressions are an expression that refers to a column of type ``LOGICAL``, and can only take on the values True or False.
+Logical Expressions are an expression that refers to a column of type ``Boolean``, and can only take on the values True or False.
 
 .. code:: python
 
     df = DataFrame.from_pydict({"C": [True, False, True]})
-
     df["C"]
-
-.. code:: none
-
-    col(C#0: LOGICAL)
 
 Daft supports logical operations such as ``&`` (and) and ``|`` (or) between logical expressions.
 
@@ -186,16 +229,16 @@ For example, here we can compare if each element in column "A" is equal to eleme
 
 .. code:: none
 
-    +-----------+-----------+-----------+
-    |         A |         B | A_eq_B    |
-    |   INTEGER |   INTEGER | LOGICAL   |
-    +===========+===========+===========+
-    |         1 |         1 | true      |
-    +-----------+-----------+-----------+
-    |         2 |         2 | true      |
-    +-----------+-----------+-----------+
-    |         3 |         4 | false     |
-    +-----------+-----------+-----------+
+    +---------+---------+-----------+
+    |       A |       B | A_eq_B    |
+    |   Int64 |   Int64 | Boolean   |
+    +=========+=========+===========+
+    |       1 |       1 | true      |
+    +---------+---------+-----------+
+    |       2 |       2 | true      |
+    +---------+---------+-----------+
+    |       3 |       4 | false     |
+    +---------+---------+-----------+
     (Showing first 3 of 3 rows)
 
 Other useful comparisons can be found in the :ref:`Expressions API reference <api-comparison-expression>`.
@@ -220,16 +263,16 @@ The ``.if_else`` method is a useful expression to have up your sleeve for choosi
 
 .. code:: none
 
-    +-----------+-----------+----------------------+
-    |         A |         B |   A_if_bigger_else_B |
-    |   INTEGER |   INTEGER |              INTEGER |
-    +===========+===========+======================+
-    |         1 |         0 |                    1 |
-    +-----------+-----------+----------------------+
-    |         2 |         2 |                    2 |
-    +-----------+-----------+----------------------+
-    |         3 |         4 |                    4 |
-    +-----------+-----------+----------------------+
+    +---------+---------+----------------------+
+    |       A |       B |   A_if_bigger_else_B |
+    |   Int64 |   Int64 |                Int64 |
+    +=========+=========+======================+
+    |       1 |       0 |                    1 |
+    +---------+---------+----------------------+
+    |       2 |       2 |                    2 |
+    +---------+---------+----------------------+
+    |       3 |       4 |                    4 |
+    +---------+---------+----------------------+
     (Showing first 3 of 3 rows)
 
 This is a useful expression for cleaning your data!

@@ -33,11 +33,11 @@ Examine your Dataframe by printing it:
 
 .. code:: none
 
-    +-----------+---------+-----------+
-    | A         | B       | C         |
-    | INTEGER   | FLOAT   | LOGICAL   |
-    +===========+=========+===========+
-    +-----------+---------+-----------+
+    +---------+-----------+-----------+
+    | A       | B         | C         |
+    | Int64   | Float64   | Boolean   |
+    +=========+===========+===========+
+    +---------+-----------+-----------+
     (No data to display: Dataframe not materialized)
 
 
@@ -67,21 +67,22 @@ We can tell Daft to execute our DataFrame and cache the results using ``df.colle
 .. code:: python
 
     df.collect()
+    df
 
 .. code:: none
 
-    +-----------+---------+-----------+
-    |         A |       B | C         |
-    |   INTEGER |   FLOAT | LOGICAL   |
-    +===========+=========+===========+
-    |         1 |     1.5 | true      |
-    +-----------+---------+-----------+
-    |         2 |     2.5 | true      |
-    +-----------+---------+-----------+
-    |         3 |     3.5 | false     |
-    +-----------+---------+-----------+
-    |         4 |     4.5 | false     |
-    +-----------+---------+-----------+
+    +---------+-----------+-----------+
+    |       A |         B | C         |
+    |   Int64 |   Float64 | Boolean   |
+    +=========+===========+===========+
+    |       1 |       1.5 | true      |
+    +---------+-----------+-----------+
+    |       2 |       2.5 | true      |
+    +---------+-----------+-----------+
+    |       3 |       3.5 | false     |
+    +---------+-----------+-----------+
+    |       4 |       4.5 | false     |
+    +---------+-----------+-----------+
     (Showing first 4 of 4 rows)
 
 Now your DataFrame object ``df`` is **materialized** - Daft has executed all the steps required to compute the results, and has cached the results in memory so that it can display this preview.
@@ -124,29 +125,9 @@ Notice also that when we printed our DataFrame, Daft displayed its **schema**. E
 
 Daft can display your DataFrame's schema without materializing it. Under the hood, it performs intelligent sampling of your data to determine the appropriate schema, and if you make any modifications to your DataFrame it can infer the resulting types based on the operation.
 
-The following is a list of Daft types and a short explanation of the types.
-
-+---------+------------------------------------------+
-| STRING  | A sequence of text                       |
-+---------+------------------------------------------+
-| INTEGER | A number without decimal point           |
-+---------+------------------------------------------+
-| FLOAT   | A number with decimal point              |
-+---------+------------------------------------------+
-| LOGICAL | A boolean true/false                     |
-+---------+------------------------------------------+
-| BYTES   | A sequence of bytes                      |
-+---------+------------------------------------------+
-| DATE    | A day/month/year non-timezone aware date |
-+---------+------------------------------------------+
-| **PY**  | An arbitrary Python object               |
-+---------+------------------------------------------+
-
 .. NOTE::
 
     Under the hood, Daft represents data in the `Apache Arrow <https://arrow.apache.org/>`_ format, which allows it to efficiently represent and work on data using high-performance kernels which are written in Rust.
-
-    Native Arrow support for more complex types such as lists, dictionaries and images are on the roadmap. Such types are supported at the moment using the **PY** type.
 
 
 Running Computations
@@ -162,23 +143,23 @@ The following statement will ``.show()`` a DataFrame that has only one column - 
 
 .. code:: none
 
-    +-----------+
-    |         A |
-    |   INTEGER |
-    +===========+
-    |         2 |
-    +-----------+
-    |         3 |
-    +-----------+
-    |         4 |
-    +-----------+
-    |         5 |
-    +-----------+
-    (Showing first 4 of 4 rows)
+    +---------+
+    |       A |
+    |   Int64 |
+    +=========+
+    |       2 |
+    +---------+
+    |       3 |
+    +---------+
+    |       4 |
+    +---------+
+    |       5 |
+    +---------+
+    (Showing first 4 rows)
 
 .. NOTE::
 
-    A common pattern is to create a new columns using:
+    A common pattern is to create a new columns using ``DataFrame.with_column``:
 
     .. code:: python
 
@@ -196,7 +177,7 @@ Expressions are how you define computations on your columns in Daft.
 The world of Daft contains much more than just numbers, and you can do much more than just add numbers together. Daft's rich Expressions API allows you to do things such as:
 
 1. Convert between different types with ``df["numbers"].cast(float)``
-2. Download BYTES from a column containing STRING URLs using ``df["urls"].url.download()``
+2. Download Bytes from a column containing String URLs using ``df["urls"].url.download()``
 3. Run arbitrary Python functions on your data using ``df["objects"].apply(my_python_function)``
 
 We are also constantly looking to improve Daft and add more Expression functionality. Please contribute to the project with your ideas and code if you have an Expression in mind!

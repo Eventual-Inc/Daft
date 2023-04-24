@@ -19,6 +19,8 @@
       ~DataFrame.count
       ~DataFrame.count_rows
       ~DataFrame.distinct
+      ~DataFrame.drop_nan
+      ~DataFrame.drop_null
       ~DataFrame.exclude
       ~DataFrame.explain
       ~DataFrame.explode

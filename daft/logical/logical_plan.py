@@ -410,7 +410,7 @@ class Filter(UnaryNode):
             resolved_type = resolved_field.dtype
             if resolved_type != DataType.bool():
                 raise ValueError(
-                    f"Expected expression {predicate_expr} to resolve to type LOGICAL, but received: {resolved_type}"
+                    f"Expected expression {predicate_expr} to resolve to type Boolean, but received: {resolved_type}"
                 )
 
     def __repr__(self) -> str:
