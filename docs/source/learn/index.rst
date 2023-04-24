@@ -6,7 +6,7 @@ Learn Daft with our wide range of resources!
 New to Daft?
 ------------
 
-If you are completely new and just want a quick look through some of the most common APIs, check out the :doc:`10-min` notebook.
+If you are completely new and just want a quick look through some of the most common APIs, check out the :doc:`../10-min` notebook.
 
 User Guide
 ----------
@@ -18,10 +18,14 @@ Example Use-Cases
 
 Our :doc:`tutorials` section provides notebooks that showcase Daft being used across different projects ranging from computer vision, to basic analytics and NLP. Many of these notebooks are runnable on Google Colab and run on public datasets!
 
+API Reference
+-------------
+
+If you are already using Daft and need a reference to all of our APIs, check out the :doc:`../api_docs/index`.
+
 .. toctree::
     :maxdepth: 1
     :hidden:
 
-    10-min
     user_guides
     tutorials
