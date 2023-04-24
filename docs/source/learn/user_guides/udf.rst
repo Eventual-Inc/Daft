@@ -7,7 +7,8 @@ Let's first create a dataframe that will be used as a running example throughout
 
 .. code:: python
 
-    from daft import DataFrame
+    from daft import DataFrame, DataType
+    import numpy as np
 
     df = DataFrame.from_pydict({
         # the `image` column contains images represented as 2D numpy arrays
@@ -15,6 +16,16 @@ Let's first create a dataframe that will be used as a running example throughout
         # the `crop` column contains a box to crop from our image, represented as a list of integers: [x1, x2, y1, y2]
         "crop": [[0, 1, 0, 1] for i in range(16)],
     })
+    df
+
+.. code:: none
+
+    +----------+---------------+
+    | image    | crop          |
+    | Python   | List[Int64]   |
+    +==========+===============+
+    +----------+---------------+
+    (No data to display: Dataframe not materialized)
 
 Per-column per-row functions using ``Expression.apply``
 -------------------------------------------------------
@@ -27,11 +38,26 @@ For example, the following example creates a new ``"flattened_image"`` column by
 
     df.with_column(
         "flattened_image",
-        df["image"].apply(lambda img: img.flatten(), return_dtype=np.ndarray)
-    )
+        df["image"].apply(lambda img: img.flatten(), return_dtype=DataType.python())
+    ).show(2)
 
-Note here that we use the ``return_type`` keyword argument to specify that our returned column type is of type ``np.ndarray``, so the new ``"flattened_image"``
-column will have type ``PY[np.ndarray]``!
+.. code:: none
+
+    +----------------------+---------------+---------------------+
+    | image                | crop          | flattened_image     |
+    | Python               | List[Int64]   | Python              |
+    +======================+===============+=====================+
+    | [[1. 1. 1. ... 1. 1. | [0, 1, 0, 1]  | [1. 1. 1. ... 1. 1. |
+    | 1.]  [1. 1. 1. ...   |               | 1.]                 |
+    | 1. 1. 1.]  [1. 1.... |               |                     |
+    +----------------------+---------------+---------------------+
+    | [[1. 1. 1. ... 1. 1. | [0, 1, 0, 1]  | [1. 1. 1. ... 1. 1. |
+    | 1.]  [1. 1. 1. ...   |               | 1.]                 |
+    | 1. 1. 1.]  [1. 1.... |               |                     |
+    +----------------------+---------------+---------------------+
+    (Showing first 2 rows)
+
+Note here that we use the ``return_dtype`` keyword argument to specify that our returned column type is a Python column!
 
 Multi-column per-partition functions using ``@udf``
 ---------------------------------------------------
@@ -49,10 +75,10 @@ For example, let's try writing a function that will crop all our images in the `
 
     from daft import udf
 
-    @udf(return_dtype=np.ndarray, input_columns={"images": list, "crops": list})
+    @udf(return_dtype=DataType.python())
     def crop_images(images, crops, padding=0):
         cropped = []
-        for img, crop in zip(images, crops):
+        for img, crop in zip(images.to_pylist(), crops.to_pylist()):
             x1, x2, y1, y2 = crop
             cropped_img = img[x1:x2 + padding, y1:y2 + padding]
             cropped.append(cropped_img)
@@ -62,6 +88,23 @@ For example, let's try writing a function that will crop all our images in the `
         "cropped",
         crop_images(df["image"], df["crop"], padding=1),
     )
+    df.show(2)
+
+.. code:: none
+
+    +----------------------+---------------+--------------------+
+    | image                | crop          | cropped            |
+    | Python               | List[Int64]   | Python             |
+    +======================+===============+====================+
+    | [[1. 1. 1. ... 1. 1. | [0, 1, 0, 1]  | [[1. 1.]  [1. 1.]] |
+    | 1.]  [1. 1. 1. ...   |               |                    |
+    | 1. 1. 1.]  [1. 1.... |               |                    |
+    +----------------------+---------------+--------------------+
+    | [[1. 1. 1. ... 1. 1. | [0, 1, 0, 1]  | [[1. 1.]  [1. 1.]] |
+    | 1.]  [1. 1. 1. ...   |               |                    |
+    | 1. 1. 1.]  [1. 1.... |               |                    |
+    +----------------------+---------------+--------------------+
+    (Showing first 2 rows)
 
 There's a few things happening here, let's break it down:
 
@@ -70,22 +113,23 @@ There's a few things happening here, let's break it down:
     b. A list of cropping boxes: ``crops``
     c. An integer indicating how much padding to apply to the right and bottom of the cropping: ``padding``
 2. To allow Daft to pass column data into the ``images`` and ``crops`` arguments, we decorate the function with ``@udf``
-    a. ``return_dtype`` defines the returned data type. In this case, we return a column containing numpy arrays (``np.ndarray``)
-    b. The keys in ``input_columns`` defines which input parameters should be columns (in this case ``images`` and ``crops``)
-    c. The values in ``input_columns`` defines what container type Daft should pass columns in as, in this case just a ``list``.
+    a. ``return_dtype`` defines the returned data type. In this case, we return a column containing Python objects of numpy arrays
+    b. At runtime, because we call the UDF on the ``"image"`` and ``"crop"`` columns, the UDF will receive a ``daft.series.Series`` object for each argument.
 3. We can create a new column in our DataFrame by applying our UDF on the ``"image"`` and ``"crop"`` columns inside of a ``df.with_column`` call.
 
-Input Types
-^^^^^^^^^^^
+UDF Inputs
+^^^^^^^^^^
 
-In the above example, we indicated that the ``images`` and ``crops`` input parameters should be passed in as a ``list``. Daft supports other
-array container types as well:
+When you specify an Expression as an input to a UDF, Daft will calculate the result of that Expression and pass it into your function as a ``daft.series.Series`` object.
 
-1. Numpy Arrays (``np.ndarray``)
-2. Pandas Series (``pd.Series``)
-3. Polars Series (``polars.Series``)
-4. PyArrow Arrays (``pa.Array``) or (``pa.ChunkedArray``)
-5. Python lists (``list`` or ``typing.List``)
+The Daft ``Series`` is just an abstraction on a "column" of data! You can obtain several different data representations from a ``Series``:
+
+1. Numpy Arrays (``np.ndarray``): ``Series.to_numpy()``
+2. Pandas Series (``pd.Series``): ``Series.to_pandas()``
+3. PyArrow Arrays (``pa.Array``): ``Series.to_arrow()``
+4. Python lists (``list``): ``Series.to_list()``
+
+Depending on your application, you may choose a different data representation that is more performant or more convenient!
 
 .. NOTE::
     Certain array formats have some restrictions around the type of data that they can handle:
@@ -93,27 +137,23 @@ array container types as well:
     1. **Null Handling**: In Pandas and Numpy, nulls are represented as NaNs for numeric types, and Nones for non-numeric types.
     Additionally, the existence of nulls will trigger a type casting from integer to float arrays. If null handling is important to
     your use-case, we recommend using one of the other available options.
-    2. **Python Objects**: PyArrow array formats cannot support object-type columns.
+    2. **Python Objects**: PyArrow array formats cannot support Python columns.
 
     We recommend using Python lists if performance is not a major consideration, and using the arrow-native formats such as
-    PyArrow arrays and Polars series if performance is important.
+    PyArrow arrays and numpy arrays if performance is important.
 
 Return Types
 ^^^^^^^^^^^^
 
-The ``return_dtype`` argument specifies what type of column your UDF will return. For user convenience, you may specify a Python
-type such as ``str``, ``int``, ``float``, ``bool`` and ``datetime.date``, which will be converted into a Daft dtype for you.
-
-Python types that are not recognized as Daft types will be represented as a Daft Python object dtype. For example, if you specify
-``return_dtype=np.ndarray``, then your returned column will have type ``PY[np.ndarray]``.
+The ``return_dtype`` argument specifies what type of column your UDF will return. Types can be specified using the ``daft.DataType`` class.
 
 Your UDF function itself needs to return a batch of columnar data, and can do so as any one of the following array types:
 
 1. Numpy Arrays (``np.ndarray``)
-2. Pandas Series (``pd.Series``)
-3. Polars Series (``polars.Series``)
-4. PyArrow Arrays (``pa.Array``) or (``pa.ChunkedArray``)
-5. Python lists (``list`` or ``typing.List``)
+2. PyArrow Arrays (``pa.Array``)
+3. Python lists (``list``)
+
+Note that if the data you have returned is not castable to the return_dtype that you specify (e.g. if you return a list of floats when you've specified a ``return_dtype=DataType.bool()``), Daft will throw a runtime error!
 
 Stateful UDFs
 -------------
@@ -123,7 +163,7 @@ between invocations of the class, for example downloading data or creating a mod
 
 .. code:: python
 
-    @udf(return_dtype=int, input_columns={"features_col": np.ndarray})
+    @udf(return_dtype=DataType.int64())
     class RunModel:
 
         def __init__(self):

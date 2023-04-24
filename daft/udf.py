@@ -75,7 +75,10 @@ class PartialUDF:
         if isinstance(result, Series):
             return result.rename(name).cast(self.udf.return_dtype)._series
         elif isinstance(result, list):
-            return Series.from_pylist(result, name=name).cast(self.udf.return_dtype)._series
+            if self.udf.return_dtype == DataType.python():
+                return Series.from_pylist(result, name=name, pyobj="force")._series
+            else:
+                return Series.from_pylist(result, name=name, pyobj="disallow").cast(self.udf.return_dtype)._series
         elif _NUMPY_AVAILABLE and isinstance(result, np.ndarray):
             return Series.from_numpy(result, name=name).cast(self.udf.return_dtype)._series
         else:
@@ -150,8 +153,8 @@ def udf(
     1. Receives data under the argument name ``x``
     2. Converts the ``x`` Daft Series into a Python list using ``x.to_pylist()``
     3. Adds a Python constant value ``c`` to every element in ``x``
-    3. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
-    4. We can call our UDF on a dataframe using any of the dataframe projection operations (``with_column``, ``select`` etc)
+    4. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
+    5. We can call our UDF on a dataframe using any of the dataframe projection operations (``with_column``, ``select`` etc)
 
     Example:
         >>> @udf(return_dtype=DataType.int64())

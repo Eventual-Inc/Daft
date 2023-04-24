@@ -23,13 +23,13 @@ An aggregation can be applied on an entire DataFrame, for example to get the mea
 
 .. code:: none
 
-    +---------+
-    |   score |
-    |   FLOAT |
-    +=========+
-    |      25 |
-    +---------+
-    (Showing first 1 of 1 rows)
+    +-----------+
+    |     score |
+    |   Float64 |
+    +===========+
+    |        25 |
+    +-----------+
+    (Showing first 1 rows)
 
 Grouped Aggregations
 --------------------
@@ -44,12 +44,12 @@ Let's run the mean of column "score" again, but this time grouped by "class":
 
 .. code:: none
 
-    +----------+---------+
-    | class    |   score |
-    | STRING   |   FLOAT |
-    +==========+=========+
-    | b        |      35 |
-    +----------+---------+
-    | a        |      15 |
-    +----------+---------+
-    (Showing first 2 of 2 rows)
+    +---------+-----------+
+    | class   |     score |
+    | Utf8    |   Float64 |
+    +=========+===========+
+    | b       |        35 |
+    +---------+-----------+
+    | a       |        15 |
+    +---------+-----------+
+    (Showing first 2 rows)

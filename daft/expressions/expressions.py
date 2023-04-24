@@ -509,7 +509,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             other (Expression): a string expression to concatenate with
 
         Returns:
-            Expression: a STRING expression which is `self` concatenated with `other`
+            Expression: a String expression which is `self` concatenated with `other`
         """
         # Delegate to + operator implementation.
         return Expression._from_pyexpr(self._expr) + other

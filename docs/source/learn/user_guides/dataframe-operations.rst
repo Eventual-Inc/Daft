@@ -22,17 +22,17 @@ Select specific columns in a DataFrame using ``.select``, which also takes Expre
 
 .. code-block:: none
 
-    +-----------+
-    |         A |
-    |   INTEGER |
-    +===========+
-    |         1 |
-    +-----------+
-    |         2 |
-    +-----------+
-    |         3 |
-    +-----------+
-    (Showing first 3 of 3 rows)
+    +---------+
+    |       A |
+    |   Int64 |
+    +=========+
+    |       1 |
+    +---------+
+    |       2 |
+    +---------+
+    |       3 |
+    +---------+
+    (Showing first 3 rows)
 
 A useful alias for ``.select`` is indexing a DataFrame with a list of column names or Expressions:
 
@@ -42,17 +42,17 @@ A useful alias for ``.select`` is indexing a DataFrame with a list of column nam
 
 .. code-block:: none
 
-    +-----------+-----------+
-    |         A |         B |
-    |   INTEGER |   INTEGER |
-    +===========+===========+
-    |         1 |         4 |
-    +-----------+-----------+
-    |         2 |         5 |
-    +-----------+-----------+
-    |         3 |         6 |
-    +-----------+-----------+
-    (Showing first 3 of 3 rows)
+    +---------+---------+
+    |       A |       B |
+    |   Int64 |   Int64 |
+    +=========+=========+
+    |       1 |       4 |
+    +---------+---------+
+    |       2 |       5 |
+    +---------+---------+
+    |       3 |       6 |
+    +---------+---------+
+    (Showing first 3 rows)
 
 Sometimes, it may be useful to exclude certain columns from a DataFrame. This can be done with ``.exclude``:
 
@@ -62,17 +62,17 @@ Sometimes, it may be useful to exclude certain columns from a DataFrame. This ca
 
 .. code-block:: none
 
-    +-----------+
-    |         B |
-    |   INTEGER |
-    +===========+
-    |         4 |
-    +-----------+
-    |         5 |
-    +-----------+
-    |         6 |
-    +-----------+
-    (Showing first 3 of 3 rows)
+    +---------+
+    |       B |
+    |   Int64 |
+    +=========+
+    |       4 |
+    +---------+
+    |       5 |
+    +---------+
+    |       6 |
+    +---------+
+    (Showing first 3 rows)
 
 As we have already seen in previous guides, adding a new column can be achieved with ``.with_column``:
 
@@ -82,17 +82,17 @@ As we have already seen in previous guides, adding a new column can be achieved 
 
 .. code-block:: none
 
-    +-----------+-----------+-----------+
-    |         A |         B |         C |
-    |   INTEGER |   INTEGER |   INTEGER |
-    +===========+===========+===========+
-    |         1 |         4 |         5 |
-    +-----------+-----------+-----------+
-    |         2 |         5 |         7 |
-    +-----------+-----------+-----------+
-    |         3 |         6 |         9 |
-    +-----------+-----------+-----------+
-    (Showing first 3 of 3 rows)
+    +---------+---------+---------+
+    |       A |       B |       C |
+    |   Int64 |   Int64 |   Int64 |
+    +=========+=========+=========+
+    |       1 |       4 |       5 |
+    +---------+---------+---------+
+    |       2 |       5 |       7 |
+    +---------+---------+---------+
+    |       3 |       6 |       9 |
+    +---------+---------+---------+
+    (Showing first 3 rows)
 
 Selecting Rows
 --------------
@@ -110,17 +110,17 @@ We can limit the rows to the first ``N`` rows using ``.limit``:
 
 .. code-block:: none
 
-    +-----------+-----------+
-    |         A |         B |
-    |   INTEGER |   INTEGER |
-    +===========+===========+
-    |         1 |         6 |
-    +-----------+-----------+
-    |         2 |         7 |
-    +-----------+-----------+
-    |         3 |         8 |
-    +-----------+-----------+
-    (Showing first 3 of 3 rows)
+    +---------+---------+
+    |       A |       B |
+    |   Int64 |   Int64 |
+    +=========+=========+
+    |       1 |       6 |
+    +---------+---------+
+    |       2 |       7 |
+    +---------+---------+
+    |       3 |       8 |
+    +---------+---------+
+    (Showing first 3 rows)
 
 
 We can also filter rows using ``.where``, which takes an input a Logical Expression predicate:
@@ -131,15 +131,15 @@ We can also filter rows using ``.where``, which takes an input a Logical Express
 
 .. code-block:: none
 
-    +-----------+-----------+
-    |         A |         B |
-    |   INTEGER |   INTEGER |
-    +===========+===========+
-    |         4 |         9 |
-    +-----------+-----------+
-    |         5 |        10 |
-    +-----------+-----------+
-    (Showing first 2 of 2 rows)
+    +---------+---------+
+    |       A |       B |
+    |   Int64 |   Int64 |
+    +=========+=========+
+    |       4 |       9 |
+    +---------+---------+
+    |       5 |      10 |
+    +---------+---------+
+    (Showing first 2 rows)
 
 Combining DataFrames
 --------------------
@@ -159,17 +159,17 @@ Daft also supports multi-column joins key you have a join key comprising of mult
 
 .. code-block:: none
 
-    +-----------+-----------+-----------+
-    |         A |         B |         C |
-    |   INTEGER |   INTEGER |   INTEGER |
-    +===========+===========+===========+
-    |         1 |         4 |         7 |
-    +-----------+-----------+-----------+
-    |         2 |         5 |         8 |
-    +-----------+-----------+-----------+
-    |         3 |         6 |         9 |
-    +-----------+-----------+-----------+
-    (Showing first 3 of 3 rows)
+    +---------+---------+---------+
+    |       A |       B |       C |
+    |   Int64 |   Int64 |   Int64 |
+    +=========+=========+=========+
+    |       1 |       4 |       7 |
+    +---------+---------+---------+
+    |       2 |       5 |       8 |
+    +---------+---------+---------+
+    |       3 |       6 |       9 |
+    +---------+---------+---------+
+    (Showing first 3 rows)
 
 Reordering Rows
 ---------------
@@ -187,17 +187,17 @@ Rows in a DataFrame can be reordered based on some column using ``.sort``. Daft 
 
 .. code-block:: none
 
-    +-----------+-----------+
-    |         A |         B |
-    |   INTEGER |   INTEGER |
-    +===========+===========+
-    |         3 |         8 |
-    +-----------+-----------+
-    |         2 |         7 |
-    +-----------+-----------+
-    |         1 |         6 |
-    +-----------+-----------+
-    (Showing first 3 of 3 rows)
+    +---------+---------+
+    |       A |       B |
+    |   Int64 |   Int64 |
+    +=========+=========+
+    |       3 |       8 |
+    +---------+---------+
+    |       2 |       7 |
+    +---------+---------+
+    |       1 |       6 |
+    +---------+---------+
+    (Showing first 3 rows)
 
 Exploding Columns
 -----------------
@@ -215,29 +215,27 @@ The ``df.explode`` method can be used to explode a column containing a list of v
 
 .. code:: none
 
-    +-----------+-----------+
-    |         A |         B |
-    |   INTEGER |   INTEGER |
-    +===========+===========+
-    |         1 |         1 |
-    +-----------+-----------+
-    |         1 |         2 |
-    +-----------+-----------+
-    |         1 |         3 |
-    +-----------+-----------+
-    |         2 |         4 |
-    +-----------+-----------+
-    |         2 |         5 |
-    +-----------+-----------+
-    |         2 |         6 |
-    +-----------+-----------+
-    |         3 |         7 |
-    +-----------+-----------+
-    |         3 |         8 |
-    +-----------+-----------+
-    |         3 |         9 |
-    +-----------+-----------+
-    (Showing first 9 of 9 rows)
+    +---------+---------+
+    |       A |       B |
+    |   Int64 |   Int64 |
+    +=========+=========+
+    |       1 |       1 |
+    +---------+---------+
+    |       1 |       2 |
+    +---------+---------+
+    |       1 |       3 |
+    +---------+---------+
+    |       2 |       4 |
+    +---------+---------+
+    |       2 |       5 |
+    +---------+---------+
+    |       2 |       6 |
+    +---------+---------+
+    |       3 |       7 |
+    +---------+---------+
+    |       3 |       8 |
+    +---------+---------+
+    (Showing first 8 rows)
 
 Repartitioning
 --------------
