@@ -62,28 +62,28 @@ def test_series_if_else_pyobj(
     assert result.to_pylist() == [if_true_value, if_false_value, None]
 
 
+@pytest.mark.parametrize("if_true_value", ["1", None])
+@pytest.mark.parametrize("if_false_value", ["0", None])
 @pytest.mark.parametrize(
-    ["if_true", "if_false"],
-    [
-        # Same length, same type
-        (pa.array(["1", "1", "1"], type=pa.string()), pa.array(["0", "0", "0"], type=pa.string())),
-        # Same length, different super-castable type
-        (pa.array(["1", "1", "1"], type=pa.string()), pa.array(["0", "0", "0"], type=pa.string())),
-        # Broadcast left
-        (pa.array(["1"], type=pa.string()), pa.array(["0", "0", "0"], type=pa.string())),
-        # Broadcast right
-        (pa.array(["1", "1", "1"], type=pa.string()), pa.array(["0"], type=pa.string())),
-        # Broadcast both
-        (pa.array(["1"], type=pa.string()), pa.array(["0"], type=pa.string())),
-    ],
+    "if_true_length",
+    [1, 3],
 )
-def test_series_if_else_string(if_true, if_false) -> None:
-    if_true_series = Series.from_arrow(if_true)
-    if_false_series = Series.from_arrow(if_false)
+@pytest.mark.parametrize(
+    "if_false_length",
+    [1, 3],
+)
+def test_series_if_else_string(
+    if_true_value,
+    if_false_value,
+    if_true_length,
+    if_false_length,
+) -> None:
+    if_true_series = Series.from_arrow(pa.array([if_true_value] * if_true_length, type=pa.string()))
+    if_false_series = Series.from_arrow(pa.array([if_false_value] * if_false_length, type=pa.string()))
     predicate_series = Series.from_arrow(pa.array([True, False, None]))
     result = predicate_series.if_else(if_true_series, if_false_series)
     assert result.datatype() == DataType.string()
-    assert result.to_pylist() == ["1", "0", None]
+    assert result.to_pylist() == [if_true_value, if_false_value, None]
 
 
 @pytest.mark.parametrize(
