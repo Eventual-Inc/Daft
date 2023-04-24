@@ -83,6 +83,19 @@ class Series:
     def cast(self, dtype: DataType) -> Series:
         return Series._from_pyseries(self._series.cast(dtype._dtype))
 
+    def _cast_to_python(self) -> Series:
+        """Convert this Series into a Series of Python objects.
+
+        Call Series.to_pylist() and create a new Series from the raw Pylist directly.
+
+        This logic is needed by the Rust implementation of cast(),
+        but is written here (i.e. not in Rust) for conciseness.
+
+        Do not call this method directly in Python; call cast() instead.
+        """
+        pylist = self.to_pylist()
+        return Series.from_pylist(pylist, self.name(), pyobj="force")
+
     @staticmethod
     def concat(series: list[Series]) -> Series:
         pyseries = []
