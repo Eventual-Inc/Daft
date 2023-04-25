@@ -42,10 +42,18 @@ impl Table {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
+        // Take fast path short circuit if there is only 1 group
+        let group_idx_input = if groupvals_indices.len() > 1 {
+            Some(&groupvals_indices)
+        } else {
+            None
+        };
+
         let grouped_cols = agg_exprs
             .iter()
-            .map(|e| self.eval_agg_expression(e, Some(&groupvals_indices)))
+            .map(|e| self.eval_agg_expression(e, group_idx_input))
             .collect::<DaftResult<Vec<_>>>()?;
+
         // Combine the groupkey columns and the aggregation result columns.
         Self::from_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
     }
