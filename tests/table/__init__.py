@@ -12,8 +12,8 @@ daft_int_types = [
     DataType.uint32(),
     DataType.uint64(),
 ]
-
-daft_numeric_types = daft_int_types + [DataType.float32(), DataType.float64()]
+daft_floating_types = [DataType.float32(), DataType.float64()]
+daft_numeric_types = daft_int_types + daft_floating_types
 daft_string_types = [DataType.string()]
 daft_nonnull_types = daft_numeric_types + daft_string_types + [DataType.bool(), DataType.binary(), DataType.date()]
 daft_null_types = [DataType.null()]

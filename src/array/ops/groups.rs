@@ -70,9 +70,23 @@ impl IntoGroups for Float32Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array = self.downcast();
         if array.null_count() > 0 {
-            make_groups(array.iter().map(move |f| f.map(|v| v.to_bits())))
+            make_groups(array.iter().map(move |f| {
+                f.map(|v| {
+                    match v.is_nan() {
+                        true => f32::NAN,
+                        false => *v,
+                    }
+                    .to_bits()
+                })
+            }))
         } else {
-            make_groups(array.values_iter().map(move |f| f.to_bits()))
+            make_groups(array.values_iter().map(move |f| {
+                match f.is_nan() {
+                    true => f32::NAN,
+                    false => *f,
+                }
+                .to_bits()
+            }))
         }
     }
 }
@@ -81,9 +95,23 @@ impl IntoGroups for Float64Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array = self.downcast();
         if array.null_count() > 0 {
-            make_groups(array.iter().map(move |f| f.map(|v| v.to_bits())))
+            make_groups(array.iter().map(move |f| {
+                f.map(|v| {
+                    match v.is_nan() {
+                        true => f64::NAN,
+                        false => *v,
+                    }
+                    .to_bits()
+                })
+            }))
         } else {
-            make_groups(array.values_iter().map(move |f| f.to_bits()))
+            make_groups(array.values_iter().map(move |f| {
+                match f.is_nan() {
+                    true => f64::NAN,
+                    false => *f,
+                }
+                .to_bits()
+            }))
         }
     }
 }
