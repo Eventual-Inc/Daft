@@ -33,32 +33,49 @@ pub fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
     }
 }
 
-pub fn record_batches_to_table(batches: &[&PyAny], schema: SchemaRef) -> PyResult<Table> {
+pub fn record_batches_to_table(
+    py: Python,
+    batches: &[&PyAny],
+    schema: SchemaRef,
+) -> PyResult<Table> {
     if batches.is_empty() {
         return Ok(Table::empty(Some(schema))?);
     }
 
     let names = schema.names();
-
-    let mut tables: Vec<Table> = Vec::with_capacity(batches.len());
+    let num_batches = batches.len();
+    // First extract all the arrays at once while holding the GIL
+    let mut extracted_arrow_arrays: Vec<Vec<Box<dyn arrow2::array::Array>>> =
+        Vec::with_capacity(num_batches);
     for rb in batches {
-        let columns: DaftResult<Vec<Series>> = (0..names.len())
+        let columns: Vec<Box<dyn arrow2::array::Array>> = (0..names.len())
             .map(|i| {
                 let arr = rb
                     .call_method1(pyo3::intern!(rb.py(), "column"), (i,))
                     .unwrap();
-                let arr = array_to_rust(arr).unwrap();
-                let arr = cast_array_if_needed(arr);
-
-                Series::try_from((names.get(i).unwrap().as_str(), arr))
+                array_to_rust(arr).unwrap()
             })
             .collect();
-        tables.push(Table::from_columns(columns?)?)
+        extracted_arrow_arrays.push(columns);
     }
-
-    Ok(Table::concat(
-        tables.iter().collect::<Vec<&Table>>().as_slice(),
-    )?)
+    // Now do the heavy lifting (casting and concats) without the GIL.
+    py.allow_threads(|| {
+        let mut tables: Vec<Table> = Vec::with_capacity(num_batches);
+        for cols in extracted_arrow_arrays {
+            let columns = cols
+                .into_iter()
+                .enumerate()
+                .map(|(i, c)| {
+                    let c = cast_array_if_needed(c);
+                    Series::try_from((names.get(i).unwrap().as_str(), c))
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
+            tables.push(Table::from_columns(columns)?)
+        }
+        Ok(Table::concat(
+            tables.iter().collect::<Vec<&Table>>().as_slice(),
+        )?)
+    })
 }
 
 pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
