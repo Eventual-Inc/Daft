@@ -337,3 +337,53 @@ def test_groupby_all_nulls(dtype) -> None:
     )
     result_table = daft_table.agg([col("cookies")._sum()], group_by=[col("group")])
     assert result_table.to_pydict() == {"group": [None], "cookies": [6]}
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    daft_numeric_types + daft_string_types + [DataType.bool()],
+    ids=[f"{_}" for _ in daft_numeric_types + daft_string_types + [DataType.bool()]],
+)
+def test_groupby_numeric_string_bool_some_nulls(dtype) -> None:
+    daft_table = Table.from_pydict(
+        {
+            "group": Series.from_pylist([1, 1, None]).cast(dtype),
+            "cookies": [2, 2, 3],
+        }
+    )
+    result_table = daft_table.agg([col("cookies")._sum()], group_by=[col("group")])
+    expected_table = Table.from_pydict(
+        {
+            "group": Series.from_pylist([1, None]).cast(dtype),
+            "cookies": [4, 3],
+        }
+    )
+
+    assert set(utils.freeze(utils.pydict_to_rows(result_table.to_pydict()))) == set(
+        utils.freeze(utils.pydict_to_rows(expected_table.to_pydict()))
+    )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    daft_numeric_types + daft_string_types + [DataType.bool()],
+    ids=[f"{_}" for _ in daft_numeric_types + daft_string_types + [DataType.bool()]],
+)
+def test_groupby_numeric_string_bool_no_nulls(dtype) -> None:
+    daft_table = Table.from_pydict(
+        {
+            "group": Series.from_pylist([1, 0, 1, 0]).cast(dtype),
+            "cookies": [1, 2, 2, 3],
+        }
+    )
+    result_table = daft_table.agg([col("cookies")._sum()], group_by=[col("group")])
+    expected_table = Table.from_pydict(
+        {
+            "group": Series.from_pylist([0, 1]).cast(dtype),
+            "cookies": [5, 3],
+        }
+    )
+
+    assert set(utils.freeze(utils.pydict_to_rows(result_table.to_pydict()))) == set(
+        utils.freeze(utils.pydict_to_rows(expected_table.to_pydict()))
+    )
