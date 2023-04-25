@@ -267,10 +267,12 @@ impl PyTable {
 
     #[staticmethod]
     pub fn from_arrow_record_batches(
+        py: Python,
         record_batches: Vec<&PyAny>,
         schema: &PySchema,
     ) -> PyResult<Self> {
-        let table = ffi::record_batches_to_table(record_batches.as_slice(), schema.schema.clone())?;
+        let table =
+            ffi::record_batches_to_table(py, record_batches.as_slice(), schema.schema.clone())?;
         Ok(PyTable { table })
     }
 

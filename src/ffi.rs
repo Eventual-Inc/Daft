@@ -33,7 +33,11 @@ pub fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
     }
 }
 
-pub fn record_batches_to_table(batches: &[&PyAny], schema: SchemaRef) -> PyResult<Table> {
+pub fn record_batches_to_table(
+    py: Python,
+    batches: &[&PyAny],
+    schema: SchemaRef,
+) -> PyResult<Table> {
     if batches.is_empty() {
         return Ok(Table::empty(Some(schema))?);
     }
@@ -55,10 +59,11 @@ pub fn record_batches_to_table(batches: &[&PyAny], schema: SchemaRef) -> PyResul
             .collect();
         tables.push(Table::from_columns(columns?)?)
     }
-
-    Ok(Table::concat(
-        tables.iter().collect::<Vec<&Table>>().as_slice(),
-    )?)
+    py.allow_threads(|| {
+        Ok(Table::concat(
+            tables.iter().collect::<Vec<&Table>>().as_slice(),
+        )?)
+    })
 }
 
 pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
