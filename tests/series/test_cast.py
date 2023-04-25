@@ -40,3 +40,29 @@ def test_series_casting_to_string(source_dtype, dest_dtype) -> None:
         assert t.to_pylist() == ["1.0", "2.0", "3.0", None, "5.0", None]
     else:
         assert t.to_pylist() == ["1", "2", "3", None, "5", None]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        [None, None, None],
+        [1, 2, None],
+        ["a", "b", None],
+    ],
+)
+def test_series_cast_to_python(source) -> None:
+    s = Series.from_pylist(source)
+    t = s.cast(DataType.python())
+
+    assert t.datatype() == DataType.python()
+    assert t.to_pylist() == source
+
+
+def test_series_python_selfcast() -> None:
+    data = [object(), None, object()]
+    s = Series.from_pylist(data)
+
+    t = s.cast(DataType.python())
+
+    assert t.datatype() == DataType.python()
+    assert t.to_pylist() == data

@@ -92,6 +92,21 @@ fn copy_optional_native<T: DaftNumericType>(v: Option<&T::Native>) -> Option<T::
     v.copied()
 }
 
+fn get_result_size(if_true_len: usize, if_false_len: usize, pred_len: usize) -> DaftResult<usize> {
+    let input_lengths = [if_true_len, if_false_len, pred_len];
+    let result_len = *input_lengths.iter().max().unwrap();
+    let length_error = Err(DaftError::ValueError(format!(
+        "Cannot run if_else against arrays with non-broadcastable lengths: if_true={}, if_false={}, predicate={}",
+        if_true_len, if_false_len, pred_len
+    )));
+    for len in input_lengths {
+        if len != 1 && len != result_len {
+            return length_error;
+        }
+    }
+    Ok(result_len)
+}
+
 impl<T> DataArray<T>
 where
     T: DaftNumericType,
@@ -160,11 +175,12 @@ impl BinaryArray {
 }
 
 impl NullArray {
-    pub fn if_else(&self, _other: &NullArray, _predicate: &BooleanArray) -> DaftResult<NullArray> {
+    pub fn if_else(&self, other: &NullArray, predicate: &BooleanArray) -> DaftResult<NullArray> {
+        let result_len = get_result_size(self.len(), other.len(), predicate.len())?;
         Ok(DataArray::full_null(
             self.name(),
             self.data_type(),
-            self.len(),
+            result_len,
         ))
     }
 }
@@ -180,14 +196,7 @@ impl PythonArray {
         use crate::datatypes::PythonType;
         use pyo3::prelude::*;
 
-        let input_lengths = [predicate.len(), self.len(), other.len()];
-        let result_len = *input_lengths.iter().max().unwrap();
-        let length_error = Err(DaftError::ValueError(format!("Cannot run if_else against arrays with non-broadcastable lengths: if_true={}, if_false={}, predicate={}", self.len(), other.len(), predicate.len())));
-        for len in input_lengths {
-            if len != 1 && len != result_len {
-                return length_error;
-            }
-        }
+        let result_len = get_result_size(self.len(), other.len(), predicate.len())?;
 
         let predicate_arr = match predicate.len() {
             1 => predicate.broadcast(result_len)?,
