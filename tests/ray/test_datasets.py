@@ -35,10 +35,11 @@ def test_to_ray_dataset_all_arrow(n_partitions: int):
     df = df.with_column("floatcol", df["intcol"].cast(DataType.float64()))
     ds = df.to_ray_dataset()
 
-    if RAY_VERSION >= (2, 2, 0):
-        assert ds.dataset_format() == "arrow", "Ray Dataset format should be arrow"
-    elif RAY_VERSION >= (2, 0, 0):
-        assert ds._dataset_format() == "arrow", "Ray Dataset format should be arrow"
+    if RAY_VERSION < (2, 4, 0):
+        if RAY_VERSION >= (2, 2, 0):
+            assert ds.dataset_format() == "arrow", "Ray Dataset format should be arrow"
+        elif RAY_VERSION >= (2, 0, 0):
+            assert ds._dataset_format() == "arrow", "Ray Dataset format should be arrow"
 
     rows = sorted([row.as_pydict() for row in ds.iter_rows()], key=lambda r: r["intcol"])
     assert rows == sorted(
@@ -58,10 +59,11 @@ def test_to_ray_dataset_with_py(n_partitions: int):
     df = df.with_column("pycol", df["intcol"].apply(lambda x: MyObj(x), DataType.python()))
     ds = df.to_ray_dataset()
 
-    if RAY_VERSION >= (2, 2, 0):
-        assert ds.dataset_format() == "simple", "Ray Dataset format should be simple because it has Python objects"
-    elif RAY_VERSION >= (2, 0, 0):
-        assert ds._dataset_format() == "simple", "Ray Dataset format should be simple because it has Python objects"
+    if RAY_VERSION < (2, 4, 0):
+        if RAY_VERSION >= (2, 2, 0):
+            assert ds.dataset_format() == "simple", "Ray Dataset format should be simple because it has Python objects"
+        elif RAY_VERSION >= (2, 0, 0):
+            assert ds._dataset_format() == "simple", "Ray Dataset format should be simple because it has Python objects"
 
     rows = sorted([row for row in ds.iter_rows()], key=lambda r: r["intcol"])
     assert rows == sorted(
@@ -81,14 +83,15 @@ def test_to_ray_dataset_with_numpy(n_partitions: int):
     df = df.with_column("npcol", df["intcol"].apply(lambda _: np.ones((3, 3)), DataType.python()))
     ds = df.to_ray_dataset()
 
-    if RAY_VERSION >= (2, 2, 0):
-        assert (
-            ds.dataset_format() == "arrow"
-        ), "Ray Dataset format should be arrow because it uses a Tensor extension type"
-    elif RAY_VERSION >= (2, 0, 0):
-        assert (
-            ds._dataset_format() == "arrow"
-        ), "Ray Dataset format should be arrow because it uses a Tensor extension type"
+    if RAY_VERSION < (2, 4, 0):
+        if RAY_VERSION >= (2, 2, 0):
+            assert (
+                ds.dataset_format() == "arrow"
+            ), "Ray Dataset format should be arrow because it uses a Tensor extension type"
+        elif RAY_VERSION >= (2, 0, 0):
+            assert (
+                ds._dataset_format() == "arrow"
+            ), "Ray Dataset format should be arrow because it uses a Tensor extension type"
 
     rows = sorted([row.as_pydict() for row in ds.iter_rows()], key=lambda r: r["intcol"])
     np.testing.assert_equal(
@@ -111,14 +114,15 @@ def test_to_ray_dataset_with_numpy_variable_shaped(n_partitions: int):
     df = df.with_column("npcol", df["intcol"].apply(lambda x: np.ones((x, 3)), DataType.python()))
     ds = df.to_ray_dataset()
 
-    if RAY_VERSION >= (2, 2, 0):
-        assert (
-            ds.dataset_format() == "arrow"
-        ), "Ray Dataset format should be arrow because it uses a Tensor extension type"
-    elif RAY_VERSION >= (2, 0, 0):
-        assert (
-            ds._dataset_format() == "simple"
-        ), "In old versions of Ray, we drop down to `simple` format because ArrowTensorType is not compatible with ragged tensors"
+    if RAY_VERSION < (2, 4, 0):
+        if RAY_VERSION >= (2, 2, 0):
+            assert (
+                ds.dataset_format() == "arrow"
+            ), "Ray Dataset format should be arrow because it uses a Tensor extension type"
+        elif RAY_VERSION >= (2, 0, 0):
+            assert (
+                ds._dataset_format() == "simple"
+            ), "In old versions of Ray, we drop down to `simple` format because ArrowTensorType is not compatible with ragged tensors"
 
     rows = sorted([row.as_pydict() for row in ds.iter_rows()], key=lambda r: r["intcol"])
     np.testing.assert_equal(
@@ -143,10 +147,11 @@ def test_from_ray_dataset_all_arrow(n_partitions: int):
     table = pa.table(DATA)
     ds = ray.data.from_arrow(table).map_batches(add_float, batch_format="pyarrow").repartition(n_partitions)
 
-    if RAY_VERSION >= (2, 2, 0):
-        assert ds.dataset_format() == "arrow", "Ray Dataset format should be arrow"
-    elif RAY_VERSION >= (2, 0, 0):
-        assert ds._dataset_format() == "arrow", "Ray Dataset format should be arrow"
+    if RAY_VERSION < (2, 4, 0):
+        if RAY_VERSION >= (2, 2, 0):
+            assert ds.dataset_format() == "arrow", "Ray Dataset format should be arrow"
+        elif RAY_VERSION >= (2, 0, 0):
+            assert ds._dataset_format() == "arrow", "Ray Dataset format should be arrow"
 
     df = DataFrame.from_ray_dataset(ds)
     out_table = df.to_arrow()
@@ -198,10 +203,11 @@ def test_from_ray_dataset_pandas(n_partitions: int):
 
     ds = ray.data.from_pandas(pd_df).map_batches(add_float).repartition(n_partitions)
 
-    if RAY_VERSION >= (2, 2, 0):
-        assert ds.dataset_format() == "pandas", "Ray Dataset format should be pandas"
-    elif RAY_VERSION >= (2, 0, 0):
-        assert ds._dataset_format() == "pandas", "Ray Dataset format should be pandas"
+    if RAY_VERSION < (2, 4, 0):
+        if RAY_VERSION >= (2, 2, 0):
+            assert ds.dataset_format() == "pandas", "Ray Dataset format should be pandas"
+        elif RAY_VERSION >= (2, 0, 0):
+            assert ds._dataset_format() == "pandas", "Ray Dataset format should be pandas"
 
     df = DataFrame.from_ray_dataset(ds)
     expected_df = add_float(pd_df)
