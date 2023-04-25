@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 
+use arrow2::array::Array;
 use fnv::FnvHashMap;
 
 use crate::{
@@ -56,31 +57,56 @@ where
     <T as DaftNumericType>::Native: std::cmp::Eq,
 {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        make_groups(self.downcast().values_iter())
+        let array: &arrow2::array::PrimitiveArray<<T as DaftNumericType>::Native> = self.downcast();
+        if array.null_count() > 0 {
+            make_groups(array.iter())
+        } else {
+            make_groups(array.values_iter())
+        }
     }
 }
 
 impl IntoGroups for Float32Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        make_groups(self.downcast().values_iter().map(move |f| f.to_bits()))
+        let array = self.downcast();
+        if array.null_count() > 0 {
+            make_groups(array.iter().map(move |f| f.map(|v| v.to_bits())))
+        } else {
+            make_groups(array.values_iter().map(move |f| f.to_bits()))
+        }
     }
 }
 
 impl IntoGroups for Float64Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        make_groups(self.downcast().values_iter().map(move |f| f.to_bits()))
+        let array = self.downcast();
+        if array.null_count() > 0 {
+            make_groups(array.iter().map(move |f| f.map(|v| v.to_bits())))
+        } else {
+            make_groups(array.values_iter().map(move |f| f.to_bits()))
+        }
     }
 }
 
 impl IntoGroups for Utf8Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        make_groups(self.downcast().values_iter())
+        let array = self.downcast();
+        if array.null_count() > 0 {
+            make_groups(array.iter())
+        } else {
+            make_groups(array.values_iter())
+        }
     }
 }
 
 impl IntoGroups for BooleanArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        make_groups(self.downcast().values_iter())
+        let array = self.downcast();
+        if array.null_count() > 0 {
+            make_groups(array.iter())
+        } else {
+            make_groups(array.values_iter())
+        }
     }
 }
 
