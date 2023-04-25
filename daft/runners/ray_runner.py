@@ -321,7 +321,12 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
         parts = [_to_pandas_ref(next(iter(part.dask.values()))) for part in persisted_partitions]
         daft_vpartitions, schemas = zip(*map(_make_daft_partition_from_dask_dataframe_partitions.remote, parts))
         schemas = ray.get(list(schemas))
-        # TODO(Clark): Validate that all schemas are the same.
+        # Dask shouldn't allow inconsistent schemas across partitions, but we double-check here.
+        if not all(schemas[0] == schema for schema in schemas[1:]):
+            raise ValueError(
+                "Can't convert a Dask DataFrame with inconsistent schemas across partitions to a Daft DataFrame:",
+                schemas,
+            )
         return RayPartitionSet(dict(enumerate(daft_vpartitions))), schemas[0]
 
 

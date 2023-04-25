@@ -1298,7 +1298,6 @@ class DataFrame:
         assert partition_set is not None
         # TODO(Clark): Support Dask DataFrame conversion for the local runner if
         # Dask is using a non-distributed scheduler.
-
         if not isinstance(partition_set, RayPartitionSet):
             raise ValueError("Cannot convert to Dask DataFrame if not running on Ray backend")
         return partition_set.to_dask_dataframe()

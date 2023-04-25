@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import dask
+import dask.dataframe as dd
 import numpy as np
 import pandas as pd
 import pytest
@@ -111,7 +111,7 @@ def test_to_dask_dataframe_with_numpy_variable_shaped(n_partitions: int):
 def test_from_dask_dataframe_all_arrow(n_partitions: int):
     df = pd.DataFrame(DATA)
     df["floatcol"] = df["intcol"].astype(float)
-    ddf = dask.dataframe.from_pandas(df, npartitions=n_partitions)
+    ddf = dd.from_pandas(df, npartitions=n_partitions)
 
     daft_df = DataFrame.from_dask_dataframe(ddf)
     out_df = daft_df.to_pandas()
@@ -123,7 +123,7 @@ def test_from_dask_dataframe_all_arrow(n_partitions: int):
 def test_from_dask_dataframe_tensor(n_partitions: int):
     df = pd.DataFrame(DATA)
     df["tensor"] = pd.Series([np.ones((2, 2)) for _ in range(len(df))], dtype=object)
-    ddf = dask.dataframe.from_pandas(df, npartitions=n_partitions)
+    ddf = dd.from_pandas(df, npartitions=n_partitions)
 
     daft_df = DataFrame.from_dask_dataframe(ddf)
     out_df = daft_df.to_pandas()
