@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     import numpy as np
     import pandas
     import pyarrow as pa
+    import dask
 
 from daft.logical.schema import Schema
 
@@ -1242,7 +1243,8 @@ class DataFrame:
         self.collect()
         partition_set = self._result
         assert partition_set is not None
-        assert isinstance(partition_set, RayPartitionSet), "Cannot convert to Ray Dataset if not running on Ray backend"
+        if not isinstance(partition_set, RayPartitionSet):
+            raise ValueError("Cannot convert to Ray Dataset if not running on Ray backend")
         return partition_set.to_ray_dataset()
 
     @classmethod
@@ -1256,9 +1258,8 @@ class DataFrame:
         Args:
             ds: the Ray Dataset to create a Daft DataFrame from
         """
-        assert (
-            get_context().runner_config.name == "ray"
-        ), "Daft needs to be running on the Ray Runner for this operation"
+        if get_context().runner_config.name != "ray":
+            raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
@@ -1266,6 +1267,87 @@ class DataFrame:
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
+        cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
+        return cls(
+            logical_plan.InMemoryScan(
+                cache_entry=cache_entry,
+                schema=schema,
+                partition_spec=logical_plan.PartitionSpec(
+                    logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
+                ),
+            )
+        )
+
+    @DataframePublicAPI
+    def to_dask_dataframe(
+        self,
+        meta: Union[
+            "pandas.DataFrame",
+            "pandas.Series",
+            Dict[str, Any],
+            Iterable[Any],
+            Tuple[Any],
+            None,
+        ] = None,
+    ) -> "dask.DataFrame":
+        """Converts the current Daft DataFrame to a Dask DataFrame.
+
+        The returned Dask DataFrame will use `Dask-on-Ray <https://docs.ray.io/en/latest/data/dask-on-ray.html>`__
+        to execute operations on a Ray cluster.
+
+        .. NOTE::
+            This function can only work if Daft is running using the RayRunner.
+
+        Args:
+            meta: An empty pandas DataFrame or Series that matches the dtypes and column
+                names of the stream. This metadata is necessary for many algorithms in
+                dask dataframe to work. For ease of use, some alternative inputs are
+                also available. Instead of a DataFrame, a dict of ``{name: dtype}`` or
+                iterable of ``(name, dtype)`` can be provided (note that the order of
+                the names should match the order of the columns). Instead of a series, a
+                tuple of ``(name, dtype)`` can be used.
+                By default, this will be inferred from the underlying Daft DataFrame schema,
+                with this argument supplying an optional override.
+
+        Returns:
+            dask.DataFrame: A Dask DataFrame stored on a Ray cluster.
+        """
+        from daft.runners.ray_runner import RayPartitionSet
+
+        self.collect()
+        partition_set = self._result
+        assert partition_set is not None
+        # TODO(Clark): Support Dask DataFrame conversion for the local runner if
+        # Dask is using a non-distributed scheduler.
+        if not isinstance(partition_set, RayPartitionSet):
+            raise ValueError("Cannot convert to Dask DataFrame if not running on Ray backend")
+        return partition_set.to_dask_dataframe(meta)
+
+    @classmethod
+    @DataframePublicAPI
+    def from_dask_dataframe(cls, ddf: "dask.DataFrame") -> "DataFrame":
+        """Creates a Daft DataFrame from a Dask DataFrame.
+
+        The provided Dask DataFrame must have been created using
+        `Dask-on-Ray <https://docs.ray.io/en/latest/data/dask-on-ray.html>`__.
+
+        .. NOTE::
+            This function can only work if Daft is running using the RayRunner
+
+        Args:
+            ddf: The Dask DataFrame to create a Daft DataFrame from.
+        """
+        # TODO(Clark): Support Dask DataFrame conversion for the local runner if
+        # Dask is using a non-distributed scheduler.
+        if get_context().runner_config.name != "ray":
+            raise ValueError("Daft needs to be running on the Ray Runner for this operation")
+
+        from daft.runners.ray_runner import RayRunnerIO
+
+        ray_runner_io = get_context().runner().runner_io()
+        assert isinstance(ray_runner_io, RayRunnerIO)
+
+        partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
         cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
         return cls(
             logical_plan.InMemoryScan(

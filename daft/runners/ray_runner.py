@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterable
 
 import pyarrow as pa
 from loguru import logger
@@ -54,6 +54,8 @@ from daft.runners.runner import Runner
 from daft.table import Table
 
 if TYPE_CHECKING:
+    import dask
+    import pandas as pd
     from ray.data.block import Block as RayDatasetBlock
     from ray.data.dataset import Dataset as RayDataset
 
@@ -136,6 +138,25 @@ def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_sc
     return partition
 
 
+@ray.remote(num_returns=2)
+def _make_daft_partition_from_dask_dataframe_partitions(dask_df_partition: pd.DataFrame) -> tuple[Table, pa.Schema]:
+    # TODO(Clark): Port to Table.from_pandas() once that API exists.
+    vpart = Table.from_pydict(dask_df_partition.to_dict(orient="list"))
+    return vpart, vpart.schema()
+
+
+def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef[pd.DataFrame]) -> ray.ObjectRef[pd.DataFrame]:
+    """Ensures that the provided pandas DataFrame partition is in the Ray object store."""
+    import pandas as pd
+
+    if isinstance(df, pd.DataFrame):
+        return ray.put(df)
+    elif isinstance(df, ray.ObjectRef):
+        return df
+    else:
+        raise ValueError("Expected a Ray object ref or a Pandas DataFrame, " f"got {type(df)}")
+
+
 @ray.remote
 def remote_len_partition(p: Table) -> int:
     return len(p)
@@ -180,6 +201,25 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         # NOTE: although the Ray method is called `from_arrow_refs`, this method works also when the blocks are List[T] types
         # instead of Arrow tables as the codepath for Dataset creation is the same.
         return from_arrow_refs(blocks)
+
+    def to_dask_dataframe(
+        self,
+        meta: (pd.DataFrame | pd.Series | dict[str, Any] | Iterable[Any] | tuple[Any] | None) = None,
+    ) -> dask.DataFrame:
+        import dask
+        import dask.dataframe as dd
+        from ray.util.dask import ray_dask_get
+
+        dask.config.set(scheduler=ray_dask_get)
+
+        @dask.delayed
+        def _make_dask_dataframe_partition_from_vpartition(partition: Table) -> pd.DataFrame:
+            return partition.to_pandas()
+
+        ddf_parts = [
+            _make_dask_dataframe_partition_from_vpartition(self._partitions[k]) for k in self._partitions.keys()
+        ]
+        return dd.from_delayed(ddf_parts, meta=meta)
 
     def get_partition(self, idx: PartID) -> ray.ObjectRef:
         return self._partitions[idx]
@@ -268,7 +308,29 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
         daft_vpartitions = [
             _make_daft_partition_from_ray_dataset_blocks.remote(block, daft_schema) for block in block_refs
         ]
-        return RayPartitionSet({part_id: part for part_id, part in enumerate(daft_vpartitions)}), daft_schema
+        return RayPartitionSet(dict(enumerate(daft_vpartitions))), daft_schema
+
+    def partition_set_from_dask_dataframe(
+        self,
+        ddf: dask.DataFrame,
+    ) -> tuple[RayPartitionSet, Schema]:
+        import dask
+        from ray.util.dask import ray_dask_get
+
+        partitions = ddf.to_delayed()
+        if not partitions:
+            raise ValueError("Can't convert an empty Dask DataFrame (with no partitions) to a Daft DataFrame.")
+        persisted_partitions = dask.persist(*partitions, scheduler=ray_dask_get)
+        parts = [_to_pandas_ref(next(iter(part.dask.values()))) for part in persisted_partitions]
+        daft_vpartitions, schemas = zip(*map(_make_daft_partition_from_dask_dataframe_partitions.remote, parts))
+        schemas = ray.get(list(schemas))
+        # Dask shouldn't allow inconsistent schemas across partitions, but we double-check here.
+        if not all(schemas[0] == schema for schema in schemas[1:]):
+            raise ValueError(
+                "Can't convert a Dask DataFrame with inconsistent schemas across partitions to a Daft DataFrame:",
+                schemas,
+            )
+        return RayPartitionSet(dict(enumerate(daft_vpartitions))), schemas[0]
 
 
 def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
