@@ -14,6 +14,7 @@ pub(crate) mod downcast;
 mod filter;
 mod float;
 mod full;
+pub(crate) mod groups;
 mod hash;
 mod if_else;
 mod len;
@@ -28,6 +29,8 @@ mod take;
 mod utf8;
 
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
+
+use crate::error::DaftResult;
 
 pub trait DaftCompare<Rhs> {
     type Output;
@@ -74,7 +77,13 @@ pub trait DaftIsNan {
     fn is_nan(&self) -> Self::Output;
 }
 
-pub type GroupIndices = Vec<Vec<u64>>;
+pub type VecIndices = Vec<u64>;
+pub type GroupIndices = Vec<VecIndices>;
+pub type GroupIndicesPair = (VecIndices, GroupIndices);
+
+pub trait IntoGroups {
+    fn make_groups(&self) -> DaftResult<GroupIndicesPair>;
+}
 
 pub trait DaftCountAggable {
     type Output;
