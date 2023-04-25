@@ -71,13 +71,20 @@ jobs:
       env:
         DAFT_DEVELOPER_USE_THREAD_POOL: '0'
       run: |
-        py-spy record --native -o tpch-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup || true
+        py-spy record --native --function -o tpch-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup || true
+
+    - name: Run GIL Profiling on TPCH Benchmark
+      env:
+        DAFT_DEVELOPER_USE_THREAD_POOL: '0'
+      run: |
+        py-spy record --native --function --gil -o tpch-gil-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup || true
+
 
     - name: Upload Profile
       uses: actions/upload-artifact@v2
       with:
         name: speedscope-profile
-        path: tpch-${{github.run_id}}.txt
+        path: tpch-*.txt
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.23.0
