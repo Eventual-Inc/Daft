@@ -96,6 +96,21 @@ class Series:
         pylist = self.to_pylist()
         return Series.from_pylist(pylist, self.name(), pyobj="force")
 
+    def _pycast_to_pynative(self, type_: type) -> Series:
+        """Apply Python-level casting to this Series.
+
+        Call Series.to_pylist(), apply the Python cast (e.g. str(x)),
+        and create a new arrow-backed Series from the result.
+
+        This logic is needed by the Rust implementation of cast(),
+        but is written here (i.e. not in Rust) for conciseness.
+
+        Do not call this method directly in Python; call cast() instead.
+        """
+        pylist = self.to_pylist()
+        pylist = [type_(_) for _ in pylist]
+        return Series.from_pylist(pylist, self.name(), pyobj="disallow")
+
     @staticmethod
     def concat(series: list[Series]) -> Series:
         pyseries = []

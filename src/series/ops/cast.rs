@@ -72,7 +72,55 @@ impl Series {
                 // Convert something from Python to Arrow.
                 // Complex. Need to apply a Python-side cast to a relevant Python native type,
                 // and then use our existing Python native -> Arrow import logic.
-                todo!()
+                match datatype {
+                    DataType::Null => todo!(),
+                    DataType::Boolean => {
+                        let old_pyseries = PySeries::from(self.clone());
+
+                        let new_pyseries = Python::with_gil(|py| -> PyResult<PySeries> {
+                            let old_daft_series = {
+                                PyModule::import(py, pyo3::intern!(py, "daft.series"))?
+                                    .getattr(pyo3::intern!(py, "Series"))?
+                                    .getattr(pyo3::intern!(py, "_from_pyseries"))?
+                                    .call1((old_pyseries,))?
+                            };
+
+                            let py_type_fn = {
+                                PyModule::import(py, pyo3::intern!(py, "builtins"))?
+                                    .getattr(pyo3::intern!(py, "bool"))?
+                            };
+
+                            old_daft_series
+                                .call_method1(
+                                    pyo3::intern!(py, "_pycast_to_pynative"),
+                                    (py_type_fn,),
+                                )?
+                                .getattr(pyo3::intern!(py, "_series"))?
+                                .extract()
+                        })?;
+
+                        return Ok(new_pyseries.into());
+                    }
+                    DataType::Binary => todo!(),
+                    DataType::Utf8 => todo!(),
+                    DataType::UInt8
+                    | DataType::UInt16
+                    | DataType::UInt32
+                    | DataType::UInt64
+                    | DataType::Int8
+                    | DataType::Int16
+                    | DataType::Int32
+                    | DataType::Int64 => todo!(),
+                    // DataType::Float16 => todo!(),
+                    DataType::Float32 | DataType::Float64 => todo!(),
+                    DataType::Date => todo!(),
+                    DataType::List(_) => todo!(),
+                    DataType::FixedSizeList(..) => todo!(),
+                    DataType::Struct(_) => todo!(),
+                    // TODO: Add implementations for these types
+                    // DataType::Timestamp(_, _) => $self.timestamp().unwrap().$method($($args),*),
+                    dt => unimplemented!("dtype {:?} not supported", dt),
+                }
             }
         }
         apply_method_all_arrow_series!(self, cast, datatype)
