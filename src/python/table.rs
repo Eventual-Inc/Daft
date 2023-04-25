@@ -30,64 +30,84 @@ impl PyTable {
         })
     }
 
-    pub fn eval_expression_list(&self, exprs: Vec<PyExpr>) -> PyResult<Self> {
+    pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let converted_exprs: Vec<dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
-        Ok(self
-            .table
-            .eval_expression_list(converted_exprs.as_slice())?
-            .into())
+        py.allow_threads(|| {
+            Ok(self
+                .table
+                .eval_expression_list(converted_exprs.as_slice())?
+                .into())
+        })
     }
 
-    pub fn take(&self, idx: &PySeries) -> PyResult<Self> {
-        Ok(self.table.take(&idx.series)?.into())
+    pub fn take(&self, py: Python, idx: &PySeries) -> PyResult<Self> {
+        py.allow_threads(|| Ok(self.table.take(&idx.series)?.into()))
     }
 
-    pub fn filter(&self, exprs: Vec<PyExpr>) -> PyResult<Self> {
+    pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let converted_exprs: Vec<dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
-        Ok(self.table.filter(converted_exprs.as_slice())?.into())
+        py.allow_threads(|| Ok(self.table.filter(converted_exprs.as_slice())?.into()))
     }
 
-    pub fn sort(&self, sort_keys: Vec<PyExpr>, descending: Vec<bool>) -> PyResult<Self> {
+    pub fn sort(
+        &self,
+        py: Python,
+        sort_keys: Vec<PyExpr>,
+        descending: Vec<bool>,
+    ) -> PyResult<Self> {
         let converted_exprs: Vec<dsl::Expr> = sort_keys.into_iter().map(|e| e.into()).collect();
-        Ok(self
-            .table
-            .sort(converted_exprs.as_slice(), descending.as_slice())?
-            .into())
+        py.allow_threads(|| {
+            Ok(self
+                .table
+                .sort(converted_exprs.as_slice(), descending.as_slice())?
+                .into())
+        })
     }
 
-    pub fn argsort(&self, sort_keys: Vec<PyExpr>, descending: Vec<bool>) -> PyResult<PySeries> {
+    pub fn argsort(
+        &self,
+        py: Python,
+        sort_keys: Vec<PyExpr>,
+        descending: Vec<bool>,
+    ) -> PyResult<PySeries> {
         let converted_exprs: Vec<dsl::Expr> = sort_keys.into_iter().map(|e| e.into()).collect();
-        Ok(self
-            .table
-            .argsort(converted_exprs.as_slice(), descending.as_slice())?
-            .into())
+        py.allow_threads(|| {
+            Ok(self
+                .table
+                .argsort(converted_exprs.as_slice(), descending.as_slice())?
+                .into())
+        })
     }
 
-    pub fn agg(&self, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
+    pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
         let converted_to_agg: Vec<dsl::Expr> = to_agg.into_iter().map(|e| e.into()).collect();
         let converted_group_by: Vec<dsl::Expr> = group_by.into_iter().map(|e| e.into()).collect();
-        Ok(self
-            .table
-            .agg(converted_to_agg.as_slice(), converted_group_by.as_slice())?
-            .into())
+        py.allow_threads(|| {
+            Ok(self
+                .table
+                .agg(converted_to_agg.as_slice(), converted_group_by.as_slice())?
+                .into())
+        })
     }
 
     pub fn join(
         &self,
+        py: Python,
         right: &Self,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
     ) -> PyResult<Self> {
         let left_exprs: Vec<dsl::Expr> = left_on.into_iter().map(|e| e.into()).collect();
         let right_exprs: Vec<dsl::Expr> = right_on.into_iter().map(|e| e.into()).collect();
-
-        Ok(self
-            .table
-            .join(&right.table, left_exprs.as_slice(), right_exprs.as_slice())?
-            .into())
+        py.allow_threads(|| {
+            Ok(self
+                .table
+                .join(&right.table, left_exprs.as_slice(), right_exprs.as_slice())?
+                .into())
+        })
     }
 
-    pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {
+    pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
         let converted_to_explode: Vec<dsl::Expr> =
             to_explode.into_iter().map(|e| e.into()).collect();
 
@@ -97,49 +117,51 @@ impl PyTable {
             )
             .into());
         }
-
-        Ok(self
-            .table
-            .explode(converted_to_explode.get(0).unwrap())?
-            .into())
+        py.allow_threads(|| {
+            Ok(self
+                .table
+                .explode(converted_to_explode.get(0).unwrap())?
+                .into())
+        })
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.table))
     }
 
-    pub fn head(&self, num: i64) -> PyResult<Self> {
+    pub fn head(&self, py: Python, num: i64) -> PyResult<Self> {
         if num < 0 {
             return Err(PyValueError::new_err(format!(
                 "Can not head table with negative number: {num}"
             )));
         }
         let num = num as usize;
-        Ok(self.table.head(num)?.into())
+        py.allow_threads(|| Ok(self.table.head(num)?.into()))
     }
 
-    pub fn sample(&self, num: i64) -> PyResult<Self> {
+    pub fn sample(&self, py: Python, num: i64) -> PyResult<Self> {
         if num < 0 {
             return Err(PyValueError::new_err(format!(
                 "Can not sample table with negative number: {num}"
             )));
         }
         let num = num as usize;
-        Ok(self.table.sample(num)?.into())
+        py.allow_threads(|| Ok(self.table.sample(num)?.into()))
     }
 
-    pub fn quantiles(&self, num: i64) -> PyResult<Self> {
+    pub fn quantiles(&self, py: Python, num: i64) -> PyResult<Self> {
         if num < 0 {
             return Err(PyValueError::new_err(format!(
                 "Can not fetch quantile from table with negative number: {num}"
             )));
         }
         let num = num as usize;
-        Ok(self.table.quantiles(num)?.into())
+        py.allow_threads(|| Ok(self.table.quantiles(num)?.into()))
     }
 
     pub fn partition_by_hash(
         &self,
+        py: Python,
         exprs: Vec<PyExpr>,
         num_partitions: i64,
     ) -> PyResult<Vec<Self>> {
@@ -149,15 +171,22 @@ impl PyTable {
             )));
         }
         let exprs: Vec<dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
-        Ok(self
-            .table
-            .partition_by_hash(exprs.as_slice(), num_partitions as usize)?
-            .into_iter()
-            .map(|t| t.into())
-            .collect::<Vec<PyTable>>())
+        py.allow_threads(|| {
+            Ok(self
+                .table
+                .partition_by_hash(exprs.as_slice(), num_partitions as usize)?
+                .into_iter()
+                .map(|t| t.into())
+                .collect::<Vec<PyTable>>())
+        })
     }
 
-    pub fn partition_by_random(&self, num_partitions: i64, seed: i64) -> PyResult<Vec<Self>> {
+    pub fn partition_by_random(
+        &self,
+        py: Python,
+        num_partitions: i64,
+        seed: i64,
+    ) -> PyResult<Vec<Self>> {
         if num_partitions < 0 {
             return Err(PyValueError::new_err(format!(
                 "Can not partition into negative number of partitions: {num_partitions}"
@@ -169,27 +198,32 @@ impl PyTable {
                 "Can not have seed has negative number: {seed}"
             )));
         }
-        Ok(self
-            .table
-            .partition_by_random(num_partitions as usize, seed as u64)?
-            .into_iter()
-            .map(|t| t.into())
-            .collect::<Vec<PyTable>>())
+        py.allow_threads(|| {
+            Ok(self
+                .table
+                .partition_by_random(num_partitions as usize, seed as u64)?
+                .into_iter()
+                .map(|t| t.into())
+                .collect::<Vec<PyTable>>())
+        })
     }
 
     pub fn partition_by_range(
         &self,
+        py: Python,
         partition_keys: Vec<PyExpr>,
         boundaries: &Self,
         descending: Vec<bool>,
     ) -> PyResult<Vec<Self>> {
         let exprs: Vec<dsl::Expr> = partition_keys.into_iter().map(|e| e.into()).collect();
-        Ok(self
-            .table
-            .partition_by_range(exprs.as_slice(), &boundaries.table, descending.as_slice())?
-            .into_iter()
-            .map(|t| t.into())
-            .collect::<Vec<PyTable>>())
+        py.allow_threads(|| {
+            Ok(self
+                .table
+                .partition_by_range(exprs.as_slice(), &boundaries.table, descending.as_slice())?
+                .into_iter()
+                .map(|t| t.into())
+                .collect::<Vec<PyTable>>())
+        })
     }
 
     pub fn __len__(&self) -> PyResult<usize> {
@@ -226,9 +260,9 @@ impl PyTable {
     }
 
     #[staticmethod]
-    pub fn concat(tables: Vec<Self>) -> PyResult<Self> {
+    pub fn concat(py: Python, tables: Vec<Self>) -> PyResult<Self> {
         let tables: Vec<_> = tables.iter().map(|t| &t.table).collect();
-        Ok(Table::concat(tables.as_slice())?.into())
+        py.allow_threads(|| Ok(Table::concat(tables.as_slice())?.into()))
     }
 
     #[staticmethod]
