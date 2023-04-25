@@ -379,6 +379,10 @@ impl Table {
         let schema = Schema::new(fields);
         Table::new(schema, result_series)
     }
+    pub fn as_physical(&self) -> DaftResult<Self> {
+        let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.as_physical()).collect();
+        Table::from_columns(new_series?)
+    }
 }
 
 impl Display for Table {

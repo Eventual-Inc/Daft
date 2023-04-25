@@ -6,8 +6,14 @@ import numpy as np
 import pytest
 
 from daft import DataType, col, utils
+from daft.series import Series
 from daft.table import Table
-from tests.table import daft_nonnull_types, daft_numeric_types, daft_string_types
+from tests.table import (
+    daft_comparable_types,
+    daft_nonnull_types,
+    daft_numeric_types,
+    daft_string_types,
+)
 
 test_table_count_cases = [
     ([], {"count": [0]}),
@@ -319,3 +325,15 @@ def test_table_agg_groupby(case) -> None:
     assert set(utils.freeze(utils.pydict_to_rows(daft_table.to_pydict()))) == set(
         utils.freeze(utils.pydict_to_rows(case["expected"]))
     )
+
+
+@pytest.mark.parametrize("dtype", daft_comparable_types, ids=[f"{_}" for _ in daft_comparable_types])
+def test_groupby_all_nulls(dtype) -> None:
+    daft_table = Table.from_pydict(
+        {
+            "group": Series.from_pylist([None, None, None]).cast(dtype),
+            "cookies": [1, 2, 3],
+        }
+    )
+    result_table = daft_table.agg([col("cookies")._sum()], group_by=[col("group")])
+    assert result_table.to_pydict() == {"group": [None], "cookies": [6]}

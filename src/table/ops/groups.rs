@@ -109,6 +109,6 @@ impl Table {
 
 impl IntoGroups for Table {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair> {
-        self.hash_grouper()
+        self.as_physical()?.hash_grouper()
     }
 }
