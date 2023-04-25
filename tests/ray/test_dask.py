@@ -6,12 +6,9 @@ import dask.dataframe as dd
 import numpy as np
 import pandas as pd
 import pytest
-import ray
 
 from daft import DataFrame, DataType
 from daft.context import get_context
-
-RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
 
 
 class MyObj:
