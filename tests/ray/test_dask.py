@@ -45,6 +45,24 @@ def test_to_dask_dataframe_all_arrow(n_partitions: int):
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
+def test_to_dask_dataframe_all_arrow_with_schema(n_partitions: int):
+    df = DataFrame.from_pydict(DATA).repartition(n_partitions)
+    df = df.with_column("floatcol", df["intcol"].cast(DataType.float64()))
+    ddf = df.to_dask_dataframe({"intcol": np.int64, "strcol": np.str_, "floatcol": np.float64})
+
+    rows = sorted(ddf.compute().to_dict("records"), key=lambda r: r["intcol"])
+    assert rows == sorted(
+        [
+            {"intcol": 1, "strcol": "a", "floatcol": 1.0},
+            {"intcol": 2, "strcol": "b", "floatcol": 2.0},
+            {"intcol": 3, "strcol": "c", "floatcol": 3.0},
+        ],
+        key=lambda r: r["intcol"],
+    )
+
+
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_dask_dataframe_with_py(n_partitions: int):
     df = DataFrame.from_pydict(DATA).repartition(n_partitions)
     df = df.with_column("pycol", df["intcol"].apply(lambda x: MyObj(x), DataType.python()))

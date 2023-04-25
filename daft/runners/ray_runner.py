@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterable
 
 import pyarrow as pa
 from loguru import logger
@@ -202,7 +202,10 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         # instead of Arrow tables as the codepath for Dataset creation is the same.
         return from_arrow_refs(blocks)
 
-    def to_dask_dataframe(self) -> dask.DataFrame:
+    def to_dask_dataframe(
+        self,
+        meta: (pd.DataFrame | pd.Series | dict[str, Any] | Iterable[Any] | tuple[Any] | None) = None,
+    ) -> dask.DataFrame:
         import dask
         import dask.dataframe as dd
         from ray.util.dask import ray_dask_get
@@ -216,7 +219,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         ddf_parts = [
             _make_dask_dataframe_partition_from_vpartition(self._partitions[k]) for k in self._partitions.keys()
         ]
-        return dd.from_delayed(ddf_parts)
+        return dd.from_delayed(ddf_parts, meta=meta)
 
     def get_partition(self, idx: PartID) -> ray.ObjectRef:
         return self._partitions[idx]
