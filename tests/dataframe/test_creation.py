@@ -6,6 +6,7 @@ import tempfile
 import uuid
 
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
@@ -117,6 +118,54 @@ def test_create_dataframe_pydict_bad_columns() -> None:
     with pytest.raises(ValueError) as e:
         DataFrame.from_pydict({"foo": "somestring"})
     assert "Creating a Series from data of type" in str(e.value)
+
+
+###
+# Arrow tests
+###
+
+
+def test_create_dataframe_arrow(valid_data: list[dict[str, float]]) -> None:
+    t = pa.Table.from_pylist(valid_data)
+    df = DataFrame.from_arrow(t)
+    assert set(df.column_names) == set(t.column_names)
+    casted_field = t.schema.field("variety").with_type(pa.large_string())
+    expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
+    # Check roundtrip.
+    assert df.to_arrow() == expected
+
+
+###
+# Pandas tests
+###
+
+
+def test_create_dataframe_pandas(valid_data: list[dict[str, float]]) -> None:
+    pd_df = pd.DataFrame(valid_data)
+    df = DataFrame.from_pandas(pd_df)
+    assert set(df.column_names) == set(pd_df.columns)
+    # Check roundtrip.
+    pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
+
+
+def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    pydict["obj"] = [MyObj() for _ in range(len(valid_data))]
+    pd_df = pd.DataFrame(pydict)
+    df = DataFrame.from_pandas(pd_df)
+    assert set(df.column_names) == set(pd_df.columns)
+    # Check roundtrip.
+    pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
+
+
+def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    pydict["obj"] = pd.Series([np.ones((2, 2)) for _ in range(len(valid_data))])
+    pd_df = pd.DataFrame(pydict)
+    df = DataFrame.from_pandas(pd_df)
+    assert set(df.column_names) == set(pd_df.columns)
+    # Check roundtrip.
+    pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
 
 
 @pytest.mark.parametrize(

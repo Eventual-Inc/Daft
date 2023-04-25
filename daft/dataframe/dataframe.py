@@ -46,7 +46,7 @@ from daft.viz import DataFrameDisplay
 if TYPE_CHECKING:
     from ray.data.dataset import Dataset as RayDataset
     import numpy as np
-    import pandas
+    import pandas as pd
     import pyarrow as pa
     import dask
 
@@ -281,13 +281,61 @@ class DataFrame:
             )
 
         data_vpartition = Table.from_pydict(data)
-        result_pset = LocalPartitionSet({0: data_vpartition})
+        return cls._from_table(data_vpartition)
+
+    @classmethod
+    @DataframePublicAPI
+    def from_arrow(cls, data: "pa.Table") -> "DataFrame":
+        """Creates a DataFrame from a pyarrow Table.
+
+        Example:
+            >>> t = pa.table({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+            >>> df = DataFrame.from_arrow(t)
+
+        Args:
+            data: pyarrow Table that we wish to convert into a Daft DataFrame.
+
+        Returns:
+            DataFrame: DataFrame created from the provided pyarrow Table.
+        """
+        data_vpartition = Table.from_arrow(data)
+        return cls._from_table(data_vpartition)
+
+    @classmethod
+    @DataframePublicAPI
+    def from_pandas(cls, data: "pd.DataFrame") -> "DataFrame":
+        """Creates a Daft DataFrame from a pandas DataFrame.
+
+        Example:
+            >>> pd_df = pd.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+            >>> df = DataFrame.from_pandas(pd_df))
+
+        Args:
+            data: pandas DataFrame that we wish to convert into a Daft DataFrame.
+
+        Returns:
+            DataFrame: Daft DataFrame created from the provided pandas DataFrame.
+        """
+        data_vpartition = Table.from_pandas(data)
+        return cls._from_table(data_vpartition)
+
+    @classmethod
+    def _from_table(cls, part: Table) -> "DataFrame":
+        """Creates a Daft DataFrame from a single Table.
+
+        Args:
+            part: The Table that we wish to convert into a Daft DataFrame.
+
+        Returns:
+            DataFrame: Daft DataFrame created from the provided Table.
+        """
+        result_pset = LocalPartitionSet({0: part})
 
         cache_entry = get_context().runner().put_partition_set_into_cache(result_pset)
 
         plan = logical_plan.InMemoryScan(
             cache_entry=cache_entry,
-            schema=data_vpartition.schema(),
+            schema=part.schema(),
         )
         return cls(plan)
 
@@ -1177,7 +1225,7 @@ class DataFrame:
         raise RuntimeError(message)
 
     @DataframePublicAPI
-    def to_pandas(self) -> "pandas.DataFrame":
+    def to_pandas(self) -> "pd.DataFrame":
         """Converts the current DataFrame to a pandas DataFrame.
         If results have not computed yet, collect will be called.
 
