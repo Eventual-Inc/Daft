@@ -44,6 +44,18 @@ From In-Memory Data
     daft.DataFrame.from_pylist
     daft.DataFrame.from_pydict
 
+From Integrations
+*****************
+
+.. _df-from-integrations:
+
+.. autosummary::
+    :nosignatures:
+    :toctree: dataframe_methods
+
+    daft.DataFrame.from_ray_dataset
+    daft.DataFrame.from_dask_dataframe
+
 
 .. _dataframe-api-operations:
 
@@ -167,7 +179,7 @@ Writing Data
 Integrations
 ************
 
-.. _df-to-pandas:
+.. _df-to-integrations:
 
 .. autosummary::
     :nosignatures:
@@ -175,6 +187,7 @@ Integrations
 
     daft.DataFrame.to_pandas
     daft.DataFrame.to_ray_dataset
+    daft.DataFrame.to_dask_dataframe
 
 Schema and Lineage
 ##################

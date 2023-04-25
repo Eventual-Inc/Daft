@@ -150,7 +150,22 @@ class Table:
     def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
         if not _PANDAS_AVAILABLE:
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
-        return self.to_arrow().to_pandas()
+        python_fields = {field.name for field in self.schema() if field.dtype == DataType.python()}
+        if python_fields:
+            # Use Python list representation for Python typed columns.
+            table = {}
+            for colname in self.column_names():
+                column_series = self.get_column(colname)
+                if colname in python_fields:
+                    column = column_series.to_pylist()
+                else:
+                    # Arrow-native field, so provide column as Arrow array.
+                    column = column_series.to_arrow()
+                table[colname] = column
+
+            return pd.DataFrame.from_dict(table)
+        else:
+            return self.to_arrow().to_pandas()
 
     ###
     # Compute methods (Table -> Table)
