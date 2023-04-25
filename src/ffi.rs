@@ -1,7 +1,9 @@
 use arrow2::{array::Array, datatypes::Field, ffi};
 
+use pyo3::exceptions::PyValueError;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 use pyo3::{PyAny, PyObject, PyResult, Python};
 
 use crate::{
@@ -48,14 +50,15 @@ pub fn record_batches_to_table(
     let mut extracted_arrow_arrays: Vec<Vec<Box<dyn arrow2::array::Array>>> =
         Vec::with_capacity(num_batches);
     for rb in batches {
-        let columns: Vec<Box<dyn arrow2::array::Array>> = (0..names.len())
-            .map(|i| {
-                let arr = rb
-                    .call_method1(pyo3::intern!(rb.py(), "column"), (i,))
-                    .unwrap();
-                array_to_rust(arr).unwrap()
-            })
-            .collect();
+        let pycolumns = rb.getattr(pyo3::intern!(rb.py(), "columns"))?;
+        let columns = pycolumns
+            .cast_as::<PyList>()?
+            .into_iter()
+            .map(array_to_rust)
+            .collect::<PyResult<Vec<_>>>()?;
+        if names.len() != columns.len() {
+            return Err(PyValueError::new_err(format!("Error when converting Arrow Record Batches to Daft Table. Expected: {} columns, got: {}", names.len(), columns.len())));
+        }
         extracted_arrow_arrays.push(columns);
     }
     // Now do the heavy lifting (casting and concats) without the GIL.
