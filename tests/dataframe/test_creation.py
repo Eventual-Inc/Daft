@@ -133,9 +133,14 @@ def test_create_dataframe_pydict_bad_columns() -> None:
 ###
 
 
-def test_create_dataframe_arrow(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("multiple", [False, True])
+def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) -> None:
     t = pa.Table.from_pylist(valid_data)
+    if multiple:
+        t = [t, t, t]
     df = DataFrame.from_arrow(t)
+    if multiple:
+        t = pa.concat_tables(t)
     assert set(df.column_names) == set(t.column_names)
     casted_field = t.schema.field("variety").with_type(pa.large_string())
     expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
@@ -148,9 +153,14 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]]) -> None:
 ###
 
 
-def test_create_dataframe_pandas(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("multiple", [False, True])
+def test_create_dataframe_pandas(valid_data: list[dict[str, float]], multiple) -> None:
     pd_df = pd.DataFrame(valid_data)
+    if multiple:
+        pd_df = [pd_df, pd_df, pd_df]
     df = DataFrame.from_pandas(pd_df)
+    if multiple:
+        pd_df = pd.concat(pd_df).reset_index(drop=True)
     assert set(df.column_names) == set(pd_df.columns)
     # Check roundtrip.
     pd.testing.assert_frame_equal(df.to_pandas(), pd_df)

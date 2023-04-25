@@ -281,11 +281,11 @@ class DataFrame:
             )
 
         data_vpartition = Table.from_pydict(data)
-        return cls._from_table(data_vpartition)
+        return cls._from_tables(data_vpartition)
 
     @classmethod
     @DataframePublicAPI
-    def from_arrow(cls, data: "pa.Table") -> "DataFrame":
+    def from_arrow(cls, data: Union["pa.Table", List["pa.Table"]]) -> "DataFrame":
         """Creates a DataFrame from a pyarrow Table.
 
         Example:
@@ -293,17 +293,19 @@ class DataFrame:
             >>> df = DataFrame.from_arrow(t)
 
         Args:
-            data: pyarrow Table that we wish to convert into a Daft DataFrame.
+            data: pyarrow Table(s) that we wish to convert into a Daft DataFrame.
 
         Returns:
             DataFrame: DataFrame created from the provided pyarrow Table.
         """
-        data_vpartition = Table.from_arrow(data)
-        return cls._from_table(data_vpartition)
+        if not isinstance(data, list):
+            data = [data]
+        data_vpartitions = [Table.from_arrow(table) for table in data]
+        return cls._from_tables(*data_vpartitions)
 
     @classmethod
     @DataframePublicAPI
-    def from_pandas(cls, data: "pd.DataFrame") -> "DataFrame":
+    def from_pandas(cls, data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame":
         """Creates a Daft DataFrame from a pandas DataFrame.
 
         Example:
@@ -311,31 +313,36 @@ class DataFrame:
             >>> df = DataFrame.from_pandas(pd_df))
 
         Args:
-            data: pandas DataFrame that we wish to convert into a Daft DataFrame.
+            data: pandas DataFrame(s) that we wish to convert into a Daft DataFrame.
 
         Returns:
             DataFrame: Daft DataFrame created from the provided pandas DataFrame.
         """
-        data_vpartition = Table.from_pandas(data)
-        return cls._from_table(data_vpartition)
+        if not isinstance(data, list):
+            data = [data]
+        data_vpartitions = [Table.from_pandas(df) for df in data]
+        return cls._from_tables(*data_vpartitions)
 
     @classmethod
-    def _from_table(cls, part: Table) -> "DataFrame":
+    def _from_tables(cls, *parts: Table) -> "DataFrame":
         """Creates a Daft DataFrame from a single Table.
 
         Args:
-            part: The Table that we wish to convert into a Daft DataFrame.
+            parts: The Tables that we wish to convert into a Daft DataFrame.
 
         Returns:
             DataFrame: Daft DataFrame created from the provided Table.
         """
-        result_pset = LocalPartitionSet({0: part})
+        if not parts:
+            raise ValueError("Can't create a DataFrame from an empty list of tables.")
+
+        result_pset = LocalPartitionSet({i: part for i, part in enumerate(parts)})
 
         cache_entry = get_context().runner().put_partition_set_into_cache(result_pset)
 
         plan = logical_plan.InMemoryScan(
             cache_entry=cache_entry,
-            schema=part.schema(),
+            schema=parts[0].schema(),
         )
         return cls(plan)
 
