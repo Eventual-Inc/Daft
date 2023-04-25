@@ -55,7 +55,4 @@ impl Table {
         // Combine the groupkey columns and the aggregation result columns.
         Self::from_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
     }
-
-
-
 }

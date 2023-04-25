@@ -1,4 +1,13 @@
-use crate::{array::ops::{IntoGroups, GroupIndicesPair, arrow2::comparison::build_multi_array_is_equal, downcast::Downcastable}, table::Table, error::DaftResult, datatypes::{UInt64Array, UInt64Type}, series::Series};
+use crate::{
+    array::ops::{
+        arrow2::comparison::build_multi_array_is_equal, downcast::Downcastable, GroupIndicesPair,
+        IntoGroups,
+    },
+    datatypes::{UInt64Array, UInt64Type},
+    error::DaftResult,
+    series::Series,
+    table::Table,
+};
 
 impl Table {
     fn hash_grouper(&self) -> DaftResult<GroupIndicesPair> {
@@ -96,7 +105,6 @@ impl Table {
 
         Ok((key_indices, values_indices))
     }
-
 }
 
 impl IntoGroups for Table {
