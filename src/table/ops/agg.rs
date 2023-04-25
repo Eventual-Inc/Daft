@@ -1,16 +1,10 @@
 use crate::{
-    array::{
-        ops::{arrow2::comparison::build_multi_array_is_equal, GroupIndicesPair, IntoGroups},
-        BaseArray,
-    },
-    datatypes::{UInt64Array, UInt64Type},
+    array::{ops::IntoGroups, BaseArray},
+    datatypes::UInt64Array,
     dsl::Expr,
     error::{DaftError, DaftResult},
-    series::Series,
     table::Table,
 };
-
-use crate::array::ops::downcast::Downcastable;
 
 impl Table {
     pub fn agg(&self, to_agg: &[Expr], group_by: &[Expr]) -> DaftResult<Table> {
