@@ -24,6 +24,14 @@ class MyObj2:
     pass
 
 
+class MyObjWithValue:
+    def __init__(self, value: int):
+        self.value = value
+
+    def __eq__(self, other: MyObjWithValue):
+        return isinstance(other, MyObjWithValue) and self.value == other.value
+
+
 COL_NAMES = [
     "sepal_length",
     "sepal_width",
@@ -150,7 +158,7 @@ def test_create_dataframe_pandas(valid_data: list[dict[str, float]]) -> None:
 
 def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    pydict["obj"] = [MyObj() for _ in range(len(valid_data))]
+    pydict["obj"] = [MyObjWithValue(i) for i in range(len(valid_data))]
     pd_df = pd.DataFrame(pydict)
     df = DataFrame.from_pandas(pd_df)
     assert set(df.column_names) == set(pd_df.columns)
