@@ -47,24 +47,14 @@ impl Series {
                 // to create a Python list out of this series.
                 let old_pyseries = PySeries::from(self.clone());
 
-                let new_pyseries: PySeries = Python::with_gil(|py| {
-                    PyModule::import(py, pyo3::intern!(py, "daft.series"))
-                        .and_then(|daft_series_mod| {
-                            daft_series_mod.getattr(pyo3::intern!(py, "Series"))
-                        })
-                        .and_then(|daft_series_class| {
-                            daft_series_class.getattr(pyo3::intern!(py, "_from_pyseries"))
-                        })
-                        .and_then(|from_pyseries| from_pyseries.call1((old_pyseries,)))
-                        .and_then(|old_daft_series| {
-                            old_daft_series.call_method0(pyo3::intern!(py, "_cast_to_python"))
-                        })
-                        .and_then(|new_daft_series| {
-                            new_daft_series.getattr(pyo3::intern!(py, "_series"))
-                        })
-                        .and_then(|pyseries_any| -> Result<PySeries, PyErr> {
-                            pyseries_any.extract()
-                        })
+                let new_pyseries: PySeries = Python::with_gil(|py| -> PyResult<PySeries> {
+                    PyModule::import(py, pyo3::intern!(py, "daft.series"))?
+                        .getattr(pyo3::intern!(py, "Series"))?
+                        .getattr(pyo3::intern!(py, "_from_pyseries"))?
+                        .call1((old_pyseries,))?
+                        .call_method0(pyo3::intern!(py, "_cast_to_python"))?
+                        .getattr(pyo3::intern!(py, "_series"))?
+                        .extract()
                 })?;
 
                 return Ok(new_pyseries.into());
