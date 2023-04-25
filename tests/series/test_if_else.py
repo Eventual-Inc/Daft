@@ -86,52 +86,52 @@ def test_series_if_else_string(
     assert result.to_pylist() == [if_true_value, if_false_value, None]
 
 
+@pytest.mark.parametrize("if_true_value", [True, None])
+@pytest.mark.parametrize("if_false_value", [None, None])
 @pytest.mark.parametrize(
-    ["if_true", "if_false"],
-    [
-        # Same length, same type
-        (pa.array([True, True, True], type=pa.bool_()), pa.array([False, False, False], type=pa.bool_())),
-        # Same length, different super-castable type
-        (pa.array([True, True, True], type=pa.bool_()), pa.array([False, False, False], type=pa.bool_())),
-        # Broadcast left
-        (pa.array([True], type=pa.bool_()), pa.array([False, False, False], type=pa.bool_())),
-        # Broadcast right
-        (pa.array([True, True, True], type=pa.bool_()), pa.array([False], type=pa.bool_())),
-        # Broadcast both
-        (pa.array([True], type=pa.bool_()), pa.array([False], type=pa.bool_())),
-    ],
+    "if_true_length",
+    [1, 3],
 )
-def test_series_if_else_bool(if_true, if_false) -> None:
-    if_true_series = Series.from_arrow(if_true)
-    if_false_series = Series.from_arrow(if_false)
+@pytest.mark.parametrize(
+    "if_false_length",
+    [1, 3],
+)
+def test_series_if_else_bool(
+    if_true_value,
+    if_false_value,
+    if_true_length,
+    if_false_length,
+) -> None:
+    if_true_series = Series.from_arrow(pa.array([if_true_value] * if_true_length, type=pa.bool_()))
+    if_false_series = Series.from_arrow(pa.array([if_false_value] * if_false_length, type=pa.bool_()))
     predicate_series = Series.from_arrow(pa.array([True, False, None]))
     result = predicate_series.if_else(if_true_series, if_false_series)
     assert result.datatype() == DataType.bool()
-    assert result.to_pylist() == [True, False, None]
+    assert result.to_pylist() == [if_true_value, if_false_value, None]
 
 
+@pytest.mark.parametrize("if_true_value", [b"Y", None])
+@pytest.mark.parametrize("if_false_value", [b"N", None])
 @pytest.mark.parametrize(
-    ["if_true", "if_false"],
-    [
-        # Same length, same type
-        (pa.array([b"Y", b"Y", b"Y"], type=pa.binary()), pa.array([b"N", b"N", b"N"], type=pa.binary())),
-        # Same length, different super-castable type
-        (pa.array([b"Y", b"Y", b"Y"], type=pa.binary()), pa.array([b"N", b"N", b"N"], type=pa.binary())),
-        # Broadcast left
-        (pa.array([b"Y"], type=pa.binary()), pa.array([b"N", b"N", b"N"], type=pa.binary())),
-        # Broadcast right
-        (pa.array([b"Y", b"Y", b"Y"], type=pa.binary()), pa.array([b"N"], type=pa.binary())),
-        # Broadcast both
-        (pa.array([b"Y"], type=pa.binary()), pa.array([b"N"], type=pa.binary())),
-    ],
+    "if_true_length",
+    [1, 3],
 )
-def test_series_if_else_binary(if_true, if_false) -> None:
-    if_true_series = Series.from_arrow(if_true)
-    if_false_series = Series.from_arrow(if_false)
+@pytest.mark.parametrize(
+    "if_false_length",
+    [1, 3],
+)
+def test_series_if_else_binary(
+    if_true_value,
+    if_false_value,
+    if_true_length,
+    if_false_length,
+) -> None:
+    if_true_series = Series.from_arrow(pa.array([if_true_value] * if_true_length, type=pa.binary()))
+    if_false_series = Series.from_arrow(pa.array([if_false_value] * if_false_length, type=pa.binary()))
     predicate_series = Series.from_arrow(pa.array([True, False, None]))
     result = predicate_series.if_else(if_true_series, if_false_series)
     assert result.datatype() == DataType.binary()
-    assert result.to_pylist() == [b"Y", b"N", None]
+    assert result.to_pylist() == [if_true_value, if_false_value, None]
 
 
 @pytest.mark.parametrize(
@@ -290,27 +290,23 @@ def test_series_if_else_struct(if_true, if_false, expected) -> None:
 
 
 @pytest.mark.parametrize(
-    ["if_true", "if_false"],
-    [
-        # Same length, same type
-        (pa.array([None, None, None], type=pa.null()), pa.array([None, None, None], type=pa.null())),
-        # Same length, different super-castable type
-        (pa.array([None, None, None], type=pa.null()), pa.array([None, None, None], type=pa.null())),
-        # Broadcast left
-        (pa.array([None], type=pa.null()), pa.array([None, None, None], type=pa.null())),
-        # Broadcast right
-        (pa.array([None, None, None], type=pa.null()), pa.array([None], type=pa.null())),
-        # Broadcast right
-        (pa.array([None], type=pa.null()), pa.array([None], type=pa.null())),
-    ],
+    "if_true_length",
+    [1, 3],
 )
-def test_series_if_else_nulls(if_true, if_false) -> None:
-    if_true_series = Series.from_arrow(if_true)
-    if_false_series = Series.from_arrow(if_false)
+@pytest.mark.parametrize(
+    "if_false_length",
+    [1, 3],
+)
+def test_series_if_else_nulls(
+    if_true_length,
+    if_false_length,
+) -> None:
+    if_true_series = Series.from_arrow(pa.array([None] * if_true_length, type=pa.null()))
+    if_false_series = Series.from_arrow(pa.array([None] * if_false_length, type=pa.null()))
     predicate_series = Series.from_arrow(pa.array([True, False, None]))
     result = predicate_series.if_else(if_true_series, if_false_series)
     assert result.datatype() == DataType.null()
-    assert result.to_pylist() == [None for _ in range(len(if_true))]
+    assert result.to_pylist() == [None, None, None]
 
 
 @pytest.mark.parametrize(
