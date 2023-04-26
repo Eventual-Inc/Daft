@@ -7,7 +7,6 @@ authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
   "pyarrow",
   "fsspec[http]",
-  "pydot",
   "loguru",
   "tabulate",
   "psutil",
