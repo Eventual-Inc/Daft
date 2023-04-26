@@ -71,7 +71,12 @@ class TreeNode(Generic[TreeNodeType]):
         return filename
 
     def to_dot(self) -> str:
-        import pydot
+        try:
+            import pydot
+        except ImportError:
+            raise ImportError(
+                "Error while importing pydot: please manually install `pip install pydot` for tree visualizations"
+            )
 
         graph: pydot.Graph = pydot.Dot("TreeNode", graph_type="digraph", bgcolor="white")  # type: ignore
         counter = 0

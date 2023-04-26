@@ -4,7 +4,6 @@ maturin
 pre-commit
 
 # Tracing
-# TODO: Do we need orjson and viztracer still?
 orjson  # orjson recommended for viztracer
 py-spy
 viztracer
@@ -18,7 +17,7 @@ pytest-cov
 # Testing dependencies
 dask
 lxml
-numpy < 1.24
+numpy
 pandas
 xxhash>=3.0.0
 
