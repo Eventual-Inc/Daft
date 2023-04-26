@@ -25,9 +25,9 @@ readme = "README.rst"
 requires-python = ">=3.7"
 
 [project.optional-dependencies]
-all = ["daft[aws, ray]"]
+all = ["getdaft[aws, ray]"]
 aws = ["s3fs"]
-experimental = ["daft[serving, iceberg]"]
+experimental = ["getdaft[serving, iceberg]"]
 iceberg = ["icebridge"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
