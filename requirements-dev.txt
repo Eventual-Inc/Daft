@@ -1,33 +1,33 @@
 # Development/Build utilities
+ipdb
 maturin
 pre-commit
-ipdb
 
 # Tracing
 # TODO: Do we need orjson and viztracer still?
 orjson  # orjson recommended for viztracer
-viztracer
 py-spy
+viztracer
 
 # Testing frameworks
+hypothesis
 pytest>=7.1.2
 pytest-benchmark
 pytest-cov
-hypothesis
 
 # Testing dependencies
-pandas
+dask
 lxml
 numpy < 1.24
+pandas
 xxhash>=3.0.0
-dask
 
 # Ray
-ray[data, default]
 grpcio<1.52.0  # Pin due to Ray issue: https://github.com/ray-project/ray/issues/32246
+ray[data, default]
 
 # Documentation
-Sphinx <= 5
 myst-nb>=0.16.0
+Sphinx <= 5
 sphinx-book-theme>=0.3.3,<1.0.0
 sphinx-reredirects>=0.1.1
