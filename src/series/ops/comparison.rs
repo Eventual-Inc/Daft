@@ -44,86 +44,37 @@ macro_rules! py_compare {
     }
 }
 
+macro_rules! impl_compare {
+    ($fname:ident, $pycmp:expr) => {
+        fn $fname(&self, rhs: &Series) -> Self::Output {
+            let (lhs, rhs) = match_types_on_series(self, rhs)?;
+
+            #[cfg(feature = "python")]
+            if lhs.data_type() == &DataType::Python {
+                py_compare!(lhs, rhs, $pycmp);
+            }
+
+            let lhs = lhs.as_physical()?;
+            let rhs = rhs.as_physical()?;
+
+            with_match_comparable_daft_types!(lhs.data_type(), |$T| {
+                let lhs = lhs.downcast::<$T>()?;
+                let rhs = rhs.downcast::<$T>()?;
+                lhs.$fname(rhs)
+            })
+        }
+    };
+}
+
 impl DaftCompare<&Series> for Series {
     type Output = DaftResult<BooleanArray>;
-    fn equal(&self, rhs: &Series) -> Self::Output {
-        let (lhs, rhs) = match_types_on_series(self, rhs)?;
 
-        #[cfg(feature = "python")]
-        if lhs.data_type() == &DataType::Python {
-            py_compare!(lhs, rhs, "==");
-        }
-
-        let lhs = lhs.as_physical()?;
-        let rhs = rhs.as_physical()?;
-
-        with_match_comparable_daft_types!(lhs.data_type(), |$T| {
-            let lhs = lhs.downcast::<$T>()?;
-            let rhs = rhs.downcast::<$T>()?;
-            lhs.equal(rhs)
-        })
-    }
-
-    fn not_equal(&self, rhs: &Series) -> Self::Output {
-        let (lhs, rhs) = match_types_on_series(self, rhs)?;
-
-        let lhs = lhs.as_physical()?;
-        let rhs = rhs.as_physical()?;
-
-        with_match_comparable_daft_types!(lhs.data_type(), |$T| {
-            let lhs = lhs.downcast::<$T>()?;
-            let rhs = rhs.downcast::<$T>()?;
-            lhs.not_equal(rhs)
-        })
-    }
-
-    fn lt(&self, rhs: &Series) -> Self::Output {
-        let (lhs, rhs) = match_types_on_series(self, rhs)?;
-        let lhs = lhs.as_physical()?;
-        let rhs = rhs.as_physical()?;
-
-        with_match_comparable_daft_types!(lhs.data_type(), |$T| {
-            let lhs = lhs.downcast::<$T>()?;
-            let rhs = rhs.downcast::<$T>()?;
-            lhs.lt(rhs)
-        })
-    }
-
-    fn lte(&self, rhs: &Series) -> Self::Output {
-        let (lhs, rhs) = match_types_on_series(self, rhs)?;
-        let lhs = lhs.as_physical()?;
-        let rhs = rhs.as_physical()?;
-
-        with_match_comparable_daft_types!(lhs.data_type(), |$T| {
-            let lhs = lhs.downcast::<$T>()?;
-            let rhs = rhs.downcast::<$T>()?;
-            lhs.lte(rhs)
-        })
-    }
-
-    fn gt(&self, rhs: &Series) -> Self::Output {
-        let (lhs, rhs) = match_types_on_series(self, rhs)?;
-        let lhs = lhs.as_physical()?;
-        let rhs = rhs.as_physical()?;
-
-        with_match_comparable_daft_types!(lhs.data_type(), |$T| {
-            let lhs = lhs.downcast::<$T>()?;
-            let rhs = rhs.downcast::<$T>()?;
-            lhs.gt(rhs)
-        })
-    }
-
-    fn gte(&self, rhs: &Series) -> Self::Output {
-        let (lhs, rhs) = match_types_on_series(self, rhs)?;
-        let lhs = lhs.as_physical()?;
-        let rhs = rhs.as_physical()?;
-
-        with_match_comparable_daft_types!(lhs.data_type(), |$T| {
-            let lhs = lhs.downcast::<$T>()?;
-            let rhs = rhs.downcast::<$T>()?;
-            lhs.gte(rhs)
-        })
-    }
+    impl_compare!(equal, "==");
+    impl_compare!(not_equal, "!=");
+    impl_compare!(lt, "<");
+    impl_compare!(lte, "<=");
+    impl_compare!(gt, ">");
+    impl_compare!(gte, ">=");
 }
 
 impl DaftLogical<&Series> for Series {
