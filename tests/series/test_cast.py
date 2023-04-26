@@ -112,3 +112,13 @@ def test_series_cast_from_python(dtype, pytype) -> None:
     assert t.datatype() == dtype
     expected_val = pytype(PycastableObject())
     assert t.to_pylist() == [expected_val, None, expected_val]
+
+
+def test_series_cast_python_to_null() -> None:
+    data = [object(), None, object()]
+    s = Series.from_pylist(data)
+
+    t = s.cast(DataType.null())
+
+    assert t.datatype() == DataType.null()
+    assert t.to_pylist() == [None, None, None]
