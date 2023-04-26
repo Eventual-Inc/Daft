@@ -22,7 +22,7 @@ pandas
 xxhash>=3.0.0
 
 # Ray
-grpcio<1.52.0  # Pin due to Ray issue: https://github.com/ray-project/ray/issues/32246
+grpcio
 ray[data, default]
 
 # Documentation
