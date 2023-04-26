@@ -25,7 +25,6 @@ repos:
     - --no-sort-keys
     - '--indent=  '
   - id: check-added-large-files
-  - id: requirements-txt-fixer
   - id: check-merge-conflict
   - id: check-docstring-first
   - id: check-toml

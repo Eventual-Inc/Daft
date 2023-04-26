@@ -35,7 +35,7 @@ hooks: venv
 
 .PHONY: build
 build: venv  ## Compile and install Daft for development
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --extras=all
 
 .PHONY: build-release
 build-release: venv  ## Compile and install a faster Daft binary
