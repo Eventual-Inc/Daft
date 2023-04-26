@@ -480,7 +480,7 @@ mod tests {
     use super::*;
     use crate::dsl::lit;
     #[test]
-    fn check_comparision_type() -> DaftResult<()> {
+    fn check_comparison_type() -> DaftResult<()> {
         let x = lit(10.);
         let y = lit(12);
         let schema = Schema::empty();

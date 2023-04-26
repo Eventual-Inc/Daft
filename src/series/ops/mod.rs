@@ -8,7 +8,7 @@ pub mod agg;
 pub mod arithmetic;
 pub mod broadcast;
 pub mod cast;
-pub mod comparision;
+pub mod comparison;
 pub mod concat;
 pub mod date;
 pub mod downcast;
