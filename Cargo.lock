@@ -146,6 +146,7 @@ version = "0.0.23"
 dependencies = [
  "arrow2",
  "bincode",
+ "dyn-clone",
  "fnv",
  "indexmap",
  "num-traits",

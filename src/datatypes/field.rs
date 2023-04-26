@@ -29,6 +29,13 @@ impl Field {
     pub fn rename<S: Into<String>>(&self, name: S) -> Self {
         Field::new(name, self.dtype.clone())
     }
+    pub fn to_list_field(&self) -> Self {
+        let list_dtype = DataType::List(Box::new(self.clone()));
+        Field {
+            name: self.name.clone(),
+            dtype: list_dtype,
+        }
+    }
 }
 
 impl From<&ArrowField> for Field {

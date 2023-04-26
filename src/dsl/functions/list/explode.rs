@@ -20,7 +20,7 @@ impl FunctionEvaluator for ExplodeEvaluator {
             [input] => {
                 let field = input.to_field(schema)?;
                 let exploded_dtype = field.dtype.get_exploded_dtype()?;
-                Ok(Field::new(field.name, exploded_dtype))
+                Ok(Field::new(field.name, exploded_dtype.clone()))
             }
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
