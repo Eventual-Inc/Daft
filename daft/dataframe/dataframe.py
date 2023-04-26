@@ -1237,7 +1237,7 @@ class DataFrame:
         If results have not computed yet, collect will be called.
 
         Returns:
-            pandas.DataFrame: pandas DataFrame converted from a Daft DataFrame
+            pd.DataFrame: pandas DataFrame converted from a Daft DataFrame
 
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
