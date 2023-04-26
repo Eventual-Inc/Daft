@@ -6,19 +6,17 @@ use crate::{
     error::DaftResult,
 };
 
-use super::{downcast::Downcastable, DaftListAggable};
+use super::DaftListAggable;
 
 use dyn_clone::clone_box;
 
 impl<T> DaftListAggable for DataArray<T>
 where
     T: DaftArrowBackedType,
-    DataArray<T>: Downcastable,
-    <DataArray<T> as Downcastable>::Output: arrow2::array::Array,
 {
     type Output = DaftResult<ListArray>;
     fn list(&self) -> Self::Output {
-        let child_array = clone_box(self.downcast() as &dyn arrow2::array::Array);
+        let child_array = clone_box(self.data.as_ref() as &dyn arrow2::array::Array);
         let arrow_type = child_array.data_type();
         let offsets = arrow2::offset::OffsetsBuffer::try_from(vec![0, child_array.len() as i64])?;
         let nested_array = Box::new(arrow2::array::ListArray::<i64>::try_new(
