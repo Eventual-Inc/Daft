@@ -201,6 +201,10 @@ impl Expr {
         Expr::Agg(AggExpr::Max(self.clone().into()))
     }
 
+    pub fn list(&self) -> Self {
+        Expr::Agg(AggExpr::List(self.clone().into()))
+    }
+
     pub fn not(&self) -> Self {
         Expr::Not(self.clone().into())
     }

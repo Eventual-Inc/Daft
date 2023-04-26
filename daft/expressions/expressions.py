@@ -261,6 +261,10 @@ class Expression:
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
+    def _list(self) -> Expression:
+        expr = self._expr.list()
+        return Expression._from_pyexpr(expr)
+
     def _explode(self) -> Expression:
         expr = self._expr.explode()
         return Expression._from_pyexpr(expr)
