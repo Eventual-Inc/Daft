@@ -79,20 +79,47 @@ impl DaftCompare<&Series> for Series {
     impl_compare!(gte, ">=");
 }
 
+// macro_rules! impl_logical {
+//     ($fname:ident, $pyop:expr) => {
+//         fn $fname(&self, other: &Series) -> Self::Output {
+//             let (lhs, rhs) = match_types_on_series(self, other)?;
+
+//             #[cfg(feature = "python")]
+//             if lhs.data_type() == &DataType::Python {
+//                 return py_compare!(lhs, rhs, $pyop);
+//             }
+
+//             if lhs.data_type() != &DataType::Boolean {
+//                 return Err(DaftError::TypeError(format!(
+//                     "Can only perform logical operations on boolean supertype, but got left series {} and right series {} with supertype {}",
+//                     self.field(),
+//                     other.field(),
+//                     lhs.data_type(),
+//                 )));
+//             }
+//             self.downcast::<BooleanType>()?
+//                 .$fname(rhs.downcast::<BooleanType>()?)
+//         }
+//     };
+// }
+
 impl DaftLogical<&Series> for Series {
     type Output = DaftResult<BooleanArray>;
-    fn and(&self, rhs: &Series) -> Self::Output {
-        if self.data_type() != &DataType::Boolean {
+
+    fn and(&self, other: &Series) -> Self::Output {
+        let (lhs, rhs) = match_types_on_series(self, other)?;
+
+        #[cfg(feature = "python")]
+        if lhs.data_type() == &DataType::Python {
+            return py_compare!(lhs, rhs, "&");
+        }
+
+        if lhs.data_type() != &DataType::Boolean {
             return Err(DaftError::TypeError(format!(
-                "Can only perform Logical Operations on Boolean DataTypes, got {} for Series {}",
-                self.data_type(),
-                self.name()
-            )));
-        } else if rhs.data_type() != &DataType::Boolean {
-            return Err(DaftError::TypeError(format!(
-                "Can only perform Logical Operations on Boolean DataTypes, got {} for Series {}",
-                rhs.data_type(),
-                rhs.name()
+                "Can only perform logical operations on boolean supertype, but got left series {} and right series {} with supertype {}",
+                self.field(),
+                other.field(),
+                lhs.data_type(),
             )));
         }
         self.downcast::<BooleanType>()?
