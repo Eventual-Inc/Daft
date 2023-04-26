@@ -96,7 +96,7 @@ class Series:
         pylist = self.to_pylist()
         return Series.from_pylist(pylist, self.name(), pyobj="force")
 
-    def _pycast_to_pynative(self, type_: type) -> Series:
+    def _pycast_to_pynative(self, typefn: type) -> Series:
         """Apply Python-level casting to this Series.
 
         Call Series.to_pylist(), apply the Python cast (e.g. str(x)),
@@ -108,7 +108,7 @@ class Series:
         Do not call this method directly in Python; call cast() instead.
         """
         pylist = self.to_pylist()
-        pylist = [type_(_) for _ in pylist]
+        pylist = [typefn(_) if _ is not None else None for _ in pylist]
         return Series.from_pylist(pylist, self.name(), pyobj="disallow")
 
     @staticmethod
