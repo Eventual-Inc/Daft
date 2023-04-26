@@ -1,4 +1,4 @@
-use crate::{datatypes::DataType, error::DaftResult, series::Series};
+use crate::{array::BaseArray, datatypes::DataType, error::DaftResult, series::Series};
 
 #[macro_export]
 macro_rules! apply_method_all_arrow_series {
@@ -97,11 +97,20 @@ impl Series {
 
                 return Ok(new_pyseries.into());
             } else if self.data_type() == &DataType::Python {
-                // Convert something from Python to Arrow.
-                // Complex. Need to apply a Python-side cast to a relevant Python native type,
-                // and then use our existing Python native -> Arrow import logic.
+                // Convert Python type to an Arrow type.
+                // The semantics of this cast is:
+                // we will call the appropriate Python cast function on the Python object,
+                // then call the Arrow cast function.
                 match datatype {
-                    DataType::Null => todo!(),
+                    DataType::Null => {
+                        // (Follow Arrow cast behaviour: turn all elements into Null.)
+                        let null_array = crate::datatypes::NullArray::full_null(
+                            self.name(),
+                            &DataType::Null,
+                            self.len(),
+                        );
+                        return Ok(null_array.into_series());
+                    }
                     DataType::Boolean => pycast_then_arrowcast!(self, DataType::Boolean, "bool"),
                     DataType::Binary => pycast_then_arrowcast!(self, DataType::Binary, "bytes"),
                     DataType::Utf8 => pycast_then_arrowcast!(self, DataType::Utf8, "str"),
