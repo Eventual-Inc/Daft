@@ -226,14 +226,21 @@ impl Expr {
                 match op {
                     // Logical operations
                     Operator::And | Operator::Or | Operator::Xor => {
-                        if left_field.dtype != DataType::Boolean
-                            || right_field.dtype != DataType::Boolean
-                        {
-                            return Err(DaftError::TypeError(format!(
-                                "Expected all boolean arguments for {op} but received {left_field} {op} {right_field}",
-                            )));
+                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
+                            Ok(DataType::Boolean) => Ok(Field::new(
+                                left_field.name.as_str(),
+                                DataType::Boolean,
+                            )),
+                            #[cfg(feature = "python")]
+                            Ok(DataType::Python) => Ok(Field::new(
+                                left_field.name.as_str(),
+                                DataType::Boolean,
+                            )),
+                            Ok(other_stype) => Err(DaftError::TypeError(format!(
+                                "Expected boolean supertype arguments for {op} but received {left_field} {op} {right_field} with supertype {other_stype}",
+                            ))),
+                            Err(_) => Err(DaftError::TypeError(format!("Expected left and right arguments to be castable to the same supertype for comparison {op}, but received {left_field} and {right_field}"))),
                         }
-                        Ok(Field::new(left_field.name.as_str(), DataType::Boolean))
                     }
 
                     // Comparison operations
