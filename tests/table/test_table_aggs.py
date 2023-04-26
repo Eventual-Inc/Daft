@@ -429,3 +429,37 @@ def test_global_list_aggs(dtype) -> None:
     result = daft_table.eval_expression_list([col("input").alias("list")._list()])
     assert result.get_column("list").datatype() == DataType.list("list", dtype)
     assert result.to_pydict() == {"list": [daft_table.to_pydict()["input"]]}
+
+
+@pytest.mark.parametrize(
+    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+)
+def test_grouped_list_aggs(dtype) -> None:
+    groups = [None, 1, None, 1, 2, 2]
+    input = [None, 0, 1, 2, None, 4]
+    expected_idx = [[1, 3], [4, 5], [0, 2]]
+
+    if dtype == DataType.date():
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+    daft_table = Table.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
+    result = daft_table.agg([col("input").alias("list")._list()], group_by=[col("groups")]).sort([col("groups")])
+    assert result.get_column("list").datatype() == DataType.list("list", dtype)
+
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+    expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
+
+    assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
+
+
+def test_list_aggs_empty() -> None:
+
+    daft_table = Table.from_pydict({"col_A": [], "col_B": []})
+    daft_table = daft_table.agg(
+        [col("col_A").alias("list")._list()],
+        group_by=[col("col_B")],
+    )
+
+    res = daft_table.to_pydict()
+
+    assert res == {"col_B": [], "list": []}

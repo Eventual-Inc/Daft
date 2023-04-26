@@ -142,7 +142,7 @@ impl AggExpr {
                         "We can only perform List Aggregation on Arrow Compatible Types, got: {field}",
                     )));
                 }
-                Ok(field.to_list_field())
+                field.to_list_field()
             }
         }
     }
