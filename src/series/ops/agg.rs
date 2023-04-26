@@ -138,7 +138,7 @@ impl Series {
         use crate::array::ops::DaftListAggable;
         with_match_arrow_daft_types!(self.data_type(), |$T| {
             match groups {
-                Some(_groups) => todo!("impl groups"),
+                Some(groups) => Ok(DaftListAggable::grouped_list(self.downcast::<$T>()?, groups)?.into_series()),
                 None => Ok(DaftListAggable::list(self.downcast::<$T>()?)?.into_series())
             }
         })

@@ -115,4 +115,5 @@ pub trait DaftCompareAggable {
 pub trait DaftListAggable {
     type Output;
     fn list(&self) -> Self::Output;
+    fn grouped_list(&self, groups: &GroupIndices) -> Self::Output;
 }

@@ -262,7 +262,7 @@ test_table_agg_groupby_cases = [
         "aggs": [
             col("cookies").alias("sum")._sum(),
             col("name").alias("count")._count(),
-            col("name").alias("list")._list(),
+            col("cookies").alias("list")._list(),
         ],
         "expected": {
             "name": ["Alice", "Bob", None],

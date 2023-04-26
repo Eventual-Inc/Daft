@@ -22,8 +22,9 @@ def pydict_to_rows(pydict: dict[str, list]) -> list[frozenset[tuple[str, Any]]]:
         {("fruit", "carrot"), ("number", 3)},
     ]
     """
-
-    return [frozenset((key, value) for key, value in zip(pydict.keys(), values)) for values in zip(*pydict.values())]
+    return [
+        frozenset((key, freeze(value)) for key, value in zip(pydict.keys(), values)) for values in zip(*pydict.values())
+    ]
 
 
 def freeze(input: dict | list | Any) -> frozenset | tuple | Any:
@@ -32,7 +33,6 @@ def freeze(input: dict | list | Any) -> frozenset | tuple | Any:
         return frozenset((key, freeze(value)) for key, value in input.items())
     elif isinstance(input, list):
         return tuple(freeze(item) for item in input)
-
     else:
         return input
 
