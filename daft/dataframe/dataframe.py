@@ -1337,8 +1337,8 @@ class DataFrame:
     def to_dask_dataframe(
         self,
         meta: Union[
-            "pandas.DataFrame",
-            "pandas.Series",
+            "pd.DataFrame",
+            "pd.Series",
             Dict[str, Any],
             Iterable[Any],
             Tuple[Any],
