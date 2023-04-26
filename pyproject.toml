@@ -10,7 +10,6 @@ dependencies = [
   "pydot",
   "loguru",
   "tabulate",
-  "pandas",
   "psutil",
   "typing-extensions >= 4.0.0; python_version < '3.8'",
   "pickle5 >= 0.0.12; python_version < '3.8'",
