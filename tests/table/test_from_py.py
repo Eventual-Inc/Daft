@@ -1,14 +1,163 @@
 from __future__ import annotations
 
+import datetime
 import itertools
 
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pac
 import pytest
+from ray.data.extensions import ArrowTensorArray, ArrowTensorType
 
+from daft import DataType
 from daft.series import Series
 from daft.table import Table
+
+PYTHON_TYPE_ARRAYS = {
+    "int": [1, 2],
+    "float": [1.0, 2.0],
+    "bool": [True, False],
+    "str": ["foo", "bar"],
+    "binary": [b"foo", b"bar"],
+    "date": [datetime.date.today(), datetime.date.today()],
+    "list": [[1, 2], [3]],
+    "struct": [{"a": 1, "b": 2.0}, {"b": 3.0}],
+    "tensor": list(np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])),
+    "null": [None, None],
+}
+
+
+INFERRED_TYPES = {
+    "int": DataType.int64(),
+    "float": DataType.float64(),
+    "bool": DataType.bool(),
+    "str": DataType.string(),
+    "binary": DataType.binary(),
+    "date": DataType.date(),
+    "list": DataType.list("item", DataType.int64()),
+    "struct": DataType.struct({"a": DataType.int64(), "b": DataType.float64()}),
+    "tensor": DataType.python(),
+    "null": DataType.null(),
+}
+
+
+ROUNDTRIP_TYPES = {
+    "int": pa.int64(),
+    "float": pa.float64(),
+    "bool": pa.bool_(),
+    "str": pa.large_string(),
+    "binary": pa.large_binary(),
+    "date": pa.date32(),
+    "list": pa.large_list(pa.int64()),
+    "struct": pa.struct({"a": pa.int64(), "b": pa.float64()}),
+    "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
+    "null": pa.null(),
+}
+
+
+ARROW_TYPE_ARRAYS = {
+    "int8": pa.array(PYTHON_TYPE_ARRAYS["int"], pa.int8()),
+    "int16": pa.array(PYTHON_TYPE_ARRAYS["int"], pa.int16()),
+    "int32": pa.array(PYTHON_TYPE_ARRAYS["int"], pa.int32()),
+    "int64": pa.array(PYTHON_TYPE_ARRAYS["int"], pa.int64()),
+    "uint8": pa.array(PYTHON_TYPE_ARRAYS["int"], pa.uint8()),
+    "uint16": pa.array(PYTHON_TYPE_ARRAYS["int"], pa.uint16()),
+    "uint32": pa.array(PYTHON_TYPE_ARRAYS["int"], pa.uint32()),
+    "uint64": pa.array(PYTHON_TYPE_ARRAYS["int"], pa.uint64()),
+    "float32": pa.array(PYTHON_TYPE_ARRAYS["float"], pa.float32()),
+    "float64": pa.array(PYTHON_TYPE_ARRAYS["float"], pa.float64()),
+    "string": pa.array(PYTHON_TYPE_ARRAYS["str"], pa.string()),
+    "binary": pa.array(PYTHON_TYPE_ARRAYS["binary"], pa.binary()),
+    "boolean": pa.array(PYTHON_TYPE_ARRAYS["bool"], pa.bool_()),
+    "date32": pa.array(PYTHON_TYPE_ARRAYS["date"], pa.date32()),
+    "list": pa.array(PYTHON_TYPE_ARRAYS["list"], pa.list_(pa.int64())),
+    "fixed_size_list": pa.array([[1, 2], [3, 4]], pa.list_(pa.int64(), 2)),
+    "struct": pa.array(PYTHON_TYPE_ARRAYS["struct"], pa.struct([("a", pa.int64()), ("b", pa.float64())])),
+    # TODO(Clark): Uncomment once extension type support has been added.
+    # "tensor": ArrowTensorArray.from_numpy(PYTHON_TYPE_ARRAYS["tensor"]),
+    "null": pa.array(PYTHON_TYPE_ARRAYS["null"], pa.null()),
+}
+
+
+ARROW_ROUNDTRIP_TYPES = {
+    "int8": pa.int8(),
+    "int16": pa.int16(),
+    "int32": pa.int32(),
+    "int64": pa.int64(),
+    "uint8": pa.uint8(),
+    "uint16": pa.uint16(),
+    "uint32": pa.uint32(),
+    "uint64": pa.uint64(),
+    "float32": pa.float32(),
+    "float64": pa.float64(),
+    "string": pa.large_string(),
+    "binary": pa.large_binary(),
+    "boolean": pa.bool_(),
+    "date32": pa.date32(),
+    "list": pa.large_list(pa.int64()),
+    "fixed_size_list": pa.list_(pa.int64(), 2),
+    "struct": pa.struct([("a", pa.int64()), ("b", pa.float64())]),
+    # TODO(Clark): Uncomment once extension type support has been added.
+    # "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
+    "null": pa.null(),
+}
+
+
+def test_from_pydict_roundtrip() -> None:
+    table = Table.from_pydict(PYTHON_TYPE_ARRAYS)
+    assert len(table) == 2
+    assert set(table.column_names()) == set(PYTHON_TYPE_ARRAYS.keys())
+    for field in table.schema():
+        assert field.dtype == INFERRED_TYPES[field.name]
+    schema = pa.schema(ROUNDTRIP_TYPES)
+    arrs = {}
+    for col_name, col in PYTHON_TYPE_ARRAYS.items():
+        if col_name == "tensor":
+            arrs[col_name] = ArrowTensorArray.from_numpy(col)
+        else:
+            arrs[col_name] = pa.array(col, type=schema.field(col_name).type)
+    expected_table = pa.table(arrs, schema=schema)
+    assert table.to_arrow() == expected_table
+
+
+def test_from_pydict_arrow_roundtrip() -> None:
+    table = Table.from_pydict(ARROW_TYPE_ARRAYS)
+    assert len(table) == 2
+    assert set(table.column_names()) == set(ARROW_TYPE_ARRAYS.keys())
+    for field in table.schema():
+        assert field.dtype == DataType.from_arrow_type(ARROW_TYPE_ARRAYS[field.name].type)
+    expected_table = pa.table(ARROW_TYPE_ARRAYS).cast(pa.schema(ARROW_ROUNDTRIP_TYPES))
+    assert table.to_arrow() == expected_table
+
+
+def test_from_arrow_roundtrip() -> None:
+    pa_table = pa.table(ARROW_TYPE_ARRAYS)
+    table = Table.from_arrow(pa_table)
+    assert len(table) == 2
+    assert set(table.column_names()) == set(ARROW_TYPE_ARRAYS.keys())
+    for field in table.schema():
+        assert field.dtype == DataType.from_arrow_type(ARROW_TYPE_ARRAYS[field.name].type)
+    expected_table = pa.table(ARROW_TYPE_ARRAYS).cast(pa.schema(ARROW_ROUNDTRIP_TYPES))
+    assert table.to_arrow() == expected_table
+
+
+def test_from_pandas_roundtrip() -> None:
+    # TODO(Clark): Remove struct column until our .to_pandas() representation is
+    # consistent with pyarrow's.
+    # Our struct representation, when converted to pandas, currently materializes the Nones
+    # while pyarrow's does not.
+    data = {col_name: col for col_name, col in PYTHON_TYPE_ARRAYS.items() if col_name != "struct"}
+    df = pd.DataFrame(data)
+    table = Table.from_pandas(df)
+    assert len(table) == 2
+    assert set(table.column_names()) == set(data.keys())
+    for field in table.schema():
+        assert field.dtype == INFERRED_TYPES[field.name]
+    # pyarrow --> pandas doesn't preserve the datetime type for the "date" column, so we need to
+    # convert it before the comparison.
+    df["date"] = pd.to_datetime(df["date"]).astype("datetime64[s]")
+    pd.testing.assert_frame_equal(table.to_pandas(), df)
 
 
 def test_from_pydict_list() -> None:
@@ -139,15 +288,6 @@ def test_from_pydict_series() -> None:
     daft_table = Table.from_pydict({"a": Series.from_arrow(pa.array([1, 2, 3], type=pa.int8()))})
     assert "a" in daft_table.column_names()
     assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int8())
-
-
-def test_from_arrow_round_trip() -> None:
-    pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = Table.from_arrow(pa_table)
-    assert len(daft_table) == 4
-    assert daft_table.column_names() == ["a", "b"]
-    read_back = daft_table.to_arrow()
-    assert pa_table == read_back
 
 
 @pytest.mark.parametrize(

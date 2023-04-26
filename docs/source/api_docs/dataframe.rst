@@ -43,6 +43,8 @@ From In-Memory Data
 
     daft.DataFrame.from_pylist
     daft.DataFrame.from_pydict
+    daft.DataFrame.from_arrow
+    daft.DataFrame.from_pandas
 
 From Integrations
 *****************

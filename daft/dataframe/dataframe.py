@@ -46,7 +46,7 @@ from daft.viz import DataFrameDisplay
 if TYPE_CHECKING:
     from ray.data.dataset import Dataset as RayDataset
     import numpy as np
-    import pandas
+    import pandas as pd
     import pyarrow as pa
     import dask
 
@@ -281,13 +281,68 @@ class DataFrame:
             )
 
         data_vpartition = Table.from_pydict(data)
-        result_pset = LocalPartitionSet({0: data_vpartition})
+        return cls._from_tables(data_vpartition)
+
+    @classmethod
+    @DataframePublicAPI
+    def from_arrow(cls, data: Union["pa.Table", List["pa.Table"]]) -> "DataFrame":
+        """Creates a DataFrame from a pyarrow Table.
+
+        Example:
+            >>> t = pa.table({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+            >>> df = DataFrame.from_arrow(t)
+
+        Args:
+            data: pyarrow Table(s) that we wish to convert into a Daft DataFrame.
+
+        Returns:
+            DataFrame: DataFrame created from the provided pyarrow Table.
+        """
+        if not isinstance(data, list):
+            data = [data]
+        data_vpartitions = [Table.from_arrow(table) for table in data]
+        return cls._from_tables(*data_vpartitions)
+
+    @classmethod
+    @DataframePublicAPI
+    def from_pandas(cls, data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame":
+        """Creates a Daft DataFrame from a pandas DataFrame.
+
+        Example:
+            >>> pd_df = pd.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+            >>> df = DataFrame.from_pandas(pd_df))
+
+        Args:
+            data: pandas DataFrame(s) that we wish to convert into a Daft DataFrame.
+
+        Returns:
+            DataFrame: Daft DataFrame created from the provided pandas DataFrame.
+        """
+        if not isinstance(data, list):
+            data = [data]
+        data_vpartitions = [Table.from_pandas(df) for df in data]
+        return cls._from_tables(*data_vpartitions)
+
+    @classmethod
+    def _from_tables(cls, *parts: Table) -> "DataFrame":
+        """Creates a Daft DataFrame from a single Table.
+
+        Args:
+            parts: The Tables that we wish to convert into a Daft DataFrame.
+
+        Returns:
+            DataFrame: Daft DataFrame created from the provided Table.
+        """
+        if not parts:
+            raise ValueError("Can't create a DataFrame from an empty list of tables.")
+
+        result_pset = LocalPartitionSet({i: part for i, part in enumerate(parts)})
 
         cache_entry = get_context().runner().put_partition_set_into_cache(result_pset)
 
         plan = logical_plan.InMemoryScan(
             cache_entry=cache_entry,
-            schema=data_vpartition.schema(),
+            schema=parts[0].schema(),
         )
         return cls(plan)
 
@@ -1177,12 +1232,12 @@ class DataFrame:
         raise RuntimeError(message)
 
     @DataframePublicAPI
-    def to_pandas(self) -> "pandas.DataFrame":
+    def to_pandas(self) -> "pd.DataFrame":
         """Converts the current DataFrame to a pandas DataFrame.
         If results have not computed yet, collect will be called.
 
         Returns:
-            pandas.DataFrame: pandas DataFrame converted from a Daft DataFrame
+            pd.DataFrame: pandas DataFrame converted from a Daft DataFrame
 
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
@@ -1282,8 +1337,8 @@ class DataFrame:
     def to_dask_dataframe(
         self,
         meta: Union[
-            "pandas.DataFrame",
-            "pandas.Series",
+            "pd.DataFrame",
+            "pd.Series",
             Dict[str, Any],
             Iterable[Any],
             Tuple[Any],

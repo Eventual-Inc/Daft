@@ -140,8 +140,7 @@ def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_sc
 
 @ray.remote(num_returns=2)
 def _make_daft_partition_from_dask_dataframe_partitions(dask_df_partition: pd.DataFrame) -> tuple[Table, pa.Schema]:
-    # TODO(Clark): Port to Table.from_pandas() once that API exists.
-    vpart = Table.from_pydict(dask_df_partition.to_dict(orient="list"))
+    vpart = Table.from_pandas(dask_df_partition)
     return vpart, vpart.schema()
 
 
