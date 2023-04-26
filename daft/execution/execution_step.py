@@ -5,8 +5,6 @@ import sys
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
-import numpy as np
-
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
 else:
@@ -695,7 +693,7 @@ class FanoutSlices(FanoutInstruction):
             assert start >= 0, f"start must be positive, but got {start}"
             end = min(end, len(input))
 
-            indices_block = Series.from_numpy(np.arange(start, end))
+            indices_block = Series.from_numpy(list(range(start, end)))
             results.append(input.take(indices_block))
 
         return results
