@@ -66,3 +66,59 @@ def test_series_python_selfcast() -> None:
 
     assert t.datatype() == DataType.python()
     assert t.to_pylist() == data
+
+
+class PycastableObject:
+    def __int__(self) -> int:
+        return 1
+
+    def __float__(self) -> float:
+        return 2.0
+
+    def __str__(self) -> str:
+        return "hello"
+
+    def __bytes__(self) -> bytes:
+        return b"abc"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+@pytest.mark.parametrize(
+    ["dtype", "pytype"],
+    [
+        (DataType.bool(), bool),
+        (DataType.int8(), int),
+        (DataType.int16(), int),
+        (DataType.int32(), int),
+        (DataType.int64(), int),
+        (DataType.uint8(), int),
+        (DataType.uint16(), int),
+        (DataType.uint32(), int),
+        (DataType.uint64(), int),
+        (DataType.float32(), float),
+        (DataType.float64(), float),
+        (DataType.string(), str),
+        (DataType.binary(), bytes),
+    ],
+)
+def test_series_cast_from_python(dtype, pytype) -> None:
+    data = [PycastableObject(), None, PycastableObject()]
+    s = Series.from_pylist(data)
+
+    t = s.cast(dtype)
+
+    assert t.datatype() == dtype
+    expected_val = pytype(PycastableObject())
+    assert t.to_pylist() == [expected_val, None, expected_val]
+
+
+def test_series_cast_python_to_null() -> None:
+    data = [object(), None, object()]
+    s = Series.from_pylist(data)
+
+    t = s.cast(DataType.null())
+
+    assert t.datatype() == DataType.null()
+    assert t.to_pylist() == [None, None, None]
