@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import builtins
-from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
 from daft.daft import PyDataType
 
-if TYPE_CHECKING:
-    pass
+_RAY_DATA_EXTENSIONS_AVAILABLE = True
+try:
+    from ray.data.extensions import ArrowTensorType, ArrowVariableShapedTensorType
+except ImportError:
+    _RAY_DATA_EXTENSIONS_AVAILABLE = False
 
 
 class DataType:
@@ -102,8 +104,6 @@ class DataType:
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
-        from ray.data.extensions import ArrowTensorType, ArrowVariableShapedTensorType
-
         if pa.types.is_int8(arrow_type):
             return cls.int8()
         elif pa.types.is_int16(arrow_type):
@@ -146,7 +146,9 @@ class DataType:
             assert isinstance(arrow_type, pa.StructType)
             fields = [arrow_type.field(i) for i in range(arrow_type.num_fields)]
             return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
-        elif isinstance(arrow_type, (ArrowTensorType, ArrowVariableShapedTensorType)):
+        elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(
+            arrow_type, (ArrowTensorType, ArrowVariableShapedTensorType)
+        ):
             # TODO(Clark): Add an extension type Daft type to be able to represent this tensor extension
             # type natively.
             return cls.python()
