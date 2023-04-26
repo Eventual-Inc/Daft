@@ -13,6 +13,7 @@ from tests.table import (
     daft_comparable_types,
     daft_floating_types,
     daft_nonnull_types,
+    daft_null_types,
     daft_numeric_types,
     daft_string_types,
 )
@@ -258,8 +259,17 @@ test_table_agg_groupby_cases = [
     {
         # Group by strings.
         "groups": ["name"],
-        "aggs": [col("cookies").alias("sum")._sum(), col("name").alias("count")._count()],
-        "expected": {"name": ["Alice", "Bob", None], "sum": [None, 10, 7], "count": [4, 4, 0]},
+        "aggs": [
+            col("cookies").alias("sum")._sum(),
+            col("name").alias("count")._count(),
+            col("name").alias("list")._list(),
+        ],
+        "expected": {
+            "name": ["Alice", "Bob", None],
+            "sum": [None, 10, 7],
+            "count": [4, 4, 0],
+            "list": [[None] * 4, [None, None, 5, 5], [None, 5, None, 2]],
+        },
     },
     {
         # Group by numbers.
@@ -405,3 +415,17 @@ def test_groupby_floats_nan(dtype) -> None:
     ):
         for r, e in zip(result_col, expected_col):
             assert (r == e) or (math.isnan(r) and math.isnan(e))
+
+
+@pytest.mark.parametrize(
+    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+)
+def test_global_list_aggs(dtype) -> None:
+    input = [None, 0, 1, 2, None, 4]
+    if dtype == DataType.date():
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").cast(dtype)])
+    result = daft_table.eval_expression_list([col("input").alias("list")._list()])
+    assert result.get_column("list").datatype() == DataType.list("list", dtype)
+    assert result.to_pydict() == {"list": [daft_table.to_pydict()["input"]]}
