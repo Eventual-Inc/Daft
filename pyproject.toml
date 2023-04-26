@@ -12,9 +12,7 @@ dependencies = [
   "tabulate",
   "psutil",
   "typing-extensions >= 4.0.0; python_version < '3.8'",
-  "pickle5 >= 0.0.12; python_version < '3.8'",
-  # Breaking change in list aggregations in 0.16.1: https://github.com/pola-rs/polars/issues/6584
-  "polars[timezone] < 0.16.0"
+  "pickle5 >= 0.0.12; python_version < '3.8'"
 ]
 description = "A Distributed DataFrame library for large scale complex data processing."
 dynamic = ["version"]
