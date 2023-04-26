@@ -490,3 +490,59 @@ def test_comparisons_dates() -> None:
 
     gt = (l > r).to_pylist()
     assert gt == [False, False, True, None, None, None]
+
+
+class CustomZero:
+    def __eq__(self, other):
+        if isinstance(other, CustomZero):
+            return True
+        else:
+            return 0 == other
+
+    def __lt__(self, other):
+        if isinstance(other, CustomZero):
+            return False
+        else:
+            return 0 < other
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __le__(self, other):
+        return self.__lt__(other) or self.__eq__(other)
+
+    def __gt__(self, other):
+        return not self.__le__(other)
+
+    def __ge__(self, other):
+        return not self.__lt__(other)
+
+
+def test_comparisons_pyobjects() -> None:
+
+    custom_zeros = Series.from_pylist([CustomZero(), CustomZero(), CustomZero(), CustomZero(), None])
+    values = Series.from_pylist([-1, 0, 1, None, None])
+
+    assert (custom_zeros == values).to_pylist() == [False, True, False, None, None]
+    assert (custom_zeros == values).to_pylist() == (values == custom_zeros).to_pylist()
+    assert (custom_zeros == custom_zeros).to_pylist() == [True, True, True, True, None]
+
+    assert (custom_zeros != values).to_pylist() == [True, False, True, None, None]
+    assert (custom_zeros != values).to_pylist() == (values != custom_zeros).to_pylist()
+    assert (custom_zeros != custom_zeros).to_pylist() == [False, False, False, False, None]
+
+    assert (custom_zeros < values).to_pylist() == [False, False, True, None, None]
+    assert (custom_zeros < values).to_pylist() == (values > custom_zeros).to_pylist()
+    assert (custom_zeros < custom_zeros).to_pylist() == [False, False, False, False, None]
+
+    assert (custom_zeros > values).to_pylist() == [True, False, False, None, None]
+    assert (custom_zeros > values).to_pylist() == (values < custom_zeros).to_pylist()
+    assert (custom_zeros > custom_zeros).to_pylist() == [False, False, False, False, None]
+
+    assert (custom_zeros <= values).to_pylist() == [False, True, True, None, None]
+    assert (custom_zeros <= values).to_pylist() == (values >= custom_zeros).to_pylist()
+    assert (custom_zeros <= custom_zeros).to_pylist() == [True, True, True, True, None]
+
+    assert (custom_zeros >= values).to_pylist() == [True, True, False, None, None]
+    assert (custom_zeros >= values).to_pylist() == (values <= custom_zeros).to_pylist()
+    assert (custom_zeros >= custom_zeros).to_pylist() == [True, True, True, True, None]
