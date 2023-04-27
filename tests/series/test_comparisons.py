@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import itertools
+import operator
 
 import pyarrow as pa
 import pytest
 
-from daft import Series
+from daft import DataType, Series
 
 arrow_int_types = [pa.int8(), pa.uint8(), pa.int16(), pa.uint16(), pa.int32(), pa.uint32(), pa.int64(), pa.uint64()]
 arrow_string_types = [pa.string(), pa.large_string()]
@@ -516,34 +517,26 @@ class CustomZero:
         return not self.__lt__(other)
 
 
-def test_comparisons_pyobjects() -> None:
+@pytest.mark.parametrize(
+    ["op", "reflected_op", "expected", "expected_self"],
+    [
+        (operator.eq, operator.eq, [False, True, False, None, None], [True, True, True, True, None]),
+        (operator.ne, operator.ne, [True, False, True, None, None], [False, False, False, False, None]),
+        (operator.lt, operator.gt, [False, False, True, None, None], [False, False, False, False, None]),
+        (operator.gt, operator.lt, [True, False, False, None, None], [False, False, False, False, None]),
+        (operator.le, operator.ge, [False, True, True, None, None], [True, True, True, True, None]),
+        (operator.ge, operator.le, [True, True, False, None, None], [True, True, True, True, None]),
+    ],
+)
+def test_comparisons_pyobjects(op, reflected_op, expected, expected_self) -> None:
 
     custom_zeros = Series.from_pylist([CustomZero(), CustomZero(), CustomZero(), CustomZero(), None])
     values = Series.from_pylist([-1, 0, 1, None, None])
 
-    assert (custom_zeros == values).to_pylist() == [False, True, False, None, None]
-    assert (custom_zeros == values).to_pylist() == (values == custom_zeros).to_pylist()
-    assert (custom_zeros == custom_zeros).to_pylist() == [True, True, True, True, None]
-
-    assert (custom_zeros != values).to_pylist() == [True, False, True, None, None]
-    assert (custom_zeros != values).to_pylist() == (values != custom_zeros).to_pylist()
-    assert (custom_zeros != custom_zeros).to_pylist() == [False, False, False, False, None]
-
-    assert (custom_zeros < values).to_pylist() == [False, False, True, None, None]
-    assert (custom_zeros < values).to_pylist() == (values > custom_zeros).to_pylist()
-    assert (custom_zeros < custom_zeros).to_pylist() == [False, False, False, False, None]
-
-    assert (custom_zeros > values).to_pylist() == [True, False, False, None, None]
-    assert (custom_zeros > values).to_pylist() == (values < custom_zeros).to_pylist()
-    assert (custom_zeros > custom_zeros).to_pylist() == [False, False, False, False, None]
-
-    assert (custom_zeros <= values).to_pylist() == [False, True, True, None, None]
-    assert (custom_zeros <= values).to_pylist() == (values >= custom_zeros).to_pylist()
-    assert (custom_zeros <= custom_zeros).to_pylist() == [True, True, True, True, None]
-
-    assert (custom_zeros >= values).to_pylist() == [True, True, False, None, None]
-    assert (custom_zeros >= values).to_pylist() == (values <= custom_zeros).to_pylist()
-    assert (custom_zeros >= custom_zeros).to_pylist() == [True, True, True, True, None]
+    assert op(custom_zeros, values).datatype() == DataType.bool()
+    assert op(custom_zeros, values).to_pylist() == expected
+    assert op(custom_zeros, values).to_pylist() == reflected_op(values, custom_zeros).to_pylist()
+    assert op(custom_zeros, custom_zeros).to_pylist() == expected_self
 
 
 class CustomFalse:
