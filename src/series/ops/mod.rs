@@ -45,9 +45,8 @@ fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)>
     Ok((lhs, rhs))
 }
 
-#[cfg(feature = "python")]
-macro_rules! py_binary_op {
-    ($lhs:expr, $rhs:expr, $pyoperator:expr) => {{
+macro_rules! py_binary_op_utilfn {
+    ($lhs:expr, $rhs:expr, $pyoperator:expr, $utilfn:expr) => {{
         use crate::python::PySeries;
         use pyo3::prelude::*;
 
@@ -59,7 +58,7 @@ macro_rules! py_binary_op {
                 .getattr(pyo3::intern!(py, $pyoperator))?;
 
             let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
-                .getattr(pyo3::intern!(py, "map_operator_arrow_semantics_bool"))?
+                .getattr(pyo3::intern!(py, $utilfn))?
                 .call1((py_operator, left_pylist, right_pylist))?;
 
             PyModule::import(py, pyo3::intern!(py, "daft.series"))?
@@ -74,5 +73,4 @@ macro_rules! py_binary_op {
         result_series
     }};
 }
-#[cfg(feature = "python")]
-pub(super) use py_binary_op;
+pub(super) use py_binary_op_utilfn;

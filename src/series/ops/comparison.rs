@@ -8,7 +8,13 @@ use crate::{
 
 use super::match_types_on_series;
 #[cfg(feature = "python")]
-use super::py_binary_op;
+use super::py_binary_op_utilfn;
+
+macro_rules! py_binary_op_bool {
+    ($lhs:expr, $rhs:expr, $pyoperator:expr) => {
+        py_binary_op_utilfn!($lhs, $rhs, $pyoperator, "map_operator_arrow_semantics_bool")
+    };
+}
 
 macro_rules! impl_compare {
     ($fname:ident, $pyoperator:expr) => {
@@ -17,7 +23,7 @@ macro_rules! impl_compare {
 
             #[cfg(feature = "python")]
             if lhs.data_type() == &DataType::Python {
-                return py_binary_op!(lhs, rhs, $pyoperator)
+                return py_binary_op_bool!(lhs, rhs, $pyoperator)
                     .downcast::<BooleanType>()
                     .cloned();
             }
@@ -52,7 +58,7 @@ macro_rules! impl_logical {
 
             #[cfg(feature = "python")]
             if lhs.data_type() == &DataType::Python {
-                return py_binary_op!(lhs, rhs, $pyop).downcast::<BooleanType>().cloned();
+                return py_binary_op_bool!(lhs, rhs, $pyop).downcast::<BooleanType>().cloned();
             }
 
             if lhs.data_type() != &DataType::Boolean {
