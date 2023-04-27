@@ -44,12 +44,11 @@ impl DaftConcatAggable for ListArray {
                 .iter()
                 .map(|g_idx| {
                     let g_idx = *g_idx as usize;
-                    old_offsets.get(g_idx + 1 as usize).unwrap()
-                        - old_offsets.get(g_idx as usize).unwrap()
+                    old_offsets.get(g_idx + 1_usize).unwrap() - old_offsets.get(g_idx).unwrap()
                 })
                 .sum();
 
-            offsets.push(offsets.last().unwrap() + total_elems as i64);
+            offsets.push(offsets.last().unwrap() + total_elems);
         }
 
         let total_capacity = *offsets.last().unwrap();
