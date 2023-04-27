@@ -289,6 +289,7 @@ impl Table {
             Min(expr) => Series::min(&self.eval_expression(expr)?, groups),
             Max(expr) => Series::max(&self.eval_expression(expr)?, groups),
             List(expr) => Series::agg_list(&self.eval_expression(expr)?, groups),
+            Concat(expr) => Series::agg_concat(&self.eval_expression(expr)?, groups),
         }
     }
 

@@ -164,8 +164,12 @@ impl PyExpr {
         Ok(self.expr.max().into())
     }
 
-    pub fn list(&self) -> PyResult<Self> {
-        Ok(self.expr.list().into())
+    pub fn agg_list(&self) -> PyResult<Self> {
+        Ok(self.expr.agg_list().into())
+    }
+
+    pub fn agg_concat(&self) -> PyResult<Self> {
+        Ok(self.expr.agg_concat().into())
     }
 
     pub fn explode(&self) -> PyResult<Self> {

@@ -10,7 +10,8 @@ pub fn get_required_columns(e: &Expr) -> Vec<String> {
             | AggExpr::Mean(child)
             | AggExpr::Min(child)
             | AggExpr::Max(child)
-            | AggExpr::List(child) => get_required_columns(child),
+            | AggExpr::List(child)
+            | AggExpr::Concat(child) => get_required_columns(child),
         },
         Expr::BinaryOp { left, right, .. } => {
             let mut req_cols = get_required_columns(left);
@@ -88,6 +89,9 @@ pub fn replace_column_with_expression(expr: &Expr, column_name: &str, new_expr: 
                 replace_column_with_expression(child, column_name, new_expr).into(),
             )),
             AggExpr::List(child) => Expr::Agg(AggExpr::List(
+                replace_column_with_expression(child, column_name, new_expr).into(),
+            )),
+            AggExpr::Concat(child) => Expr::Agg(AggExpr::List(
                 replace_column_with_expression(child, column_name, new_expr).into(),
             )),
         },

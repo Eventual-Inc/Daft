@@ -227,7 +227,7 @@ def test_table_agg_global(case) -> None:
             col("input").cast(DataType.int32()).alias("mean")._mean(),
             col("input").cast(DataType.int32()).alias("min")._min(),
             col("input").cast(DataType.int32()).alias("max")._max(),
-            col("input").cast(DataType.int32()).alias("list")._list(),
+            col("input").cast(DataType.int32()).alias("list")._agg_list(),
         ]
     )
 
@@ -262,7 +262,7 @@ test_table_agg_groupby_cases = [
         "aggs": [
             col("cookies").alias("sum")._sum(),
             col("name").alias("count")._count(),
-            col("cookies").alias("list")._list(),
+            col("cookies").alias("list")._agg_list(),
         ],
         "expected": {
             "name": ["Alice", "Bob", None],
@@ -426,7 +426,7 @@ def test_global_list_aggs(dtype) -> None:
         input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
     daft_table = Table.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").cast(dtype)])
-    result = daft_table.eval_expression_list([col("input").alias("list")._list()])
+    result = daft_table.eval_expression_list([col("input").alias("list")._agg_list()])
     assert result.get_column("list").datatype() == DataType.list("list", dtype)
     assert result.to_pydict() == {"list": [daft_table.to_pydict()["input"]]}
 
@@ -443,7 +443,7 @@ def test_grouped_list_aggs(dtype) -> None:
         input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
     daft_table = Table.from_pydict({"groups": groups, "input": input})
     daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
-    result = daft_table.agg([col("input").alias("list")._list()], group_by=[col("groups")]).sort([col("groups")])
+    result = daft_table.agg([col("input").alias("list")._agg_list()], group_by=[col("groups")]).sort([col("groups")])
     assert result.get_column("list").datatype() == DataType.list("list", dtype)
 
     input_as_dtype = daft_table.get_column("input").to_pylist()
@@ -456,7 +456,7 @@ def test_list_aggs_empty() -> None:
 
     daft_table = Table.from_pydict({"col_A": [], "col_B": []})
     daft_table = daft_table.agg(
-        [col("col_A").alias("list")._list()],
+        [col("col_A").alias("list")._agg_list()],
         group_by=[col("col_B")],
     )
 

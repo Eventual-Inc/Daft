@@ -143,4 +143,21 @@ impl Series {
             }
         })
     }
+
+    pub fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        if !matches!(self.data_type(), DataType::List(..)) {
+            return Err(DaftError::TypeError(format!(
+                "concat aggregation is only valid for List Types, got {}",
+                self.data_type()
+            )));
+        }
+        let downcasted = self.downcast()?;
+        use crate::array::ops::DaftConcatAggable;
+        match groups {
+            Some(groups) => {
+                Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
+            }
+            None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
+        }
+    }
 }
