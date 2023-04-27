@@ -44,7 +44,6 @@ def test_series_numeric_size_bytes(dtype, size) -> None:
 )
 @pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
 def test_series_string_size_bytes(size) -> None:
-
     pydata = list(str(i) for i in range(size))
     data = pa.array(pydata, pa.large_string())
 
@@ -72,7 +71,6 @@ def test_series_string_size_bytes(size) -> None:
 )
 @pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
 def test_series_boolean_size_bytes(size) -> None:
-
     pydata = [True if i % 2 else False for i in range(size)]
 
     data = pa.array(pydata, pa.bool_())
@@ -207,10 +205,10 @@ def test_series_struct_size_bytes(size) -> None:
     dtype1, dtype2, dtype3 = pa.int64(), pa.float64(), pa.string()
     dtype = pa.struct({"a": dtype1, "b": dtype2, "c": dtype3})
     pydata = [
-        {"a": 3 * i, "b": 3 * i + 1, "c": 3 * i + 2} if i % 2 == 0 else {"a": 3 * i, "c": 3 * i + 2}
+        {"a": 3 * i, "b": 3 * i + 1, "c": str(3 * i + 2)} if i % 2 == 0 else {"a": 3 * i, "c": str(3 * i + 2)}
         for i in range(size)
     ]
-    data = pa.array(pydata).cast(dtype)
+    data = pa.array(pydata, type=dtype)
 
     s = Series.from_arrow(data)
 
@@ -223,7 +221,7 @@ def test_series_struct_size_bytes(size) -> None:
     ## with nulls
     if size > 0:
         pydata = pydata[:-1] + [None]
-    data = pa.array(pydata).cast(dtype)
+    data = pa.array(pydata, type=dtype)
 
     s = Series.from_arrow(data)
 

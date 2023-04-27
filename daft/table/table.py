@@ -433,7 +433,7 @@ def _propagate_array_slice_offsets(array: pa.Array) -> pa.Array:
     assert _array_needs_slice_offset_propagation(array)
     dtype = array.type
     if pa.types.is_struct(dtype):
-        fields = [dtype.field(i) for i in range(dtype.num_fields)]
+        fields = [dtype[i] for i in range(dtype.num_fields)]
         # StructArray.flatten() will propagate slice offsets to the underlying field arrays
         # while also propagating the StructArray-level bitmap.
         new_field_arrays = array.flatten()

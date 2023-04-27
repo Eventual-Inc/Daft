@@ -76,17 +76,18 @@ class Series:
     @classmethod
     def from_numpy(cls, data: np.ndarray, name: str = "numpy_series") -> Series:
         if not isinstance(data, np.ndarray):
-            raise TypeError(f"expected a numpy ndarray, got {type(data)}")
+            raise TypeError(f"Expected a NumPy ndarray, got {type(data)}")
         if data.ndim <= 1:
-            # This may raise a pyarrow.ArrowInvalid error if the data is not representable in Arrow;
-            # we expect the caller to handle this exception.
-            arrow_array = pa.array(data)
-            return cls.from_arrow(arrow_array, name=name)
-        else:
-            # TODO(Clark): Represent the tensor series with an Arrow extension type in order
-            # to keep the series data contiguous.
-            list_ndarray = [np.asarray(item) for item in data]
-            return cls.from_pylist(list_ndarray, name=name, pyobj="force")
+            try:
+                arrow_array = pa.array(data)
+            except pa.ArrowInvalid:
+                pass
+            else:
+                return cls.from_arrow(arrow_array, name=name)
+        # TODO(Clark): Represent the tensor series with an Arrow extension type in order
+        # to keep the series data contiguous.
+        list_ndarray = [np.asarray(item) for item in data]
+        return cls.from_pylist(list_ndarray, name=name, pyobj="force")
 
     @classmethod
     def from_pandas(cls, data: pd.Series, name: str = "pd_series") -> Series:

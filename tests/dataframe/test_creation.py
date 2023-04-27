@@ -198,16 +198,26 @@ def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> N
         pytest.param(np.array([None, "foo", "bar"], dtype=np.object_), DataType.string(), id="np_string"),
         pytest.param(pa.array([1, 2, 3]), DataType.int64(), id="pa_int"),
         pytest.param(pa.chunked_array([pa.array([1, 2, 3])]), DataType.int64(), id="pa_int_chunked"),
-        # TODO: [TPCH][PY] activate tests when Python objects are implemented
-        # pytest.param([None, MyObj(), MyObj()], DataType.python(MyObj), id="py_objs"),
-        # pytest.param([None, MyObj(), MyObj2()], DataType.python_object(), id="heterogenous_py_objs"),
-        # pytest.param(np.array([None, MyObj(), MyObj()], dtype=np.object_), DataType.python(MyObj), id="np_object"),
-        # TODO: [TPCH][NESTED] activate tests when Nested types are implemented
-        # pytest.param([None, {"foo": 1}, {"bar": 1}], DataType.python(dict), id="arrow_struct"),
-        # pytest.param([np.array([1]), np.array([2]), np.array([3])], DataType.python(np.ndarray), id="numpy_arrays"),
-        # pytest.param(pa.array([[1, 2, 3], [1, 2], [1]]), DataType.python(list), id="pa_nested"),
-        # pytest.param(pa.chunked_array([pa.array([[1, 2, 3], [1, 2], [1]])]), DataType.python(list), id="pa_nested_chunked"),
-        # pytest.param(np.ones((3, 3)), DataType.python(np.ndarray), id="np_nested"),
+        pytest.param([None, MyObj(), MyObj()], DataType.python(), id="py_objs"),
+        pytest.param([None, MyObj(), MyObj2()], DataType.python(), id="heterogenous_py_objs"),
+        pytest.param(np.array([None, MyObj(), MyObj()], dtype=np.object_), DataType.python(), id="np_object"),
+        pytest.param(
+            [None, {"foo": 1}, {"bar": 1}],
+            DataType.struct({"bar": DataType.int64(), "foo": DataType.int64()}),
+            id="arrow_struct",
+        ),
+        pytest.param(
+            [np.array([1]), np.array([2]), np.array([3])],
+            DataType.list("item", DataType.int64()),
+            id="numpy_1d_arrays",
+        ),
+        pytest.param(pa.array([[1, 2, 3], [1, 2], [1]]), DataType.list("item", DataType.int64()), id="pa_nested"),
+        pytest.param(
+            pa.chunked_array([pa.array([[1, 2, 3], [1, 2], [1]])]),
+            DataType.list("item", DataType.int64()),
+            id="pa_nested_chunked",
+        ),
+        pytest.param(np.ones((3, 3)), DataType.python(), id="np_nested"),
     ],
 )
 def test_load_pydict_types(data, expected_dtype):
@@ -349,7 +359,6 @@ def test_create_dataframe_json_column_projection(valid_data: list[dict[str, floa
         assert len(pd_df) == len(valid_data)
 
 
-@pytest.mark.skip(reason="[RUST-INT][NESTED] Requires list[int64] type")
 def test_create_dataframe_json_https() -> None:
     df = DataFrame.read_json("https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz")
     df.collect()

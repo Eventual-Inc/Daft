@@ -37,7 +37,6 @@ def test_series_filter_on_null() -> None:
 
 
 def test_series_filter_on_bool() -> None:
-
     s = Series.from_pylist([True, False, None, True, None, False])
     pymask = [False, True, True, None, False, False]
     mask = Series.from_pylist(pymask)
@@ -51,7 +50,6 @@ def test_series_filter_on_bool() -> None:
 
 
 def test_series_filter_on_binary() -> None:
-
     s = Series.from_pylist([b"Y", b"N", None, b"Y", None, b"N"])
     pymask = [False, True, True, None, False, False]
     mask = Series.from_pylist(pymask)
@@ -95,9 +93,11 @@ def test_series_filter_on_fixed_size_list_array(dtype) -> None:
 
 
 def test_series_filter_on_struct_array() -> None:
-    dtype1, dtype2, dtype3 = pa.int64(), pa.float64(), pa.string()
-    dtype = pa.struct({"a": dtype1, "b": dtype2, "c": dtype3})
-    data = pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, None, {"a": 5, "b": 6, "c": 7}, {"a": 8, "b": None, "c": 10}])
+    dtype = pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
+    data = pa.array(
+        [{"a": 1, "b": 2}, {"b": 3, "c": "4"}, None, {"a": 5, "b": 6, "c": "7"}, {"a": 8, "b": None, "c": "10"}],
+        type=dtype,
+    )
 
     s = Series.from_arrow(data.cast(dtype))
     pymask = [False, True, True, None, False]

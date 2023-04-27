@@ -5,7 +5,7 @@ prettytable-rs = "^0.10"
 rand = "^0.8"
 
 [dependencies.arrow2]
-features = ["compute"]
+features = ["compute", "io_ipc"]
 version = "0.17.0"
 
 [dependencies.bincode]

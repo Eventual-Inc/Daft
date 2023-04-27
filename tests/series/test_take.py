@@ -89,18 +89,18 @@ def test_series_fixed_size_list_take() -> None:
 
 
 def test_series_struct_take() -> None:
-    dtype1, dtype2, dtype3 = pa.int64(), pa.float64(), pa.string()
-    dtype = pa.struct({"a": dtype1, "b": dtype2, "c": dtype3})
+    dtype = pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
     data = pa.array(
         [
             {"a": 1, "b": 2},
-            {"b": 3, "c": 4},
+            {"b": 3, "c": "4"},
             None,
-            {"a": 5, "b": 6, "c": 7},
-            {"a": 8, "b": None, "c": 10},
+            {"a": 5, "b": 6, "c": "7"},
+            {"a": 8, "b": None, "c": "10"},
             {"b": 11, "c": None},
-        ]
-    ).cast(dtype)
+        ],
+        type=dtype,
+    )
 
     s = Series.from_arrow(data)
     pyidx = [2, 0, None, 5]

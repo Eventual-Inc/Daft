@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 
+import pyarrow as pa
 import pytest
 
 from daft import DataType, Series
@@ -31,6 +32,56 @@ def test_series_concat(dtype, chunks) -> None:
         for j in range(i):
             val = i * j
             assert float(concated_list[counter]) == val
+            counter += 1
+
+
+@pytest.mark.parametrize("fixed", [False, True])
+@pytest.mark.parametrize("chunks", [1, 2, 3, 10])
+def test_series_concat_list_array(chunks, fixed) -> None:
+    series = []
+    arrow_type = pa.list_(pa.int64(), list_size=2 if fixed else -1)
+    for i in range(chunks):
+        series.append(Series.from_arrow(pa.array([[i + j, i * j] for j in range(i)], type=arrow_type)))
+
+    concated = Series.concat(series)
+
+    if fixed:
+        assert concated.datatype() == DataType.fixed_size_list("item", DataType.int64(), 2)
+    else:
+        assert concated.datatype() == DataType.list("item", DataType.int64())
+    concated_list = concated.to_pylist()
+
+    counter = 0
+    for i in range(chunks):
+        for j in range(i):
+            assert concated_list[counter][0] == i + j
+            assert concated_list[counter][1] == i * j
+            counter += 1
+
+
+@pytest.mark.parametrize("chunks", [1, 2, 3, 10])
+def test_series_concat_struct_array(chunks) -> None:
+    series = []
+    for i in range(chunks):
+        series.append(
+            Series.from_arrow(
+                pa.array(
+                    [{"a": i + j, "b": float(i * j)} for j in range(i)],
+                    type=pa.struct({"a": pa.int64(), "b": pa.float64()}),
+                )
+            )
+        )
+
+    concated = Series.concat(series)
+
+    assert concated.datatype() == DataType.struct({"a": DataType.int64(), "b": DataType.float64()})
+    concated_list = concated.to_pylist()
+
+    counter = 0
+    for i in range(chunks):
+        for j in range(i):
+            assert concated_list[counter]["a"] == i + j
+            assert concated_list[counter]["b"] == float(i * j)
             counter += 1
 
 

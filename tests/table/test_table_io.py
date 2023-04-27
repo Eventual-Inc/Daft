@@ -37,9 +37,6 @@ TEST_DATA = {
     "bools": [True for i in range(TEST_DATA_LEN)],
     "var_sized_arrays": [[i for _ in range(i)] for i in range(TEST_DATA_LEN)],
     "fixed_sized_arrays": [[i for _ in range(4)] for i in range(TEST_DATA_LEN)],
-    # NOTE: [RUST-INT][NESTED] Implement for nested types.
-    # NOTE: Structs are currently breaking in test_parquet_reads_limit_rows! Something weird is happening during conversion to a Rust Array
-    # where the slice offset is not being respected specifically for struct types.
     "structs": [{"foo": i} for i in range(TEST_DATA_LEN)],
 }
 
