@@ -25,10 +25,12 @@ readme = "README.rst"
 requires-python = ">=3.7"
 
 [project.optional-dependencies]
-all = ["getdaft[aws, ray]"]
+all = ["getdaft[aws, ray, pandas, numpy, viz]"]
 aws = ["s3fs"]
 experimental = ["getdaft[serving, iceberg]"]
 iceberg = ["icebridge"]
+numpy = ["numpy"]
+pandas = ["pandas"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
   "ray[data, default]>=2.0.0",
@@ -36,6 +38,7 @@ ray = [
   "grpcio<1.52.0"
 ]
 serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
+viz = ["pydot"]
 
 [project.urls]
 homepage = "https://www.getdaft.io"
