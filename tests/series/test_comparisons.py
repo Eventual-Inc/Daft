@@ -556,16 +556,19 @@ class CustomFalse:
         return False ^ other
 
 
-def test_logicalops_pyobjects() -> None:
+@pytest.mark.parametrize(
+    ["op", "expected", "expected_self"],
+    [
+        (operator.and_, [False, False, None, None], [False, False, False, None]),
+        (operator.or_, [False, True, None, None], [False, False, False, None]),
+        (operator.xor, [False, True, None, None], [False, False, False, None]),
+    ],
+)
+def test_logicalops_pyobjects(op, expected, expected_self) -> None:
     custom_falses = Series.from_pylist([CustomFalse(), CustomFalse(), CustomFalse(), None])
     values = Series.from_pylist([False, True, None, None])
 
     # (Symmetry is not tested here since Python logicalops are not automatically symmetric.)
-    assert (custom_falses & values).to_pylist() == [False, False, None, None]
-    assert (custom_falses & custom_falses).to_pylist() == [False, False, False, None]
-
-    assert (custom_falses | values).to_pylist() == [False, True, None, None]
-    assert (custom_falses | custom_falses).to_pylist() == [False, False, False, None]
-
-    assert (custom_falses ^ values).to_pylist() == [False, True, None, None]
-    assert (custom_falses ^ custom_falses).to_pylist() == [False, False, False, None]
+    assert op(custom_falses, values).datatype() == DataType.bool()
+    assert op(custom_falses, values).to_pylist() == expected
+    assert op(custom_falses, custom_falses).to_pylist() == expected_self
