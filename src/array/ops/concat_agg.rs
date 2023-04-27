@@ -33,9 +33,9 @@ impl DaftConcatAggable for ListArray {
         ListArray::new(self.field.clone(), result)
     }
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
-        let child_array = self.downcast();
+        let arrow_array = self.downcast();
 
-        let old_offsets = child_array.offsets();
+        let old_offsets = arrow_array.offsets();
         let mut offsets = Vec::with_capacity(groups.len() + 1);
         offsets.push(0);
 
@@ -44,7 +44,7 @@ impl DaftConcatAggable for ListArray {
                 .iter()
                 .map(|g_idx| {
                     let g_idx = *g_idx as usize;
-                    let is_valid = child_array.is_valid(g_idx);
+                    let is_valid = arrow_array.is_valid(g_idx);
                     match is_valid {
                         false => 0,
                         true => {
@@ -62,12 +62,15 @@ impl DaftConcatAggable for ListArray {
 
         let offsets: OffsetsBuffer<i64> = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
 
-        let mut growable =
-            arrow2::array::growable::make_growable(&[child_array], true, total_capacity as usize);
+        let mut growable = arrow2::array::growable::make_growable(
+            &[arrow_array.values().as_ref()],
+            true,
+            total_capacity as usize,
+        );
         for g in groups {
             for idx in g {
                 let idx = *idx as usize;
-                if child_array.is_valid(idx) {
+                if arrow_array.is_valid(idx) {
                     let start = *old_offsets.get(idx).unwrap();
                     let len = old_offsets.get(idx + 1).unwrap() - start;
                     growable.extend(0, start as usize, len as usize);
@@ -75,12 +78,15 @@ impl DaftConcatAggable for ListArray {
             }
         }
 
-        let nested_array = Box::new(arrow2::array::ListArray::<i64>::try_new(
-            self.data_type().to_arrow()?,
-            offsets,
-            growable.as_box(),
-            None,
-        )?);
+        let nested_array = Box::new(
+            arrow2::array::ListArray::<i64>::try_new(
+                self.data_type().to_arrow()?,
+                offsets,
+                growable.as_box(),
+                None,
+            )
+            .unwrap(),
+        );
 
         ListArray::new(self.field.clone(), nested_array)
     }

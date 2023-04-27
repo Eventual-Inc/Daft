@@ -456,10 +456,24 @@ def test_list_aggs_empty() -> None:
 
     daft_table = Table.from_pydict({"col_A": [], "col_B": []})
     daft_table = daft_table.agg(
-        [col("col_A").alias("list")._agg_list()],
+        [col("col_A").cast(DataType.int32()).alias("list")._agg_list()],
         group_by=[col("col_B")],
     )
-
+    assert daft_table.get_column("list").datatype() == DataType.list("list", DataType.int32())
     res = daft_table.to_pydict()
 
     assert res == {"col_B": [], "list": []}
+
+
+def test_concat_aggs_empty() -> None:
+
+    daft_table = Table.from_pydict({"col_A": [], "col_B": []})
+    daft_table = daft_table.agg(
+        [col("col_A").cast(DataType.list("list", DataType.int32())).alias("concat")._agg_concat()],
+        group_by=[col("col_B")],
+    )
+
+    assert daft_table.get_column("concat").datatype() == DataType.list("list", DataType.int32())
+    res = daft_table.to_pydict()
+
+    assert res == {"col_B": [], "concat": []}
