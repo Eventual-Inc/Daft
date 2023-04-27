@@ -16,11 +16,17 @@ macro_rules! py_binary_op {
 }
 
 macro_rules! impl_series_math_op {
-    ($op:ident, $func_name:ident) => {
+    ($op:ident, $func_name:ident, $pyop:expr) => {
         impl $op for &Series {
             type Output = DaftResult<Series>;
             fn $func_name(self, rhs: Self) -> Self::Output {
                 let (lhs, rhs) = match_types_on_series(self, rhs)?;
+
+                #[cfg(feature = "python")]
+                if lhs.data_type() == &DataType::Python {
+                    return Ok(py_binary_op!(lhs, rhs, $pyop));
+                }
+
                 if !lhs.data_type().is_numeric() || !rhs.data_type().is_numeric() {
                     return Err(DaftError::TypeError(
                         "Cannot run on non-numeric types".into(),
@@ -71,6 +77,13 @@ impl Add for Series {
 impl Div for &Series {
     type Output = DaftResult<Series>;
     fn div(self, rhs: Self) -> Self::Output {
+        let (lhs, rhs) = match_types_on_series(self, rhs)?;
+
+        #[cfg(feature = "python")]
+        if lhs.data_type() == &DataType::Python {
+            return Ok(py_binary_op!(lhs, rhs, "truediv"));
+        }
+
         if !self.data_type().is_numeric() || !rhs.data_type().is_numeric() {
             return Err(DaftError::TypeError(format!(
                 "True division requires numeric arguments, but received {} / {}",
@@ -96,9 +109,9 @@ impl Div for Series {
     }
 }
 
-impl_series_math_op!(Sub, sub);
-impl_series_math_op!(Mul, mul);
-impl_series_math_op!(Rem, rem);
+impl_series_math_op!(Sub, sub, "sub");
+impl_series_math_op!(Mul, mul, "mul");
+impl_series_math_op!(Rem, rem, "mod");
 
 #[cfg(test)]
 mod tests {
