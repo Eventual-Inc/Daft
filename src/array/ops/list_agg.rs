@@ -59,3 +59,15 @@ where
         ListArray::new(Arc::new(list_field), nested_array)
     }
 }
+
+#[cfg(feature = "python")]
+impl DaftListAggable for crate::datatypes::PythonArray {
+    type Output = DaftResult<crate::datatypes::PythonArray>;
+
+    fn list(&self) -> Self::Output {
+        todo!()
+    }
+    fn grouped_list(&self, _groups: &GroupIndices) -> Self::Output {
+        todo!()
+    }
+}
