@@ -693,7 +693,7 @@ class FanoutSlices(FanoutInstruction):
             assert start >= 0, f"start must be positive, but got {start}"
             end = min(end, len(input))
 
-            indices_block = Series.from_numpy(list(range(start, end)))
+            indices_block = Series.from_pylist(list(range(start, end)))
             results.append(input.take(indices_block))
 
         return results
