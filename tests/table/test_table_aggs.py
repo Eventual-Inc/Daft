@@ -465,6 +465,34 @@ def test_list_aggs_empty() -> None:
     assert res == {"col_B": [], "list": []}
 
 
+@pytest.mark.parametrize(
+    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+)
+def test_grouped_concat_aggs(dtype) -> None:
+    input = [None, 0, 1, 2, None, 4]
+
+    if dtype == DataType.date():
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+
+    input = [[x] for x in input] + [None]
+    groups = [1, 2, 3, 4, 5, 6, 7]
+    daft_table = Table.from_pydict({"groups": groups, "input": input}).eval_expression_list(
+        [col("groups"), col("input").cast(DataType.list("item", dtype))]
+    )
+
+    concat_grouped = daft_table.agg([col("input").alias("concat")._agg_concat()], group_by=[col("groups") % 2]).sort(
+        [col("groups")]
+    )
+    assert concat_grouped.get_column("concat").datatype() == DataType.list("item", dtype)
+
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+    # We should ignore Null Array elements when performing the concat agg
+    expected_groups = [
+        [input_as_dtype[i][0] for i in group if input_as_dtype[i] is not None] for group in [[1, 3, 5], [0, 2, 4, 6]]
+    ]
+    assert concat_grouped.to_pydict() == {"groups": [0, 1], "concat": expected_groups}
+
+
 def test_concat_aggs_empty() -> None:
 
     daft_table = Table.from_pydict({"col_A": [], "col_B": []})
