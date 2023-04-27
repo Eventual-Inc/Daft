@@ -253,7 +253,7 @@ class FakeFive:
             other = 5
         return 5 * other
 
-    def __div__(self, other):
+    def __truediv__(self, other):
         if isinstance(other, FakeFive):
             other = 5
         return 5 / other
