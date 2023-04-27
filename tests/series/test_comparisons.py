@@ -495,15 +495,13 @@ def test_comparisons_dates() -> None:
 class CustomZero:
     def __eq__(self, other):
         if isinstance(other, CustomZero):
-            return True
-        else:
-            return 0 == other
+            other = 0
+        return 0 == other
 
     def __lt__(self, other):
         if isinstance(other, CustomZero):
-            return False
-        else:
-            return 0 < other
+            other = 0
+        return 0 < other
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -546,3 +544,35 @@ def test_comparisons_pyobjects() -> None:
     assert (custom_zeros >= values).to_pylist() == [True, True, False, None, None]
     assert (custom_zeros >= values).to_pylist() == (values <= custom_zeros).to_pylist()
     assert (custom_zeros >= custom_zeros).to_pylist() == [True, True, True, True, None]
+
+
+class CustomFalse:
+    def __and__(self, other):
+        if isinstance(other, CustomFalse):
+            other = False
+        return False & other
+
+    def __or__(self, other):
+        if isinstance(other, CustomFalse):
+            other = False
+        return False or other
+
+    def __xor__(self, other):
+        if isinstance(other, CustomFalse):
+            other = False
+        return False ^ other
+
+
+def test_logicalops_pyobjects() -> None:
+    custom_falses = Series.from_pylist([CustomFalse(), CustomFalse(), CustomFalse(), None])
+    values = Series.from_pylist([False, True, None, None])
+
+    # (Symmetry is not tested here since Python logicalops are not automatically symmetric.)
+    assert (custom_falses & values).to_pylist() == [False, False, None, None]
+    assert (custom_falses & custom_falses).to_pylist() == [False, False, False, None]
+
+    assert (custom_falses | values).to_pylist() == [False, True, None, None]
+    assert (custom_falses | custom_falses).to_pylist() == [False, False, False, None]
+
+    assert (custom_falses ^ values).to_pylist() == [False, True, None, None]
+    assert (custom_falses ^ custom_falses).to_pylist() == [False, False, False, None]

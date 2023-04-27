@@ -78,7 +78,7 @@ macro_rules! impl_logical {
 impl DaftLogical<&Series> for Series {
     type Output = DaftResult<BooleanArray>;
 
-    impl_logical!(and, "and");
-    impl_logical!(or, "or");
+    impl_logical!(and, "and_");
+    impl_logical!(or, "or_");
     impl_logical!(xor, "xor");
 }
