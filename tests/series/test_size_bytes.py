@@ -205,7 +205,7 @@ def test_series_struct_size_bytes(size) -> None:
     dtype1, dtype2, dtype3 = pa.int64(), pa.float64(), pa.string()
     dtype = pa.struct({"a": dtype1, "b": dtype2, "c": dtype3})
     pydata = [
-        {"a": 3 * i, "b": 3 * i + 1, "c": str(3 * i + 2)} if i % 2 == 0 else {"a": 3 * i, "c": str(3 * i + 2)}
+        {"a": 3 * i, "b": 3 * i + 1, "c": str(3 * i + 2)} if i % 2 == 1 else {"a": 3 * i, "c": str(3 * i + 2)}
         for i in range(size)
     ]
     data = pa.array(pydata, type=dtype)
@@ -226,4 +226,12 @@ def test_series_struct_size_bytes(size) -> None:
     s = Series.from_arrow(data)
 
     assert s.datatype() == DataType.from_arrow_type(dtype)
-    assert s.size_bytes() == data.nbytes + 8 + (size * 8) // 2 + math.ceil(size / 8)
+    assert s.size_bytes() == (
+        data.get_total_buffer_size()
+        +
+        # String is promoted to large string, so offset array increases in size
+        ((size + 1) * 4)
+        +
+        # Validity is pushed down to children arrays for "a" and "c" only, since "b" already has one (because it was created with nulls)
+        2 * math.ceil(size / 8)
+    )
