@@ -170,7 +170,7 @@ def test_from_ray_dataset_all_arrow(n_partitions: int):
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_from_ray_dataset_simple(n_partitions: int):
-    ds = ray.data.range(8).repartition(n_partitions)
+    ds = ray.data.range(8, parallelism=n_partitions)
 
     df = DataFrame.from_ray_dataset(ds)
     np.testing.assert_equal(df.to_pydict(), {"value": list(range(8))})

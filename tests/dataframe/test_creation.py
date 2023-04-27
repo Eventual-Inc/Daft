@@ -6,6 +6,7 @@ import tempfile
 import uuid
 
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
@@ -21,6 +22,14 @@ class MyObj:
 
 class MyObj2:
     pass
+
+
+class MyObjWithValue:
+    def __init__(self, value: int):
+        self.value = value
+
+    def __eq__(self, other: MyObjWithValue):
+        return isinstance(other, MyObjWithValue) and self.value == other.value
 
 
 COL_NAMES = [
@@ -117,6 +126,64 @@ def test_create_dataframe_pydict_bad_columns() -> None:
     with pytest.raises(ValueError) as e:
         DataFrame.from_pydict({"foo": "somestring"})
     assert "Creating a Series from data of type" in str(e.value)
+
+
+###
+# Arrow tests
+###
+
+
+@pytest.mark.parametrize("multiple", [False, True])
+def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) -> None:
+    t = pa.Table.from_pylist(valid_data)
+    if multiple:
+        t = [t, t, t]
+    df = DataFrame.from_arrow(t)
+    if multiple:
+        t = pa.concat_tables(t)
+    assert set(df.column_names) == set(t.column_names)
+    casted_field = t.schema.field("variety").with_type(pa.large_string())
+    expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
+    # Check roundtrip.
+    assert df.to_arrow() == expected
+
+
+###
+# Pandas tests
+###
+
+
+@pytest.mark.parametrize("multiple", [False, True])
+def test_create_dataframe_pandas(valid_data: list[dict[str, float]], multiple) -> None:
+    pd_df = pd.DataFrame(valid_data)
+    if multiple:
+        pd_df = [pd_df, pd_df, pd_df]
+    df = DataFrame.from_pandas(pd_df)
+    if multiple:
+        pd_df = pd.concat(pd_df).reset_index(drop=True)
+    assert set(df.column_names) == set(pd_df.columns)
+    # Check roundtrip.
+    pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
+
+
+def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    pydict["obj"] = [MyObjWithValue(i) for i in range(len(valid_data))]
+    pd_df = pd.DataFrame(pydict)
+    df = DataFrame.from_pandas(pd_df)
+    assert set(df.column_names) == set(pd_df.columns)
+    # Check roundtrip.
+    pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
+
+
+def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    pydict["obj"] = pd.Series([np.ones((2, 2)) for _ in range(len(valid_data))])
+    pd_df = pd.DataFrame(pydict)
+    df = DataFrame.from_pandas(pd_df)
+    assert set(df.column_names) == set(pd_df.columns)
+    # Check roundtrip.
+    pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
 
 
 @pytest.mark.parametrize(

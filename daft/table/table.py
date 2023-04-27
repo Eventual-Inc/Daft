@@ -80,6 +80,21 @@ class Table:
         return Table._from_pytable(pyt)
 
     @staticmethod
+    def from_pandas(pd_df: pd.DataFrame) -> Table:
+        if not _PANDAS_AVAILABLE:
+            raise ImportError("Unable to import Pandas - please ensure that it is installed.")
+        assert isinstance(pd_df, pd.DataFrame)
+        try:
+            arrow_table = pa.Table.from_pandas(pd_df)
+        except pa.ArrowInvalid:
+            pass
+        else:
+            return Table.from_arrow(arrow_table)
+        # Fall back to pydict path.
+        df_as_dict = pd_df.to_dict(orient="series")
+        return Table.from_pydict(df_as_dict)
+
+    @staticmethod
     def from_pydict(data: dict) -> Table:
         series_dict = dict()
         for k, v in data.items():
@@ -95,6 +110,8 @@ class Table:
             elif isinstance(v, pa.ChunkedArray):
                 v = _ensure_chunked_array_slice_offsets_are_propagated(v)
                 series = Series.from_arrow(v)
+            elif _PANDAS_AVAILABLE and isinstance(v, pd.Series):
+                series = Series.from_pandas(v)
             else:
                 raise ValueError(f"Creating a Series from data of type {type(v)} not implemented")
             series_dict[k] = series._series

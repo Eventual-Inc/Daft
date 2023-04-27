@@ -3,14 +3,16 @@ from __future__ import annotations
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from uuid import uuid4
 
-import pandas as pd
 import pyarrow as pa
 
 from daft.logical.schema import Schema
 from daft.table import Table
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 PartID = int
 

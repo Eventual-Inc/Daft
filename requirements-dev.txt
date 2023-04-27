@@ -1,36 +1,32 @@
-boto3
-cloudpickle
-dask
-docker
-fastapi
-
-# Pin due to Ray issue: https://github.com/ray-project/ray/issues/32246
-grpcio<1.52.0
-
-hypothesis
-icebridge
+# Development/Build utilities
 ipdb
-lxml
 maturin
-myst-nb>=0.16.0
-numpy < 1.24
-
-# orjson recommended for viztracer
-orjson
-
-pandas
 pre-commit
+
+# Tracing
+orjson  # orjson recommended for viztracer
 py-spy
-pyarrow
+viztracer
+
+# Testing frameworks
+hypothesis
 pytest>=7.1.2
 pytest-benchmark
 pytest-cov
-PyYAML
+
+# Testing dependencies
+dask
+lxml
+numpy
+pandas
+xxhash>=3.0.0
+
+# Ray
+grpcio
 ray[data, default]
-s3fs
+
+# Documentation
+myst-nb>=0.16.0
 Sphinx <= 5
 sphinx-book-theme>=0.3.3,<1.0.0
 sphinx-reredirects>=0.1.1
-uvicorn
-viztracer
-xxhash>=3.0.0

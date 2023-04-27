@@ -13,6 +13,12 @@ try:
 except ImportError:
     _NUMPY_AVAILABLE = False
 
+_PANDAS_AVAILABLE = True
+try:
+    import pandas as pd
+except ImportError:
+    _PANDAS_AVAILABLE = False
+
 
 class Series:
     _series: PySeries
@@ -72,6 +78,8 @@ class Series:
         if not isinstance(data, np.ndarray):
             raise TypeError(f"expected a numpy ndarray, got {type(data)}")
         if data.ndim <= 1:
+            # This may raise a pyarrow.ArrowInvalid error if the data is not representable in Arrow;
+            # we expect the caller to handle this exception.
             arrow_array = pa.array(data)
             return cls.from_arrow(arrow_array, name=name)
         else:
@@ -79,6 +87,31 @@ class Series:
             # to keep the series data contiguous.
             list_ndarray = [np.asarray(item) for item in data]
             return cls.from_pylist(list_ndarray, name=name, pyobj="force")
+
+    @classmethod
+    def from_pandas(cls, data: pd.Series, name: str = "pd_series") -> Series:
+        if not isinstance(data, pd.Series):
+            raise TypeError(f"expected a pandas Series, got {type(data)}")
+        # First, try Arrow path.
+        try:
+            arrow_arr = pa.Array.from_pandas(data)
+        except pa.ArrowInvalid:
+            pass
+        else:
+            return cls.from_arrow(arrow_arr, name=name)
+        # Second, fall back to NumPy path. Note that .from_numpy() does _not_ fall back to
+        # the pylist representation for 1D arrays and instead raises an error that we can catch.
+        # We do the pylist representation fallback ourselves since the pd.Series.to_list()
+        # preserves more type information for types that are not natively representable in Python.
+        try:
+            ndarray = data.to_numpy()
+            return cls.from_numpy(ndarray, name=name)
+        except Exception:
+            pass
+        # Finally, fall back to pylist path.
+        # NOTE: For element types that don't have a native Python representation,
+        # a Pandas scalar object will be returned.
+        return cls.from_pylist(data.to_list(), name=name, pyobj="force")
 
     def cast(self, dtype: DataType) -> Series:
         return Series._from_pyseries(self._series.cast(dtype._dtype))
