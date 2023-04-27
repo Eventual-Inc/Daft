@@ -5,19 +5,13 @@ requires = ["maturin>=0.14,<0.15"]
 [project]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
-  "numpy < 1.24",
   "pyarrow",
   "fsspec[http]",
-  "protobuf>=3.19.0",
-  "pydot",
   "loguru",
   "tabulate",
-  "pandas",
   "psutil",
   "typing-extensions >= 4.0.0; python_version < '3.8'",
-  "pickle5 >= 0.0.12; python_version < '3.8'",
-  # Breaking change in list aggregations in 0.16.1: https://github.com/pola-rs/polars/issues/6584
-  "polars[timezone] < 0.16.0"
+  "pickle5 >= 0.0.12; python_version < '3.8'"
 ]
 description = "A Distributed DataFrame library for large scale complex data processing."
 dynamic = ["version"]
@@ -31,10 +25,12 @@ readme = "README.rst"
 requires-python = ">=3.7"
 
 [project.optional-dependencies]
-all = ["daft[aws, ray]"]
+all = ["getdaft[aws, ray, pandas, numpy, viz]"]
 aws = ["s3fs"]
-experimental = ["daft[serving, iceberg]"]
+experimental = ["getdaft[serving, iceberg]"]
 iceberg = ["icebridge"]
+numpy = ["numpy"]
+pandas = ["pandas"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
   "ray[data, default]>=2.0.0",
@@ -42,6 +38,7 @@ ray = [
   "grpcio<1.52.0"
 ]
 serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
+viz = ["pydot"]
 
 [project.urls]
 homepage = "https://www.getdaft.io"
