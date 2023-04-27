@@ -143,20 +143,17 @@ def test_from_arrow_roundtrip() -> None:
 
 
 def test_from_pandas_roundtrip() -> None:
-    # TODO(Clark): Remove struct column until our .to_pandas() representation is
-    # consistent with pyarrow's.
-    # Our struct representation, when converted to pandas, currently materializes the Nones
-    # while pyarrow's does not.
-    data = {col_name: col for col_name, col in PYTHON_TYPE_ARRAYS.items() if col_name != "struct"}
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(PYTHON_TYPE_ARRAYS)
     table = Table.from_pandas(df)
     assert len(table) == 2
-    assert set(table.column_names()) == set(data.keys())
+    assert set(table.column_names()) == set(PYTHON_TYPE_ARRAYS.keys())
     for field in table.schema():
         assert field.dtype == INFERRED_TYPES[field.name]
     # pyarrow --> pandas doesn't preserve the datetime type for the "date" column, so we need to
     # convert it before the comparison.
     df["date"] = pd.to_datetime(df["date"]).astype("datetime64[s]")
+    # pyarrow --> pandas will insert explicit Nones within the struct fields.
+    df["struct"][1]["a"] = None
     pd.testing.assert_frame_equal(table.to_pandas(), df)
 
 
