@@ -10,7 +10,8 @@ from tests.expressions.typing.conftest import assert_typing_resolve_vs_runtime_b
 
 
 def logical_resolvable(lhs: DataType, rhs: DataType) -> bool:
-    return (lhs == DataType.bool()) and (rhs == DataType.bool())
+    # Must have a Bool on one side; may have a Bool or Null on the other.
+    return {lhs, rhs} in ({DataType.bool()}, {DataType.bool(), DataType.null()})
 
 
 @pytest.mark.parametrize("op", [ops.and_, ops.or_])
