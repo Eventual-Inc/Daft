@@ -445,22 +445,22 @@ def test_logical_ops_with_non_boolean() -> None:
     l = Series.from_arrow(l_arrow)
     r = Series.from_arrow(r_arrow)
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         l & r
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         l | r
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         l ^ r
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         r & l
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         r | l
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         r ^ l
 
 
