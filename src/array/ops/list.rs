@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use crate::array::{BaseArray, DataArray};
-use crate::datatypes::{DaftListLikeType, DataType, FixedSizeListArray, ListArray, UInt64Array};
-use crate::dsl::functions::list;
+use crate::array::BaseArray;
+use crate::datatypes::{DataType, FixedSizeListArray, ListArray, UInt64Array};
+
 use crate::series::Series;
-use crate::{with_match_arrow_daft_types, with_match_daft_types};
+use crate::with_match_arrow_daft_types;
 use arrow2;
-use arrow2::array::{growable, Array};
+use arrow2::array::Array;
 
 use crate::error::DaftResult;
 
