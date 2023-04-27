@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import itertools
+import operator
 
 import pyarrow as pa
 import pytest
 
-from daft import Series
+from daft import DataType, Series
 
 arrow_int_types = [pa.int8(), pa.uint8(), pa.int16(), pa.uint16(), pa.int32(), pa.uint32(), pa.int64(), pa.uint64()]
 arrow_string_types = [pa.string(), pa.large_string()]
@@ -234,3 +235,50 @@ def test_arithmetic_numbers_array_mismatch_length() -> None:
 
     with pytest.raises(ValueError, match="different lengths"):
         l % r
+
+
+class FakeFive:
+    def __add__(self, other):
+        if isinstance(other, FakeFive):
+            other = 5
+        return 5 + other
+
+    def __sub__(self, other):
+        if isinstance(other, FakeFive):
+            other = 5
+        return 5 - other
+
+    def __mul__(self, other):
+        if isinstance(other, FakeFive):
+            other = 5
+        return 5 * other
+
+    def __div__(self, other):
+        if isinstance(other, FakeFive):
+            other = 5
+        return 5 / other
+
+    def __mod__(self, other):
+        if isinstance(other, FakeFive):
+            other = 5
+        return 5 % other
+
+
+@pytest.mark.parametrize(
+    ["op", "expected_datatype", "expected", "expected_self"],
+    [
+        (operator.add, DataType.int64(), [7, None, None], [10, 10, None]),
+        (operator.sub, DataType.int64(), [3, None, None], [0, 0, None]),
+        (operator.mul, DataType.int64(), [10, None, None], [25, 25, None]),
+        (operator.truediv, DataType.float64(), [2.5, None, None], [1.0, 1.0, None]),
+        (operator.mod, DataType.int64(), [1, None, None], [0, 0, None]),
+    ],
+)
+def test_arithmetic_pyobjects(op, expected_datatype, expected, expected_self) -> None:
+
+    fake_fives = Series.from_pylist([FakeFive(), FakeFive(), None])
+    values = Series.from_pylist([2, None, None])
+
+    assert op(fake_fives, values).datatype() == expected_datatype
+    assert op(fake_fives, values).to_pylist() == expected
+    assert op(fake_fives, fake_fives).to_pylist() == expected_self
