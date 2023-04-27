@@ -206,6 +206,10 @@ impl PyExpr {
         Ok(dsl::binary_op(dsl::Operator::Or, &self.expr, &other.expr).into())
     }
 
+    pub fn __xor__(&self, other: &Self) -> PyResult<Self> {
+        Ok(dsl::binary_op(dsl::Operator::Xor, &self.expr, &other.expr).into())
+    }
+
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
         use dsl::{binary_op, Operator};
         match op {
