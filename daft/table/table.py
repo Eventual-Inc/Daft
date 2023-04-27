@@ -4,12 +4,12 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 
+from daft.arrow_utils import FixEmptyStructArrays, SliceOffsetsFixes
 from daft.daft import PyTable as _PyTable
 from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
-from daft.table.arrow_utils import FixEmptyStructArrays, SliceOffsetsFixes
 
 _NUMPY_AVAILABLE = True
 try:
