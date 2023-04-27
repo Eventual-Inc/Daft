@@ -1,68 +1,69 @@
 use std::sync::Arc;
 
-use crate::array::BaseArray;
-use crate::datatypes::{DataType, FixedSizeListArray, ListArray, UInt64Array};
+use crate::array::{BaseArray, DataArray};
+use crate::datatypes::{DaftListLikeType, DataType, FixedSizeListArray, ListArray, UInt64Array};
+use crate::dsl::functions::list;
 use crate::series::Series;
-use crate::with_match_daft_types;
+use crate::{with_match_arrow_daft_types, with_match_daft_types};
 use arrow2;
+use arrow2::array::{growable, Array};
 
 use crate::error::DaftResult;
 
 use super::downcast::Downcastable;
 
-// Receives the elements of an explodable arrow2 array (e.g. a ListArray) as an iterator of arrow2 Arrays
-// Explodes these elements into a flattened Array, returning both this Array as well as a vector of indices indicating
-// the row index that each element of the flattened Array corresponds to
-fn explode_arrow_array_iter(
-    child_type: &arrow2::datatypes::DataType,
-    iterator: impl Iterator<Item = Option<Box<dyn arrow2::array::Array>>>,
-) -> DaftResult<(Box<dyn arrow2::array::Array>, Vec<u64>)> {
-    let mut collected_children: Vec<Box<dyn arrow2::array::Array>> = Vec::new();
-    for child in iterator {
-        match child {
-            None => collected_children
-                .push(arrow2::array::new_null_array(child_type.clone(), 1).to_boxed()),
-            Some(child_chunk) if child_chunk.len() == 0 => collected_children
-                .push(arrow2::array::new_null_array(child_type.clone(), 1).to_boxed()),
-            Some(child_chunk) => {
-                collected_children.push(child_chunk);
-            }
-        }
-    }
-    let collected_children_view = collected_children
-        .iter()
-        .map(|x| x.as_ref())
-        .collect::<Vec<_>>();
-    let new_arr = arrow2::compute::concatenate::concatenate(collected_children_view.as_slice())?;
-
-    // Use lengths of the collected children to calculate the indices to repeat other columns by
-    let idx_to_take = collected_children_view
-        .iter()
-        .map(|x| x.len() as u64)
-        .enumerate()
-        .flat_map(|(row_idx, num_row_repeats)| {
-            std::iter::repeat(row_idx as u64).take(num_row_repeats as usize)
-        })
-        .collect::<Vec<u64>>();
-
-    Ok((new_arr, idx_to_take))
-}
-
 impl ListArray {
     pub fn explode(&self) -> DaftResult<(Series, UInt64Array)> {
-        let arr = self.downcast();
+        let list_array = self.downcast();
+        let child_array = list_array.values().as_ref();
+        let offsets = list_array.offsets();
+
+        let total_capacity: i64 = (0..list_array.len())
+            .map(|i| {
+                let is_valid = list_array.is_valid(i);
+                let len: i64 = offsets.get(i + 1).unwrap() - offsets.get(i).unwrap();
+                match (is_valid, len) {
+                    (false, _) => 1,
+                    (true, 0) => 1,
+                    (true, l) => l,
+                }
+            })
+            .sum();
+        let mut growable =
+            arrow2::array::growable::make_growable(&[child_array], true, total_capacity as usize);
+        let mut indices = Vec::with_capacity(total_capacity as usize);
+
+        for i in 0..list_array.len() {
+            let is_valid = list_array.is_valid(i);
+            let start = offsets.get(i).unwrap();
+            let len = offsets.get(i + 1).unwrap() - start;
+            match (is_valid, len) {
+                (false, _) => {
+                    growable.extend_validity(1);
+                    indices.push(i as u64);
+                }
+                (true, 0) => {
+                    growable.extend_validity(1);
+                    indices.push(i as u64);
+                }
+                (true, l) => {
+                    growable.extend(0, *start as usize, l as usize);
+                    (0..l).for_each(|_| indices.push(i as u64));
+                }
+            }
+        }
+
         let child_data_type = match self.data_type() {
             DataType::List(field) => &field.dtype,
             _ => panic!("Expected List type but received {:?}", self.data_type()),
         };
-        let (exploded_arr, indices) =
-            explode_arrow_array_iter(&child_data_type.to_arrow()?, arr.iter())?;
-        with_match_daft_types!(child_data_type, |$T| {
+
+        let idx_to_take = UInt64Array::from(("idx_to_take", indices));
+        with_match_arrow_daft_types!(child_data_type,|$T| {
             let new_data_arr = DataArray::<$T>::new(Arc::new(Field {
                 name: self.field.name.clone(),
                 dtype: child_data_type.clone(),
-            }), exploded_arr)?;
-            let idx_to_take = UInt64Array::from(("idx_to_take", indices));
+            }), growable.as_box())?;
             Ok((new_data_arr.into_series(), idx_to_take))
         })
     }
@@ -70,7 +71,37 @@ impl ListArray {
 
 impl FixedSizeListArray {
     pub fn explode(&self) -> DaftResult<(Series, UInt64Array)> {
-        let arr = self.downcast();
+        let list_array = self.downcast();
+        let child_array = list_array.values().as_ref();
+
+        let list_size = list_array.size();
+
+        let mut total_capacity: i64 =
+            (list_size * (list_array.len() - list_array.null_count())) as i64;
+
+        if list_size == 0 {
+            total_capacity = list_array.len() as i64;
+        }
+
+        let mut growable =
+            arrow2::array::growable::make_growable(&[child_array], true, total_capacity as usize);
+        let mut indices = Vec::with_capacity(total_capacity as usize);
+
+        for i in 0..list_array.len() {
+            let is_valid = list_array.is_valid(i) && (list_size > 0);
+            match is_valid {
+                false => {
+                    growable.extend_validity(1);
+                    indices.push(i as u64);
+                }
+                true => {
+                    let start = i * list_size;
+                    growable.extend(0, start, list_size);
+                    (0..list_size).for_each(|_| indices.push(i as u64));
+                }
+            }
+        }
+
         let child_data_type = match self.data_type() {
             DataType::FixedSizeList(field, _) => &field.dtype,
             _ => panic!(
@@ -78,14 +109,13 @@ impl FixedSizeListArray {
                 self.data_type()
             ),
         };
-        let (exploded_arr, indices) =
-            explode_arrow_array_iter(&child_data_type.to_arrow()?, arr.iter())?;
-        with_match_daft_types!(child_data_type, |$T| {
+
+        let idx_to_take = UInt64Array::from(("idx_to_take", indices));
+        with_match_arrow_daft_types!(child_data_type,|$T| {
             let new_data_arr = DataArray::<$T>::new(Arc::new(Field {
                 name: self.field.name.clone(),
                 dtype: child_data_type.clone(),
-            }), exploded_arr)?;
-            let idx_to_take = UInt64Array::from(("idx_to_take", indices));
+            }), growable.as_box())?;
             Ok((new_data_arr.into_series(), idx_to_take))
         })
     }
