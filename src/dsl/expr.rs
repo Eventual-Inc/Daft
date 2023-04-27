@@ -48,6 +48,8 @@ pub enum AggExpr {
     Mean(ExprRef),
     Min(ExprRef),
     Max(ExprRef),
+    List(ExprRef),
+    Concat(ExprRef),
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
@@ -66,7 +68,8 @@ impl AggExpr {
     pub fn name(&self) -> DaftResult<&str> {
         use AggExpr::*;
         match self {
-            Count(expr) | Sum(expr) | Mean(expr) | Min(expr) | Max(expr) => expr.name(),
+            Count(expr) | Sum(expr) | Mean(expr) | Min(expr) | Max(expr) | List(expr)
+            | Concat(expr) => expr.name(),
         }
     }
 
@@ -132,6 +135,24 @@ impl AggExpr {
                 }
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
+            List(expr) => {
+                let field = expr.to_field(schema)?;
+                if !field.dtype.is_arrow() {
+                    return Err(DaftError::TypeError(format!(
+                        "We can only perform List Aggregation on Arrow Compatible Types, got: {field}",
+                    )));
+                }
+                field.to_list_field()
+            }
+            Concat(expr) => {
+                let field = expr.to_field(schema)?;
+                if !matches!(field.dtype, DataType::List(..)) {
+                    return Err(DaftError::TypeError(format!(
+                        "We can only perform List Concat Agg on List Types, got: {field}",
+                    )));
+                }
+                Ok(field)
+            }
         }
     }
 
@@ -143,6 +164,7 @@ impl AggExpr {
             "mean" => Ok(Mean(child.clone().into())),
             "min" => Ok(Min(child.clone().into())),
             "max" => Ok(Max(child.clone().into())),
+            "list" => Ok(List(child.clone().into())),
             _ => Err(DaftError::ValueError(format!(
                 "{} not a valid aggregation name",
                 name
@@ -186,6 +208,14 @@ impl Expr {
 
     pub fn max(&self) -> Self {
         Expr::Agg(AggExpr::Max(self.clone().into()))
+    }
+
+    pub fn agg_list(&self) -> Self {
+        Expr::Agg(AggExpr::List(self.clone().into()))
+    }
+
+    pub fn agg_concat(&self) -> Self {
+        Expr::Agg(AggExpr::Concat(self.clone().into()))
     }
 
     pub fn not(&self) -> Self {
@@ -404,6 +434,8 @@ impl Display for AggExpr {
             Mean(expr) => write!(f, "mean({expr})"),
             Min(expr) => write!(f, "min({expr})"),
             Max(expr) => write!(f, "max({expr})"),
+            List(expr) => write!(f, "list({expr})"),
+            Concat(expr) => write!(f, "list({expr})"),
         }
     }
 }

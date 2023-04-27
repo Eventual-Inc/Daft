@@ -166,10 +166,15 @@ impl DataType {
     }
 
     #[inline]
-    pub fn get_exploded_dtype(&self) -> DaftResult<DataType> {
+    pub fn is_python(&self) -> bool {
+        matches!(self, DataType::Python)
+    }
+
+    #[inline]
+    pub fn get_exploded_dtype(&self) -> DaftResult<&DataType> {
         match self {
             DataType::List(child_field) | DataType::FixedSizeList(child_field, _) => {
-                Ok(child_field.dtype.clone())
+                Ok(&child_field.dtype)
             }
             _ => Err(DaftError::ValueError(format!(
                 "Datatype cannot be exploded: {self}"

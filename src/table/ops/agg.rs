@@ -43,10 +43,10 @@ impl Table {
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Take fast path short circuit if there is only 1 group
-        let group_idx_input = if groupvals_indices.len() > 1 {
-            Some(&groupvals_indices)
-        } else {
+        let group_idx_input = if groupvals_indices.len() == 1 {
             None
+        } else {
+            Some(&groupvals_indices)
         };
 
         let grouped_cols = agg_exprs

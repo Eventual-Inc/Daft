@@ -58,7 +58,7 @@ where
     pub fn new(field: Arc<Field>, data: Box<dyn arrow2::array::Array>) -> DaftResult<DataArray<T>> {
         if let Ok(arrow_dtype) = field.dtype.to_arrow() {
             if !arrow_dtype.eq(data.data_type()) {
-                return Err(DaftError::SchemaMismatch(format!(
+                return Err(DaftError::TypeError(format!(
                     "expected {:?}, got {:?}",
                     arrow_dtype,
                     data.data_type()

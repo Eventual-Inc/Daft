@@ -13,6 +13,7 @@ from tests.table import (
     daft_comparable_types,
     daft_floating_types,
     daft_nonnull_types,
+    daft_null_types,
     daft_numeric_types,
     daft_string_types,
 )
@@ -190,33 +191,15 @@ def test_table_sum_badtype() -> None:
 test_table_agg_global_cases = [
     (
         [],
-        {
-            "count": [0],
-            "sum": [None],
-            "mean": [None],
-            "min": [None],
-            "max": [None],
-        },
+        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[]]},
     ),
     (
         [None],
-        {
-            "count": [0],
-            "sum": [None],
-            "mean": [None],
-            "min": [None],
-            "max": [None],
-        },
+        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[None]]},
     ),
     (
         [None, None, None],
-        {
-            "count": [0],
-            "sum": [None],
-            "mean": [None],
-            "min": [None],
-            "max": [None],
-        },
+        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[None, None, None]]},
     ),
     (
         [None, 3, None, None, 1, 2, 0, None],
@@ -226,6 +209,7 @@ test_table_agg_global_cases = [
             "mean": [1.5],
             "min": [0],
             "max": [3],
+            "list": [[None, 3, None, None, 1, 2, 0, None]],
         },
     ),
 ]
@@ -243,6 +227,7 @@ def test_table_agg_global(case) -> None:
             col("input").cast(DataType.int32()).alias("mean")._mean(),
             col("input").cast(DataType.int32()).alias("min")._min(),
             col("input").cast(DataType.int32()).alias("max")._max(),
+            col("input").cast(DataType.int32()).alias("list")._agg_list(),
         ]
     )
 
@@ -274,8 +259,17 @@ test_table_agg_groupby_cases = [
     {
         # Group by strings.
         "groups": ["name"],
-        "aggs": [col("cookies").alias("sum")._sum(), col("name").alias("count")._count()],
-        "expected": {"name": ["Alice", "Bob", None], "sum": [None, 10, 7], "count": [4, 4, 0]},
+        "aggs": [
+            col("cookies").alias("sum")._sum(),
+            col("name").alias("count")._count(),
+            col("cookies").alias("list")._agg_list(),
+        ],
+        "expected": {
+            "name": ["Alice", "Bob", None],
+            "sum": [None, 10, 7],
+            "count": [4, 4, 0],
+            "list": [[None] * 4, [None, None, 5, 5], [None, 5, None, 2]],
+        },
     },
     {
         # Group by numbers.
@@ -421,3 +415,119 @@ def test_groupby_floats_nan(dtype) -> None:
     ):
         for r, e in zip(result_col, expected_col):
             assert (r == e) or (math.isnan(r) and math.isnan(e))
+
+
+@pytest.mark.parametrize(
+    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+)
+def test_global_list_aggs(dtype) -> None:
+    input = [None, 0, 1, 2, None, 4]
+    if dtype == DataType.date():
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+    daft_table = Table.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").cast(dtype)])
+    result = daft_table.eval_expression_list([col("input").alias("list")._agg_list()])
+    assert result.get_column("list").datatype() == DataType.list("list", dtype)
+    assert result.to_pydict() == {"list": [daft_table.to_pydict()["input"]]}
+
+
+@pytest.mark.parametrize(
+    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+)
+def test_grouped_list_aggs(dtype) -> None:
+    groups = [None, 1, None, 1, 2, 2]
+    input = [None, 0, 1, 2, None, 4]
+    expected_idx = [[1, 3], [4, 5], [0, 2]]
+
+    if dtype == DataType.date():
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+    daft_table = Table.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
+    result = daft_table.agg([col("input").alias("list")._agg_list()], group_by=[col("groups")]).sort([col("groups")])
+    assert result.get_column("list").datatype() == DataType.list("list", dtype)
+
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+    expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
+
+    assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
+
+
+def test_list_aggs_empty() -> None:
+
+    daft_table = Table.from_pydict({"col_A": [], "col_B": []})
+    daft_table = daft_table.agg(
+        [col("col_A").cast(DataType.int32()).alias("list")._agg_list()],
+        group_by=[col("col_B")],
+    )
+    assert daft_table.get_column("list").datatype() == DataType.list("list", DataType.int32())
+    res = daft_table.to_pydict()
+
+    assert res == {"col_B": [], "list": []}
+
+
+@pytest.mark.parametrize(
+    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+)
+@pytest.mark.parametrize("with_null", [False, True])
+def test_global_concat_aggs(dtype, with_null) -> None:
+    input = [None, 0, 1, 2, None, 4]
+
+    if dtype == DataType.date():
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+
+    input = [[x] for x in input]
+    if with_null:
+        input += [None]
+
+    daft_table = Table.from_pydict({"input": input}).eval_expression_list(
+        [col("input").cast(DataType.list("item", dtype))]
+    )
+    concated = daft_table.agg([col("input").alias("concat")._agg_concat()])
+    assert concated.get_column("concat").datatype() == DataType.list("item", dtype)
+
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+    # We should ignore Null Array elements when performing the concat agg
+    expected = [[val[0] for val in input_as_dtype if val is not None]]
+    assert concated.to_pydict() == {"concat": expected}
+
+
+@pytest.mark.parametrize(
+    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+)
+def test_grouped_concat_aggs(dtype) -> None:
+    input = [None, 0, 1, 2, None, 4]
+
+    if dtype == DataType.date():
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+
+    input = [[x] for x in input] + [None]
+    groups = [1, 2, 3, 4, 5, 6, 7]
+    daft_table = Table.from_pydict({"groups": groups, "input": input}).eval_expression_list(
+        [col("groups"), col("input").cast(DataType.list("item", dtype))]
+    )
+
+    concat_grouped = daft_table.agg([col("input").alias("concat")._agg_concat()], group_by=[col("groups") % 2]).sort(
+        [col("groups")]
+    )
+    assert concat_grouped.get_column("concat").datatype() == DataType.list("item", dtype)
+
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+    # We should ignore Null Array elements when performing the concat agg
+    expected_groups = [
+        [input_as_dtype[i][0] for i in group if input_as_dtype[i] is not None] for group in [[1, 3, 5], [0, 2, 4, 6]]
+    ]
+    assert concat_grouped.to_pydict() == {"groups": [0, 1], "concat": expected_groups}
+
+
+def test_concat_aggs_empty() -> None:
+
+    daft_table = Table.from_pydict({"col_A": [], "col_B": []})
+    daft_table = daft_table.agg(
+        [col("col_A").cast(DataType.list("list", DataType.int32())).alias("concat")._agg_concat()],
+        group_by=[col("col_B")],
+    )
+
+    assert daft_table.get_column("concat").datatype() == DataType.list("list", DataType.int32())
+    res = daft_table.to_pydict()
+
+    assert res == {"col_B": [], "concat": []}

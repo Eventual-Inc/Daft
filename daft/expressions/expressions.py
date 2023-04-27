@@ -261,6 +261,14 @@ class Expression:
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
+    def _agg_list(self) -> Expression:
+        expr = self._expr.agg_list()
+        return Expression._from_pyexpr(expr)
+
+    def _agg_concat(self) -> Expression:
+        expr = self._expr.agg_concat()
+        return Expression._from_pyexpr(expr)
+
     def _explode(self) -> Expression:
         expr = self._expr.explode()
         return Expression._from_pyexpr(expr)

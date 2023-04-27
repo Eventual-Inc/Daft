@@ -25,6 +25,7 @@ impl Table {
             return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns. {} vs {}", schema.fields.len(), columns.len())));
         }
         let mut num_rows = 1;
+
         for (field, series) in schema.fields.values().zip(columns.iter()) {
             if field != series.field() {
                 return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
@@ -287,6 +288,8 @@ impl Table {
             Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
             Min(expr) => Series::min(&self.eval_expression(expr)?, groups),
             Max(expr) => Series::max(&self.eval_expression(expr)?, groups),
+            List(expr) => Series::agg_list(&self.eval_expression(expr)?, groups),
+            Concat(expr) => Series::agg_concat(&self.eval_expression(expr)?, groups),
         }
     }
 
