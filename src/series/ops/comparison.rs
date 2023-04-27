@@ -11,13 +11,13 @@ use super::match_types_on_series;
 use super::py_binary_op;
 
 macro_rules! impl_compare {
-    ($fname:ident, $pycmp:expr) => {
+    ($fname:ident, $pyoperator:expr) => {
         fn $fname(&self, rhs: &Series) -> Self::Output {
             let (lhs, rhs) = match_types_on_series(self, rhs)?;
 
             #[cfg(feature = "python")]
             if lhs.data_type() == &DataType::Python {
-                return py_binary_op!(lhs, rhs, $pycmp)
+                return py_binary_op!(lhs, rhs, $pyoperator)
                     .downcast::<BooleanType>()
                     .cloned();
             }
@@ -37,12 +37,12 @@ macro_rules! impl_compare {
 impl DaftCompare<&Series> for Series {
     type Output = DaftResult<BooleanArray>;
 
-    impl_compare!(equal, "==");
-    impl_compare!(not_equal, "!=");
-    impl_compare!(lt, "<");
-    impl_compare!(lte, "<=");
-    impl_compare!(gt, ">");
-    impl_compare!(gte, ">=");
+    impl_compare!(equal, "eq");
+    impl_compare!(not_equal, "ne");
+    impl_compare!(lt, "lt");
+    impl_compare!(lte, "le");
+    impl_compare!(gt, "gt");
+    impl_compare!(gte, "ge");
 }
 
 macro_rules! impl_logical {
@@ -72,7 +72,7 @@ macro_rules! impl_logical {
 impl DaftLogical<&Series> for Series {
     type Output = DaftResult<BooleanArray>;
 
-    impl_logical!(and, "&");
-    impl_logical!(or, "|");
-    impl_logical!(xor, "^");
+    impl_logical!(and, "and");
+    impl_logical!(or, "or");
+    impl_logical!(xor, "xor");
 }

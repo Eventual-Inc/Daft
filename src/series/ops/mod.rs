@@ -47,40 +47,32 @@ fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)>
 
 #[cfg(feature = "python")]
 macro_rules! py_binary_op {
-    ($lhs:expr, $rhs:expr, $pycmp:expr) => {
-        {
-            use crate::python::PySeries;
-            use pyo3::prelude::*;
-            use pyo3::types::IntoPyDict;
+    ($lhs:expr, $rhs:expr, $pyoperator:expr) => {{
+        use crate::python::PySeries;
+        use pyo3::prelude::*;
 
-            let left_pylist = PySeries::from($lhs.clone()).to_pylist()?;
-            let right_pylist = PySeries::from($rhs.clone()).to_pylist()?;
+        let left_pylist = PySeries::from($lhs.clone()).to_pylist()?;
+        let right_pylist = PySeries::from($rhs.clone()).to_pylist()?;
 
-            let result_series: Self = Python::with_gil(|py| -> PyResult<PySeries> {
-                // Note: In general, we should probably try to keep Python code in Python,
-                // to take advantage of the Python toolchain, e.g. mypy guarantees.
-                // In this case, it is difficult to call syntactic operators like ==.
-                // It is not as simple as calling __xx__, there is a lot of reflection and precedence logic;
-                // see https://docs.python.org/3/reference/datamodel.html#object.__lt__ etc for more details.
-                let result_pylist = py.eval(format!(
-                        "[bool(l {} r) if (l is not None and r is not None) else None for (l, r) in zip(lhs, rhs)]",
-                        $pycmp
-                    ).as_str(),
-                    None,
-                    Some([("lhs", left_pylist), ("rhs", right_pylist)].into_py_dict(py)),
-                )?;
+        let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
+            let py_operator = PyModule::import(py, pyo3::intern!(py, "operator"))?
+                .getattr(pyo3::intern!(py, $pyoperator))?;
 
-                PyModule::import(py, pyo3::intern!(py, "daft.series"))?
-                    .getattr(pyo3::intern!(py, "Series"))?
-                    .getattr(pyo3::intern!(py, "from_pylist"))?
-                    .call1((result_pylist, $lhs.name(), pyo3::intern!(py, "disallow")))?
-                    .getattr(pyo3::intern!(py, "_series"))?
-                    .extract()
-            })?.into();
+            let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
+                .getattr(pyo3::intern!(py, "map_operator_arrow_semantics_bool"))?
+                .call1((py_operator, left_pylist, right_pylist))?;
 
-            result_series
-        }
-    }
+            PyModule::import(py, pyo3::intern!(py, "daft.series"))?
+                .getattr(pyo3::intern!(py, "Series"))?
+                .getattr(pyo3::intern!(py, "from_pylist"))?
+                .call1((result_pylist, $lhs.name(), pyo3::intern!(py, "disallow")))?
+                .getattr(pyo3::intern!(py, "_series"))?
+                .extract()
+        })?
+        .into();
+
+        result_series
+    }};
 }
 #[cfg(feature = "python")]
 pub(super) use py_binary_op;
