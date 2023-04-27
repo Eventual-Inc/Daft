@@ -105,10 +105,8 @@ class Table:
             elif isinstance(v, Series):
                 series = v
             elif isinstance(v, pa.Array):
-                v = SliceOffsetsFixes.ensure_array_slice_offsets_are_propagated(v)
                 series = Series.from_arrow(v)
             elif isinstance(v, pa.ChunkedArray):
-                v = SliceOffsetsFixes.ensure_chunked_array_slice_offsets_are_propagated(v)
                 series = Series.from_arrow(v)
             elif _PANDAS_AVAILABLE and isinstance(v, pd.Series):
                 series = Series.from_pandas(v)
