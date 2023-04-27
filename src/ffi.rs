@@ -89,17 +89,7 @@ pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<
         array.data_type().clone(),
         true,
     )));
-    let mut new_arr = array;
-    // TODO(Clark): Fix struct array and fixed-size list array slice FFI upstream in arrow2/pyarrow.
-    if [
-        arrow2::datatypes::PhysicalType::Struct,
-        arrow2::datatypes::PhysicalType::FixedSizeList,
-    ]
-    .contains(&new_arr.data_type().to_physical_type())
-    {
-        // TODO(Clark): Only apply this workaround if a slice offset exists for this array.
-        new_arr = fix_child_array_slice_offsets(new_arr);
-    }
+    let new_arr = fix_child_array_slice_offsets(array);
     let arrow_arr = Box::new(ffi::export_array_to_c(new_arr));
 
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
@@ -156,6 +146,16 @@ fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {
     this buffer truncation by doing an IPC roundtrip on the array, which should result in a single
     copy of the array's underlying data.
     */
+    // TODO(Clark): Fix struct array and fixed-size list array slice FFI upstream in arrow2/pyarrow.
+    // TODO(Clark): Only apply this workaround if a slice offset exists for this array.
+    if ![
+        arrow2::datatypes::PhysicalType::Struct,
+        arrow2::datatypes::PhysicalType::FixedSizeList,
+    ]
+    .contains(&array.data_type().to_physical_type())
+    {
+        return array;
+    }
     // Write the IPC representation to an in-memory buffer.
     // TODO(Clark): Preallocate the vector with the requisite capacity, based on the array size?
     let mut cursor = Cursor::new(Vec::new());
