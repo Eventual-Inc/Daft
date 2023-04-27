@@ -44,7 +44,14 @@ impl DaftConcatAggable for ListArray {
                 .iter()
                 .map(|g_idx| {
                     let g_idx = *g_idx as usize;
-                    old_offsets.get(g_idx + 1_usize).unwrap() - old_offsets.get(g_idx).unwrap()
+                    let is_valid = child_array.is_valid(g_idx);
+                    match is_valid {
+                        false => 0,
+                        true => {
+                            old_offsets.get(g_idx + 1_usize).unwrap()
+                                - old_offsets.get(g_idx).unwrap()
+                        }
+                    }
                 })
                 .sum();
 
@@ -60,9 +67,11 @@ impl DaftConcatAggable for ListArray {
         for g in groups {
             for idx in g {
                 let idx = *idx as usize;
-                let start = *old_offsets.get(idx).unwrap();
-                let len = old_offsets.get(idx + 1).unwrap() - start;
-                growable.extend(0, start as usize, len as usize);
+                if child_array.is_valid(idx) {
+                    let start = *old_offsets.get(idx).unwrap();
+                    let len = old_offsets.get(idx + 1).unwrap() - start;
+                    growable.extend(0, start as usize, len as usize);
+                }
             }
         }
 
