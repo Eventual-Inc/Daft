@@ -1011,6 +1011,8 @@ class DataFrame:
                 builder.add_list(expr.name(), expr)
             elif op == "mean":
                 builder.add_mean(expr.name(), expr)
+            elif op == "concat":
+                builder.add_concat(expr.name(), expr)
             else:
                 raise NotImplementedError(f"LogicalPlan construction for operation not implemented: {op}")
         return DataFrame(builder.build())
@@ -1074,6 +1076,30 @@ class DataFrame:
         """
         assert len(cols) > 0, "no columns were passed in"
         return self._agg([(c, "count") for c in cols])
+
+    @DataframePublicAPI
+    def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global list agg on the DataFrame
+
+        Args:
+            *cols (Union[str, Expression]): columns to form into a list
+        Returns:
+            DataFrame: Globally aggregated list. Should be a single row.
+        """
+        assert len(cols) > 0, "no columns were passed in"
+        return self._agg([(c, "list") for c in cols])
+
+    @DataframePublicAPI
+    def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global list concatenation agg on the DataFrame
+
+        Args:
+            *cols (Union[str, Expression]): columns that are lists to concatenate
+        Returns:
+            DataFrame: Globally aggregated list. Should be a single row.
+        """
+        assert len(cols) > 0, "no columns were passed in"
+        return self._agg([(c, "concat") for c in cols])
 
     @DataframePublicAPI
     def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> "DataFrame":
@@ -1430,6 +1456,28 @@ class GroupedDataFrame:
         groupby_name_set = self.group_by.to_name_set()
         return self.df._agg(
             [(c, "count") for c in self.df.column_names if c not in groupby_name_set], group_by=self.group_by
+        )
+
+    def agg_list(self) -> "DataFrame":
+        """Performs grouped list on this GroupedDataFrame.
+
+        Returns:
+            DataFrame: DataFrame with grouped list per column.
+        """
+        groupby_name_set = self.group_by.to_name_set()
+        return self.df._agg(
+            [(c, "list") for c in self.df.column_names if c not in groupby_name_set], group_by=self.group_by
+        )
+
+    def agg_concat(self) -> "DataFrame":
+        """Performs grouped concat on this GroupedDataFrame.
+
+        Returns:
+            DataFrame: DataFrame with grouped concatenated list per column.
+        """
+        groupby_name_set = self.group_by.to_name_set()
+        return self.df._agg(
+            [(c, "concat") for c in self.df.column_names if c not in groupby_name_set], group_by=self.group_by
         )
 
     def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> "DataFrame":

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical import logical_plan
 
 AggregationOp = str
@@ -22,9 +22,9 @@ def _agg_tuple_to_expr(child_ex: Expression, agg_str: str) -> Expression:
     elif agg_str == "mean":
         return child_ex._mean()
     elif agg_str == "list":
-        raise NotImplementedError(f"[RUST-INT][NESTED] List aggregation not implemented yet")
+        return child_ex._agg_list()
     elif agg_str == "concat":
-        raise NotImplementedError(f"[RUST-INT][NESTED] Concat aggregation not implemented yet")
+        return child_ex._agg_concat()
     raise NotImplementedError(f"Aggregation {agg_str} not implemented.")
 
 
@@ -162,10 +162,14 @@ class AggregationPlanBuilder:
         return self
 
     def add_list(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        raise NotImplementedError("[RUST-INT][NESTED] Concat is not yet implemented")
+        self._add_single_partition_shortcut_agg(result_colname, expr, "list")
+        self._add_2phase_agg(result_colname, expr, "list", "concat")
+        return self
 
     def add_concat(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
-        raise NotImplementedError("[RUST-INT][NESTED] Concat is not yet implemented")
+        self._add_single_partition_shortcut_agg(result_colname, expr, "concat")
+        self._add_2phase_agg(result_colname, expr, "concat", "concat")
+        return self
 
     def add_mean(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
         self._add_single_partition_shortcut_agg(result_colname, expr, "mean")
@@ -177,11 +181,9 @@ class AggregationPlanBuilder:
         self._add_2phase_agg(intermediate_count_colname, expr, "count", "sum")
 
         # Run projection to get mean using intermediate sun and count
-        # HACK: we add 0.0 because our current PyArrow-based type system returns an integer when dividing two integers
         self._needs_final_projection = True
-        self._final_projection[result_colname] = (col(intermediate_sum_colname) + lit(0.0)) / (
-            col(intermediate_count_colname) + lit(0.0)
-        )
+        self._final_projection[result_colname] = col(intermediate_sum_colname) / col(intermediate_count_colname)
+
         self._final_projection_excludes.add(intermediate_sum_colname)
         self._final_projection_excludes.add(intermediate_count_colname)
 

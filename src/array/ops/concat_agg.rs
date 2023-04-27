@@ -21,6 +21,7 @@ impl DaftConcatAggable for ListArray {
             ));
             return ListArray::new(self.field.clone(), result);
         }
+
         let old_offsets: &OffsetsBuffer<i64> = array.offsets();
 
         let len = array.len();
@@ -53,6 +54,7 @@ impl DaftConcatAggable for ListArray {
 
         ListArray::new(self.field.clone(), nested_array)
     }
+
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
         let arrow_array = self.downcast();
 
