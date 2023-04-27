@@ -5,6 +5,39 @@ import sys
 import pyarrow as pa
 
 
+class FixEmptyStructArrays:
+    """Converts StructArrays that are empty (have no fields) to StructArrays with a single field
+    named "" and with a NullType
+
+    This is done because arrow2::ffi cannot handle empty StructArrays and we need to handle this on the
+    Python layer before going through ffi into Rust.
+    """
+
+    SINGLE_FIELD_STRUCT_TYPE = pa.struct({"": pa.null()})
+    SINGLE_FIELD_STRUCT_VALUE = {"": None}
+
+    def fix_table(table: pa.Table):
+        empty_struct_fields = [
+            (i, f) for (i, f) in enumerate(table.schema) if pa.types.is_struct(f.type) and f.type.num_fields == 0
+        ]
+        if not empty_struct_fields:
+            return table
+        for i, field in empty_struct_fields:
+            table = table.set_column(i, field.name, FixEmptyStructArrays.fix_chunked_array(table[field.name]))
+        return table
+
+    def fix_chunked_array(arr: pa.ChunkedArray):
+        return pa.chunked_array(
+            [
+                pa.array(
+                    [FixEmptyStructArrays.SINGLE_FIELD_STRUCT_VALUE if valid else None for valid in chunk.is_valid()],
+                    type=FixEmptyStructArrays.SINGLE_FIELD_STRUCT_TYPE,
+                )
+                for chunk in arr.chunks
+            ]
+        )
+
+
 class SliceOffsetsFixes:
 
     # TODO(Clark): For pyarrow < 12.0.0, struct array slice offsets are dropped

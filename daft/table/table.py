@@ -9,7 +9,7 @@ from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
-from daft.table.arrow_utils import SliceOffsetsFixes
+from daft.table.arrow_utils import FixEmptyStructArrays, SliceOffsetsFixes
 
 _NUMPY_AVAILABLE = True
 try:
@@ -75,6 +75,7 @@ class Table:
         schema = Schema._from_field_name_and_types(
             [(f.name, DataType.from_arrow_type(f.type)) for f in arrow_table.schema]
         )
+        arrow_table = FixEmptyStructArrays.fix_table(arrow_table)
         arrow_table = SliceOffsetsFixes.ensure_table_slice_offsets_are_propagated(arrow_table)
         pyt = _PyTable.from_arrow_record_batches(arrow_table.to_batches(), schema._schema)
         return Table._from_pytable(pyt)

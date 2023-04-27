@@ -53,7 +53,7 @@ ROUNDTRIP_TYPES = {
     "date": pa.date32(),
     "list": pa.large_list(pa.int64()),
     "struct": pa.struct({"a": pa.int64(), "b": pa.float64()}),
-    "empty_struct": pa.struct({}),
+    "empty_struct": pa.struct({"": pa.null()}),
     "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
     "null": pa.null(),
 }
@@ -77,7 +77,7 @@ ARROW_TYPE_ARRAYS = {
     "list": pa.array(PYTHON_TYPE_ARRAYS["list"], pa.list_(pa.int64())),
     "fixed_size_list": pa.array([[1, 2], [3, 4]], pa.list_(pa.int64(), 2)),
     "struct": pa.array(PYTHON_TYPE_ARRAYS["struct"], pa.struct([("a", pa.int64()), ("b", pa.float64())])),
-    "empty_struct": pa.array(PYTHON_TYPE_ARRAYS["empty_struct"], pa.struct([])),
+    "empty_struct": pa.array(PYTHON_TYPE_ARRAYS["empty_struct"], pa.struct({"": pa.null()})),
     # TODO(Clark): Uncomment once extension type support has been added.
     # "tensor": ArrowTensorArray.from_numpy(PYTHON_TYPE_ARRAYS["tensor"]),
     "null": pa.array(PYTHON_TYPE_ARRAYS["null"], pa.null()),
@@ -102,7 +102,7 @@ ARROW_ROUNDTRIP_TYPES = {
     "list": pa.large_list(pa.int64()),
     "fixed_size_list": pa.list_(pa.int64(), 2),
     "struct": pa.struct([("a", pa.int64()), ("b", pa.float64())]),
-    "empty_struct": pa.struct([]),
+    "empty_struct": pa.struct({"": pa.null()}),
     # TODO(Clark): Uncomment once extension type support has been added.
     # "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
     "null": pa.null(),
