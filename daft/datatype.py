@@ -144,7 +144,7 @@ class DataType:
             return cls.fixed_size_list(field.name, cls.from_arrow_type(field.type), arrow_type.list_size)
         elif pa.types.is_struct(arrow_type):
             assert isinstance(arrow_type, pa.StructType)
-            fields = [arrow_type.field(i) for i in range(arrow_type.num_fields)]
+            fields = [arrow_type[i] for i in range(arrow_type.num_fields)]
             return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
         elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(
             arrow_type, (ArrowTensorType, ArrowVariableShapedTensorType)

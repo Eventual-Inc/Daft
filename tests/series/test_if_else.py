@@ -231,11 +231,13 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
     [
         # Same length, same type
         (
-            pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, None, {"a": 5, "b": 6, "c": 7}]).cast(
-                pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
+            pa.array(
+                [{"a": 1, "b": 2}, {"b": 3, "c": "4"}, None, {"a": 5, "b": 6, "c": "7"}],
+                type=pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()}),
             ),
-            pa.array([{"a": 8, "b": 9, "c": 10}, {"c": 11}, None, {"a": 12, "b": 13}]).cast(
-                pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
+            pa.array(
+                [{"a": 8, "b": 9, "c": "10"}, {"c": "11"}, None, {"a": 12, "b": 13}],
+                type=pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()}),
             ),
             [{"a": 1, "b": 2.0, "c": None}, {"a": None, "b": None, "c": "11"}, None, {"a": 5, "b": 6.0, "c": "7"}],
         ),
@@ -248,31 +250,33 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
         # ),
         # Broadcast left
         (
-            pa.array([{"a": 1, "b": 2, "c": None}]).cast(
-                pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
+            pa.array(
+                [{"a": 1, "b": 2, "c": None}], type=pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
             ),
-            pa.array([{"a": 8, "b": 9, "c": 10}, {"c": 11}, None, {"a": 12, "b": 13}]).cast(
-                pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
+            pa.array(
+                [{"a": 8, "b": 9, "c": "10"}, {"c": "11"}, None, {"a": 12, "b": 13}],
+                type=pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()}),
             ),
             [{"a": 1, "b": 2.0, "c": None}, {"a": None, "b": None, "c": "11"}, None, {"a": 1, "b": 2.0, "c": None}],
         ),
         # Broadcast right
         (
-            pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, None, {"a": 5, "b": 6, "c": 7}]).cast(
-                pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
+            pa.array(
+                [{"a": 1, "b": 2}, {"b": 3, "c": "4"}, None, {"a": 5, "b": 6, "c": "7"}],
+                type=pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()}),
             ),
-            pa.array([{"a": 8, "b": 9, "c": 10}]).cast(
-                pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
+            pa.array(
+                [{"a": 8, "b": 9, "c": "10"}], type=pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
             ),
             [{"a": 1, "b": 2.0, "c": None}, {"a": 8, "b": 9.0, "c": "10"}, None, {"a": 5, "b": 6.0, "c": "7"}],
         ),
         # Broadcast both
         (
-            pa.array([{"a": 1, "b": 2, "c": None}]).cast(
-                pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
+            pa.array(
+                [{"a": 1, "b": 2, "c": None}], type=pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
             ),
-            pa.array([{"a": 8, "b": 9, "c": 10}]).cast(
-                pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
+            pa.array(
+                [{"a": 8, "b": 9, "c": "10"}], type=pa.struct({"a": pa.int64(), "b": pa.float64(), "c": pa.string()})
             ),
             [{"a": 1, "b": 2.0, "c": None}, {"a": 8, "b": 9.0, "c": "10"}, None, {"a": 1, "b": 2.0, "c": None}],
         ),

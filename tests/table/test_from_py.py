@@ -191,31 +191,38 @@ def test_from_pydict_arrow_list_array(list_type) -> None:
 
 
 def test_from_pydict_arrow_fixed_size_list_array() -> None:
-    arrow_arr = pa.array([["a", "b"], ["c", "d"], None, [None, "e"]], pa.list_(pa.string(), 2))
+    data = [["a", "b"], ["c", "d"], None, [None, "e"]]
+    arrow_arr = pa.array(data, pa.list_(pa.string(), 2))
     daft_table = Table.from_pydict({"a": arrow_arr})
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
-    expected = arrow_arr.cast(pa.list_(pa.large_string(), 2))
+    expected = pa.array(data, type=pa.list_(pa.large_string(), 2))
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
 
 def test_from_pydict_arrow_struct_array() -> None:
-    arrow_arr = pa.array([{"a": "foo", "b": "bar"}, {"b": "baz", "c": "quux"}])
+    data = [{"a": "foo", "b": "bar"}, {"b": "baz", "c": "quux"}]
+    arrow_arr = pa.array(data)
     daft_table = Table.from_pydict({"a": arrow_arr})
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
-    expected = arrow_arr.cast(pa.struct([("a", pa.large_string()), ("b", pa.large_string()), ("c", pa.large_string())]))
+    expected = pa.array(
+        data, type=pa.struct([("a", pa.large_string()), ("b", pa.large_string()), ("c", pa.large_string())])
+    )
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
 
 def test_from_pydict_arrow_deeply_nested() -> None:
     # Test a struct of lists of struct of lists of strings.
-    arrow_arr = pa.array([{"a": [{"b": ["foo", "bar"]}]}, {"a": [{"b": ["baz", "quux"]}]}])
+    data = [{"a": [{"b": ["foo", "bar"]}]}, {"a": [{"b": ["baz", "quux"]}]}]
+    arrow_arr = pa.array(data)
     daft_table = Table.from_pydict({"a": arrow_arr})
     assert "a" in daft_table.column_names()
     # Perform the expected Daft cast, where each list array is cast to a large list array and
     # the string array is cast to a large string array.
-    expected = arrow_arr.cast(pa.struct([("a", pa.large_list(pa.struct([("b", pa.large_list(pa.large_string()))])))]))
+    expected = pa.array(
+        data, type=pa.struct([("a", pa.large_list(pa.struct([("b", pa.large_list(pa.large_string()))])))])
+    )
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
 
@@ -338,31 +345,38 @@ def test_from_arrow_list_array(list_type) -> None:
 
 
 def test_from_arrow_fixed_size_list_array() -> None:
-    arrow_arr = pa.array([["a", "b"], ["c", "d"], None, [None, "e"]], pa.list_(pa.string(), 2))
+    data = [["a", "b"], ["c", "d"], None, [None, "e"]]
+    arrow_arr = pa.array(data, pa.list_(pa.string(), 2))
     daft_table = Table.from_arrow(pa.table({"a": arrow_arr}))
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
-    expected = arrow_arr.cast(pa.list_(pa.large_string(), 2))
+    expected = pa.array(data, type=pa.list_(pa.large_string(), 2))
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
 
 def test_from_arrow_struct_array() -> None:
-    arrow_arr = pa.array([{"a": "foo", "b": "bar"}, {"b": "baz", "c": "quux"}])
+    data = [{"a": "foo", "b": "bar"}, {"b": "baz", "c": "quux"}]
+    arrow_arr = pa.array(data)
     daft_table = Table.from_arrow(pa.table({"a": arrow_arr}))
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
-    expected = arrow_arr.cast(pa.struct([("a", pa.large_string()), ("b", pa.large_string()), ("c", pa.large_string())]))
+    expected = pa.array(
+        data, type=pa.struct([("a", pa.large_string()), ("b", pa.large_string()), ("c", pa.large_string())])
+    )
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
 
 def test_from_arrow_deeply_nested() -> None:
     # Test a struct of lists of struct of lists of strings.
-    arrow_arr = pa.array([{"a": [{"b": ["foo", "bar"]}]}, {"a": [{"b": ["baz", "quux"]}]}])
+    data = [{"a": [{"b": ["foo", "bar"]}]}, {"a": [{"b": ["baz", "quux"]}]}]
+    arrow_arr = pa.array(data)
     daft_table = Table.from_arrow(pa.table({"a": arrow_arr}))
     assert "a" in daft_table.column_names()
     # Perform the expected Daft cast, where each list array is cast to a large list array and
     # the string array is cast to a large string array.
-    expected = arrow_arr.cast(pa.struct([("a", pa.large_list(pa.struct([("b", pa.large_list(pa.large_string()))])))]))
+    expected = pa.array(
+        data, type=pa.struct([("a", pa.large_list(pa.struct([("b", pa.large_list(pa.large_string()))])))])
+    )
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
 
