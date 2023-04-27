@@ -38,7 +38,7 @@ INFERRED_TYPES = {
     "date": DataType.date(),
     "list": DataType.list("item", DataType.int64()),
     "struct": DataType.struct({"a": DataType.int64(), "b": DataType.float64()}),
-    "empty_struct": DataType.struct({}),
+    "empty_struct": DataType.struct({"": DataType.null()}),
     "tensor": DataType.python(),
     "null": DataType.null(),
 }
@@ -159,6 +159,8 @@ def test_from_pandas_roundtrip() -> None:
     df["date"] = pd.to_datetime(df["date"]).astype("datetime64[s]")
     # pyarrow --> pandas will insert explicit Nones within the struct fields.
     df["struct"][1]["a"] = None
+    df["empty_struct"][0][""] = None
+    df["empty_struct"][1][""] = None
     pd.testing.assert_frame_equal(table.to_pandas(), df)
 
 

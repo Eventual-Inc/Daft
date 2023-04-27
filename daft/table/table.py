@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 
-from daft.arrow_utils import FixEmptyStructArrays, SliceOffsetsFixes
+from daft.arrow_utils import ensure_table
 from daft.daft import PyTable as _PyTable
 from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
@@ -75,8 +75,7 @@ class Table:
         schema = Schema._from_field_name_and_types(
             [(f.name, DataType.from_arrow_type(f.type)) for f in arrow_table.schema]
         )
-        arrow_table = FixEmptyStructArrays.fix_table(arrow_table)
-        arrow_table = SliceOffsetsFixes.ensure_table_slice_offsets_are_propagated(arrow_table)
+        arrow_table = ensure_table(arrow_table)
         pyt = _PyTable.from_arrow_record_batches(arrow_table.to_batches(), schema._schema)
         return Table._from_pytable(pyt)
 

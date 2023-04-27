@@ -4,6 +4,7 @@ from typing import TypeVar
 
 import pyarrow as pa
 
+from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import PySeries
 from daft.datatype import DataType
 
@@ -35,9 +36,11 @@ class Series:
     @staticmethod
     def from_arrow(array: pa.Array | pa.ChunkedArray, name: str = "arrow_series") -> Series:
         if isinstance(array, pa.Array):
+            array = ensure_array(array)
             pys = PySeries.from_arrow(name, array)
             return Series._from_pyseries(pys)
         elif isinstance(array, pa.ChunkedArray):
+            array = ensure_chunked_array(array)
             combined_array = array.combine_chunks()
             pys = PySeries.from_arrow(name, combined_array)
             return Series._from_pyseries(pys)

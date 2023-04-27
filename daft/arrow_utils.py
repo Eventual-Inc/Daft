@@ -142,7 +142,7 @@ class _FixSliceOffsets:
             return False
 
     @staticmethod
-    def _array_needs_slice_offset_propagation(array: pa.StructArray) -> bool:
+    def _struct_array_needs_slice_offset_propagation(array: pa.StructArray) -> bool:
         """
         Whether the provided struct array needs slice offset propagation.
         """
