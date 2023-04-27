@@ -69,7 +69,7 @@ macro_rules! impl_logical {
                     lhs.data_type(),
                 )));
             }
-            self.downcast::<BooleanType>()?
+            lhs.downcast::<BooleanType>()?
                 .$fname(rhs.downcast::<BooleanType>()?)
         }
     };
