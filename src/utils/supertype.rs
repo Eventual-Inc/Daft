@@ -50,6 +50,10 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         }
 
         match (l, r) {
+            #[cfg(feature = "python")]
+            // The supertype of anything and Python is Python.
+            (_, Python) => Some(Python),
+
             (Int8, Boolean) => Some(Int8),
             (Int8, Int16) => Some(Int16),
             (Int8, Int32) => Some(Int32),
@@ -205,6 +209,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             // every known type can be casted to a string except binary
             (dt, Utf8) if dt.ne(&Binary) => Some(Utf8),
             (dt, Null) => Some(dt.clone()), // Drop Null Type
+
 
             _ => None,
         }

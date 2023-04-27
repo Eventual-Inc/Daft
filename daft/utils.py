@@ -3,7 +3,7 @@ from __future__ import annotations
 import pickle
 import random
 import statistics
-from typing import Any
+from typing import Any, Callable
 
 
 def pydict_to_rows(pydict: dict[str, list]) -> list[frozenset[tuple[str, Any]]]:
@@ -68,3 +68,21 @@ def estimate_size_bytes_pylist(pylist: list) -> int:
     one_item_size_estimate = int(mean + stdev)
 
     return one_item_size_estimate * len(pylist)
+
+
+def map_operator_arrow_semantics_bool(
+    operator: Callable[[Any, Any], Any],
+    left_pylist: list,
+    right_pylist: list,
+) -> list[bool | None]:
+    return [
+        bool(operator(l, r)) if (l is not None and r is not None) else None for (l, r) in zip(left_pylist, right_pylist)
+    ]
+
+
+def map_operator_arrow_semantics(
+    operator: Callable[[Any, Any], Any],
+    left_pylist: list,
+    right_pylist: list,
+) -> list:
+    return [operator(l, r) if (l is not None and r is not None) else None for (l, r) in zip(left_pylist, right_pylist)]

@@ -445,22 +445,22 @@ def test_logical_ops_with_non_boolean() -> None:
     l = Series.from_arrow(l_arrow)
     r = Series.from_arrow(r_arrow)
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         l & r
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         l | r
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         l ^ r
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         r & l
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         r | l
 
-    with pytest.raises(ValueError, match="Logical Operations on Boolean DataTypes"):
+    with pytest.raises(ValueError, match="logical operations on boolean supertype"):
         r ^ l
 
 
@@ -490,3 +490,89 @@ def test_comparisons_dates() -> None:
 
     gt = (l > r).to_pylist()
     assert gt == [False, False, True, None, None, None]
+
+
+class CustomZero:
+    def __eq__(self, other):
+        if isinstance(other, CustomZero):
+            other = 0
+        return 0 == other
+
+    def __lt__(self, other):
+        if isinstance(other, CustomZero):
+            other = 0
+        return 0 < other
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __le__(self, other):
+        return self.__lt__(other) or self.__eq__(other)
+
+    def __gt__(self, other):
+        return not self.__le__(other)
+
+    def __ge__(self, other):
+        return not self.__lt__(other)
+
+
+def test_comparisons_pyobjects() -> None:
+
+    custom_zeros = Series.from_pylist([CustomZero(), CustomZero(), CustomZero(), CustomZero(), None])
+    values = Series.from_pylist([-1, 0, 1, None, None])
+
+    assert (custom_zeros == values).to_pylist() == [False, True, False, None, None]
+    assert (custom_zeros == values).to_pylist() == (values == custom_zeros).to_pylist()
+    assert (custom_zeros == custom_zeros).to_pylist() == [True, True, True, True, None]
+
+    assert (custom_zeros != values).to_pylist() == [True, False, True, None, None]
+    assert (custom_zeros != values).to_pylist() == (values != custom_zeros).to_pylist()
+    assert (custom_zeros != custom_zeros).to_pylist() == [False, False, False, False, None]
+
+    assert (custom_zeros < values).to_pylist() == [False, False, True, None, None]
+    assert (custom_zeros < values).to_pylist() == (values > custom_zeros).to_pylist()
+    assert (custom_zeros < custom_zeros).to_pylist() == [False, False, False, False, None]
+
+    assert (custom_zeros > values).to_pylist() == [True, False, False, None, None]
+    assert (custom_zeros > values).to_pylist() == (values < custom_zeros).to_pylist()
+    assert (custom_zeros > custom_zeros).to_pylist() == [False, False, False, False, None]
+
+    assert (custom_zeros <= values).to_pylist() == [False, True, True, None, None]
+    assert (custom_zeros <= values).to_pylist() == (values >= custom_zeros).to_pylist()
+    assert (custom_zeros <= custom_zeros).to_pylist() == [True, True, True, True, None]
+
+    assert (custom_zeros >= values).to_pylist() == [True, True, False, None, None]
+    assert (custom_zeros >= values).to_pylist() == (values <= custom_zeros).to_pylist()
+    assert (custom_zeros >= custom_zeros).to_pylist() == [True, True, True, True, None]
+
+
+class CustomFalse:
+    def __and__(self, other):
+        if isinstance(other, CustomFalse):
+            other = False
+        return False & other
+
+    def __or__(self, other):
+        if isinstance(other, CustomFalse):
+            other = False
+        return False or other
+
+    def __xor__(self, other):
+        if isinstance(other, CustomFalse):
+            other = False
+        return False ^ other
+
+
+def test_logicalops_pyobjects() -> None:
+    custom_falses = Series.from_pylist([CustomFalse(), CustomFalse(), CustomFalse(), None])
+    values = Series.from_pylist([False, True, None, None])
+
+    # (Symmetry is not tested here since Python logicalops are not automatically symmetric.)
+    assert (custom_falses & values).to_pylist() == [False, False, None, None]
+    assert (custom_falses & custom_falses).to_pylist() == [False, False, False, None]
+
+    assert (custom_falses | values).to_pylist() == [False, True, None, None]
+    assert (custom_falses | custom_falses).to_pylist() == [False, False, False, None]
+
+    assert (custom_falses ^ values).to_pylist() == [False, True, None, None]
+    assert (custom_falses ^ custom_falses).to_pylist() == [False, False, False, None]

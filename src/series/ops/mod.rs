@@ -8,7 +8,7 @@ pub mod agg;
 pub mod arithmetic;
 pub mod broadcast;
 pub mod cast;
-pub mod comparision;
+pub mod comparison;
 pub mod concat;
 pub mod date;
 pub mod downcast;
@@ -44,3 +44,33 @@ fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)>
 
     Ok((lhs, rhs))
 }
+
+macro_rules! py_binary_op_utilfn {
+    ($lhs:expr, $rhs:expr, $pyoperator:expr, $utilfn:expr) => {{
+        use crate::python::PySeries;
+        use pyo3::prelude::*;
+
+        let left_pylist = PySeries::from($lhs.clone()).to_pylist()?;
+        let right_pylist = PySeries::from($rhs.clone()).to_pylist()?;
+
+        let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
+            let py_operator = PyModule::import(py, pyo3::intern!(py, "operator"))?
+                .getattr(pyo3::intern!(py, $pyoperator))?;
+
+            let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
+                .getattr(pyo3::intern!(py, $utilfn))?
+                .call1((py_operator, left_pylist, right_pylist))?;
+
+            PyModule::import(py, pyo3::intern!(py, "daft.series"))?
+                .getattr(pyo3::intern!(py, "Series"))?
+                .getattr(pyo3::intern!(py, "from_pylist"))?
+                .call1((result_pylist, $lhs.name(), pyo3::intern!(py, "disallow")))?
+                .getattr(pyo3::intern!(py, "_series"))?
+                .extract()
+        })?
+        .into();
+
+        result_series
+    }};
+}
+pub(super) use py_binary_op_utilfn;

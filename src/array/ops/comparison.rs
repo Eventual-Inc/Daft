@@ -781,7 +781,7 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
     }
 }
 
-macro_rules! null_array_comparision_method {
+macro_rules! null_array_comparison_method {
     ($func_name:ident) => {
         fn $func_name(&self, rhs: &NullArray) -> Self::Output {
             match (self.len(), rhs.len()) {
@@ -808,12 +808,12 @@ macro_rules! null_array_comparision_method {
 
 impl DaftCompare<&NullArray> for NullArray {
     type Output = DaftResult<BooleanArray>;
-    null_array_comparision_method!(equal);
-    null_array_comparision_method!(not_equal);
-    null_array_comparision_method!(lt);
-    null_array_comparision_method!(lte);
-    null_array_comparision_method!(gt);
-    null_array_comparision_method!(gte);
+    null_array_comparison_method!(equal);
+    null_array_comparison_method!(not_equal);
+    null_array_comparison_method!(lt);
+    null_array_comparison_method!(lte);
+    null_array_comparison_method!(gt);
+    null_array_comparison_method!(gte);
 }
 
 impl DaftLogical<bool> for BooleanArray {

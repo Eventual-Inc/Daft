@@ -1,12 +1,19 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use super::match_types_on_series;
+use super::py_binary_op_utilfn;
 use crate::array::BaseArray;
-use crate::datatypes::Float64Type;
+use crate::datatypes::{DataType, Float64Type};
 use crate::error::{DaftError, DaftResult};
 use crate::series::Series;
 use crate::with_match_numeric_and_utf_daft_types;
 use crate::with_match_numeric_daft_types;
+
+macro_rules! py_binary_op {
+    ($lhs:expr, $rhs:expr, $pyoperator:expr) => {
+        py_binary_op_utilfn!($lhs, $rhs, $pyoperator, "map_operator_arrow_semantics")
+    };
+}
 
 macro_rules! impl_series_math_op {
     ($op:ident, $func_name:ident) => {
@@ -40,6 +47,12 @@ impl Add for &Series {
     type Output = DaftResult<Series>;
     fn add(self, rhs: Self) -> Self::Output {
         let (lhs, rhs) = match_types_on_series(self, rhs)?;
+
+        #[cfg(feature = "python")]
+        if lhs.data_type() == &DataType::Python {
+            return Ok(py_binary_op!(lhs, rhs, "add"));
+        }
+
         with_match_numeric_and_utf_daft_types!(lhs.data_type(), |$T| {
             let lhs = lhs.downcast::<$T>()?;
             let rhs = rhs.downcast::<$T>()?;

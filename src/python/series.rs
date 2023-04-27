@@ -29,6 +29,7 @@ impl PySeries {
         Ok(series.into())
     }
 
+    // This ingests a Python list[object] directly into a Rust PythonArray.
     #[staticmethod]
     pub fn from_pylist(name: &str, pylist: &PyAny) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
@@ -40,6 +41,8 @@ impl PySeries {
         Ok(data_array.into_series().into())
     }
 
+    // This is for PythonArrays only,
+    // to convert the Rust PythonArray to a Python list[object].
     pub fn to_pylist(&self) -> PyResult<PyObject> {
         let pseudo_arrow_array = self.series.python()?.downcast();
         let pyobj_vec = pseudo_arrow_array.to_pyobj_vec();
