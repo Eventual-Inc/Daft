@@ -8,6 +8,7 @@ mod cast;
 mod compare_agg;
 mod comparison;
 mod concat;
+mod concat_agg;
 mod count;
 mod date;
 pub(crate) mod downcast;
@@ -116,4 +117,10 @@ pub trait DaftListAggable {
     type Output;
     fn list(&self) -> Self::Output;
     fn grouped_list(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftConcatAggable {
+    type Output;
+    fn concat(&self) -> Self::Output;
+    fn grouped_concat(&self, groups: &GroupIndices) -> Self::Output;
 }
