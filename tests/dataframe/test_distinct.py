@@ -5,6 +5,7 @@ import pytest
 
 from daft import DataFrame
 from daft.datatype import DataType
+from tests.utils import sort_arrow_table
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
@@ -21,8 +22,8 @@ def test_distinct_with_nulls(repartition_nparts):
         "id": [1, None, None],
         "values": ["a1", "b1", "c1"],
     }
-    assert pa.Table.from_pydict(daft_df.to_pydict()).sort_by("values") == pa.Table.from_pydict(expected).sort_by(
-        "values"
+    assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "values") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "values"
     )
 
 
@@ -40,8 +41,8 @@ def test_distinct_with_all_nulls(repartition_nparts):
         "id": [None, None, None],
         "values": ["a1", "b1", "c1"],
     }
-    assert pa.Table.from_pydict(daft_df.to_pydict()).sort_by("values") == pa.Table.from_pydict(expected).sort_by(
-        "values"
+    assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "values") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "values"
     )
 
 
