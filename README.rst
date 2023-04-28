@@ -128,6 +128,10 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
    :target: https://github.com/Eventual-Inc/Daft/tags
    :alt: latest tag
 
+.. |Coverage| image:: https://codecov.io/gh/Eventual-Inc/Daft/branch/main/graph/badge.svg?token=J430QVFE89
+   :target: https://codecov.io/gh/Eventual-Inc/Daft
+   :alt: Coverage
+
 .. |Slack| image:: https://img.shields.io/badge/slack-@distdata-purple.svg?logo=slack
    :target: https://join.slack.com/t/dist-data/shared_invite/zt-1t44ss4za-1rtsJNIsQOnjlf8BlG05yw
    :alt: slack community
