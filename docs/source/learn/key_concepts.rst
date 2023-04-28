@@ -49,10 +49,10 @@ Daft does not execute the computations defined on a DataFrame until explicitly i
 
 .. code:: python
 
-    from daft import DataFrame
+    import daft
 
     # Create a new dataframe with one column
-    df = DataFrame.from_pydict({"a": [1, 2, 3]})
+    df = daft.from_pydict({"a": [1, 2, 3]})
 
     # Create a new column which is column "a" incremented by 1
     df = df.with_column("b", df["a"] + 1)
@@ -104,10 +104,10 @@ Daft defines interesting types and operations over the data in your DataFrame. F
 
 .. code:: python
 
-    from daft import DataFrame
+    import daft
 
     # Create a new dataframe with just one column of URLs
-    df = DataFrame.from_pydict({"urls": ["https://www.google.com", "https://www.yahoo.com", "https://www.bing.com"]})
+    df = daft.from_pydict({"urls": ["https://www.google.com", "https://www.yahoo.com", "https://www.bing.com"]})
 
     # Create a new column which contains the downloaded bytes from each URL
     df = df.with_column("url_contents", df["urls"].url.download())
@@ -157,7 +157,7 @@ Daft then provides an extremely rich Expressions library to allow you to compose
 
 .. code:: python
 
-    from daft import col, DataType, DataFrame
+    from daft import col, DataType
 
     # Take the column named "a" and add 1 to each element
     col("a") + 1
@@ -169,7 +169,9 @@ Note that Expressions aren't very useful just by themselves! They are used in Da
 
 .. code:: python
 
-    df = DataFrame.from_pydict({"a": [1, 2, 3]})
+    import daft
+
+    df = daft.from_pydict({"a": [1, 2, 3]})
 
     df = df.select(
         col("a"),

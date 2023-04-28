@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from daft.dataframe import DataFrame
+import daft
 from daft.internal.rule_runner import FixedPointPolicy, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import PushDownLimit
@@ -23,14 +23,14 @@ def optimizer() -> RuleRunner[LogicalPlan]:
 
 
 def test_limit_pushdown_repartition(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized_df = df.repartition(3).limit(1)
     optimized_df = df.limit(1).repartition(3)
     assert_plan_eq(optimizer(unoptimized_df.plan()), optimized_df.plan())
 
 
 def test_limit_pushdown_projection(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized_df = df.select("variety").limit(1)
     optimized_df = df.limit(1).select("variety")
     assert_plan_eq(optimizer(unoptimized_df.plan()), optimized_df.plan())

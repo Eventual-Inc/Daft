@@ -47,7 +47,8 @@ In this example, we load images from an AWS S3 bucket and run a simple function 
 
 .. code:: python
 
-    from daft import DataFrame, lit
+    import daft
+    from daft import lit
 
     import io
     from PIL import Image
@@ -59,7 +60,7 @@ In this example, we load images from an AWS S3 bucket and run a simple function 
         return imgcopy
 
     # Load a dataframe from files in an S3 bucket
-    df = DataFrame.from_files("s3://daft-public-data/laion-sample-images/*")
+    df = daft.from_glob_path("s3://daft-public-data/laion-sample-images/*")
 
     # Get the AWS S3 url of each image
     df = df.select(lit("s3://").str.concat(df["name"]).alias("s3_url"))

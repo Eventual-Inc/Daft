@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+import daft
 from daft import col
-from daft.dataframe import DataFrame
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import FoldProjections
@@ -25,7 +25,7 @@ def optimizer() -> RuleRunner[LogicalPlan]:
 
 
 def test_fold_projections(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_unoptimized = df.select("sepal_length", "sepal_width").select("sepal_length")
     df_optimized = df.select("sepal_length")
     assert df_unoptimized.column_names == ["sepal_length"]
@@ -33,7 +33,7 @@ def test_fold_projections(valid_data: list[dict[str, float]], optimizer) -> None
 
 
 def test_fold_projections_aliases(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_unoptimized = df.select(col("sepal_length").alias("foo"), "sepal_width").select(col("foo").alias("sepal_width"))
     df_optimized = df.select(col("sepal_length").alias("foo").alias("sepal_width"))
 
@@ -42,13 +42,13 @@ def test_fold_projections_aliases(valid_data: list[dict[str, float]], optimizer)
 
 
 def test_cannot_fold_projections(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_unoptimized = df.select(col("sepal_length") + 1, "sepal_width").select("sepal_length")
     assert_plan_eq(optimizer(df_unoptimized.plan()), df_unoptimized.plan())
 
 
 def test_fold_projections_resource_requests(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_unoptimized = df.with_column(
         "bar", col("sepal_length"), resource_request=ResourceRequest(num_cpus=1)
     ).with_column("foo", col("sepal_length"), resource_request=ResourceRequest(num_gpus=1))

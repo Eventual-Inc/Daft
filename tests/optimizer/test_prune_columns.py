@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+import daft
 from daft import col
-from daft.dataframe import DataFrame
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import PruneColumns
@@ -24,7 +24,7 @@ def optimizer() -> RuleRunner[LogicalPlan]:
 
 
 def test_prune_columns_projection_projection(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_unoptimized = df.select("sepal_width", "sepal_length").select("sepal_length")
     df_optimized = df.select("sepal_length").select("sepal_length")
 
@@ -33,7 +33,7 @@ def test_prune_columns_projection_projection(valid_data: list[dict[str, float]],
 
 
 def test_prune_columns_projection_projection_aliases(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_unoptimized = df.select(col("sepal_width").alias("bar"), col("sepal_length").alias("foo")).select(
         col("foo").alias("bar")
     )
@@ -44,7 +44,7 @@ def test_prune_columns_projection_projection_aliases(valid_data: list[dict[str, 
 
 
 def test_prune_columns_local_aggregate(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_unoptimized = df.agg(
         [
             ("sepal_length", "mean"),
@@ -66,7 +66,7 @@ def test_prune_columns_local_aggregate(valid_data: list[dict[str, float]], optim
 
 
 def test_prune_columns_local_aggregate_aliases(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_unoptimized = df.agg(
         [
             (col("sepal_length").alias("foo"), "mean"),
@@ -123,7 +123,7 @@ def test_projection_join_pruning(
     right_selection_final = [col(s).alias(f"foo.{s}") for s in right_selection] if alias else right_selection
     key_selection_final = [col(s).alias(f"foo.{s}") for s in key_selection] if alias else key_selection
 
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_unoptimized = df.join(df, on="variety").select(
         *left_selection_final, *right_selection_final, *key_selection_final
     )
@@ -179,7 +179,7 @@ def test_local_aggregate_join_prune(
     right_selection = [c for c, _ in right_aggregation]
     right_selection_prejoin = [c.replace("right.", "") for c in right_selection]
 
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_unoptimized = (
         df.join(df, on="variety")
         .groupby("variety")
@@ -213,7 +213,7 @@ def test_local_aggregate_join_prune(
 
 
 def test_projection_on_scan(valid_data_json_path, optimizer):
-    df = DataFrame.read_json(valid_data_json_path)
+    df = daft.read_json(valid_data_json_path)
     df = df.with_column("sepal_length", col("sepal_length") + 1)
 
     # Projection cannot be pushed down into TabularFileScan

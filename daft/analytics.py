@@ -141,6 +141,19 @@ class AnalyticsClient:
             },
         )
 
+    def track_fn_call(self, fn_name: str, duration_seconds: float, error: str | None = None) -> None:
+        optionals = {}
+        if error is not None:
+            optionals["error"] = error
+        self._append_to_log(
+            "daft API Call",
+            {
+                "fn_name": fn_name,
+                "duration_seconds": duration_seconds,
+                **optionals,
+            },
+        )
+
 
 def init_analytics(daft_version: str, daft_build_type: str) -> AnalyticsClient:
     """Initialize the analytics module
@@ -163,7 +176,6 @@ def time_df_method(method):
 
     @functools.wraps(method)
     def tracked_method(*args, **kwargs):
-
         if _ANALYTICS_CLIENT is None:
             return method(*args, **kwargs)
 
@@ -183,3 +195,29 @@ def time_df_method(method):
         return result
 
     return tracked_method
+
+
+def time_func(fn):
+    """Decorator to track metrics for daft API calls"""
+
+    @functools.wraps(fn)
+    def tracked_fn(*args, **kwargs):
+        if _ANALYTICS_CLIENT is None:
+            return fn(*args, **kwargs)
+
+        start = time.time()
+        try:
+            result = fn(*args, **kwargs)
+        except Exception as e:
+            _ANALYTICS_CLIENT.track_fn_call(
+                fn_name=fn.__name__, duration_seconds=time.time() - start, error=str(type(e).__name__)
+            )
+            raise
+
+        _ANALYTICS_CLIENT.track_fn_call(
+            fn_name=fn.__name__,
+            duration_seconds=time.time() - start,
+        )
+        return result
+
+    return tracked_fn

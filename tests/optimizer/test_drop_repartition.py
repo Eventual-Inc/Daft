@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+import daft
 from daft import col
-from daft.dataframe import DataFrame
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import DropRepartition
@@ -24,7 +24,7 @@ def optimizer() -> RuleRunner[LogicalPlan]:
 
 
 def test_drop_unneeded_repartition(valid_data: list[dict[str, float]], tmpdir, optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df = df.repartition(2)
     df = df.groupby("variety").agg([("sepal_length", "mean")])
     repartitioned_df = df.repartition(2, df["variety"])
@@ -32,13 +32,13 @@ def test_drop_unneeded_repartition(valid_data: list[dict[str, float]], tmpdir, o
 
 
 def test_drop_single_repartitions(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized_df = df.repartition(1, "variety")
     assert_plan_eq(optimizer(unoptimized_df.plan()), df.plan())
 
 
 def test_drop_double_repartition(valid_data: list[dict[str, float]], tmpdir, optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized_df = df.repartition(2).repartition(3)
     optimized_df = df.repartition(3)
     assert_plan_eq(optimizer(unoptimized_df.plan()), optimized_df.plan())
@@ -46,6 +46,6 @@ def test_drop_double_repartition(valid_data: list[dict[str, float]], tmpdir, opt
 
 @pytest.mark.skip(reason="Broken on issue: https://github.com/Eventual-Inc/Daft/issues/596")
 def test_repartition_alias(valid_data: list[dict[str, float]], tmpdir, optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df = df.repartition(2, "variety").select(col("sepal_length").alias("variety")).repartition(2, "variety")
     assert_plan_eq(optimizer(df.plan()), df.plan())

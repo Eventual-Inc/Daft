@@ -16,30 +16,31 @@ Additionally, Daft can read data from a variety of container file formats, inclu
 Daft supports file paths to a single file, a directory of files, and wildcards. It also supports paths to remote object storage such as AWS S3.
 
 .. code:: python
+    import daft
 
     # You can read a single CSV file from your local filesystem
-    df = DataFrame.read_csv("path/to/file.csv")
+    df = daft.read_csv("path/to/file.csv")
 
     # You can also read folders of CSV files, or include wildcards to select for patterns of file paths
-    df = DataFrame.read_csv("path/to/*.csv")
+    df = daft.read_csv("path/to/*.csv")
 
     # Other formats such as parquet and line-delimited JSON are also supported
-    df = DataFrame.read_parquet("path/to/*.parquet")
-    df = DataFrame.read_json("path/to/*.json")
+    df = daft.read_parquet("path/to/*.parquet")
+    df = daft.read_json("path/to/*.json")
 
     # Remote filesystems such as AWS S3 are also supported, and can be specified with their protocols
-    df = DataFrame.read_csv("s3://mybucket/path/to/*.csv")
+    df = daft.read_csv("s3://mybucket/path/to/*.csv")
 
-To learn more about each of these constructors, as well as the options that they support, consult the API documentation on :ref:`DataFrame construction from files <df-file-construction-api>`.
+To learn more about each of these constructors, as well as the options that they support, consult the API documentation on :ref:`creating DataFrames from files <df-io-files>`.
 
-From Filepaths
+From File Paths
 ^^^^^^^^^^^^^^
 
-However, if instead you are reading a set of files that are not container file formats, you can use the ``DataFrame.from_glob_path`` method which will read a DataFrame of globbed filepaths.
+However, if instead you are reading a set of files that are not container file formats, you can use the ``daft.from_glob_path`` method which will read a DataFrame of globbed filepaths.
 
 .. code:: python
 
-    df = DataFrame.from_glob_path("s3://mybucket/path/to/images/*.jpeg")
+    df = daft.from_glob_path("s3://mybucket/path/to/images/*.jpeg")
 
     # +----------+------+-----+
     # | name     | size | ... |
@@ -58,12 +59,12 @@ For testing, or small datasets that fit in memory, you may also create DataFrame
 .. code:: python
 
     # Create DataFrame using a dictionary of {column_name: list_of_values}
-    df = DataFrame.from_pydict({"A": [1, 2, 3], "B": ["foo", "bar", "baz"]})
+    df = daft.from_pydict({"A": [1, 2, 3], "B": ["foo", "bar", "baz"]})
 
     # Create DataFrame using a list of rows, where each row is a dictionary of {column_name: value}
-    df = DataFrame.from_pylist([{"A": 1, "B": "foo"}, {"A": 2, "B": "bar"}, {"A": 3, "B": "baz"}])
+    df = daft.from_pylist([{"A": 1, "B": "foo"}, {"A": 2, "B": "bar"}, {"A": 3, "B": "baz"}])
 
-To learn more, consult the API documentation on :ref:`DataFrame construction from in-memory datastructures <df-memory-construction-api>`.
+To learn more, consult the API documentation on :ref:`creating DataFrames from in-memory data structures <df-io-in-memory>`.
 
 Writing Data
 ------------

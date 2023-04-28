@@ -68,11 +68,38 @@ if not dev_build and not user_opted_out:
 # Daft top-level imports
 ###
 
+from daft.convert import (
+    from_arrow,
+    from_dask_dataframe,
+    from_pandas,
+    from_pydict,
+    from_pylist,
+    from_ray_dataset,
+)
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.expressions import col, lit
+from daft.io import from_glob_path, read_csv, read_json, read_parquet
 from daft.series import Series
 from daft.udf import udf
 from daft.viz import register_viz_hook
 
-__all__ = ["DataFrame", "col", "DataType", "lit", "Series", "register_viz_hook", "udf"]
+__all__ = [
+    "from_pylist",
+    "from_pydict",
+    "from_arrow",
+    "from_pandas",
+    "from_ray_dataset",
+    "from_dask_dataframe",
+    "from_glob_path",
+    "read_csv",
+    "read_json",
+    "read_parquet",
+    "DataFrame",
+    "col",
+    "DataType",
+    "lit",
+    "Series",
+    "register_viz_hook",
+    "udf",
+]

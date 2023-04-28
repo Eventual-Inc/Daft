@@ -14,9 +14,9 @@ Select specific columns in a DataFrame using ``.select``, which also takes Expre
 
 .. code-block:: python
 
-    from daft import DataFrame
+    import daft
 
-    df = DataFrame.from_pydict({"A": [1, 2, 3], "B": [4, 5, 6]})
+    df = daft.from_pydict({"A": [1, 2, 3], "B": [4, 5, 6]})
 
     df.select("A").show()
 
@@ -101,7 +101,7 @@ We can limit the rows to the first ``N`` rows using ``.limit``:
 
 .. code-block:: python
 
-    df = DataFrame.from_pydict({
+    df = daft.from_pydict({
         "A": [1, 2, 3, 4, 5],
         "B": [6, 7, 8, 9, 10],
     })
@@ -152,8 +152,8 @@ Daft also supports multi-column joins key you have a join key comprising of mult
 
 .. code-block:: python
 
-    df1 = DataFrame.from_pydict({"A": [1, 2, 3], "B": [4, 5, 6]})
-    df2 = DataFrame.from_pydict({"A": [1, 2, 3], "C": [7, 8, 9]})
+    df1 = daft.from_pydict({"A": [1, 2, 3], "B": [4, 5, 6]})
+    df2 = daft.from_pydict({"A": [1, 2, 3], "C": [7, 8, 9]})
 
     df1.join(df2, on="A").show()
 
@@ -178,7 +178,7 @@ Rows in a DataFrame can be reordered based on some column using ``.sort``. Daft 
 
 .. code-block:: python
 
-    df = DataFrame.from_pydict({
+    df = daft.from_pydict({
         "A": [1, 2, 3],
         "B": [6, 7, 8],
     })
@@ -206,7 +206,7 @@ The ``df.explode`` method can be used to explode a column containing a list of v
 
 .. code:: python
 
-    df = DataFrame.from_pydict({
+    df = daft.from_pydict({
         "A": [1, 2, 3],
         "B": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
     })

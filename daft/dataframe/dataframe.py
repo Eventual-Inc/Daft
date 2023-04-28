@@ -1,7 +1,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
 import pathlib
-import warnings
 from dataclasses import dataclass
 from functools import reduce
 from typing import (
@@ -19,33 +18,22 @@ from typing import (
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
+from daft.convert import InputListType
 from daft.dataframe.preview import DataFramePreview
-from daft.datasources import (
-    CSVSourceInfo,
-    JSONSourceInfo,
-    ParquetSourceInfo,
-    SourceInfo,
-    StorageType,
-)
+from daft.datasources import StorageType
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
-from daft.filesystem import get_filesystem_from_path
 from daft.logical import logical_plan
 from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
 from daft.resource_request import ResourceRequest
-from daft.runners.partitioning import (
-    PartitionCacheEntry,
-    PartitionSet,
-    vPartitionSchemaInferenceOptions,
-)
+from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.table import Table
 from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
     from ray.data.dataset import Dataset as RayDataset
-    import numpy as np
     import pandas as pd
     import pyarrow as pa
     import dask
@@ -55,45 +43,6 @@ from daft.logical.schema import Schema
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
-InputListType = Union[list, "np.ndarray", "pa.Array", "pa.ChunkedArray"]
-
-
-def _get_tabular_files_scan(
-    path: str,
-    source_info: SourceInfo,
-    schema_inference_options: vPartitionSchemaInferenceOptions,
-) -> logical_plan.TabularFilesScan:
-    """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
-    # Glob the path using the Runner
-    runner_io = get_context().runner().runner_io()
-    listing_details_partition_set = runner_io.glob_paths_details(path, source_info)
-
-    # TODO: We should have a more sophisticated schema inference mechanism (sample >1 file and resolve schemas across files)
-    # Infer schema from the first filepath in the listings PartitionSet
-    data_schema = runner_io.get_schema_from_first_filepath(
-        listing_details_partition_set, source_info, schema_inference_options
-    )
-
-    # Construct plan
-    cache_entry = get_context().runner().put_partition_set_into_cache(listing_details_partition_set)
-    filepath_plan = logical_plan.InMemoryScan(
-        cache_entry=cache_entry,
-        schema=runner_io.FS_LISTING_SCHEMA,
-        partition_spec=logical_plan.PartitionSpec(
-            logical_plan.PartitionScheme.UNKNOWN, listing_details_partition_set.num_partitions()
-        ),
-    )
-    return logical_plan.TabularFilesScan(
-        schema=data_schema,
-        predicate=None,
-        columns=None,
-        source_info=source_info,
-        filepaths_child=filepath_plan,
-        filepaths_column_name=runner_io.FS_LISTING_PATH_COLUMN_NAME,
-        # WARNING: This is currently hardcoded to be the same number of partitions as rows!! This is because we emit
-        # one partition per filepath. This will change in the future and our logic here should change accordingly.
-        num_partitions=len(listing_details_partition_set),
-    )
 
 
 class DataFrame:
@@ -111,11 +60,11 @@ class DataFrame:
         if not isinstance(plan, logical_plan.LogicalPlan):
             if isinstance(plan, dict):
                 raise ValueError(
-                    f"DataFrames should be constructed with a dictionary of columns using `DataFrame.from_pydict`"
+                    f"DataFrames should be constructed with a dictionary of columns using `daft.from_pydict`"
                 )
             if isinstance(plan, list):
                 raise ValueError(
-                    f"DataFrames should be constructed with a list of dictionaries using `DataFrame.from_pylist`"
+                    f"DataFrames should be constructed with a list of dictionaries using `daft.from_pylist`"
                 )
             raise ValueError(f"Expected DataFrame to be constructed with a LogicalPlan, received: {plan}")
 
@@ -238,42 +187,19 @@ class DataFrame:
     ###
 
     @classmethod
-    @DataframePublicAPI
-    def from_pylist(cls, data: List[Dict[str, Any]]) -> "DataFrame":
-        """Creates a DataFrame from a list of dictionaries
-
-        Example:
-            >>> df = DataFrame.from_pylist([{"foo": 1}, {"foo": 2}])
-
-        Args:
-            data: list of dictionaries, where each key is a column name
-
-        Returns:
-            DataFrame: DataFrame created from list of dictionaries
-        """
+    def _from_pylist(cls, data: List[Dict[str, Any]]) -> "DataFrame":
+        """Creates a DataFrame from a list of dictionaries."""
         headers: Set[str] = set()
         for row in data:
             if not isinstance(row, dict):
                 raise ValueError(f"Expected list of dictionaries of {{column_name: value}}, received: {type(row)}")
             headers.update(row.keys())
         headers_ordered = sorted(list(headers))
-        return cls.from_pydict(data={header: [row.get(header, None) for row in data] for header in headers_ordered})
+        return cls._from_pydict(data={header: [row.get(header, None) for row in data] for header in headers_ordered})
 
     @classmethod
-    @DataframePublicAPI
-    def from_pydict(cls, data: Dict[str, InputListType]) -> "DataFrame":
-        """Creates a DataFrame from a Python dictionary
-
-        Example:
-            >>> df = DataFrame.from_pydict({"foo": [1, 2]})
-
-        Args:
-            data: Key -> Sequence[item] of data. Each Key is created as a column, and must have a value that is
-                a Python list, Numpy array or PyArrow array. Values must be equal in length across all keys.
-
-        Returns:
-            DataFrame: DataFrame created from dictionary of columns
-        """
+    def _from_pydict(cls, data: Dict[str, InputListType]) -> "DataFrame":
+        """Creates a DataFrame from a Python dictionary."""
         column_lengths = {key: len(data[key]) for key in data}
         if len(set(column_lengths.values())) > 1:
             raise ValueError(
@@ -284,40 +210,16 @@ class DataFrame:
         return cls._from_tables(data_vpartition)
 
     @classmethod
-    @DataframePublicAPI
-    def from_arrow(cls, data: Union["pa.Table", List["pa.Table"]]) -> "DataFrame":
-        """Creates a DataFrame from a pyarrow Table.
-
-        Example:
-            >>> t = pa.table({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
-            >>> df = DataFrame.from_arrow(t)
-
-        Args:
-            data: pyarrow Table(s) that we wish to convert into a Daft DataFrame.
-
-        Returns:
-            DataFrame: DataFrame created from the provided pyarrow Table.
-        """
+    def _from_arrow(cls, data: Union["pa.Table", List["pa.Table"]]) -> "DataFrame":
+        """Creates a DataFrame from a pyarrow Table."""
         if not isinstance(data, list):
             data = [data]
         data_vpartitions = [Table.from_arrow(table) for table in data]
         return cls._from_tables(*data_vpartitions)
 
     @classmethod
-    @DataframePublicAPI
-    def from_pandas(cls, data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame":
-        """Creates a Daft DataFrame from a pandas DataFrame.
-
-        Example:
-            >>> pd_df = pd.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
-            >>> df = DataFrame.from_pandas(pd_df))
-
-        Args:
-            data: pandas DataFrame(s) that we wish to convert into a Daft DataFrame.
-
-        Returns:
-            DataFrame: Daft DataFrame created from the provided pandas DataFrame.
-        """
+    def _from_pandas(cls, data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame":
+        """Creates a Daft DataFrame from a pandas DataFrame."""
         if not isinstance(data, list):
             data = [data]
         data_vpartitions = [Table.from_pandas(df) for df in data]
@@ -345,176 +247,6 @@ class DataFrame:
             schema=parts[0].schema(),
         )
         return cls(plan)
-
-    @classmethod
-    @DataframePublicAPI
-    def from_json(cls, *args, **kwargs) -> "DataFrame":
-        warnings.warn(f"DataFrame.from_json will be deprecated in 0.1.0 in favor of DataFrame.read_json")
-        return cls.read_json(*args, **kwargs)
-
-    @classmethod
-    @DataframePublicAPI
-    def read_json(
-        cls,
-        path: str,
-    ) -> "DataFrame":
-        """Creates a DataFrame from line-delimited JSON file(s)
-
-        Example:
-            >>> df = DataFrame.read_json("/path/to/file.json")
-            >>> df = DataFrame.read_json("/path/to/directory")
-            >>> df = DataFrame.read_json("/path/to/files-*.json")
-            >>> df = DataFrame.read_json("s3://path/to/files-*.json")
-
-        Args:
-            path (str): Path to JSON files (allows for wildcards)
-
-        returns:
-            DataFrame: parsed DataFrame
-        """
-        plan = _get_tabular_files_scan(
-            path,
-            JSONSourceInfo(),
-            vPartitionSchemaInferenceOptions(),
-        )
-        return cls(plan)
-
-    @classmethod
-    @DataframePublicAPI
-    def from_csv(cls, *args, **kwargs) -> "DataFrame":
-        warnings.warn(f"DataFrame.from_csv will be deprecated in 0.1.0 in favor of DataFrame.read_csv")
-        return cls.read_csv(*args, **kwargs)
-
-    @classmethod
-    @DataframePublicAPI
-    def read_csv(
-        cls,
-        path: str,
-        has_headers: bool = True,
-        column_names: Optional[List[str]] = None,
-        delimiter: str = ",",
-    ) -> "DataFrame":
-        """Creates a DataFrame from CSV file(s)
-
-        Example:
-            >>> df = DataFrame.read_csv("/path/to/file.csv")
-            >>> df = DataFrame.read_csv("/path/to/directory")
-            >>> df = DataFrame.read_csv("/path/to/files-*.csv")
-            >>> df = DataFrame.read_csv("s3://path/to/files-*.csv")
-
-        Args:
-            path (str): Path to CSV (allows for wildcards)
-            has_headers (bool): Whether the CSV has a header or not, defaults to True
-            column_names (Optional[List[str]]): Custom column names to assign to the DataFrame, defaults to None
-            delimiter (Str): Delimiter used in the CSV, defaults to ","
-
-        returns:
-            DataFrame: parsed DataFrame
-        """
-
-        plan = _get_tabular_files_scan(
-            path,
-            CSVSourceInfo(
-                delimiter=delimiter,
-                has_headers=has_headers,
-            ),
-            vPartitionSchemaInferenceOptions(inference_column_names=column_names),
-        )
-        return cls(plan)
-
-    @classmethod
-    @DataframePublicAPI
-    def from_parquet(cls, *args, **kwargs) -> "DataFrame":
-        warnings.warn(f"DataFrame.from_parquet will be deprecated in 0.1.0 in favor of DataFrame.read_parquet")
-        return cls.read_parquet(*args, **kwargs)
-
-    @classmethod
-    @DataframePublicAPI
-    def read_parquet(cls, path: str) -> "DataFrame":
-        """Creates a DataFrame from Parquet file(s)
-
-        Example:
-            >>> df = DataFrame.read_parquet("/path/to/file.parquet")
-            >>> df = DataFrame.read_parquet("/path/to/directory")
-            >>> df = DataFrame.read_parquet("/path/to/files-*.parquet")
-            >>> df = DataFrame.read_parquet("s3://path/to/files-*.parquet")
-
-        Args:
-            path (str): Path to Parquet file (allows for wildcards)
-
-        returns:
-            DataFrame: parsed DataFrame
-        """
-        plan = _get_tabular_files_scan(
-            path,
-            ParquetSourceInfo(),
-            vPartitionSchemaInferenceOptions(),
-        )
-        return cls(plan)
-
-    @classmethod
-    @DataframePublicAPI
-    def from_files(cls, path: str) -> "DataFrame":
-        """Creates a DataFrame of file paths and other metadata from a glob path
-
-        Example:
-            >>> df = DataFrame.from_files("/path/to/files/*.jpeg")
-
-        Args:
-            path (str): path to files on disk (allows wildcards)
-
-        Returns:
-            DataFrame: DataFrame containing the path to each file as a row, along with other metadata
-                parsed from the provided filesystem
-        """
-        warnings.warn(
-            f"DataFrame.from_files will be deprecated in 0.1.0 in favor of DataFrame.from_glob_path, which presents a more predictable set of columns for each backend and runs the file globbing on the runner instead of the driver"
-        )
-        fs = get_filesystem_from_path(path)
-        file_details = fs.glob(path, detail=True)
-        return cls.from_pylist(list(file_details.values()))
-
-    @classmethod
-    @DataframePublicAPI
-    def from_glob_path(cls, path: str) -> "DataFrame":
-        """Creates a DataFrame of file paths and other metadata from a glob path
-
-        This method supports wildcards:
-
-        1. "*" matches any number of any characters including none
-        2. "?" matches any single character
-        3. "[...]" matches any single character in the brackets
-        4. "**" recursively matches any number of layers of directories
-
-        The returned DataFrame will have the following columns:
-
-        1. path: the path to the file/directory
-        2. size: size of the object in bytes
-        3. type: either "file" or "directory"
-
-        Example:
-            >>> df = DataFrame.from_glob_path("/path/to/files/*.jpeg")
-            >>> df = DataFrame.from_glob_path("/path/to/files/**/*.jpeg")
-            >>> df = DataFrame.from_glob_path("/path/to/files/**/image-?.jpeg")
-
-        Args:
-            path (str): path to files on disk (allows wildcards)
-
-        Returns:
-            DataFrame: DataFrame containing the path to each file as a row, along with other metadata
-                parsed from the provided filesystem
-        """
-        runner_io = get_context().runner().runner_io()
-        partition_set = runner_io.glob_paths_details(path)
-        cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
-        filepath_plan = logical_plan.InMemoryScan(
-            cache_entry=cache_entry,
-            schema=runner_io.FS_LISTING_SCHEMA,
-            partition_spec=logical_plan.PartitionSpec(
-                logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
-            ),
-        )
-        return cls(filepath_plan)
 
     ###
     # Write methods
@@ -951,9 +683,9 @@ class DataFrame:
         """drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
         Example:
-            >>> df = DataFrame.from_pydict({"a": [1.0, 2.2, 3.5, float("nan")]})
+            >>> df = daft.from_pydict({"a": [1.0, 2.2, 3.5, float("nan")]})
             >>> df.drop_na()  # drops rows where any column contains NaN values
-            >>> df = DataFrame.from_pydict({"a": [1.6, 2.5, 3.3, float("nan")]})
+            >>> df = daft.from_pydict({"a": [1.6, 2.5, 3.3, float("nan")]})
             >>> df.drop_na("a")  # drops rows where column a contains NaN values
 
         Args:
@@ -988,9 +720,9 @@ class DataFrame:
         """drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
         If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
         Example:
-            >>> df = DataFrame.from_pydict({"a": [1.0, 2.2, 3.5, float("NaN")]})
+            >>> df = daft.from_pydict({"a": [1.0, 2.2, 3.5, float("NaN")]})
             >>> df.drop_null()  # drops rows where any column contains Null/NaN values
-            >>> df = DataFrame.from_pydict({"a": [1.6, 2.5, None, float("NaN")]})
+            >>> df = daft.from_pydict({"a": [1.6, 2.5, None, float("NaN")]})
             >>> df.drop_null("a")  # drops rows where column a contains Null/NaN values
         Args:
             *cols (str): column names by which rows containings nans should be filtered
@@ -1015,7 +747,7 @@ class DataFrame:
         Exploding Null values or empty lists will create a single Null entry (see example below).
 
         Example:
-            >>> df = DataFrame.from_pydict({
+            >>> df = daft.from_pydict({
             >>>     "x": [[1], [2, 3]],
             >>>     "y": [["a"], ["b", "c"]],
             >>>     "z": [1.0, 2.0],
@@ -1329,16 +1061,8 @@ class DataFrame:
         return partition_set.to_ray_dataset()
 
     @classmethod
-    @DataframePublicAPI
-    def from_ray_dataset(cls, ds: "RayDataset") -> "DataFrame":
-        """Creates a DataFrame from a Ray Dataset
-
-        .. NOTE::
-            This function can only work if Daft is running using the RayRunner
-
-        Args:
-            ds: the Ray Dataset to create a Daft DataFrame from
-        """
+    def _from_ray_dataset(cls, ds: "RayDataset") -> "DataFrame":
+        """Creates a DataFrame from a Ray Dataset."""
         if get_context().runner_config.name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
@@ -1406,18 +1130,8 @@ class DataFrame:
 
     @classmethod
     @DataframePublicAPI
-    def from_dask_dataframe(cls, ddf: "dask.DataFrame") -> "DataFrame":
-        """Creates a Daft DataFrame from a Dask DataFrame.
-
-        The provided Dask DataFrame must have been created using
-        `Dask-on-Ray <https://docs.ray.io/en/latest/data/dask-on-ray.html>`__.
-
-        .. NOTE::
-            This function can only work if Daft is running using the RayRunner
-
-        Args:
-            ddf: The Dask DataFrame to create a Daft DataFrame from.
-        """
+    def _from_dask_dataframe(cls, ddf: "dask.DataFrame") -> "DataFrame":
+        """Creates a Daft DataFrame from a Dask DataFrame."""
         # TODO(Clark): Support Dask DataFrame conversion for the local runner if
         # Dask is using a non-distributed scheduler.
         if get_context().runner_config.name != "ray":

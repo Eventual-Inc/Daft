@@ -25,7 +25,7 @@ def test_sort_simple(benchmark, num_samples, num_partitions) -> None:
     np.random.shuffle(arr)
 
     df = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "mykey": arr,
             }
@@ -57,7 +57,7 @@ def test_sort_strings(benchmark, num_samples, num_partitions) -> None:
     random.shuffle(keys)
 
     df = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "mykey": keys,
             }
@@ -92,7 +92,7 @@ def test_sort_withdata(benchmark, num_samples, num_partitions) -> None:
     long_A = "A" * 1024
 
     df = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "mykey": arr,
                 "data": [long_A for _ in range(num_samples)],
@@ -136,7 +136,7 @@ def test_multicolumn_sort(benchmark, num_columns, num_samples, num_partitions) -
     np.random.shuffle(arr)
 
     df = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 # all coprime
                 "nums_9": arr * 17 % 9,

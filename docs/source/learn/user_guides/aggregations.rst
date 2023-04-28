@@ -12,9 +12,9 @@ An aggregation can be applied on an entire DataFrame, for example to get the mea
 
 .. code:: python
 
-    from daft import DataFrame
+    import daft
 
-    df = DataFrame.from_pydict({
+    df = daft.from_pydict({
         "class": ["a", "a", "b", "b"],
         "score": [10, 20., 30., 40],
     })
