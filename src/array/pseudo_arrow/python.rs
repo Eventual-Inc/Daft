@@ -20,18 +20,18 @@ impl PseudoArrowArray<PyObject> {
         // taking into account the validity bitmap.
         // Invalid slots will be set to py.None().
 
-        Python::with_gil(|py| {
-            if self.validity().is_some() {
+        if self.validity().is_some() {
+            Python::with_gil(|py| {
                 self.iter()
                     .map(|opt_val| match opt_val {
                         Some(pyobj) => pyobj.clone_ref(py),
                         None => py.None(),
                     })
                     .collect()
-            } else {
-                self.values().to_vec()
-            }
-        })
+            })
+        } else {
+            self.values().to_vec()
+        }
     }
 
     pub fn if_then_else(
