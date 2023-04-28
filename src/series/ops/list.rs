@@ -1,22 +1,27 @@
-use crate::array::BaseArray;
-use crate::datatypes::DataType;
+use crate::datatypes::{DataType, UInt64Array};
 use crate::error::DaftError;
 use crate::{error::DaftResult, series::Series};
 
 impl Series {
-    pub fn explode(&self) -> DaftResult<(Series, Series)> {
+    pub fn explode(&self) -> DaftResult<Series> {
         use DataType::*;
         match self.data_type() {
-            List(_) => {
-                let (exploded, repeat_idx) = self.list()?.explode()?;
-                Ok((exploded, repeat_idx.into_series()))
-            }
-            FixedSizeList(..) => {
-                let (exploded, repeat_idx) = self.fixed_size_list()?.explode()?;
-                Ok((exploded, repeat_idx.into_series()))
-            }
+            List(_) => self.list()?.explode(),
+            FixedSizeList(..) => self.fixed_size_list()?.explode(),
             dt => Err(DaftError::TypeError(format!(
                 "explode not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn lengths(&self) -> DaftResult<UInt64Array> {
+        use DataType::*;
+        match self.data_type() {
+            List(_) => self.list()?.lengths(),
+            FixedSizeList(..) => self.fixed_size_list()?.lengths(),
+            dt => Err(DaftError::TypeError(format!(
+                "lengths not implemented for {}",
                 dt
             ))),
         }

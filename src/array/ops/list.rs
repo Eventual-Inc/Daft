@@ -13,7 +13,22 @@ use crate::error::DaftResult;
 use super::downcast::Downcastable;
 
 impl ListArray {
-    pub fn explode(&self) -> DaftResult<(Series, UInt64Array)> {
+    pub fn lengths(&self) -> DaftResult<UInt64Array> {
+        let list_array = self.downcast();
+        let offsets = list_array.offsets();
+
+        let mut lens = Vec::with_capacity(self.len());
+        for i in 0..self.len() {
+            lens.push((unsafe { offsets.get_unchecked(i + 1) - offsets.get_unchecked(i) }) as u64)
+        }
+        let array = Box::new(
+            arrow2::array::PrimitiveArray::from_vec(lens)
+                .with_validity(list_array.validity().cloned()),
+        );
+        Ok(UInt64Array::from((self.name(), array)))
+    }
+
+    pub fn explode(&self) -> DaftResult<Series> {
         let list_array = self.downcast();
         let child_array = list_array.values().as_ref();
         let offsets = list_array.offsets();
@@ -31,25 +46,15 @@ impl ListArray {
             .sum();
         let mut growable =
             arrow2::array::growable::make_growable(&[child_array], true, total_capacity as usize);
-        let mut indices = Vec::with_capacity(total_capacity as usize);
 
         for i in 0..list_array.len() {
             let is_valid = list_array.is_valid(i);
             let start = offsets.get(i).unwrap();
             let len = offsets.get(i + 1).unwrap() - start;
             match (is_valid, len) {
-                (false, _) => {
-                    growable.extend_validity(1);
-                    indices.push(i as u64);
-                }
-                (true, 0) => {
-                    growable.extend_validity(1);
-                    indices.push(i as u64);
-                }
-                (true, l) => {
-                    growable.extend(0, *start as usize, l as usize);
-                    (0..l).for_each(|_| indices.push(i as u64));
-                }
+                (false, _) => growable.extend_validity(1),
+                (true, 0) => growable.extend_validity(1),
+                (true, l) => growable.extend(0, *start as usize, l as usize),
             }
         }
 
@@ -58,19 +63,31 @@ impl ListArray {
             _ => panic!("Expected List type but received {:?}", self.data_type()),
         };
 
-        let idx_to_take = UInt64Array::from(("idx_to_take", indices));
         with_match_arrow_daft_types!(child_data_type,|$T| {
             let new_data_arr = DataArray::<$T>::new(Arc::new(Field {
                 name: self.field.name.clone(),
                 dtype: child_data_type.clone(),
             }), growable.as_box())?;
-            Ok((new_data_arr.into_series(), idx_to_take))
+            Ok(new_data_arr.into_series())
         })
     }
 }
 
 impl FixedSizeListArray {
-    pub fn explode(&self) -> DaftResult<(Series, UInt64Array)> {
+    pub fn lengths(&self) -> DaftResult<UInt64Array> {
+        let list_array = self.downcast();
+        let list_size = list_array.size();
+        let lens = (0..self.len())
+            .map(|_| list_size as u64)
+            .collect::<Vec<_>>();
+        let array = Box::new(
+            arrow2::array::PrimitiveArray::from_vec(lens)
+                .with_validity(list_array.validity().cloned()),
+        );
+        Ok(UInt64Array::from((self.name(), array)))
+    }
+
+    pub fn explode(&self) -> DaftResult<Series> {
         let list_array = self.downcast();
         let child_array = list_array.values().as_ref();
 
@@ -85,20 +102,12 @@ impl FixedSizeListArray {
 
         let mut growable =
             arrow2::array::growable::make_growable(&[child_array], true, total_capacity as usize);
-        let mut indices = Vec::with_capacity(total_capacity as usize);
 
         for i in 0..list_array.len() {
             let is_valid = list_array.is_valid(i) && (list_size > 0);
             match is_valid {
-                false => {
-                    growable.extend_validity(1);
-                    indices.push(i as u64);
-                }
-                true => {
-                    let start = i * list_size;
-                    growable.extend(0, start, list_size);
-                    (0..list_size).for_each(|_| indices.push(i as u64));
-                }
+                false => growable.extend_validity(1),
+                true => growable.extend(0, i * list_size, list_size),
             }
         }
 
@@ -110,13 +119,12 @@ impl FixedSizeListArray {
             ),
         };
 
-        let idx_to_take = UInt64Array::from(("idx_to_take", indices));
         with_match_arrow_daft_types!(child_data_type,|$T| {
             let new_data_arr = DataArray::<$T>::new(Arc::new(Field {
                 name: self.field.name.clone(),
                 dtype: child_data_type.clone(),
             }), growable.as_box())?;
-            Ok((new_data_arr.into_series(), idx_to_take))
+            Ok(new_data_arr.into_series())
         })
     }
 }

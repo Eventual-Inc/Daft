@@ -31,7 +31,7 @@ impl FunctionEvaluator for ExplodeEvaluator {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => Ok(input.explode()?.0),
+            [input] => input.explode(),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
