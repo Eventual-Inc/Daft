@@ -11,6 +11,12 @@ from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
 
+_RAY_DATA_EXTENSIONS_AVAILABLE = True
+try:
+    from ray.data.extensions import ArrowTensorArray
+except ImportError:
+    _RAY_DATA_EXTENSIONS_AVAILABLE = False
+
 _NUMPY_AVAILABLE = True
 try:
     import numpy as np
@@ -142,9 +148,7 @@ class Table:
                     # TODO(Clark): Infer the tensor extension type even when the column is empty.
                     # This will probably require encoding more information in the Daft type that we use to
                     # represent tensors.
-                    if len(column) > 0 and isinstance(column[0], np.ndarray):
-                        from ray.data.extensions import ArrowTensorArray
-
+                    if _RAY_DATA_EXTENSIONS_AVAILABLE and len(column) > 0 and isinstance(column[0], np.ndarray):
                         column = ArrowTensorArray.from_numpy(column)
                 else:
                     column = column_series.to_arrow()
