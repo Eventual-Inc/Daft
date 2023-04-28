@@ -2,7 +2,7 @@ use crate::{
     array::ops::GroupIndices,
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_arrow_daft_types, with_match_comparable_daft_types, with_match_daft_types,
+    with_match_comparable_daft_types, with_match_daft_types,
 };
 
 use crate::array::BaseArray;
@@ -128,15 +128,8 @@ impl Series {
     }
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        if !self.data_type().is_arrow() {
-            return Err(DaftError::TypeError(format!(
-                "list aggregation is not implemented for type {}",
-                self.data_type()
-            )));
-        }
-
         use crate::array::ops::DaftListAggable;
-        with_match_arrow_daft_types!(self.data_type(), |$T| {
+        with_match_daft_types!(self.data_type(), |$T| {
             match groups {
                 Some(groups) => Ok(DaftListAggable::grouped_list(self.downcast::<$T>()?, groups)?.into_series()),
                 None => Ok(DaftListAggable::list(self.downcast::<$T>()?)?.into_series())
