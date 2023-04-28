@@ -29,3 +29,7 @@ log/
 
 # pytest benchmarks
 .benchmarks
+
+
+# docs autogen
+/docs/source/api_docs/*/
