@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use crate::{
-    array::DataArray,
+    array::{BaseArray, DataArray},
     datatypes::{DaftArrowBackedType, ListArray},
     error::DaftResult,
 };
 
-use super::{DaftListAggable, GroupIndices};
+use super::{downcast::Downcastable, DaftListAggable, GroupIndices};
 
 use dyn_clone::clone_box;
 
@@ -65,7 +65,16 @@ impl DaftListAggable for crate::datatypes::PythonArray {
     type Output = DaftResult<crate::datatypes::PythonArray>;
 
     fn list(&self) -> Self::Output {
-        todo!()
+        use crate::array::pseudo_arrow::PseudoArrowArray;
+        use pyo3::prelude::*;
+        use pyo3::types::PyList;
+
+        let pyobj_vec = self.downcast().to_pyobj_vec();
+
+        let pylist: Py<PyList> = Python::with_gil(|py| PyList::new(py, pyobj_vec).into());
+
+        let arrow_array = PseudoArrowArray::<PyObject>::from_pyobj_vec(vec![pylist.into()]);
+        Self::new(self.field().clone().into(), Box::new(arrow_array))
     }
     fn grouped_list(&self, _groups: &GroupIndices) -> Self::Output {
         todo!()
