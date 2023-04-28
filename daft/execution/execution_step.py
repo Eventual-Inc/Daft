@@ -104,7 +104,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         resource_request_final_cpu = ResourceRequest(
             num_cpus=self.resource_request.num_cpus or 1,
             num_gpus=self.resource_request.num_gpus,
-            memory_bytes=self.resource_request.memory_bytes or None,  # Lower versions of Ray do not accept 0
+            memory_bytes=self.resource_request.memory_bytes,
         )
 
         assert self.num_results == 1
