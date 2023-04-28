@@ -47,5 +47,5 @@ def test_explode_eval_expr(data):
 
 def test_explode_bad_col_type():
     table = Table.from_pydict({"a": [1, 2, 3]})
-    with pytest.raises(ValueError, match="explode not implemented for"):
+    with pytest.raises(ValueError, match="to be a List Type, but is"):
         table = table.explode([col("a")._explode()])

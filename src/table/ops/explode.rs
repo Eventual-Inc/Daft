@@ -17,7 +17,7 @@ fn lengths_to_indices(lengths: &UInt64Array, capacity: usize) -> DaftResult<UInt
 }
 
 impl Table {
-    pub fn explode(&self, exprs: &[&Expr]) -> DaftResult<Self> {
+    pub fn explode<E: AsRef<Expr>>(&self, exprs: &[E]) -> DaftResult<Self> {
         if exprs.len() == 0 {
             return Err(DaftError::ValueError(format!(
                 "Explode needs at least 1 expression, received: {}",
@@ -29,7 +29,7 @@ impl Table {
 
         let mut evaluated_columns = Vec::with_capacity(exprs.len());
         for expr in exprs {
-            match expr {
+            match expr.as_ref() {
                 Expr::Function {
                     func: FunctionExpr::List(ListExpr::Explode),
                     inputs,
@@ -45,7 +45,7 @@ impl Table {
                         DataType::List(..) | DataType::FixedSizeList(..)
                     ) {
                         return Err(DaftError::ValueError(format!(
-                            "Evaluated Expression for {exploded_name} is not List Type but is {}",
+                            "Expected Expression for series: `{exploded_name}` to be a List Type, but is {}",
                             evaluated.data_type()
                         )));
                     }
@@ -81,7 +81,7 @@ impl Table {
                 "When performing multicolumn explode, list lengths did not match up"
             )));
         }
-        let exploded_columns = evaluated_columns
+        let mut exploded_columns = evaluated_columns
             .iter()
             .map(|c| c.explode())
             .collect::<DaftResult<Vec<_>>>()?;
@@ -89,10 +89,20 @@ impl Table {
         let take_idx = lengths_to_indices(&first_len, capacity_expected)?.into_series();
 
         let mut new_series = self.columns.clone();
-        for c in exploded_columns {
-            new_series.re
-        }
 
-        Ok(self.clone())
+        for i in 0..self.num_columns() {
+            let name = new_series.get(i).unwrap().name();
+            let result: Option<(usize, &Series)> = exploded_columns
+                .iter()
+                .enumerate()
+                .find(|(_, s)| s.name().eq(name));
+            if let Some((i, _)) = result {
+                new_series[i] = exploded_columns.remove(i);
+            } else {
+                new_series[i] = new_series[i].take(&take_idx)?;
+            }
+        }
+        new_series.extend_from_slice(exploded_columns.as_slice());
+        Self::from_columns(new_series)
     }
 }

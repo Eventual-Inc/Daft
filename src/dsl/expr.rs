@@ -173,6 +173,12 @@ impl AggExpr {
     }
 }
 
+impl AsRef<Expr> for Expr {
+    fn as_ref(&self) -> &Expr {
+        self
+    }
+}
+
 impl Expr {
     pub fn alias<S: Into<Arc<str>>>(&self, name: S) -> Self {
         Expr::Alias(self.clone().into(), name.into())

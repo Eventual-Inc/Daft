@@ -18,7 +18,7 @@ use arrow2::{compute::comparison, scalar::PrimitiveScalar};
 
 impl<T> PartialEq for DataArray<T>
 where
-    T: DaftArrowBackedType,
+    T: DaftArrowBackedType + 'static,
 {
     fn eq(&self, other: &Self) -> bool {
         arrow2::array::equal(self.data(), other.data())
