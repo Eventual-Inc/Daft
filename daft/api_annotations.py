@@ -59,7 +59,6 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
 
         # T is a simple type, like `int`
         if isinstance(T, type):
-            print(T)
             return isinstance(value, T)
 
         # T is a generic type, like `typing.List`
