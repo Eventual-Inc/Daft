@@ -6,6 +6,17 @@ use crate::{array::BaseArray, datatypes::ListArray, error::DaftResult};
 
 use super::{downcast::Downcastable, DaftConcatAggable};
 
+#[cfg(feature = "python")]
+impl DaftConcatAggable for crate::datatypes::PythonArray {
+    type Output = DaftResult<Self>;
+    fn concat(&self) -> Self::Output {
+        todo!()
+    }
+    fn grouped_concat(&self, _groups: &super::GroupIndices) -> Self::Output {
+        todo!()
+    }
+}
+
 impl DaftConcatAggable for ListArray {
     type Output = DaftResult<Self>;
     fn concat(&self) -> Self::Output {
