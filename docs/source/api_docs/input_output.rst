@@ -8,7 +8,7 @@ Input/Output
 In-Memory Data
 --------------
 
-.. _df-io-in-memory
+.. _df-io-in-memory:
 
 Python Objects
 ~~~~~~~~~~~~~~
@@ -58,7 +58,7 @@ File Paths
 Files
 -----
 
-.. _df-io-files
+.. _df-io-files:
 
 Parquet
 ~~~~~~~
@@ -92,7 +92,7 @@ JSON
 Integrations
 ------------
 
-.. _df-io-integrations
+.. _df-io-integrations:
 
 Ray Datasets
 ~~~~~~~~~~~~
