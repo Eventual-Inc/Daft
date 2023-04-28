@@ -230,7 +230,7 @@ def test_series_struct_size_bytes(size) -> None:
 
     assert s.datatype() == DataType.from_arrow_type(dtype)
 
-    # check validity bitmaps were were properly propagated to children
+    # check validity bitmaps were properly propagated to children
     if size > 0:
         child_arrays = [data.field(i) for i in range(data.type.num_fields)]
         child_arrays_without_validity_buffer = len(
