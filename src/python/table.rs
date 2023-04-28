@@ -292,7 +292,7 @@ impl PyTable {
         }
 
         Ok(PyTable {
-            table: Table::new(Schema::new(fields), columns)?,
+            table: Table::new(Schema::new(fields)?, columns)?,
         })
     }
 

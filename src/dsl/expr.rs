@@ -584,7 +584,7 @@ mod tests {
         let schema = Schema::new(vec![
             Field::new("x", DataType::Float64),
             Field::new("y", DataType::Int64),
-        ]);
+        ])?;
 
         let z = Expr::BinaryOp {
             left: x.into(),

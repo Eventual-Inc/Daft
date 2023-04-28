@@ -50,19 +50,6 @@ impl Table {
                         )));
                     }
                     evaluated_columns.push(evaluated);
-                    // let lengths = evaluated.lengths()?;
-                    // let take_idx = lengths_to_indices(&lengths, exploded.len())?.into_series();
-                    // let table_to_repeat = self.get_columns(
-                    //     self.column_names()
-                    //         .iter()
-                    //         .filter(|name| name.as_str().ne(exploded_name))
-                    //         .collect::<Vec<&String>>()
-                    //         .as_slice(),
-                    // )?;
-                    // let mut table_to_repeat = table_to_repeat.take(&take_idx)?;
-                    // let mut cols: Vec<Series> = table_to_repeat.columns.drain(..).collect();
-                    // cols.push(exploded);
-                    // Self::from_columns(cols);
                 }
                 _ => {
                     return Err(DaftError::ValueError(
@@ -78,13 +65,14 @@ impl Table {
             .any(|c| c.lengths().unwrap().ne(&first_len))
         {
             return Err(DaftError::ValueError(
-                "When performing multicolumn explode, list lengths did not match up".to_string(),
+                "In multicolumn explode, list length did not match".to_string(),
             ));
         }
         let mut exploded_columns = evaluated_columns
             .iter()
             .map(|c| c.explode())
             .collect::<DaftResult<Vec<_>>>()?;
+
         let capacity_expected = exploded_columns.first().unwrap().len();
         let take_idx = lengths_to_indices(&first_len, capacity_expected)?.into_series();
 
@@ -96,8 +84,8 @@ impl Table {
                 .iter()
                 .enumerate()
                 .find(|(_, s)| s.name().eq(name));
-            if let Some((i, _)) = result {
-                new_series[i] = exploded_columns.remove(i);
+            if let Some((j, _)) = result {
+                new_series[i] = exploded_columns.remove(j);
             } else {
                 new_series[i] = new_series[i].take(&take_idx)?;
             }

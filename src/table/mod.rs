@@ -22,7 +22,7 @@ pub struct Table {
 impl Table {
     pub fn new(schema: Schema, columns: Vec<Series>) -> DaftResult<Self> {
         if schema.fields.len() != columns.len() {
-            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns. {} vs {}", schema.fields.len(), columns.len())));
+            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields, columns)));
         }
         let mut num_rows = 1;
 
@@ -73,7 +73,7 @@ impl Table {
 
     pub fn from_columns(columns: Vec<Series>) -> DaftResult<Self> {
         let fields = columns.iter().map(|s| s.field().clone()).collect();
-        let schema = Schema::new(fields);
+        let schema = Schema::new(fields)?;
         Table::new(schema, columns)
     }
 
@@ -347,7 +347,7 @@ impl Table {
             }
             seen.insert(name.clone());
         }
-        let schema = Schema::new(fields);
+        let schema = Schema::new(fields)?;
         Table::new(schema, result_series)
     }
     pub fn as_physical(&self) -> DaftResult<Self> {
@@ -426,7 +426,7 @@ mod test {
         let schema = Schema::new(vec![
             a.field().clone().rename("a"),
             b.field().clone().rename("b"),
-        ]);
+        ])?;
         let table = Table::new(schema, vec![a, b])?;
         let e1 = col("a") + col("b");
         let result = table.eval_expression(&e1)?;
