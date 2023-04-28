@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pyarrow as pa
 import pytest
@@ -329,8 +331,13 @@ def test_agg_groupby_empty():
     )
 
 
+@dataclass
+class CustomObject:
+    val: int
+
+
 def test_agg_pyobjects():
-    objects = [object(), None, object()]
+    objects = [CustomObject(val=0), None, CustomObject(val=1)]
     df = DataFrame.from_pydict({"objs": objects})
     df = df.into_partitions(2)
     df = df.agg(
@@ -347,7 +354,7 @@ def test_agg_pyobjects():
 
 
 def test_groupby_agg_pyobjects():
-    objects = [object(), object(), None, None, object()]
+    objects = [CustomObject(val=0), CustomObject(val=1), None, None, CustomObject(val=2)]
     df = DataFrame.from_pydict({"objects": objects, "groups": [1, 2, 1, 2, 1]})
     df = df.into_partitions(2)
     df = (
