@@ -173,7 +173,7 @@ def test_series_struct_size_bytes(size, with_nulls) -> None:
         )
         additional_validity_buffer_bytes = child_arrays_without_validity_buffer * math.ceil(size / 8)
         assert s.size_bytes() == (
-            data.get_total_buffer_size() + additional_validity_buffer_bytes + conversion_to_large_string_bytes
+            get_total_buffer_size(data) + additional_validity_buffer_bytes + conversion_to_large_string_bytes
         )
     else:
-        assert s.size_bytes() == data.get_total_buffer_size() + conversion_to_large_string_bytes
+        assert s.size_bytes() == get_total_buffer_size(data) + conversion_to_large_string_bytes
