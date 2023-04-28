@@ -88,7 +88,6 @@ JSON
     :toctree: io_functions
 
     daft.read_json
-    daft.DataFrame.write_json
 
 Integrations
 ------------

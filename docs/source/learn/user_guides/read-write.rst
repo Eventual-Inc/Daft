@@ -76,7 +76,6 @@ The :ref:`df.write_*(...) <df-write-data>` methods are used to write DataFrames 
     # Write to various file formats in a local folder
     df.write_csv("path/to/folder/")
     df.write_parquet("path/to/folder/")
-    df.write_json("path/to/folder/")
 
     # Write DataFrame to a remote filesystem such as AWS S3
     df.write_csv("s3://mybucket/path/")
