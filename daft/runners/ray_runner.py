@@ -112,7 +112,15 @@ def _make_ray_block_from_vpartition(partition: Table) -> RayDatasetBlock:
 
 @ray.remote
 def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_schema: Schema) -> Table:
-    from ray.data.extensions import ArrowTensorType, ArrowVariableShapedTensorType
+    # Variable-shaped tensor column support was added in Ray 2.1.0.
+    if RAY_VERSION >= (2, 1, 0):
+        from ray.data.extensions import ArrowTensorType, ArrowVariableShapedTensorType
+
+        tensor_extension_types = [ArrowTensorType, ArrowVariableShapedTensorType]
+    else:
+        from ray.data.extensions import ArrowTensorType
+
+        tensor_extension_types = [ArrowTensorType]
 
     assert isinstance(ray_dataset_block, pa.Table), "Cannot handle non-arrow Ray Datasets, please file a ticket!"
 
@@ -123,7 +131,7 @@ def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_sc
         # [[RUST-INT][EXTENSION] Properly handle Ray Datasets' extension types.
         # We convert Ray Datasets' tensor extension columns to Daft Python block columns here by
         # converting the column to a NumPy ndarray.
-        if isinstance(column.type, (ArrowTensorType, ArrowVariableShapedTensorType)):
+        if isinstance(column.type, tuple(tensor_extension_types)):
             # Daft type should have already been coerced to the Python object type.
             assert daft_field.dtype._is_python_type()
             column = [np.asarray(arr) for arr in column]
@@ -289,11 +297,15 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
         arrow_schema = ds.schema(fetch_if_missing=True)
         if not isinstance(arrow_schema, pa.Schema):
             # Convert Dataset to an Arrow dataset.
+            extra_kwargs = {}
+            if RAY_VERSION >= (2, 3, 0):
+                # The zero_copy_batch kwarg was added in Ray 2.3.0.
+                extra_kwargs["zero_copy_batch"] = True
             ds = ds.map_batches(
                 lambda x: x,
                 batch_size=None,
                 batch_format="pyarrow",
-                zero_copy_batch=True,
+                **extra_kwargs,
             )
             arrow_schema = ds.schema(fetch_if_missing=True)
 
