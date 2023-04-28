@@ -339,7 +339,7 @@ class CustomObject:
 
 def test_agg_pyobjects():
     objects = [CustomObject(val=0), None, CustomObject(val=1)]
-    df = DataFrame.from_pydict({"objs": objects})
+    df = daft.from_pydict({"objs": objects})
     df = df.into_partitions(2)
     df = df.agg(
         [
@@ -356,7 +356,7 @@ def test_agg_pyobjects():
 
 def test_groupby_agg_pyobjects():
     objects = [CustomObject(val=0), CustomObject(val=1), None, None, CustomObject(val=2)]
-    df = DataFrame.from_pydict({"objects": objects, "groups": [1, 2, 1, 2, 1]})
+    df = daft.from_pydict({"objects": objects, "groups": [1, 2, 1, 2, 1]})
     df = df.into_partitions(2)
     df = (
         df.groupby(col("groups"))
