@@ -11,6 +11,7 @@ import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
 
+import daft
 from daft.api_annotations import APITypeError
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
@@ -45,7 +46,7 @@ COL_NAMES = [
 def test_load_missing(read_method):
     """Loading data from a missing filepath"""
     with pytest.raises(FileNotFoundError):
-        getattr(DataFrame, read_method)(str(uuid.uuid4()))
+        getattr(daft, read_method)(str(uuid.uuid4()))
 
 
 @pytest.mark.parametrize("data", [{"foo": [1, 2, 3]}, [{"foo": i} for i in range(3)], "foo"])
@@ -56,7 +57,7 @@ def test_error_thrown_create_dataframe_constructor(data) -> None:
 
 def test_wrong_input_type():
     with pytest.raises(APITypeError):
-        DataFrame.from_pydict("invalid input")
+        daft.from_pydict("invalid input")
 
 
 ###
@@ -65,17 +66,17 @@ def test_wrong_input_type():
 
 
 def test_create_dataframe_list(valid_data: list[dict[str, float]]) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     assert set(df.column_names) == set(COL_NAMES)
 
 
 def test_create_dataframe_list_empty() -> None:
-    df = DataFrame.from_pylist([])
+    df = daft.from_pylist([])
     assert df.column_names == []
 
 
 def test_create_dataframe_list_ragged_keys() -> None:
-    df = DataFrame.from_pylist(
+    df = daft.from_pylist(
         [
             {"foo": 1},
             {"foo": 2, "bar": 1},
@@ -90,13 +91,13 @@ def test_create_dataframe_list_ragged_keys() -> None:
 
 
 def test_create_dataframe_list_empty_dicts() -> None:
-    df = DataFrame.from_pylist([{}, {}, {}])
+    df = daft.from_pylist([{}, {}, {}])
     assert df.column_names == []
 
 
 def test_create_dataframe_list_non_dicts() -> None:
     with pytest.raises(ValueError) as e:
-        DataFrame.from_pylist([1, 2, 3])
+        daft.from_pylist([1, 2, 3])
     assert "Expected list of dictionaries of {column_name: value}" in str(e.value)
 
 
@@ -107,24 +108,24 @@ def test_create_dataframe_list_non_dicts() -> None:
 
 def test_create_dataframe_pydict(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    df = DataFrame.from_pydict(pydict)
+    df = daft.from_pydict(pydict)
     assert set(df.column_names) == set(COL_NAMES)
 
 
 def test_create_dataframe_empty_pydict() -> None:
-    df = DataFrame.from_pydict({})
+    df = daft.from_pydict({})
     assert df.column_names == []
 
 
 def test_create_dataframe_pydict_ragged_col_lens() -> None:
     with pytest.raises(ValueError) as e:
-        DataFrame.from_pydict({"foo": [1, 2], "bar": [1, 2, 3]})
+        daft.from_pydict({"foo": [1, 2], "bar": [1, 2, 3]})
     assert "Expected all columns to be of the same length" in str(e.value)
 
 
 def test_create_dataframe_pydict_bad_columns() -> None:
     with pytest.raises(ValueError) as e:
-        DataFrame.from_pydict({"foo": "somestring"})
+        daft.from_pydict({"foo": "somestring"})
     assert "Creating a Series from data of type" in str(e.value)
 
 
@@ -138,7 +139,7 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     t = pa.Table.from_pydict({k: [valid_data[i][k] for i in range(len(valid_data))] for k in valid_data[0].keys()})
     if multiple:
         t = [t, t, t]
-    df = DataFrame.from_arrow(t)
+    df = daft.from_arrow(t)
     if multiple:
         t = pa.concat_tables(t)
     assert set(df.column_names) == set(t.column_names)
@@ -158,7 +159,7 @@ def test_create_dataframe_pandas(valid_data: list[dict[str, float]], multiple) -
     pd_df = pd.DataFrame(valid_data)
     if multiple:
         pd_df = [pd_df, pd_df, pd_df]
-    df = DataFrame.from_pandas(pd_df)
+    df = daft.from_pandas(pd_df)
     if multiple:
         pd_df = pd.concat(pd_df).reset_index(drop=True)
     assert set(df.column_names) == set(pd_df.columns)
@@ -170,7 +171,7 @@ def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     pydict["obj"] = [MyObjWithValue(i) for i in range(len(valid_data))]
     pd_df = pd.DataFrame(pydict)
-    df = DataFrame.from_pandas(pd_df)
+    df = daft.from_pandas(pd_df)
     assert set(df.column_names) == set(pd_df.columns)
     # Check roundtrip.
     pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
@@ -180,7 +181,7 @@ def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> N
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     pydict["obj"] = pd.Series([np.ones((2, 2)) for _ in range(len(valid_data))])
     pd_df = pd.DataFrame(pydict)
-    df = DataFrame.from_pandas(pd_df)
+    df = daft.from_pandas(pd_df)
     assert set(df.column_names) == set(pd_df.columns)
     # Check roundtrip.
     pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
@@ -222,7 +223,7 @@ def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> N
 )
 def test_load_pydict_types(data, expected_dtype):
     data_dict = {"x": data}
-    daft_df = DataFrame.from_pydict(data_dict)
+    daft_df = daft.from_pydict(data_dict)
     daft_df.collect()
     collected_data = daft_df.to_pydict()
 
@@ -243,7 +244,7 @@ def test_create_dataframe_csv(valid_data: list[dict[str, float]]) -> None:
         writer.writerows([[item[col] for col in header] for item in valid_data])
         f.flush()
 
-        df = DataFrame.read_csv(f.name)
+        df = daft.read_csv(f.name)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -262,7 +263,7 @@ def test_create_dataframe_csv_provide_headers(valid_data: list[dict[str, float]]
         f.flush()
 
         cnames = [f"foo{i}" for i in range(5)]
-        df = DataFrame.read_csv(f.name, has_headers=has_headers, column_names=cnames)
+        df = daft.read_csv(f.name, has_headers=has_headers, column_names=cnames)
         assert df.column_names == cnames
 
         pd_df = df.to_pandas()
@@ -278,7 +279,7 @@ def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]
         f.flush()
 
         cnames = [f"f{i}" for i in range(5)]
-        df = DataFrame.read_csv(f.name, has_headers=False)
+        df = daft.read_csv(f.name, has_headers=False)
         assert df.column_names == cnames
 
         pd_df = df.to_pandas()
@@ -296,7 +297,7 @@ def test_create_dataframe_csv_column_projection(valid_data: list[dict[str, float
 
         col_subset = COL_NAMES[:3]
 
-        df = DataFrame.read_csv(f.name)
+        df = daft.read_csv(f.name)
         df = df.select(*col_subset)
         assert df.column_names == col_subset
 
@@ -313,7 +314,7 @@ def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]
         writer.writerows([[item[col] for col in header] for item in valid_data])
         f.flush()
 
-        df = DataFrame.read_csv(f.name, delimiter="\t")
+        df = daft.read_csv(f.name, delimiter="\t")
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -333,7 +334,7 @@ def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
             f.write("\n")
         f.flush()
 
-        df = DataFrame.read_json(f.name)
+        df = daft.read_json(f.name)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -350,7 +351,7 @@ def test_create_dataframe_json_column_projection(valid_data: list[dict[str, floa
 
         col_subset = COL_NAMES[:3]
 
-        df = DataFrame.read_json(f.name)
+        df = daft.read_json(f.name)
         df = df.select(*col_subset)
         assert df.column_names == col_subset
 
@@ -360,7 +361,7 @@ def test_create_dataframe_json_column_projection(valid_data: list[dict[str, floa
 
 
 def test_create_dataframe_json_https() -> None:
-    df = DataFrame.read_json("https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz")
+    df = daft.read_json("https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz")
     df.collect()
     assert set(df.column_names) == {"label", "image"}
     assert len(df) == 10000
@@ -377,7 +378,7 @@ def test_create_dataframe_parquet(valid_data: list[dict[str, float]]) -> None:
         papq.write_table(table, f.name)
         f.flush()
 
-        df = DataFrame.read_parquet(f.name)
+        df = daft.read_parquet(f.name)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -393,7 +394,7 @@ def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, f
 
         col_subset = COL_NAMES[:3]
 
-        df = DataFrame.read_parquet(f.name)
+        df = daft.read_parquet(f.name)
         df = df.select(*col_subset)
         assert df.column_names == col_subset
 

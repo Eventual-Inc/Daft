@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from daft import DataFrame
+import daft
 from daft.datatype import DataType
 from daft.logical.logical_plan import LogicalPlan
 
 
 @pytest.fixture(scope="function")
 def df():
-    return DataFrame.from_pydict({"foo": [1, 2, 3]})
+    return daft.from_pydict({"foo": [1, 2, 3]})
 
 
 def test_get_plan(df):

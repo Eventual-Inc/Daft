@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 from fsspec.implementations.local import LocalFileSystem
 
+import daft
 from benchmarking.tpch import answers, data_generation
-from daft.dataframe import DataFrame
 from tests.assets import TPCH_DBGEN_DIR, TPCH_QUERIES
 from tests.conftest import assert_df_equals
 
@@ -47,7 +47,7 @@ def get_df(gen_tpch):
         except FileNotFoundError:
             fp = nonchunked_filepath
 
-        df = DataFrame.read_csv(
+        df = daft.read_csv(
             fp,
             has_headers=False,
             column_names=data_generation.SCHEMA[tbl_name],

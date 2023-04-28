@@ -18,7 +18,7 @@ def test_agg_baseline(benchmark, num_samples) -> None:
 
     No groups, simplest aggregation (count).
     """
-    df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).collect()
+    df = daft.from_pydict({"mycol": np.arange(num_samples)}).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -35,7 +35,7 @@ def test_agg_baseline(benchmark, num_samples) -> None:
 @pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_agg_multipart(benchmark, num_samples, num_partitions) -> None:
     """Evaluate the impact of multiple partitions."""
-    df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).into_partitions(num_partitions).collect()
+    df = daft.from_pydict({"mycol": np.arange(num_samples)}).into_partitions(num_partitions).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -55,7 +55,7 @@ def test_comparable_agg(benchmark, num_samples) -> None:
     data = [str(uuid4()) for _ in range(num_samples)] + ["ffffffff-ffff-ffff-ffff-ffffffffffff"]
     random.shuffle(data)
 
-    df = DataFrame.from_pydict({"mycol": data}).collect()
+    df = daft.from_pydict({"mycol": data}).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -72,7 +72,7 @@ def test_comparable_agg(benchmark, num_samples) -> None:
 def test_numeric_agg(benchmark, num_samples) -> None:
     """Test aggregation performance for numeric aggregation ops."""
 
-    df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).collect()
+    df = daft.from_pydict({"mycol": np.arange(num_samples)}).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -96,7 +96,7 @@ def test_groupby(benchmark, num_samples, num_groups) -> None:
 
     np.random.shuffle(keys)
 
-    df = DataFrame.from_pydict(
+    df = daft.from_pydict(
         {
             "keys": keys,
             "data": np.arange(num_samples),
@@ -131,7 +131,7 @@ def test_groupby_string(benchmark, num_samples, num_groups) -> None:
 
     keys = [f"{i:09}" for i in keys]
 
-    df = DataFrame.from_pydict(
+    df = daft.from_pydict(
         {
             "keys": keys,
             "data": np.arange(num_samples),
@@ -166,7 +166,7 @@ def test_multicolumn_groupby(benchmark, num_columns, num_samples) -> None:
     keys = np.arange(num_samples) % num_groups
     np.random.shuffle(keys)
 
-    df = DataFrame.from_pydict(
+    df = daft.from_pydict(
         {
             "keys_a": keys * 7 % 10,
             "keys": keys,

@@ -15,9 +15,9 @@ To do so, simply index a DataFrame with the string name of the column:
 
 .. code:: python
 
-    from daft import DataFrame
+    import daft
 
-    df = DataFrame.from_pydict({"A": [1, 2, 3]})
+    df = daft.from_pydict({"A": [1, 2, 3]})
 
     # Refers to column "A" in `df`
     df["A"]
@@ -99,7 +99,7 @@ Daft also lets you have columns of strings in a DataFrame. Let's take a look!
 
 .. code:: python
 
-    df = DataFrame.from_pydict({"B": ["foo", "bar", "baz"]})
+    df = daft.from_pydict({"B": ["foo", "bar", "baz"]})
     df.show()
 
 .. code:: none
@@ -171,7 +171,7 @@ Daft provides the ``Expression.url.*`` method namespace with functionality for w
 
 .. code:: python
 
-    df = DataFrame.from_pydict({
+    df = daft.from_pydict({
         "urls": [
             "https://www.google.com",
             "s3://daft-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
@@ -207,7 +207,7 @@ Logical Expressions are an expression that refers to a column of type ``Boolean`
 
 .. code:: python
 
-    df = DataFrame.from_pydict({"C": [True, False, True]})
+    df = daft.from_pydict({"C": [True, False, True]})
     df["C"]
 
 Daft supports logical operations such as ``&`` (and) and ``|`` (or) between logical expressions.
@@ -221,7 +221,7 @@ For example, here we can compare if each element in column "A" is equal to eleme
 
 .. code:: python
 
-    df = DataFrame.from_pydict({"A": [1, 2, 3], "B": [1, 2, 4]})
+    df = daft.from_pydict({"A": [1, 2, 3], "B": [1, 2, 4]})
 
     df = df.with_column("A_eq_B", df["A"] == df["B"])
 
@@ -250,7 +250,7 @@ The ``.if_else`` method is a useful expression to have up your sleeve for choosi
 
 .. code:: python
 
-    df = DataFrame.from_pydict({"A": [1, 2, 3], "B": [0, 2, 4]})
+    df = daft.from_pydict({"A": [1, 2, 3], "B": [0, 2, 4]})
 
     # Pick values from column A if the value in column A is bigger
     # than the value in column B. Otherwise, pick values from column B.

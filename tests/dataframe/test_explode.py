@@ -3,7 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from daft import DataFrame
+import daft
 from daft.expressions import col
 from daft.series import Series
 
@@ -16,7 +16,7 @@ from daft.series import Series
     ],
 )
 def test_explode(data):
-    df = DataFrame.from_pydict({"nested": data, "sidecar": ["a", "b", "c", "d"]})
+    df = daft.from_pydict({"nested": data, "sidecar": ["a", "b", "c", "d"]})
     df = df.explode(col("nested"))
     assert df.to_pydict() == {"nested": [1, 2, 3, 4, None, None], "sidecar": ["a", "a", "b", "b", "c", "d"]}
 
@@ -29,7 +29,7 @@ def test_explode(data):
     ],
 )
 def test_explode_multiple_cols(data):
-    df = DataFrame.from_pydict({"nested": data, "nested2": data, "sidecar": ["a", "b", "c", "d"]})
+    df = daft.from_pydict({"nested": data, "nested2": data, "sidecar": ["a", "b", "c", "d"]})
     df = df.explode(col("nested"), col("nested2"))
     # TODO: [RUST-INT][NESTED] Need to fix to allow multiple explodes
     with pytest.raises(ValueError):
@@ -37,6 +37,6 @@ def test_explode_multiple_cols(data):
 
 
 def test_explode_bad_col_type():
-    df = DataFrame.from_pydict({"a": [1, 2, 3]})
+    df = daft.from_pydict({"a": [1, 2, 3]})
     with pytest.raises(ValueError, match="Datatype cannot be exploded:"):
         df = df.explode(col("a"))

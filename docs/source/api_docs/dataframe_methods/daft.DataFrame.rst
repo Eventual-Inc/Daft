@@ -24,14 +24,6 @@
       ~DataFrame.exclude
       ~DataFrame.explain
       ~DataFrame.explode
-      ~DataFrame.from_csv
-      ~DataFrame.from_files
-      ~DataFrame.from_glob_path
-      ~DataFrame.from_json
-      ~DataFrame.from_parquet
-      ~DataFrame.from_pydict
-      ~DataFrame.from_pylist
-      ~DataFrame.from_ray_dataset
       ~DataFrame.groupby
       ~DataFrame.into_partitions
       ~DataFrame.join
@@ -41,9 +33,6 @@
       ~DataFrame.min
       ~DataFrame.num_partitions
       ~DataFrame.plan
-      ~DataFrame.read_csv
-      ~DataFrame.read_json
-      ~DataFrame.read_parquet
       ~DataFrame.repartition
       ~DataFrame.schema
       ~DataFrame.select

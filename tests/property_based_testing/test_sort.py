@@ -16,6 +16,7 @@ from hypothesis.strategies import (
     sampled_from,
 )
 
+import daft
 from daft import DataFrame
 from daft.datatype import DataType
 from tests.property_based_testing.strategies import (
@@ -68,7 +69,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
                 num_rows_strategy=self.num_rows_strategy,
             )
         )
-        df = DataFrame.from_pydict(columns_dict_data)
+        df = daft.from_pydict(columns_dict_data)
         self.df = df
 
     @rule(data=data())
@@ -103,7 +104,6 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
                 note(f"Comparing {current_tup} and {next_tup} for desc={sorted_on_desc}")
 
                 for current_val, next_val, desc in zip(current_tup, next_tup, sorted_on_desc):
-
                     a, b = (current_val, next_val) if desc else (next_val, current_val)
 
                     # Assert that a >= b, where the ordering is defined as: None > NaN > other values

@@ -23,6 +23,7 @@ PYTHON_TYPE_ARRAYS = {
     "date": [datetime.date.today(), datetime.date.today()],
     "list": [[1, 2], [3]],
     "struct": [{"a": 1, "b": 2.0}, {"b": 3.0}],
+    "empty_struct": [{}, {}],
     "tensor": list(np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])),
     "null": [None, None],
 }
@@ -37,6 +38,7 @@ INFERRED_TYPES = {
     "date": DataType.date(),
     "list": DataType.list("item", DataType.int64()),
     "struct": DataType.struct({"a": DataType.int64(), "b": DataType.float64()}),
+    "empty_struct": DataType.struct({"": DataType.null()}),
     "tensor": DataType.python(),
     "null": DataType.null(),
 }
@@ -51,6 +53,7 @@ ROUNDTRIP_TYPES = {
     "date": pa.date32(),
     "list": pa.large_list(pa.int64()),
     "struct": pa.struct({"a": pa.int64(), "b": pa.float64()}),
+    "empty_struct": pa.struct({"": pa.null()}),
     "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
     "null": pa.null(),
 }
@@ -74,6 +77,7 @@ ARROW_TYPE_ARRAYS = {
     "list": pa.array(PYTHON_TYPE_ARRAYS["list"], pa.list_(pa.int64())),
     "fixed_size_list": pa.array([[1, 2], [3, 4]], pa.list_(pa.int64(), 2)),
     "struct": pa.array(PYTHON_TYPE_ARRAYS["struct"], pa.struct([("a", pa.int64()), ("b", pa.float64())])),
+    "empty_struct": pa.array(PYTHON_TYPE_ARRAYS["empty_struct"], pa.struct({"": pa.null()})),
     # TODO(Clark): Uncomment once extension type support has been added.
     # "tensor": ArrowTensorArray.from_numpy(PYTHON_TYPE_ARRAYS["tensor"]),
     "null": pa.array(PYTHON_TYPE_ARRAYS["null"], pa.null()),
@@ -98,6 +102,7 @@ ARROW_ROUNDTRIP_TYPES = {
     "list": pa.large_list(pa.int64()),
     "fixed_size_list": pa.list_(pa.int64(), 2),
     "struct": pa.struct([("a", pa.int64()), ("b", pa.float64())]),
+    "empty_struct": pa.struct({"": pa.null()}),
     # TODO(Clark): Uncomment once extension type support has been added.
     # "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
     "null": pa.null(),
@@ -154,6 +159,8 @@ def test_from_pandas_roundtrip() -> None:
     df["date"] = pd.to_datetime(df["date"]).astype("datetime64[s]")
     # pyarrow --> pandas will insert explicit Nones within the struct fields.
     df["struct"][1]["a"] = None
+    df["empty_struct"][0][""] = None
+    df["empty_struct"][1][""] = None
     pd.testing.assert_frame_equal(table.to_pandas(), df)
 
 

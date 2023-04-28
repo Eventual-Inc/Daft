@@ -6,7 +6,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from daft.dataframe import DataFrame
+import daft
 from tests.utils import sort_arrow_table
 
 TEST_DATA_LEN = 16
@@ -42,7 +42,7 @@ TEST_DATA_SCHEMA = pa.schema(
 
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_arrow(n_partitions: int) -> None:
-    df = DataFrame.from_pydict(TEST_DATA).repartition(n_partitions)
+    df = daft.from_pydict(TEST_DATA).repartition(n_partitions)
     table = df.to_arrow()
     # String column is converted to large_string column in Daft.
     assert table.schema == TEST_DATA_SCHEMA
@@ -52,7 +52,7 @@ def test_to_arrow(n_partitions: int) -> None:
 
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_pandas(n_partitions: int) -> None:
-    df = DataFrame.from_pydict(TEST_DATA).repartition(n_partitions)
+    df = daft.from_pydict(TEST_DATA).repartition(n_partitions)
     pd_df = df.to_pandas().sort_values("integers").reset_index(drop=True)
     expected_df = pd.DataFrame(TEST_DATA).sort_values("integers").reset_index(drop=True)
     pd.testing.assert_frame_equal(pd_df, expected_df)

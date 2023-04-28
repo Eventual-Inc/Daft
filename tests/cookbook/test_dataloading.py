@@ -4,8 +4,7 @@ import pathlib
 
 import pandas as pd
 
-from daft.dataframe import DataFrame
-from daft.filesystem import get_filesystem_from_path
+import daft
 from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
@@ -22,7 +21,7 @@ def test_load_csv_no_headers(tmp_path: pathlib.Path):
     """Generate a default set of headers `f0, f1, ... f{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
     csv.write_text("\n".join(pathlib.Path(COOKBOOK_DATA_CSV).read_text().split("\n")[1:]))
-    daft_df = DataFrame.read_csv(str(csv), has_headers=False)
+    daft_df = daft.read_csv(str(csv), has_headers=False)
     pd_df = pd.read_csv(csv, header=None, keep_default_na=False)
     pd_df.columns = [f"f{i}" for i in range(52)]
     daft_pd_df = daft_df.to_pandas()
@@ -33,7 +32,7 @@ def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
     """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
     csv.write_text(pathlib.Path(COOKBOOK_DATA_CSV).read_text().replace(",", "\t"))
-    daft_df = DataFrame.read_csv(str(csv), delimiter="\t")
+    daft_df = daft.read_csv(str(csv), delimiter="\t")
     pd_df = pd.read_csv(csv, delimiter="\t")
     daft_pd_df = daft_df.to_pandas()
     assert list(daft_pd_df.columns) == list(pd_df.columns)
@@ -44,14 +43,14 @@ def test_load_json(tmp_path: pathlib.Path):
     json_file = tmp_path / "iris.json"
     pd_df = pd.read_csv(COOKBOOK_DATA_CSV)
     pd_df.to_json(json_file, lines=True, orient="records")
-    daft_df = DataFrame.read_json(str(json_file))
+    daft_df = daft.read_json(str(json_file))
     daft_pd_df = daft_df.to_pandas()
     assert list(daft_pd_df.columns) == list(pd_df.columns)
 
 
 def test_load_pydict():
     data = {"foo": [1, 2, 3], "bar": [1.0, 2.0, 3.0], "baz": ["a", "b", "c"]}
-    daft_df = DataFrame.from_pydict(data)
+    daft_df = daft.from_pydict(data)
     pd_df = pd.DataFrame(data)
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="foo")
@@ -63,24 +62,10 @@ def test_load_pylist():
         {"foo": 2, "bar": 2.0, "baz": "b"},
         {"foo": 3, "bar": 3.0, "baz": "c"},
     ]
-    daft_df = DataFrame.from_pylist(data)
+    daft_df = daft.from_pylist(data)
     pd_df = pd.DataFrame.from_records(data)
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="foo")
-
-
-def test_load_files(tmpdir):
-    for i in range(10):
-        filepath = pathlib.Path(tmpdir) / f"file_{i}.foo"
-        filepath.write_text("a" * i)
-        filepath = pathlib.Path(tmpdir) / f"file_{i}.bar"
-        filepath.write_text("b" * i)
-
-    daft_df = DataFrame.from_files(f"{tmpdir}/*.foo")
-    daft_pd_df = daft_df.to_pandas()
-    pd_df = pd.DataFrame.from_records(get_filesystem_from_path(str(tmpdir)).ls(str(tmpdir), detail=True))
-    pd_df = pd_df[~pd_df["name"].str.endswith(".bar")]
-    assert_df_equals(daft_pd_df, pd_df, sort_key="name")
 
 
 def test_glob_files(tmpdir):
@@ -92,7 +77,7 @@ def test_glob_files(tmpdir):
         bar_filepath = pathlib.Path(tmpdir) / f"file_{i}.bar"
         bar_filepath.write_text("b" * i)
 
-    daft_df = DataFrame.from_glob_path(f"{tmpdir}/*.foo")
+    daft_df = daft.from_glob_path(f"{tmpdir}/*.foo")
     daft_pd_df = daft_df.to_pandas()
     pd_df = pd.DataFrame.from_records(
         {"path": str(path), "size": size, "type": "file", "rows": None}
@@ -106,7 +91,7 @@ def test_glob_files(tmpdir):
 def test_glob_files_single_file(tmpdir):
     filepath = pathlib.Path(tmpdir) / f"file.foo"
     filepath.write_text("b" * 10)
-    daft_df = DataFrame.from_glob_path(f"{tmpdir}/file.foo")
+    daft_df = daft.from_glob_path(f"{tmpdir}/file.foo")
     daft_pd_df = daft_df.to_pandas()
     pd_df = pd.DataFrame.from_records([{"path": str(filepath), "size": 10, "type": "file", "rows": None}])
     pd_df = pd_df.astype({"rows": float})
@@ -123,7 +108,7 @@ def test_glob_files_directory(tmpdir):
             filepath.write_text("a" * i)
             filepaths.append(filepath)
 
-    daft_df = DataFrame.from_glob_path(str(tmpdir))
+    daft_df = daft.from_glob_path(str(tmpdir))
     daft_pd_df = daft_df.to_pandas()
 
     listing_records = [
@@ -149,7 +134,7 @@ def test_glob_files_recursive(tmpdir):
             filepath.write_text("a" * i)
             paths.append(filepath)
 
-    daft_df = DataFrame.from_glob_path(f"{tmpdir}/**")
+    daft_df = daft.from_glob_path(f"{tmpdir}/**")
     daft_pd_df = daft_df.to_pandas()
 
     listing_records = [

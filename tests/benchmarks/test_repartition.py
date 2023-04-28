@@ -14,7 +14,7 @@ NUM_PARTITIONS = 100
 @pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
 def test_split(benchmark, num_samples, end_partitions) -> None:
     """Test performance of splitting into multiple partitions."""
-    df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).collect()
+    df = daft.from_pydict({"mycol": np.arange(num_samples)}).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -28,7 +28,7 @@ def test_split(benchmark, num_samples, end_partitions) -> None:
 @pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
 def test_coalesce(benchmark, num_samples, start_partitions) -> None:
     """Test performance of coalescing partitions."""
-    df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).into_partitions(start_partitions).collect()
+    df = daft.from_pydict({"mycol": np.arange(num_samples)}).into_partitions(start_partitions).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -43,7 +43,7 @@ def test_coalesce(benchmark, num_samples, start_partitions) -> None:
 @pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
 def test_repartition_random(benchmark, num_samples, start_partitions, end_partitions) -> None:
     """Test performance of random repartitioning."""
-    df = DataFrame.from_pydict({"mycol": np.arange(num_samples)}).into_partitions(start_partitions).collect()
+    df = daft.from_pydict({"mycol": np.arange(num_samples)}).into_partitions(start_partitions).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
@@ -65,7 +65,7 @@ def test_repartition_hash(benchmark, num_samples, start_partitions, end_partitio
 
     np.random.shuffle(data)
 
-    df = DataFrame.from_pydict({"mycol": data}).into_partitions(start_partitions).collect()
+    df = daft.from_pydict({"mycol": data}).into_partitions(start_partitions).collect()
 
     # Run the benchmark.
     def bench() -> DataFrame:
