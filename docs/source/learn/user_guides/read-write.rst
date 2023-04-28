@@ -16,6 +16,7 @@ Additionally, Daft can read data from a variety of container file formats, inclu
 Daft supports file paths to a single file, a directory of files, and wildcards. It also supports paths to remote object storage such as AWS S3.
 
 .. code:: python
+
     import daft
 
     # You can read a single CSV file from your local filesystem
