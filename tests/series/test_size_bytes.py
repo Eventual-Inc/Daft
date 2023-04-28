@@ -205,10 +205,13 @@ def test_series_struct_size_bytes(size) -> None:
     dtype1, dtype2, dtype3 = pa.int64(), pa.float64(), pa.string()
     dtype = pa.struct({"a": dtype1, "b": dtype2, "c": dtype3})
     pydata = [
-        {"a": 3 * i, "b": 3 * i + 1, "c": str(3 * i + 2)} if i % 2 == 1 else {"a": 3 * i, "c": str(3 * i + 2)}
+        {"a": 3 * i, "b": 3 * i + 1, "c": str(3 * i + 2)} if i % 2 == 0 else {"a": 3 * i, "c": str(3 * i + 2)}
         for i in range(size)
     ]
     data = pa.array(pydata, type=dtype)
+
+    # Additional bytes are allocated for converting the nested string child array to a large_string array
+    additional_bytes_for_large_string_offsets = (len(data) + 1) * 4
 
     s = Series.from_arrow(data)
 
@@ -216,7 +219,7 @@ def test_series_struct_size_bytes(size) -> None:
     # TODO(Clark): Investigate this discrepancy.
     # TODO(Clark): Investigate this discrepancy between Arrow2 and pyarrow.
     # We should fix this upstream and/or refactor these tests to not rely on pyarrow as the source-of-truth.
-    assert s.size_bytes() == data.nbytes + 8 + (size * 8) // 2
+    assert s.size_bytes() == data.get_total_buffer_size() + additional_bytes_for_large_string_offsets
 
     ## with nulls
     if size > 0:
@@ -226,12 +229,17 @@ def test_series_struct_size_bytes(size) -> None:
     s = Series.from_arrow(data)
 
     assert s.datatype() == DataType.from_arrow_type(dtype)
-    assert s.size_bytes() == (
-        data.get_total_buffer_size()
-        +
-        # String is promoted to large string, so offset array increases in size
-        ((size + 1) * 4)
-        +
-        # Validity is pushed down to children arrays for "a" and "c" only, since "b" already has one (because it was created with nulls)
-        2 * math.ceil(size / 8)
-    )
+
+    # check validity bitmaps were were properly propagated to children
+    if size > 0:
+        child_arrays = [data.field(i) for i in range(data.type.num_fields)]
+        child_arrays_without_validity_buffer = len(
+            [child for child in child_arrays if any([b is None for b in child.buffers()])]
+        )
+        assert s.size_bytes() == (
+            data.get_total_buffer_size()
+            + child_arrays_without_validity_buffer * math.ceil(size / 8)
+            + additional_bytes_for_large_string_offsets
+        )
+    else:
+        assert s.size_bytes() == data.get_total_buffer_size() + additional_bytes_for_large_string_offsets
