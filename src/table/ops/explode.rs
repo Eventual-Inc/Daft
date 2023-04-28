@@ -18,7 +18,7 @@ fn lengths_to_indices(lengths: &UInt64Array, capacity: usize) -> DaftResult<UInt
 
 impl Table {
     pub fn explode<E: AsRef<Expr>>(&self, exprs: &[E]) -> DaftResult<Self> {
-        if exprs.len() == 0 {
+        if exprs.is_empty() {
             return Err(DaftError::ValueError(format!(
                 "Explode needs at least 1 expression, received: {}",
                 exprs.len()
@@ -77,9 +77,9 @@ impl Table {
             .skip(1)
             .any(|c| c.lengths().unwrap().ne(&first_len))
         {
-            return Err(DaftError::ValueError(format!(
-                "When performing multicolumn explode, list lengths did not match up"
-            )));
+            return Err(DaftError::ValueError(
+                "When performing multicolumn explode, list lengths did not match up".to_string(),
+            ));
         }
         let mut exploded_columns = evaluated_columns
             .iter()
