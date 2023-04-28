@@ -6,6 +6,7 @@ import pytest
 import daft
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
+from tests.utils import sort_arrow_table
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
@@ -69,7 +70,9 @@ def test_inner_join(repartition_nparts):
         "values_left": ["a1", "c1"],
         "values_right": ["a2", "c2"],
     }
-    assert pa.Table.from_pydict(daft_df.to_pydict()).sort_by("id") == pa.Table.from_pydict(expected).sort_by("id")
+    assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "id") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "id"
+    )
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -96,7 +99,9 @@ def test_inner_join_multikey(repartition_nparts):
         "values_left": ["a1"],
         "values_right": ["c2"],
     }
-    assert pa.Table.from_pydict(daft_df.to_pydict()).sort_by("id") == pa.Table.from_pydict(expected).sort_by("id")
+    assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "id") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "id"
+    )
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -120,7 +125,9 @@ def test_inner_join_all_null(repartition_nparts):
         "values_left": [],
         "values_right": [],
     }
-    assert pa.Table.from_pydict(daft_df.to_pydict()).sort_by("id") == pa.Table.from_pydict(expected).sort_by("id")
+    assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "id") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "id"
+    )
 
 
 def test_inner_join_null_type_column():
