@@ -159,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "daft"
-version = "0.0.23"
+version = "0.1.0"
 dependencies = [
  "arrow2",
  "bincode",
