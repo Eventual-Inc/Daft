@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pyarrow as pa
 import pytest
@@ -328,3 +330,47 @@ def test_agg_groupby_empty():
     assert sort_arrow_table(pa.Table.from_pydict(daft_cols), "group") == sort_arrow_table(
         pa.Table.from_pydict(expected), "group"
     )
+
+
+@dataclass
+class CustomObject:
+    val: int
+
+
+def test_agg_pyobjects():
+    objects = [CustomObject(val=0), None, CustomObject(val=1)]
+    df = daft.from_pydict({"objs": objects})
+    df = df.into_partitions(2)
+    df = df.agg(
+        [
+            (col("objs").alias("count"), "count"),
+            (col("objs").alias("list"), "list"),
+        ]
+    )
+    df.collect()
+    res = df.to_pydict()
+
+    assert res["count"] == [2]
+    assert res["list"] == [objects]
+
+
+def test_groupby_agg_pyobjects():
+    objects = [CustomObject(val=0), CustomObject(val=1), None, None, CustomObject(val=2)]
+    df = daft.from_pydict({"objects": objects, "groups": [1, 2, 1, 2, 1]})
+    df = df.into_partitions(2)
+    df = (
+        df.groupby(col("groups"))
+        .agg(
+            [
+                (col("objects").alias("count"), "count"),
+                (col("objects").alias("list"), "list"),
+            ]
+        )
+        .sort(col("groups"))
+    )
+
+    df.collect()
+    res = df.to_pydict()
+    assert res["groups"] == [1, 2]
+    assert res["count"] == [2, 1]
+    assert res["list"] == [[objects[0], objects[2], objects[4]], [objects[1], objects[3]]]

@@ -138,19 +138,31 @@ impl Series {
     }
 
     pub fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        if !matches!(self.data_type(), DataType::List(..)) {
-            return Err(DaftError::TypeError(format!(
-                "concat aggregation is only valid for List Types, got {}",
-                self.data_type()
-            )));
-        }
-        let downcasted = self.downcast()?;
         use crate::array::ops::DaftConcatAggable;
-        match groups {
-            Some(groups) => {
-                Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
+        match self.data_type() {
+            DataType::List(..) => {
+                let downcasted = self.downcast::<ListType>()?;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
+                    }
+                    None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
+                }
             }
-            None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
+            #[cfg(feature = "python")]
+            DataType::Python => {
+                let downcasted = self.downcast::<PythonType>()?;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
+                    }
+                    None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
+                }
+            }
+            _ => Err(DaftError::TypeError(format!(
+                "concat aggregation is only valid for List or Python types, got {}",
+                self.data_type()
+            ))),
         }
     }
 }
