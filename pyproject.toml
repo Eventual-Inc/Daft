@@ -27,8 +27,6 @@ requires-python = ">=3.7"
 [project.optional-dependencies]
 all = ["getdaft[aws, ray, pandas, numpy, viz]"]
 aws = ["s3fs"]
-experimental = ["getdaft[serving, iceberg]"]
-iceberg = ["icebridge"]
 numpy = ["numpy"]
 pandas = ["pandas"]
 ray = [
@@ -37,7 +35,6 @@ ray = [
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
-serving = ["fastapi", "docker", "uvicorn", "cloudpickle", "boto3", "PyYAML"]
 viz = ["pydot"]
 
 [project.urls]
