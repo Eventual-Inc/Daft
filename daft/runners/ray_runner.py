@@ -113,7 +113,7 @@ def _make_ray_block_from_vpartition(partition: Table) -> RayDatasetBlock:
 @ray.remote
 def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_schema: Schema) -> Table:
     # Variable-shaped tensor column support was added in Ray 2.1.0.
-    if RAY_VERSION >= (2, 1, 0):
+    if RAY_VERSION >= (2, 2, 0):
         from ray.data.extensions import ArrowTensorType, ArrowVariableShapedTensorType
 
         tensor_extension_types = [ArrowTensorType, ArrowVariableShapedTensorType]

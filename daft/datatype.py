@@ -16,7 +16,7 @@ else:
     _RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
     try:
         # Variable-shaped tensor column support was added in Ray 2.1.0.
-        if _RAY_VERSION >= (2, 1, 0):
+        if _RAY_VERSION >= (2, 2, 0):
             from ray.data.extensions import (
                 ArrowTensorType,
                 ArrowVariableShapedTensorType,

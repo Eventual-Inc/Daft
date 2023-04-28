@@ -108,7 +108,7 @@ def test_to_ray_dataset_with_numpy(n_partitions: int):
 
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
-@pytest.mark.skipif(RAY_VERSION < (2, 1, 0), reason="Variable-shaped tensor columns not supported in Ray < 2.1.0")
+@pytest.mark.skipif(RAY_VERSION < (2, 2, 0), reason="Variable-shaped tensor columns not supported in Ray < 2.1.0")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_with_numpy_variable_shaped(n_partitions: int):
     df = DataFrame.from_pydict(DATA).repartition(n_partitions)
