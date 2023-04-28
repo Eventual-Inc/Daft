@@ -19,7 +19,9 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
         let pylist: Py<PyList> = Python::with_gil(|py| -> PyResult<Py<PyList>> {
             let pylist: Py<PyList> = PyList::empty(py).into();
             for pyobj in pyobj_vec {
-                pylist.call_method1(py, pyo3::intern!(py, "extend"), (pyobj,))?;
+                if !pyobj.is_none(py) {
+                    pylist.call_method1(py, pyo3::intern!(py, "extend"), (pyobj,))?;
+                }
             }
             Ok(pylist)
         })?;
@@ -39,7 +41,9 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
                 let group_pyobjs = self.take(&indices_as_array)?.downcast().to_pyobj_vec();
                 let pylist: Py<PyList> = PyList::empty(py).into();
                 for pyobj in group_pyobjs {
-                    pylist.call_method1(py, pyo3::intern!(py, "extend"), (pyobj,))?;
+                    if !pyobj.is_none(py) {
+                        pylist.call_method1(py, pyo3::intern!(py, "extend"), (pyobj,))?;
+                    }
                 }
                 result_pylists.push(pylist.into());
             }
