@@ -34,7 +34,7 @@ Daft supports file paths to a single file, a directory of files, and wildcards. 
 To learn more about each of these constructors, as well as the options that they support, consult the API documentation on :ref:`creating DataFrames from files <df-io-files>`.
 
 From File Paths
-^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^
 
 However, if instead you are reading a set of files that are not container file formats, you can use the ``daft.from_glob_path`` method which will read a DataFrame of globbed filepaths.
 
