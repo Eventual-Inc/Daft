@@ -196,42 +196,30 @@ def test_series_fixed_size_list_size_bytes(dtype, size) -> None:
     assert s.size_bytes() == data.nbytes
 
 
-@pytest.mark.skipif(
-    not PYARROW_GE_7_0_0,
-    reason="Array.nbytes behavior changed in versions >= 7.0.0. Old behavior is incompatible with our tests and is renamed to Array.get_total_buffer_size()",
-)
 @pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
-def test_series_struct_size_bytes(size) -> None:
+@pytest.mark.parametrize("with_nulls", [True, False])
+def test_series_struct_size_bytes(size, with_nulls) -> None:
     dtype1, dtype2, dtype3 = pa.int64(), pa.float64(), pa.string()
     dtype = pa.struct({"a": dtype1, "b": dtype2, "c": dtype3})
     pydata = [
         {"a": 3 * i, "b": 3 * i + 1, "c": str(3 * i + 2)} if i % 2 == 0 else {"a": 3 * i, "c": str(3 * i + 2)}
         for i in range(size)
     ]
-    data = pa.array(pydata, type=dtype)
+
+    # Artifically inject nulls if required as a top-level StructArray Null entry
+    if with_nulls and size > 0:
+        data = pa.array(pydata[:-1] + [None], type=dtype)
+    else:
+        data = pa.array(pydata, type=dtype)
 
     # Additional bytes are allocated for converting the nested string child array to a large_string array
     additional_bytes_for_large_string_offsets = (len(data) + 1) * 4
 
     s = Series.from_arrow(data)
-
-    assert s.datatype() == DataType.from_arrow_type(dtype)
-    # TODO(Clark): Investigate this discrepancy.
-    # TODO(Clark): Investigate this discrepancy between Arrow2 and pyarrow.
-    # We should fix this upstream and/or refactor these tests to not rely on pyarrow as the source-of-truth.
-    assert s.size_bytes() == data.get_total_buffer_size() + additional_bytes_for_large_string_offsets
-
-    ## with nulls
-    if size > 0:
-        pydata = pydata[:-1] + [None]
-    data = pa.array(pydata, type=dtype)
-
-    s = Series.from_arrow(data)
-
     assert s.datatype() == DataType.from_arrow_type(dtype)
 
-    # check validity bitmaps were properly propagated to children
-    if size > 0:
+    # If nulls were injected, check validity bitmaps were were properly propagated to children
+    if with_nulls and size > 0:
         child_arrays = [data.field(i) for i in range(data.type.num_fields)]
         child_arrays_without_validity_buffer = len(
             [child for child in child_arrays if any([b is None for b in child.buffers()])]
