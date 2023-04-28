@@ -318,3 +318,42 @@ def test_agg_groupby_empty():
     daft_df.collect()
     daft_cols = daft_df.to_pydict()
     assert pa.Table.from_pydict(daft_cols).sort_by("group") == pa.Table.from_pydict(expected).sort_by("group")
+
+
+def test_agg_pyobjects():
+    objects = [object(), None, object()]
+    df = DataFrame.from_pydict({"objs": objects})
+    df = df.into_partitions(2)
+    df = df.agg(
+        [
+            (col("objs").alias("count"), "count"),
+            (col("objs").alias("list"), "list"),
+        ]
+    )
+    df.collect()
+    res = df.to_pydict()
+
+    assert res["count"] == [2]
+    assert res["list"] == [objects]
+
+
+def test_groupby_agg_pyobjects():
+    objects = [object(), object(), None, None, object()]
+    df = DataFrame.from_pydict({"objects": objects, "groups": [1, 2, 1, 2, 1]})
+    df = df.into_partitions(2)
+    df = (
+        df.groupby(col("groups"))
+        .agg(
+            [
+                (col("objects").alias("count"), "count"),
+                (col("objects").alias("list"), "list"),
+            ]
+        )
+        .sort(col("groups"))
+    )
+
+    df.collect()
+    res = df.to_pydict()
+    assert res["groups"] == [1, 2]
+    assert res["count"] == [2, 1]
+    assert res["list"] == [[objects[0], objects[2], objects[4]], [objects[1], objects[3]]]
