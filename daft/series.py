@@ -223,6 +223,15 @@ class Series:
         return len(self._series)
 
     def size_bytes(self) -> int:
+        """Returns the total sizes of all buffers used for representing this Series.
+
+        In particular, this includes the:
+
+        1. Buffer(s) used for data (applies any slicing if that occurs!)
+        2. Buffer(s) used for offsets, if applicable (for variable-length arrow types)
+        3. Buffer(s) used for validity, if applicable (arrow can choose to omit the validity bitmask)
+        4. Recursively gets .size_bytes for any child arrays, if applicable (for nested types)
+        """
         return self._series.size_bytes()
 
     def __abs__(self) -> Series:
