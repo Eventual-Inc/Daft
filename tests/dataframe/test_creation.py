@@ -135,7 +135,7 @@ def test_create_dataframe_pydict_bad_columns() -> None:
 
 @pytest.mark.parametrize("multiple", [False, True])
 def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) -> None:
-    t = pa.Table.from_pylist(valid_data)
+    t = pa.Table.from_pydict({k: [valid_data[i][k] for i in range(len(valid_data))] for k in valid_data[0].keys()})
     if multiple:
         t = [t, t, t]
     df = DataFrame.from_arrow(t)
