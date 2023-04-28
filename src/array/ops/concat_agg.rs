@@ -10,7 +10,21 @@ use super::{downcast::Downcastable, DaftConcatAggable};
 impl DaftConcatAggable for crate::datatypes::PythonArray {
     type Output = DaftResult<Self>;
     fn concat(&self) -> Self::Output {
-        todo!()
+        use crate::array::pseudo_arrow::PseudoArrowArray;
+        use pyo3::prelude::*;
+        use pyo3::types::PyList;
+
+        let pyobj_vec = self.downcast().to_pyobj_vec();
+
+        let pylist: Py<PyList> = Python::with_gil(|py| -> PyResult<Py<PyList>> {
+            let pylist: Py<PyList> = PyList::empty(py).into();
+            for pyobj in pyobj_vec {
+                pylist.call_method1(py, pyo3::intern!(py, "extend"), (pyobj,))?;
+            }
+            Ok(pylist)
+        })?;
+        let arrow_array = PseudoArrowArray::<PyObject>::from_pyobj_vec(vec![pylist.into()]);
+        Self::new(self.field().clone().into(), Box::new(arrow_array))
     }
     fn grouped_concat(&self, _groups: &super::GroupIndices) -> Self::Output {
         todo!()
