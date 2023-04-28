@@ -5,7 +5,7 @@ from typing import List, Tuple
 import pandas as pd
 import pytest
 
-from daft.dataframe import DataFrame
+import daft
 from daft.expressions import col
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
@@ -15,7 +15,7 @@ CsvPathAndColumns = Tuple[str, List[str]]
 
 @pytest.fixture(scope="function")
 def daft_df():
-    return DataFrame.read_csv(COOKBOOK_DATA_CSV).select(*[col(c) for c in COLUMNS])
+    return daft.read_csv(COOKBOOK_DATA_CSV).select(*[col(c) for c in COLUMNS])
 
 
 @pytest.fixture(scope="function")

@@ -4,7 +4,7 @@ import re
 
 import pandas as pd
 
-from daft import DataFrame
+import daft
 
 ROW_DIVIDER_REGEX = re.compile(r"\+-+\+")
 SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")
@@ -69,7 +69,7 @@ def parse_html_table(
 
 
 def test_empty_repr():
-    df = DataFrame.from_pydict({})
+    df = daft.from_pydict({})
     assert df.__repr__() == "(No data to display: Dataframe has no columns)"
     assert df._repr_html_() == "<small>(No data to display: Dataframe has no columns)</small>"
 
@@ -79,7 +79,7 @@ def test_empty_repr():
 
 
 def test_empty_df_repr():
-    df = DataFrame.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
+    df = daft.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df = df.where(df["A"] > 10)
     expected_data = {"A": ("Int64", []), "B": ("Utf8", [])}
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
@@ -101,7 +101,7 @@ def test_empty_df_repr():
 
 
 def test_alias_repr():
-    df = DataFrame.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
+    df = daft.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df = df.select(df["A"].alias("A2"), df["B"])
 
     expected_data = {"A2": ("Int64", []), "B": ("Utf8", [])}

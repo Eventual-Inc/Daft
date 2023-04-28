@@ -10,7 +10,7 @@ if sys.version_info < (3, 8):
 else:
     from typing import get_args, get_origin
 
-from daft.analytics import time_df_method
+from daft.analytics import time_df_method, time_func
 
 
 def DataframePublicAPI(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -25,12 +25,23 @@ def DataframePublicAPI(func: Callable[..., Any]) -> Callable[..., Any]:
     return _wrap
 
 
+def PublicAPI(func: Callable[..., Any]) -> Callable[..., Any]:
+    """A decorator to mark a function as part of the Daft public API."""
+
+    @functools.wraps(func)
+    def _wrap(*args, **kwargs):
+        type_check_function(func, *args, **kwargs)
+        timed_func = time_func(func)
+        return timed_func(*args, **kwargs)
+
+    return _wrap
+
+
 class APITypeError(TypeError):
     pass
 
 
 def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
-
     signature = inspect.signature(func)
     arguments = signature.bind(*args, **kwargs).arguments
     type_hints = func.__annotations__
@@ -48,6 +59,7 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
 
         # T is a simple type, like `int`
         if isinstance(T, type):
+            print(T)
             return isinstance(value, T)
 
         # T is a generic type, like `typing.List`

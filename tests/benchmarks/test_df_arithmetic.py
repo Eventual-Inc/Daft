@@ -9,7 +9,7 @@ from daft import DataFrame
 @pytest.mark.aggregations
 @pytest.fixture(scope="module")
 def gen_aranged_df(num_samples=1_000_000) -> DataFrame:
-    return DataFrame.from_pydict(
+    return daft.from_pydict(
         {
             "i": ((np.arange(num_samples, dtype=np.int64) * 9582398353) % 100),
             "j": ((np.arange(num_samples, dtype=np.int64) * 847892347987) % 100),

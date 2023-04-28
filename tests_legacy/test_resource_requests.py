@@ -7,7 +7,8 @@ import psutil
 import pytest
 import ray
 
-from daft import DataFrame, resource_request, udf
+import daft
+from daft import resource_request, udf
 from daft.context import get_context
 from daft.expressions import col
 from daft.internal.gpu import cuda_device_count
@@ -35,7 +36,7 @@ def my_udf(c):
 
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_requesting_too_many_cpus():
-    df = DataFrame.from_pydict(DATA)
+    df = daft.from_pydict(DATA)
 
     df = df.with_column(
         "foo",
@@ -49,7 +50,7 @@ def test_requesting_too_many_cpus():
 
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_requesting_too_many_gpus():
-    df = DataFrame.from_pydict(DATA)
+    df = daft.from_pydict(DATA)
     df = df.with_column(
         "foo", my_udf(col("id")), resource_request=resource_request.ResourceRequest(num_gpus=cuda_device_count() + 1)
     )
@@ -60,7 +61,7 @@ def test_requesting_too_many_gpus():
 
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_requesting_too_much_memory():
-    df = DataFrame.from_pydict(DATA)
+    df = daft.from_pydict(DATA)
 
     df = df.with_column(
         "foo",
@@ -99,7 +100,7 @@ RAY_VERSION_LT_2 = int(ray.__version__.split(".")[0]) < 2
 )
 @pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
 def test_with_column_rayrunner():
-    df = DataFrame.from_pydict(DATA).repartition(2)
+    df = daft.from_pydict(DATA).repartition(2)
 
     df = df.with_column(
         "resources_ok",
@@ -115,7 +116,7 @@ def test_with_column_rayrunner():
 )
 @pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
 def test_with_column_folded_rayrunner():
-    df = DataFrame.from_pydict(DATA).repartition(2)
+    df = daft.from_pydict(DATA).repartition(2)
 
     # Because of Projection Folding optimizations, the expected resource request is the max of the three .with_column requests
     expected = dict(num_cpus=1, num_gpus=None, memory=5_000_000)
@@ -159,7 +160,7 @@ def assert_num_cuda_visible_devices(c, num_gpus: int = 0):
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 def test_with_column_pyrunner_gpu():
-    df = DataFrame.from_pydict(DATA).repartition(5)
+    df = daft.from_pydict(DATA).repartition(5)
 
     # We do not do any masking of devices for the local PyRunner, even if the user requests fewer GPUs
     # than the host actually has.
@@ -176,7 +177,7 @@ def test_with_column_pyrunner_gpu():
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 @pytest.mark.parametrize("num_gpus", [None, 1])
 def test_with_column_rayrunner_gpu(num_gpus):
-    df = DataFrame.from_pydict(DATA).repartition(2)
+    df = daft.from_pydict(DATA).repartition(2)
 
     df = df.with_column(
         "num_cuda_visible_devices",
@@ -190,7 +191,7 @@ def test_with_column_rayrunner_gpu(num_gpus):
 @pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 def test_with_column_max_resources_rayrunner_gpu():
-    df = DataFrame.from_pydict(DATA).repartition(2)
+    df = daft.from_pydict(DATA).repartition(2)
 
     # Because of projection folding optimizations, both UDFs should run with num_gpus=1 even though 0_gpu_col requested for 0 GPUs
     df = df.with_column(

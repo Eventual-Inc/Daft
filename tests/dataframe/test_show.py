@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from daft import DataFrame
+import daft
 
 
 def test_show_default(valid_data):
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_display = df.show()
 
     assert df_display.schema == df.schema()
@@ -14,7 +14,7 @@ def test_show_default(valid_data):
 
 
 def test_show_some(valid_data):
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     df_display = df.show(1)
 
     assert df_display.schema == df.schema()

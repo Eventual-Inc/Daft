@@ -8,7 +8,8 @@ import pyarrow as pa
 import pytest
 import ray
 
-from daft import DataFrame, DataType
+import daft
+from daft import DataType
 from daft.context import get_context
 
 RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
@@ -31,7 +32,7 @@ DATA = {
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_all_arrow(n_partitions: int):
-    df = DataFrame.from_pydict(DATA).repartition(n_partitions)
+    df = daft.from_pydict(DATA).repartition(n_partitions)
     df = df.with_column("floatcol", df["intcol"].cast(DataType.float64()))
     ds = df.to_ray_dataset()
 
@@ -55,7 +56,7 @@ def test_to_ray_dataset_all_arrow(n_partitions: int):
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_with_py(n_partitions: int):
-    df = DataFrame.from_pydict(DATA).repartition(n_partitions)
+    df = daft.from_pydict(DATA).repartition(n_partitions)
     df = df.with_column("pycol", df["intcol"].apply(lambda x: MyObj(x), DataType.python()))
     ds = df.to_ray_dataset()
 
@@ -79,7 +80,7 @@ def test_to_ray_dataset_with_py(n_partitions: int):
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_with_numpy(n_partitions: int):
-    df = DataFrame.from_pydict(DATA).repartition(n_partitions)
+    df = daft.from_pydict(DATA).repartition(n_partitions)
     df = df.with_column("npcol", df["intcol"].apply(lambda _: np.ones((3, 3)), DataType.python()))
     ds = df.to_ray_dataset()
 
@@ -110,7 +111,7 @@ def test_to_ray_dataset_with_numpy(n_partitions: int):
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_with_numpy_variable_shaped(n_partitions: int):
-    df = DataFrame.from_pydict(DATA).repartition(n_partitions)
+    df = daft.from_pydict(DATA).repartition(n_partitions)
     df = df.with_column("npcol", df["intcol"].apply(lambda x: np.ones((x, 3)), DataType.python()))
     ds = df.to_ray_dataset()
 
@@ -153,7 +154,7 @@ def test_from_ray_dataset_all_arrow(n_partitions: int):
         elif RAY_VERSION >= (2, 0, 0):
             assert ds._dataset_format() == "arrow", "Ray Dataset format should be arrow"
 
-    df = DataFrame.from_ray_dataset(ds)
+    df = daft.from_ray_dataset(ds)
     out_table = df.to_arrow()
     expected_table = add_float(table).cast(
         pa.schema(
@@ -172,7 +173,7 @@ def test_from_ray_dataset_all_arrow(n_partitions: int):
 def test_from_ray_dataset_simple(n_partitions: int):
     ds = ray.data.range(8, parallelism=n_partitions)
 
-    df = DataFrame.from_ray_dataset(ds)
+    df = daft.from_ray_dataset(ds)
     np.testing.assert_equal(df.to_pydict(), {"value": list(range(8))})
 
 
@@ -182,7 +183,7 @@ def test_from_ray_dataset_tensor(n_partitions: int):
     ds = ray.data.range(8)
     ds = ds.map(lambda i: {"int": i, "np": np.ones((3, 3))}).repartition(n_partitions)
 
-    df = DataFrame.from_ray_dataset(ds)
+    df = daft.from_ray_dataset(ds)
     np.testing.assert_equal(
         df.to_pydict(),
         {
@@ -209,6 +210,6 @@ def test_from_ray_dataset_pandas(n_partitions: int):
         elif RAY_VERSION >= (2, 0, 0):
             assert ds._dataset_format() == "pandas", "Ray Dataset format should be pandas"
 
-    df = DataFrame.from_ray_dataset(ds)
+    df = daft.from_ray_dataset(ds)
     expected_df = add_float(pd_df)
     pd.testing.assert_frame_equal(df.to_pandas(), expected_df)

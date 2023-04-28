@@ -7,10 +7,10 @@ Let's first create a dataframe that will be used as a running example throughout
 
 .. code:: python
 
-    from daft import DataFrame, DataType
+    import daft
     import numpy as np
 
-    df = DataFrame.from_pydict({
+    df = daft.from_pydict({
         # the `image` column contains images represented as 2D numpy arrays
         "image": [np.ones((128, 128)) for i in range(16)],
         # the `crop` column contains a box to crop from our image, represented as a list of integers: [x1, x2, y1, y2]
@@ -38,7 +38,7 @@ For example, the following example creates a new ``"flattened_image"`` column by
 
     df.with_column(
         "flattened_image",
-        df["image"].apply(lambda img: img.flatten(), return_dtype=DataType.python())
+        df["image"].apply(lambda img: img.flatten(), return_dtype=daft.DataType.python())
     ).show(2)
 
 .. code:: none
@@ -73,9 +73,7 @@ For example, let's try writing a function that will crop all our images in the `
 
 .. code:: python
 
-    from daft import udf
-
-    @udf(return_dtype=DataType.python())
+    @daft.udf(return_dtype=daft.DataType.python())
     def crop_images(images, crops, padding=0):
         cropped = []
         for img, crop in zip(images.to_pylist(), crops.to_pylist()):
@@ -163,7 +161,7 @@ between invocations of the class, for example downloading data or creating a mod
 
 .. code:: python
 
-    @udf(return_dtype=DataType.int64())
+    @daft.udf(return_dtype=daft.DataType.int64())
     class RunModel:
 
         def __init__(self):

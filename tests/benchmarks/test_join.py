@@ -29,7 +29,7 @@ def test_join_simple(benchmark, num_samples, num_partitions) -> None:
     np.random.shuffle(right_arr)
 
     left_table = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "mycol": left_arr,
             }
@@ -38,7 +38,7 @@ def test_join_simple(benchmark, num_samples, num_partitions) -> None:
         .collect()
     )
     right_table = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "mycol": right_arr,
             }
@@ -75,7 +75,7 @@ def test_join_largekey(benchmark, num_samples, num_partitions) -> None:
     random.shuffle(right_keys)
 
     left_table = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "mycol": left_keys,
             }
@@ -84,7 +84,7 @@ def test_join_largekey(benchmark, num_samples, num_partitions) -> None:
         .collect()
     )
     right_table = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "mycol": right_keys,
             }
@@ -124,7 +124,7 @@ def test_join_withdata(benchmark, num_samples, num_partitions) -> None:
     long_B = "B" * 1024
 
     left_table = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "mykey": left_arr,
                 "left_data": [long_A for _ in range(num_samples)],
@@ -134,7 +134,7 @@ def test_join_withdata(benchmark, num_samples, num_partitions) -> None:
         .collect()
     )
     right_table = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "mykey": right_arr,
                 "right_data": [long_B for _ in range(num_samples)],
@@ -182,14 +182,14 @@ def test_broadcast_join(benchmark, left_bigger, num_partitions) -> None:
     big_arr = np.concatenate([np.arange(small_length) for _ in range(big_factor)])
     np.random.shuffle(big_arr)
 
-    small_table = DataFrame.from_pydict(
+    small_table = daft.from_pydict(
         {
             "keys": small_arr,
             "data": [str(x) for x in small_arr],
         }
     ).collect()
     big_table = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "keys": big_arr,
             }
@@ -233,7 +233,7 @@ def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions) 
     np.random.shuffle(right_arr)
 
     left_table = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "nums_a": left_arr * 17 % 9,
                 "nums_b": left_arr * 17 % 10,
@@ -245,7 +245,7 @@ def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions) 
         .collect()
     )
     right_table = (
-        DataFrame.from_pydict(
+        daft.from_pydict(
             {
                 "nums_a": right_arr * 17 % 9,
                 "nums_b": right_arr * 17 % 10,

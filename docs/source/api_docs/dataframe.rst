@@ -13,52 +13,6 @@ DataFrame
     Most DataFrame methods are **lazy**, meaning that they do not execute computation immediately when invoked. Instead, these operations are enqueued in
     the DataFrame's internal query plan, and are only executed when `Execution`_ DataFrame methods are called.
 
-Construction
-############
-
-.. _df-construction:
-
-From Files
-**********
-
-.. _df-file-construction-api:
-
-.. autosummary::
-    :nosignatures:
-    :toctree: dataframe_methods
-
-    daft.DataFrame.read_csv
-    daft.DataFrame.read_json
-    daft.DataFrame.read_parquet
-    daft.DataFrame.from_glob_path
-
-From In-Memory Data
-*******************
-
-.. _df-memory-construction-api:
-
-.. autosummary::
-    :nosignatures:
-    :toctree: dataframe_methods
-
-    daft.DataFrame.from_pylist
-    daft.DataFrame.from_pydict
-    daft.DataFrame.from_arrow
-    daft.DataFrame.from_pandas
-
-From Integrations
-*****************
-
-.. _df-from-integrations:
-
-.. autosummary::
-    :nosignatures:
-    :toctree: dataframe_methods
-
-    daft.DataFrame.from_ray_dataset
-    daft.DataFrame.from_dask_dataframe
-
-
 .. _dataframe-api-operations:
 
 Data Manipulation

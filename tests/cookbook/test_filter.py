@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from daft import DataFrame
+import daft
 from daft.expressions import col
 from tests.conftest import assert_df_equals
 
@@ -144,13 +144,13 @@ def test_chain_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartit
 
 def test_filter_on_projection():
     """Filter the dataframe with on top of a projection"""
-    df = DataFrame.from_pydict({"x": [1, 1, 1, 1, 1]})
+    df = daft.from_pydict({"x": [1, 1, 1, 1, 1]})
     df = df.select(col("x") * 2)
     df = df.where(col("x") == 1)
     result = df.to_pandas()
     assert len(result) == 0
 
-    df = DataFrame.from_pydict({"x": [1, 1, 1, 1, 1]})
+    df = daft.from_pydict({"x": [1, 1, 1, 1, 1]})
     df = df.select(col("x") * 2)
     df = df.where(col("x") == 2)
     result = df.to_pandas()

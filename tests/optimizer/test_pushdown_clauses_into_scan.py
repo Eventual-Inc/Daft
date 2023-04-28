@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import daft
 from daft import DataFrame, col
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan, TabularFilesScan
@@ -15,7 +16,7 @@ def optimizer() -> RuleRunner[LogicalPlan]:
 
 
 def test_push_projection_scan_all_cols(valid_data_json_path: str, optimizer):
-    df_unoptimized_scan = DataFrame.from_json(valid_data_json_path)
+    df_unoptimized_scan = daft.read_json(valid_data_json_path)
     df_unoptimized = df_unoptimized_scan.select("sepal_length")
 
     # TODO: switch to using .read_parquet(columns=["sepal_length"]) once that's implemented
@@ -35,7 +36,7 @@ def test_push_projection_scan_all_cols(valid_data_json_path: str, optimizer):
 
 
 def test_push_projection_scan_all_cols_alias(valid_data_json_path: str, optimizer):
-    df_unoptimized_scan = DataFrame.from_json(valid_data_json_path)
+    df_unoptimized_scan = daft.read_json(valid_data_json_path)
     df_unoptimized = df_unoptimized_scan.select(col("sepal_length").alias("foo"))
 
     # TODO: switch to using .read_parquet(columns=["sepal_length"]) once that's implemented
@@ -56,7 +57,7 @@ def test_push_projection_scan_all_cols_alias(valid_data_json_path: str, optimize
 
 
 def test_push_projection_scan_some_cols_aliases(valid_data_json_path: str, optimizer):
-    df_unoptimized_scan = DataFrame.from_json(valid_data_json_path)
+    df_unoptimized_scan = daft.read_json(valid_data_json_path)
     df_unoptimized = df_unoptimized_scan.select(col("sepal_length").alias("foo"), col("sepal_width") + 1)
 
     # TODO: switch to using .read_parquet(columns=["sepal_length"]) once that's implemented

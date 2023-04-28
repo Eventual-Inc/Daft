@@ -10,7 +10,7 @@ from glob import glob
 
 from loguru import logger
 
-from daft.dataframe import DataFrame
+import daft
 
 SCHEMA = {
     "part": [
@@ -311,7 +311,7 @@ def gen_parquet(csv_files_location: str) -> str:
         table_parquet_path = os.path.join(PARQUET_FILE_PATH, tab_name)
         if not os.path.exists(table_parquet_path):
             logger.info(f"Generating Parquet Files for {tab_name}")
-            df = DataFrame.read_csv(
+            df = daft.read_csv(
                 os.path.join(csv_files_location, f"{tab_name}.tbl*"),
                 has_headers=False,
                 column_names=SCHEMA[tab_name],

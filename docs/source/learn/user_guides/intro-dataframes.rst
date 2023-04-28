@@ -17,9 +17,9 @@ Let's create our first Dataframe from a Python dictionary of columns.
 
 .. code:: python
 
-    from daft import DataFrame
+    import daft
 
-    df = DataFrame.from_pydict({
+    df = daft.from_pydict({
         "A": [1, 2, 3, 4],
         "B": [1.5, 2.5, 3.5, 4.5],
         "C": [True, True, False, False],

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from daft.dataframe import DataFrame
+import daft
 from daft.expressions import ExpressionsProjection, col
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import Filter, Join, LogicalPlan
@@ -26,7 +26,7 @@ def optimizer() -> RuleRunner[LogicalPlan]:
 
 
 def test_no_pushdown_on_modified_column(optimizer) -> None:
-    df = DataFrame.from_pydict({"ints": [i for i in range(3)], "ints_dup": [i for i in range(3)]})
+    df = daft.from_pydict({"ints": [i for i in range(3)], "ints_dup": [i for i in range(3)]})
     df = df.with_column(
         "modified",
         col("ints_dup") + 1,
@@ -37,7 +37,7 @@ def test_no_pushdown_on_modified_column(optimizer) -> None:
 
 
 def test_filter_pushdown_select(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized = df.select("sepal_length", "sepal_width").where(col("sepal_length") > 4.8)
     optimized = df.where(col("sepal_length") > 4.8).select("sepal_length", "sepal_width")
     assert unoptimized.column_names == ["sepal_length", "sepal_width"]
@@ -45,7 +45,7 @@ def test_filter_pushdown_select(valid_data: list[dict[str, float]], optimizer) -
 
 
 def test_filter_pushdown_select_alias(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized = df.select("sepal_length", "sepal_width").where(col("sepal_length").alias("foo") > 4.8)
     optimized = df.where(col("sepal_length").alias("foo") > 4.8).select("sepal_length", "sepal_width")
     assert unoptimized.column_names == ["sepal_length", "sepal_width"]
@@ -53,7 +53,7 @@ def test_filter_pushdown_select_alias(valid_data: list[dict[str, float]], optimi
 
 
 def test_filter_pushdown_with_column(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized = df.with_column("foo", col("sepal_length") + 1).where(col("sepal_length") > 4.8)
     optimized = df.where(col("sepal_length") > 4.8).with_column("foo", col("sepal_length") + 1)
     assert unoptimized.column_names == [*df.column_names, "foo"]
@@ -61,7 +61,7 @@ def test_filter_pushdown_with_column(valid_data: list[dict[str, float]], optimiz
 
 
 def test_filter_pushdown_with_column_partial_predicate_pushdown(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized = (
         df.with_column("foo", col("sepal_length") + 1).where(col("sepal_length") > 4.8).where(col("foo") > 4.8)
     )
@@ -71,7 +71,7 @@ def test_filter_pushdown_with_column_partial_predicate_pushdown(valid_data: list
 
 
 def test_filter_pushdown_with_column_alias(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized = df.with_column("foo", col("sepal_length").alias("foo") + 1).where(
         col("sepal_length").alias("foo") > 4.8
     )
@@ -83,7 +83,7 @@ def test_filter_pushdown_with_column_alias(valid_data: list[dict[str, float]], o
 
 
 def test_filter_merge(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized = df.where((col("sepal_length") > 4.8).alias("foo")).where((col("sepal_width") > 2.4).alias("foo"))
 
     # HACK: We manually modify the plan here because currently CombineFilters works by combining predicates as an ExpressionsProjection rather than taking the & of the two predicates
@@ -98,7 +98,7 @@ def test_filter_merge(valid_data: list[dict[str, float]], optimizer) -> None:
 
 
 def test_filter_pushdown_sort(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized = df.sort("sepal_length").select("sepal_length", "sepal_width").where(col("sepal_length") > 4.8)
     optimized = df.where(col("sepal_length") > 4.8).sort("sepal_length").select("sepal_length", "sepal_width")
     assert unoptimized.column_names == ["sepal_length", "sepal_width"]
@@ -106,7 +106,7 @@ def test_filter_pushdown_sort(valid_data: list[dict[str, float]], optimizer) -> 
 
 
 def test_filter_pushdown_repartition(valid_data: list[dict[str, float]], optimizer) -> None:
-    df = DataFrame.from_pylist(valid_data)
+    df = daft.from_pylist(valid_data)
     unoptimized = df.repartition(2).select("sepal_length", "sepal_width").where(col("sepal_length") > 4.8)
     optimized = df.where(col("sepal_length") > 4.8).repartition(2).select("sepal_length", "sepal_width")
     assert unoptimized.column_names == ["sepal_length", "sepal_width"]
@@ -114,8 +114,8 @@ def test_filter_pushdown_repartition(valid_data: list[dict[str, float]], optimiz
 
 
 def test_filter_join_pushdown(valid_data: list[dict[str, float]], optimizer) -> None:
-    df1 = DataFrame.from_pylist(valid_data)
-    df2 = DataFrame.from_pylist(valid_data)
+    df1 = daft.from_pylist(valid_data)
+    df2 = daft.from_pylist(valid_data)
 
     joined = df1.join(df2, on="variety")
 
@@ -131,8 +131,8 @@ def test_filter_join_pushdown(valid_data: list[dict[str, float]], optimizer) -> 
 
 
 def test_filter_join_pushdown_aliases(valid_data: list[dict[str, float]], optimizer) -> None:
-    df1 = DataFrame.from_pylist(valid_data)
-    df2 = DataFrame.from_pylist(valid_data)
+    df1 = daft.from_pylist(valid_data)
+    df2 = daft.from_pylist(valid_data)
 
     joined = df1.join(df2, on="variety")
 
@@ -151,8 +151,8 @@ def test_filter_join_pushdown_aliases(valid_data: list[dict[str, float]], optimi
 
 
 def test_filter_join_pushdown_nonvalid(valid_data: list[dict[str, float]], optimizer) -> None:
-    df1 = DataFrame.from_pylist(valid_data)
-    df2 = DataFrame.from_pylist(valid_data)
+    df1 = daft.from_pylist(valid_data)
+    df2 = daft.from_pylist(valid_data)
 
     joined = df1.join(df2, on="variety")
 
@@ -165,8 +165,8 @@ def test_filter_join_pushdown_nonvalid(valid_data: list[dict[str, float]], optim
 
 
 def test_filter_join_pushdown_nonvalid_aliases(valid_data: list[dict[str, float]], optimizer) -> None:
-    df1 = DataFrame.from_pylist(valid_data)
-    df2 = DataFrame.from_pylist(valid_data)
+    df1 = daft.from_pylist(valid_data)
+    df2 = daft.from_pylist(valid_data)
 
     joined = df1.join(df2, on="variety")
 
@@ -179,8 +179,8 @@ def test_filter_join_pushdown_nonvalid_aliases(valid_data: list[dict[str, float]
 
 
 def test_filter_join_partial_predicate_pushdown(valid_data: list[dict[str, float]], optimizer) -> None:
-    df1 = DataFrame.from_pylist(valid_data)
-    df2 = DataFrame.from_pylist(valid_data)
+    df1 = daft.from_pylist(valid_data)
+    df2 = daft.from_pylist(valid_data)
 
     joined = df1.join(df2, on="variety")
 

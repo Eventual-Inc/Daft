@@ -34,7 +34,6 @@ ALL_TABLES = [
 
 
 class MetricsBuilder:
-
     NUM_TPCH_QUESTIONS = 10
 
     HEADERS = [
@@ -114,7 +113,7 @@ class MetricsBuilder:
 
 def get_df_with_parquet_folder(parquet_folder: str) -> Callable[[str], DataFrame]:
     def _get_df(table_name: str) -> DataFrame:
-        return DataFrame.read_parquet(os.path.join(parquet_folder, table_name, "*.parquet"))
+        return daft.read_parquet(os.path.join(parquet_folder, table_name, "*.parquet"))
 
     return _get_df
 
@@ -178,6 +177,7 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
         )
 
         logger.info("Warming up Ray cluster with a function...")
+
         # NOTE: installation of runtime_env is supposed to be eager but it seems to be happening async.
         # Here we farm out some work on Ray to warm up all the workers by downloading data.
         # Warm up n := num_cpus workers.

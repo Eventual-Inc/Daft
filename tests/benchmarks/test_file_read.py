@@ -48,7 +48,7 @@ def test_csv_read(gen_simple_csvs, benchmark):
     csv_dir, num_rows = gen_simple_csvs
 
     def bench() -> DataFrame:
-        df = DataFrame.read_csv(csv_dir)
+        df = daft.read_csv(csv_dir)
         return df.collect()
 
     df = benchmark(bench)
