@@ -2,10 +2,7 @@ use std::fmt::{Display, Formatter, Result};
 
 use arrow2::datatypes::Field as ArrowField;
 
-use crate::{
-    datatypes::dtype::DataType,
-    error::{DaftError, DaftResult},
-};
+use crate::{datatypes::dtype::DataType, error::DaftResult};
 
 use serde::{Deserialize, Serialize};
 
@@ -34,9 +31,7 @@ impl Field {
     }
     pub fn to_list_field(&self) -> DaftResult<Self> {
         if self.dtype.is_python() {
-            return Err(DaftError::TypeError(format!(
-                "Attempting to promote a Python Field: {self} into a List Field, which is currently not implemented."
-            )));
+            return Ok(self.clone());
         }
         let list_dtype = DataType::List(Box::new(self.clone()));
         Ok(Field {

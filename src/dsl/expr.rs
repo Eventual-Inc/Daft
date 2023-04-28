@@ -135,15 +135,7 @@ impl AggExpr {
                 }
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
-            List(expr) => {
-                let field = expr.to_field(schema)?;
-                if !field.dtype.is_arrow() {
-                    return Err(DaftError::TypeError(format!(
-                        "We can only perform List Aggregation on Arrow Compatible Types, got: {field}",
-                    )));
-                }
-                field.to_list_field()
-            }
+            List(expr) => expr.to_field(schema)?.to_list_field(),
             Concat(expr) => {
                 let field = expr.to_field(schema)?;
                 if !matches!(field.dtype, DataType::List(..)) {
