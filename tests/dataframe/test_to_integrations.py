@@ -7,6 +7,7 @@ import pyarrow as pa
 import pytest
 
 from daft.dataframe import DataFrame
+from tests.utils import sort_arrow_table
 
 TEST_DATA_LEN = 16
 FIXED_SIZE_LIST_ARRAY_LENGTH = 4
@@ -45,8 +46,8 @@ def test_to_arrow(n_partitions: int) -> None:
     table = df.to_arrow()
     # String column is converted to large_string column in Daft.
     assert table.schema == TEST_DATA_SCHEMA
-    expected_table = pa.table(TEST_DATA, schema=table.schema).sort_by("integers")
-    assert table.sort_by("integers").equals(expected_table)
+    expected_table = sort_arrow_table(pa.table(TEST_DATA, schema=table.schema), "integers")
+    assert sort_arrow_table(table, "integers").equals(expected_table)
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2])

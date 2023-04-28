@@ -8,6 +8,7 @@ from daft import DataFrame, col
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.utils import freeze
+from tests.utils import sort_arrow_table
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -151,7 +152,9 @@ def test_agg_groupby(repartition_nparts):
     res_list = daft_cols.pop("list")
     exp_list = expected.pop("list")
 
-    assert pa.Table.from_pydict(daft_cols).sort_by("group") == pa.Table.from_pydict(expected).sort_by("group")
+    assert sort_arrow_table(pa.Table.from_pydict(daft_cols), "group") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "group"
+    )
 
     arg_sort = np.argsort(daft_cols["group"])
     assert freeze([list(map(set, res_list))[i] for i in arg_sort]) == freeze(list(map(set, exp_list)))
@@ -192,7 +195,9 @@ def test_agg_groupby_all_null(repartition_nparts):
     daft_df.collect()
     daft_cols = daft_df.to_pydict()
 
-    assert pa.Table.from_pydict(daft_cols).sort_by("group") == pa.Table.from_pydict(expected).sort_by("group")
+    assert sort_arrow_table(pa.Table.from_pydict(daft_cols), "group") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "group"
+    )
 
 
 def test_agg_groupby_null_type_column():
@@ -238,7 +243,9 @@ def test_null_groupby_keys(repartition_nparts):
         "mean": [0.0, 1.0, 2.0, 3.0],
     }
     daft_cols = daft_df.to_pydict()
-    assert pa.Table.from_pydict(daft_cols).sort_by("group") == pa.Table.from_pydict(expected).sort_by("group")
+    assert sort_arrow_table(pa.Table.from_pydict(daft_cols), "group") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "group"
+    )
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -317,4 +324,6 @@ def test_agg_groupby_empty():
 
     daft_df.collect()
     daft_cols = daft_df.to_pydict()
-    assert pa.Table.from_pydict(daft_cols).sort_by("group") == pa.Table.from_pydict(expected).sort_by("group")
+    assert sort_arrow_table(pa.Table.from_pydict(daft_cols), "group") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "group"
+    )
