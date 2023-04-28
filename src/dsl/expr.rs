@@ -138,12 +138,14 @@ impl AggExpr {
             List(expr) => expr.to_field(schema)?.to_list_field(),
             Concat(expr) => {
                 let field = expr.to_field(schema)?;
-                if !matches!(field.dtype, DataType::List(..)) {
-                    return Err(DaftError::TypeError(format!(
-                        "We can only perform List Concat Agg on List Types, got: {field}",
-                    )));
+                match field.dtype {
+                    DataType::List(..) => Ok(field),
+                    #[cfg(feature = "python")]
+                    DataType::Python => Ok(field),
+                    _ => Err(DaftError::TypeError(format!(
+                        "We can only perform List Concat Agg on List or Python Types, got: {field}",
+                    ))),
                 }
-                Ok(field)
             }
         }
     }
