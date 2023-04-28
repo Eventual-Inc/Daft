@@ -1,4 +1,5 @@
 mod agg;
+mod explode;
 mod groups;
 mod hash;
 mod joins;

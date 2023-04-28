@@ -167,6 +167,12 @@ impl AggExpr {
     }
 }
 
+impl AsRef<Expr> for Expr {
+    fn as_ref(&self) -> &Expr {
+        self
+    }
+}
+
 impl Expr {
     pub fn alias<S: Into<Arc<str>>>(&self, name: S) -> Self {
         Expr::Alias(self.clone().into(), name.into())
@@ -572,7 +578,7 @@ mod tests {
         let schema = Schema::new(vec![
             Field::new("x", DataType::Float64),
             Field::new("y", DataType::Int64),
-        ]);
+        ])?;
 
         let z = Expr::BinaryOp {
             left: x.into(),

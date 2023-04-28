@@ -108,21 +108,9 @@ impl PyTable {
     }
 
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_explode: Vec<dsl::Expr> =
-            to_explode.into_iter().map(|e| e.into()).collect();
+        let converted_to_explode: Vec<dsl::Expr> = to_explode.into_iter().map(|e| e.expr).collect();
 
-        if converted_to_explode.len() != 1 {
-            return Err(DaftError::ValueError(
-                "Exploding more than one column is not yet implemented.".to_string(),
-            )
-            .into());
-        }
-        py.allow_threads(|| {
-            Ok(self
-                .table
-                .explode(converted_to_explode.get(0).unwrap())?
-                .into())
-        })
+        py.allow_threads(|| Ok(self.table.explode(converted_to_explode.as_slice())?.into()))
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
@@ -304,7 +292,7 @@ impl PyTable {
         }
 
         Ok(PyTable {
-            table: Table::new(Schema::new(fields), columns)?,
+            table: Table::new(Schema::new(fields)?, columns)?,
         })
     }
 

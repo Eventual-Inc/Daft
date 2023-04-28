@@ -31,9 +31,11 @@ def test_explode(data):
 def test_explode_multiple_cols(data):
     df = daft.from_pydict({"nested": data, "nested2": data, "sidecar": ["a", "b", "c", "d"]})
     df = df.explode(col("nested"), col("nested2"))
-    # TODO: [RUST-INT][NESTED] Need to fix to allow multiple explodes
-    with pytest.raises(ValueError):
-        df.to_pydict()
+    assert df.to_pydict() == {
+        "nested": [1, 2, 3, 4, None, None],
+        "nested2": [1, 2, 3, 4, None, None],
+        "sidecar": ["a", "a", "b", "b", "c", "d"],
+    }
 
 
 def test_explode_bad_col_type():

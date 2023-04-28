@@ -2,7 +2,9 @@ use num_traits::{NumCast, ToPrimitive};
 
 use crate::{
     array::{BaseArray, DataArray},
-    datatypes::{BooleanArray, DaftNumericType, DataType, NullArray, Utf8Array},
+    datatypes::{
+        BooleanArray, DaftArrowBackedType, DaftNumericType, DataType, NullArray, Utf8Array,
+    },
     error::{DaftError, DaftResult},
     utils::arrow::arrow_bitmap_and_helper,
 };
@@ -13,6 +15,15 @@ use super::{DaftCompare, DaftLogical};
 
 use super::downcast::Downcastable;
 use arrow2::{compute::comparison, scalar::PrimitiveScalar};
+
+impl<T> PartialEq for DataArray<T>
+where
+    T: DaftArrowBackedType + 'static,
+{
+    fn eq(&self, other: &Self) -> bool {
+        arrow2::array::equal(self.data(), other.data())
+    }
+}
 
 impl<T> DaftCompare<&DataArray<T>> for DataArray<T>
 where

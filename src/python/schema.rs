@@ -58,7 +58,7 @@ impl PySchema {
             .iter()
             .map(|(name, pydtype)| datatypes::Field::new(name, pydtype.clone().into()))
             .collect();
-        let schema = schema::Schema::new(fields);
+        let schema = schema::Schema::new(fields)?;
         Ok(PySchema {
             schema: schema.into(),
         })

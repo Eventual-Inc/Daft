@@ -22,7 +22,7 @@ pub struct Table {
 impl Table {
     pub fn new(schema: Schema, columns: Vec<Series>) -> DaftResult<Self> {
         if schema.fields.len() != columns.len() {
-            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns. {} vs {}", schema.fields.len(), columns.len())));
+            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields, columns)));
         }
         let mut num_rows = 1;
 
@@ -73,7 +73,7 @@ impl Table {
 
     pub fn from_columns(columns: Vec<Series>) -> DaftResult<Self> {
         let fields = columns.iter().map(|s| s.field().clone()).collect();
-        let schema = Schema::new(fields);
+        let schema = Schema::new(fields)?;
         Table::new(schema, columns)
     }
 
@@ -190,38 +190,6 @@ impl Table {
             schema: self.schema.clone(),
             columns: new_series?,
         })
-    }
-
-    pub fn explode(&self, expr: &Expr) -> DaftResult<Self> {
-        use crate::dsl::functions::{list::ListExpr, FunctionExpr};
-        match expr {
-            Expr::Function {
-                func: FunctionExpr::List(ListExpr::Explode),
-                inputs,
-            } => {
-                if inputs.len() != 1 {
-                    return Err(DaftError::ValueError(format!("ListExpr::Explode function expression must have one input only, received: {}", inputs.len())));
-                }
-                let expr = inputs.get(0).unwrap();
-                let exploded_name = expr.name()?;
-                let evaluated = self.eval_expression(expr)?;
-                let (exploded, take_idx) = evaluated.explode()?;
-                let table_to_repeat = self.get_columns(
-                    self.column_names()
-                        .iter()
-                        .filter(|name| !name.as_str().eq(exploded_name))
-                        .collect::<Vec<&String>>()
-                        .as_slice(),
-                )?;
-                let mut table_to_repeat = table_to_repeat.take(&take_idx)?;
-                let mut cols: Vec<Series> = table_to_repeat.columns.drain(..).collect();
-                cols.push(exploded);
-                Self::from_columns(cols)
-            }
-            _ => Err(DaftError::ValueError(
-                "Can only explode a ListExpr::Explode function expression".to_string(),
-            )),
-        }
     }
 
     pub fn concat(tables: &[&Table]) -> DaftResult<Self> {
@@ -379,7 +347,7 @@ impl Table {
             }
             seen.insert(name.clone());
         }
-        let schema = Schema::new(fields);
+        let schema = Schema::new(fields)?;
         Table::new(schema, result_series)
     }
     pub fn as_physical(&self) -> DaftResult<Self> {
@@ -458,7 +426,7 @@ mod test {
         let schema = Schema::new(vec![
             a.field().clone().rename("a"),
             b.field().clone().rename("b"),
-        ]);
+        ])?;
         let table = Table::new(schema, vec![a, b])?;
         let e1 = col("a") + col("b");
         let result = table.eval_expression(&e1)?;

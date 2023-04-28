@@ -106,6 +106,6 @@ impl Table {
         }
 
         drop(ridx);
-        Table::new(Schema::new(join_fields), join_series)
+        Table::new(Schema::new(join_fields)?, join_series)
     }
 }
