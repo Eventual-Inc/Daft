@@ -12,10 +12,10 @@ def read_parquet(path: str) -> DataFrame:
     """Creates a DataFrame from Parquet file(s)
 
     Example:
-        >>> df = DataFrame.read_parquet("/path/to/file.parquet")
-        >>> df = DataFrame.read_parquet("/path/to/directory")
-        >>> df = DataFrame.read_parquet("/path/to/files-*.parquet")
-        >>> df = DataFrame.read_parquet("s3://path/to/files-*.parquet")
+        >>> df = daft.read_parquet("/path/to/file.parquet")
+        >>> df = daft.read_parquet("/path/to/directory")
+        >>> df = daft.read_parquet("/path/to/files-*.parquet")
+        >>> df = daft.read_parquet("s3://path/to/files-*.parquet")
 
     Args:
         path (str): Path to Parquet file (allows for wildcards)
