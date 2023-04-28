@@ -510,6 +510,21 @@ def test_global_concat_aggs(dtype, with_null) -> None:
     assert concated.to_pydict() == {"concat": expected}
 
 
+def test_global_concat_aggs_pyobj() -> None:
+    expected = [object(), object(), None, None, object()]
+    input = [
+        [expected[0], expected[1]],
+        None,
+        [expected[2]],
+        [expected[3], expected[4]],
+    ]
+
+    table = Table.from_pydict({"input": input})
+    concatted = table.agg([col("input").alias("concat")._agg_concat()])
+    assert concatted.get_column("concat").datatype() == DataType.python()
+    assert concatted.to_pydict()["concat"] == [expected]
+
+
 @pytest.mark.parametrize(
     "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
 )
@@ -536,6 +551,30 @@ def test_grouped_concat_aggs(dtype) -> None:
         [input_as_dtype[i][0] for i in group if input_as_dtype[i] is not None] for group in [[1, 3, 5], [0, 2, 4, 6]]
     ]
     assert concat_grouped.to_pydict() == {"groups": [0, 1], "concat": expected_groups}
+
+
+def test_grouped_concat_aggs_pyobj() -> None:
+    objects = [object(), object(), object(), object()]
+    input = [
+        [objects[0], objects[1]],
+        None,
+        None,
+        [objects[2]],
+        [None, objects[3]],
+    ]
+
+    table = Table.from_pydict({"input": input, "groups": [1, 2, 3, 3, 4]})
+    concatted = table.agg([col("input").alias("concat")._agg_concat()], group_by=[col("groups")]).sort([col("groups")])
+    assert concatted.get_column("concat").datatype() == DataType.python()
+    assert concatted.to_pydict() == {
+        "groups": [1, 2, 3, 4],
+        "concat": [
+            [objects[0], objects[1]],
+            [],
+            [objects[2]],
+            [None, objects[3]],
+        ],
+    }
 
 
 def test_concat_aggs_empty() -> None:
