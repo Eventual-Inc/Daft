@@ -1,0 +1,110 @@
+Daft 0.1.0 Release Notes
+========================
+
+Welcome to the first "minor" version release of Daft!
+
+We hope everyone has had a great time using our ``0.0.*`` releases, but buckle up and grab a drink while you read these release notes, because we built so much over the past month and this new release is BIG!
+
+A big shoutout to the contributors who made this all possible - with 21,716 added and 16,090 deleted lines of code!
+
+`@xcharleslin <https://github.com/xcharleslin>`_ `@clarkzinzow <https://github.com/clarkzinzow>`_ `@jeevb <https://github.com/jeevb>`_ `@samster25 <https://github.com/samster25>`_ `@jaychia <https://github.com/jaychia>`_ `@FelixKleineBoesing <https://github.com/FelixKleineBoesing>`_
+
+Main Highlights
+---------------
+
+1. We rebuilt all of our core execution code in Rust - giving us a 2x speedup across the board for many of our benchmarks!
+2. Our type system just levelled up! We have a much more sophisticated type system written in Rust that can handle nested types, parametrized types and type promotion semantics.
+3. The UDF API is much cleaner now with the introduction of the Daft ``Series`` object!
+4. Python object columns are now much more featureful with support for casting and magic methods
+
+The full list of changes is much too long to present in this release notes, but `here it is anyways <https://github.com/Eventual-Inc/Daft/compare/v0.0.24...v0.1.0>`_.
+
+Enhancements
+------------
+
+Rust Execution Backend
+^^^^^^^^^^^^^^^^^^^^^^
+
+Our execution code was refactored into Rust!
+
+Previously Daft relied on a mix of NumPy, Polars, Pandas and PyArrow for executing logic. This was problematic for a few reasons:
+
+1. Difficult to perform performance optimizations
+2. Difficult to understand and manage memory allocation
+3. Dependency hell!
+4. Flaky null-handling and broadcasting semantics depending on the library we used
+
+As of ``0.1.0``, Daft is now statically linked to the wonderful Arrow2 Rust library which we use for executing all our kernels.
+
+This has several implications:
+
+1. Daft now has a Python-binded Rust execution layer, mainly comprising of the ``Table``, ``Series`` and ``Expression`` abstractions.
+2. Daft is much faster (up to 2x in many cases, especially for our default multithreaded Python runner!) as GIL contention is no longer a bottleneck
+3. Daft's Python dependencies have been greatly reduced, and is much more lightweight!
+
+On the user-facing API, most of these changes are completely transparent - i.e. you just got a massive speedup for free!
+
+
+New Features
+------------
+
+Enhanced Type System
+^^^^^^^^^^^^^^^^^^^^
+
+Our type system just levelled up!
+
+1. Nested types were added `#802 <https://github.com/Eventual-Inc/Daft/pull/802>`_
+2. Types are now much more granular (e.g. ``int64`` vs ``uint32`` vs ``int8``...)
+3. Types are automatically promoted when necessary during certain operations (e.g. adding a ``Null`` array and a ``Int64`` array results in ``Int64``!)
+
+As a result, we have much cleaner support for Null array handling since the Null type can be correctly type-promoted with our new supertype semantics.
+
+
+Deprecations
+------------
+
+As our first minor release, several APIs have changed substantially that you should be aware of. Moving forward, Daft APIs will maintain much stricter backward compatibility semantics.
+
+UDFs
+^^^^
+
+UDFs are much cleaner in ``0.1.0``!
+
+UDFs now no longer require up-front declaration of which arguments have to be ``Expressions``, and what input types they are passed in as \(list, numpy, arrow etc\). Instead:
+
+1. Inputs are always passed in as ``daft.series.Series`` objects and users can now easily convert this to the format they care about using ``Series.to_pylist()``, ``Series.to_numpy()`` etc.
+2. Which inputs are going to be ``daft.series.Series`` vs Python objects is inferred at runtime by checking which arguments a user passes in are ``Expressions``.
+
+For more information, consult: :doc:`UDF User Guide<../learn/user_guides/udf>`
+
+Typing
+^^^^^^
+
+Our old typing APIs have changed - the definitive typing API is now found at ``daft.DataType``.
+
+If you are declaring types \(for instance as return types for UDFs\), you should now use the ``DataType.*`` constructor methods!
+
+Input/Output APIs
+^^^^^^^^^^^^^^^^^
+
+Creation of DataFrames has been promoted to module-level functions!
+
+Before:
+
+.. code:: python
+
+    from daft import DataFrame
+
+    df = DataFrame.read_csv(...)
+
+After:
+
+.. code:: python
+
+    import daft
+
+    df = daft.read_csv(...)
+
+This is a big improvement in useability \(moving forward, Daft will try to make it as easy as possible to use us by just importing the top-level ``daft`` module\).
+
+For more information, please see: :doc:`API Documentation for Input/Output <../api_docs/input_output>`.
