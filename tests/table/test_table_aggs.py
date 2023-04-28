@@ -431,6 +431,14 @@ def test_global_list_aggs(dtype) -> None:
     assert result.to_pydict() == {"list": [daft_table.to_pydict()["input"]]}
 
 
+def test_global_pyobj_list_aggs() -> None:
+    input = [object(), object(), object()]
+    table = Table.from_pydict({"input": input})
+    result = table.eval_expression_list([col("input").alias("list")._agg_list()])
+    assert result.get_column("list").datatype() == DataType.python()
+    assert result.to_pydict()["list"][0] == input
+
+
 @pytest.mark.parametrize(
     "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
 )
@@ -449,6 +457,17 @@ def test_grouped_list_aggs(dtype) -> None:
     input_as_dtype = daft_table.get_column("input").to_pylist()
     expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
 
+    assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
+
+
+def test_grouped_pyobj_list_aggs() -> None:
+    groups = [None, 1, None, 1, 2, 2]
+    input = [None, object(), object(), object(), None, object()]
+    expected_idx = [[1, 3], [4, 5], [0, 2]]
+
+    daft_table = Table.from_pydict({"groups": groups, "input": input})
+    result = daft_table.agg([col("input").alias("list")._agg_list()], group_by=[col("groups")]).sort([col("groups")])
+    expected_groups = [[input[i] for i in group] for group in expected_idx]
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
 
 
