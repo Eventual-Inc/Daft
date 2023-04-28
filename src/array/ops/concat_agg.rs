@@ -26,8 +26,28 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
         let arrow_array = PseudoArrowArray::<PyObject>::from_pyobj_vec(vec![pylist.into()]);
         Self::new(self.field().clone().into(), Box::new(arrow_array))
     }
-    fn grouped_concat(&self, _groups: &super::GroupIndices) -> Self::Output {
-        todo!()
+    fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
+        use crate::array::pseudo_arrow::PseudoArrowArray;
+        use pyo3::prelude::*;
+        use pyo3::types::PyList;
+
+        let mut result_pylists: Vec<PyObject> = Vec::with_capacity(groups.len());
+
+        Python::with_gil(|py| -> DaftResult<()> {
+            for group in groups {
+                let indices_as_array = crate::datatypes::UInt64Array::from(("", group.clone()));
+                let group_pyobjs = self.take(&indices_as_array)?.downcast().to_pyobj_vec();
+                let pylist: Py<PyList> = PyList::empty(py).into();
+                for pyobj in group_pyobjs {
+                    pylist.call_method1(py, pyo3::intern!(py, "extend"), (pyobj,))?;
+                }
+                result_pylists.push(pylist.into());
+            }
+            Ok(())
+        })?;
+
+        let arrow_array = PseudoArrowArray::<PyObject>::from_pyobj_vec(result_pylists);
+        Self::new(self.field().clone().into(), Box::new(arrow_array))
     }
 }
 
