@@ -6,6 +6,7 @@ from uuid import uuid4
 import numpy as np
 import pytest
 
+import daft
 from daft import DataFrame
 
 NUM_SAMPLES = [1_000_000, 10_000_000]

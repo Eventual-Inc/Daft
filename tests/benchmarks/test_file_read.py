@@ -6,6 +6,7 @@ import tempfile
 
 import pytest
 
+import daft
 from daft import DataFrame
 from daft.context import _RayRunnerConfig, get_context
 
