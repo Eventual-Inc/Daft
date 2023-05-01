@@ -69,7 +69,7 @@ from daft.logical.schema import Schema
 
 _NUMPY_AVAILABLE = True
 try:
-    import numpy as np
+    pass
 except ImportError:
     _NUMPY_AVAILABLE = False
 
@@ -111,39 +111,8 @@ def _make_ray_block_from_vpartition(partition: Table) -> RayDatasetBlock:
 
 
 @ray.remote
-def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: Any, daft_schema: Schema) -> Table:
-    # Variable-shaped tensor column support was added in Ray 2.1.0.
-    if RAY_VERSION >= (2, 2, 0):
-        from ray.data.extensions import ArrowTensorType, ArrowVariableShapedTensorType
-
-        tensor_extension_types = [ArrowTensorType, ArrowVariableShapedTensorType]
-    else:
-        from ray.data.extensions import ArrowTensorType
-
-        tensor_extension_types = [ArrowTensorType]
-
-    assert isinstance(ray_dataset_block, pa.Table), "Cannot handle non-arrow Ray Datasets, please file a ticket!"
-
-    data = {}
-    for cname, column in zip(ray_dataset_block.column_names, ray_dataset_block):
-        daft_field = daft_schema[cname]
-
-        # [[RUST-INT][EXTENSION] Properly handle Ray Datasets' extension types.
-        # We convert Ray Datasets' tensor extension columns to Daft Python block columns here by
-        # converting the column to a NumPy ndarray.
-        if isinstance(column.type, tuple(tensor_extension_types)):
-            # Daft type should have already been coerced to the Python object type.
-            assert daft_field.dtype._is_python_type()
-            column = [np.asarray(arr) for arr in column]
-            # TODO(Clark): Provide the column as a top-level ndarray to ensure it remains contiguous.
-            # ata = column.combine_chunks()
-            # assert isinstance(ata, ArrowTensorArray), type(ata)
-            # column = np.asarray(ata)
-
-        data[cname] = column
-
-    partition = Table.from_pydict(data)
-    return partition
+def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: pa.Table, daft_schema: Schema) -> Table:
+    return Table.from_arrow(ray_dataset_block)
 
 
 @ray.remote(num_returns=2)

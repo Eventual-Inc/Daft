@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import datetime
 import json
 import tempfile
 import uuid
@@ -10,6 +11,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
+from ray.data.extensions import ArrowTensorArray
 
 import daft
 from daft.api_annotations import APITypeError
@@ -149,6 +151,34 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     assert df.to_arrow() == expected
 
 
+def test_create_dataframe_arrow_tensor(valid_data: list[dict[str, float]]) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    pydict["obj"] = ArrowTensorArray.from_numpy(np.ones((len(valid_data), 2, 2)))
+    t = pa.Table.from_pydict(pydict)
+    df = daft.from_arrow(t)
+    assert set(df.column_names) == set(t.column_names)
+    # Type not natively supported, so should have Python object dtype.
+    assert df.schema()["obj"].dtype == DataType.python()
+    casted_field = t.schema.field("variety").with_type(pa.large_string())
+    expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
+    # Check roundtrip.
+    assert df.to_arrow() == expected
+
+
+def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, float]]) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    pydict["obj"] = [datetime.datetime.now() for _ in range(len(valid_data))]
+    t = pa.Table.from_pydict(pydict)
+    df = daft.from_arrow(t)
+    assert set(df.column_names) == set(t.column_names)
+    # Type not natively supported, so should have Python object dtype.
+    assert df.schema()["obj"].dtype == DataType.python()
+    casted_field = t.schema.field("variety").with_type(pa.large_string())
+    expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
+    # Check roundtrip.
+    assert df.to_arrow() == expected
+
+
 ###
 # Pandas tests
 ###
@@ -172,6 +202,8 @@ def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -
     pydict["obj"] = [MyObjWithValue(i) for i in range(len(valid_data))]
     pd_df = pd.DataFrame(pydict)
     df = daft.from_pandas(pd_df)
+    # Type not natively supported, so should have Python object dtype.
+    assert df.schema()["obj"].dtype == DataType.python()
     assert set(df.column_names) == set(pd_df.columns)
     # Check roundtrip.
     pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
@@ -182,6 +214,8 @@ def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> N
     pydict["obj"] = pd.Series([np.ones((2, 2)) for _ in range(len(valid_data))])
     pd_df = pd.DataFrame(pydict)
     df = daft.from_pandas(pd_df)
+    # Type not natively supported, so should have Python object dtype.
+    assert df.schema()["obj"].dtype == DataType.python()
     assert set(df.column_names) == set(pd_df.columns)
     # Check roundtrip.
     pd.testing.assert_frame_equal(df.to_pandas(), pd_df)

@@ -35,7 +35,10 @@ class Series:
 
     @staticmethod
     def from_arrow(array: pa.Array | pa.ChunkedArray, name: str = "arrow_series") -> Series:
-        if isinstance(array, pa.Array):
+        if DataType.from_arrow_type(array.type) == DataType.python():
+            # If the Arrow type is not natively supported, go through the Python list path.
+            return Series.from_pylist(array.to_pylist(), pyobj="force")
+        elif isinstance(array, pa.Array):
             array = ensure_array(array)
             pys = PySeries.from_arrow(name, array)
             return Series._from_pyseries(pys)

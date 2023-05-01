@@ -24,8 +24,10 @@ PYTHON_TYPE_ARRAYS = {
     "list": [[1, 2], [3]],
     "struct": [{"a": 1, "b": 2.0}, {"b": 3.0}],
     "empty_struct": [{}, {}],
-    "tensor": list(np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])),
     "null": [None, None],
+    # The following types are not natively supported and will be cast to Python object types.
+    "tensor": list(np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])),
+    "timestamp": [datetime.datetime.now(), datetime.datetime.now()],
 }
 
 
@@ -39,8 +41,10 @@ INFERRED_TYPES = {
     "list": DataType.list("item", DataType.int64()),
     "struct": DataType.struct({"a": DataType.int64(), "b": DataType.float64()}),
     "empty_struct": DataType.struct({"": DataType.null()}),
-    "tensor": DataType.python(),
     "null": DataType.null(),
+    # The following types are not natively supported and will be cast to Python object types.
+    "tensor": DataType.python(),
+    "timestamp": DataType.python(),
 }
 
 
@@ -54,8 +58,10 @@ ROUNDTRIP_TYPES = {
     "list": pa.large_list(pa.int64()),
     "struct": pa.struct({"a": pa.int64(), "b": pa.float64()}),
     "empty_struct": pa.struct({"": pa.null()}),
-    "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
     "null": pa.null(),
+    # The following types are not natively supported and will be cast to Python object types.
+    "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
+    "timestamp": pa.timestamp("us"),
 }
 
 
@@ -78,9 +84,10 @@ ARROW_TYPE_ARRAYS = {
     "fixed_size_list": pa.array([[1, 2], [3, 4]], pa.list_(pa.int64(), 2)),
     "struct": pa.array(PYTHON_TYPE_ARRAYS["struct"], pa.struct([("a", pa.int64()), ("b", pa.float64())])),
     "empty_struct": pa.array(PYTHON_TYPE_ARRAYS["empty_struct"], pa.struct({"": pa.null()})),
-    # TODO(Clark): Uncomment once extension type support has been added.
-    # "tensor": ArrowTensorArray.from_numpy(PYTHON_TYPE_ARRAYS["tensor"]),
     "null": pa.array(PYTHON_TYPE_ARRAYS["null"], pa.null()),
+    # The following types are not natively supported and will be cast to Python object types.
+    "tensor": ArrowTensorArray.from_numpy(PYTHON_TYPE_ARRAYS["tensor"]),
+    "timestamp": pa.array(PYTHON_TYPE_ARRAYS["timestamp"]),
 }
 
 
@@ -103,9 +110,10 @@ ARROW_ROUNDTRIP_TYPES = {
     "fixed_size_list": pa.list_(pa.int64(), 2),
     "struct": pa.struct([("a", pa.int64()), ("b", pa.float64())]),
     "empty_struct": pa.struct({"": pa.null()}),
-    # TODO(Clark): Uncomment once extension type support has been added.
-    # "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
     "null": pa.null(),
+    # The following types are not natively supported and will be cast to Python object types.
+    "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
+    "timestamp": pa.timestamp("us"),
 }
 
 

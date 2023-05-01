@@ -81,9 +81,15 @@ class Table:
         schema = Schema._from_field_name_and_types(
             [(f.name, DataType.from_arrow_type(f.type)) for f in arrow_table.schema]
         )
-        arrow_table = ensure_table(arrow_table)
-        pyt = _PyTable.from_arrow_record_batches(arrow_table.to_batches(), schema._schema)
-        return Table._from_pytable(pyt)
+        if any(field.dtype == DataType.python() for field in schema):
+            # If there are any contained Arrow types that are not natively supported, go through Table.from_pydict()
+            # path.
+            return Table.from_pydict(dict(zip(arrow_table.column_names, arrow_table.columns)))
+        else:
+            # Otherwise, go through record batch happy path.
+            arrow_table = ensure_table(arrow_table)
+            pyt = _PyTable.from_arrow_record_batches(arrow_table.to_batches(), schema._schema)
+            return Table._from_pytable(pyt)
 
     @staticmethod
     def from_pandas(pd_df: pd.DataFrame) -> Table:

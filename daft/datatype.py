@@ -6,30 +6,6 @@ import pyarrow as pa
 
 from daft.daft import PyDataType
 
-_RAY_DATA_EXTENSIONS_AVAILABLE = True
-_TENSOR_EXTENSION_TYPES = []
-try:
-    import ray
-except ImportError:
-    _RAY_DATA_EXTENSIONS_AVAILABLE = False
-else:
-    _RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
-    try:
-        # Variable-shaped tensor column support was added in Ray 2.1.0.
-        if _RAY_VERSION >= (2, 2, 0):
-            from ray.data.extensions import (
-                ArrowTensorType,
-                ArrowVariableShapedTensorType,
-            )
-
-            _TENSOR_EXTENSION_TYPES = [ArrowTensorType, ArrowVariableShapedTensorType]
-        else:
-            from ray.data.extensions import ArrowTensorType
-
-            _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
-    except ImportError:
-        _RAY_DATA_EXTENSIONS_AVAILABLE = False
-
 
 class DataType:
     _dtype: PyDataType
@@ -164,12 +140,10 @@ class DataType:
             assert isinstance(arrow_type, pa.StructType)
             fields = [arrow_type[i] for i in range(arrow_type.num_fields)]
             return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
-        elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
-            # TODO(Clark): Add an extension type Daft type to be able to represent this tensor extension
-            # type natively.
-            return cls.python()
         else:
-            raise NotImplementedError(f"we cant convert arrow type: {arrow_type} to a daft type")
+            # Fall back to a Python object type.
+            # TODO(Clark): Add native support for remaining Arrow types and extension types.
+            return cls.python()
 
     @classmethod
     def python(cls) -> DataType:
