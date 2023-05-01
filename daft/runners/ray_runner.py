@@ -67,13 +67,6 @@ except ImportError:
 
 from daft.logical.schema import Schema
 
-_NUMPY_AVAILABLE = True
-try:
-    pass
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
-
 RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
 
 
