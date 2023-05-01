@@ -32,6 +32,9 @@ class Field:
             return False
         return self._field.eq(other._field)
 
+    def __repr__(self) -> str:
+        return f"Field(name={self.name}, dtype={self.dtype})"
+
 
 class Schema:
     _schema: _PySchema
