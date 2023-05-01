@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+import daft
 from daft import DataFrame
 
 NUM_SAMPLES = 10_000_000
