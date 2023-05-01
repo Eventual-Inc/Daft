@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
+from loguru import logger
 
 from daft.arrow_utils import ensure_table
 from daft.daft import PyTable as _PyTable
@@ -81,9 +82,13 @@ class Table:
         schema = Schema._from_field_name_and_types(
             [(f.name, DataType.from_arrow_type(f.type)) for f in arrow_table.schema]
         )
-        if any(field.dtype == DataType.python() for field in schema):
+        python_fields = [field.name for field in schema if field.dtype == DataType.python()]
+        if python_fields:
             # If there are any contained Arrow types that are not natively supported, go through Table.from_pydict()
             # path.
+            logger.debug(
+                f"Unsupported Arrow types detected, falling back to Python object type for columns: {python_fields}"
+            )
             return Table.from_pydict(dict(zip(arrow_table.column_names, arrow_table.columns)))
         else:
             # Otherwise, go through record batch happy path.
