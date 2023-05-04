@@ -116,17 +116,17 @@ class Table:
         series_dict = dict()
         for k, v in data.items():
             if isinstance(v, list):
-                series = Series.from_pylist(v)
+                series = Series.from_pylist(v, name=k)
             elif _NUMPY_AVAILABLE and isinstance(v, np.ndarray):
-                series = Series.from_numpy(v)
+                series = Series.from_numpy(v, name=k)
             elif isinstance(v, Series):
                 series = v
             elif isinstance(v, pa.Array):
-                series = Series.from_arrow(v)
+                series = Series.from_arrow(v, name=k)
             elif isinstance(v, pa.ChunkedArray):
-                series = Series.from_arrow(v)
+                series = Series.from_arrow(v, name=k)
             elif _PANDAS_AVAILABLE and isinstance(v, pd.Series):
-                series = Series.from_pandas(v)
+                series = Series.from_pandas(v, name=k)
             else:
                 raise ValueError(f"Creating a Series from data of type {type(v)} not implemented")
             series_dict[k] = series._series
