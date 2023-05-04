@@ -299,6 +299,14 @@ impl Expr {
 
                     // Plus operation: special-cased as it has semantic meaning for some other types
                     Operator::Plus => {
+                        #[cfg(feature = "python")]
+                        {
+                            let supertype =
+                                try_get_supertype(&left_field.dtype, &right_field.dtype)?;
+                            if supertype.is_python() {
+                                return Ok(Field::new(left_field.name.as_str(), supertype));
+                            }
+                        }
                         let (lhs, rhs) = (&left_field.dtype, &right_field.dtype);
                         for dt in [lhs, rhs] {
                             if !(dt.is_numeric()
@@ -315,6 +323,14 @@ impl Expr {
 
                     // True divide operation
                     Operator::TrueDivide => {
+                        #[cfg(feature = "python")]
+                        {
+                            let supertype =
+                                try_get_supertype(&left_field.dtype, &right_field.dtype)?;
+                            if supertype.is_python() {
+                                return Ok(Field::new(left_field.name.as_str(), supertype));
+                            }
+                        }
                         if !left_field.dtype.is_castable(&DataType::Float64)
                             || !right_field.dtype.is_castable(&DataType::Float64)
                             || !left_field.dtype.is_numeric()
@@ -330,6 +346,14 @@ impl Expr {
                     | Operator::Multiply
                     | Operator::Modulus
                     | Operator::FloorDivide => {
+                        #[cfg(feature = "python")]
+                        {
+                            let supertype =
+                                try_get_supertype(&left_field.dtype, &right_field.dtype)?;
+                            if supertype.is_python() {
+                                return Ok(Field::new(left_field.name.as_str(), supertype));
+                            }
+                        }
                         if !&left_field.dtype.is_numeric() || !&right_field.dtype.is_numeric() {
                             return Err(DaftError::TypeError(format!("Expected left and right arguments for {op} to both be numeric but received {left_field} and {right_field}")));
                         }
