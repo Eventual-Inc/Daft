@@ -53,6 +53,7 @@ Evaluating Daft for a new project or system? Read more about why you should choo
    release_notes/index
    Telemetry <telemetry>
    dataframe_comparison
+   technical_architecture
 
 .. Indices and tables
 .. ==================
