@@ -48,14 +48,14 @@ def _warmup_fsspec_registry(urls_pylist: list[str | None]) -> None:
 
 
 @udf(return_dtype=DataType.binary())
-def download_udf(urls, max_worker_threads: int = 8, on_error: Literal["raise"] | Literal["null"] = "null"):
+def download_udf(urls, max_worker_threads: int = 8, on_error: Literal["raise"] | Literal["null"] = "raise"):
     """Downloads the contents of the supplied URLs.
 
     Args:
         urls: URLs as a UTF8 string series
         max_worker_threads: max number of worker threads to use, defaults to 8
-        on_error: Behavior when a URL download error is encountered - "raise" to raise the error immediately, defaults to "null"
-            which will log the error but populate the result with a Null value
+        on_error: Behavior when a URL download error is encountered - "raise" to raise the error immediately or "null" to log
+            the error but fallback to a Null value. Defaults to "raise".
     """
 
     from loguru import logger

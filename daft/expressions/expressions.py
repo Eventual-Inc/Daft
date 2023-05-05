@@ -394,14 +394,14 @@ class ExpressionNamespace:
 
 class ExpressionUrlNamespace(ExpressionNamespace):
     def download(
-        self, max_worker_threads: int = 8, on_error: Literal["raise"] | Literal["null"] = "null"
+        self, max_worker_threads: int = 8, on_error: Literal["raise"] | Literal["null"] = "raise"
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column
 
         Args:
             max_worker_threads: The maximum number of threads to use for downloading URLs, defaults to 8
-            on_error: Behavior when a URL download error is encountered - "raise" to raise the error immediately, defaults to "null"
-                which will log the error but populate the result with a Null value
+            on_error: Behavior when a URL download error is encountered - "raise" to raise the error immediately or "null" to log
+                the error but fallback to a Null value. Defaults to "raise".
 
         Returns:
             UdfExpression: a BYTES expression which is the bytes contents of the URL, or None if an error occured during download
