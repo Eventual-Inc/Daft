@@ -78,7 +78,7 @@ def get_protocol_from_path(path: str) -> str:
     matched_url = URL_REGEX.match(path)
     if matched_url is None:
         return "file"
-    return matched_url.group(0)
+    return matched_url.group(1)
 
 
 def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
