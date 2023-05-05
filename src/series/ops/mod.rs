@@ -50,8 +50,15 @@ macro_rules! py_binary_op_utilfn {
         use crate::python::PySeries;
         use pyo3::prelude::*;
 
-        let left_pylist = PySeries::from($lhs.clone()).to_pylist()?;
-        let right_pylist = PySeries::from($rhs.clone()).to_pylist()?;
+        let (lhs, rhs) = match ($lhs.len(), $rhs.len()) {
+            (a, b) if a == b => ($lhs, $rhs),
+            (a, 1) => ($lhs, $rhs.broadcast(a)?),
+            (1, b) => ($lhs.broadcast(b)?, $rhs),
+            (a, b) => panic!("Cannot apply operation on arrays of different lengths: {a} vs {b}"),
+        };
+
+        let left_pylist = PySeries::from(lhs.clone()).to_pylist()?;
+        let right_pylist = PySeries::from(rhs.clone()).to_pylist()?;
 
         let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
             let py_operator = PyModule::import(py, pyo3::intern!(py, "operator"))?
@@ -64,7 +71,7 @@ macro_rules! py_binary_op_utilfn {
             PyModule::import(py, pyo3::intern!(py, "daft.series"))?
                 .getattr(pyo3::intern!(py, "Series"))?
                 .getattr(pyo3::intern!(py, "from_pylist"))?
-                .call1((result_pylist, $lhs.name(), pyo3::intern!(py, "disallow")))?
+                .call1((result_pylist, lhs.name(), pyo3::intern!(py, "disallow")))?
                 .getattr(pyo3::intern!(py, "_series"))?
                 .extract()
         })?
