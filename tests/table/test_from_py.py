@@ -14,6 +14,8 @@ from daft import DataType
 from daft.series import Series
 from daft.table import Table
 
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
+
 PYTHON_TYPE_ARRAYS = {
     "int": [1, 2],
     "float": [1.0, 2.0],
@@ -26,7 +28,7 @@ PYTHON_TYPE_ARRAYS = {
     "empty_struct": [{}, {}],
     "null": [None, None],
     # The following types are not natively supported and will be cast to Python object types.
-    "tensor": list(np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])),
+    "tensor": list(np.arange(8).reshape(2, 2, 2)),
     "timestamp": [datetime.datetime.now(), datetime.datetime.now()],
 }
 
@@ -43,6 +45,7 @@ INFERRED_TYPES = {
     "empty_struct": DataType.struct({"": DataType.null()}),
     "null": DataType.null(),
     # The following types are not natively supported and will be cast to Python object types.
+    # TODO(Clark): Change the tensor inferred type to be the canonical fixed-shape tensor extension type.
     "tensor": DataType.python(),
     "timestamp": DataType.python(),
 }
@@ -115,6 +118,12 @@ ARROW_ROUNDTRIP_TYPES = {
     "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
     "timestamp": pa.timestamp("us"),
 }
+
+if ARROW_VERSION >= (12, 0, 0):
+    ARROW_TYPE_ARRAYS["ext_type"] = (
+        pa.FixedShapeTensorArray.from_numpy_ndarray(np.array(PYTHON_TYPE_ARRAYS["tensor"])),
+    )
+    ARROW_ROUNDTRIP_TYPES["ext_type"] = (pa.fixed_shape_tensor(pa.int64(), (2, 2)),)
 
 
 def test_from_pydict_roundtrip() -> None:

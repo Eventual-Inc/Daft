@@ -1,8 +1,8 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::DateArray, BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray,
-        ListArray, NullArray, StructArray, Utf8Array,
+        logical::DateArray, BinaryArray, BooleanArray, DaftNumericType, ExtensionArray,
+        FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
     },
     error::DaftResult,
 };
@@ -69,6 +69,13 @@ impl StructArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
         Self::try_from((self.field.clone(), result))
+    }
+}
+
+impl ExtensionArray {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let result = arrow2::compute::filter::filter(self.data(), mask.as_arrow())?;
+        DataArray::try_from((self.field.clone(), result))
     }
 }
 

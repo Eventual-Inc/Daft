@@ -44,7 +44,7 @@ impl Series {
     }
     pub fn as_physical(&self) -> DaftResult<Series> {
         let physical_dtype = self.data_type().to_physical();
-        if &physical_dtype == self.data_type() {
+        if &physical_dtype == self.data_type() || self.data_type().is_extension() {
             Ok(self.clone())
         } else {
             self.inner.cast(&physical_dtype)

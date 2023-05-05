@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import itertools
 
+import numpy as np
 import pyarrow as pa
 import pytest
+from ray.data.extensions import ArrowTensorArray
 
 from daft import DataType, Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
+
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 class MockObject:
@@ -83,6 +87,57 @@ def test_series_concat_struct_array(chunks) -> None:
             assert concated_list[counter]["a"] == i + j
             assert concated_list[counter]["b"] == float(i * j)
             counter += 1
+
+
+@pytest.mark.parametrize("chunks", [1, 2, 3, 10])
+def test_series_concat_tensor_array_ray(chunks) -> None:
+    element_shape = (2, 2)
+    num_elements_per_tensor = np.prod(element_shape)
+    chunk_size = 3
+    chunk_shape = (chunk_size,) + element_shape
+    chunks = [
+        np.arange(i * chunk_size * num_elements_per_tensor, (i + 1) * chunk_size * num_elements_per_tensor).reshape(
+            chunk_shape
+        )
+        for i in range(chunks)
+    ]
+    series = [Series.from_arrow(ArrowTensorArray.from_numpy(chunk)) for chunk in chunks]
+
+    concated = Series.concat(series)
+
+    assert concated.datatype() == DataType.python()
+    expected = [chunk[i] for chunk in chunks for i in range(len(chunk))]
+    np.testing.assert_equal(concated.to_pylist(), expected)
+
+
+@pytest.mark.skipif(
+    ARROW_VERSION < (12, 0, 0),
+    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+@pytest.mark.parametrize("chunks", [1, 2, 3, 10])
+def test_series_concat_tensor_array_canonical(chunks) -> None:
+    element_shape = (2, 2)
+    num_elements_per_tensor = np.prod(element_shape)
+    chunk_size = 3
+    chunk_shape = (chunk_size,) + element_shape
+    chunks = [
+        np.arange(i * chunk_size * num_elements_per_tensor, (i + 1) * chunk_size * num_elements_per_tensor).reshape(
+            chunk_shape
+        )
+        for i in range(chunks)
+    ]
+    ext_arrays = [pa.FixedShapeTensorArray.from_numpy_ndarray(chunk) for chunk in chunks]
+    series = [Series.from_arrow(ext_array) for ext_array in ext_arrays]
+
+    concated = Series.concat(series)
+
+    assert concated.datatype() == DataType.extension(
+        "arrow.fixed_shape_tensor", DataType.from_arrow_type(ext_arrays[0].type.storage_type), '{"shape":[2,2]}'
+    )
+    expected = [chunk[i] for chunk in chunks for i in range(len(chunk))]
+    concated_arrow = concated.to_arrow()
+    assert isinstance(concated_arrow.type, pa.FixedShapeTensorType)
+    np.testing.assert_equal(concated_arrow.to_numpy_ndarray(), expected)
 
 
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])

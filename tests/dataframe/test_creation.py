@@ -18,6 +18,8 @@ from daft.api_annotations import APITypeError
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
+
 
 class MyObj:
     pass
@@ -151,9 +153,10 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     assert df.to_arrow() == expected
 
 
-def test_create_dataframe_arrow_tensor(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    pydict["obj"] = ArrowTensorArray.from_numpy(np.ones((len(valid_data), 2, 2)))
+    ata = ArrowTensorArray.from_numpy(np.ones((len(valid_data), 2, 2)))
+    pydict["obj"] = ata
     t = pa.Table.from_pydict(pydict)
     df = daft.from_arrow(t)
     assert set(df.column_names) == set(t.column_names)
@@ -163,6 +166,48 @@ def test_create_dataframe_arrow_tensor(valid_data: list[dict[str, float]]) -> No
     expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
     # Check roundtrip.
     assert df.to_arrow() == expected
+
+
+@pytest.mark.skipif(
+    ARROW_VERSION < (12, 0, 0),
+    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, float]]) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    dtype = pa.fixed_shape_tensor(pa.int64(), (2, 2))
+    storage = pa.array([list(range(4 * i, 4 * (i + 1))) for i in range(len(valid_data))], pa.list_(pa.int64(), 4))
+    ata = pa.ExtensionArray.from_storage(dtype, storage)
+    pydict["obj"] = ata
+    t = pa.Table.from_pydict(pydict)
+    df = daft.from_arrow(t)
+    assert set(df.column_names) == set(t.column_names)
+    # Type not natively supported, so should have Python object dtype.
+    assert df.schema()["obj"].dtype == DataType.extension(
+        "arrow.fixed_shape_tensor", DataType.from_arrow_type(dtype.storage_type), '{"shape":[2,2]}'
+    )
+    casted_field = t.schema.field("variety").with_type(pa.large_string())
+    expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
+    # Check roundtrip.
+    assert df.to_arrow() == expected
+
+
+class UuidType(pa.PyExtensionType):
+    def __init__(self):
+        pa.PyExtensionType.__init__(self, pa.binary(5))
+
+    def __reduce__(self):
+        return UuidType, ()
+
+
+def test_create_dataframe_arrow_ext_type_raises(valid_data: list[dict[str, float]]) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    uuid_type = UuidType()
+    storage_array = pa.array([f"foo-{i}" for i in range(len(valid_data))], pa.binary(5))
+    arr = pa.ExtensionArray.from_storage(uuid_type, storage_array)
+    pydict["obj"] = arr
+    t = pa.Table.from_pydict(pydict)
+    with pytest.raises(ValueError):
+        daft.from_arrow(t)
 
 
 def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, float]]) -> None:

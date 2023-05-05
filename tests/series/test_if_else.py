@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import numpy as np
 import pyarrow as pa
 import pytest
 
 from daft import Series
 from daft.datatype import DataType
+
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 @pytest.mark.parametrize("if_true_value", [1, None])
@@ -291,6 +294,59 @@ def test_series_if_else_struct(if_true, if_false, expected) -> None:
         {"a": DataType.int64(), "b": DataType.float64(), "c": DataType.string()}
     )
     assert result.to_pylist() == expected
+
+
+@pytest.mark.skipif(
+    ARROW_VERSION < (12, 0, 0),
+    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+@pytest.mark.parametrize(
+    ["if_true", "if_false", "expected"],
+    [
+        # Same length, same type
+        (
+            np.arange(16).reshape((4, 2, 2)),
+            np.arange(16, 32).reshape((4, 2, 2)),
+            np.array(
+                [[[0, 1], [2, 3]], [[20, 21], [22, 23]], [[np.nan, np.nan], [np.nan, np.nan]], [[12, 13], [14, 15]]]
+            ),
+        ),
+        # Broadcast left
+        (
+            np.arange(4).reshape((1, 2, 2)),
+            np.arange(16, 32).reshape((4, 2, 2)),
+            np.array([[[0, 1], [2, 3]], [[20, 21], [22, 23]], [[np.nan, np.nan], [np.nan, np.nan]], [[0, 1], [2, 3]]]),
+        ),
+        # Broadcast right
+        (
+            np.arange(16).reshape((4, 2, 2)),
+            np.arange(16, 20).reshape((1, 2, 2)),
+            np.array(
+                [[[0, 1], [2, 3]], [[16, 17], [18, 19]], [[np.nan, np.nan], [np.nan, np.nan]], [[12, 13], [14, 15]]]
+            ),
+        ),
+        # Broadcast both
+        (
+            np.arange(4).reshape((1, 2, 2)),
+            np.arange(16, 20).reshape((1, 2, 2)),
+            np.array([[[0, 1], [2, 3]], [[16, 17], [18, 19]], [[np.nan, np.nan], [np.nan, np.nan]], [[0, 1], [2, 3]]]),
+        ),
+    ],
+)
+def test_series_if_else_canonical_tensor_extension_type(if_true, if_false, expected) -> None:
+    if_true_arrow = pa.FixedShapeTensorArray.from_numpy_ndarray(if_true)
+    if_false_arrow = pa.FixedShapeTensorArray.from_numpy_ndarray(if_false)
+    if_true_series = Series.from_arrow(if_true_arrow)
+    if_false_series = Series.from_arrow(if_false_arrow)
+    predicate_series = Series.from_arrow(pa.array([True, False, None, True]))
+
+    result = predicate_series.if_else(if_true_series, if_false_series)
+
+    assert result.datatype() == DataType.extension(
+        "arrow.fixed_shape_tensor", DataType.from_arrow_type(if_true_arrow.type.storage_type), '{"shape":[2,2]}'
+    )
+    result_arrow = result.to_arrow()
+    np.testing.assert_equal(result_arrow.to_numpy_ndarray(), expected)
 
 
 @pytest.mark.parametrize(

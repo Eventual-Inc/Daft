@@ -1,8 +1,8 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftNumericType, DataType, FixedSizeListArray, ListArray,
-        NullArray, StructArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, DataType, ExtensionArray, FixedSizeListArray,
+        ListArray, NullArray, StructArray, Utf8Array,
     },
     error::{DaftError, DaftResult},
 };
@@ -248,6 +248,23 @@ impl Broadcastable for StructArray {
                 other
             ),
         }
+    }
+}
+
+impl Broadcastable for ExtensionArray {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        if self.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
+        let array = self.data();
+        let mut growable = arrow2::array::growable::make_growable(&[array], true, num);
+        for _ in 0..num {
+            growable.extend(0, 0, 1);
+        }
+        ExtensionArray::new(self.field.clone(), growable.as_box())
     }
 }
 

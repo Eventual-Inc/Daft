@@ -72,6 +72,8 @@ pub enum DataType {
     List(Box<Field>),
     /// A nested [`DataType`] with a given number of [`Field`]s.
     Struct(Vec<Field>),
+    /// Extension type.
+    Extension(String, Box<DataType>, Option<String>),
     // Stop ArrowTypes
     DaftType(Box<DataType>),
     Python,
@@ -117,6 +119,11 @@ impl DataType {
                     .collect::<DaftResult<Vec<arrow2::datatypes::Field>>>()?;
                 ArrowType::Struct(fields)
             }),
+            DataType::Extension(name, dtype, metadata) => Ok(ArrowType::Extension(
+                name.clone(),
+                Box::new(dtype.to_arrow()?),
+                metadata.clone(),
+            )),
             _ => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
@@ -159,23 +166,41 @@ impl DataType {
              // DataType::Float16
              | DataType::Float32
              | DataType::Float64 => true,
+             DataType::Extension(_, inner, _) => inner.is_numeric(),
              _ => false
          }
     }
 
     #[inline]
     pub fn is_temporal(&self) -> bool {
-        matches!(self, DataType::Date)
+        match self {
+            DataType::Date => true,
+            DataType::Extension(_, inner, _) => inner.is_temporal(),
+            _ => false,
+        }
     }
 
     #[inline]
     pub fn is_null(&self) -> bool {
-        matches!(self, DataType::Null)
+        match self {
+            DataType::Null => true,
+            DataType::Extension(_, inner, _) => inner.is_null(),
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn is_extension(&self) -> bool {
+        matches!(self, DataType::Extension(..))
     }
 
     #[inline]
     pub fn is_python(&self) -> bool {
-        matches!(self, DataType::Python)
+        match self {
+            DataType::Python => true,
+            DataType::Extension(_, inner, _) => inner.is_python(),
+            _ => false,
+        }
     }
 
     #[inline]
@@ -257,6 +282,11 @@ impl From<&ArrowType> for DataType {
                 let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
                 DataType::Struct(fields)
             }
+            ArrowType::Extension(name, dtype, metadata) => DataType::Extension(
+                name.clone(),
+                Box::new(dtype.as_ref().into()),
+                metadata.clone(),
+            ),
             _ => panic!("DataType :{item:?} is not supported"),
         }
     }

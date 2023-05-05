@@ -6,10 +6,13 @@ use crate::{datatypes::dtype::DataType, error::DaftResult};
 
 use serde::{Deserialize, Serialize};
 
+pub type Metadata = std::collections::BTreeMap<String, String>;
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
 pub struct Field {
     pub name: String,
     pub dtype: DataType,
+    pub metadata: Metadata,
 }
 
 impl Field {
@@ -17,18 +20,33 @@ impl Field {
         Field {
             name: name.into(),
             dtype,
+            metadata: Default::default(),
         }
     }
+
+    pub fn with_metadata(self, metadata: Metadata) -> Self {
+        Self {
+            name: self.name,
+            dtype: self.dtype,
+            metadata,
+        }
+    }
+
     pub fn to_arrow(&self) -> DaftResult<ArrowField> {
-        Ok(ArrowField::new(
-            self.name.clone(),
-            self.dtype.to_arrow()?,
-            true,
-        ))
+        Ok(
+            ArrowField::new(self.name.clone(), self.dtype.to_arrow()?, true)
+                .with_metadata(self.metadata.clone()),
+        )
     }
+
     pub fn rename<S: Into<String>>(&self, name: S) -> Self {
-        Field::new(name, self.dtype.clone())
+        Self {
+            name: name.into(),
+            dtype: self.dtype.clone(),
+            metadata: self.metadata.clone(),
+        }
     }
+
     pub fn to_list_field(&self) -> DaftResult<Self> {
         if self.dtype.is_python() {
             return Ok(self.clone());
@@ -37,6 +55,7 @@ impl Field {
         Ok(Field {
             name: self.name.clone(),
             dtype: list_dtype,
+            metadata: self.metadata.clone(),
         })
     }
 }
@@ -46,6 +65,7 @@ impl From<&ArrowField> for Field {
         Field {
             name: af.name.clone(),
             dtype: af.data_type().into(),
+            metadata: af.metadata.clone(),
         }
     }
 }

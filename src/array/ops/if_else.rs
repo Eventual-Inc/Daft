@@ -1,8 +1,8 @@
 use crate::array::DataArray;
 use crate::datatypes::logical::DateArray;
 use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, Field, FixedSizeListArray,
-    ListArray, NullArray, StructArray, Utf8Array,
+    BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, ExtensionArray, Field,
+    FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
 };
 use crate::error::{DaftError, DaftResult};
 use crate::utils::arrow::arrow_bitmap_and_helper;
@@ -229,68 +229,60 @@ impl PythonArray {
     }
 }
 
-fn from_arrow_if_then_else<T: DaftArrowBackedType + 'static>(
-    predicate: &BooleanArray,
-    if_true: &DataArray<T>,
-    if_false: &DataArray<T>,
-) -> DaftResult<DataArray<T>>
-where
-    DataArray<T>:
-        AsArrow + for<'a> TryFrom<(Arc<Field>, Box<dyn arrow2::array::Array>), Error = DaftError>,
-    <DataArray<T> as AsArrow>::Output: arrow2::array::Array,
-{
-    let result = arrow2::compute::if_then_else::if_then_else(
-        predicate.as_arrow(),
-        if_true.as_arrow(),
-        if_false.as_arrow(),
-    )?;
-    DataArray::try_from((if_true.field.clone(), result))
-}
-
 fn nested_if_then_else<T: DaftArrowBackedType + 'static>(
     predicate: &BooleanArray,
     if_true: &DataArray<T>,
     if_false: &DataArray<T>,
 ) -> DaftResult<DataArray<T>>
 where
-    DataArray<T>: AsArrow
-        + Broadcastable
+    DataArray<T>: Broadcastable
         + for<'a> TryFrom<(Arc<Field>, Box<dyn arrow2::array::Array>), Error = DaftError>,
-    <DataArray<T> as AsArrow>::Output: arrow2::array::Array,
 {
     // TODO(Clark): Support streaming broadcasting, i.e. broadcasting without inflating scalars to full array length.
-    match (predicate.len(), if_true.len(), if_false.len()) {
+    let result = match (predicate.len(), if_true.len(), if_false.len()) {
         (predicate_len, if_true_len, if_false_len)
-            if predicate_len == if_true_len && if_true_len == if_false_len => from_arrow_if_then_else(predicate, if_true, if_false),
-        (1, if_true_len, 1) => from_arrow_if_then_else(
-            &predicate.broadcast(if_true_len)?,
-            if_true,
-            &if_false.broadcast(if_true_len)?,
-        ),
-        (1, 1, if_false_len) => from_arrow_if_then_else(
-            &predicate.broadcast(if_false_len)?,
-            &if_true.broadcast(if_false_len)?,
-            if_false,
-        ),
-        (predicate_len, 1, 1) => from_arrow_if_then_else(
-            predicate,
-            &if_true.broadcast(predicate_len)?,
-            &if_false.broadcast(predicate_len)?,
-        ),
-        (predicate_len, if_true_len, 1) if predicate_len == if_true_len => from_arrow_if_then_else(
-            predicate,
-            if_true,
-            &if_false.broadcast(predicate_len)?,
-        ),
-        (predicate_len, 1, if_false_len) if predicate_len == if_false_len => from_arrow_if_then_else(
-            predicate,
-            &if_true.broadcast(predicate_len)?,
-            if_false,
-        ),
-        (p, s, o) => {
-            Err(DaftError::ValueError(format!("Cannot run if_else against arrays with non-broadcastable lengths: if_true={s}, if_false={o}, predicate={p}")))
+            if predicate_len == if_true_len && if_true_len == if_false_len =>
+        {
+            arrow2::compute::if_then_else::if_then_else(
+                predicate.as_arrow(),
+                if_true.data(),
+                if_false.data(),
+            )?
         }
-    }
+        (1, if_true_len, 1) => arrow2::compute::if_then_else::if_then_else(
+            predicate.broadcast(if_true_len)?.as_arrow(),
+            if_true.data(),
+            if_false.broadcast(if_true_len)?.data(),
+        )?,
+        (1, 1, if_false_len) => arrow2::compute::if_then_else::if_then_else(
+            predicate.broadcast(if_false_len)?.as_arrow(),
+            if_true.broadcast(if_false_len)?.data(),
+            if_false.data(),
+        )?,
+        (predicate_len, 1, 1) => arrow2::compute::if_then_else::if_then_else(
+            predicate.as_arrow(),
+            if_true.broadcast(predicate_len)?.data(),
+            if_false.broadcast(predicate_len)?.data(),
+        )?,
+        (predicate_len, if_true_len, 1) if predicate_len == if_true_len => {
+            arrow2::compute::if_then_else::if_then_else(
+                predicate.as_arrow(),
+                if_true.data(),
+                if_false.broadcast(predicate_len)?.data(),
+            )?
+        }
+        (predicate_len, 1, if_false_len) if predicate_len == if_false_len => {
+            arrow2::compute::if_then_else::if_then_else(
+                predicate.as_arrow(),
+                if_true.broadcast(predicate_len)?.data(),
+                if_false.data(),
+            )?
+        }
+        (p, s, o) => {
+            return Err(DaftError::ValueError(format!("Cannot run if_else against arrays with non-broadcastable lengths: if_true={s}, if_false={o}, predicate={p}")));
+        }
+    };
+    DataArray::try_from((if_true.field.clone(), result))
 }
 
 impl ListArray {
@@ -315,6 +307,16 @@ impl StructArray {
         other: &StructArray,
         predicate: &BooleanArray,
     ) -> DaftResult<StructArray> {
+        nested_if_then_else(predicate, self, other)
+    }
+}
+
+impl ExtensionArray {
+    pub fn if_else(
+        &self,
+        other: &ExtensionArray,
+        predicate: &BooleanArray,
+    ) -> DaftResult<ExtensionArray> {
         nested_if_then_else(predicate, self, other)
     }
 }

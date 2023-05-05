@@ -29,10 +29,7 @@ where
         let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
             Ok(arrow_dtype) => DataArray::<T>::new(
-                Arc::new(Field {
-                    name: name.to_string(),
-                    dtype: dtype.clone(),
-                }),
+                Arc::new(Field::new(name.to_string(), dtype.clone())),
                 arrow2::array::new_null_array(arrow_dtype, length),
             )
             .unwrap(),
@@ -54,10 +51,7 @@ where
         let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
             Ok(arrow_dtype) => DataArray::<T>::new(
-                Arc::new(Field {
-                    name: name.to_string(),
-                    dtype: dtype.clone(),
-                }),
+                Arc::new(Field::new(name.to_string(), dtype.clone())),
                 arrow2::array::new_empty_array(arrow_dtype),
             )
             .unwrap(),
