@@ -356,8 +356,6 @@ class FileWrite(UnaryNode):
             self._partition_cols = partition_cols
         else:
             self._partition_cols = ExpressionsProjection([])
-        for field in input.schema():
-            assert not field.dtype._is_python_type(), f"we can currently only write out primitive types, got: {field}"
 
         schema = Schema._from_field_name_and_types([("file_path", DataType.string())])
 
