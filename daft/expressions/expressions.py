@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import sys
 from datetime import date
 from typing import Callable, Iterable, Iterator, TypeVar, overload
 
@@ -11,6 +12,11 @@ from daft.daft import udf as _udf
 from daft.datatype import DataType
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Literal
+else:
+    from typing import Literal
 
 
 def lit(value: object) -> Expression:
@@ -387,18 +393,24 @@ class ExpressionNamespace:
 
 
 class ExpressionUrlNamespace(ExpressionNamespace):
-    def download(self, max_worker_threads: int = 8) -> Expression:
+    def download(
+        self, max_worker_threads: int = 8, on_error: Literal["raise"] | Literal["null"] = "null"
+    ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column
 
         Args:
             max_worker_threads: The maximum number of threads to use for downloading URLs, defaults to 8
+            on_error: Behavior when a URL download error is encountered - "raise" to raise the error immediately, defaults to "null"
+                which will log the error but populate the result with a Null value
 
         Returns:
             UdfExpression: a BYTES expression which is the bytes contents of the URL, or None if an error occured during download
         """
         from daft.udf_library import url_udfs
 
-        return url_udfs.download_udf(Expression._from_pyexpr(self._expr), max_worker_threads=max_worker_threads)
+        return url_udfs.download_udf(
+            Expression._from_pyexpr(self._expr), max_worker_threads=max_worker_threads, on_error=on_error
+        )
 
 
 class ExpressionFloatNamespace(ExpressionNamespace):

@@ -57,6 +57,18 @@ def test_download_with_broken_urls(files):
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
 
 
+def test_download_with_broken_urls_reraise_errors(files):
+    data = {
+        "id": list(range(len(files) * 2)),
+        "filenames": [str(f) for f in files] + [str(uuid.uuid4()) for _ in range(len(files))],
+    }
+    df = daft.from_pydict(data)
+    df = df.with_column("bytes", col("filenames").url.download(on_error="raise"))
+
+    with pytest.raises(FileNotFoundError):
+        df.collect()
+
+
 def test_download_with_duplicate_urls(files):
     data = {
         "id": list(range(len(files) * 2)),
