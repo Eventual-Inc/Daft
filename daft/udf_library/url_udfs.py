@@ -69,8 +69,6 @@ def download_udf(urls, max_worker_threads: int = 8, on_error: Literal["raise"] |
             the error but fallback to a Null value. Defaults to "raise".
     """
 
-    from loguru import logger
-
     urls_pylist = urls.to_arrow().to_pylist()
 
     _warmup_fsspec_registry(urls_pylist)
