@@ -22,7 +22,9 @@ def _worker_thread_initializer() -> None:
     thread_local.filesystems_cache = {}
 
 
-def _download(path: str | None) -> bytes | None:
+def _download(path: str | None, on_error: Literal["raise"] | Literal["null"]) -> bytes | None:
+    from loguru import logger
+
     if path is None:
         return None
     protocol = filesystem.get_protocol_from_path(path)
@@ -30,7 +32,16 @@ def _download(path: str | None) -> bytes | None:
     if fs is None:
         fs = filesystem.get_filesystem(protocol)
         thread_local.filesystems_cache[protocol] = fs
-    return fs.cat_file(path)
+    try:
+        return fs.cat_file(path)
+    except Exception as e:
+        if on_error == "raise":
+            raise
+        elif on_error == "null":
+            logger.error(f"Encountered error during download from URL {path} and falling back to Null\n\n{e}: {str(e)}")
+            return None
+        else:
+            raise NotImplemented(f"Unimplemented on_error option: {on_error}.\n\nEncountered error: {e}")
 
 
 def _warmup_fsspec_registry(urls_pylist: list[str | None]) -> None:
@@ -66,18 +77,8 @@ def download_udf(urls, max_worker_threads: int = 8, on_error: Literal["raise"] |
 
     executor = ThreadPoolExecutor(max_workers=max_worker_threads, initializer=_worker_thread_initializer)
     results: list[bytes | None] = [None for _ in range(len(urls))]
-    future_to_idx = {executor.submit(_download, urls_pylist[i]): i for i in range(len(urls))}
+    future_to_idx = {executor.submit(_download, urls_pylist[i], on_error): i for i in range(len(urls))}
     for future in as_completed(future_to_idx):
-        try:
-            results[future_to_idx[future]] = future.result()
-        except Exception as e:
-            if on_error == "raise":
-                raise
-            elif on_error == "null":
-                logger.error(
-                    f"Encountered error during download from URL {urls_pylist[future_to_idx[future]]} and falling back to Null: {str(e)}"
-                )
-            else:
-                raise NotImplemented(f"Unimplemented on_error option: {on_error}.\n\nEncountered error: {e}")
+        results[future_to_idx[future]] = future.result()
 
     return Series.from_pylist(results)
