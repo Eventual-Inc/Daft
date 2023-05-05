@@ -7,7 +7,6 @@ import daft
 from daft import DataFrame
 
 
-@pytest.mark.aggregations
 @pytest.fixture(scope="module")
 def gen_aranged_df(num_samples=1_000_000) -> DataFrame:
     return daft.from_pydict(
