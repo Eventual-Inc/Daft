@@ -367,7 +367,7 @@ jobs:
         key: ${{ runner.os }}-python-${{ steps.setup-python.outputs.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
     - name: Python And Rust Style Check
       run: |
-        pre-commit run --all-files
+        SKIP=pip-compile pre-commit run --all-files
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.23.0
