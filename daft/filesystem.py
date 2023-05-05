@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import dataclasses
-import re
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -19,8 +18,6 @@ from fsspec import AbstractFileSystem, get_filesystem_class
 from loguru import logger
 
 from daft.datasources import ParquetSourceInfo, SourceInfo
-
-URL_REGEX = re.compile(r"([a-zA-Z\d_-]+):\/\/(.+)")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -75,10 +72,10 @@ def get_filesystem(protocol: str, **kwargs) -> AbstractFileSystem:
 
 
 def get_protocol_from_path(path: str) -> str:
-    matched_url = URL_REGEX.match(path)
-    if matched_url is None:
+    parsed_scheme = urlparse(path).scheme
+    if parsed_scheme == "" or parsed_scheme is None:
         return "file"
-    return matched_url.group(1)
+    return parsed_scheme
 
 
 def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
