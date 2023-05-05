@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +19,8 @@ from fsspec import AbstractFileSystem, get_filesystem_class
 from loguru import logger
 
 from daft.datasources import ParquetSourceInfo, SourceInfo
+
+URL_REGEX = re.compile(r"([a-zA-Z\d_-]+):\/\/(.+)")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -71,11 +74,11 @@ def get_filesystem(protocol: str, **kwargs) -> AbstractFileSystem:
     return fs
 
 
-def get_protocol_from_path(path: str, **kwargs) -> str:
-    split = path.split(":")
-    assert len(split) <= 2, f"too many colons found in {path}"
-    protocol = split[0] if len(split) == 2 else "file"
-    return protocol
+def get_protocol_from_path(path: str) -> str:
+    matched_url = URL_REGEX.match(path)
+    if matched_url is None:
+        return "file"
+    return matched_url.group(0)
 
 
 def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:

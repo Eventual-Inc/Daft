@@ -11,9 +11,18 @@ from daft.expressions import col
 from tests.conftest import assert_df_equals
 
 
+def _get_filename():
+    name = str(uuid.uuid4())
+
+    # Inject colons into the name
+    name += ":foo:bar"
+
+    return name
+
+
 @pytest.fixture(scope="function")
 def files(tmpdir) -> list[str]:
-    filepaths = [pathlib.Path(tmpdir) / str(uuid.uuid4()) for _ in range(10)]
+    filepaths = [pathlib.Path(tmpdir) / _get_filename() for _ in range(10)]
     for fp in filepaths:
         fp.write_bytes(fp.name.encode("utf-8"))
     return filepaths
