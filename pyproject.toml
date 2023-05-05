@@ -27,6 +27,8 @@ requires-python = ">=3.7"
 [project.optional-dependencies]
 all = ["getdaft[aws, ray, pandas, numpy, viz]"]
 aws = ["s3fs"]
+dev = ["getdaft[all, test, docs]", "ipdb", "pre-commit", "maturin", "py-spy", "pip-tools"]
+docs = ["myst-nb>=0.16.0", "Sphinx <= 5", "sphinx-book-theme>=0.3.3,<1.0.0", "sphinx-reredirects>=0.1.1"]
 numpy = ["numpy"]
 pandas = ["pandas"]
 ray = [
@@ -35,7 +37,8 @@ ray = [
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
-viz = ["pydot"]
+test = ["dask", "lxml", "xxhash>=3.0", "hypothesis", "pytest>=7.1.2", "pytest-benchmark", "pytest-cov"]
+viz = ["pydot", "viztracer", "orjson"]
 
 [project.urls]
 homepage = "https://www.getdaft.io"

@@ -83,3 +83,11 @@ repos:
   rev: v0.10.1
   hooks:
   - id: validate-pyproject
+
+- repo: https://github.com/jazzband/pip-tools
+  rev: 6.13.0
+  hooks:
+  - id: pip-compile
+    name: pip-compile requirements-dev.txt
+    files: ^(pyproject\.toml)$
+    args: [--extra=dev, --resolver=backtracking, --unsafe-package, getdaft, --unsafe-package, pip, --unsafe-package, setuptools, --output-file=requirements-dev.txt]
