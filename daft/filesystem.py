@@ -71,11 +71,11 @@ def get_filesystem(protocol: str, **kwargs) -> AbstractFileSystem:
     return fs
 
 
-def get_protocol_from_path(path: str, **kwargs) -> str:
-    split = path.split(":")
-    assert len(split) <= 2, f"too many colons found in {path}"
-    protocol = split[0] if len(split) == 2 else "file"
-    return protocol
+def get_protocol_from_path(path: str) -> str:
+    parsed_scheme = urlparse(path).scheme
+    if parsed_scheme == "" or parsed_scheme is None:
+        return "file"
+    return parsed_scheme
 
 
 def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
