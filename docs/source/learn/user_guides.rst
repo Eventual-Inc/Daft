@@ -29,6 +29,7 @@ Daft is a Python dataframe library. A dataframe is just a table consisting of ro
 
     user_guides/intro-dataframes
     user_guides/expressions
+    user_guides/datatypes
     user_guides/read-write
     user_guides/dataframe-operations
     user_guides/aggregations
