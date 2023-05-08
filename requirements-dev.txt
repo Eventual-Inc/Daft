@@ -1,29 +1,29 @@
 # Development/Build utilities
-ipdb
-maturin
-pre-commit
+ipdb==0.13.13
+maturin==0.15.1
+pre-commit==3.3.1
 
 # Tracing
-orjson  # orjson recommended for viztracer
-py-spy
-viztracer
+orjson==3.8.12  # orjson recommended for viztracer
+py-spy==0.3.14
+viztracer==0.15.6
 
 # Testing frameworks
-hypothesis
-pytest>=7.1.2
-pytest-benchmark
-pytest-cov
+hypothesis==6.75.2
+pytest==7.3.1
+pytest-benchmark==4.0.0
+pytest-cov==4.0.0
 
 # Testing dependencies
-dask
-lxml
-numpy
-pandas
+dask==2022.2.0; python_version < '3.8'
+dask==2023.4.1; python_version >= '3.8'
+lxml==4.9.2
+numpy==1.24.3
+pandas==2.0.1
 xxhash>=3.0.0
 
 # Ray
-grpcio
-ray[data, default]
+ray[data, default]==2.4.0
 
 # Documentation
 myst-nb>=0.16.0
