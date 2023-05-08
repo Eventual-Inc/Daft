@@ -1,7 +1,7 @@
-# Development/Build utilities
-ipdb==0.13.13
-maturin==0.15.1
-pre-commit==3.3.1
+# Development/Build utilities (allow to be unpinned)
+ipdb
+maturin
+pre-commit
 
 # Tracing
 orjson==3.8.12  # orjson recommended for viztracer
