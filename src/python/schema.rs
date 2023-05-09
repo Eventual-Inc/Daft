@@ -20,7 +20,7 @@ pub struct PySchema {
 #[pymethods]
 impl PySchema {
     #[new]
-    #[args(args = "*")]
+    #[pyo3(signature = (*args))]
     pub fn new(args: &PyTuple) -> PyResult<Self> {
         match args.len() {
             0 => Ok(Self {

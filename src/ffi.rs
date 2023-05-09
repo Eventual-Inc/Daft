@@ -54,7 +54,7 @@ pub fn record_batches_to_table(
     for rb in batches {
         let pycolumns = rb.getattr(pyo3::intern!(rb.py(), "columns"))?;
         let columns = pycolumns
-            .cast_as::<PyList>()?
+            .downcast::<PyList>()?
             .into_iter()
             .map(array_to_rust)
             .collect::<PyResult<Vec<_>>>()?;

@@ -90,7 +90,7 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 #[pymethods]
 impl PyExpr {
     #[new]
-    #[args(args = "*")]
+    #[pyo3(signature = (*args))]
     pub fn new(args: &PyTuple) -> PyResult<Self> {
         match args.len() {
             0 => Ok(dsl::null_lit().into()),
