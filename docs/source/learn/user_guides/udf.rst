@@ -125,7 +125,7 @@ The Daft ``Series`` is just an abstraction on a "column" of data! You can obtain
 1. Numpy Arrays (``np.ndarray``): ``Series.to_numpy()``
 2. Pandas Series (``pd.Series``): ``Series.to_pandas()``
 3. PyArrow Arrays (``pa.Array``): ``Series.to_arrow()``
-4. Python lists (``list``): ``Series.to_list()``
+4. Python lists (``list``): ``Series.to_pylist()``
 
 Depending on your application, you may choose a different data representation that is more performant or more convenient!
 
