@@ -1,4 +1,7 @@
 #![feature(hash_raw_entry)]
+#[macro_use]
+extern crate lazy_static;
+
 mod array;
 mod datatypes;
 mod dsl;

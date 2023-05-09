@@ -9,8 +9,11 @@ use pyo3::types::PyList;
 use pyo3::{PyAny, PyObject, PyResult, Python};
 
 use crate::{
-    error::DaftResult, schema::SchemaRef, series::Series, table::Table,
-    utils::arrow::cast_array_if_needed,
+    error::DaftResult,
+    schema::SchemaRef,
+    series::Series,
+    table::Table,
+    utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
 
 pub type ArrayRef = Box<dyn Array>;
@@ -71,7 +74,7 @@ pub fn record_batches_to_table(
                 .into_iter()
                 .enumerate()
                 .map(|(i, c)| {
-                    let c = cast_array_if_needed(c);
+                    let c = cast_array_for_daft_if_needed(c);
                     Series::try_from((names.get(i).unwrap().as_str(), c))
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
@@ -110,6 +113,7 @@ pub fn table_to_record_batch(table: &Table, py: Python, pyarrow: &PyModule) -> P
     for i in 0..table.num_columns() {
         let s = table.get_column_by_index(i)?;
         let arrow_array = s.to_arrow();
+        let arrow_array = cast_array_from_daft_if_needed(arrow_array.to_boxed());
         let py_array = to_py_array(arrow_array, py, pyarrow)?;
         arrays.push(py_array);
         names.push(s.name().to_string());

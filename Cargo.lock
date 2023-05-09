@@ -42,8 +42,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.17.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0f73029049896b3d70ba17756afef171ceef3569016cfa9dbca58d29e0e16f9"
+source = "git+https://github.com/Eventual-Inc/arrow2?branch=clark/expand-casting-support#0fb8f5eb6707957e832fd28ac0ce381d9b23d521"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -166,6 +165,7 @@ dependencies = [
  "dyn-clone",
  "fnv",
  "indexmap",
+ "lazy_static",
  "num-traits",
  "prettytable-rs",
  "pyo3",

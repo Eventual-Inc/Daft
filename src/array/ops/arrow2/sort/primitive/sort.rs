@@ -166,6 +166,7 @@ mod tests {
     use super::*;
 
     use arrow2::array::ord;
+    use arrow2::array::Array;
     use arrow2::array::PrimitiveArray;
     use arrow2::datatypes::DataType;
 
@@ -177,13 +178,28 @@ mod tests {
     ) where
         T: NativeType + std::cmp::Ord,
     {
-        let input = PrimitiveArray::<T>::from(data).to(data_type.clone());
-        let expected = PrimitiveArray::<T>::from(expected_data).to(data_type.clone());
+        let input = PrimitiveArray::<T>::from(data)
+            .to(data_type.clone())
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T>>()
+            .unwrap()
+            .clone();
+        let expected = PrimitiveArray::<T>::from(expected_data)
+            .to(data_type.clone())
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T>>()
+            .unwrap()
+            .clone();
         let output = sort_by(&input, ord::total_cmp, &options, None);
         assert_eq!(expected, output);
 
         // with limit
-        let expected = PrimitiveArray::<T>::from(&expected_data[..3]).to(data_type);
+        let expected = PrimitiveArray::<T>::from(&expected_data[..3])
+            .to(data_type)
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T>>()
+            .unwrap()
+            .clone();
         let output = sort_by(&input, ord::total_cmp, &options, Some(3));
         assert_eq!(expected, output)
     }

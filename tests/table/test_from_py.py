@@ -120,10 +120,8 @@ ARROW_ROUNDTRIP_TYPES = {
 }
 
 if ARROW_VERSION >= (12, 0, 0):
-    ARROW_TYPE_ARRAYS["ext_type"] = (
-        pa.FixedShapeTensorArray.from_numpy_ndarray(np.array(PYTHON_TYPE_ARRAYS["tensor"])),
-    )
-    ARROW_ROUNDTRIP_TYPES["ext_type"] = (pa.fixed_shape_tensor(pa.int64(), (2, 2)),)
+    ARROW_TYPE_ARRAYS["ext_type"] = pa.FixedShapeTensorArray.from_numpy_ndarray(np.array(PYTHON_TYPE_ARRAYS["tensor"]))
+    ARROW_ROUNDTRIP_TYPES["ext_type"] = pa.fixed_shape_tensor(pa.int64(), (2, 2))
 
 
 def test_from_pydict_roundtrip() -> None:

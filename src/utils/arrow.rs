@@ -1,105 +1,138 @@
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use arrow2::compute::cast;
 
-pub fn cast_array_if_needed(
-    arrow_array: Box<dyn arrow2::array::Array>,
-) -> Box<dyn arrow2::array::Array> {
-    match arrow_array.data_type() {
-        arrow2::datatypes::DataType::Utf8 => {
-            cast::utf8_to_large_utf8(arrow_array.as_any().downcast_ref().unwrap()).boxed()
-        }
-        arrow2::datatypes::DataType::Binary => cast::binary_to_large_binary(
-            arrow_array.as_any().downcast_ref().unwrap(),
-            arrow2::datatypes::DataType::LargeBinary,
-        )
-        .boxed(),
+// TODO(Clark): Refactor to GILOnceCell in order to avoid deadlock between the below mutex and the Python GIL.
+lazy_static! {
+    static ref REGISTRY: Mutex<HashMap<std::string::String, arrow2::datatypes::DataType>> =
+        Mutex::new(HashMap::new());
+}
+
+fn coerce_to_daft_compatible_type(
+    dtype: &arrow2::datatypes::DataType,
+) -> Option<arrow2::datatypes::DataType> {
+    match dtype {
+        arrow2::datatypes::DataType::Utf8 => Some(arrow2::datatypes::DataType::LargeUtf8),
+        arrow2::datatypes::DataType::Binary => Some(arrow2::datatypes::DataType::LargeBinary),
         arrow2::datatypes::DataType::List(field) => {
-            let array = arrow_array
-                .as_any()
-                .downcast_ref::<arrow2::array::ListArray<i32>>()
-                .unwrap();
-            let new_values = cast_array_if_needed(array.values().clone());
-            let offsets = array.offsets().into();
-            arrow2::array::ListArray::<i64>::new(
-                arrow2::datatypes::DataType::LargeList(Box::new(arrow2::datatypes::Field::new(
-                    field.name.clone(),
-                    new_values.data_type().clone(),
-                    field.is_nullable,
-                ))),
-                offsets,
-                new_values,
-                arrow_array.validity().cloned(),
-            )
-            .boxed()
+            let new_field = match coerce_to_daft_compatible_type(field.data_type()) {
+                Some(new_inner_dtype) => Box::new(
+                    arrow2::datatypes::Field::new(
+                        field.name.clone(),
+                        new_inner_dtype,
+                        field.is_nullable,
+                    )
+                    .with_metadata(field.metadata.clone()),
+                ),
+                None => field.clone(),
+            };
+            Some(arrow2::datatypes::DataType::LargeList(new_field))
         }
         arrow2::datatypes::DataType::LargeList(field) => {
-            // Types nested within LargeList may need casting.
-            let array = arrow_array
-                .as_any()
-                .downcast_ref::<arrow2::array::ListArray<i64>>()
-                .unwrap();
-            let new_values = cast_array_if_needed(array.values().clone());
-            if new_values.data_type() == array.values().data_type() {
-                return arrow_array;
-            }
-            arrow2::array::ListArray::<i64>::new(
-                arrow2::datatypes::DataType::LargeList(Box::new(arrow2::datatypes::Field::new(
+            let new_inner_dtype = coerce_to_daft_compatible_type(field.data_type())?;
+            Some(arrow2::datatypes::DataType::LargeList(Box::new(
+                arrow2::datatypes::Field::new(
                     field.name.clone(),
-                    new_values.data_type().clone(),
+                    new_inner_dtype,
                     field.is_nullable,
-                ))),
-                array.offsets().clone(),
-                new_values,
-                arrow_array.validity().cloned(),
-            )
-            .boxed()
+                )
+                .with_metadata(field.metadata.clone()),
+            )))
         }
         arrow2::datatypes::DataType::FixedSizeList(field, size) => {
-            // Types nested within FixedSizeList may need casting.
-            let array = arrow_array
-                .as_any()
-                .downcast_ref::<arrow2::array::FixedSizeListArray>()
-                .unwrap();
-            let new_values = cast_array_if_needed(array.values().clone());
-            if new_values.data_type() == array.values().data_type() {
-                return arrow_array;
-            }
-            arrow2::array::FixedSizeListArray::new(
-                arrow2::datatypes::DataType::FixedSizeList(
-                    Box::new(arrow2::datatypes::Field::new(
+            let new_inner_dtype = coerce_to_daft_compatible_type(field.data_type())?;
+            Some(arrow2::datatypes::DataType::FixedSizeList(
+                Box::new(
+                    arrow2::datatypes::Field::new(
                         field.name.clone(),
-                        new_values.data_type().clone(),
+                        new_inner_dtype,
                         field.is_nullable,
-                    )),
-                    *size,
+                    )
+                    .with_metadata(field.metadata.clone()),
                 ),
-                new_values,
-                arrow_array.validity().cloned(),
-            )
-            .boxed()
-        }
-        arrow2::datatypes::DataType::Struct(fields) => {
-            let new_arrays = arrow_array
-                .as_any()
-                .downcast_ref::<arrow2::array::StructArray>()
-                .unwrap()
-                .values()
-                .iter()
-                .map(|field_arr| cast_array_if_needed(field_arr.clone()))
-                .collect::<Vec<Box<dyn arrow2::array::Array>>>();
-            let new_fields = fields
-                .iter()
-                .zip(new_arrays.iter().map(|arr| arr.data_type().clone()))
-                .map(|(field, dtype)| {
-                    arrow2::datatypes::Field::new(field.name.clone(), dtype, field.is_nullable)
-                })
-                .collect();
-            Box::new(arrow2::array::StructArray::new(
-                arrow2::datatypes::DataType::Struct(new_fields),
-                new_arrays,
-                arrow_array.validity().cloned(),
+                *size,
             ))
         }
-        _ => arrow_array,
+        arrow2::datatypes::DataType::Struct(fields) => {
+            let new_fields = fields
+                .iter()
+                .map(
+                    |field| match coerce_to_daft_compatible_type(field.data_type()) {
+                        Some(new_inner_dtype) => arrow2::datatypes::Field::new(
+                            field.name.clone(),
+                            new_inner_dtype,
+                            field.is_nullable,
+                        )
+                        .with_metadata(field.metadata.clone()),
+                        None => field.clone(),
+                    },
+                )
+                .collect::<Vec<arrow2::datatypes::Field>>();
+            if &new_fields == fields {
+                None
+            } else {
+                Some(arrow2::datatypes::DataType::Struct(new_fields))
+            }
+        }
+        arrow2::datatypes::DataType::Extension(name, inner, metadata) => {
+            let new_inner_dtype = coerce_to_daft_compatible_type(inner.as_ref())?;
+            REGISTRY.lock().unwrap().insert(name.clone(), dtype.clone());
+            Some(arrow2::datatypes::DataType::Extension(
+                name.clone(),
+                Box::new(new_inner_dtype),
+                metadata.clone(),
+            ))
+        }
+        _ => None,
+    }
+}
+
+pub fn cast_array_for_daft_if_needed(
+    arrow_array: Box<dyn arrow2::array::Array>,
+) -> Box<dyn arrow2::array::Array> {
+    match coerce_to_daft_compatible_type(arrow_array.data_type()) {
+        Some(coerced_dtype) => cast::cast(
+            arrow_array.as_ref(),
+            &coerced_dtype,
+            cast::CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )
+        .unwrap(),
+        None => arrow_array,
+    }
+}
+
+fn coerce_from_daft_compatible_type(
+    dtype: &arrow2::datatypes::DataType,
+) -> Option<arrow2::datatypes::DataType> {
+    match dtype {
+        arrow2::datatypes::DataType::Extension(name, _, _)
+            if REGISTRY.lock().unwrap().contains_key(name) =>
+        {
+            let entry = REGISTRY.lock().unwrap();
+            Some(entry.get(name).unwrap().clone())
+        }
+        _ => None,
+    }
+}
+
+pub fn cast_array_from_daft_if_needed(
+    arrow_array: Box<dyn arrow2::array::Array>,
+) -> Box<dyn arrow2::array::Array> {
+    match coerce_from_daft_compatible_type(arrow_array.data_type()) {
+        Some(coerced_dtype) => cast::cast(
+            arrow_array.as_ref(),
+            &coerced_dtype,
+            cast::CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )
+        .unwrap(),
+        None => arrow_array,
     }
 }
 

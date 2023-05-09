@@ -1,6 +1,21 @@
 from __future__ import annotations
 
 import pandas as pd
+import pyarrow as pa
+
+
+class UuidType(pa.ExtensionType):
+    NAME = "daft.uuid"
+
+    def __init__(self):
+        pa.ExtensionType.__init__(self, pa.binary(), self.NAME)
+
+    def __arrow_ext_serialize__(self):
+        return b""
+
+    @classmethod
+    def __arrow_ext_deserialize__(self, storage_type, serialized):
+        return UuidType()
 
 
 def assert_df_equals(

@@ -313,4 +313,8 @@ impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
             .map(|x| x.unset_bits())
             .unwrap_or(0)
     }
+
+    fn to_type(&self, _: DataType) -> Box<dyn Array> {
+        panic!("not implemented");
+    }
 }
