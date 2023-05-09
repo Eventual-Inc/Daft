@@ -6,7 +6,7 @@ rand = "^0.8"
 
 [dependencies.arrow2]
 features = ["compute", "io_ipc"]
-version = "0.17.0"
+version = "0.17.1"
 
 [dependencies.bincode]
 version = "1.3.3"
