@@ -18,7 +18,8 @@ pytest-cov==4.0.0
 dask==2022.2.0; python_version < '3.8'
 dask==2023.4.1; python_version >= '3.8'
 lxml==4.9.2
-numpy==1.24.3
+numpy==1.21.6; python_version < '3.8'
+numpy==1.24.3; python_version >= '3.8'
 pandas==2.0.1
 xxhash>=3.0.0
 
