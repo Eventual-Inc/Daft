@@ -1,0 +1,28 @@
+version: 2
+updates:
+- package-ecosystem: pip
+  directory: /
+  schedule:
+    interval: daily
+    # Add assignees
+  assignees:
+  - samster25
+  - jaychia
+
+- package-ecosystem: cargo
+  directory: /
+  schedule:
+    interval: daily
+    # Add assignees
+  assignees:
+  - samster25
+  - jaychia
+
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: daily
+    # Add assignees
+  assignees:
+  - samster25
+  - jaychia
