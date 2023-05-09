@@ -69,7 +69,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft_runner }}
 
     - name: Upload coverage report
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: coverage-reports
         path: ./report-output
@@ -198,7 +198,7 @@ jobs:
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov --no-default-features --workspace --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: coverage-reports
         path: ./report-output
