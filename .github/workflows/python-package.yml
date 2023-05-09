@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.7']
+        python-version: ['3.7', '3.11']
         daft_runner: [py, ray]
     steps:
     - uses: actions/checkout@v3
