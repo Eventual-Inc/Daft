@@ -17,3 +17,12 @@ updates:
   assignees:
   - samster25
   - jaychia
+
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: daily
+    # Add assignees
+  assignees:
+  - samster25
+  - jaychia
