@@ -25,7 +25,7 @@ version = "0.18.3"
 
 [dependencies.serde]
 features = ["derive", "rc"]
-version = "1.0.162"
+version = "1.0.163"
 
 [dependencies.xxhash-rust]
 features = ["xxh3", "const_xxh3"]
