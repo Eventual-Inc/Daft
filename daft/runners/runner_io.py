@@ -81,15 +81,13 @@ def sample_schema(
     sampled_partition: Table
     if source_info.scan_type() == StorageType.CSV:
         assert isinstance(source_info, CSVSourceInfo)
-        sampled_partition = table_io.read_csv(
+        sampled_partition = table_io.read_csv_infer_schema(
             file=filepath,
+            override_column_names=schema_inference_options.inference_column_names,
             csv_options=vPartitionParseCSVOptions(
                 delimiter=source_info.delimiter,
-                has_headers=source_info.has_headers,
-                skip_rows_before_header=0,
-                skip_rows_after_header=0,
+                header_index=0 if source_info.has_headers else None,
             ),
-            schema_options=schema_inference_options,
             read_options=vPartitionReadOptions(
                 num_rows=100,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns

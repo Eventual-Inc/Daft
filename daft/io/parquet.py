@@ -3,7 +3,7 @@
 from daft.api_annotations import PublicAPI
 from daft.dataframe import DataFrame
 from daft.datasources import ParquetSourceInfo
-from daft.io.common import _get_tabular_files_scan
+from daft.io.common import get_tabular_files_scan
 from daft.runners.partitioning import vPartitionSchemaInferenceOptions
 
 
@@ -23,8 +23,10 @@ def read_parquet(path: str) -> DataFrame:
     returns:
         DataFrame: parsed DataFrame
     """
-    plan = _get_tabular_files_scan(
+    plan = get_tabular_files_scan(
         path,
+        # TODO(jay): Allow passing of schema hints here
+        None,
         ParquetSourceInfo(),
         vPartitionSchemaInferenceOptions(),
     )
