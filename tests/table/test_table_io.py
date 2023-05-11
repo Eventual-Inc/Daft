@@ -226,7 +226,7 @@ def generate_csv_input(request, tmpdir: str) -> Callable[[vPartitionParseCSVOpti
 
 def test_csv_reads_infer_schema(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
     with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
-        table = table_io.read_csv_infer_schema(table_io_input)
+        table = table_io.infer_schema_csv(table_io_input)
         d = table.to_pydict()
         assert d == CSV_EXPECTED_DATA
 
@@ -255,7 +255,7 @@ def test_csv_reads_provided_schema_differing_headers(
 def test_csv_reads_limit_rows_infer_schema(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
     row_limit = 3
     with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
-        table = table_io.read_csv_infer_schema(table_io_input, read_options=vPartitionReadOptions(num_rows=row_limit))
+        table = table_io.infer_schema_csv(table_io_input, read_options=vPartitionReadOptions(num_rows=row_limit))
         d = table.to_pydict()
         assert d == {k: v[:row_limit] for k, v in CSV_EXPECTED_DATA.items()}
 
@@ -275,7 +275,7 @@ def test_csv_reads_limit_rows_provided_schema(generate_csv_input: Callable[[vPar
 def test_csv_reads_pruned_columns_infer_schema(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
     included_columns = ["strings", "integers"]
     with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
-        table = table_io.read_csv_infer_schema(
+        table = table_io.infer_schema_csv(
             table_io_input, read_options=vPartitionReadOptions(column_names=included_columns)
         )
         d = table.to_pydict()
@@ -319,7 +319,7 @@ def test_csv_reads_custom_options_infer_schema(
     schema_options: vPartitionSchemaInferenceOptions,
 ):
     with generate_csv_input(csv_options) as table_io_input:
-        table = table_io.read_csv_infer_schema(
+        table = table_io.infer_schema_csv(
             table_io_input, override_column_names=schema_options.inference_column_names, csv_options=csv_options
         )
         d = table.to_pydict()

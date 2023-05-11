@@ -163,12 +163,12 @@ def read_csv_with_schema(
     return Table.from_arrow(table)
 
 
-def read_csv_infer_schema(
+def infer_schema_csv(
     file: FileInput,
     override_column_names: list[str] | None = None,
     csv_options: vPartitionParseCSVOptions = vPartitionParseCSVOptions(),
     read_options: vPartitionReadOptions = vPartitionReadOptions(),
-) -> Table:
+) -> Schema:
     """Reads a Table from a CSV file
 
     Args:
@@ -219,7 +219,7 @@ def read_csv_infer_schema(
             convert_options=pacsv.ConvertOptions(include_columns=read_options.column_names),
         )
 
-    return Table.from_arrow(table)
+    return Table.from_arrow(table).schema()
 
 
 def write_csv(
