@@ -78,10 +78,6 @@ where
         self.data.as_ref()
     }
 
-    pub fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     pub fn data_type(&self) -> &DataType {
         &self.field.dtype
     }
@@ -96,5 +92,14 @@ where
 
     pub fn field(&self) -> &Field {
         &self.field
+    }
+}
+
+impl<T> DataArray<T>
+where
+    T: DaftDataType + 'static,
+{
+    pub fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }

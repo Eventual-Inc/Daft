@@ -109,7 +109,7 @@ pub fn table_to_record_batch(table: &Table, py: Python, pyarrow: &PyModule) -> P
 
     for i in 0..table.num_columns() {
         let s = table.get_column_by_index(i)?;
-        let arrow_array = s.array().data();
+        let arrow_array = s.array();
         let py_array = to_py_array(arrow_array.to_boxed(), py, pyarrow)?;
         arrays.push(py_array);
         names.push(s.name().to_string());

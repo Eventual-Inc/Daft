@@ -44,7 +44,7 @@ pub trait SeriesLike: Send + Sync + Any {
     fn len(&self) -> usize;
     fn name(&self) -> &str;
     fn rename(&self, name: &str) -> Series;
-    // fn size_bytes(&self) -> DaftResult<usize>;
+    fn size_bytes(&self) -> DaftResult<usize>;
     // fn explode(&self) -> DaftResult<Series>;
     // fn lengths(&self) -> DaftResult<UInt64Array>;
     fn is_null(&self) -> DaftResult<Series>;

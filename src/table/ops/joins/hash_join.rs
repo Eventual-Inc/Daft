@@ -27,8 +27,8 @@ pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series
         || right.columns.iter().any(|s| s.data_type().is_null());
     if has_null_type {
         return Ok((
-            Series::empty("left_indices", &DataType::UInt64)?,
-            Series::empty("right_indices", &DataType::UInt64)?,
+            UInt64Array::empty("left_indices", &DataType::UInt64).into_series(),
+            UInt64Array::empty("right_indices", &DataType::UInt64).into_series(),
         ));
     }
     let types_not_match = left

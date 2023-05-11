@@ -10,6 +10,7 @@ use arrow2::array::Array;
 use crate::error::DaftResult;
 
 use super::downcast::Downcastable;
+use crate::series::IntoSeries;
 
 impl ListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {
@@ -61,14 +62,14 @@ impl ListArray {
             DataType::List(field) => &field.dtype,
             _ => panic!("Expected List type but received {:?}", self.data_type()),
         };
-
-        with_match_arrow_daft_types!(child_data_type,|$T| {
-            let new_data_arr = DataArray::<$T>::new(Arc::new(Field {
-                name: self.field.name.clone(),
-                dtype: child_data_type.clone(),
-            }), growable.as_box())?;
-            Ok(new_data_arr.into_series())
-        })
+        Series::try_from((self.field.name.as_ref(), growable.as_box()))
+        // with_match_arrow_daft_types!(child_data_type,|$T| {
+        //     let new_data_arr = DataArray::<$T>::new(Arc::new(Field {
+        //         name: self.field.name.clone(),
+        //         dtype: child_data_type.clone(),
+        //     }), growable.as_box())?;
+        //     Ok(new_data_arr.into_series())
+        // })
     }
 }
 
@@ -117,13 +118,14 @@ impl FixedSizeListArray {
                 self.data_type()
             ),
         };
+        Series::try_from((self.field.name.as_ref(), growable.as_box()))
 
-        with_match_arrow_daft_types!(child_data_type,|$T| {
-            let new_data_arr = DataArray::<$T>::new(Arc::new(Field {
-                name: self.field.name.clone(),
-                dtype: child_data_type.clone(),
-            }), growable.as_box())?;
-            Ok(new_data_arr.into_series())
-        })
+        // with_match_arrow_daft_types!(child_data_type,|$T| {
+        //     let new_data_arr = DataArray::<$T>::new(Arc::new(Field {
+        //         name: self.field.name.clone(),
+        //         dtype: child_data_type.clone(),
+        //     }), growable.as_box())?;
+        //     Ok(new_data_arr.into_series())
+        // })
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
     error::{DaftError, DaftResult},
-    series::Series,
-    with_match_daft_types,
+    series::{IntoSeries, Series},
+    with_match_physical_daft_types,
 };
 
 impl Series {
@@ -27,7 +27,7 @@ impl Series {
             }
         }
 
-        with_match_daft_types!(first_dtype, |$T| {
+        with_match_physical_daft_types!(first_dtype, |$T| {
             let downcasted = series.into_iter().map(|s| s.downcast::<$T>()).collect::<DaftResult<Vec<_>>>()?;
             Ok(DataArray::<$T>::concat(downcasted.as_slice())?.into_series())
         })

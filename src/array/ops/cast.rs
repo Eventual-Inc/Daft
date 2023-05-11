@@ -7,7 +7,7 @@ use crate::{
     array::DataArray,
     datatypes::{
         BinaryArray, BooleanArray, DaftArrowBackedType, DaftDataType, DaftNumericType, DataType,
-        DateArray, FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
+        DateArray, FixedSizeListArray, ListArray, NullArray, PythonArray, StructArray, Utf8Array,
     },
     error::{DaftError, DaftResult},
     series::Series,
@@ -20,12 +20,10 @@ use super::downcast::Downcastable;
 
 fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
 where
-    T: DaftArrowBackedType + 'static,
+    T: DaftDataType + 'static,
 {
     if to_cast.data_type().eq(dtype) {
-        return Ok(
-            DataArray::<T>::try_from((to_cast.name(), to_cast.data().to_boxed()))?.into_series(),
-        );
+        return Series::try_from((to_cast.name(), to_cast.data().to_boxed()));
     }
 
     let _arrow_type = dtype.to_arrow();
@@ -56,10 +54,7 @@ where
             partial: false,
         },
     )?;
-
-    Ok(
-        with_match_arrow_daft_types!(dtype, |$T| DataArray::<$T>::try_from((to_cast.name(), result_array))?.into_series()),
-    )
+    Series::try_from((to_cast.name(), result_array))
 }
 
 impl<T> DataArray<T>
@@ -138,5 +133,11 @@ impl FixedSizeListArray {
 impl StructArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         arrow_cast(self, dtype)
+    }
+}
+
+impl PythonArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        todo!("Move python casting logic to here")
     }
 }

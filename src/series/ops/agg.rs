@@ -1,8 +1,9 @@
+use crate::series::IntoSeries;
 use crate::{
     array::ops::GroupIndices,
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_comparable_daft_types, with_match_daft_types,
+    with_match_comparable_daft_types, with_match_daft_types, with_match_physical_daft_types,
 };
 
 use crate::datatypes::*;
@@ -10,11 +11,11 @@ use crate::datatypes::*;
 impl Series {
     pub fn count(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         use crate::array::ops::DaftCountAggable;
-
-        with_match_daft_types!(self.data_type(), |$T| {
+        let s = self.as_physical()?;
+        with_match_physical_daft_types!(s.data_type(), |$T| {
             match groups {
-                Some(groups) => Ok(DaftCountAggable::grouped_count(&self.downcast::<$T>()?, groups)?.into_series()),
-                None => Ok(DaftCountAggable::count(&self.downcast::<$T>()?)?.into_series())
+                Some(groups) => Ok(DaftCountAggable::grouped_count(&s.downcast::<$T>()?, groups)?.into_series()),
+                None => Ok(DaftCountAggable::count(&s.downcast::<$T>()?)?.into_series())
             }
         })
     }

@@ -255,25 +255,25 @@ impl PyExpr {
         Ok(is_nan(&self.expr).into())
     }
 
-    pub fn dt_day(&self) -> PyResult<Self> {
-        use functions::temporal::day;
-        Ok(day(&self.expr).into())
-    }
+    // pub fn dt_day(&self) -> PyResult<Self> {
+    //     use functions::temporal::day;
+    //     Ok(day(&self.expr).into())
+    // }
 
-    pub fn dt_month(&self) -> PyResult<Self> {
-        use functions::temporal::month;
-        Ok(month(&self.expr).into())
-    }
+    // pub fn dt_month(&self) -> PyResult<Self> {
+    //     use functions::temporal::month;
+    //     Ok(month(&self.expr).into())
+    // }
 
-    pub fn dt_year(&self) -> PyResult<Self> {
-        use functions::temporal::year;
-        Ok(year(&self.expr).into())
-    }
+    // pub fn dt_year(&self) -> PyResult<Self> {
+    //     use functions::temporal::year;
+    //     Ok(year(&self.expr).into())
+    // }
 
-    pub fn dt_day_of_week(&self) -> PyResult<Self> {
-        use functions::temporal::day_of_week;
-        Ok(day_of_week(&self.expr).into())
-    }
+    // pub fn dt_day_of_week(&self) -> PyResult<Self> {
+    //     use functions::temporal::day_of_week;
+    //     Ok(day_of_week(&self.expr).into())
+    // }
 
     pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         match state.extract::<&PyBytes>(py) {

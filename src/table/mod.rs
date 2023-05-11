@@ -10,7 +10,7 @@ use crate::dsl::{AggExpr, Expr};
 use crate::error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
 use crate::series::{IntoSeries, Series};
-use crate::with_match_daft_types;
+use crate::{with_match_daft_types, with_match_physical_daft_types};
 
 mod ops;
 #[derive(Clone)]
@@ -61,7 +61,7 @@ impl Table {
             Some(schema) => {
                 let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
                 for (field_name, field) in schema.fields.iter() {
-                    with_match_daft_types!(field.dtype, |$T| {
+                    with_match_physical_daft_types!(field.dtype, |$T| {
                         columns.push(DataArray::<$T>::full_null(field_name, &field.dtype, 0).into_series())
                     })
                 }
@@ -418,6 +418,7 @@ mod test {
     use crate::dsl::col;
     use crate::error::DaftResult;
     use crate::schema::Schema;
+    use crate::series::IntoSeries;
     use crate::table::Table;
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {

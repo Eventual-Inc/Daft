@@ -1,13 +1,11 @@
-use arrow2::array::StructArray;
-
 use super::Series;
 use std::sync::Arc;
 
 use crate::{
     datatypes::{
         BinaryArray, BooleanArray, FixedSizeListArray, Float32Array, Float64Array, Int16Array,
-        Int32Array, Int64Array, Int8Array, ListArray, NullArray, PythonArray, UInt16Array,
-        UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        Int32Array, Int64Array, Int8Array, ListArray, NullArray, PythonArray, StructArray,
+        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     error::DaftResult,
     series::series_like::SeriesLike,
@@ -32,7 +30,7 @@ macro_rules! impl_series_like_for_data_array {
 
         impl SeriesLike for ArrayWrapper<$da> {
             fn array(&self) -> &dyn arrow2::array::Array {
-                self.array()
+                self.0.data()
             }
 
             fn as_any(&self) -> &dyn std::any::Any {
@@ -70,13 +68,17 @@ macro_rules! impl_series_like_for_data_array {
 
             fn is_null(&self) -> DaftResult<Series> {
                 use crate::array::ops::DaftIsNull;
-                let s = self.0;
 
-                Ok(DaftIsNull::is_null(&s)?.into_series())
+                Ok(DaftIsNull::is_null(&self.0)?.into_series())
             }
             fn len(&self) -> usize {
                 self.0.len()
             }
+
+            fn size_bytes(&self) -> DaftResult<usize> {
+                self.0.size_bytes()
+            }
+
             fn name(&self) -> &str {
                 self.0.name()
             }
@@ -117,4 +119,5 @@ impl_series_like_for_data_array!(Float64Array);
 impl_series_like_for_data_array!(Utf8Array);
 impl_series_like_for_data_array!(FixedSizeListArray);
 impl_series_like_for_data_array!(ListArray);
+impl_series_like_for_data_array!(StructArray);
 impl_series_like_for_data_array!(PythonArray);

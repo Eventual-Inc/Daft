@@ -224,7 +224,7 @@ impl PythonArray {
     }
 }
 
-fn from_arrow_if_then_else<T: DaftDataType>(
+fn from_arrow_if_then_else<T: DaftDataType + 'static>(
     predicate: &BooleanArray,
     if_true: &DataArray<T>,
     if_false: &DataArray<T>,
@@ -242,7 +242,7 @@ where
     DataArray::try_from((if_true.name(), result))
 }
 
-fn nested_if_then_else<T: DaftDataType>(
+fn nested_if_then_else<T: DaftDataType + 'static>(
     predicate: &BooleanArray,
     if_true: &DataArray<T>,
     if_false: &DataArray<T>,

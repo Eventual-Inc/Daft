@@ -6,7 +6,7 @@ use crate::{
     array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
     datatypes::{DataType, Field, PythonType, UInt64Type},
     ffi,
-    series::{self, Series},
+    series::{self, IntoSeries, Series},
     utils::arrow::cast_array_if_needed,
 };
 
@@ -246,19 +246,26 @@ impl PySeries {
     }
 
     pub fn dt_day(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day()?.into())
+        todo!("enable date ops");
+        // Ok(self.series.dt_day()?.into())
     }
 
     pub fn dt_month(&self) -> PyResult<Self> {
-        Ok(self.series.dt_month()?.into())
+        todo!("enable date ops");
+
+        // Ok(self.series.dt_month()?.into())
     }
 
     pub fn dt_year(&self) -> PyResult<Self> {
-        Ok(self.series.dt_year()?.into())
+        todo!("enable date ops");
+
+        // Ok(self.series.dt_year()?.into())
     }
 
     pub fn dt_day_of_week(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day_of_week()?.into())
+        todo!("enable date ops");
+
+        // Ok(self.series.dt_day_of_week()?.into())
     }
 
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {
