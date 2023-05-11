@@ -21,7 +21,7 @@ from daft.runners.partitioning import (
     vPartitionReadOptions,
     vPartitionSchemaInferenceOptions,
 )
-from daft.table import Table, table_io
+from daft.table import table_io
 
 PartitionT = TypeVar("PartitionT")
 
@@ -86,10 +86,9 @@ def sample_schema(
     if fs is None:
         fs = get_filesystem_from_path(filepath)
 
-    sampled_partition: Table
     if source_info.scan_type() == StorageType.CSV:
         assert isinstance(source_info, CSVSourceInfo)
-        sampled_partition = table_io.read_csv_infer_schema(
+        return table_io.infer_schema_csv(
             file=filepath,
             fs=fs,
             override_column_names=schema_inference_options.inference_column_names,
@@ -112,6 +111,7 @@ def sample_schema(
                 column_names=None,  # read all columns
             ),
         )
+        return sampled_partition.schema()
     elif source_info.scan_type() == StorageType.PARQUET:
         assert isinstance(source_info, ParquetSourceInfo)
         sampled_partition = table_io.read_parquet(
@@ -122,7 +122,6 @@ def sample_schema(
                 column_names=None,  # read all columns
             ),
         )
+        return sampled_partition.schema()
     else:
         raise NotImplementedError(f"Schema inference for {source_info} not implemented")
-
-    return sampled_partition.schema()

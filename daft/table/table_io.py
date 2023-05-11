@@ -159,17 +159,21 @@ def read_csv_with_schema(
             ),
         )
 
+    # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
+    if read_options.num_rows is not None:
+        table = table[: read_options.num_rows]
+
     return Table.from_arrow(table)
 
 
-def read_csv_infer_schema(
+def infer_schema_csv(
     file: FileInput,
     fs: fsspec.AbstractFileSystem | None = None,
     override_column_names: list[str] | None = None,
     csv_options: vPartitionParseCSVOptions = vPartitionParseCSVOptions(),
     read_options: vPartitionReadOptions = vPartitionReadOptions(),
-) -> Table:
-    """Reads a Table from a CSV file
+) -> Schema:
+    """Infers a Schema from a CSV file
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
@@ -192,6 +196,7 @@ def read_csv_infer_schema(
     )
 
     with _open_stream(file, fs) as f:
+        # TODO(jay): Can't limit number of rows with current PyArrow filesystem so this reads the entire CSV to sample the schema
         table = pacsv.read_csv(
             f,
             parse_options=pacsv.ParseOptions(
@@ -207,11 +212,7 @@ def read_csv_infer_schema(
             convert_options=pacsv.ConvertOptions(include_columns=read_options.column_names),
         )
 
-    # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
-    if read_options.num_rows is not None:
-        table = table[: read_options.num_rows]
-
-    return Table.from_arrow(table)
+    return Table.from_arrow(table).schema()
 
 
 def write_csv(
