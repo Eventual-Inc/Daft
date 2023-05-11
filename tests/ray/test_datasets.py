@@ -11,6 +11,7 @@ import ray
 import daft
 from daft import DataType
 from daft.context import get_context
+from daft.utils import freeze
 
 RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
 
@@ -175,7 +176,8 @@ def test_from_ray_dataset_simple(n_partitions: int):
     ds = ray.data.range(8, parallelism=n_partitions)
 
     df = daft.from_ray_dataset(ds)
-    np.testing.assert_equal(df.to_pydict(), {"value": list(range(8))})
+    # Sort data since partition ordering in Datasets is not deterministic.
+    assert freeze(df.to_pydict()) == freeze({"value": list(range(8))})
 
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
