@@ -1,9 +1,5 @@
 use super::{DaftCompareAggable, GroupIndices};
-use crate::{
-    array::{BaseArray, DataArray},
-    datatypes::*,
-    error::DaftResult,
-};
+use crate::{array::DataArray, datatypes::*, error::DaftResult};
 use arrow2::array::PrimitiveArray;
 use arrow2::{self, array::Array};
 

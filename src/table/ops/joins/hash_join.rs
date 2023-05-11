@@ -1,8 +1,8 @@
 use crate::{
-    array::{ops::arrow2::comparison::build_multi_array_is_equal, BaseArray},
+    array::ops::arrow2::comparison::build_multi_array_is_equal,
     datatypes::{DataType, UInt64Array},
     error::{DaftError, DaftResult},
-    series::Series,
+    series::{IntoSeries, Series},
     table::Table,
 };
 

@@ -1,4 +1,3 @@
-use crate::array::BaseArray;
 use crate::{datatypes::DataType, error::DaftResult, series::Series, with_match_daft_types};
 
 impl Series {

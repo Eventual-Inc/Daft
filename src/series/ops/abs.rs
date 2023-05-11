@@ -1,10 +1,11 @@
-use crate::array::BaseArray;
 use crate::datatypes::DataType;
 use crate::error::DaftError;
 use crate::{error::DaftResult, series::Series};
 
 impl Series {
     pub fn abs(&self) -> DaftResult<Series> {
+        use crate::series::array_impl::IntoSeries;
+
         use DataType::*;
         match self.data_type() {
             Int8 => Ok(self.i8().unwrap().abs()?.into_series()),

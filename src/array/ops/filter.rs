@@ -7,8 +7,6 @@ use crate::{
     error::DaftResult,
 };
 
-use crate::array::BaseArray;
-
 use super::downcast::Downcastable;
 
 impl<T> DataArray<T>

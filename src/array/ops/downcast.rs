@@ -2,7 +2,7 @@ use arrow2;
 use arrow2::array;
 
 use crate::{
-    array::{BaseArray, DataArray},
+    array::DataArray,
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DateArray, FixedSizeListArray, ListArray,
         StructArray, Utf8Array,

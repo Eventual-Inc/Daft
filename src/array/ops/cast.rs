@@ -4,21 +4,23 @@ use arrow2::compute::{
 };
 
 use crate::{
-    array::{BaseArray, DataArray},
+    array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftDataType, DaftNumericType, DataType, DateArray,
-        FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftArrowBackedType, DaftDataType, DaftNumericType, DataType,
+        DateArray, FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
     },
     error::{DaftError, DaftResult},
     series::Series,
     with_match_arrow_daft_types,
 };
 
+use crate::series::IntoSeries;
+
 use super::downcast::Downcastable;
 
 fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
 where
-    T: DaftDataType + 'static,
+    T: DaftArrowBackedType + 'static,
 {
     if to_cast.data_type().eq(dtype) {
         return Ok(

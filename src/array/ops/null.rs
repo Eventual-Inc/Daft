@@ -6,7 +6,7 @@ use crate::{array::DataArray, datatypes::*, error::DaftResult};
 
 use super::DaftIsNull;
 
-impl<T> DaftIsNull for &DataArray<T>
+impl<T> DaftIsNull for DataArray<T>
 where
     T: DaftDataType,
 {

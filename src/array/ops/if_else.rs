@@ -1,7 +1,7 @@
-use crate::array::{BaseArray, DataArray};
+use crate::array::DataArray;
 use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, NullArray,
-    PythonArray, StructArray, Utf8Array,
+    BinaryArray, BooleanArray, DaftDataType, DaftNumericType, FixedSizeListArray, ListArray,
+    NullArray, PythonArray, StructArray, Utf8Array,
 };
 use crate::error::{DaftError, DaftResult};
 use crate::utils::arrow::arrow_bitmap_and_helper;
@@ -224,28 +224,34 @@ impl PythonArray {
     }
 }
 
-fn from_arrow_if_then_else<T>(predicate: &BooleanArray, if_true: &T, if_false: &T) -> DaftResult<T>
+fn from_arrow_if_then_else<T: DaftDataType>(
+    predicate: &BooleanArray,
+    if_true: &DataArray<T>,
+    if_false: &DataArray<T>,
+) -> DaftResult<DataArray<T>>
 where
-    T: BaseArray
-        + Downcastable
-        + for<'a> TryFrom<(&'a str, Box<dyn arrow2::array::Array>), Error = DaftError>,
-    <T as Downcastable>::Output: arrow2::array::Array,
+    DataArray<T>:
+        Downcastable + for<'a> TryFrom<(&'a str, Box<dyn arrow2::array::Array>), Error = DaftError>,
+    <DataArray<T> as Downcastable>::Output: arrow2::array::Array,
 {
     let result = arrow2::compute::if_then_else::if_then_else(
         predicate.downcast(),
         if_true.downcast(),
         if_false.downcast(),
     )?;
-    T::try_from((if_true.name(), result))
+    DataArray::try_from((if_true.name(), result))
 }
 
-fn nested_if_then_else<T>(predicate: &BooleanArray, if_true: &T, if_false: &T) -> DaftResult<T>
+fn nested_if_then_else<T: DaftDataType>(
+    predicate: &BooleanArray,
+    if_true: &DataArray<T>,
+    if_false: &DataArray<T>,
+) -> DaftResult<DataArray<T>>
 where
-    T: BaseArray
+    DataArray<T>: Downcastable
         + Broadcastable
-        + Downcastable
         + for<'a> TryFrom<(&'a str, Box<dyn arrow2::array::Array>), Error = DaftError>,
-    <T as Downcastable>::Output: arrow2::array::Array,
+    <DataArray<T> as Downcastable>::Output: arrow2::array::Array,
 {
     // TODO(Clark): Support streaming broadcasting, i.e. broadcasting without inflating scalars to full array length.
     match (predicate.len(), if_true.len(), if_false.len()) {

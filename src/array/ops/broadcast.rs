@@ -1,5 +1,5 @@
 use crate::{
-    array::{BaseArray, DataArray},
+    array::DataArray,
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DataType, FixedSizeListArray, ListArray,
         NullArray, StructArray, Utf8Array,

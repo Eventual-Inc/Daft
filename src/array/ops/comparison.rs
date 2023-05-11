@@ -1,7 +1,7 @@
 use num_traits::{NumCast, ToPrimitive};
 
 use crate::{
-    array::{BaseArray, DataArray},
+    array::DataArray,
     datatypes::{
         BooleanArray, DaftArrowBackedType, DaftNumericType, DataType, NullArray, Utf8Array,
     },

@@ -35,8 +35,8 @@ unsafe fn multicol_search_sorted(
     keys: &[Series],
     descending: &[bool],
 ) -> DaftResult<UInt64Array> {
-    let data_arrow_vec = data.iter().map(|s| s.array().data()).collect();
-    let keys_arrow_vec = keys.iter().map(|s| s.array().data()).collect();
+    let data_arrow_vec = data.iter().map(|s| s.array()).collect();
+    let keys_arrow_vec = keys.iter().map(|s| s.array()).collect();
 
     let indices =
         search_sorted_multi_array(&data_arrow_vec, &keys_arrow_vec, &Vec::from(descending))?;

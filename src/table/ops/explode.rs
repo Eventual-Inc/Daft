@@ -1,5 +1,6 @@
+use crate::series::IntoSeries;
 use crate::{
-    array::{ops::downcast::Downcastable, BaseArray},
+    array::ops::downcast::Downcastable,
     datatypes::{DataType, UInt64Array},
     dsl::Expr,
     error::{DaftError, DaftResult},

@@ -1,4 +1,3 @@
-use crate::array::BaseArray;
 use crate::{
     datatypes::{DataType, DateType},
     error::DaftError,

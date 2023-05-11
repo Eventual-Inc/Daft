@@ -1,12 +1,12 @@
 use crate::{
     datatypes::{DataType, Field},
     error::{DaftError, DaftResult},
-    with_match_daft_types,
+    with_match_arrow_daft_types, with_match_daft_types,
 };
 
 use super::Series;
 
-use crate::array::BaseArray;
+use crate::series::array_impl::IntoSeries;
 
 impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
     type Error = DaftError;
@@ -17,7 +17,7 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
         let dtype: DataType = self_arrow_type.into();
         let field = Field::new(name, dtype.clone());
         Ok(
-            with_match_daft_types!(dtype, |$T| DataArray::<$T>::new(field.into(), array.into())?.into_series()),
+            with_match_arrow_daft_types!(dtype, |$T| DataArray::<$T>::new(field.into(), array.into())?.into_series()),
         )
     }
 }

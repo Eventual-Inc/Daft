@@ -3,13 +3,13 @@ use std::fmt::{Display, Formatter, Result};
 use num_traits::ToPrimitive;
 
 use crate::array::ops::GroupIndices;
-use crate::array::BaseArray;
+
 use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
 use crate::dsl::functions::FunctionEvaluator;
 use crate::dsl::{AggExpr, Expr};
 use crate::error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
-use crate::series::Series;
+use crate::series::{IntoSeries, Series};
 use crate::with_match_daft_types;
 
 mod ops;
@@ -22,7 +22,7 @@ pub struct Table {
 impl Table {
     pub fn new(schema: Schema, columns: Vec<Series>) -> DaftResult<Self> {
         if schema.fields.len() != columns.len() {
-            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields, columns)));
+            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields.len(), columns.len())));
         }
         let mut num_rows = 1;
 
@@ -115,7 +115,8 @@ impl Table {
             use rand::{distributions::Uniform, Rng};
             let range = Uniform::from(0..self.len() as u64);
             let values: Vec<u64> = rand::thread_rng().sample_iter(&range).take(num).collect();
-            let indices = UInt64Array::from(("idx", values));
+            let indices: crate::array::DataArray<crate::datatypes::UInt64Type> =
+                UInt64Array::from(("idx", values));
             self.take(&indices.into_series())
         }
     }
@@ -413,7 +414,6 @@ impl Display for Table {
 #[cfg(test)]
 mod test {
 
-    use crate::array::BaseArray;
     use crate::datatypes::{DataType, Float64Array, Int64Array};
     use crate::dsl::col;
     use crate::error::DaftResult;

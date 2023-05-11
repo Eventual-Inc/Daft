@@ -1,4 +1,3 @@
-use crate::array::BaseArray;
 use crate::datatypes::{BooleanArray, UInt64Array, Utf8Array};
 use arrow2;
 

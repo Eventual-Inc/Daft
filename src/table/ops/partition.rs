@@ -4,10 +4,10 @@ use arrow2::array::{Array, DictionaryKey};
 use rand::SeedableRng;
 
 use crate::{
-    array::BaseArray,
     datatypes::UInt64Array,
     dsl::Expr,
     error::{DaftError, DaftResult},
+    series::IntoSeries,
     table::Table,
 };
 

@@ -5,13 +5,11 @@ use crate::{
 };
 use num_traits::Float;
 
-use crate::array::BaseArray;
-
 use super::DaftIsNan;
 
 use super::downcast::Downcastable;
 
-impl<T> DaftIsNan for &DataArray<T>
+impl<T> DaftIsNan for DataArray<T>
 where
     T: DaftFloatType,
     <T as DaftNumericType>::Native: Float,
@@ -28,7 +26,7 @@ where
     }
 }
 
-impl DaftIsNan for &DataArray<NullType> {
+impl DaftIsNan for DataArray<NullType> {
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_nan(&self) -> Self::Output {

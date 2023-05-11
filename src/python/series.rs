@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
 
 use crate::{
-    array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, BaseArray, DataArray},
+    array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
     datatypes::{DataType, Field, PythonType, UInt64Type},
     ffi,
     series::{self, Series},
@@ -50,7 +50,7 @@ impl PySeries {
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
-        let arrow_array = self.series.array().data().to_boxed();
+        let arrow_array = self.series.array().to_boxed();
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
             ffi::to_py_array(arrow_array, py, pyarrow)
@@ -123,7 +123,7 @@ impl PySeries {
                 mask.series.data_type()
             )));
         }
-        Ok(self.series.filter(mask.series.downcast().unwrap())?.into())
+        Ok(self.series.filter(mask.series.downcast()?)?.into())
     }
 
     pub fn sort(&self, descending: bool) -> PyResult<Self> {

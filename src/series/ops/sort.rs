@@ -1,12 +1,11 @@
 use crate::error::DaftError;
 use crate::{error::DaftResult, series::Series, with_match_comparable_daft_types};
 
-use crate::array::BaseArray;
+use crate::series::array_impl::IntoSeries;
 
 impl Series {
     pub fn argsort(&self, descending: bool) -> DaftResult<Series> {
         let series = self.as_physical()?;
-
         with_match_comparable_daft_types!(series.data_type(), |$T| {
             let downcasted = series.downcast::<$T>()?;
             Ok(downcasted.argsort::<UInt64Type>(descending)?.into_series())
@@ -38,17 +37,18 @@ impl Series {
     }
 
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        let s = self.as_physical()?;
+        self.inner.sort(descending)
+        // let s = self.as_physical()?;
 
-        let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
-            let downcasted = s.downcast::<$T>()?;
-            downcasted.sort(descending)?.into_series()
-        });
+        // let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
+        //     let downcasted = s.downcast::<$T>()?;
+        //     downcasted.sort(descending)?.into_series()
+        // });
 
-        if result.data_type() != self.data_type() {
-            return result.cast(self.data_type());
-        }
+        // if result.data_type() != self.data_type() {
+        //     return result.cast(self.data_type());
+        // }
 
-        Ok(result)
+        // Ok(result)
     }
 }

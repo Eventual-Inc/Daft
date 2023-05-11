@@ -5,7 +5,6 @@ use crate::{
     with_match_comparable_daft_types, with_match_daft_types,
 };
 
-use crate::array::BaseArray;
 use crate::datatypes::*;
 
 impl Series {

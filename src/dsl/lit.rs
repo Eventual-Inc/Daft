@@ -81,7 +81,6 @@ impl LiteralValue {
     }
 
     pub fn to_series(&self) -> Series {
-        use crate::array::BaseArray;
         use crate::datatypes::*;
         use LiteralValue::*;
         let result = match self {

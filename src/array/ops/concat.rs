@@ -6,8 +6,6 @@ use crate::{
     error::{DaftError, DaftResult},
 };
 
-use crate::array::BaseArray;
-
 impl<T> DataArray<T>
 where
     T: DaftDataType + 'static,

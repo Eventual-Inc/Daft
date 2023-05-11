@@ -1,5 +1,5 @@
 use crate::{
-    array::{BaseArray, DataArray},
+    array::DataArray,
     datatypes::{DaftArrowBackedType, DaftDataType, PythonArray},
 };
 

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::array::BaseArray;
 use crate::datatypes::{DataType, FixedSizeListArray, ListArray, UInt64Array};
 
 use crate::series::Series;

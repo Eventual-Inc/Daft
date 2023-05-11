@@ -4,8 +4,6 @@ use crate::{
     with_match_daft_types,
 };
 
-use crate::array::BaseArray;
-
 impl Series {
     pub fn concat(series: &[&Series]) -> DaftResult<Self> {
         if series.is_empty() {

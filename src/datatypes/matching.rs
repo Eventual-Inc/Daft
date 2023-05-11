@@ -89,7 +89,7 @@ macro_rules! with_match_arrow_daft_types {(
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
-        Float16 => __with_ty__! { Float16Type },
+        // Float16 => __with_ty__! { Float16Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         Date => __with_ty__! { DateType },
