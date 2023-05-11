@@ -81,8 +81,10 @@ class CustomJSONEncoder(json.JSONEncoder):
             return super().default(obj)
 
 
-@pytest.fixture(scope="function")
-def json_input(tmpdir: str) -> str:
+@pytest.fixture(scope="function", params=[(it,) for it in TEST_INPUT_TYPES])
+def json_input(request, tmpdir: str) -> str:
+    (input_type,) = request.param
+
     # NOTE: PyArrow JSON parser parses dates as timestamps, so this fails for us at the moment
     # as we still lack timestamp type support.
     skip_columns = {"dates"}
@@ -93,15 +95,15 @@ def json_input(tmpdir: str) -> str:
             row_data = {cname: TEST_DATA[cname][row] for cname in TEST_DATA if cname not in skip_columns}
             f.write(json.dumps(row_data, default=CustomJSONEncoder().default).encode("utf-8"))
             f.write(b"\n")
-    yield path
+
+    with _resolve_parametrized_input_type(input_type, path) as table_io_input:
+        yield table_io_input
 
 
-@pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
-def test_json_reads(json_input: str, input_type: InputType):
-    with _resolve_parametrized_input_type(input_type, json_input) as table_io_input:
-        table = table_io.read_json(table_io_input)
-        d = table.to_pydict()
-        assert d == JSON_EXPECTED_DATA
+def test_json_reads(json_input):
+    table = table_io.read_json(json_input)
+    d = table.to_pydict()
+    assert d == JSON_EXPECTED_DATA
 
 
 def test_json_reads_limit_rows(json_input: str):
@@ -188,9 +190,12 @@ CSV_EXPECTED_DATA = {
 }
 
 
-@pytest.fixture(scope="function")
-def generate_csv_input(tmpdir: str) -> Callable[[vPartitionParseCSVOptions], str]:
-    def _generate(csv_options) -> str:
+@pytest.fixture(scope="function", params=[(it,) for it in TEST_INPUT_TYPES])
+def generate_csv_input(request, tmpdir: str) -> Callable[[vPartitionParseCSVOptions], str]:
+    (input_type,) = request.param
+
+    @contextlib.contextmanager
+    def _generate(csv_options) -> InputType:
         path = str(tmpdir + f"/data.csv")
         headers = [cname for cname in TEST_DATA]
         with open(path, "w") as f:
@@ -200,38 +205,36 @@ def generate_csv_input(tmpdir: str) -> Callable[[vPartitionParseCSVOptions], str
                     writer.writerow(["extra-data-before-header" for _ in TEST_DATA])
                 writer.writerow(headers)
             writer.writerows([[TEST_DATA[cname][row] for cname in headers] for row in range(TEST_DATA_LEN)])
-        return path
+
+        with _resolve_parametrized_input_type(input_type, path) as table_io_input:
+            yield table_io_input
 
     yield _generate
 
 
-@pytest.mark.parametrize(["input_type"], [(ip,) for ip in TEST_INPUT_TYPES])
-def test_csv_reads(generate_csv_input: Callable[[vPartitionParseCSVOptions], str], input_type: InputType):
-    generate_csv_input_path = generate_csv_input(vPartitionParseCSVOptions())
-    with _resolve_parametrized_input_type(input_type, generate_csv_input_path) as table_io_input:
+def test_csv_reads(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
+    with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
         table = table_io.read_csv_infer_schema(table_io_input)
         d = table.to_pydict()
         assert d == CSV_EXPECTED_DATA
 
 
-def test_csv_reads_limit_rows(generate_csv_input: Callable[[vPartitionParseCSVOptions], str]):
+def test_csv_reads_limit_rows(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
     row_limit = 3
-    generate_csv_input_path = generate_csv_input(vPartitionParseCSVOptions())
-    table = table_io.read_csv_infer_schema(
-        generate_csv_input_path, read_options=vPartitionReadOptions(num_rows=row_limit)
-    )
-    d = table.to_pydict()
-    assert d == {k: v[:row_limit] for k, v in CSV_EXPECTED_DATA.items()}
+    with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
+        table = table_io.read_csv_infer_schema(table_io_input, read_options=vPartitionReadOptions(num_rows=row_limit))
+        d = table.to_pydict()
+        assert d == {k: v[:row_limit] for k, v in CSV_EXPECTED_DATA.items()}
 
 
-def test_csv_reads_pruned_columns(generate_csv_input: str):
+def test_csv_reads_pruned_columns(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
     included_columns = ["strings", "integers"]
-    generate_csv_input_path = generate_csv_input(vPartitionParseCSVOptions())
-    table = table_io.read_csv_infer_schema(
-        generate_csv_input_path, read_options=vPartitionReadOptions(column_names=included_columns)
-    )
-    d = table.to_pydict()
-    assert d == {k: v for k, v in CSV_EXPECTED_DATA.items() if k in included_columns}
+    with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
+        table = table_io.read_csv_infer_schema(
+            table_io_input, read_options=vPartitionReadOptions(column_names=included_columns)
+        )
+        d = table.to_pydict()
+        assert d == {k: v for k, v in CSV_EXPECTED_DATA.items() if k in included_columns}
 
 
 @pytest.mark.parametrize(
@@ -254,16 +257,16 @@ def test_csv_reads_pruned_columns(generate_csv_input: str):
     ],
 )
 def test_csv_reads_custom_options(
-    generate_csv_input: Callable[[vPartitionParseCSVOptions, vPartitionSchemaInferenceOptions], str],
+    generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType],
     csv_options: vPartitionParseCSVOptions,
     schema_options: vPartitionSchemaInferenceOptions,
 ):
-    generate_csv_input_path = generate_csv_input(csv_options)
-    table = table_io.read_csv_infer_schema(
-        generate_csv_input_path, override_column_names=schema_options.inference_column_names, csv_options=csv_options
-    )
-    d = table.to_pydict()
-    assert d == CSV_EXPECTED_DATA
+    with generate_csv_input(csv_options) as table_io_input:
+        table = table_io.read_csv_infer_schema(
+            table_io_input, override_column_names=schema_options.inference_column_names, csv_options=csv_options
+        )
+        d = table.to_pydict()
+        assert d == CSV_EXPECTED_DATA
 
 
 ## Pickling
