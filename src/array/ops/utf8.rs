@@ -3,7 +3,7 @@ use arrow2;
 
 use crate::error::{DaftError, DaftResult};
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
@@ -19,7 +19,7 @@ impl Utf8Array {
     }
 
     pub fn length(&self) -> DaftResult<UInt64Array> {
-        let self_arrow = self.downcast();
+        let self_arrow = self.as_arrow();
         let arrow_result = self_arrow
             .iter()
             .map(|val| {
@@ -39,8 +39,8 @@ impl Utf8Array {
     where
         ScalarKernel: Fn(&str, &str) -> bool,
     {
-        let self_arrow = self.downcast();
-        let other_arrow = other.downcast();
+        let self_arrow = self.as_arrow();
+        let other_arrow = other.as_arrow();
         match (self.len(), other.len()) {
             // Matching len case:
             (self_len, other_len) if self_len == other_len => {
@@ -115,9 +115,9 @@ mod tests {
         ));
         let result = &data.endswith(&pattern)?;
         assert_eq!(result.len(), 3);
-        assert!(result.downcast().value(0));
-        assert!(result.downcast().value(1));
-        assert!(!result.downcast().value(2));
+        assert!(result.as_arrow().value(0));
+        assert!(result.as_arrow().value(1));
+        assert!(!result.as_arrow().value(2));
         Ok(())
     }
 
@@ -141,9 +141,9 @@ mod tests {
         ));
         let result = &data.endswith(&pattern)?;
         assert_eq!(result.len(), 3);
-        assert!(result.downcast().value(0));
-        assert!(!result.downcast().value(1));
-        assert!(result.downcast().value(2));
+        assert!(result.as_arrow().value(0));
+        assert!(!result.as_arrow().value(1));
+        assert!(result.as_arrow().value(2));
         Ok(())
     }
 }

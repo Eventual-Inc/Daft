@@ -14,6 +14,7 @@ pub use dtype::DataType;
 pub use field::Field;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 pub use time_unit::TimeUnit;
+pub mod logical;
 
 /// Trait to wrap DataType Enum
 pub trait DaftDataType: Sync + Send {
@@ -23,7 +24,13 @@ pub trait DaftDataType: Sync + Send {
         Self: Sized;
 }
 
-pub trait DaftArrowBackedType: Send + Sync + DaftDataType {}
+pub trait DaftPhysicalType: Send + Sync + DaftDataType {}
+
+pub trait DaftArrowBackedType: Send + Sync + DaftPhysicalType + 'static {}
+
+pub trait DaftLogicalType: Send + Sync + DaftDataType + 'static {
+    type PhysicalType: DaftArrowBackedType;
+}
 
 macro_rules! impl_daft_arrow_datatype {
     ($ca:ident, $variant:ident) => {
@@ -37,6 +44,7 @@ macro_rules! impl_daft_arrow_datatype {
         }
 
         impl DaftArrowBackedType for $ca {}
+        impl DaftPhysicalType for $ca {}
     };
 }
 
@@ -49,6 +57,24 @@ macro_rules! impl_daft_non_arrow_datatype {
             fn get_dtype() -> DataType {
                 DataType::$variant
             }
+        }
+        impl DaftPhysicalType for $ca {}
+    };
+}
+
+macro_rules! impl_daft_logical_datatype {
+    ($ca:ident, $variant:ident, $physical_type:ident) => {
+        pub struct $ca {}
+
+        impl DaftDataType for $ca {
+            #[inline]
+            fn get_dtype() -> DataType {
+                DataType::$variant
+            }
+        }
+
+        impl DaftLogicalType for $ca {
+            type PhysicalType = $physical_type;
         }
     };
 }
@@ -66,16 +92,17 @@ impl_daft_arrow_datatype!(UInt64Type, UInt64);
 impl_daft_arrow_datatype!(Float16Type, Float16);
 impl_daft_arrow_datatype!(Float32Type, Float32);
 impl_daft_arrow_datatype!(Float64Type, Float64);
-impl_daft_arrow_datatype!(TimestampType, Unknown);
-impl_daft_arrow_datatype!(DateType, Date);
-impl_daft_arrow_datatype!(TimeType, Unknown);
-impl_daft_arrow_datatype!(DurationType, Unknown);
 impl_daft_arrow_datatype!(BinaryType, Binary);
 impl_daft_arrow_datatype!(Utf8Type, Utf8);
 impl_daft_arrow_datatype!(FixedSizeListType, Unknown);
 impl_daft_arrow_datatype!(ListType, Unknown);
 impl_daft_arrow_datatype!(StructType, Unknown);
 impl_daft_non_arrow_datatype!(PythonType, Python);
+
+impl_daft_logical_datatype!(TimestampType, Unknown, Int64Type);
+impl_daft_logical_datatype!(DateType, Date, Int32Type);
+impl_daft_logical_datatype!(TimeType, Unknown, Int64Type);
+impl_daft_logical_datatype!(DurationType, Unknown, Int64Type);
 
 pub trait NumericNative:
     PartialOrd
@@ -100,7 +127,7 @@ pub trait NumericNative:
 }
 
 /// Trait to express types that are native and can be vectorized
-pub trait DaftNumericType: Send + Sync + DaftDataType + 'static {
+pub trait DaftNumericType: Send + Sync + DaftArrowBackedType + 'static {
     type Native: NumericNative;
 }
 
@@ -209,9 +236,6 @@ pub type UInt64Array = DataArray<UInt64Type>;
 pub type Float16Array = DataArray<Float16Type>;
 pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
-pub type TimestampArray = DataArray<TimestampType>;
-pub type DateArray = DataArray<DateType>;
-pub type TimeArray = DataArray<TimeType>;
 pub type BinaryArray = DataArray<BinaryType>;
 pub type Utf8Array = DataArray<Utf8Type>;
 pub type FixedSizeListArray = DataArray<FixedSizeListType>;

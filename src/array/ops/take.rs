@@ -1,13 +1,13 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeListArray, ListArray,
-        NullArray, StructArray, Utf8Array,
+        logical::DateArray, BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType,
+        FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
     },
     error::DaftResult,
 };
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where
@@ -18,7 +18,7 @@ where
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
         let is_valid = arrow_array
             .validity()
             .map_or(true, |validity| validity.get_bit(idx));
@@ -34,7 +34,7 @@ where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
         Self::try_from((self.name(), result))
     }
 
@@ -53,7 +53,7 @@ impl Utf8Array {
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
         let is_valid = arrow_array
             .validity()
             .map_or(true, |validity| validity.get_bit(idx));
@@ -69,7 +69,7 @@ impl Utf8Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
         Self::try_from((self.name(), result))
     }
 
@@ -88,7 +88,7 @@ impl BooleanArray {
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
         let is_valid = arrow_array
             .validity()
             .map_or(true, |validity| validity.get_bit(idx));
@@ -104,7 +104,7 @@ impl BooleanArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
         Self::try_from((self.name(), result))
     }
 
@@ -131,7 +131,7 @@ impl NullArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
         Self::try_from((self.name(), result))
     }
 
@@ -149,7 +149,7 @@ impl BinaryArray {
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
         let is_valid = arrow_array
             .validity()
             .map_or(true, |validity| validity.get_bit(idx));
@@ -165,7 +165,7 @@ impl BinaryArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
         Self::try_from((self.name(), result))
     }
 
@@ -186,7 +186,7 @@ impl ListArray {
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
         let is_valid = arrow_array
             .validity()
             .map_or(true, |validity| validity.get_bit(idx));
@@ -202,7 +202,7 @@ impl ListArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
         Self::try_from((self.name(), result))
     }
 
@@ -221,7 +221,7 @@ impl FixedSizeListArray {
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
         let is_valid = arrow_array
             .validity()
             .map_or(true, |validity| validity.get_bit(idx));
@@ -237,7 +237,7 @@ impl FixedSizeListArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
         Self::try_from((self.name(), result))
     }
 
@@ -256,7 +256,7 @@ impl StructArray {
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
         let is_valid = arrow_array
             .validity()
             .map_or(true, |validity| validity.get_bit(idx));
@@ -278,7 +278,7 @@ impl StructArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let result = arrow2::compute::take::take(self.data(), idx.downcast())?;
+        let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
         Self::try_from((self.name(), result))
     }
 
@@ -302,12 +302,12 @@ impl crate::datatypes::PythonArray {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
         let valid = self
-            .downcast()
+            .as_arrow()
             .validity()
             .map(|vd| vd.get_bit(idx))
             .unwrap_or(true);
         if valid {
-            self.downcast().values().get(idx).unwrap().clone()
+            self.as_arrow().values().get(idx).unwrap().clone()
         } else {
             Python::with_gil(|py| py.None())
         }
@@ -325,13 +325,13 @@ impl crate::datatypes::PythonArray {
         use arrow2::types::Index;
         use pyo3::prelude::*;
 
-        let indices = idx.downcast();
+        let indices = idx.as_arrow();
 
-        let old_values = self.downcast().values();
+        let old_values = self.as_arrow().values();
 
         // Execute take on the data values, ignoring validity.
         let new_values: Vec<PyObject> = {
-            let py_none = Python::with_gil(|py| py.None());
+            let py_none = Python::with_gil(|py: Python| py.None());
 
             indices
                 .iter()
@@ -344,7 +344,7 @@ impl crate::datatypes::PythonArray {
 
         // Execute take on the validity bitmap using arrow2::compute.
         let new_validity = {
-            self.downcast()
+            self.as_arrow()
                 .validity()
                 .map(|old_validity| {
                     let old_validity_array = {
@@ -386,5 +386,40 @@ impl crate::datatypes::PythonArray {
         let extracted = Python::with_gil(|py| call_result.extract(py))?;
 
         Ok(extracted)
+    }
+}
+
+impl DateArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<i32> {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        let arrow_array = self.as_arrow();
+        let is_valid = arrow_array
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
+        if is_valid {
+            Some(unsafe { arrow_array.value_unchecked(idx) })
+        } else {
+            None
+        }
+    }
+
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let new_array = self.physical.take(idx)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => Ok(format!("{v}")),
+        }
     }
 }

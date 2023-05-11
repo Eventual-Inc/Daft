@@ -4,7 +4,7 @@ use crate::{
     error::DaftResult,
 };
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where
@@ -21,12 +21,12 @@ where
         let mut left_idx = vec![];
         let mut right_idx = vec![];
 
-        for (i, l) in self.downcast().iter().enumerate() {
+        for (i, l) in self.as_arrow().iter().enumerate() {
             if l.is_none() {
                 continue;
             }
             let l = *l.unwrap();
-            for (j, r) in other.downcast().iter().enumerate() {
+            for (j, r) in other.as_arrow().iter().enumerate() {
                 match r {
                     None => continue,
                     Some(r) => {
@@ -56,12 +56,12 @@ impl Utf8Array {
         let mut left_idx = vec![];
         let mut right_idx = vec![];
 
-        for (i, l) in self.downcast().iter().enumerate() {
+        for (i, l) in self.as_arrow().iter().enumerate() {
             if l.is_none() {
                 continue;
             }
             let l = l.unwrap();
-            for (j, r) in other.downcast().iter().enumerate() {
+            for (j, r) in other.as_arrow().iter().enumerate() {
                 match r {
                     None => continue,
                     Some(r) => {
@@ -91,12 +91,12 @@ impl BooleanArray {
         let mut left_idx = vec![];
         let mut right_idx = vec![];
 
-        for (i, l) in self.downcast().iter().enumerate() {
+        for (i, l) in self.as_arrow().iter().enumerate() {
             if l.is_none() {
                 continue;
             }
             let l = l.unwrap();
-            for (j, r) in other.downcast().iter().enumerate() {
+            for (j, r) in other.as_arrow().iter().enumerate() {
                 match r {
                     None => continue,
                     Some(r) => {

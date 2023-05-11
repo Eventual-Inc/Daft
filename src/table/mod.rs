@@ -62,7 +62,7 @@ impl Table {
                 let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
                 for (field_name, field) in schema.fields.iter() {
                     with_match_physical_daft_types!(field.dtype, |$T| {
-                        columns.push(DataArray::<$T>::full_null(field_name, &field.dtype, 0).into_series())
+                        columns.push(DataArray::<$T>::empty(field_name, &field.dtype).into_series())
                     })
                 }
                 Ok(Table { schema, columns })

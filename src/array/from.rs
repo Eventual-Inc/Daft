@@ -1,5 +1,6 @@
 use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftDataType, DaftNumericType, DataType, Field, Utf8Array, Utf8Type,
+    BinaryArray, BooleanArray, DaftArrowBackedType, DaftDataType, DaftNumericType,
+    DaftPhysicalType, DataType, Field, Utf8Array, Utf8Type,
 };
 
 use crate::array::DataArray;
@@ -101,7 +102,7 @@ impl From<(&str, &[u8])> for BinaryArray {
     }
 }
 
-impl<T: DaftDataType> TryFrom<(&str, Box<dyn arrow2::array::Array>)> for DataArray<T> {
+impl<T: DaftPhysicalType> TryFrom<(&str, Box<dyn arrow2::array::Array>)> for DataArray<T> {
     type Error = DaftError;
 
     fn try_from(item: (&str, Box<dyn arrow2::array::Array>)) -> DaftResult<Self> {

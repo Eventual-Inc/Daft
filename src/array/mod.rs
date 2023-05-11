@@ -1,24 +1,23 @@
 pub mod from;
 pub mod iterator;
-pub mod logical;
 pub mod ops;
 pub mod pseudo_arrow;
 
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    datatypes::{DaftDataType, DataType, Field},
+    datatypes::{DaftArrowBackedType, DaftDataType, DaftPhysicalType, DataType, Field},
     error::{DaftError, DaftResult},
 };
 
 #[derive(Debug)]
-pub struct DataArray<T: DaftDataType> {
+pub struct DataArray<T: DaftPhysicalType> {
     field: Arc<Field>,
     data: Box<dyn arrow2::array::Array>,
     marker_: PhantomData<T>,
 }
 
-impl<T: DaftDataType> Clone for DataArray<T> {
+impl<T: DaftPhysicalType> Clone for DataArray<T> {
     fn clone(&self) -> Self {
         DataArray::new(self.field.clone(), self.data.clone()).unwrap()
     }
@@ -26,7 +25,7 @@ impl<T: DaftDataType> Clone for DataArray<T> {
 
 impl<T> DataArray<T>
 where
-    T: DaftDataType,
+    T: DaftPhysicalType,
 {
     pub fn new(field: Arc<Field>, data: Box<dyn arrow2::array::Array>) -> DaftResult<DataArray<T>> {
         if let Ok(arrow_dtype) = field.dtype.to_arrow() {
@@ -44,6 +43,10 @@ where
             data,
             marker_: PhantomData,
         })
+    }
+
+    pub fn len(&self) -> usize {
+        self.data().len()
     }
 
     pub fn with_validity(&self, validity: &[bool]) -> DaftResult<Self> {
@@ -96,7 +99,7 @@ where
 
 impl<T> DataArray<T>
 where
-    T: DaftDataType + 'static,
+    T: DaftPhysicalType + 'static,
 {
     pub fn as_any(&self) -> &dyn std::any::Any {
         self

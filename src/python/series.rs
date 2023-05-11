@@ -11,7 +11,7 @@ use crate::{
 };
 
 use super::datatype::PyDataType;
-use crate::array::ops::downcast::Downcastable;
+use crate::array::ops::as_arrow::AsArrow;
 
 #[pyclass]
 #[derive(Clone)]
@@ -44,7 +44,7 @@ impl PySeries {
     // This is for PythonArrays only,
     // to convert the Rust PythonArray to a Python list[object].
     pub fn to_pylist(&self) -> PyResult<PyObject> {
-        let pseudo_arrow_array = self.series.python()?.downcast();
+        let pseudo_arrow_array = self.series.python()?.as_arrow();
         let pyobj_vec = pseudo_arrow_array.to_pyobj_vec();
         Python::with_gil(|py| Ok(PyList::new(py, pyobj_vec).into()))
     }

@@ -7,7 +7,7 @@ use num_traits::Float;
 
 use super::DaftIsNan;
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 impl<T> DaftIsNan for DataArray<T>
 where
@@ -17,7 +17,7 @@ where
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_nan(&self) -> Self::Output {
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
         let result_arrow_array = arrow2::array::BooleanArray::from_trusted_len_values_iter(
             arrow_array.values_iter().map(|v| v.is_nan()),
         )

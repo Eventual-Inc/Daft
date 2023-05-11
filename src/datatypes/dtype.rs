@@ -171,6 +171,18 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_logical(&self) -> bool {
+        let p: DataType = self.to_physical();
+        self != &p
+    }
+
+    #[inline]
+    pub fn is_physical(&self) -> bool {
+        let p: DataType = self.to_physical();
+        self == &p
+    }
+
+    #[inline]
     pub fn get_exploded_dtype(&self) -> DaftResult<&DataType> {
         match self {
             DataType::List(child_field) | DataType::FixedSizeList(child_field, _) => {

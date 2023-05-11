@@ -1,8 +1,9 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeListArray,
-        Float32Array, Float64Array, ListArray, NullArray, PythonArray, StructArray, Utf8Array,
+        logical::DateArray, BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType,
+        FixedSizeListArray, Float32Array, Float64Array, ListArray, NullArray, PythonArray,
+        StructArray, Utf8Array,
     },
     error::DaftResult,
     kernels::search_sorted::{build_compare_with_nulls, cmp_float},
@@ -16,7 +17,7 @@ use arrow2::{
 
 use super::arrow2::sort::primitive::common::multi_column_idx_sort;
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 pub fn build_multi_array_compare(
     arrays: &[Series],
@@ -58,7 +59,7 @@ where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
 
         let result =
             crate::array::ops::arrow2::sort::primitive::indices::indices_sorted_unstable_by::<
@@ -79,7 +80,7 @@ where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
@@ -131,7 +132,7 @@ where
             nulls_first: descending,
         };
 
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
 
         let result = crate::array::ops::arrow2::sort::primitive::sort::sort_by::<T::Native, _>(
             arrow_array,
@@ -150,7 +151,7 @@ impl Float32Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
 
         let result =
             crate::array::ops::arrow2::sort::primitive::indices::indices_sorted_unstable_by::<
@@ -171,7 +172,7 @@ impl Float32Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
@@ -223,7 +224,7 @@ impl Float32Array {
             nulls_first: descending,
         };
 
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
 
         let result = crate::array::ops::arrow2::sort::primitive::sort::sort_by::<f32, _>(
             arrow_array,
@@ -242,7 +243,7 @@ impl Float64Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
 
         let result =
             crate::array::ops::arrow2::sort::primitive::indices::indices_sorted_unstable_by::<
@@ -263,7 +264,7 @@ impl Float64Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
@@ -315,7 +316,7 @@ impl Float64Array {
             nulls_first: descending,
         };
 
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
 
         let result = crate::array::ops::arrow2::sort::primitive::sort::sort_by::<f64, _>(
             arrow_array,
@@ -475,5 +476,12 @@ impl_sort_fns_via_arrow!(StructArray);
 impl PythonArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
         todo!("impl sort for python array")
+    }
+}
+
+impl DateArray {
+    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
+        let new_array = self.physical.sort(descending)?;
+        Ok(Self::new(self.field.clone(), new_array))
     }
 }

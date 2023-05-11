@@ -5,8 +5,9 @@ use arrow2::compute::{
 
 use crate::{
     array::DataArray,
+    datatypes::logical::DateArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftDataType, DaftNumericType, DataType, DateArray,
+        BinaryArray, BooleanArray, DaftArrowBackedType, DaftDataType, DaftNumericType, DataType,
         FixedSizeListArray, ListArray, NullArray, PythonArray, StructArray, Utf8Array,
     },
     error::{DaftError, DaftResult},
@@ -15,11 +16,11 @@ use crate::{
 
 use crate::series::IntoSeries;
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
 where
-    T: DaftDataType + 'static,
+    T: DaftArrowBackedType,
 {
     if to_cast.data_type().eq(dtype) {
         return Series::try_from((to_cast.name(), to_cast.data().to_boxed()));
@@ -58,32 +59,8 @@ where
 
 impl<T> DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftArrowBackedType,
 {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        arrow_cast(self, dtype)
-    }
-}
-
-impl Utf8Array {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        arrow_cast(self, dtype)
-    }
-}
-
-impl BooleanArray {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        arrow_cast(self, dtype)
-    }
-}
-
-impl NullArray {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        arrow_cast(self, dtype)
-    }
-}
-
-impl BinaryArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         arrow_cast(self, dtype)
     }
@@ -95,7 +72,7 @@ impl DateArray {
         match dtype {
             DataType::Utf8 => {
                 // TODO: we should move this into our own strftime kernel
-                let date_array = self.downcast();
+                let date_array = self.as_arrow();
                 let year_array = compute::temporal::year(date_array)?;
                 let month_array = compute::temporal::month(date_array)?;
                 let day_array = compute::temporal::day(date_array)?;
@@ -112,26 +89,8 @@ impl DateArray {
             }
             DataType::Float32 => self.cast(&DataType::Int32)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int32)?.cast(&DataType::Float64),
-            _ => arrow_cast(self, dtype),
+            _ => arrow_cast(&self.physical, dtype),
         }
-    }
-}
-
-impl ListArray {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        arrow_cast(self, dtype)
-    }
-}
-
-impl FixedSizeListArray {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        arrow_cast(self, dtype)
-    }
-}
-
-impl StructArray {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        arrow_cast(self, dtype)
     }
 }
 

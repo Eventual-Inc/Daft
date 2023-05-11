@@ -1,13 +1,13 @@
 use crate::{
     array::DataArray,
-    datatypes::{DaftDataType, UInt64Array},
+    datatypes::{DaftArrowBackedType, DaftDataType, UInt64Array},
     error::DaftResult,
     kernels::search_sorted,
 };
 
 impl<T> DataArray<T>
 where
-    T: DaftDataType + 'static,
+    T: DaftArrowBackedType + 'static,
 {
     pub fn search_sorted(&self, keys: &Self, descending: bool) -> DaftResult<UInt64Array> {
         let array =

@@ -9,7 +9,7 @@ use crate::{
     kernels::utf8::add_utf8_arrays,
 };
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 /// Helper function to perform arithmetic operations on a DataArray
 /// Takes both Kernel (array x array operation) and operation (scalar x scalar) functions
 /// The Kernel is used for when both arrays are non-unit length and the operation is used when broadcasting
@@ -48,7 +48,7 @@ where
     match (lhs.len(), rhs.len()) {
         (a, b) if a == b => Ok(DataArray::from((
             lhs.name(),
-            Box::new(kernel(lhs.downcast(), rhs.downcast())),
+            Box::new(kernel(lhs.as_arrow(), rhs.as_arrow())),
         ))),
         // broadcast right path
         (_, 1) => {
@@ -86,7 +86,7 @@ where
 impl Add for &Utf8Array {
     type Output = DaftResult<Utf8Array>;
     fn add(self, rhs: Self) -> Self::Output {
-        let result = Box::new(add_utf8_arrays(self.downcast(), rhs.downcast())?);
+        let result = Box::new(add_utf8_arrays(self.as_arrow(), rhs.as_arrow())?);
         Ok(Utf8Array::from((self.name(), result)))
     }
 }
@@ -156,7 +156,7 @@ where
             match (self.len(), rhs.len()) {
                 (a, b) if a == b => Ok(DataArray::from((
                     self.name(),
-                    Box::new(rem_with_nulls(self.downcast(), rhs.downcast())),
+                    Box::new(rem_with_nulls(self.as_arrow(), rhs.as_arrow())),
                 ))),
                 // broadcast right path
                 (_, 1) => {
@@ -175,7 +175,7 @@ where
                     Ok(match opt_lhs {
                         None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
                         Some(lhs) => {
-                            let values_iter = rhs.downcast().iter().map(|v| v.map(|v| lhs % *v));
+                            let values_iter = rhs.as_arrow().iter().map(|v| v.map(|v| lhs % *v));
                             let arrow_array = unsafe {
                                 PrimitiveArray::from_trusted_len_iter_unchecked(values_iter)
                             };

@@ -216,3 +216,18 @@ macro_rules! with_match_float_and_null_daft_types {(
         _ => panic!("Only Float Types are supported, {:?} not implemented", $key_type)
     }
 })}
+
+#[macro_export]
+macro_rules! with_match_daft_logical_types {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    #[allow(unused_imports)]
+    use $crate::datatypes::*;
+
+    match $key_type {
+        Date => __with_ty__! { DateType },
+        _ => panic!("{:?} not implemented for with_match_daft_logical_types", $key_type)
+    }
+})}

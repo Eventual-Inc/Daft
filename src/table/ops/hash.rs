@@ -10,7 +10,7 @@ use crate::{
     table::Table,
 };
 
-use crate::array::ops::downcast::Downcastable;
+use crate::array::ops::as_arrow::AsArrow;
 
 pub struct IndexHash {
     pub idx: u64,
@@ -78,7 +78,7 @@ impl Table {
                 Default::default(),
             );
         // TODO(Sammy): Drop nulls using validity array if requested
-        for (i, h) in hashes.downcast().values_iter().enumerate() {
+        for (i, h) in hashes.as_arrow().values_iter().enumerate() {
             let entry = probe_table.raw_entry_mut().from_hash(*h, |other| {
                 (*h == other.hash) && {
                     let j = other.idx;

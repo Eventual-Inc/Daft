@@ -6,7 +6,7 @@ use crate::{
     with_match_comparable_daft_types, with_match_daft_types, with_match_physical_daft_types,
 };
 
-use crate::datatypes::*;
+use crate::{datatypes::*, with_match_arrow_daft_types};
 
 impl Series {
     pub fn count(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
@@ -129,7 +129,7 @@ impl Series {
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         use crate::array::ops::DaftListAggable;
-        with_match_daft_types!(self.data_type(), |$T| {
+        with_match_physical_daft_types!(self.data_type(), |$T| {
             match groups {
                 Some(groups) => Ok(DaftListAggable::grouped_list(self.downcast::<$T>()?, groups)?.into_series()),
                 None => Ok(DaftListAggable::list(self.downcast::<$T>()?)?.into_series())

@@ -7,11 +7,11 @@ use arrow2::array::Array;
 
 use crate::error::DaftResult;
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 impl ListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {
-        let list_array = self.downcast();
+        let list_array = self.as_arrow();
         let offsets = list_array.offsets();
 
         let mut lens = Vec::with_capacity(self.len());
@@ -26,7 +26,7 @@ impl ListArray {
     }
 
     pub fn explode(&self) -> DaftResult<Series> {
-        let list_array = self.downcast();
+        let list_array = self.as_arrow();
         let child_array = list_array.values().as_ref();
         let offsets = list_array.offsets();
 
@@ -61,7 +61,7 @@ impl ListArray {
 
 impl FixedSizeListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {
-        let list_array = self.downcast();
+        let list_array = self.as_arrow();
         let list_size = list_array.size();
         let lens = (0..self.len())
             .map(|_| list_size as u64)
@@ -74,7 +74,7 @@ impl FixedSizeListArray {
     }
 
     pub fn explode(&self) -> DaftResult<Series> {
-        let list_array = self.downcast();
+        let list_array = self.as_arrow();
         let child_array = list_array.values().as_ref();
 
         let list_size = list_array.size();

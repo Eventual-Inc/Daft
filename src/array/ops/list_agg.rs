@@ -6,7 +6,7 @@ use crate::{
     error::DaftResult,
 };
 
-use super::{downcast::Downcastable, DaftListAggable, GroupIndices};
+use super::{as_arrow::AsArrow, DaftListAggable, GroupIndices};
 
 use dyn_clone::clone_box;
 
@@ -69,7 +69,7 @@ impl DaftListAggable for crate::datatypes::PythonArray {
         use pyo3::prelude::*;
         use pyo3::types::PyList;
 
-        let pyobj_vec = self.downcast().to_pyobj_vec();
+        let pyobj_vec = self.as_arrow().to_pyobj_vec();
 
         let pylist: Py<PyList> = Python::with_gil(|py| PyList::new(py, pyobj_vec).into());
 
@@ -87,7 +87,7 @@ impl DaftListAggable for crate::datatypes::PythonArray {
         Python::with_gil(|py| -> DaftResult<()> {
             for group in groups {
                 let indices_as_array = crate::datatypes::UInt64Array::from(("", group.clone()));
-                let group_pyobjs = self.take(&indices_as_array)?.downcast().to_pyobj_vec();
+                let group_pyobjs = self.take(&indices_as_array)?.as_arrow().to_pyobj_vec();
                 result_pylists.push(PyList::new(py, group_pyobjs).into());
             }
             Ok(())

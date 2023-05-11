@@ -6,7 +6,7 @@ use crate::{
     table::Table,
 };
 
-use crate::array::ops::downcast::Downcastable;
+use crate::array::ops::as_arrow::AsArrow;
 
 pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series, Series)> {
     // TODO(sammy) add tests for mismatched types for multiple columns for joins
@@ -53,7 +53,7 @@ pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series
         false,
         false,
     )?;
-    for (r_idx, h) in r_hashes.downcast().values_iter().enumerate() {
+    for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
         if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
             *h == other.hash && {
                 let l_idx = other.idx;

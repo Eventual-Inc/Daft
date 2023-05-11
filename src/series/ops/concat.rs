@@ -1,7 +1,8 @@
+use crate::datatypes::logical::LogicalArray;
 use crate::{
     error::{DaftError, DaftResult},
     series::{IntoSeries, Series},
-    with_match_physical_daft_types,
+    with_match_daft_logical_types, with_match_physical_daft_types,
 };
 
 impl Series {
@@ -25,6 +26,12 @@ impl Series {
                     s.data_type()
                 )));
             }
+        }
+        if first_dtype.is_logical() {
+            return Ok(with_match_daft_logical_types!(first_dtype, |$T| {
+                let downcasted = series.into_iter().map(|s| s.downcast_logical::<$T>()).collect::<DaftResult<Vec<_>>>()?;
+                LogicalArray::<$T>::concat(downcasted.as_slice())?.into_series()
+            }));
         }
 
         with_match_physical_daft_types!(first_dtype, |$T| {

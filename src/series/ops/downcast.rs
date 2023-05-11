@@ -1,12 +1,13 @@
 use crate::datatypes::*;
 
+use crate::datatypes::logical::LogicalArray;
 use crate::series::array_impl::ArrayWrapper;
 use crate::{error::DaftResult, series::Series};
 
 impl Series {
     pub fn downcast<T>(&self) -> DaftResult<&DataArray<T>>
     where
-        T: DaftDataType + 'static,
+        T: DaftPhysicalType + 'static,
     {
         match self.inner.as_any().downcast_ref() {
             Some(ArrayWrapper(arr)) => Ok(arr),
@@ -14,6 +15,17 @@ impl Series {
                 "Attempting to downcast {:?} to {:?}",
                 self.data_type(),
                 T::get_dtype()
+            ), //Err(DaftError::SchemaMismatch(format!(
+        }
+    }
+
+    pub fn downcast_logical<L: DaftLogicalType>(&self) -> DaftResult<&LogicalArray<L>> {
+        match self.inner.as_any().downcast_ref() {
+            Some(ArrayWrapper(arr)) => Ok(arr),
+            None => panic!(
+                "Attempting to downcast {:?} to {:?}",
+                self.data_type(),
+                L::get_dtype()
             ), //Err(DaftError::SchemaMismatch(format!(
         }
     }

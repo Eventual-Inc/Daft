@@ -2,13 +2,13 @@ use arrow2::array::Array;
 
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
-    datatypes::{DaftDataType, DataType},
+    datatypes::{DaftArrowBackedType, DaftDataType, DaftPhysicalType, DataType},
     error::{DaftError, DaftResult},
 };
 
 impl<T> DataArray<T>
 where
-    T: DaftDataType + 'static,
+    T: DaftPhysicalType,
 {
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
         if arrays.is_empty() {

@@ -8,7 +8,7 @@ use super::DaftIsNull;
 
 impl<T> DaftIsNull for DataArray<T>
 where
-    T: DaftDataType,
+    T: DaftPhysicalType,
 {
     type Output = DaftResult<DataArray<BooleanType>>;
 
