@@ -18,6 +18,8 @@ if sys.version_info < (3, 8):
 else:
     from typing import Literal
 
+from daft.datatype import DataType
+from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     vPartitionParseCSVOptions,
     vPartitionReadOptions,
@@ -188,6 +190,16 @@ CSV_EXPECTED_DATA = {
     "fixed_sized_arrays": [str(l) for l in TEST_DATA["fixed_sized_arrays"]],
     "structs": [str(s) for s in TEST_DATA["structs"]],
 }
+CSV_DTYPES_HINTS = {
+    "dates": DataType.date(),
+    "strings": DataType.string(),
+    "integers": DataType.int8(),
+    "floats": DataType.float32(),
+    "bools": DataType.bool(),
+    "var_sized_arrays": DataType.string(),
+    "fixed_sized_arrays": DataType.string(),
+    "structs": DataType.string(),
+}
 
 
 @pytest.fixture(scope="function", params=[(it,) for it in TEST_INPUT_TYPES])
@@ -212,14 +224,35 @@ def generate_csv_input(request, tmpdir: str) -> Callable[[vPartitionParseCSVOpti
     yield _generate
 
 
-def test_csv_reads(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
+def test_csv_reads_infer_schema(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
     with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
         table = table_io.read_csv_infer_schema(table_io_input)
         d = table.to_pydict()
         assert d == CSV_EXPECTED_DATA
 
 
-def test_csv_reads_limit_rows(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
+def test_csv_reads_provided_schema(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
+    schema = Schema._from_field_name_and_types(list(CSV_DTYPES_HINTS.items()))
+    with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
+        table = table_io.read_csv_with_schema(table_io_input, schema=schema)
+        d = table.to_pydict()
+        assert d == CSV_EXPECTED_DATA
+        assert table.schema() == schema
+
+
+def test_csv_reads_provided_schema_differing_headers(
+    generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]
+):
+    # Reverse the ordering of the schema, but this should be resolved against the headers available on the CSV
+    schema = Schema._from_field_name_and_types(list(reversed(CSV_DTYPES_HINTS.items())))
+    with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
+        table = table_io.read_csv_with_schema(table_io_input, schema=schema)
+        d = table.to_pydict()
+        assert d == CSV_EXPECTED_DATA
+        assert table.schema() == schema
+
+
+def test_csv_reads_limit_rows_infer_schema(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
     row_limit = 3
     with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
         table = table_io.read_csv_infer_schema(table_io_input, read_options=vPartitionReadOptions(num_rows=row_limit))
@@ -227,7 +260,19 @@ def test_csv_reads_limit_rows(generate_csv_input: Callable[[vPartitionParseCSVOp
         assert d == {k: v[:row_limit] for k, v in CSV_EXPECTED_DATA.items()}
 
 
-def test_csv_reads_pruned_columns(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
+def test_csv_reads_limit_rows_provided_schema(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
+    schema = Schema._from_field_name_and_types(list(CSV_DTYPES_HINTS.items()))
+    row_limit = 3
+    with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
+        table = table_io.read_csv_with_schema(
+            table_io_input, schema, read_options=vPartitionReadOptions(num_rows=row_limit)
+        )
+        d = table.to_pydict()
+        assert d == {k: v[:row_limit] for k, v in CSV_EXPECTED_DATA.items()}
+        assert table.schema() == schema
+
+
+def test_csv_reads_pruned_columns_infer_schema(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
     included_columns = ["strings", "integers"]
     with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
         table = table_io.read_csv_infer_schema(
@@ -235,6 +280,18 @@ def test_csv_reads_pruned_columns(generate_csv_input: Callable[[vPartitionParseC
         )
         d = table.to_pydict()
         assert d == {k: v for k, v in CSV_EXPECTED_DATA.items() if k in included_columns}
+
+
+def test_csv_reads_pruned_columns_provided_schema(generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType]):
+    schema = Schema._from_field_name_and_types(list(CSV_DTYPES_HINTS.items()))
+    included_columns = ["strings", "integers"]
+    with generate_csv_input(vPartitionParseCSVOptions()) as table_io_input:
+        table = table_io.read_csv_with_schema(
+            table_io_input, schema, read_options=vPartitionReadOptions(column_names=included_columns)
+        )
+        d = table.to_pydict()
+        assert d == {k: v for k, v in CSV_EXPECTED_DATA.items() if k in included_columns}
+        assert table.schema() == Schema._from_field_name_and_types([(k, schema[k].dtype) for k in included_columns])
 
 
 @pytest.mark.parametrize(
@@ -256,7 +313,7 @@ def test_csv_reads_pruned_columns(generate_csv_input: Callable[[vPartitionParseC
         (vPartitionParseCSVOptions(delimiter="|"), vPartitionSchemaInferenceOptions()),
     ],
 )
-def test_csv_reads_custom_options(
+def test_csv_reads_custom_options_infer_schema(
     generate_csv_input: Callable[[vPartitionParseCSVOptions], InputType],
     csv_options: vPartitionParseCSVOptions,
     schema_options: vPartitionSchemaInferenceOptions,
