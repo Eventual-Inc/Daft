@@ -473,7 +473,7 @@ impl_sort_fns_via_arrow!(ListArray);
 impl_sort_fns_via_arrow!(StructArray);
 
 impl PythonArray {
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
         todo!("impl sort for python array")
     }
 }

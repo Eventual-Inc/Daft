@@ -12,7 +12,7 @@ use crate::{
     with_match_integer_daft_types,
 };
 
-struct ArrayWrapper<T>(pub T);
+pub struct ArrayWrapper<T>(pub T);
 
 pub trait IntoSeries {
     fn into_series(self) -> Series;

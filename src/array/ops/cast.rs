@@ -137,7 +137,7 @@ impl StructArray {
 }
 
 impl PythonArray {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+    pub fn cast(&self, _dtype: &DataType) -> DaftResult<Series> {
         todo!("Move python casting logic to here")
     }
 }
