@@ -246,26 +246,19 @@ impl PySeries {
     }
 
     pub fn dt_day(&self) -> PyResult<Self> {
-        todo!("enable date ops");
-        // Ok(self.series.dt_day()?.into())
+        Ok(self.series.dt_day()?.into())
     }
 
     pub fn dt_month(&self) -> PyResult<Self> {
-        todo!("enable date ops");
-
-        // Ok(self.series.dt_month()?.into())
+        Ok(self.series.dt_month()?.into())
     }
 
     pub fn dt_year(&self) -> PyResult<Self> {
-        todo!("enable date ops");
-
-        // Ok(self.series.dt_year()?.into())
+        Ok(self.series.dt_year()?.into())
     }
 
     pub fn dt_day_of_week(&self) -> PyResult<Self> {
-        todo!("enable date ops");
-
-        // Ok(self.series.dt_day_of_week()?.into())
+        Ok(self.series.dt_day_of_week()?.into())
     }
 
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {

@@ -1,3 +1,4 @@
+use crate::series::array_impl::IntoSeries;
 use crate::{
     datatypes::{DataType, DateType},
     error::DaftError,
@@ -14,7 +15,7 @@ impl Series {
             )));
         }
 
-        let downcasted = self.downcast::<DateType>()?;
+        let downcasted = self.downcast_logical::<DateType>()?;
         Ok(downcasted.day()?.into_series())
     }
 
@@ -26,7 +27,7 @@ impl Series {
             )));
         }
 
-        let downcasted = self.downcast::<DateType>()?;
+        let downcasted = self.downcast_logical::<DateType>()?;
         Ok(downcasted.month()?.into_series())
     }
 
@@ -38,7 +39,7 @@ impl Series {
             )));
         }
 
-        let downcasted = self.downcast::<DateType>()?;
+        let downcasted = self.downcast_logical::<DateType>()?;
         Ok(downcasted.year()?.into_series())
     }
 
@@ -50,7 +51,7 @@ impl Series {
             )));
         }
 
-        let downcasted = self.downcast::<DateType>()?;
+        let downcasted = self.downcast_logical::<DateType>()?;
         Ok(downcasted.day_of_week()?.into_series())
     }
 }

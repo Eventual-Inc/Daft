@@ -10,7 +10,7 @@ pub mod broadcast;
 pub mod cast;
 pub mod comparison;
 pub mod concat;
-// pub mod date;
+pub mod date;
 pub mod downcast;
 pub mod filter;
 pub mod float;

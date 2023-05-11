@@ -1,10 +1,10 @@
 pub mod float;
 pub mod list;
 pub mod numeric;
-// pub mod temporal;
+pub mod temporal;
 pub mod utf8;
 
-// use self::temporal::TemporalExpr;
+use self::temporal::TemporalExpr;
 use crate::{datatypes::Field, error::DaftResult, schema::Schema, series::Series};
 use float::FloatExpr;
 use list::ListExpr;
@@ -24,7 +24,7 @@ pub enum FunctionExpr {
     Numeric(NumericExpr),
     Float(FloatExpr),
     Utf8(Utf8Expr),
-    // Temporal(TemporalExpr),
+    Temporal(TemporalExpr),
     List(ListExpr),
     #[cfg(feature = "python")]
     Python(PythonUDF),
@@ -44,7 +44,7 @@ impl FunctionExpr {
             Numeric(expr) => expr.get_evaluator(),
             Float(expr) => expr.get_evaluator(),
             Utf8(expr) => expr.get_evaluator(),
-            // Temporal(expr) => expr.get_evaluator(),
+            Temporal(expr) => expr.get_evaluator(),
             List(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
             Python(expr) => expr,
