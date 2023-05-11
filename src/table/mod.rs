@@ -376,7 +376,7 @@ impl Table {
                     col(name.clone()).cast(&field.dtype)
                 } else {
                     // For any fields in schema that are not in self.schema, create all-null arrays
-                    null_lit().cast(&field.dtype)
+                    null_lit().alias(name.clone()).cast(&field.dtype)
                 }
             })
             .collect();

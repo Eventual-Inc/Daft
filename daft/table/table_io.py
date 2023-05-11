@@ -149,15 +149,26 @@ def read_csv_with_schema(
                 column_names=schema.column_names(),
                 skip_rows=(0 if csv_options.header_index is None else csv_options.header_index + 1),
             ),
+            convert_options=pacsv.ConvertOptions(
+                # Column pruning
+                include_columns=read_options.column_names,
+                # If any columns are missing, parse as null array
+                include_missing_columns=True,
+            ),
         )
 
     # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
     if read_options.num_rows is not None:
         table = table[: read_options.num_rows]
-    if read_options.column_names is not None:
-        table = table.select(read_options.column_names)
 
-    return Table.from_arrow(table)
+    pruned_schema = (
+        Schema._from_field_name_and_types([(c, schema[c].dtype) for c in read_options.column_names])
+        if read_options.column_names is not None
+        else schema
+    )
+    table = Table.from_arrow(table)
+    table = table.cast_to_schema(pruned_schema)
+    return table
 
 
 def infer_schema_csv(
