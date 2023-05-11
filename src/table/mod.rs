@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Result};
 
 use num_traits::ToPrimitive;
@@ -6,7 +7,7 @@ use crate::array::ops::GroupIndices;
 use crate::array::BaseArray;
 use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
 use crate::dsl::functions::FunctionEvaluator;
-use crate::dsl::{AggExpr, Expr};
+use crate::dsl::{col, null_lit, AggExpr, Expr};
 use crate::error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
 use crate::series::Series;
@@ -336,7 +337,6 @@ impl Table {
             .iter()
             .map(|s| s.field().clone())
             .collect::<Vec<Field>>();
-        use std::collections::HashSet;
         let mut seen: HashSet<String> = HashSet::new();
         for field in fields.iter() {
             let name = &field.name;
@@ -350,9 +350,28 @@ impl Table {
         let schema = Schema::new(fields)?;
         Table::new(schema, result_series)
     }
+
     pub fn as_physical(&self) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.as_physical()).collect();
         Table::from_columns(new_series?)
+    }
+
+    pub fn cast_to_schema(&self, schema: &Schema) -> DaftResult<Self> {
+        let current_col_names = HashSet::<_>::from_iter(self.column_names());
+        let exprs: Vec<_> = schema
+            .fields
+            .iter()
+            .map(|(name, field)| {
+                if current_col_names.contains(name) {
+                    // For any fields already in the table, perform a cast
+                    col(name.clone()).cast(&field.dtype)
+                } else {
+                    // For any fields in schema that are not in self.schema, create all-null arrays
+                    null_lit().cast(&field.dtype)
+                }
+            })
+            .collect();
+        self.eval_expression_list(&exprs)
     }
 }
 
