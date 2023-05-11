@@ -10,7 +10,7 @@ use crate::dsl::{AggExpr, Expr};
 use crate::error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
 use crate::series::{IntoSeries, Series};
-use crate::{with_match_daft_types, with_match_physical_daft_types};
+use crate::with_match_physical_daft_types;
 
 mod ops;
 #[derive(Clone)]

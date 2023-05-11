@@ -6,12 +6,11 @@ use arrow2::compute::{
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftArrowBackedType, DaftDataType, DaftNumericType, DataType,
-        DateArray, FixedSizeListArray, ListArray, NullArray, PythonArray, StructArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftDataType, DaftNumericType, DataType, DateArray,
+        FixedSizeListArray, ListArray, NullArray, PythonArray, StructArray, Utf8Array,
     },
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_arrow_daft_types,
 };
 
 use crate::series::IntoSeries;

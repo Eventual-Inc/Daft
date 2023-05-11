@@ -1,7 +1,6 @@
-use crate::{error::DaftResult, series::Series, with_match_physical_daft_types};
+use crate::{error::DaftResult, series::Series};
 
 use crate::array::ops::broadcast::Broadcastable;
-use crate::series::array_impl::IntoSeries;
 
 impl Series {
     pub fn broadcast(&self, num: usize) -> DaftResult<Series> {

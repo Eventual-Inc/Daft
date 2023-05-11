@@ -1,7 +1,4 @@
-use crate::{
-    error::DaftResult, series::Series, with_match_integer_daft_types,
-    with_match_physical_daft_types,
-};
+use crate::{error::DaftResult, series::Series};
 
 impl Series {
     pub fn head(&self, num: usize) -> DaftResult<Series> {

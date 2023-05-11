@@ -4,12 +4,11 @@ pub mod logical;
 pub mod ops;
 pub mod pseudo_arrow;
 
-use std::{any::Any, marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
     datatypes::{DaftDataType, DataType, Field},
     error::{DaftError, DaftResult},
-    series::Series,
 };
 
 #[derive(Debug)]

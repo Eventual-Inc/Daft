@@ -1,16 +1,13 @@
-use std::sync::Arc;
-
-use crate::datatypes::{DataType, FixedSizeListArray, ListArray, UInt64Array};
+use crate::datatypes::{FixedSizeListArray, ListArray, UInt64Array};
 
 use crate::series::Series;
-use crate::with_match_arrow_daft_types;
+
 use arrow2;
 use arrow2::array::Array;
 
 use crate::error::DaftResult;
 
 use super::downcast::Downcastable;
-use crate::series::IntoSeries;
 
 impl ListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {

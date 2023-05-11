@@ -1,13 +1,7 @@
-use std::{
-    any::Any,
-    fmt::Debug,
-    ops::{Add, Div, Not, Rem, Sub},
-    sync::Arc,
-};
+use std::any::Any;
 
 use crate::{
-    array::ops::{DaftCompare, DaftLogical, GroupIndices, GroupIndicesPair},
-    datatypes::{BooleanArray, DataType, Field, UInt64Array},
+    datatypes::{BooleanArray, DataType, Field},
     error::DaftResult,
 };
 

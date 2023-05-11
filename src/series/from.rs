@@ -1,7 +1,7 @@
 use crate::{
     datatypes::{DataType, Field},
     error::{DaftError, DaftResult},
-    with_match_arrow_daft_types, with_match_daft_types, with_match_physical_daft_types,
+    with_match_physical_daft_types,
 };
 
 use super::Series;

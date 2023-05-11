@@ -2,7 +2,6 @@ use crate::{
     datatypes::BooleanArray,
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_physical_daft_types,
 };
 
 impl Series {

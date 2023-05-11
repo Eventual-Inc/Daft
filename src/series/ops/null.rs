@@ -1,4 +1,4 @@
-use crate::{error::DaftResult, series::Series, with_match_daft_types};
+use crate::{error::DaftResult, series::Series};
 
 impl Series {
     pub fn is_null(&self) -> DaftResult<Series> {

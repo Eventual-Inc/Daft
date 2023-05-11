@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::datatypes::{DaftDataType, DataType, Field};
+use crate::datatypes::{DaftDataType, Field};
 
 use super::DataArray;
 
