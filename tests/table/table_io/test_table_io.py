@@ -91,9 +91,7 @@ def test_csv_reads_provided_schema(
         table = table_io.read_csv_with_schema(table_io_input, schema=schema)
         d = table.to_pydict()
         assert d == csv_expected_data
-
-        # TODO(jaychia): Enable once we properly cast
-        # assert table.schema() == schema
+        assert table.schema() == schema
 
 
 def test_csv_reads_limit_rows_provided_schema(
@@ -107,9 +105,7 @@ def test_csv_reads_limit_rows_provided_schema(
         )
         d = table.to_pydict()
         assert d == {k: v[:row_limit] for k, v in csv_expected_data.items()}
-
-        # TODO(jaychia): Enable once we properly cast
-        # assert table.schema() == schema
+        assert table.schema() == schema
 
 
 def test_csv_reads_pruned_columns_provided_schema(
@@ -123,9 +119,7 @@ def test_csv_reads_pruned_columns_provided_schema(
         )
         d = table.to_pydict()
         assert d == {k: v for k, v in csv_expected_data.items() if k in included_columns}
-
-        # TODO(jaychia): Enable once we properly cast
-        # assert table.schema() == Schema._from_field_name_and_types([(k, schema[k].dtype) for k in included_columns])
+        assert table.schema() == Schema._from_field_name_and_types([(k, schema[k].dtype) for k in included_columns])
 
 
 ## Pickling

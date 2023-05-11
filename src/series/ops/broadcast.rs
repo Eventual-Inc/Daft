@@ -13,7 +13,7 @@ impl Series {
         }
 
         let s = self.as_physical()?;
-        let result = with_match_physical_daft_types!(self.data_type(), |$T| {
+        let result = with_match_physical_daft_types!(s.data_type(), |$T| {
             let array = s.downcast::<$T>()?;
             array.broadcast(num)?.into_series()
         });
