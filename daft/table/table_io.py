@@ -128,7 +128,7 @@ def read_csv_with_schema(
     fs: fsspec.AbstractFileSystem | None = None,
     csv_options: vPartitionParseCSVOptions = vPartitionParseCSVOptions(),
     read_options: vPartitionReadOptions = vPartitionReadOptions(),
-):
+) -> Table:
     """Reads a Table from a CSV file and a provided Schema
 
     Args:
@@ -138,7 +138,7 @@ def read_csv_with_schema(
         csv_options (vPartitionParseCSVOptions, optional): options for reading the CSV file. Defaults to vPartitionParseCSVOptions().
         read_options (vPartitionReadOptions, optional): options for reading the Table. Defaults to vPartitionReadOptions().
     """
-    column_names = schema.column_names()
+    csv_is_headerless = csv_options.header_index is None
 
     with _open_stream(file, fs) as f:
         table = pacsv.read_csv(
@@ -147,10 +147,16 @@ def read_csv_with_schema(
                 delimiter=csv_options.delimiter,
             ),
             read_options=pacsv.ReadOptions(
-                column_names=column_names,
-                skip_rows=csv_options.header_index,
+                # If CSV has no header, we assume the provided schema's (ordered) field names as the column names
+                # Otherwise, we will read the headers from the CSV (indicated with column_names=None and autogenerate_column_names=False)
+                column_names=schema.column_names() if csv_is_headerless else None,
+                autogenerate_column_names=False,
+                skip_rows=(0 if csv_is_headerless else csv_options.header_index),
             ),
-            convert_options=pacsv.ConvertOptions(include_columns=read_options.column_names),
+            convert_options=pacsv.ConvertOptions(
+                include_columns=read_options.column_names,
+                include_missing_columns=True,
+            ),
         )
 
     return Table.from_arrow(table)
