@@ -35,18 +35,10 @@ class vPartitionSchemaInferenceOptions:
     """Options for schema inference when reading a vPartition
 
     Args:
-        schema: A schema to use when reading the vPartition. If provided, all schema inference should be skipped.
         inference_column_names: Column names to use when performing schema inference
     """
 
-    schema: Schema | None = None
     inference_column_names: list[str] | None = None
-
-    def full_schema_column_names(self) -> list[str] | None:
-        """Returns all column names for the schema, or None if not provided."""
-        if self.schema is not None:
-            return self.schema.column_names()
-        return self.inference_column_names
 
 
 @dataclass(frozen=True)
@@ -55,16 +47,11 @@ class vPartitionParseCSVOptions:
 
     Args:
         delimiter: The delimiter to use when parsing CSVs, defaults to ","
-        has_headers: Whether the CSV has headers, defaults to True
-        column_names: Column names to use in place of headers, defaults to None
-        skip_rows_before_header: Number of rows to skip before the header, defaults to 0
-        skip_rows_after_header: Number of rows to skip after the header, defaults to 0
+        header_index: Index of the header row, or None if no header
     """
 
     delimiter: str = ","
-    has_headers: bool = True
-    skip_rows_before_header: int = 0
-    skip_rows_after_header: int = 0
+    header_index: int | None = 0
 
 
 @dataclass(frozen=True)

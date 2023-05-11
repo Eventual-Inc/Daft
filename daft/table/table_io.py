@@ -19,8 +19,9 @@ from daft.filesystem import _resolve_paths_and_filesystem
 from daft.runners.partitioning import (
     vPartitionParseCSVOptions,
     vPartitionReadOptions,
-    vPartitionSchemaInferenceOptions,
 )
+from daft.logical.schema import Schema
+from daft.runners.partitioning import vPartitionParseCSVOptions, vPartitionReadOptions
 from daft.table import Table
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
@@ -121,11 +122,45 @@ def read_parquet(
     return Table.from_arrow(table)
 
 
-def read_csv(
+def read_csv_with_schema(
     file: FileInput,
+    schema: Schema,
     fs: fsspec.AbstractFileSystem | None = None,
     csv_options: vPartitionParseCSVOptions = vPartitionParseCSVOptions(),
-    schema_options: vPartitionSchemaInferenceOptions = vPartitionSchemaInferenceOptions(),
+    read_options: vPartitionReadOptions = vPartitionReadOptions(),
+):
+    """Reads a Table from a CSV file and a provided Schema
+
+    Args:
+        file (FileInput): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
+        schema (Schema): Daft schema to read the CSV file into
+        fs (AbstractFileSystem): FSSpec filesystem to use when reading
+        csv_options (vPartitionParseCSVOptions, optional): options for reading the CSV file. Defaults to vPartitionParseCSVOptions().
+        read_options (vPartitionReadOptions, optional): options for reading the Table. Defaults to vPartitionReadOptions().
+    """
+    column_names = schema.column_names()
+
+    with _open_stream(file, fs) as f:
+        table = pacsv.read_csv(
+            f,
+            parse_options=pacsv.ParseOptions(
+                delimiter=csv_options.delimiter,
+            ),
+            read_options=pacsv.ReadOptions(
+                column_names=column_names,
+                skip_rows=csv_options.header_index,
+            ),
+            convert_options=pacsv.ConvertOptions(include_columns=read_options.column_names),
+        )
+
+    return Table.from_arrow(table)
+
+
+def read_csv_infer_schema(
+    file: FileInput,
+    fs: fsspec.AbstractFileSystem | None = None,
+    override_column_names: list[str] | None = None,
+    csv_options: vPartitionParseCSVOptions = vPartitionParseCSVOptions(),
     read_options: vPartitionReadOptions = vPartitionReadOptions(),
 ) -> Table:
     """Reads a Table from a CSV file
@@ -134,22 +169,21 @@ def read_csv(
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
+        override_column_names (list[str]): column names to use instead of those found in the CSV - will throw an error if its length does not
+            match the actual number of columns found in the CSV
         csv_options (vPartitionParseCSVOptions, optional): CSV-specific configs to apply when reading the file
-        schema_options (vPartitionSchemaInferenceOptions, optional): configs to apply when inferring schema from the file
         read_options (vPartitionReadOptions, optional): Options for reading the file
 
     Returns:
         Table: Parsed Table from CSV
     """
-    # Use provided CSV column names, or None if nothing provided
-    full_column_names = schema_options.full_schema_column_names()
-
     # Have PyArrow generate the column names if the CSV has no header and no column names were provided
-    pyarrow_autogenerate_column_names = (not csv_options.has_headers) and (full_column_names is None)
+    pyarrow_autogenerate_column_names = (csv_options.header_index is None) and (override_column_names is None)
 
-    # Have Pyarrow skip the header row if column names were provided, and a header exists in the CSV
-    skip_header_row = full_column_names is not None and csv_options.has_headers
-    pyarrow_skip_rows_after_names = (1 if skip_header_row else 0) + csv_options.skip_rows_after_header
+    # Have Pyarrow skip the header row if override_column_names were provided, and a header exists in the CSV
+    pyarrow_skip_rows_after_names = (
+        1 if override_column_names is not None and csv_options.header_index is not None else 0
+    )
 
     with _open_stream(file, fs) as f:
         table = pacsv.read_csv(
@@ -157,12 +191,12 @@ def read_csv(
             parse_options=pacsv.ParseOptions(
                 delimiter=csv_options.delimiter,
             ),
-            # skip_rows applied, header row is read if column_names is not None, skip_rows_after_names is applied
+            # First skip_rows is applied, then header row is read if column_names is None, then skip_rows_after_names is applied
             read_options=pacsv.ReadOptions(
                 autogenerate_column_names=pyarrow_autogenerate_column_names,
-                column_names=full_column_names,
+                column_names=override_column_names,
                 skip_rows_after_names=pyarrow_skip_rows_after_names,
-                skip_rows=csv_options.skip_rows_before_header,
+                skip_rows=csv_options.header_index,
             ),
             convert_options=pacsv.ConvertOptions(include_columns=read_options.column_names),
         )

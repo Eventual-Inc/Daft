@@ -7,11 +7,7 @@ from daft.datasources import (
     StorageType,
 )
 from daft.logical.logical_plan import FileWrite, TabularFilesScan
-from daft.runners.partitioning import (
-    vPartitionParseCSVOptions,
-    vPartitionReadOptions,
-    vPartitionSchemaInferenceOptions,
-)
+from daft.runners.partitioning import vPartitionParseCSVOptions, vPartitionReadOptions
 from daft.table import Table, table_io
 
 
@@ -35,7 +31,6 @@ class LogicalPartitionOpRunner:
         # Common options for reading vPartition
         fs = scan._fs
         schema = scan._schema
-        schema_options = vPartitionSchemaInferenceOptions(schema=schema)
         read_options = vPartitionReadOptions(
             num_rows=scan._limit_rows,
             column_names=scan._column_names,  # read only specified columns
@@ -45,16 +40,14 @@ class LogicalPartitionOpRunner:
             assert isinstance(scan._source_info, CSVSourceInfo)
             return Table.concat(
                 [
-                    table_io.read_csv(
+                    table_io.read_csv_with_schema(
                         file=fp,
                         fs=fs,
+                        schema=schema,
                         csv_options=vPartitionParseCSVOptions(
                             delimiter=scan._source_info.delimiter,
-                            has_headers=scan._source_info.has_headers,
-                            skip_rows_before_header=0,
-                            skip_rows_after_header=0,
+                            header_index=0 if scan._source_info.has_headers else None,
                         ),
-                        schema_options=schema_options,
                         read_options=read_options,
                     )
                     for fp in filepaths

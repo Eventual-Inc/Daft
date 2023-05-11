@@ -195,7 +195,9 @@ def generate_csv_input(tmpdir: str) -> Callable[[vPartitionParseCSVOptions], str
         headers = [cname for cname in TEST_DATA]
         with open(path, "w") as f:
             writer = csv.writer(f, delimiter=csv_options.delimiter)
-            if csv_options.has_headers:
+            if csv_options.header_index is not None:
+                for _ in range(csv_options.header_index):
+                    writer.writerow(["extra-data-before-header" for _ in TEST_DATA])
                 writer.writerow(headers)
             writer.writerows([[TEST_DATA[cname][row] for cname in headers] for row in range(TEST_DATA_LEN)])
         return path
@@ -207,7 +209,7 @@ def generate_csv_input(tmpdir: str) -> Callable[[vPartitionParseCSVOptions], str
 def test_csv_reads(generate_csv_input: Callable[[vPartitionParseCSVOptions], str], input_type: InputType):
     generate_csv_input_path = generate_csv_input(vPartitionParseCSVOptions())
     with _resolve_parametrized_input_type(input_type, generate_csv_input_path) as table_io_input:
-        table = table_io.read_csv(table_io_input)
+        table = table_io.read_csv_infer_schema(table_io_input)
         d = table.to_pydict()
         assert d == CSV_EXPECTED_DATA
 
@@ -215,7 +217,9 @@ def test_csv_reads(generate_csv_input: Callable[[vPartitionParseCSVOptions], str
 def test_csv_reads_limit_rows(generate_csv_input: Callable[[vPartitionParseCSVOptions], str]):
     row_limit = 3
     generate_csv_input_path = generate_csv_input(vPartitionParseCSVOptions())
-    table = table_io.read_csv(generate_csv_input_path, read_options=vPartitionReadOptions(num_rows=row_limit))
+    table = table_io.read_csv_infer_schema(
+        generate_csv_input_path, read_options=vPartitionReadOptions(num_rows=row_limit)
+    )
     d = table.to_pydict()
     assert d == {k: v[:row_limit] for k, v in CSV_EXPECTED_DATA.items()}
 
@@ -223,7 +227,7 @@ def test_csv_reads_limit_rows(generate_csv_input: Callable[[vPartitionParseCSVOp
 def test_csv_reads_pruned_columns(generate_csv_input: str):
     included_columns = ["strings", "integers"]
     generate_csv_input_path = generate_csv_input(vPartitionParseCSVOptions())
-    table = table_io.read_csv(
+    table = table_io.read_csv_infer_schema(
         generate_csv_input_path, read_options=vPartitionReadOptions(column_names=included_columns)
     )
     d = table.to_pydict()
@@ -237,12 +241,12 @@ def test_csv_reads_pruned_columns(generate_csv_input: str):
         (vPartitionParseCSVOptions(), vPartitionSchemaInferenceOptions()),
         # No headers, but inference_column_names is provided
         (
-            vPartitionParseCSVOptions(has_headers=False),
+            vPartitionParseCSVOptions(header_index=None),
             vPartitionSchemaInferenceOptions(inference_column_names=list(TEST_DATA.keys())),
         ),
         # Has headers, but provide inference_column_names so we should skip the first row of headers
         (
-            vPartitionParseCSVOptions(has_headers=True),
+            vPartitionParseCSVOptions(header_index=0),
             vPartitionSchemaInferenceOptions(inference_column_names=list(TEST_DATA.keys())),
         ),
         # Custom delimiter
@@ -255,7 +259,9 @@ def test_csv_reads_custom_options(
     schema_options: vPartitionSchemaInferenceOptions,
 ):
     generate_csv_input_path = generate_csv_input(csv_options)
-    table = table_io.read_csv(generate_csv_input_path, csv_options=csv_options, schema_options=schema_options)
+    table = table_io.read_csv_infer_schema(
+        generate_csv_input_path, override_column_names=schema_options.inference_column_names, csv_options=csv_options
+    )
     d = table.to_pydict()
     assert d == CSV_EXPECTED_DATA
 

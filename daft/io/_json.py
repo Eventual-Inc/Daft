@@ -7,7 +7,7 @@ import fsspec
 from daft.api_annotations import PublicAPI
 from daft.dataframe import DataFrame
 from daft.datasources import JSONSourceInfo
-from daft.io.common import _get_tabular_files_scan
+from daft.io.common import get_tabular_files_scan
 from daft.runners.partitioning import vPartitionSchemaInferenceOptions
 
 
@@ -29,8 +29,10 @@ def read_json(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) -> Data
     returns:
         DataFrame: parsed DataFrame
     """
-    plan = _get_tabular_files_scan(
+    plan = get_tabular_files_scan(
         path,
+        # TODO(jay): Allow passing of schema hints here
+        None,
         JSONSourceInfo(),
         fs,
         vPartitionSchemaInferenceOptions(),
