@@ -5,7 +5,7 @@ requires = ["maturin>=0.14,<0.15"]
 [project]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
-  "pyarrow",
+  "pyarrow >= 6.0.1",
   "fsspec[http]",
   "loguru",
   "tabulate",
