@@ -138,8 +138,6 @@ def read_csv_with_schema(
         csv_options (vPartitionParseCSVOptions, optional): options for reading the CSV file. Defaults to vPartitionParseCSVOptions().
         read_options (vPartitionReadOptions, optional): options for reading the Table. Defaults to vPartitionReadOptions().
     """
-    csv_is_headerless = csv_options.header_index is None
-
     with _open_stream(file, fs) as f:
         table = pacsv.read_csv(
             f,
@@ -147,21 +145,17 @@ def read_csv_with_schema(
                 delimiter=csv_options.delimiter,
             ),
             read_options=pacsv.ReadOptions(
-                # If CSV has no header, we assume the provided schema's (ordered) field names as the column names
-                # Otherwise, we will read the headers from the CSV (indicated with column_names=None and autogenerate_column_names=False)
-                column_names=schema.column_names() if csv_is_headerless else None,
-                autogenerate_column_names=False,
-                skip_rows=(0 if csv_is_headerless else csv_options.header_index),
-            ),
-            convert_options=pacsv.ConvertOptions(
-                include_columns=read_options.column_names,
-                include_missing_columns=True,
+                # Use the provided schema's field names as the column names, and skip parsing headers entirely
+                column_names=schema.column_names(),
+                skip_rows=(0 if csv_options.header_index is None else csv_options.header_index + 1),
             ),
         )
 
     # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
     if read_options.num_rows is not None:
         table = table[: read_options.num_rows]
+    if read_options.column_names is not None:
+        table = table.select(read_options.column_names)
 
     return Table.from_arrow(table)
 
@@ -185,7 +179,7 @@ def infer_schema_csv(
         read_options (vPartitionReadOptions, optional): Options for reading the file
 
     Returns:
-        Table: Parsed Table from CSV
+        Schema: Inferred Schema from the CSV
     """
     # Have PyArrow generate the column names if the CSV has no header and no column names were provided
     pyarrow_autogenerate_column_names = (csv_options.header_index is None) and (override_column_names is None)
