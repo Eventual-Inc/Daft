@@ -98,6 +98,13 @@ class Schema:
 
         return Schema._from_pyschema(self._schema.union(other._schema))
 
+    def select_columns(self, columns: list[str] | None) -> Schema:
+        if columns is None:
+            return self
+        # TODO(jaychia): This logic is brittle when we start having more metadata on the schema
+        # Instead, we should reconstruct the schema from its Fields
+        return Schema._from_field_name_and_types([(c, self[c].dtype) for c in columns])
+
     def __getstate__(self) -> bytes:
         return self._schema.__getstate__()
 

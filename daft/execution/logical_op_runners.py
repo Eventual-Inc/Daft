@@ -38,7 +38,7 @@ class LogicalPartitionOpRunner:
 
         if scan._source_info.scan_type() == StorageType.CSV:
             assert isinstance(scan._source_info, CSVSourceInfo)
-            return Table.concat(
+            table = Table.concat(
                 [
                     table_io.read_csv_with_schema(
                         file=fp,
@@ -55,7 +55,7 @@ class LogicalPartitionOpRunner:
             )
         elif scan._source_info.scan_type() == StorageType.JSON:
             assert isinstance(scan._source_info, JSONSourceInfo)
-            return Table.concat(
+            table = Table.concat(
                 [
                     table_io.read_json_with_schema(
                         file=fp,
@@ -68,7 +68,7 @@ class LogicalPartitionOpRunner:
             )
         elif scan._source_info.scan_type() == StorageType.PARQUET:
             assert isinstance(scan._source_info, ParquetSourceInfo)
-            return Table.concat(
+            table = Table.concat(
                 [
                     table_io.read_parquet_with_schema(
                         file=fp,
@@ -81,6 +81,10 @@ class LogicalPartitionOpRunner:
             )
         else:
             raise NotImplementedError(f"PyRunner has not implemented scan: {scan._source_info.scan_type()}")
+
+        pruned_schema = schema.select_columns(scan._column_names)
+        assert table.schema() == pruned_schema, f"Expected schema: {pruned_schema} \n\nReceived: {table.schema()}"
+        return table
 
     def _handle_file_write(self, inputs: dict[int, Table], file_write: FileWrite) -> Table:
         child_id = file_write._children()[0].id()

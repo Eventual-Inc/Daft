@@ -46,11 +46,7 @@ def _open_stream(
 
 def _from_arrow_table(table: pa.Table, schema: Schema, read_options: vPartitionReadOptions) -> Table:
     """Produces a Daft Table from an Arrow table, applying the provided schema and read_options correctly"""
-    pruned_schema = (
-        Schema._from_field_name_and_types([(c, schema[c].dtype) for c in read_options.column_names])
-        if read_options.column_names is not None
-        else schema
-    )
+    pruned_schema = schema.select_columns(read_options.column_names)
     table = Table.from_arrow(table)
     table = table.cast_to_schema(pruned_schema)
     return table
