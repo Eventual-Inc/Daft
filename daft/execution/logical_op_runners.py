@@ -59,11 +59,8 @@ class LogicalPartitionOpRunner:
                 [
                     table_io.read_json_with_schema(
                         file=fp,
-<<<<<<< HEAD
                         fs=fs,
-=======
                         schema=schema,
->>>>>>> 940ff928 (Implement logic for JSON reads)
                         read_options=read_options,
                     )
                     for fp in filepaths
@@ -73,9 +70,10 @@ class LogicalPartitionOpRunner:
             assert isinstance(scan._source_info, ParquetSourceInfo)
             return Table.concat(
                 [
-                    table_io.read_parquet(
+                    table_io.read_parquet_with_schema(
                         file=fp,
                         fs=fs,
+                        schema=schema,
                         read_options=read_options,
                     )
                     for fp in filepaths

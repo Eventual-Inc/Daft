@@ -14,6 +14,7 @@ from pyarrow import json as pajson
 from pyarrow import parquet as papq
 from pyarrow.fs import FileSystem
 
+from daft.datatype import DataType
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.runners.partitioning import (
@@ -102,8 +103,18 @@ def read_json_with_schema(
     return _from_arrow_table(table, schema, read_options)
 
 
-def read_parquet(
+def infer_parquet_schema(file: FileInput):
+    """Infers a Schema from a Parquet file"""
+    with _get_file(file) as f:
+        pqf = papq.ParquetFile(f)
+        arrow_schema = pqf.metadata.schema.to_arrow_schema()
+
+    return Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])
+
+
+def read_parquet_with_schema(
     file: FileInput,
+    schema: Schema,
     fs: fsspec.AbstractFileSystem | None = None,
     read_options: vPartitionReadOptions = vPartitionReadOptions(),
 ) -> Table:
@@ -113,6 +124,7 @@ def read_parquet(
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
+        schema (Schema): Daft schema to read the Parquet file into
         read_options (vPartitionReadOptions, optional): Options for reading the file
 
     Returns:
@@ -149,7 +161,7 @@ def read_parquet(
             columns=read_options.column_names,
         )
 
-    return Table.from_arrow(table)
+    return _from_arrow_table(table, schema, read_options)
 
 
 def read_csv_with_schema(

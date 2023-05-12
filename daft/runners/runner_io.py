@@ -113,14 +113,6 @@ def sample_schema(
         )
     elif source_info.scan_type() == StorageType.PARQUET:
         assert isinstance(source_info, ParquetSourceInfo)
-        sampled_partition = table_io.read_parquet(
-            file=filepath,
-            fs=fs,
-            read_options=vPartitionReadOptions(
-                num_rows=0,  # sample 100 rows for schema inference
-                column_names=None,  # read all columns
-            ),
-        )
-        return sampled_partition.schema()
+        return table_io.infer_parquet_schema(file=filepath, fs=fs)
     else:
         raise NotImplementedError(f"Schema inference for {source_info} not implemented")
