@@ -7,12 +7,16 @@ import fsspec
 from daft.api_annotations import PublicAPI
 from daft.dataframe import DataFrame
 from daft.datasources import ParquetSourceInfo
-from daft.io.common import get_tabular_files_scan
+from daft.io.common import UserProvidedSchemaHints, get_tabular_files_scan
 from daft.runners.partitioning import vPartitionSchemaInferenceOptions
 
 
 @PublicAPI
-def read_parquet(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) -> DataFrame:
+def read_parquet(
+    path: str,
+    fs: Optional[fsspec.AbstractFileSystem] = None,
+    schema_hints: Optional[UserProvidedSchemaHints] = None,
+) -> DataFrame:
     """Creates a DataFrame from Parquet file(s)
 
     Example:
@@ -25,14 +29,15 @@ def read_parquet(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) -> D
         path (str): Path to Parquet file (allows for wildcards)
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
+        schema_hints (Optional[UserProvidedSchemaHints]): A mapping between column names and datatypes - passing this option will
+            disable all type inference on the Parquet files being read, and throw a runtime error if data being read is incompatible. Defaults to None.
 
     returns:
         DataFrame: parsed DataFrame
     """
     plan = get_tabular_files_scan(
         path,
-        # TODO(jay): Allow passing of schema hints here
-        None,
+        schema_hints,
         ParquetSourceInfo(),
         fs,
         vPartitionSchemaInferenceOptions(),
