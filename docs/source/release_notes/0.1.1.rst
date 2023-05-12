@@ -1,0 +1,42 @@
+Daft 0.1.1 Release Notes
+========================
+
+The Daft 0.1.1 release provides bugfixes and stabilization fixes.
+
+Enhancements
+------------
+
+* Enable and test writing temporal types `#897 <https://github.com/Eventual-Inc/Daft/pull/897>`_
+* Fix universal expressions on temporals `#895 <https://github.com/Eventual-Inc/Daft/pull/895>`_
+* \[Arrow Types\] Add automatic Python object fallback for unsupported Arrow types. `#886 <https://github.com/Eventual-Inc/Daft/pull/886>`_
+
+Bug Fixes
+---------
+
+* Fix fsspec multithreading clobbering issue `#898 <https://github.com/Eventual-Inc/Daft/pull/898>`_
+* Fix temporal unit tests for older versions of pyarrow `#919 <https://github.com/Eventual-Inc/Daft/pull/919>`_
+* Fix colon URL downloads and default to strict mode for .url.download\(\) `#896 <https://github.com/Eventual-Inc/Daft/pull/896>`_
+* \[CI\] Fix flaky Datasets integration test. `#917 <https://github.com/Eventual-Inc/Daft/pull/917>`_
+* Import daft in local benchmarking unit tests `#887 <https://github.com/Eventual-Inc/Daft/pull/887>`_
+* Fix imports in microbenchmarks `#885 <https://github.com/Eventual-Inc/Daft/pull/885>`_
+
+Build Changes
+-------------
+
+* enable python 3.10 unit tests `#915 <https://github.com/Eventual-Inc/Daft/pull/915>`_
+* Update pyo3 to 0.18.3 `#914 <https://github.com/Eventual-Inc/Daft/pull/914>`_
+* Bump serde from 1.0.160 to 1.0.162 `#912 <https://github.com/Eventual-Inc/Daft/pull/912>`_
+* Bump arrow2 from 0.17.0 to 0.17.1 `#910 <https://github.com/Eventual-Inc/Daft/pull/910>`_
+* Bump actions/upload-artifact from 2 to 3 `#909 <https://github.com/Eventual-Inc/Daft/pull/909>`_
+* Bump actions/download-artifact from 2 to 3 `#907 <https://github.com/Eventual-Inc/Daft/pull/907>`_
+* Bump actions/setup-python from 3 to 4 `#906 <https://github.com/Eventual-Inc/Daft/pull/906>`_
+* Enable dependabot for pip, cargo and github-actions `#904 <https://github.com/Eventual-Inc/Daft/pull/904>`_
+* pinned deps for requirements-dev.txt `#903 <https://github.com/Eventual-Inc/Daft/pull/903>`_
+
+Documentation
+-------------
+
+* Fix README.rst quickstart `#925 <https://github.com/Eventual-Inc/Daft/pull/925>`_
+* Fix typo: CSV -\> Parquet `#893 <https://github.com/Eventual-Inc/Daft/pull/893>`_
+* Add initial technical architecture docs `#890 <https://github.com/Eventual-Inc/Daft/pull/890>`_
+* Fix 10-min tutorial link to colab `#884 <https://github.com/Eventual-Inc/Daft/pull/884>`_
