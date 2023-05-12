@@ -43,8 +43,44 @@ def _open_stream(
         yield file
 
 
-def read_json(
+def _from_arrow_table(table: pa.Table, schema: Schema, read_options: vPartitionReadOptions) -> Table:
+    """Produces a Daft Table from an Arrow table, applying the provided schema and read_options correctly"""
+    pruned_schema = (
+        Schema._from_field_name_and_types([(c, schema[c].dtype) for c in read_options.column_names])
+        if read_options.column_names is not None
+        else schema
+    )
+    table = Table.from_arrow(table)
+    table = table.cast_to_schema(pruned_schema)
+    return table
+
+
+def infer_schema_json(
     file: FileInput,
+    fs: fsspec.AbstractFileSystem | None = None,
+    read_options: vPartitionReadOptions = vPartitionReadOptions(),
+) -> Schema:
+    """Reads a Schema from a JSON file
+
+    Args:
+        file (FileInput): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
+        read_options (vPartitionReadOptions, optional): Options for reading the file
+
+    Returns:
+        Schema: Inferred Schema from the JSON
+    """
+    with _open_stream(file, fs) as f:
+        table = pajson.read_json(f)
+
+    if read_options.column_names is not None:
+        table = table.select(read_options.column_names)
+
+    return Table.from_arrow(table).schema()
+
+
+def read_json_with_schema(
+    file: FileInput,
+    schema: Schema,
     fs: fsspec.AbstractFileSystem | None = None,
     read_options: vPartitionReadOptions = vPartitionReadOptions(),
 ) -> Table:
@@ -54,6 +90,7 @@ def read_json(
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
+        schema (Schema): Daft schema to read the JSON file into
         read_options (vPartitionReadOptions, optional): Options for reading the file
 
     Returns:
@@ -62,14 +99,7 @@ def read_json(
     with _open_stream(file, fs) as f:
         table = pajson.read_json(f)
 
-    if read_options.column_names is not None:
-        table = table.select(read_options.column_names)
-
-    # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
-    if read_options.num_rows is not None:
-        table = table[: read_options.num_rows]
-
-    return Table.from_arrow(table)
+    return _from_arrow_table(table, schema, read_options)
 
 
 def read_parquet(
@@ -157,18 +187,7 @@ def read_csv_with_schema(
             ),
         )
 
-    # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
-    if read_options.num_rows is not None:
-        table = table[: read_options.num_rows]
-
-    pruned_schema = (
-        Schema._from_field_name_and_types([(c, schema[c].dtype) for c in read_options.column_names])
-        if read_options.column_names is not None
-        else schema
-    )
-    table = Table.from_arrow(table)
-    table = table.cast_to_schema(pruned_schema)
-    return table
+    return _from_arrow_table(table, schema, read_options)
 
 
 def infer_schema_csv(
