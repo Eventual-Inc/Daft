@@ -17,8 +17,18 @@ macro_rules! impl_series_like_for_logical_array {
         }
 
         impl SeriesLike for ArrayWrapper<$da> {
-            fn array(&self) -> &dyn arrow2::array::Array {
-                self.0.physical.data()
+            fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+                let arrow_logical_type = self.0.logical_type().to_arrow().unwrap();
+                let physical_arrow_array = self.0.physical.data();
+                arrow2::compute::cast::cast(
+                    physical_arrow_array,
+                    &arrow_logical_type,
+                    arrow2::compute::cast::CastOptions {
+                        wrapped: true,
+                        partial: false,
+                    },
+                )
+                .unwrap()
             }
 
             fn as_any(&self) -> &dyn std::any::Any {

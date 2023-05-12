@@ -12,6 +12,8 @@ use crate::{
     with_match_integer_daft_types,
 };
 
+use dyn_clone::clone_box;
+
 macro_rules! impl_series_like_for_data_array {
     ($da:ident) => {
         impl IntoSeries for $da {
@@ -23,8 +25,8 @@ macro_rules! impl_series_like_for_data_array {
         }
 
         impl SeriesLike for ArrayWrapper<$da> {
-            fn array(&self) -> &dyn arrow2::array::Array {
-                self.0.data()
+            fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+                clone_box(self.0.data())
             }
 
             fn as_any(&self) -> &dyn std::any::Any {

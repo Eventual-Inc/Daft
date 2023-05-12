@@ -28,6 +28,11 @@ where
     T: DaftPhysicalType,
 {
     pub fn new(field: Arc<Field>, data: Box<dyn arrow2::array::Array>) -> DaftResult<DataArray<T>> {
+        assert!(
+            field.dtype.is_physical(),
+            "Can only construct DataArray for PhysicalTypes, got {}",
+            field.dtype
+        );
         if let Ok(arrow_dtype) = field.dtype.to_arrow() {
             if !arrow_dtype.eq(data.data_type()) {
                 return Err(DaftError::TypeError(format!(

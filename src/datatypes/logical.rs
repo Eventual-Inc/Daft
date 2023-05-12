@@ -15,6 +15,19 @@ pub struct LogicalArray<L: DaftLogicalType> {
 
 impl<L: DaftLogicalType + 'static> LogicalArray<L> {
     pub fn new(field: Arc<Field>, physical: DataArray<L::PhysicalType>) -> Self {
+        assert!(
+            field.dtype.is_logical(),
+            "Can only construct Logical Arrays on Logical Types, got {}",
+            field.dtype
+        );
+        assert_eq!(
+            physical.data_type(),
+            &field.dtype.to_physical(),
+            "Expected {} for Physical Array, got {}",
+            &field.dtype.to_physical(),
+            physical.data_type()
+        );
+
         LogicalArray {
             physical: physical,
             field: field,

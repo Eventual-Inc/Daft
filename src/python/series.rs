@@ -50,7 +50,7 @@ impl PySeries {
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
-        let arrow_array = self.series.array().to_boxed();
+        let arrow_array = self.series.to_arrow();
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
             ffi::to_py_array(arrow_array, py, pyarrow)

@@ -24,7 +24,13 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
 
         if dtype.is_logical() {
             return Ok(with_match_daft_logical_types!(dtype, |$T| {
-                let physical = DataArray::try_from((name, array))?;
+                let arrow_physical_type = dtype.to_physical().to_arrow()?;
+                let casted_array = arrow2::compute::cast::cast(array.as_ref(), &arrow_physical_type,
+                arrow2::compute::cast::CastOptions {
+                    wrapped: true,
+                    partial: false,
+                })?;
+                let physical = DataArray::try_from((name, casted_array))?;
                 LogicalArray::<$T>::new(field, physical).into_series()
             }));
         }

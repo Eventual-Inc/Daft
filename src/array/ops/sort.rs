@@ -34,7 +34,11 @@ pub fn build_multi_array_bicompare(
     let mut cmp_list = Vec::with_capacity(left.len());
 
     for ((l, r), desc) in left.iter().zip(right.iter()).zip(descending.iter()) {
-        cmp_list.push(build_compare_with_nulls(l.array(), r.array(), *desc)?);
+        cmp_list.push(build_compare_with_nulls(
+            l.to_arrow().as_ref(),
+            r.to_arrow().as_ref(),
+            *desc,
+        )?);
     }
 
     let combined_comparator = Box::new(move |a_idx: usize, b_idx: usize| -> std::cmp::Ordering {
@@ -371,7 +375,95 @@ impl NullArray {
     }
 }
 
-macro_rules! impl_sort_fns_via_arrow {
+impl BooleanArray {
+    pub fn argsort<I>(&self, descending: bool) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let options = arrow2::compute::sort::SortOptions {
+            descending,
+            nulls_first: descending,
+        };
+
+        let result =
+            arrow2::compute::sort::sort_to_indices::<I::Native>(self.data(), &options, None)?;
+
+        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+    }
+
+    pub fn argsort_multikey<I>(
+        &self,
+        others: &[Series],
+        descending: &[bool],
+    ) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let first_desc = *descending.first().unwrap();
+
+        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+
+        let values = self
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::BooleanArray>()
+            .unwrap()
+            .values();
+
+        let result = if first_desc {
+            multi_column_idx_sort(
+                self.data().validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_bit_unchecked(a) };
+                    let r = unsafe { values.get_bit_unchecked(b) };
+                    match r.cmp(&l) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                self.len(),
+                first_desc,
+            )
+        } else {
+            multi_column_idx_sort(
+                self.data().validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_bit_unchecked(a) };
+                    let r = unsafe { values.get_bit_unchecked(b) };
+                    match l.cmp(&r) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                self.len(),
+                first_desc,
+            )
+        };
+
+        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+    }
+
+    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
+        let options = arrow2::compute::sort::SortOptions {
+            descending,
+            nulls_first: descending,
+        };
+
+        let result = arrow2::compute::sort::sort(self.data(), &options, None)?;
+
+        BooleanArray::try_from((self.name(), result))
+    }
+}
+
+macro_rules! impl_binary_like_sort {
     ($da:ident) => {
         impl $da {
             pub fn argsort<I>(&self, descending: bool) -> DaftResult<DataArray<I>>
@@ -406,12 +498,12 @@ macro_rules! impl_sort_fns_via_arrow {
 
                 let others_cmp = build_multi_array_compare(others, &descending[1..])?;
 
-                let values = self
-                    .data()
-                    .as_any()
-                    .downcast_ref::<arrow2::array::BooleanArray>()
-                    .unwrap()
-                    .values();
+                let values = self.as_arrow();
+                // .data()
+                // .as_any()
+                // .downcast_ref::<arrow2::array::BooleanArray>()
+                // .unwrap()
+                // .values();
 
                 let result = if first_desc {
                     multi_column_idx_sort(
@@ -419,8 +511,8 @@ macro_rules! impl_sort_fns_via_arrow {
                         |a: &I::Native, b: &I::Native| {
                             let a = a.to_usize();
                             let b = b.to_usize();
-                            let l = unsafe { values.get_bit_unchecked(a) };
-                            let r = unsafe { values.get_bit_unchecked(b) };
+                            let l = unsafe { values.value_unchecked(a) };
+                            let r = unsafe { values.value_unchecked(b) };
                             match r.cmp(&l) {
                                 std::cmp::Ordering::Equal => others_cmp(a, b),
                                 v => v,
@@ -436,8 +528,8 @@ macro_rules! impl_sort_fns_via_arrow {
                         |a: &I::Native, b: &I::Native| {
                             let a = a.to_usize();
                             let b = b.to_usize();
-                            let l = unsafe { values.get_bit_unchecked(a) };
-                            let r = unsafe { values.get_bit_unchecked(b) };
+                            let l = unsafe { values.value_unchecked(a) };
+                            let r = unsafe { values.value_unchecked(b) };
                             match l.cmp(&r) {
                                 std::cmp::Ordering::Equal => others_cmp(a, b),
                                 v => v,
@@ -466,13 +558,26 @@ macro_rules! impl_sort_fns_via_arrow {
     };
 }
 
-impl_sort_fns_via_arrow!(BooleanArray);
-impl_sort_fns_via_arrow!(BinaryArray);
-impl_sort_fns_via_arrow!(Utf8Array);
-impl_sort_fns_via_arrow!(FixedSizeListArray);
-impl_sort_fns_via_arrow!(ListArray);
-impl_sort_fns_via_arrow!(StructArray);
+impl_binary_like_sort!(BinaryArray);
+impl_binary_like_sort!(Utf8Array);
 
+impl FixedSizeListArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for FixedSizeListArray")
+    }
+}
+
+impl ListArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for ListArray")
+    }
+}
+
+impl StructArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for StructArray")
+    }
+}
 impl PythonArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
         todo!("impl sort for python array")
@@ -481,6 +586,11 @@ impl PythonArray {
 
 impl DateArray {
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
+        println!(
+            "arrow_dtype {} vs actual: {:?}",
+            self.physical.data_type(),
+            self.physical.data().data_type()
+        );
         let new_array = self.physical.sort(descending)?;
         Ok(Self::new(self.field.clone(), new_array))
     }

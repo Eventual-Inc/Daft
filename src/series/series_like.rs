@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, borrow::Cow};
 
 use crate::{
     datatypes::{BooleanArray, DataType, Field},
@@ -8,7 +8,8 @@ use crate::{
 use super::Series;
 
 pub trait SeriesLike: Send + Sync + Any {
-    fn array(&self) -> &dyn arrow2::array::Array;
+    fn to_arrow(&self) -> Box<dyn arrow2::array::Array>;
+
     fn as_any(&self) -> &dyn std::any::Any;
 
     // fn abs(&self) -> DaftResult<Series>;

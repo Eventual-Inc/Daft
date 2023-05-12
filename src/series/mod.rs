@@ -23,8 +23,8 @@ pub struct Series {
 }
 
 impl Series {
-    pub fn array(&self) -> &dyn arrow2::array::Array {
-        self.inner.array()
+    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+        self.inner.to_arrow()
     }
 
     pub fn data_type(&self) -> &DataType {
