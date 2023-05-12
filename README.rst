@@ -47,8 +47,7 @@ In this example, we load images from an AWS S3 bucket and run a simple function 
 
 .. code:: python
 
-    import daft
-    from daft import lit
+    import daft as daft
 
     import io
     from PIL import Image
@@ -63,13 +62,13 @@ In this example, we load images from an AWS S3 bucket and run a simple function 
     df = daft.from_glob_path("s3://daft-public-data/laion-sample-images/*")
 
     # Get the AWS S3 url of each image
-    df = df.select(lit("s3://").str.concat(df["name"]).alias("s3_url"))
+    df = df.select(df["path"].alias("s3_url"))
 
     # Download images and load as a PIL Image object
-    df = df.with_column("image", df["s3_url"].url.download().apply(lambda data: Image.open(io.BytesIO(data))))
+    df = df.with_column("image", df["s3_url"].url.download().apply(lambda data: Image.open(io.BytesIO(data)), return_dtype=daft.DataType.python()))
 
     # Generate thumbnails from images
-    df = df.with_column("thumbnail", df["image"].apply(get_thumbnail))
+    df = df.with_column("thumbnail", df["image"].apply(get_thumbnail, return_dtype=daft.DataType.python()))
 
     df.show(3)
 
