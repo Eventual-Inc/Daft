@@ -191,16 +191,16 @@ def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, floa
     assert df.to_arrow() == expected
 
 
-def test_create_dataframe_arrow_extension_type(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_arrow_extension_type(valid_data: list[dict[str, float]], uuid_ext_type: UuidType) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    dtype = UuidType()
-    pa.register_extension_type(dtype)
     storage = pa.array([f"{i}".encode() for i in range(len(valid_data))])
-    pydict["obj"] = pa.ExtensionArray.from_storage(dtype, storage)
+    pydict["obj"] = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
     t = pa.Table.from_pydict(pydict)
     df = daft.from_arrow(t)
     assert set(df.column_names) == set(t.column_names)
-    assert df.schema()["obj"].dtype == DataType.extension(dtype.NAME, DataType.from_arrow_type(dtype.storage_type), "")
+    assert df.schema()["obj"].dtype == DataType.extension(
+        uuid_ext_type.NAME, DataType.from_arrow_type(uuid_ext_type.storage_type), ""
+    )
     casted_field = t.schema.field("variety").with_type(pa.large_string())
     expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
     # Check roundtrip.

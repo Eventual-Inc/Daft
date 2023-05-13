@@ -296,6 +296,52 @@ def test_series_if_else_struct(if_true, if_false, expected) -> None:
     assert result.to_pylist() == expected
 
 
+@pytest.mark.parametrize(
+    ["if_true_storage", "if_false_storage", "expected_storage"],
+    [
+        # Same length, same type
+        (
+            pa.array([f"{i}".encode() for i in range(4)]),
+            pa.array([f"{i}".encode() for i in range(4, 8)]),
+            pa.array([b"0", b"5", None, b"3"]),
+        ),
+        # Broadcast left
+        (
+            pa.array([b"0"]),
+            pa.array([f"{i}".encode() for i in range(4, 8)]),
+            pa.array([b"0", b"5", None, b"0"]),
+        ),
+        # Broadcast right
+        (
+            pa.array([f"{i}".encode() for i in range(4)]),
+            pa.array([b"4"]),
+            pa.array([b"0", b"4", None, b"3"]),
+        ),
+        # Broadcast both
+        (
+            pa.array([b"0"]),
+            pa.array([b"4"]),
+            pa.array([b"0", b"4", None, b"0"]),
+        ),
+    ],
+)
+def test_series_if_else_extension_type(uuid_ext_type, if_true_storage, if_false_storage, expected_storage) -> None:
+    if_true_arrow = pa.ExtensionArray.from_storage(uuid_ext_type, if_true_storage)
+    if_false_arrow = pa.ExtensionArray.from_storage(uuid_ext_type, if_false_storage)
+    expected_arrow = pa.ExtensionArray.from_storage(uuid_ext_type, expected_storage)
+    if_true_series = Series.from_arrow(if_true_arrow)
+    if_false_series = Series.from_arrow(if_false_arrow)
+    predicate_series = Series.from_arrow(pa.array([True, False, None, True]))
+
+    result = predicate_series.if_else(if_true_series, if_false_series)
+
+    assert result.datatype() == DataType.extension(
+        uuid_ext_type.NAME, DataType.from_arrow_type(uuid_ext_type.storage_type), ""
+    )
+    result_arrow = result.to_arrow()
+    assert result_arrow == expected_arrow
+
+
 @pytest.mark.skipif(
     ARROW_VERSION < (12, 0, 0),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",

@@ -8,6 +8,7 @@ import pytest
 from ray.data.extensions import ArrowTensorArray
 
 from daft import DataType, Series
+from tests.conftest import *
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
@@ -138,6 +139,26 @@ def test_series_concat_tensor_array_canonical(chunks) -> None:
     concated_arrow = concated.to_arrow()
     assert isinstance(concated_arrow.type, pa.FixedShapeTensorType)
     np.testing.assert_equal(concated_arrow.to_numpy_ndarray(), expected)
+
+
+@pytest.mark.parametrize("chunks", [1, 2, 3, 10])
+def test_series_concat_extension_type(uuid_ext_type, chunks) -> None:
+    chunk_size = 3
+    storage_arrays = [
+        pa.array([f"{i}".encode() for i in range(j * chunk_size, (j + 1) * chunk_size)]) for j in range(chunks)
+    ]
+    ext_arrays = [pa.ExtensionArray.from_storage(uuid_ext_type, storage) for storage in storage_arrays]
+    series = [Series.from_arrow(ext_array) for ext_array in ext_arrays]
+
+    concated = Series.concat(series)
+
+    assert concated.datatype() == DataType.extension(
+        uuid_ext_type.NAME, DataType.from_arrow_type(uuid_ext_type.storage_type), ""
+    )
+    concated_arrow = concated.to_arrow()
+    assert isinstance(concated_arrow.type, UuidType)
+    assert concated_arrow.type == uuid_ext_type
+    assert concated_arrow == pa.concat_arrays(ext_arrays)
 
 
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])

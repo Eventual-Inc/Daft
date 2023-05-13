@@ -118,6 +118,27 @@ def test_series_struct_take() -> None:
     assert result.to_pylist() == expected
 
 
+def test_series_extension_type_take(uuid_ext_type) -> None:
+    pydata = [f"{i}".encode() for i in range(6)]
+    pydata[2] = None
+    storage = pa.array(pydata)
+    data = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
+
+    s = Series.from_arrow(data)
+    assert s.datatype() == DataType.extension(
+        uuid_ext_type.NAME, DataType.from_arrow_type(uuid_ext_type.storage_type), ""
+    )
+    pyidx = [2, 0, None, 5]
+    idx = Series.from_pylist(pyidx)
+
+    result = s.take(idx)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 4
+
+    expected = [pydata[i] if i is not None else None for i in pyidx]
+    assert result.to_pylist() == expected
+
+
 @pytest.mark.skipif(
     ARROW_VERSION < (12, 0, 0),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",

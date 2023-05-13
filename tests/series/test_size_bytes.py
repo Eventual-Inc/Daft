@@ -181,6 +181,28 @@ def test_series_struct_size_bytes(size, with_nulls) -> None:
         assert s.size_bytes() == get_total_buffer_size(data) + conversion_to_large_string_bytes
 
 
+@pytest.mark.parametrize("size", [1, 2, 8, 9, 16])
+@pytest.mark.parametrize("with_nulls", [True, False])
+def test_series_extension_type_size_bytes(uuid_ext_type, size, with_nulls) -> None:
+    pydata = [f"{i}".encode() for i in range(size)]
+
+    # TODO(Clark): Change to size > 0 condition when pyarrow extension arrays support generic construction on null arrays.
+    if with_nulls and size > 1:
+        pydata = pydata[:-1] + [None]
+    storage = pa.array(pydata)
+    data = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
+
+    s = Series.from_arrow(data)
+
+    size_bytes = s.size_bytes()
+
+    assert s.datatype() == DataType.extension(
+        uuid_ext_type.NAME, DataType.from_arrow_type(uuid_ext_type.storage_type), ""
+    )
+    post_daft_cast_data = storage.cast(pa.large_binary())
+    assert size_bytes == get_total_buffer_size(post_daft_cast_data)
+
+
 @pytest.mark.skipif(
     ARROW_VERSION < (12, 0, 0),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",

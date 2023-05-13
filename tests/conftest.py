@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 import pyarrow as pa
+import pytest
 
 
 class UuidType(pa.ExtensionType):
@@ -16,6 +17,14 @@ class UuidType(pa.ExtensionType):
     @classmethod
     def __arrow_ext_deserialize__(self, storage_type, serialized):
         return UuidType()
+
+
+@pytest.fixture
+def uuid_ext_type() -> UuidType:
+    ext_type = UuidType()
+    pa.register_extension_type(ext_type)
+    yield ext_type
+    pa.unregister_extension_type(ext_type.NAME)
 
 
 def assert_df_equals(

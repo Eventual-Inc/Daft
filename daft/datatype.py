@@ -183,8 +183,6 @@ class DataType:
                 metadata = arrow_type.__arrow_ext_serialize__().decode()
             except AttributeError:
                 metadata = None
-            if metadata == "":
-                metadata = None
             return cls.extension(
                 name,
                 cls.from_arrow_type(arrow_type.storage_type),
