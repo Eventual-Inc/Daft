@@ -314,7 +314,7 @@ impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
             .unwrap_or(0)
     }
 
-    fn to_type(&self, _: DataType) -> Box<dyn Array> {
-        panic!("not implemented");
+    fn change_type(&mut self, _: arrow2::datatypes::DataType) {
+        unimplemented!("PseudoArray doesn't hold a data type and therefore does not support the change_type API.")
     }
 }
