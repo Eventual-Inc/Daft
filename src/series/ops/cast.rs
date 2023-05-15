@@ -30,44 +30,6 @@ macro_rules! apply_method_all_arrow_series {
     }
 }
 
-#[cfg(feature = "python")]
-macro_rules! pycast_then_arrowcast {
-    ($self:expr, $daft_type:expr, $pytype_str:expr) => {
-        {
-            let old_pyseries = PySeries::from($self.clone());
-
-            let new_pyseries = Python::with_gil(|py| -> PyResult<PySeries> {
-                let old_daft_series = {
-                    PyModule::import(py, pyo3::intern!(py, "daft.series"))?
-                        .getattr(pyo3::intern!(py, "Series"))?
-                        .getattr(pyo3::intern!(py, "_from_pyseries"))?
-                        .call1((old_pyseries,))?
-                };
-
-                let py_type_fn = {
-                    PyModule::import(py, pyo3::intern!(py, "builtins"))?
-                        .getattr(pyo3::intern!(py, $pytype_str))?
-                };
-
-                old_daft_series
-                    .call_method1(
-                        pyo3::intern!(py, "_pycast_to_pynative"),
-                        (py_type_fn,),
-                    )?
-                    .getattr(pyo3::intern!(py, "_series"))?
-                    .extract()
-            })?;
-
-            let new_series: Self = new_pyseries.into();
-
-            if new_series.data_type() == &DataType::Python {
-                panic!("After casting, we expected an Arrow data type castable to {}, but got Python type again", $daft_type)
-            }
-            return new_series.cast(&$daft_type);
-        }
-    }
-}
-
 impl Series {
     pub fn cast(&self, datatype: &DataType) -> DaftResult<Series> {
         self.inner.cast(datatype)
