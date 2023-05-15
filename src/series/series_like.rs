@@ -1,6 +1,7 @@
 use std::{any::Any, borrow::Cow};
 
 use crate::{
+    array::ops::GroupIndices,
     datatypes::{BooleanArray, DataType, Field},
     error::DaftResult,
 };
@@ -16,8 +17,8 @@ pub trait SeriesLike: Send + Sync + Any {
     // fn count(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     // fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     // fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
-    // fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
-    // fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
+    fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
+    fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     // fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     // fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn broadcast(&self, num: usize) -> DaftResult<Series>;

@@ -6,7 +6,7 @@ use crate::{
     with_match_comparable_daft_types, with_match_daft_types, with_match_physical_daft_types,
 };
 
-use crate::{datatypes::*, with_match_arrow_daft_types};
+use crate::{datatypes::*, with_match_arrow_daft_types, with_match_daft_logical_types};
 
 impl Series {
     pub fn count(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
@@ -92,43 +92,16 @@ impl Series {
     }
 
     pub fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftCompareAggable;
-
-        let s = self.as_physical()?;
-
-        let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
-            match groups {
-                Some(groups) => DaftCompareAggable::grouped_min(&s.downcast::<$T>()?, groups)?.into_series(),
-                None => DaftCompareAggable::min(&s.downcast::<$T>()?)?.into_series()
-            }
-        });
-
-        if result.data_type() != self.data_type() {
-            return result.cast(self.data_type());
-        }
-        Ok(result)
+        self.inner.min(groups)
     }
 
     pub fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftCompareAggable;
-
-        let s = self.as_physical()?;
-
-        let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
-            match groups {
-                Some(groups) => DaftCompareAggable::grouped_max(&s.downcast::<$T>()?, groups)?.into_series(),
-                None => DaftCompareAggable::max(&s.downcast::<$T>()?)?.into_series()
-            }
-        });
-
-        if result.data_type() != self.data_type() {
-            return result.cast(self.data_type());
-        }
-        Ok(result)
+        self.inner.max(groups)
     }
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         use crate::array::ops::DaftListAggable;
+
         with_match_physical_daft_types!(self.data_type(), |$T| {
             match groups {
                 Some(groups) => Ok(DaftListAggable::grouped_list(self.downcast::<$T>()?, groups)?.into_series()),

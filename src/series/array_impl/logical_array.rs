@@ -1,6 +1,7 @@
 use crate::datatypes::logical::DateArray;
 
 use super::{ArrayWrapper, IntoSeries, Series};
+use crate::array::ops::GroupIndices;
 use crate::series::DaftResult;
 use crate::series::SeriesLike;
 use crate::with_match_integer_daft_types;
@@ -106,6 +107,23 @@ macro_rules! impl_series_like_for_logical_array {
                 with_match_integer_daft_types!(idx.data_type(), |$S| {
                     Ok(self.0.take(idx.downcast::<$S>()?)?.into_series())
                 })
+            }
+
+            fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+                use crate::array::ops::DaftCompareAggable;
+                let data_array = match groups {
+                    Some(groups) => DaftCompareAggable::grouped_min(&self.0.physical, groups)?,
+                    None => DaftCompareAggable::min(&self.0.physical)?,
+                };
+                Ok($da::new(self.0.field.clone(), data_array).into_series())
+            }
+            fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+                use crate::array::ops::DaftCompareAggable;
+                let data_array = match groups {
+                    Some(groups) => DaftCompareAggable::grouped_max(&self.0.physical, groups)?,
+                    None => DaftCompareAggable::max(&self.0.physical)?,
+                };
+                Ok($da::new(self.0.field.clone(), data_array).into_series())
             }
         }
     };

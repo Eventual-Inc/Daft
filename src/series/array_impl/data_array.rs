@@ -1,6 +1,7 @@
 use super::{ArrayWrapper, IntoSeries, Series};
 use std::sync::Arc;
 
+use crate::array::ops::GroupIndices;
 use crate::{
     datatypes::{
         BinaryArray, BooleanArray, FixedSizeListArray, Float32Array, Float64Array, Int16Array,
@@ -11,7 +12,6 @@ use crate::{
     series::series_like::SeriesLike,
     with_match_integer_daft_types,
 };
-
 use dyn_clone::clone_box;
 
 macro_rules! impl_series_like_for_data_array {
@@ -94,6 +94,25 @@ macro_rules! impl_series_like_for_data_array {
                 with_match_integer_daft_types!(idx.data_type(), |$S| {
                     Ok(self.0.take(idx.downcast::<$S>()?)?.into_series())
                 })
+            }
+
+            fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+                use crate::array::ops::DaftCompareAggable;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftCompareAggable::grouped_min(&self.0, groups)?.into_series())
+                    }
+                    None => Ok(DaftCompareAggable::min(&self.0)?.into_series()),
+                }
+            }
+            fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+                use crate::array::ops::DaftCompareAggable;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftCompareAggable::grouped_max(&self.0, groups)?.into_series())
+                    }
+                    None => Ok(DaftCompareAggable::max(&self.0)?.into_series()),
+                }
             }
         }
     };

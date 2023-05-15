@@ -57,9 +57,9 @@ where
 
 use super::as_arrow::AsArrow;
 
-impl<T> DaftCompareAggable for &DataArray<T>
+impl<T> DaftCompareAggable for DataArray<T>
 where
-    T: DaftDataType + DaftNumericType,
+    T: DaftNumericType,
     T::Native: PartialOrd,
     <T::Native as arrow2::types::simd::Simd>::Simd: arrow2::compute::aggregate::SimdOrd<T::Native>,
 {
@@ -158,7 +158,7 @@ where
     )))
 }
 
-impl DaftCompareAggable for &DataArray<Utf8Type> {
+impl DaftCompareAggable for DataArray<Utf8Type> {
     type Output = DaftResult<DataArray<Utf8Type>>;
     fn min(&self) -> Self::Output {
         let arrow_array: &arrow2::array::Utf8Array<i64> = self.as_arrow();
@@ -240,7 +240,7 @@ fn grouped_cmp_bool(
     )))
 }
 
-impl DaftCompareAggable for &DataArray<BooleanType> {
+impl DaftCompareAggable for DataArray<BooleanType> {
     type Output = DaftResult<DataArray<BooleanType>>;
     fn min(&self) -> Self::Output {
         let arrow_array: &arrow2::array::BooleanArray = self.as_arrow();
@@ -268,7 +268,7 @@ impl DaftCompareAggable for &DataArray<BooleanType> {
     }
 }
 
-impl DaftCompareAggable for &DataArray<NullType> {
+impl DaftCompareAggable for DataArray<NullType> {
     type Output = DaftResult<DataArray<NullType>>;
 
     fn min(&self) -> Self::Output {
@@ -297,3 +297,44 @@ impl DaftCompareAggable for &DataArray<NullType> {
         ))
     }
 }
+
+macro_rules! impl_todo_daft_comparable {
+    ($da:ident) => {
+        impl DaftCompareAggable for $da {
+            type Output = DaftResult<$da>;
+            fn min(&self) -> Self::Output {
+                todo!(
+                    "TODO need to impl DaftCompareAggable for {}",
+                    self.data_type()
+                )
+            }
+
+            fn max(&self) -> Self::Output {
+                todo!(
+                    "TODO need to impl DaftCompareAggable for {}",
+                    self.data_type()
+                )
+            }
+
+            fn grouped_min(&self, groups: &super::GroupIndices) -> Self::Output {
+                todo!(
+                    "TODO need to impl DaftCompareAggable for {}",
+                    self.data_type()
+                )
+            }
+
+            fn grouped_max(&self, groups: &super::GroupIndices) -> Self::Output {
+                todo!(
+                    "TODO need to impl DaftCompareAggable for {}",
+                    self.data_type()
+                )
+            }
+        }
+    };
+}
+
+impl_todo_daft_comparable!(BinaryArray);
+impl_todo_daft_comparable!(StructArray);
+impl_todo_daft_comparable!(FixedSizeListArray);
+impl_todo_daft_comparable!(ListArray);
+impl_todo_daft_comparable!(PythonArray);
