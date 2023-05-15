@@ -1,8 +1,8 @@
 use crate::array::DataArray;
 use crate::datatypes::logical::DateArray;
 use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftArrowBackedType, DaftDataType, DaftNumericType,
-    FixedSizeListArray, ListArray, NullArray, PythonArray, StructArray, Utf8Array,
+    BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, FixedSizeListArray, ListArray,
+    NullArray, PythonArray, StructArray, Utf8Array,
 };
 use crate::error::{DaftError, DaftResult};
 use crate::utils::arrow::arrow_bitmap_and_helper;

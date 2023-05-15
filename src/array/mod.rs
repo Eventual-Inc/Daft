@@ -6,7 +6,7 @@ pub mod pseudo_arrow;
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    datatypes::{DaftArrowBackedType, DaftDataType, DaftPhysicalType, DataType, Field},
+    datatypes::{DaftPhysicalType, DataType, Field},
     error::{DaftError, DaftResult},
 };
 

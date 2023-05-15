@@ -1,7 +1,5 @@
 use crate::{error::DaftResult, series::Series};
 
-use crate::array::ops::broadcast::Broadcastable;
-
 impl Series {
     pub fn broadcast(&self, num: usize) -> DaftResult<Series> {
         self.inner.broadcast(num)

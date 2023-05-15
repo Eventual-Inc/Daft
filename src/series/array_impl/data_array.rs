@@ -1,6 +1,8 @@
 use super::{ArrayWrapper, IntoSeries, Series};
 use std::sync::Arc;
 
+use crate::array::ops::broadcast::Broadcastable;
+use crate::array::ops::DaftListAggable;
 use crate::array::ops::GroupIndices;
 use crate::{
     datatypes::{
@@ -34,7 +36,6 @@ macro_rules! impl_series_like_for_data_array {
             }
 
             fn broadcast(&self, num: usize) -> DaftResult<Series> {
-                use crate::array::ops::broadcast::Broadcastable;
                 Ok(self.0.broadcast(num)?.into_series())
             }
 
@@ -116,7 +117,6 @@ macro_rules! impl_series_like_for_data_array {
             }
 
             fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-                use crate::array::ops::DaftListAggable;
                 match groups {
                     Some(groups) => Ok(self.0.grouped_list(groups)?.into_series()),
                     None => Ok(self.0.list()?.into_series()),

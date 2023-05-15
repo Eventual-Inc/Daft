@@ -1,6 +1,6 @@
 use crate::{
     array::DataArray,
-    datatypes::{DaftArrowBackedType, DaftDataType, PythonArray},
+    datatypes::{DaftArrowBackedType, PythonArray},
     error::DaftResult,
 };
 

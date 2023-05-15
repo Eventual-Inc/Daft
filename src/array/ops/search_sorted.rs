@@ -1,6 +1,6 @@
 use crate::{
     array::DataArray,
-    datatypes::{DaftArrowBackedType, DaftDataType, UInt64Array},
+    datatypes::{DaftArrowBackedType, UInt64Array},
     error::DaftResult,
     kernels::search_sorted,
 };

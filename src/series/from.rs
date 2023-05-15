@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    datatypes::{
-        logical::{DateArray, LogicalArray},
-        DataType, DateType, Field, Int32Array,
-    },
+    datatypes::{logical::LogicalArray, DataType, Field},
     error::{DaftError, DaftResult},
     with_match_daft_logical_types, with_match_physical_daft_types,
 };

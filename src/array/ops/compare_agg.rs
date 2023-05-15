@@ -316,14 +316,14 @@ macro_rules! impl_todo_daft_comparable {
                 )
             }
 
-            fn grouped_min(&self, groups: &super::GroupIndices) -> Self::Output {
+            fn grouped_min(&self, _groups: &super::GroupIndices) -> Self::Output {
                 todo!(
                     "TODO need to impl DaftCompareAggable for {}",
                     self.data_type()
                 )
             }
 
-            fn grouped_max(&self, groups: &super::GroupIndices) -> Self::Output {
+            fn grouped_max(&self, _groups: &super::GroupIndices) -> Self::Output {
                 todo!(
                     "TODO need to impl DaftCompareAggable for {}",
                     self.data_type()

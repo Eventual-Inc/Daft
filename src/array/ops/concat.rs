@@ -2,7 +2,7 @@ use arrow2::array::Array;
 
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
-    datatypes::{DaftArrowBackedType, DaftDataType, DaftPhysicalType, DataType},
+    datatypes::{DaftPhysicalType, DataType},
     error::{DaftError, DaftResult},
 };
 

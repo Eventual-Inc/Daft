@@ -5,9 +5,7 @@ use pyo3::Python;
 
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
-    datatypes::{
-        DaftArrowBackedType, DaftDataType, DaftPhysicalType, DataType, Field, PythonArray,
-    },
+    datatypes::{DaftPhysicalType, DataType, Field},
 };
 
 impl<T> DataArray<T>

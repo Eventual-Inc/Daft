@@ -1,11 +1,11 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    datatypes::{DaftLogicalType, DaftPhysicalType, DateType, Field, Int32Type},
+    datatypes::{DaftLogicalType, DateType, Field},
     error::DaftResult,
 };
 
-use super::{DaftArrowBackedType, DaftIntegerType, DaftNumericType, DataArray, DataType};
+use super::{DataArray, DataType};
 
 pub struct LogicalArray<L: DaftLogicalType> {
     pub field: Arc<Field>,
@@ -29,8 +29,8 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
         );
 
         LogicalArray {
-            physical: physical,
-            field: field,
+            physical,
+            field,
             marker_: PhantomData,
         }
     }
@@ -54,7 +54,7 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
     }
 
     pub fn physical_type(&self) -> &DataType {
-        &self.physical.data_type()
+        self.physical.data_type()
     }
 
     pub fn len(&self) -> usize {
@@ -75,10 +75,10 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
     }
 
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
-        if arrays.len() == 0 {
-            return Err(crate::error::DaftError::ValueError(format!(
-                "Need at least 1 logical array to concat"
-            )));
+        if arrays.is_empty() {
+            return Err(crate::error::DaftError::ValueError(
+                "Need at least 1 logical array to concat".to_string(),
+            ));
         }
         let physicals: Vec<_> = arrays.iter().map(|a| &a.physical).collect();
         let concatd = DataArray::<L::PhysicalType>::concat(physicals.as_slice())?;

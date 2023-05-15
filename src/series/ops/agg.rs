@@ -3,10 +3,10 @@ use crate::{
     array::ops::GroupIndices,
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_comparable_daft_types, with_match_daft_types, with_match_physical_daft_types,
+    with_match_physical_daft_types,
 };
 
-use crate::{datatypes::*, with_match_arrow_daft_types, with_match_daft_logical_types};
+use crate::datatypes::*;
 
 impl Series {
     pub fn count(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

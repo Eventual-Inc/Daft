@@ -1,9 +1,8 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType,
-        DaftPhysicalType, DataType, FixedSizeListArray, ListArray, NullArray, StructArray,
-        Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, DataType, FixedSizeListArray, ListArray,
+        NullArray, StructArray, Utf8Array,
     },
     error::{DaftError, DaftResult},
 };

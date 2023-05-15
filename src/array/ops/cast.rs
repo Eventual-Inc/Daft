@@ -6,10 +6,7 @@ use arrow2::compute::{
 use crate::{
     array::DataArray,
     datatypes::logical::DateArray,
-    datatypes::{
-        BinaryArray, BooleanArray, DaftArrowBackedType, DaftDataType, DaftNumericType, DataType,
-        FixedSizeListArray, ListArray, NullArray, PythonArray, StructArray, Utf8Array,
-    },
+    datatypes::{DaftArrowBackedType, DataType, PythonArray, Utf8Array},
     error::{DaftError, DaftResult},
     series::Series,
 };

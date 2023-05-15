@@ -1,6 +1,6 @@
 use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftArrowBackedType, DaftDataType, DaftNumericType,
-    DaftPhysicalType, DataType, Field, Utf8Array, Utf8Type,
+    BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataType, Field, Utf8Array,
+    Utf8Type,
 };
 
 use crate::array::DataArray;
