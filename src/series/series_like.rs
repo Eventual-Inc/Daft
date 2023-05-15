@@ -19,7 +19,7 @@ pub trait SeriesLike: Send + Sync + Any {
     // fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
-    // fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
+    fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     // fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn broadcast(&self, num: usize) -> DaftResult<Series>;
     fn cast(&self, datatype: &DataType) -> DaftResult<Series>;

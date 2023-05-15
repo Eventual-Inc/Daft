@@ -100,14 +100,7 @@ impl Series {
     }
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftListAggable;
-
-        with_match_physical_daft_types!(self.data_type(), |$T| {
-            match groups {
-                Some(groups) => Ok(DaftListAggable::grouped_list(self.downcast::<$T>()?, groups)?.into_series()),
-                None => Ok(DaftListAggable::list(self.downcast::<$T>()?)?.into_series())
-            }
-        })
+        self.inner.agg_list(groups)
     }
 
     pub fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

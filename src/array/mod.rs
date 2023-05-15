@@ -12,8 +12,8 @@ use crate::{
 
 #[derive(Debug)]
 pub struct DataArray<T: DaftPhysicalType> {
-    field: Arc<Field>,
-    data: Box<dyn arrow2::array::Array>,
+    pub field: Arc<Field>,
+    pub data: Box<dyn arrow2::array::Array>,
     marker_: PhantomData<T>,
 }
 

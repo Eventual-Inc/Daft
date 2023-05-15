@@ -114,6 +114,14 @@ macro_rules! impl_series_like_for_data_array {
                     None => Ok(DaftCompareAggable::max(&self.0)?.into_series()),
                 }
             }
+
+            fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+                use crate::array::ops::DaftListAggable;
+                match groups {
+                    Some(groups) => Ok(self.0.grouped_list(groups)?.into_series()),
+                    None => Ok(self.0.list()?.into_series()),
+                }
+            }
         }
     };
 }
