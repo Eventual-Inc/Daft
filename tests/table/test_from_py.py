@@ -449,3 +449,23 @@ def test_nested_fixed_size_list_dates(levels: int) -> None:
     assert dtype == expected_dtype
     assert back_again.to_arrow() == pa.array(data, type=expected_arrow_type)
     assert back_again.to_pylist() == data
+
+
+@pytest.mark.parametrize("levels", list(range(5)))
+def test_nested_struct_dates(levels: int) -> None:
+    data = datetime.date.today()
+    for _ in range(levels):
+        data = {"data": data}
+
+    data = [data]
+    table = Table.from_pydict({"data": data})
+    back_again = table.get_column("data")
+    dtype = back_again.datatype()
+    expected_dtype = DataType.date()
+    expected_arrow_type = pa.date32()
+    for _ in range(levels):
+        expected_dtype = DataType.struct({"data": expected_dtype})
+        expected_arrow_type = pa.struct([("data", expected_arrow_type)])
+    assert dtype == expected_dtype
+    assert back_again.to_arrow() == pa.array(data, type=expected_arrow_type)
+    assert back_again.to_pylist() == data

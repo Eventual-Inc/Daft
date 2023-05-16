@@ -58,7 +58,7 @@ impl Display for Series {
         let mut table = prettytable::Table::new();
 
         let header =
-            prettytable::Cell::new(format!("{}\n{:?}", self.name(), self.data_type()).as_str())
+            prettytable::Cell::new(format!("{}\n{}", self.name(), self.data_type()).as_str())
                 .with_style(prettytable::Attr::Bold);
         table.add_row(prettytable::Row::new(vec![header]));
 

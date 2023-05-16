@@ -89,6 +89,36 @@ fn logical_to_arrow<'a>(
                 }
             }
         }
+        DataType::Struct(fields) => {
+            let downcasted = arr
+                .as_ref()
+                .as_any()
+                .downcast_ref::<arrow2::array::StructArray>()
+                .unwrap();
+            let mut new_values_vec = Vec::with_capacity(fields.len());
+
+            let mut new_fields_vec = Vec::with_capacity(fields.len());
+
+            for (values, child_field) in downcasted.values().iter().zip(fields) {
+                let values = Cow::Borrowed(values);
+                let new_values = logical_to_arrow(values, child_field);
+                new_fields_vec.push(arrow2::datatypes::Field::new(
+                    child_field.name.clone(),
+                    new_values.data_type().clone(),
+                    true,
+                ));
+                new_values_vec.push(new_values.into_owned());
+            }
+            Cow::Owned(
+                arrow2::array::StructArray::new(
+                    arrow2::datatypes::DataType::Struct(new_fields_vec),
+                    new_values_vec,
+                    arr.validity().cloned(),
+                )
+                .boxed(),
+            )
+        }
+
         DataType::Date => {
             let downcasted = arr
                 .as_ref()
