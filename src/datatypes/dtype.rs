@@ -180,10 +180,7 @@ impl DataType {
 
     #[inline]
     pub fn is_logical(&self) -> bool {
-        match self {
-            DataType::Date => true,
-            _ => false,
-        }
+        matches!(self, DataType::Date)
     }
 
     #[inline]
@@ -194,10 +191,10 @@ impl DataType {
     #[inline]
     pub fn is_nested(&self) -> bool {
         let p: DataType = self.to_physical();
-        match p {
-            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Struct(..) => true,
-            _ => false,
-        }
+        matches!(
+            p,
+            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Struct(..)
+        )
     }
 
     #[inline]
