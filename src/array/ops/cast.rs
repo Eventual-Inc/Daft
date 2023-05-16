@@ -8,11 +8,14 @@ use crate::series::IntoSeries;
 use crate::{
     array::DataArray,
     datatypes::{logical::DateArray, Field},
-    datatypes::{DaftArrowBackedType, DataType, PythonArray, Utf8Array},
+    datatypes::{DaftArrowBackedType, DataType, Utf8Array},
     error::{DaftError, DaftResult},
     series::Series,
     with_match_arrow_daft_types, with_match_daft_logical_types,
 };
+
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 
 use super::as_arrow::AsArrow;
 use std::sync::Arc;

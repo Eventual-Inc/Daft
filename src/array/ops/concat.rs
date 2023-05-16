@@ -1,10 +1,13 @@
 use arrow2::array::Array;
 
 use crate::{
-    array::{pseudo_arrow::PseudoArrowArray, DataArray},
+    array::DataArray,
     datatypes::DaftPhysicalType,
     error::{DaftError, DaftResult},
 };
+
+#[cfg(feature = "python")]
+use crate::array::pseudo_arrow::PseudoArrowArray;
 
 impl<T> DataArray<T>
 where

@@ -337,4 +337,6 @@ impl_todo_daft_comparable!(BinaryArray);
 impl_todo_daft_comparable!(StructArray);
 impl_todo_daft_comparable!(FixedSizeListArray);
 impl_todo_daft_comparable!(ListArray);
+
+#[cfg(feature = "python")]
 impl_todo_daft_comparable!(PythonArray);

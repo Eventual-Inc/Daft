@@ -126,6 +126,7 @@ impl Series {
         self.downcast()
     }
 
+    #[cfg(feature = "python")]
     pub fn python(&self) -> DaftResult<&PythonArray> {
         self.downcast()
     }

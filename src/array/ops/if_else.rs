@@ -2,7 +2,7 @@ use crate::array::DataArray;
 use crate::datatypes::logical::DateArray;
 use crate::datatypes::{
     BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, Field, FixedSizeListArray,
-    ListArray, NullArray, PythonArray, StructArray, Utf8Array,
+    ListArray, NullArray, StructArray, Utf8Array,
 };
 use crate::error::{DaftError, DaftResult};
 use crate::utils::arrow::arrow_bitmap_and_helper;
@@ -11,6 +11,9 @@ use std::sync::Arc;
 
 use super::as_arrow::AsArrow;
 use super::broadcast::Broadcastable;
+
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 
 // Helper macro for broadcasting if/else across the if_true/if_false/predicate DataArrays
 //

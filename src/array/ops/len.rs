@@ -1,8 +1,7 @@
-use crate::{
-    array::DataArray,
-    datatypes::{DaftArrowBackedType, PythonArray},
-    error::DaftResult,
-};
+use crate::{array::DataArray, datatypes::DaftArrowBackedType, error::DaftResult};
+
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 
 use super::as_arrow::AsArrow;
 

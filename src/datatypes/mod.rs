@@ -97,6 +97,8 @@ impl_daft_arrow_datatype!(Utf8Type, Utf8);
 impl_daft_arrow_datatype!(FixedSizeListType, Unknown);
 impl_daft_arrow_datatype!(ListType, Unknown);
 impl_daft_arrow_datatype!(StructType, Unknown);
+
+#[cfg(feature = "python")]
 impl_daft_non_arrow_datatype!(PythonType, Python);
 
 impl_daft_logical_datatype!(TimestampType, Unknown, Int64Type);
@@ -241,4 +243,6 @@ pub type Utf8Array = DataArray<Utf8Type>;
 pub type FixedSizeListArray = DataArray<FixedSizeListType>;
 pub type ListArray = DataArray<ListType>;
 pub type StructArray = DataArray<StructType>;
+
+#[cfg(feature = "python")]
 pub type PythonArray = DataArray<PythonType>;

@@ -2,13 +2,16 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::DateArray, BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType,
-        FixedSizeListArray, Float32Array, Float64Array, ListArray, NullArray, PythonArray,
-        StructArray, Utf8Array,
+        FixedSizeListArray, Float32Array, Float64Array, ListArray, NullArray, StructArray,
+        Utf8Array,
     },
     error::DaftResult,
     kernels::search_sorted::{build_compare_with_nulls, cmp_float},
     series::Series,
 };
+
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 
 use arrow2::{
     array::ord::{self, DynComparator},
@@ -573,6 +576,8 @@ impl StructArray {
         todo!("impl sort for StructArray")
     }
 }
+
+#[cfg(feature = "python")]
 impl PythonArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
         todo!("impl sort for python array")
