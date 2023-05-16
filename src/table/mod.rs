@@ -52,7 +52,7 @@ impl Table {
             .collect();
 
         Ok(Table {
-            schema: schema.into(),
+            schema,
             columns: columns?,
         })
     }

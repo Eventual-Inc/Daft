@@ -6,7 +6,7 @@ use crate::array::ops::DaftListAggable;
 use crate::array::ops::GroupIndices;
 use crate::array::DataArray;
 use crate::datatypes::DaftArrowBackedType;
-use crate::datatypes::DaftPhysicalType;
+
 use crate::series::Field;
 use crate::{
     datatypes::{
@@ -18,7 +18,6 @@ use crate::{
     series::series_like::SeriesLike,
     with_match_integer_daft_types,
 };
-use dyn_clone::clone_box;
 
 use crate::datatypes::DataType;
 use std::borrow::Cow;
