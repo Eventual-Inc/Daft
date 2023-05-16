@@ -10,20 +10,13 @@ use super::Series;
 
 pub trait SeriesLike: Send + Sync + Any {
     fn to_arrow(&self) -> Box<dyn arrow2::array::Array>;
-
     fn as_any(&self) -> &dyn std::any::Any;
-
     fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn broadcast(&self, num: usize) -> DaftResult<Series>;
     fn cast(&self, datatype: &DataType) -> DaftResult<Series>;
-
     fn filter(&self, mask: &BooleanArray) -> DaftResult<Series>;
-
-    // fn is_nan(&self) -> DaftResult<Series>;
-    // fn make_groups(&self) -> DaftResult<GroupIndicesPair>;
-    // fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array>;
     fn if_else(&self, other: &Series, predicate: &Series) -> DaftResult<Series>;
     fn data_type(&self) -> &DataType;
     fn field(&self) -> &Field;
