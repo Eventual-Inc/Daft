@@ -370,7 +370,7 @@ impl Display for Table {
             .fields
             .iter()
             .map(|(name, field)| {
-                prettytable::Cell::new(format!("{}\n{:?}", name, field.dtype).as_str())
+                prettytable::Cell::new(format!("{}\n{}", name, field.dtype).as_str())
                     .with_style(prettytable::Attr::Bold)
             })
             .collect();

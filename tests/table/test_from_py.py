@@ -404,3 +404,48 @@ def test_pyobjects_roundtrip() -> None:
     assert objs[0] is o0
     assert objs[1] is o1
     assert objs[2] is None
+
+
+@pytest.mark.parametrize("levels", list(range(6)))
+def test_nested_list_dates(levels: int) -> None:
+    data = [datetime.date.today(), datetime.date.today()]
+    for _ in range(levels):
+        data = [data, data]
+    table = Table.from_pydict({"data": data})
+    back_again = table.get_column("data")
+
+    dtype = back_again.datatype()
+
+    expected_dtype = DataType.date()
+    expected_arrow_type = pa.date32()
+    for _ in range(levels):
+        expected_dtype = DataType.list("item", expected_dtype)
+        expected_arrow_type = pa.large_list(expected_arrow_type)
+    assert dtype == expected_dtype
+    assert back_again.to_arrow() == pa.array(data, type=expected_arrow_type)
+    assert back_again.to_pylist() == data
+
+
+# TODO: Fix downcasting for FixedSizedList in Series::try_from
+@pytest.mark.skip()
+@pytest.mark.parametrize("levels", list(range(1, 6)))
+def test_nested_fixed_size_list_dates(levels: int) -> None:
+    data = [datetime.date.today(), datetime.date.today()]
+    for _ in range(levels):
+        data = [data, data]
+
+    expected_dtype = DataType.date()
+    expected_arrow_type = pa.date32()
+    for _ in range(levels):
+        expected_dtype = DataType.fixed_size_list("item", expected_dtype, 2)
+        expected_arrow_type = pa.list_(expected_arrow_type, 2)
+
+    pa_data = pa.array(data, type=expected_arrow_type)
+    table = Table.from_pydict({"data": pa_data})
+    back_again = table.get_column("data")
+
+    dtype = back_again.datatype()
+
+    assert dtype == expected_dtype
+    assert back_again.to_arrow() == pa.array(data, type=expected_arrow_type)
+    assert back_again.to_pylist() == data
