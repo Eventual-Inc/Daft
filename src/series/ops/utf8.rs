@@ -3,8 +3,8 @@ use crate::{
     series::Series,
 };
 
-use crate::array::BaseArray;
 use crate::datatypes::*;
+use crate::series::array_impl::IntoSeries;
 
 impl Series {
     pub fn utf8_endswith(&self, pattern: &Series) -> DaftResult<Series> {

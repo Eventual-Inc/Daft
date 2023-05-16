@@ -1,8 +1,8 @@
 use std::ops::Not;
 
-use crate::array::BaseArray;
 use crate::datatypes::BooleanType;
 use crate::error::DaftResult;
+use crate::series::array_impl::IntoSeries;
 use crate::series::Series;
 
 impl Not for &Series {

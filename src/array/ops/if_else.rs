@@ -1,14 +1,19 @@
-use crate::array::{BaseArray, DataArray};
+use crate::array::DataArray;
+use crate::datatypes::logical::DateArray;
 use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, NullArray,
-    PythonArray, StructArray, Utf8Array,
+    BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, Field, FixedSizeListArray,
+    ListArray, NullArray, StructArray, Utf8Array,
 };
 use crate::error::{DaftError, DaftResult};
 use crate::utils::arrow::arrow_bitmap_and_helper;
 use std::convert::identity;
+use std::sync::Arc;
 
+use super::as_arrow::AsArrow;
 use super::broadcast::Broadcastable;
-use super::downcast::Downcastable;
+
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 
 // Helper macro for broadcasting if/else across the if_true/if_false/predicate DataArrays
 //
@@ -23,8 +28,8 @@ macro_rules! broadcast_if_else{(
     match ($if_true.len(), $if_false.len(), $predicate.len()) {
         // CASE: Equal lengths across all 3 arguments
         (self_len, other_len, predicate_len) if self_len == other_len && other_len == predicate_len => {
-            let result = $if_then_else($predicate.downcast(), $if_true.data(), $if_false.data())?;
-            DataArray::try_from(($if_true.name(), result))
+            let result = $if_then_else($predicate.as_arrow(), $if_true.data(), $if_false.data())?;
+            DataArray::try_from(($if_true.field.clone(), result))
         },
         // CASE: Broadcast predicate
         (self_len, _, 1) => {
@@ -44,7 +49,7 @@ macro_rules! broadcast_if_else{(
         (1, 1, _) => {
             let self_scalar = $if_true.get(0);
             let other_scalar = $if_false.get(0);
-            let predicate_arr = $predicate.downcast();
+            let predicate_arr = $predicate.as_arrow();
             let predicate_values = predicate_arr.values();
             let naive_if_else: $array_type = predicate_values.iter().map(
                 |pred_val| match pred_val {
@@ -58,9 +63,9 @@ macro_rules! broadcast_if_else{(
         // CASE: Broadcast truthy array
         (1, o, p)  if o == p => {
             let self_scalar = $if_true.get(0);
-            let predicate_arr = $predicate.downcast();
+            let predicate_arr = $predicate.as_arrow();
             let predicate_values = predicate_arr.values();
-            let naive_if_else: $array_type = $if_false.downcast().iter().zip(predicate_values.iter()).map(
+            let naive_if_else: $array_type = $if_false.as_arrow().iter().zip(predicate_values.iter()).map(
                 |(other_val, pred_val)| match pred_val {
                     true => self_scalar,
                     false => $scalar_copy(other_val),
@@ -72,9 +77,9 @@ macro_rules! broadcast_if_else{(
         // CASE: Broadcast falsey array
         (s, 1, p)  if s == p => {
             let other_scalar = $if_false.get(0);
-            let predicate_arr = $predicate.downcast();
+            let predicate_arr = $predicate.as_arrow();
             let predicate_values = predicate_arr.values();
-            let naive_if_else: $array_type = $if_true.downcast().iter().zip(predicate_values.iter()).map(
+            let naive_if_else: $array_type = $if_true.as_arrow().iter().zip(predicate_values.iter()).map(
                 |(self_val, pred_val)| match pred_val {
                     true => $scalar_copy(self_val),
                     false => other_scalar,
@@ -216,36 +221,42 @@ impl PythonArray {
         DataArray::<PythonType>::new(
             self.field.clone(),
             Box::new(PseudoArrowArray::<PyObject>::if_then_else(
-                predicate_arr.downcast(),
-                if_true_arr.downcast(),
-                if_false_arr.downcast(),
+                predicate_arr.as_arrow(),
+                if_true_arr.as_arrow(),
+                if_false_arr.as_arrow(),
             )),
         )
     }
 }
 
-fn from_arrow_if_then_else<T>(predicate: &BooleanArray, if_true: &T, if_false: &T) -> DaftResult<T>
+fn from_arrow_if_then_else<T: DaftArrowBackedType + 'static>(
+    predicate: &BooleanArray,
+    if_true: &DataArray<T>,
+    if_false: &DataArray<T>,
+) -> DaftResult<DataArray<T>>
 where
-    T: BaseArray
-        + Downcastable
-        + for<'a> TryFrom<(&'a str, Box<dyn arrow2::array::Array>), Error = DaftError>,
-    <T as Downcastable>::Output: arrow2::array::Array,
+    DataArray<T>:
+        AsArrow + for<'a> TryFrom<(Arc<Field>, Box<dyn arrow2::array::Array>), Error = DaftError>,
+    <DataArray<T> as AsArrow>::Output: arrow2::array::Array,
 {
     let result = arrow2::compute::if_then_else::if_then_else(
-        predicate.downcast(),
-        if_true.downcast(),
-        if_false.downcast(),
+        predicate.as_arrow(),
+        if_true.as_arrow(),
+        if_false.as_arrow(),
     )?;
-    T::try_from((if_true.name(), result))
+    DataArray::try_from((if_true.field.clone(), result))
 }
 
-fn nested_if_then_else<T>(predicate: &BooleanArray, if_true: &T, if_false: &T) -> DaftResult<T>
+fn nested_if_then_else<T: DaftArrowBackedType + 'static>(
+    predicate: &BooleanArray,
+    if_true: &DataArray<T>,
+    if_false: &DataArray<T>,
+) -> DaftResult<DataArray<T>>
 where
-    T: BaseArray
+    DataArray<T>: AsArrow
         + Broadcastable
-        + Downcastable
-        + for<'a> TryFrom<(&'a str, Box<dyn arrow2::array::Array>), Error = DaftError>,
-    <T as Downcastable>::Output: arrow2::array::Array,
+        + for<'a> TryFrom<(Arc<Field>, Box<dyn arrow2::array::Array>), Error = DaftError>,
+    <DataArray<T> as AsArrow>::Output: arrow2::array::Array,
 {
     // TODO(Clark): Support streaming broadcasting, i.e. broadcasting without inflating scalars to full array length.
     match (predicate.len(), if_true.len(), if_false.len()) {
@@ -305,5 +316,12 @@ impl StructArray {
         predicate: &BooleanArray,
     ) -> DaftResult<StructArray> {
         nested_if_then_else(predicate, self, other)
+    }
+}
+
+impl DateArray {
+    pub fn if_else(&self, other: &DateArray, predicate: &BooleanArray) -> DaftResult<DateArray> {
+        let new_array = self.physical.if_else(&other.physical, predicate)?;
+        Ok(Self::new(self.field.clone(), new_array))
     }
 }

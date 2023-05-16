@@ -7,8 +7,9 @@ use crate::{
 
 impl IntoGroups for Series {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair> {
-        with_match_comparable_daft_types!(self.data_type(), |$T| {
-            let array = self.downcast::<$T>()?;
+        let s = self.as_physical()?;
+        with_match_comparable_daft_types!(s.data_type(), |$T| {
+            let array = s.downcast::<$T>()?;
             array.make_groups()
         })
     }

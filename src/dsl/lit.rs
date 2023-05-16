@@ -81,8 +81,8 @@ impl LiteralValue {
     }
 
     pub fn to_series(&self) -> Series {
-        use crate::array::BaseArray;
         use crate::datatypes::*;
+        use crate::series::IntoSeries;
         use LiteralValue::*;
         let result = match self {
             Null => NullArray::full_null("literal", &DataType::Null, 1).into_series(),

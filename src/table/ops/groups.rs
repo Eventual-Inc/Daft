@@ -1,6 +1,6 @@
 use crate::{
     array::ops::{
-        arrow2::comparison::build_multi_array_is_equal, downcast::Downcastable, GroupIndicesPair,
+        arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow, GroupIndicesPair,
         IntoGroups,
     },
     datatypes::{UInt64Array, UInt64Type},
@@ -76,7 +76,7 @@ impl Table {
 
         let mut group_begin_indices: Option<(usize, usize)> = None;
 
-        for (argarray_index, table_index) in argsort_array.downcast().iter().enumerate() {
+        for (argarray_index, table_index) in argsort_array.as_arrow().iter().enumerate() {
             let table_index = *table_index.unwrap() as usize;
 
             match group_begin_indices {

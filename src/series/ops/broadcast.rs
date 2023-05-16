@@ -1,35 +1,15 @@
-use crate::{error::DaftResult, series::Series, with_match_physical_daft_types};
-
-use crate::array::ops::broadcast::Broadcastable;
-use crate::array::BaseArray;
+use crate::{error::DaftResult, series::Series};
 
 impl Series {
     pub fn broadcast(&self, num: usize) -> DaftResult<Series> {
-        if self.len() != 1 {
-            return Err(crate::error::DaftError::ValueError(format!(
-                "Attempting to broadcast non-unit length Series named: {}",
-                self.name()
-            )));
-        }
-
-        let s = self.as_physical()?;
-        let result = with_match_physical_daft_types!(self.data_type(), |$T| {
-            let array = s.downcast::<$T>()?;
-            array.broadcast(num)?.into_series()
-        });
-
-        if result.data_type() != self.data_type() {
-            return result.cast(self.data_type());
-        }
-
-        Ok(result)
+        self.inner.broadcast(num)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::series::array_impl::IntoSeries;
     use crate::{
-        array::BaseArray,
         datatypes::{DataType, Int64Array, Utf8Array},
         error::DaftResult,
     };

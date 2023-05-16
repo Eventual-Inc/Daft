@@ -5,20 +5,18 @@ use crate::{
     kernels,
 };
 
-use crate::array::BaseArray;
-
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where
     T: DaftNumericType,
 {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        let downcasted = self.downcast();
+        let as_arrowed = self.as_arrow();
 
-        let seed = seed.map(|v| v.downcast());
+        let seed = seed.map(|v| v.as_arrow());
 
-        let result = kernels::hashing::hash(downcasted, seed)?;
+        let result = kernels::hashing::hash(as_arrowed, seed)?;
 
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
@@ -26,11 +24,11 @@ where
 
 impl Utf8Array {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        let downcasted = self.downcast();
+        let as_arrowed = self.as_arrow();
 
-        let seed = seed.map(|v| v.downcast());
+        let seed = seed.map(|v| v.as_arrow());
 
-        let result = kernels::hashing::hash(downcasted, seed)?;
+        let result = kernels::hashing::hash(as_arrowed, seed)?;
 
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
@@ -38,11 +36,11 @@ impl Utf8Array {
 
 impl BooleanArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        let downcasted = self.downcast();
+        let as_arrowed = self.as_arrow();
 
-        let seed = seed.map(|v| v.downcast());
+        let seed = seed.map(|v| v.as_arrow());
 
-        let result = kernels::hashing::hash(downcasted, seed)?;
+        let result = kernels::hashing::hash(as_arrowed, seed)?;
 
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
@@ -50,11 +48,11 @@ impl BooleanArray {
 
 impl NullArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        let downcasted = self.data();
+        let as_arrowed = self.data();
 
-        let seed = seed.map(|v| v.downcast());
+        let seed = seed.map(|v| v.as_arrow());
 
-        let result = kernels::hashing::hash(downcasted, seed)?;
+        let result = kernels::hashing::hash(as_arrowed, seed)?;
 
         Ok(DataArray::from((self.name(), Box::new(result))))
     }

@@ -3,15 +3,15 @@ use std::fmt::{Display, Formatter, Result};
 use num_traits::ToPrimitive;
 
 use crate::array::ops::GroupIndices;
-use crate::array::BaseArray;
+
+use crate::datatypes::logical::LogicalArray;
 use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
 use crate::dsl::functions::FunctionEvaluator;
 use crate::dsl::{AggExpr, Expr};
 use crate::error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
-use crate::series::Series;
-use crate::with_match_daft_types;
-
+use crate::series::{IntoSeries, Series};
+use crate::{with_match_daft_logical_types, with_match_physical_daft_types};
 mod ops;
 #[derive(Clone)]
 pub struct Table {
@@ -20,9 +20,10 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new(schema: Schema, columns: Vec<Series>) -> DaftResult<Self> {
+    pub fn new<S: Into<SchemaRef>>(schema: S, columns: Vec<Series>) -> DaftResult<Self> {
+        let schema: SchemaRef = schema.into();
         if schema.fields.len() != columns.len() {
-            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields, columns)));
+            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields.len(), columns.len())));
         }
         let mut num_rows = 1;
 
@@ -51,7 +52,7 @@ impl Table {
             .collect();
 
         Ok(Table {
-            schema: schema.into(),
+            schema,
             columns: columns?,
         })
     }
@@ -61,9 +62,15 @@ impl Table {
             Some(schema) => {
                 let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
                 for (field_name, field) in schema.fields.iter() {
-                    with_match_daft_types!(field.dtype, |$T| {
-                        columns.push(DataArray::<$T>::full_null(field_name, &field.dtype, 0).into_series())
-                    })
+                    if field.dtype.is_logical() {
+                        with_match_daft_logical_types!(field.dtype, |$T| {
+                            columns.push(LogicalArray::<$T>::empty(field_name, &field.dtype).into_series())
+                        })
+                    } else {
+                        with_match_physical_daft_types!(field.dtype, |$T| {
+                            columns.push(DataArray::<$T>::empty(field_name, &field.dtype).into_series())
+                        })
+                    }
                 }
                 Ok(Table { schema, columns })
             }
@@ -115,7 +122,8 @@ impl Table {
             use rand::{distributions::Uniform, Rng};
             let range = Uniform::from(0..self.len() as u64);
             let values: Vec<u64> = rand::thread_rng().sample_iter(&range).take(num).collect();
-            let indices = UInt64Array::from(("idx", values));
+            let indices: crate::array::DataArray<crate::datatypes::UInt64Type> =
+                UInt64Array::from(("idx", values));
             self.take(&indices.into_series())
         }
     }
@@ -186,10 +194,7 @@ impl Table {
 
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
-        Ok(Table {
-            schema: self.schema.clone(),
-            columns: new_series?,
-        })
+        Ok(Table::new(self.schema.clone(), new_series?).unwrap())
     }
 
     pub fn concat(tables: &[&Table]) -> DaftResult<Self> {
@@ -321,7 +326,7 @@ impl Table {
             )));
         }
         if expected_field.dtype != series.field().dtype {
-            return Err(DaftError::ComputeError(format!("Mismatch of expected expression data type and data type from computed series, {} vs {}", expected_field.dtype, series.field().dtype)));
+            panic!("Mismatch of expected expression data type and data type from computed series, {} vs {}", expected_field.dtype, series.field().dtype);
         }
         Ok(series)
     }
@@ -365,7 +370,7 @@ impl Display for Table {
             .fields
             .iter()
             .map(|(name, field)| {
-                prettytable::Cell::new(format!("{}\n{:?}", name, field.dtype).as_str())
+                prettytable::Cell::new(format!("{}\n{}", name, field.dtype).as_str())
                     .with_style(prettytable::Attr::Bold)
             })
             .collect();
@@ -413,11 +418,11 @@ impl Display for Table {
 #[cfg(test)]
 mod test {
 
-    use crate::array::BaseArray;
     use crate::datatypes::{DataType, Float64Array, Int64Array};
     use crate::dsl::col;
     use crate::error::DaftResult;
     use crate::schema::Schema;
+    use crate::series::IntoSeries;
     use crate::table::Table;
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {

@@ -2,9 +2,9 @@ use std::vec;
 
 use arrow2::{array::Array, offset::OffsetsBuffer};
 
-use crate::{array::BaseArray, datatypes::ListArray, error::DaftResult};
+use crate::{datatypes::ListArray, error::DaftResult};
 
-use super::{downcast::Downcastable, DaftConcatAggable};
+use super::{as_arrow::AsArrow, DaftConcatAggable};
 
 #[cfg(feature = "python")]
 impl DaftConcatAggable for crate::datatypes::PythonArray {
@@ -14,7 +14,7 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
         use pyo3::prelude::*;
         use pyo3::types::PyList;
 
-        let pyobj_vec = self.downcast().to_pyobj_vec();
+        let pyobj_vec = self.as_arrow().to_pyobj_vec();
 
         let pylist: Py<PyList> = Python::with_gil(|py| -> PyResult<Py<PyList>> {
             let pylist: Py<PyList> = PyList::empty(py).into();
@@ -38,7 +38,7 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
         Python::with_gil(|py| -> DaftResult<()> {
             for group in groups {
                 let indices_as_array = crate::datatypes::UInt64Array::from(("", group.clone()));
-                let group_pyobjs = self.take(&indices_as_array)?.downcast().to_pyobj_vec();
+                let group_pyobjs = self.take(&indices_as_array)?.as_arrow().to_pyobj_vec();
                 let pylist: Py<PyList> = PyList::empty(py).into();
                 for pyobj in group_pyobjs {
                     if !pyobj.is_none(py) {
@@ -58,16 +58,19 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
 impl DaftConcatAggable for ListArray {
     type Output = DaftResult<Self>;
     fn concat(&self) -> Self::Output {
-        let array = self.downcast();
+        let array = self.as_arrow();
         if array.null_count() == 0 {
             let values = array.values();
             let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, values.len() as i64])?;
-            let result = Box::new(arrow2::array::ListArray::<i64>::new(
-                self.data_type().to_arrow()?,
-                new_offsets,
-                values.clone(),
-                None,
-            ));
+            let result = Box::new(
+                arrow2::array::ListArray::<i64>::try_new(
+                    self.data_type().to_physical().to_arrow()?,
+                    new_offsets,
+                    values.clone(),
+                    None,
+                )
+                .unwrap(),
+            );
             return ListArray::new(self.field.clone(), result);
         }
 
@@ -94,18 +97,20 @@ impl DaftConcatAggable for ListArray {
             }
         });
 
-        let nested_array = Box::new(arrow2::array::ListArray::<i64>::try_new(
-            self.data_type().to_arrow()?,
-            arrow2::offset::OffsetsBuffer::try_from(vec![0, capacity])?,
-            growable.as_box(),
-            None,
-        )?);
-
+        let nested_array = Box::new(
+            arrow2::array::ListArray::<i64>::try_new(
+                self.data_type().to_physical().to_arrow()?,
+                arrow2::offset::OffsetsBuffer::try_from(vec![0, capacity])?,
+                growable.as_box(),
+                None,
+            )
+            .unwrap(),
+        );
         ListArray::new(self.field.clone(), nested_array)
     }
 
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
-        let arrow_array = self.downcast();
+        let arrow_array = self.as_arrow();
 
         let old_offsets: &OffsetsBuffer<i64> = arrow_array.offsets();
         let mut offsets = Vec::with_capacity(groups.len() + 1);
@@ -151,7 +156,7 @@ impl DaftConcatAggable for ListArray {
         }
 
         let nested_array = Box::new(arrow2::array::ListArray::<i64>::try_new(
-            self.data_type().to_arrow()?,
+            self.data_type().to_physical().to_arrow()?,
             offsets,
             growable.as_box(),
             None,

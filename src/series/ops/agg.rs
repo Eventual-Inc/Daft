@@ -1,21 +1,21 @@
+use crate::series::IntoSeries;
 use crate::{
     array::ops::GroupIndices,
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_comparable_daft_types, with_match_daft_types,
+    with_match_physical_daft_types,
 };
 
-use crate::array::BaseArray;
 use crate::datatypes::*;
 
 impl Series {
     pub fn count(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         use crate::array::ops::DaftCountAggable;
-
-        with_match_daft_types!(self.data_type(), |$T| {
+        let s = self.as_physical()?;
+        with_match_physical_daft_types!(s.data_type(), |$T| {
             match groups {
-                Some(groups) => Ok(DaftCountAggable::grouped_count(&self.downcast::<$T>()?, groups)?.into_series()),
-                None => Ok(DaftCountAggable::count(&self.downcast::<$T>()?)?.into_series())
+                Some(groups) => Ok(DaftCountAggable::grouped_count(&s.downcast::<$T>()?, groups)?.into_series()),
+                None => Ok(DaftCountAggable::count(&s.downcast::<$T>()?)?.into_series())
             }
         })
     }
@@ -92,49 +92,15 @@ impl Series {
     }
 
     pub fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftCompareAggable;
-
-        let s = self.as_physical()?;
-
-        let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
-            match groups {
-                Some(groups) => DaftCompareAggable::grouped_min(&s.downcast::<$T>()?, groups)?.into_series(),
-                None => DaftCompareAggable::min(&s.downcast::<$T>()?)?.into_series()
-            }
-        });
-
-        if result.data_type() != self.data_type() {
-            return result.cast(self.data_type());
-        }
-        Ok(result)
+        self.inner.min(groups)
     }
 
     pub fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftCompareAggable;
-
-        let s = self.as_physical()?;
-
-        let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
-            match groups {
-                Some(groups) => DaftCompareAggable::grouped_max(&s.downcast::<$T>()?, groups)?.into_series(),
-                None => DaftCompareAggable::max(&s.downcast::<$T>()?)?.into_series()
-            }
-        });
-
-        if result.data_type() != self.data_type() {
-            return result.cast(self.data_type());
-        }
-        Ok(result)
+        self.inner.max(groups)
     }
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftListAggable;
-        with_match_daft_types!(self.data_type(), |$T| {
-            match groups {
-                Some(groups) => Ok(DaftListAggable::grouped_list(self.downcast::<$T>()?, groups)?.into_series()),
-                None => Ok(DaftListAggable::list(self.downcast::<$T>()?)?.into_series())
-            }
-        })
+        self.inner.agg_list(groups)
     }
 
     pub fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

@@ -12,7 +12,7 @@ use crate::{
     error::DaftResult,
 };
 
-use super::{downcast::Downcastable, IntoGroups};
+use super::{as_arrow::AsArrow, IntoGroups};
 
 use std::hash::Hash;
 
@@ -57,7 +57,7 @@ where
     <T as DaftNumericType>::Native: std::cmp::Eq,
 {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array: &arrow2::array::PrimitiveArray<<T as DaftNumericType>::Native> = self.downcast();
+        let array: &arrow2::array::PrimitiveArray<<T as DaftNumericType>::Native> = self.as_arrow();
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
@@ -68,7 +68,7 @@ where
 
 impl IntoGroups for Float32Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.downcast();
+        let array = self.as_arrow();
         if array.null_count() > 0 {
             make_groups(array.iter().map(move |f| {
                 f.map(|v| {
@@ -93,7 +93,7 @@ impl IntoGroups for Float32Array {
 
 impl IntoGroups for Float64Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.downcast();
+        let array = self.as_arrow();
         if array.null_count() > 0 {
             make_groups(array.iter().map(move |f| {
                 f.map(|v| {
@@ -118,7 +118,7 @@ impl IntoGroups for Float64Array {
 
 impl IntoGroups for Utf8Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.downcast();
+        let array = self.as_arrow();
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
@@ -129,7 +129,7 @@ impl IntoGroups for Utf8Array {
 
 impl IntoGroups for BooleanArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.downcast();
+        let array = self.as_arrow();
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {

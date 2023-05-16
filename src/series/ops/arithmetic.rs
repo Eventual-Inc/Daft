@@ -2,10 +2,10 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use super::match_types_on_series;
 use super::py_binary_op_utilfn;
-use crate::array::BaseArray;
+
 use crate::datatypes::{DataType, Float64Type};
 use crate::error::{DaftError, DaftResult};
-use crate::series::Series;
+use crate::series::{IntoSeries, Series};
 use crate::with_match_numeric_and_utf_daft_types;
 use crate::with_match_numeric_daft_types;
 
@@ -115,8 +115,8 @@ impl_series_math_op!(Rem, rem, "mod");
 
 #[cfg(test)]
 mod tests {
+    use crate::series::IntoSeries;
     use crate::{
-        array::BaseArray,
         datatypes::{DataType, Float64Array, Int64Array, Utf8Array},
         error::DaftResult,
     };

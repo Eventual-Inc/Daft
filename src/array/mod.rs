@@ -2,50 +2,22 @@ pub mod from;
 pub mod iterator;
 pub mod ops;
 pub mod pseudo_arrow;
-use std::{any::Any, marker::PhantomData, sync::Arc};
+
+use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    datatypes::{DaftDataType, DataType, Field},
+    datatypes::{DaftPhysicalType, DataType, Field},
     error::{DaftError, DaftResult},
-    series::Series,
 };
 
-pub trait BaseArray: Any + Send + Sync {
-    fn data(&self) -> &dyn arrow2::array::Array;
-
-    fn data_type(&self) -> &DataType;
-
-    fn name(&self) -> &str;
-
-    fn rename(&self, name: &str) -> Box<dyn BaseArray>;
-
-    fn field(&self) -> &Field;
-
-    fn len(&self) -> usize;
-
-    fn as_any(&self) -> &dyn std::any::Any;
-
-    fn boxed(self) -> Box<dyn BaseArray>;
-
-    fn arced(self) -> Arc<dyn BaseArray>;
-
-    fn into_series(self) -> Series;
-}
-
-impl std::fmt::Debug for dyn BaseArray {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self.data_type())
-    }
-}
-
 #[derive(Debug)]
-pub struct DataArray<T: DaftDataType> {
-    field: Arc<Field>,
-    data: Box<dyn arrow2::array::Array>,
+pub struct DataArray<T: DaftPhysicalType> {
+    pub field: Arc<Field>,
+    pub data: Box<dyn arrow2::array::Array>,
     marker_: PhantomData<T>,
 }
 
-impl<T: DaftDataType> Clone for DataArray<T> {
+impl<T: DaftPhysicalType> Clone for DataArray<T> {
     fn clone(&self) -> Self {
         DataArray::new(self.field.clone(), self.data.clone()).unwrap()
     }
@@ -53,16 +25,22 @@ impl<T: DaftDataType> Clone for DataArray<T> {
 
 impl<T> DataArray<T>
 where
-    T: DaftDataType,
+    T: DaftPhysicalType,
 {
     pub fn new(field: Arc<Field>, data: Box<dyn arrow2::array::Array>) -> DaftResult<DataArray<T>> {
-        if let Ok(arrow_dtype) = field.dtype.to_arrow() {
+        assert!(
+            field.dtype.is_physical(),
+            "Can only construct DataArray for PhysicalTypes, got {}",
+            field.dtype
+        );
+
+        if let Ok(arrow_dtype) = field.dtype.to_physical().to_arrow() {
             if !arrow_dtype.eq(data.data_type()) {
-                return Err(DaftError::TypeError(format!(
-                    "expected {:?}, got {:?}",
+                panic!(
+                    "expected {:?}, got {:?} when creating a new DataArray",
                     arrow_dtype,
                     data.data_type()
-                )));
+                )
             }
         }
 
@@ -71,6 +49,10 @@ where
             data,
             marker_: PhantomData,
         })
+    }
+
+    pub fn len(&self) -> usize {
+        self.data().len()
     }
 
     pub fn with_validity(&self, validity: &[bool]) -> DaftResult<Self> {
@@ -99,46 +81,33 @@ where
     pub fn head(&self, num: usize) -> DaftResult<Self> {
         self.slice(0, num)
     }
-}
 
-impl<T: DaftDataType + 'static> BaseArray for DataArray<T> {
-    fn data(&self) -> &dyn arrow2::array::Array {
+    pub fn data(&self) -> &dyn arrow2::array::Array {
         self.data.as_ref()
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn data_type(&self) -> &DataType {
+    pub fn data_type(&self) -> &DataType {
         &self.field.dtype
     }
 
-    fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         self.field.name.as_str()
     }
 
-    fn rename(&self, name: &str) -> Box<dyn BaseArray> {
-        Box::new(Self::new(Arc::new(self.field.rename(name)), self.data.clone()).unwrap())
+    pub fn rename(&self, name: &str) -> Self {
+        Self::new(Arc::new(self.field.rename(name)), self.data.clone()).unwrap()
     }
 
-    fn field(&self) -> &Field {
+    pub fn field(&self) -> &Field {
         &self.field
     }
+}
 
-    fn len(&self) -> usize {
-        self.data.len()
-    }
-
-    fn boxed(self) -> Box<dyn BaseArray> {
-        Box::new(self)
-    }
-
-    fn arced(self) -> Arc<dyn BaseArray> {
-        Arc::new(self)
-    }
-
-    fn into_series(self) -> Series {
-        Series::new(self.arced())
+impl<T> DataArray<T>
+where
+    T: DaftPhysicalType + 'static,
+{
+    pub fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }

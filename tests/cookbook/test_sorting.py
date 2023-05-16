@@ -40,7 +40,6 @@ def test_get_sorted(daft_df, service_requests_csv_pd_df, repartition_nparts, sor
     """Sort by a column"""
     daft_df = daft_df.repartition(repartition_nparts)
     daft_sorted_df = daft_df.sort([col(k) for k in sort_keys], desc=True)
-
     daft_sorted_pd_df = daft_sorted_df.to_pandas()
     assert_df_equals(
         daft_sorted_pd_df,

@@ -1,8 +1,9 @@
 use crate::{
-    array::{ops::IntoGroups, BaseArray},
+    array::ops::IntoGroups,
     datatypes::UInt64Array,
     dsl::Expr,
     error::{DaftError, DaftResult},
+    series::IntoSeries,
     table::Table,
 };
 

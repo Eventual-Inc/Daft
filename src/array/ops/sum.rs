@@ -2,7 +2,7 @@ use arrow2;
 
 use super::DaftSumAggable;
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 use crate::array::ops::GroupIndices;
 use crate::{array::DataArray, datatypes::*, error::DaftResult};
@@ -13,7 +13,7 @@ macro_rules! impl_daft_numeric_agg {
             type Output = DaftResult<DataArray<$T>>;
 
             fn sum(&self) -> Self::Output {
-                let primitive_arr = self.downcast();
+                let primitive_arr = self.as_arrow();
                 let sum_value = arrow2::compute::aggregate::sum_primitive(primitive_arr);
                 let arrow_array = Box::new(arrow2::array::PrimitiveArray::from([sum_value]));
                 DataArray::new(self.field.clone(), arrow_array)
@@ -21,7 +21,7 @@ macro_rules! impl_daft_numeric_agg {
 
             fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output {
                 use arrow2::array::PrimitiveArray;
-                let arrow_array = self.downcast();
+                let arrow_array = self.as_arrow();
                 let sum_per_group = if arrow_array.null_count() > 0 {
                     Box::new(PrimitiveArray::from_trusted_len_iter(groups.iter().map(
                         |g| {

@@ -4,14 +4,14 @@ use arrow2::array::{Array, DictionaryKey};
 use rand::SeedableRng;
 
 use crate::{
-    array::BaseArray,
     datatypes::UInt64Array,
     dsl::Expr,
     error::{DaftError, DaftResult},
+    series::IntoSeries,
     table::Table,
 };
 
-use crate::array::ops::downcast::Downcastable;
+use crate::array::ops::as_arrow::AsArrow;
 
 impl Table {
     fn partition_by_index(
@@ -28,14 +28,14 @@ impl Table {
         }
         let mut output_to_input_idx =
             vec![Vec::with_capacity(self.len() / num_partitions); num_partitions];
-        if targets.downcast().null_count() != 0 {
+        if targets.as_arrow().null_count() != 0 {
             return Err(DaftError::ComputeError(format!(
                 "target array can not contain nulls, contains {} nulls",
-                targets.downcast().null_count()
+                targets.as_arrow().null_count()
             )));
         }
 
-        for (s_idx, t_idx) in targets.downcast().values_iter().enumerate() {
+        for (s_idx, t_idx) in targets.as_arrow().values_iter().enumerate() {
             if *t_idx >= (num_partitions as u64) {
                 return Err(DaftError::ComputeError(format!("idx in target array is out of bounds, target idx {} at index {} out of {} partitions", t_idx, s_idx, num_partitions)));
             }

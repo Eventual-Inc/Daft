@@ -6,15 +6,15 @@ use crate::{array::DataArray, datatypes::*, error::DaftResult};
 
 use super::{DaftCountAggable, DaftMeanAggable, DaftSumAggable};
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 use crate::array::ops::GroupIndices;
 impl DaftMeanAggable for &DataArray<Float64Type> {
     type Output = DaftResult<DataArray<Float64Type>>;
 
     fn mean(&self) -> Self::Output {
-        let sum_value = DaftSumAggable::sum(self)?.downcast().value(0);
-        let count_value = DaftCountAggable::count(self)?.downcast().value(0);
+        let sum_value = DaftSumAggable::sum(self)?.as_arrow().value(0);
+        let count_value = DaftCountAggable::count(self)?.as_arrow().value(0);
 
         let result = match count_value {
             0 => None,
@@ -34,9 +34,9 @@ impl DaftMeanAggable for &DataArray<Float64Type> {
         let count_values = self.grouped_count(groups)?;
         assert_eq!(sum_values.len(), count_values.len());
         let mean_per_group = sum_values
-            .downcast()
+            .as_arrow()
             .values_iter()
-            .zip(count_values.downcast().values_iter())
+            .zip(count_values.as_arrow().values_iter())
             .map(|(s, c)| match (s, c) {
                 (_, 0) => None,
                 (s, c) => Some(s / (*c as f64)),
