@@ -4,8 +4,9 @@ use arrow2::array;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::DateArray, BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray,
-        ListArray, StructArray, Utf8Array,
+        logical::{DateArray, EmbeddingArray},
+        BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, StructArray,
+        Utf8Array,
     },
 };
 
@@ -97,5 +98,14 @@ impl AsArrow for crate::datatypes::PythonArray {
     // downcasts a DataArray<T> to a PseudoArrowArray of PyObject.
     fn as_arrow(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
+    }
+}
+
+impl AsArrow for EmbeddingArray {
+    type Output = array::FixedSizeListArray;
+
+    // downcasts a DataArray<T> to an Arrow DateArray.
+    fn as_arrow(&self) -> &Self::Output {
+        self.physical.data().as_any().downcast_ref().unwrap()
     }
 }

@@ -75,7 +75,8 @@ pub enum DataType {
     /// Extension type.
     Extension(String, Box<DataType>, Option<String>),
     // Stop ArrowTypes
-    DaftType(Box<DataType>),
+    /// A Embedding Logical Type
+    Embedding(Box<Field>, usize),
     Python,
     Unknown,
 }

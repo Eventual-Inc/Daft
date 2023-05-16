@@ -118,6 +118,12 @@ class DataType:
         return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
 
     @classmethod
+    def embedding(cls, name: str, dtype: DataType, size: int) -> DataType:
+        if not isinstance(size, int) or size <= 0:
+            raise ValueError("The size for a embedding must be a positive integer, but got: ", size)
+        return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
+
+    @classmethod
     def struct(cls, fields: dict[str, DataType]) -> DataType:
         return cls._from_pydatatype(PyDataType.struct({name: datatype._dtype for name, datatype in fields.items()}))
 

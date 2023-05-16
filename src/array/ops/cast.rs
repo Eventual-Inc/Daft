@@ -3,7 +3,7 @@ use arrow2::compute::{
     cast::{can_cast_types, cast, CastOptions},
 };
 
-use crate::datatypes::logical::LogicalArray;
+use crate::datatypes::logical::{EmbeddingArray, LogicalArray};
 use crate::series::IntoSeries;
 use crate::{
     array::DataArray,
@@ -212,5 +212,11 @@ impl PythonArray {
             // DataType::Timestamp(_, _) => $self.timestamp().unwrap().$method($($args),*),
             dt => unimplemented!("dtype {:?} not supported", dt),
         }
+    }
+}
+
+impl EmbeddingArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        self.physical.cast(dtype)
     }
 }

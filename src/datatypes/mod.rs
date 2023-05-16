@@ -106,6 +106,7 @@ impl_daft_logical_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_datatype!(TimeType, Unknown, Int64Type);
 impl_daft_logical_datatype!(DurationType, Unknown, Int64Type);
+impl_daft_logical_datatype!(EmbeddingType, Unknown, FixedSizeListType);
 
 pub trait NumericNative:
     PartialOrd
