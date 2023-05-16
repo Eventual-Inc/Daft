@@ -4,6 +4,7 @@ use arrow2::compute::{
 };
 
 use crate::datatypes::logical::{EmbeddingArray, LogicalArray};
+use crate::datatypes::FixedSizeListArray;
 use crate::series::IntoSeries;
 use crate::{
     array::DataArray,
@@ -14,8 +15,14 @@ use crate::{
     with_match_arrow_daft_types, with_match_daft_logical_types,
 };
 
+use std::iter;
+
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
+#[cfg(feature = "python")]
+use numpy::PyReadonlyArrayDyn;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 use super::as_arrow::AsArrow;
 use std::sync::Arc;
@@ -172,11 +179,85 @@ macro_rules! pycast_then_arrowcast {
 }
 
 #[cfg(feature = "python")]
+fn extract_numpy_array_to_fixed_size_list<'py, T: numpy::Element + arrow2::types::NativeType>(
+    py: Python<'py>,
+    python_objects: PythonArray,
+    list_size: usize,
+    inner_type: &DataType,
+) -> DaftResult<FixedSizeListArray> {
+    use arrow2::array::Array;
+    use numpy::PyArray1;
+
+    assert!(
+        inner_type.is_numeric(),
+        "we only support numeric types for numpy extractions"
+    );
+
+    let mut values_vec = Vec::with_capacity(list_size * python_objects.len());
+
+    for object in python_objects.as_arrow().iter() {
+        if let Some(object) = object {
+            let pyarray = object.getattr(py, pyo3::intern!(py, "__array__"));
+            if pyarray.is_err() {
+                return Err(DaftError::ValueError(format!(
+                    "An error occurred when extracting array out of type: {:?}",
+                    object.getattr(py, pyo3::intern!(py, "__class__"))
+                )));
+            }
+
+            let pyarray = pyarray?.call_method0(py, "__array__")?;
+            let pyarray: PyReadonlyArrayDyn<'_, T> = pyarray.extract(py)?;
+            if pyarray.ndim() != 1 {
+                return Err(DaftError::ValueError(format!(
+                    "we only support 1 dim numpy arrays, got {}",
+                    pyarray.ndim()
+                )));
+            }
+
+            let pyarray = pyarray.downcast::<PyArray1<T>>().unwrap();
+            if pyarray.len() != list_size {
+                return Err(DaftError::ValueError(format!(
+                    "Expected Array-like Object to have {list_size} elements but got {}",
+                    pyarray.len()
+                )));
+            }
+            values_vec.extend_from_slice(unsafe { pyarray.as_slice() }.unwrap())
+        } else {
+            values_vec.extend(iter::repeat(T::default()).take(list_size));
+        }
+    }
+
+    let values_array: Box<dyn arrow2::array::Array> =
+        Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
+
+    let inner_field =
+        arrow2::datatypes::Field::new(python_objects.name(), inner_type.to_arrow()?, true);
+
+    let list_dtype = arrow2::datatypes::DataType::FixedSizeList(Box::new(inner_field), list_size);
+
+    let daft_datatype = DataType::FixedSizeList(
+        Box::new(Field::new(python_objects.name(), (&list_dtype).into())),
+        list_size,
+    );
+
+    let list_array = arrow2::array::FixedSizeListArray::new(
+        list_dtype,
+        values_array,
+        python_objects.as_arrow().validity().cloned(),
+    );
+
+    FixedSizeListArray::new(
+        Field::new(python_objects.name(), daft_datatype).into(),
+        Box::new(list_array),
+    )
+}
+
+#[cfg(feature = "python")]
 impl PythonArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         use crate::python::PySeries;
         use pyo3::prelude::*;
-
+        for x in self.as_arrow().iter() {}
         match dtype {
             DataType::Python => Ok(self.clone().into_series()),
 

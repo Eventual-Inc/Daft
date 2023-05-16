@@ -24,6 +24,10 @@ version = "1.4.0"
 [dependencies.num-traits]
 version = "0.2"
 
+[dependencies.numpy]
+numpy = "0.18"
+optional = true
+
 [dependencies.pyo3]
 features = ["extension-module", "abi3-py37"]
 optional = true
@@ -39,7 +43,7 @@ version = "0.8.5"
 
 [features]
 default = ["python"]
-python = ["dep:pyo3"]
+python = ["dep:pyo3", "dep:numpy"]
 
 [lib]
 crate-type = ["cdylib"]
