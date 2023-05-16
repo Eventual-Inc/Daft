@@ -19,18 +19,38 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
         let dtype: DataType = self_arrow_type.into();
         let field = Arc::new(Field::new(name, dtype.clone()));
 
+        let physical_type = dtype.to_physical();
+
         if dtype.is_logical() {
             return Ok(with_match_daft_logical_types!(dtype, |$T| {
-                let arrow_physical_type = dtype.to_physical().to_arrow()?;
+
+                let arrow_physical_type = physical_type.to_arrow()?;
                 let casted_array = arrow2::compute::cast::cast(array.as_ref(), &arrow_physical_type,
                 arrow2::compute::cast::CastOptions {
                     wrapped: true,
                     partial: false,
                 })?;
-                let physical = DataArray::try_from((name, casted_array))?;
+                let physical = DataArray::try_from((Field::new(name, physical_type), casted_array))?;
                 LogicalArray::<$T>::new(field, physical).into_series()
             }));
         }
+
+        // is not logical but contains one
+        if physical_type != dtype {
+            let arrow_physical_type = physical_type.to_arrow()?;
+            let casted_array = arrow2::compute::cast::cast(
+                array.as_ref(),
+                &arrow_physical_type,
+                arrow2::compute::cast::CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )?;
+            return Ok(
+                with_match_physical_daft_types!(physical_type, |$T| DataArray::<$T>::new(field, casted_array)?.into_series()),
+            );
+        }
+
         Ok(
             with_match_physical_daft_types!(dtype, |$T| DataArray::<$T>::new(field, array.into())?.into_series()),
         )

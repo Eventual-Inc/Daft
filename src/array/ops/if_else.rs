@@ -1,12 +1,13 @@
 use crate::array::DataArray;
 use crate::datatypes::logical::DateArray;
 use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, FixedSizeListArray, ListArray,
-    NullArray, PythonArray, StructArray, Utf8Array,
+    BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, Field, FixedSizeListArray,
+    ListArray, NullArray, PythonArray, StructArray, Utf8Array,
 };
 use crate::error::{DaftError, DaftResult};
 use crate::utils::arrow::arrow_bitmap_and_helper;
 use std::convert::identity;
+use std::sync::Arc;
 
 use super::as_arrow::AsArrow;
 use super::broadcast::Broadcastable;
@@ -25,7 +26,7 @@ macro_rules! broadcast_if_else{(
         // CASE: Equal lengths across all 3 arguments
         (self_len, other_len, predicate_len) if self_len == other_len && other_len == predicate_len => {
             let result = $if_then_else($predicate.as_arrow(), $if_true.data(), $if_false.data())?;
-            DataArray::try_from(($if_true.name(), result))
+            DataArray::try_from(($if_true.field.clone(), result))
         },
         // CASE: Broadcast predicate
         (self_len, _, 1) => {
@@ -232,7 +233,7 @@ fn from_arrow_if_then_else<T: DaftArrowBackedType + 'static>(
 ) -> DaftResult<DataArray<T>>
 where
     DataArray<T>:
-        AsArrow + for<'a> TryFrom<(&'a str, Box<dyn arrow2::array::Array>), Error = DaftError>,
+        AsArrow + for<'a> TryFrom<(Arc<Field>, Box<dyn arrow2::array::Array>), Error = DaftError>,
     <DataArray<T> as AsArrow>::Output: arrow2::array::Array,
 {
     let result = arrow2::compute::if_then_else::if_then_else(
@@ -240,7 +241,7 @@ where
         if_true.as_arrow(),
         if_false.as_arrow(),
     )?;
-    DataArray::try_from((if_true.name(), result))
+    DataArray::try_from((if_true.field.clone(), result))
 }
 
 fn nested_if_then_else<T: DaftArrowBackedType + 'static>(
@@ -251,7 +252,7 @@ fn nested_if_then_else<T: DaftArrowBackedType + 'static>(
 where
     DataArray<T>: AsArrow
         + Broadcastable
-        + for<'a> TryFrom<(&'a str, Box<dyn arrow2::array::Array>), Error = DaftError>,
+        + for<'a> TryFrom<(Arc<Field>, Box<dyn arrow2::array::Array>), Error = DaftError>,
     <DataArray<T> as AsArrow>::Output: arrow2::array::Array,
 {
     // TODO(Clark): Support streaming broadcasting, i.e. broadcasting without inflating scalars to full array length.

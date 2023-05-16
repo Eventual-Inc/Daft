@@ -33,13 +33,14 @@ where
             "Can only construct DataArray for PhysicalTypes, got {}",
             field.dtype
         );
-        if let Ok(arrow_dtype) = field.dtype.to_arrow() {
+
+        if let Ok(arrow_dtype) = field.dtype.to_physical().to_arrow() {
             if !arrow_dtype.eq(data.data_type()) {
-                return Err(DaftError::TypeError(format!(
-                    "expected {:?}, got {:?}",
+                panic!(
+                    "expected {:?}, got {:?} when creating a new DataArray",
                     arrow_dtype,
                     data.data_type()
-                )));
+                )
             }
         }
 

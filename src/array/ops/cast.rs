@@ -5,10 +5,11 @@ use arrow2::compute::{
 
 use crate::{
     array::DataArray,
-    datatypes::logical::DateArray,
+    datatypes::{logical::DateArray, Field},
     datatypes::{DaftArrowBackedType, DataType, PythonArray, Utf8Array},
     error::{DaftError, DaftResult},
     series::Series,
+    with_match_arrow_daft_types,
 };
 
 use crate::series::IntoSeries;
@@ -19,10 +20,6 @@ fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
 where
     T: DaftArrowBackedType,
 {
-    if to_cast.data_type().eq(dtype) {
-        return Series::try_from((to_cast.name(), to_cast.data().to_boxed()));
-    }
-
     let _arrow_type = dtype.to_arrow();
 
     if !dtype.is_arrow() || !to_cast.data_type().is_arrow() {
@@ -34,7 +31,7 @@ where
     }
 
     let self_arrow_type = to_cast.data_type().to_arrow()?;
-    let target_arrow_type = dtype.to_arrow()?;
+    let target_arrow_type = dtype.to_physical().to_arrow()?;
     if !can_cast_types(&self_arrow_type, &target_arrow_type) {
         return Err(DaftError::TypeError(format!(
             "can not cast {:?} to type: {:?}: Arrow types not castable",
@@ -51,7 +48,10 @@ where
             partial: false,
         },
     )?;
-    Series::try_from((to_cast.name(), result_array))
+    let new_field = Field::new(to_cast.name(), dtype.clone());
+    with_match_arrow_daft_types!(dtype, |$T| {
+        Ok(DataArray::<$T>::new(new_field.into(), result_array)?.into_series())
+    })
 }
 
 impl<T> DataArray<T>

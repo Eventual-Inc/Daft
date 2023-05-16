@@ -62,12 +62,15 @@ impl DaftConcatAggable for ListArray {
         if array.null_count() == 0 {
             let values = array.values();
             let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, values.len() as i64])?;
-            let result = Box::new(arrow2::array::ListArray::<i64>::new(
-                self.data_type().to_arrow()?,
-                new_offsets,
-                values.clone(),
-                None,
-            ));
+            let result = Box::new(
+                arrow2::array::ListArray::<i64>::try_new(
+                    self.data_type().to_physical().to_arrow()?,
+                    new_offsets,
+                    values.clone(),
+                    None,
+                )
+                .unwrap(),
+            );
             return ListArray::new(self.field.clone(), result);
         }
 
@@ -94,13 +97,15 @@ impl DaftConcatAggable for ListArray {
             }
         });
 
-        let nested_array = Box::new(arrow2::array::ListArray::<i64>::try_new(
-            self.data_type().to_arrow()?,
-            arrow2::offset::OffsetsBuffer::try_from(vec![0, capacity])?,
-            growable.as_box(),
-            None,
-        )?);
-
+        let nested_array = Box::new(
+            arrow2::array::ListArray::<i64>::try_new(
+                self.data_type().to_physical().to_arrow()?,
+                arrow2::offset::OffsetsBuffer::try_from(vec![0, capacity])?,
+                growable.as_box(),
+                None,
+            )
+            .unwrap(),
+        );
         ListArray::new(self.field.clone(), nested_array)
     }
 
@@ -151,7 +156,7 @@ impl DaftConcatAggable for ListArray {
         }
 
         let nested_array = Box::new(arrow2::array::ListArray::<i64>::try_new(
-            self.data_type().to_arrow()?,
+            self.data_type().to_physical().to_arrow()?,
             offsets,
             growable.as_box(),
             None,

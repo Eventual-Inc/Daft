@@ -4,6 +4,10 @@ use std::sync::Arc;
 use crate::array::ops::broadcast::Broadcastable;
 use crate::array::ops::DaftListAggable;
 use crate::array::ops::GroupIndices;
+use crate::array::DataArray;
+use crate::datatypes::DaftArrowBackedType;
+use crate::datatypes::DaftPhysicalType;
+use crate::series::Field;
 use crate::{
     datatypes::{
         BinaryArray, BooleanArray, FixedSizeListArray, Float32Array, Float64Array, Int16Array,
@@ -16,19 +20,113 @@ use crate::{
 };
 use dyn_clone::clone_box;
 
-macro_rules! impl_series_like_for_data_array {
-    ($da:ident) => {
-        impl IntoSeries for $da {
-            fn into_series(self) -> Series {
-                Series {
-                    inner: Arc::new(ArrayWrapper(self)),
+use crate::datatypes::DataType;
+use std::borrow::Cow;
+
+fn logical_to_arrow<'a>(
+    arr: Cow<'a, Box<dyn arrow2::array::Array>>,
+    field: &Field,
+) -> Cow<'a, Box<dyn arrow2::array::Array>> {
+    match &field.dtype {
+        DataType::List(child_field) => {
+            let downcasted = arr
+                .as_ref()
+                .as_any()
+                .downcast_ref::<arrow2::array::ListArray<i64>>()
+                .unwrap();
+            let values = Cow::Borrowed(downcasted.values());
+            let new_values = logical_to_arrow(values, child_field.as_ref());
+            match new_values {
+                Cow::Borrowed(..) => arr,
+                Cow::Owned(new_arr) => {
+                    let new_child_field = arrow2::datatypes::Field::new(
+                        field.name.clone(),
+                        new_arr.data_type().clone(),
+                        true,
+                    );
+                    let new_datatype =
+                        arrow2::datatypes::DataType::LargeList(Box::new(new_child_field));
+                    Cow::Owned(
+                        arrow2::array::ListArray::<i64>::try_new(
+                            new_datatype,
+                            downcasted.offsets().clone(),
+                            new_arr,
+                            arr.validity().cloned(),
+                        )
+                        .unwrap()
+                        .boxed(),
+                    )
                 }
             }
         }
+        DataType::FixedSizeList(child_field, _size) => {
+            let downcasted = arr
+                .as_ref()
+                .as_any()
+                .downcast_ref::<arrow2::array::FixedSizeListArray>()
+                .unwrap();
+            let values = Cow::Borrowed(downcasted.values());
+            let new_values = logical_to_arrow(values, child_field.as_ref());
+            match new_values {
+                Cow::Borrowed(..) => arr,
+                Cow::Owned(new_arr) => {
+                    let new_child_field = arrow2::datatypes::Field::new(
+                        field.name.clone(),
+                        new_arr.data_type().clone(),
+                        true,
+                    );
+                    let new_datatype =
+                        arrow2::datatypes::DataType::LargeList(Box::new(new_child_field));
+                    Cow::Owned(
+                        arrow2::array::FixedSizeListArray::new(
+                            new_datatype,
+                            new_arr,
+                            arr.validity().cloned(),
+                        )
+                        .boxed(),
+                    )
+                }
+            }
+        }
+        DataType::Date => {
+            let downcasted = arr
+                .as_ref()
+                .as_any()
+                .downcast_ref::<arrow2::array::PrimitiveArray<i32>>()
+                .unwrap();
+            let casted: Box<dyn arrow2::array::Array> =
+                Box::new(downcasted.clone().to(arrow2::datatypes::DataType::Date32));
+            Cow::Owned(casted)
+        }
 
+        _ => arr,
+    }
+}
+
+impl<T: DaftArrowBackedType> IntoSeries for DataArray<T>
+where
+    ArrayWrapper<DataArray<T>>: SeriesLike,
+{
+    fn into_series(self) -> Series {
+        Series {
+            inner: Arc::new(ArrayWrapper(self)),
+        }
+    }
+}
+
+impl IntoSeries for PythonArray {
+    fn into_series(self) -> Series {
+        Series {
+            inner: Arc::new(ArrayWrapper(self)),
+        }
+    }
+}
+
+macro_rules! impl_series_like_for_data_array {
+    ($da:ident) => {
         impl SeriesLike for ArrayWrapper<$da> {
             fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
-                clone_box(self.0.data())
+                logical_to_arrow(Cow::Borrowed(&self.0.data), self.field()).into_owned()
             }
 
             fn as_any(&self) -> &dyn std::any::Any {
@@ -43,7 +141,7 @@ macro_rules! impl_series_like_for_data_array {
                 self.0.cast(datatype)
             }
 
-            fn data_type(&self) -> &crate::datatypes::DataType {
+            fn data_type(&self) -> &DataType {
                 self.0.data_type()
             }
             fn field(&self) -> &crate::datatypes::Field {

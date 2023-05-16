@@ -459,7 +459,7 @@ impl BooleanArray {
 
         let result = arrow2::compute::sort::sort(self.data(), &options, None)?;
 
-        BooleanArray::try_from((self.name(), result))
+        BooleanArray::try_from((self.field.clone(), result))
     }
 }
 
@@ -499,11 +499,6 @@ macro_rules! impl_binary_like_sort {
                 let others_cmp = build_multi_array_compare(others, &descending[1..])?;
 
                 let values = self.as_arrow();
-                // .data()
-                // .as_any()
-                // .downcast_ref::<arrow2::array::BooleanArray>()
-                // .unwrap()
-                // .values();
 
                 let result = if first_desc {
                     multi_column_idx_sort(
@@ -552,7 +547,7 @@ macro_rules! impl_binary_like_sort {
 
                 let result = arrow2::compute::sort::sort(self.data(), &options, None)?;
 
-                $da::try_from((self.name(), result))
+                $da::try_from((self.field.clone(), result))
             }
         }
     };
@@ -586,11 +581,6 @@ impl PythonArray {
 
 impl DateArray {
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        println!(
-            "arrow_dtype {} vs actual: {:?}",
-            self.physical.data_type(),
-            self.physical.data().data_type()
-        );
         let new_array = self.physical.sort(descending)?;
         Ok(Self::new(self.field.clone(), new_array))
     }

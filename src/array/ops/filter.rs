@@ -15,28 +15,28 @@ where
 {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        DataArray::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 impl Utf8Array {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        DataArray::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 impl BinaryArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        DataArray::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 impl BooleanArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        DataArray::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 }
 
@@ -54,21 +54,21 @@ impl NullArray {
 impl ListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        DataArray::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 impl FixedSizeListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        DataArray::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 impl StructArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        DataArray::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 }
 

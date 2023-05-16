@@ -4,14 +4,14 @@ use num_traits::ToPrimitive;
 
 use crate::array::ops::GroupIndices;
 
+use crate::datatypes::logical::LogicalArray;
 use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
 use crate::dsl::functions::FunctionEvaluator;
 use crate::dsl::{AggExpr, Expr};
 use crate::error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
 use crate::series::{IntoSeries, Series};
-use crate::with_match_physical_daft_types;
-
+use crate::{with_match_daft_logical_types, with_match_physical_daft_types};
 mod ops;
 #[derive(Clone)]
 pub struct Table {
@@ -20,7 +20,8 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new(schema: Schema, columns: Vec<Series>) -> DaftResult<Self> {
+    pub fn new<S: Into<SchemaRef>>(schema: S, columns: Vec<Series>) -> DaftResult<Self> {
+        let schema: SchemaRef = schema.into();
         if schema.fields.len() != columns.len() {
             return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields.len(), columns.len())));
         }
@@ -61,9 +62,15 @@ impl Table {
             Some(schema) => {
                 let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
                 for (field_name, field) in schema.fields.iter() {
-                    with_match_physical_daft_types!(field.dtype, |$T| {
-                        columns.push(DataArray::<$T>::empty(field_name, &field.dtype).into_series())
-                    })
+                    if field.dtype.is_logical() {
+                        with_match_daft_logical_types!(field.dtype, |$T| {
+                            columns.push(LogicalArray::<$T>::empty(field_name, &field.dtype).into_series())
+                        })
+                    } else {
+                        with_match_physical_daft_types!(field.dtype, |$T| {
+                            columns.push(DataArray::<$T>::empty(field_name, &field.dtype).into_series())
+                        })
+                    }
                 }
                 Ok(Table { schema, columns })
             }
@@ -187,10 +194,7 @@ impl Table {
 
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
-        Ok(Table {
-            schema: self.schema.clone(),
-            columns: new_series?,
-        })
+        Ok(Table::new(self.schema.clone(), new_series?).unwrap())
     }
 
     pub fn concat(tables: &[&Table]) -> DaftResult<Self> {
@@ -322,7 +326,7 @@ impl Table {
             )));
         }
         if expected_field.dtype != series.field().dtype {
-            return Err(DaftError::ComputeError(format!("Mismatch of expected expression data type and data type from computed series, {} vs {}", expected_field.dtype, series.field().dtype)));
+            panic!("Mismatch of expected expression data type and data type from computed series, {} vs {}", expected_field.dtype, series.field().dtype);
         }
         Ok(series)
     }

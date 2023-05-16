@@ -128,6 +128,14 @@ impl DataType {
         match self {
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
+            List(field) => List(Box::new(Field::new(
+                field.name.clone(),
+                field.dtype.to_physical(),
+            ))),
+            FixedSizeList(field, size) => FixedSizeList(
+                Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
+                *size,
+            ),
             _ => self.clone(),
         }
     }
@@ -172,14 +180,24 @@ impl DataType {
 
     #[inline]
     pub fn is_logical(&self) -> bool {
-        let p: DataType = self.to_physical();
-        self != &p
+        match self {
+            DataType::Date => true,
+            _ => false,
+        }
     }
 
     #[inline]
     pub fn is_physical(&self) -> bool {
+        !self.is_logical()
+    }
+
+    #[inline]
+    pub fn is_nested(&self) -> bool {
         let p: DataType = self.to_physical();
-        self == &p
+        match p {
+            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Struct(..) => true,
+            _ => false,
+        }
     }
 
     #[inline]

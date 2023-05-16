@@ -35,6 +35,11 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
         }
     }
 
+    pub fn empty(name: &str, dtype: &DataType) -> Self {
+        let field = Field::new(name, dtype.clone());
+        Self::new(field.into(), DataArray::empty(name, &dtype.to_physical()))
+    }
+
     pub fn name(&self) -> &str {
         self.field.name.as_ref()
     }

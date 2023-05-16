@@ -35,7 +35,7 @@ where
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
-        Self::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
@@ -70,7 +70,7 @@ impl Utf8Array {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
-        Self::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
@@ -105,7 +105,7 @@ impl BooleanArray {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
-        Self::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
@@ -132,7 +132,7 @@ impl NullArray {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
-        Self::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
@@ -166,7 +166,7 @@ impl BinaryArray {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
-        Self::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
@@ -203,7 +203,7 @@ impl ListArray {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
-        Self::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
@@ -238,7 +238,7 @@ impl FixedSizeListArray {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
-        Self::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
@@ -279,7 +279,7 @@ impl StructArray {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
-        Self::try_from((self.name(), result))
+        Self::try_from((self.field.clone(), result))
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
