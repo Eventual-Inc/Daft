@@ -3,24 +3,6 @@ use crate::{error::DaftResult, series::Series};
 impl Series {
     pub fn broadcast(&self, num: usize) -> DaftResult<Series> {
         self.inner.broadcast(num)
-        // if self.len() != 1 {
-        //     return Err(crate::error::DaftError::ValueError(format!(
-        //         "Attempting to broadcast non-unit length Series named: {}",
-        //         self.name()
-        //     )));
-        // }
-
-        // let s = self.as_physical()?;
-        // let result = with_match_physical_daft_types!(self.data_type(), |$T| {
-        //     let array = s.downcast::<$T>()?;
-        //     array.broadcast(num)?.into_series()
-        // });
-
-        // if result.data_type() != self.data_type() {
-        //     return result.cast(self.data_type());
-        // }
-
-        // Ok(result)
     }
 }
 

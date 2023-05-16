@@ -38,17 +38,5 @@ impl Series {
 
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
         self.inner.sort(descending)
-        // let s = self.as_physical()?;
-
-        // let result = with_match_comparable_daft_types!(s.data_type(), |$T| {
-        //     let downcasted = s.downcast::<$T>()?;
-        //     downcasted.sort(descending)?.into_series()
-        // });
-
-        // if result.data_type() != self.data_type() {
-        //     return result.cast(self.data_type());
-        // }
-
-        // Ok(result)
     }
 }
