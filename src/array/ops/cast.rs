@@ -179,8 +179,8 @@ macro_rules! pycast_then_arrowcast {
 }
 
 #[cfg(feature = "python")]
-fn extract_numpy_array_to_fixed_size_list<'py, T: numpy::Element + arrow2::types::NativeType>(
-    py: Python<'py>,
+fn extract_numpy_array_to_fixed_size_list<T: numpy::Element + arrow2::types::NativeType>(
+    py: Python<'_>,
     python_objects: PythonArray,
     list_size: usize,
     inner_type: &DataType,
@@ -257,7 +257,6 @@ impl PythonArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         use crate::python::PySeries;
         use pyo3::prelude::*;
-        for x in self.as_arrow().iter() {}
         match dtype {
             DataType::Python => Ok(self.clone().into_series()),
 
