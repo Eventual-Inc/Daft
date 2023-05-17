@@ -4,6 +4,7 @@ import builtins
 
 import pyarrow as pa
 
+from daft.context import get_context
 from daft.daft import PyDataType
 
 _RAY_DATA_EXTENSIONS_AVAILABLE = True
@@ -178,6 +179,12 @@ class DataType:
                 f"used in non-Python Arrow implementations and Daft uses the Rust Arrow2 implementation: {arrow_type}"
             )
         elif isinstance(arrow_type, pa.BaseExtensionType):
+            if get_context().runner_config.name == "ray":
+                raise ValueError(
+                    f"pyarrow extension types are not supported for the Ray runner: {arrow_type}. If you need support "
+                    "for this, please let us know on this issue: "
+                    "https://github.com/Eventual-Inc/Daft/issues/933"
+                )
             name = arrow_type.extension_name
             try:
                 metadata = arrow_type.__arrow_ext_serialize__().decode()

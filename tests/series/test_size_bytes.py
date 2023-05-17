@@ -7,6 +7,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
+from daft.context import get_context
 from daft.datatype import DataType
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
@@ -181,6 +182,10 @@ def test_series_struct_size_bytes(size, with_nulls) -> None:
         assert s.size_bytes() == get_total_buffer_size(data) + conversion_to_large_string_bytes
 
 
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
 @pytest.mark.parametrize("size", [1, 2, 8, 9, 16])
 @pytest.mark.parametrize("with_nulls", [True, False])
 def test_series_extension_type_size_bytes(uuid_ext_type, size, with_nulls) -> None:
@@ -206,6 +211,10 @@ def test_series_extension_type_size_bytes(uuid_ext_type, size, with_nulls) -> No
 @pytest.mark.skipif(
     ARROW_VERSION < (12, 0, 0),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="Pickling canonical tensor extension type is not supported by pyarrow",
 )
 @pytest.mark.parametrize("dtype, size", itertools.product(ARROW_INT_TYPES + ARROW_FLOAT_TYPES, [0, 1, 2, 8, 9, 16]))
 @pytest.mark.parametrize("with_nulls", [True, False])

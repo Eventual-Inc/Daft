@@ -5,6 +5,7 @@ import pyarrow as pa
 import pytest
 
 from daft import Series
+from daft.context import get_context
 from daft.datatype import DataType
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
@@ -296,6 +297,10 @@ def test_series_if_else_struct(if_true, if_false, expected) -> None:
     assert result.to_pylist() == expected
 
 
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
 @pytest.mark.parametrize(
     ["if_true_storage", "if_false_storage", "expected_storage"],
     [
@@ -345,6 +350,10 @@ def test_series_if_else_extension_type(uuid_ext_type, if_true_storage, if_false_
 @pytest.mark.skipif(
     ARROW_VERSION < (12, 0, 0),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="Pickling canonical tensor extension type is not supported by pyarrow",
 )
 @pytest.mark.parametrize(
     ["if_true", "if_false", "expected"],

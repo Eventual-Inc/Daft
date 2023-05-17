@@ -4,6 +4,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
+from daft.context import get_context
 from daft.datatype import DataType
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
@@ -113,6 +114,10 @@ def test_series_filter_on_struct_array() -> None:
     assert result.to_pylist() == expected
 
 
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
 def test_series_filter_on_extension_array(uuid_ext_type) -> None:
     arr = pa.array(f"{i}".encode() for i in range(5))
     data = pa.ExtensionArray.from_storage(uuid_ext_type, arr)
@@ -131,6 +136,10 @@ def test_series_filter_on_extension_array(uuid_ext_type) -> None:
 @pytest.mark.skipif(
     ARROW_VERSION < (12, 0, 0),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="Pickling canonical tensor extension type is not supported by pyarrow",
 )
 def test_series_filter_on_canonical_tensor_extension_array() -> None:
     arr = np.arange(20).reshape((5, 2, 2))

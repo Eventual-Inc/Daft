@@ -11,6 +11,7 @@ import pytest
 from ray.data.extensions import ArrowTensorArray, ArrowTensorType
 
 from daft import DataType
+from daft.context import get_context
 from daft.series import Series
 from daft.table import Table
 
@@ -119,7 +120,7 @@ ARROW_ROUNDTRIP_TYPES = {
     "timestamp": pa.timestamp("us"),
 }
 
-if ARROW_VERSION >= (12, 0, 0):
+if ARROW_VERSION >= (12, 0, 0) and get_context().runner_config.name == "ray":
     ARROW_ROUNDTRIP_TYPES["canonical_tensor"] = pa.fixed_shape_tensor(pa.int64(), (2, 2))
     ARROW_TYPE_ARRAYS["canonical_tensor"] = pa.FixedShapeTensorArray.from_numpy_ndarray(
         np.array(PYTHON_TYPE_ARRAYS["tensor"])
@@ -127,6 +128,9 @@ if ARROW_VERSION >= (12, 0, 0):
 
 
 def _with_uuid_ext_type(uuid_ext_type) -> tuple[dict, dict]:
+    if get_context().runner_config.name == "ray":
+        # pyarrow extension types aren't supported in Ray clusters yet.
+        return ARROW_ROUNDTRIP_TYPES, ARROW_TYPE_ARRAYS
     arrow_roundtrip_types = ARROW_ROUNDTRIP_TYPES.copy()
     arrow_type_arrays = ARROW_TYPE_ARRAYS.copy()
     arrow_roundtrip_types["ext_type"] = uuid_ext_type
@@ -244,6 +248,10 @@ def test_from_pydict_arrow_struct_array() -> None:
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
 
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
 def test_from_pydict_arrow_extension_array(uuid_ext_type) -> None:
     pydata = [f"{i}".encode() for i in range(6)]
     pydata[2] = None
@@ -412,6 +420,10 @@ def test_from_arrow_struct_array() -> None:
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
 
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
 def test_from_arrow_extension_array(uuid_ext_type) -> None:
     pydata = [f"{i}".encode() for i in range(6)]
     pydata[2] = None

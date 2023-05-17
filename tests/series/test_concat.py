@@ -8,6 +8,7 @@ import pytest
 from ray.data.extensions import ArrowTensorArray
 
 from daft import DataType, Series
+from daft.context import get_context
 from tests.conftest import *
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
@@ -115,6 +116,10 @@ def test_series_concat_tensor_array_ray(chunks) -> None:
     ARROW_VERSION < (12, 0, 0),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
 )
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="Pickling canonical tensor extension type is not supported by pyarrow",
+)
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
 def test_series_concat_tensor_array_canonical(chunks) -> None:
     element_shape = (2, 2)
@@ -141,6 +146,10 @@ def test_series_concat_tensor_array_canonical(chunks) -> None:
     np.testing.assert_equal(concated_arrow.to_numpy_ndarray(), expected)
 
 
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
 def test_series_concat_extension_type(uuid_ext_type, chunks) -> None:
     chunk_size = 3
