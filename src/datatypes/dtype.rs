@@ -237,16 +237,6 @@ impl DataType {
             ))),
         }
     }
-
-    #[inline]
-    pub fn is_castable(&self, cast_to: &DataType) -> bool {
-        match (self.to_arrow(), cast_to.to_arrow()) {
-            (Ok(self_arrow_type), Ok(cast_to_arrow_type)) => {
-                arrow2::compute::cast::can_cast_types(&self_arrow_type, &cast_to_arrow_type)
-            }
-            _ => false,
-        }
-    }
 }
 
 impl From<&ArrowType> for DataType {
@@ -301,6 +291,9 @@ impl Display for DataType {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             DataType::List(nested) => write!(f, "List[{}]", nested.dtype),
+            DataType::FixedSizeList(inner, size) => {
+                write!(f, "FixedSizeList[{}; {}]", inner.dtype, size)
+            }
             DataType::Struct(fields) => {
                 let fields: String = fields
                     .iter()

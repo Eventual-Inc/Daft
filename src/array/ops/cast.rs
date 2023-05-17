@@ -3,7 +3,6 @@ use arrow2::compute::{
     cast::{can_cast_types, cast, CastOptions},
 };
 
-use crate::datatypes::logical::{EmbeddingArray, LogicalArray};
 use crate::datatypes::FixedSizeListArray;
 use crate::series::IntoSeries;
 use crate::{
@@ -13,6 +12,10 @@ use crate::{
     error::{DaftError, DaftResult},
     series::Series,
     with_match_arrow_daft_types, with_match_daft_logical_types,
+};
+use crate::{
+    datatypes::logical::{EmbeddingArray, LogicalArray},
+    with_match_numeric_daft_types,
 };
 
 use std::iter;
@@ -177,27 +180,25 @@ macro_rules! pycast_then_arrowcast {
         }
     }
 }
+use crate::datatypes::DaftNumericType;
 
 #[cfg(feature = "python")]
-fn extract_numpy_array_to_fixed_size_list<T: numpy::Element + arrow2::types::NativeType>(
+fn extract_numpy_array_to_fixed_size_list<T: DaftNumericType>(
     py: Python<'_>,
-    python_objects: PythonArray,
+    python_objects: &PythonArray,
     list_size: usize,
-    inner_type: &DataType,
-) -> DaftResult<FixedSizeListArray> {
+) -> DaftResult<FixedSizeListArray>
+where
+    T::Native: numpy::Element,
+{
     use arrow2::array::Array;
     use numpy::PyArray1;
-
-    assert!(
-        inner_type.is_numeric(),
-        "we only support numeric types for numpy extractions"
-    );
 
     let mut values_vec = Vec::with_capacity(list_size * python_objects.len());
 
     for object in python_objects.as_arrow().iter() {
         if let Some(object) = object {
-            let pyarray = object.getattr(py, pyo3::intern!(py, "__array__"));
+            let pyarray = object.call_method0(py, pyo3::intern!(py, "__array__"));
             if pyarray.is_err() {
                 return Err(DaftError::ValueError(format!(
                     "An error occurred when extracting array out of type: {:?}",
@@ -206,7 +207,7 @@ fn extract_numpy_array_to_fixed_size_list<T: numpy::Element + arrow2::types::Nat
             }
 
             let pyarray = pyarray?.call_method0(py, "__array__")?;
-            let pyarray: PyReadonlyArrayDyn<'_, T> = pyarray.extract(py)?;
+            let pyarray: PyReadonlyArrayDyn<'_, T::Native> = pyarray.extract(py)?;
             if pyarray.ndim() != 1 {
                 return Err(DaftError::ValueError(format!(
                     "we only support 1 dim numpy arrays, got {}",
@@ -214,7 +215,7 @@ fn extract_numpy_array_to_fixed_size_list<T: numpy::Element + arrow2::types::Nat
                 )));
             }
 
-            let pyarray = pyarray.downcast::<PyArray1<T>>().unwrap();
+            let pyarray = pyarray.downcast::<PyArray1<T::Native>>().unwrap();
             if pyarray.len() != list_size {
                 return Err(DaftError::ValueError(format!(
                     "Expected Array-like Object to have {list_size} elements but got {}",
@@ -223,7 +224,7 @@ fn extract_numpy_array_to_fixed_size_list<T: numpy::Element + arrow2::types::Nat
             }
             values_vec.extend_from_slice(unsafe { pyarray.as_slice() }.unwrap())
         } else {
-            values_vec.extend(iter::repeat(T::default()).take(list_size));
+            values_vec.extend(iter::repeat(T::Native::default()).take(list_size));
         }
     }
 
@@ -231,14 +232,11 @@ fn extract_numpy_array_to_fixed_size_list<T: numpy::Element + arrow2::types::Nat
         Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
 
     let inner_field =
-        arrow2::datatypes::Field::new(python_objects.name(), inner_type.to_arrow()?, true);
+        arrow2::datatypes::Field::new(python_objects.name(), T::get_dtype().to_arrow()?, true);
 
     let list_dtype = arrow2::datatypes::DataType::FixedSizeList(Box::new(inner_field), list_size);
 
-    let daft_datatype = DataType::FixedSizeList(
-        Box::new(Field::new(python_objects.name(), (&list_dtype).into())),
-        list_size,
-    );
+    let daft_type = (&list_dtype).into();
 
     let list_array = arrow2::array::FixedSizeListArray::new(
         list_dtype,
@@ -247,7 +245,7 @@ fn extract_numpy_array_to_fixed_size_list<T: numpy::Element + arrow2::types::Nat
     );
 
     FixedSizeListArray::new(
-        Field::new(python_objects.name(), daft_datatype).into(),
+        Field::new(python_objects.name(), daft_type).into(),
         Box::new(list_array),
     )
 }
@@ -286,7 +284,14 @@ impl PythonArray {
             }
             DataType::Date => unimplemented!(),
             DataType::List(_) => unimplemented!(),
-            DataType::FixedSizeList(..) => unimplemented!(),
+            DataType::FixedSizeList(field, size) => {
+                with_match_numeric_daft_types!(field.dtype, |$T| {
+                    pyo3::Python::with_gil(|py| {
+                        let result = extract_numpy_array_to_fixed_size_list::<$T>(py, self, *size)?;
+                        Ok(result.into_series())
+                    })
+                })
+            }
             DataType::Struct(_) => unimplemented!(),
             // TODO: Add implementations for these types
             // DataType::Timestamp(_, _) => $self.timestamp().unwrap().$method($($args),*),
