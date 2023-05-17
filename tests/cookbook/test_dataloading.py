@@ -4,9 +4,11 @@ import pathlib
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 from fsspec.implementations.local import LocalFileSystem
 
 import daft
+from daft.context import get_context
 from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
@@ -152,6 +154,7 @@ def test_glob_files_recursive(tmpdir):
     assert_df_equals(daft_pd_df, pd_df, sort_key="path")
 
 
+@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_glob_files_custom_fs(tmpdir):
     filepaths = []
     for i in range(10):

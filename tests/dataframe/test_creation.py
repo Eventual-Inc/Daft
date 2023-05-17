@@ -17,6 +17,7 @@ from ray.data.extensions import ArrowTensorArray
 
 import daft
 from daft.api_annotations import APITypeError
+from daft.context import get_context
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 
@@ -288,6 +289,7 @@ def test_create_dataframe_csv(valid_data: list[dict[str, float]]) -> None:
         assert len(pd_df) == len(valid_data)
 
 
+@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         header = list(valid_data[0].keys())
@@ -405,6 +407,7 @@ def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
         assert len(pd_df) == len(valid_data)
 
 
+@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_create_dataframe_json_custom_fs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         for data in valid_data:
@@ -476,6 +479,7 @@ def test_create_dataframe_parquet(valid_data: list[dict[str, float]]) -> None:
         assert len(pd_df) == len(valid_data)
 
 
+@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_create_dataframe_parquet_custom_fs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})

@@ -9,6 +9,7 @@ import pytest
 from fsspec.implementations.local import LocalFileSystem
 
 import daft
+from daft.context import get_context
 from daft.expressions import col
 from tests.conftest import assert_df_equals
 
@@ -38,6 +39,7 @@ def test_download(files):
     assert_df_equals(df.to_pandas(), pd_df, sort_key="filenames")
 
 
+@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_download_custom_ds(files):
     # Mark that this filesystem instance shouldn't be automatically reused by fsspec; without this,
     # fsspec would cache this instance and reuse it for Daft's default construction of filesystems,
