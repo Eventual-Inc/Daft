@@ -13,8 +13,8 @@ else:
 
 from typing import Any
 
+import fsspec
 import pyarrow as pa
-from fsspec import AbstractFileSystem, get_filesystem_class
 from loguru import logger
 
 from daft.datasources import ParquetSourceInfo, SourceInfo
@@ -54,13 +54,12 @@ def _get_s3fs_kwargs() -> dict[str, Any]:
     return kwargs
 
 
-def get_filesystem(protocol: str, **kwargs) -> AbstractFileSystem:
-
+def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
     if protocol == "s3" or protocol == "s3a":
         kwargs = {**kwargs, **_get_s3fs_kwargs()}
 
     try:
-        klass = get_filesystem_class(protocol)
+        klass = fsspec.get_filesystem_class(protocol)
     except ImportError:
         logger.error(
             f"Error when importing dependencies for accessing data with: {protocol}. Please ensure that getdaft was installed with the appropriate extra dependencies (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
@@ -78,7 +77,7 @@ def get_protocol_from_path(path: str) -> str:
     return parsed_scheme
 
 
-def get_filesystem_from_path(path: str, **kwargs) -> AbstractFileSystem:
+def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
     protocol = get_protocol_from_path(path)
     fs = get_filesystem(protocol, **kwargs)
     return fs
@@ -105,14 +104,18 @@ def _path_is_glob(path: str) -> bool:
     return any([char in path for char in ["*", "?", "["]])
 
 
-def glob_path_with_stats(path: str, source_info: SourceInfo | None) -> list[ListingInfo]:
+def glob_path_with_stats(
+    path: str,
+    source_info: SourceInfo | None,
+    fs: fsspec.AbstractFileSystem,
+) -> list[ListingInfo]:
     """Glob a path, returning a list ListingInfo."""
-    fs = get_filesystem_from_path(path)
     protocol = get_protocol_from_path(path)
 
     filepaths_to_infos: dict[str, dict[str, Any]] = defaultdict(dict)
 
     if _path_is_glob(path):
+        print("REACHED")
         globbed_data = fs.glob(path, detail=True)
 
         for path, details in globbed_data.items():

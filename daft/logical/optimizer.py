@@ -319,6 +319,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             predicate=child._predicate,
             columns=child._column_names,
             source_info=child._source_info,
+            fs=child._fs,
             filepaths_child=child._filepaths_child,
             filepaths_column_name=child._filepaths_column_name,
             limit_rows=new_limit_rows,
@@ -342,6 +343,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             predicate=child._predicate,
             columns=ordered_required_columns,
             source_info=child._source_info,
+            fs=child._fs,
             filepaths_child=child._filepaths_child,
             filepaths_column_name=child._filepaths_column_name,
         )

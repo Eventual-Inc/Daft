@@ -33,6 +33,7 @@ class LogicalPartitionOpRunner:
             filepaths = [filepaths[index]]
 
         # Common options for reading vPartition
+        fs = scan._fs
         schema = scan._schema
         schema_options = vPartitionSchemaInferenceOptions(schema=schema)
         read_options = vPartitionReadOptions(
@@ -46,6 +47,7 @@ class LogicalPartitionOpRunner:
                 [
                     table_io.read_csv(
                         file=fp,
+                        fs=fs,
                         csv_options=vPartitionParseCSVOptions(
                             delimiter=scan._source_info.delimiter,
                             has_headers=scan._source_info.has_headers,
@@ -64,6 +66,7 @@ class LogicalPartitionOpRunner:
                 [
                     table_io.read_json(
                         file=fp,
+                        fs=fs,
                         read_options=read_options,
                     )
                     for fp in filepaths
@@ -75,6 +78,7 @@ class LogicalPartitionOpRunner:
                 [
                     table_io.read_parquet(
                         file=fp,
+                        fs=fs,
                         read_options=read_options,
                     )
                     for fp in filepaths

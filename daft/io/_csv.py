@@ -2,6 +2,8 @@
 
 from typing import List, Optional
 
+import fsspec
+
 from daft.api_annotations import PublicAPI
 from daft.dataframe import DataFrame
 from daft.datasources import CSVSourceInfo
@@ -12,6 +14,7 @@ from daft.runners.partitioning import vPartitionSchemaInferenceOptions
 @PublicAPI
 def read_csv(
     path: str,
+    fs: Optional[fsspec.AbstractFileSystem] = None,
     has_headers: bool = True,
     column_names: Optional[List[str]] = None,
     delimiter: str = ",",
@@ -26,6 +29,8 @@ def read_csv(
 
     Args:
         path (str): Path to CSV (allows for wildcards)
+        fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
+            By default, Daft will automatically construct a FileSystem instance internally.
         has_headers (bool): Whether the CSV has a header or not, defaults to True
         column_names (Optional[List[str]]): Custom column names to assign to the DataFrame, defaults to None
         delimiter (Str): Delimiter used in the CSV, defaults to ","
@@ -39,6 +44,7 @@ def read_csv(
             delimiter=delimiter,
             has_headers=has_headers,
         ),
+        fs,
         vPartitionSchemaInferenceOptions(inference_column_names=column_names),
     )
     return DataFrame(plan)

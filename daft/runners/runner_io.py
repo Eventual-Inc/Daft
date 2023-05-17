@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Generic, TypeVar
 
+import fsspec
+
 from daft.datasources import (
     CSVSourceInfo,
     JSONSourceInfo,
@@ -50,7 +52,8 @@ class RunnerIO(Generic[PartitionT]):
         self,
         source_path: str,
         source_info: SourceInfo | None = None,
-    ) -> PartitionSet[PartitionT]:
+        fs: fsspec.AbstractFileSystem | None = None,
+    ) -> tuple[PartitionSet[PartitionT], fsspec.AbstractFileSystem]:
         """Globs the specified filepath to construct Partitions containing file and dir metadata
 
         Args:
@@ -66,6 +69,7 @@ class RunnerIO(Generic[PartitionT]):
         self,
         listing_details_partitions: PartitionSet[PartitionT],
         source_info: SourceInfo,
+        fs: fsspec.AbstractFileSystem,
         schema_inference_options: vPartitionSchemaInferenceOptions,
     ) -> Schema:
         raise NotImplementedError()
@@ -74,6 +78,7 @@ class RunnerIO(Generic[PartitionT]):
 def sample_schema(
     filepath: str,
     source_info: SourceInfo,
+    fs: fsspec.AbstractFileSystem,
     schema_inference_options: vPartitionSchemaInferenceOptions,
 ) -> Schema:
     """Helper method that samples a schema from the specified source"""
@@ -83,6 +88,7 @@ def sample_schema(
         assert isinstance(source_info, CSVSourceInfo)
         sampled_partition = table_io.read_csv(
             file=filepath,
+            fs=fs,
             csv_options=vPartitionParseCSVOptions(
                 delimiter=source_info.delimiter,
                 has_headers=source_info.has_headers,
@@ -99,6 +105,7 @@ def sample_schema(
         assert isinstance(source_info, JSONSourceInfo)
         sampled_partition = table_io.read_json(
             file=filepath,
+            fs=fs,
             read_options=vPartitionReadOptions(
                 num_rows=100,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns
@@ -108,6 +115,7 @@ def sample_schema(
         assert isinstance(source_info, ParquetSourceInfo)
         sampled_partition = table_io.read_parquet(
             file=filepath,
+            fs=fs,
             read_options=vPartitionReadOptions(
                 num_rows=0,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns

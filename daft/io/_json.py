@@ -1,5 +1,9 @@
 # isort: dont-add-import: from __future__ import annotations
 
+from typing import Optional
+
+import fsspec
+
 from daft.api_annotations import PublicAPI
 from daft.dataframe import DataFrame
 from daft.datasources import JSONSourceInfo
@@ -8,9 +12,7 @@ from daft.runners.partitioning import vPartitionSchemaInferenceOptions
 
 
 @PublicAPI
-def read_json(
-    path: str,
-) -> DataFrame:
+def read_json(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) -> DataFrame:
     """Creates a DataFrame from line-delimited JSON file(s)
 
     Example:
@@ -21,6 +23,8 @@ def read_json(
 
     Args:
         path (str): Path to JSON files (allows for wildcards)
+        fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
+            By default, Daft will automatically construct a FileSystem instance internally.
 
     returns:
         DataFrame: parsed DataFrame
@@ -28,6 +32,7 @@ def read_json(
     plan = _get_tabular_files_scan(
         path,
         JSONSourceInfo(),
+        fs,
         vPartitionSchemaInferenceOptions(),
     )
     return DataFrame(plan)

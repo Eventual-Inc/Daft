@@ -6,6 +6,7 @@ import pathlib
 from typing import IO, Iterator, Union
 from uuid import uuid4
 
+import fsspec
 import pyarrow as pa
 from pyarrow import csv as pacsv
 from pyarrow import dataset as pads
@@ -36,14 +37,13 @@ def _limit_num_rows(buf: IO, num_rows: int) -> IO:
 
 
 @contextlib.contextmanager
-def _get_file(file: FileInput) -> Iterator[IO[bytes]]:
+def _get_file(file: FileInput, fs: fsspec.AbstractFileSystem | None) -> Iterator[IO[bytes]]:
     """Helper method to return a file handle if input is a string."""
+    if isinstance(file, pathlib.Path):
+        file = str(file)
     if isinstance(file, str):
-        fs = get_filesystem_from_path(file)
-        with fs.open(file, compression="infer") as f:
-            yield f
-    elif isinstance(file, pathlib.Path):
-        fs = get_filesystem_from_path(str(file))
+        if fs is None:
+            fs = get_filesystem_from_path(file)
         with fs.open(file, compression="infer") as f:
             yield f
     else:
@@ -52,18 +52,21 @@ def _get_file(file: FileInput) -> Iterator[IO[bytes]]:
 
 def read_json(
     file: FileInput,
+    fs: fsspec.AbstractFileSystem | None = None,
     read_options: vPartitionReadOptions = vPartitionReadOptions(),
 ) -> Table:
     """Reads a Table from a JSON file
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
+        fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
+            By default, Daft will automatically construct a FileSystem instance internally.
         read_options (vPartitionReadOptions, optional): Options for reading the file
 
     Returns:
         Table: Parsed Table from JSON
     """
-    with _get_file(file) as f:
+    with _get_file(file, fs) as f:
         if read_options.num_rows is not None:
             f = _limit_num_rows(f, read_options.num_rows)
         table = pajson.read_json(f)
@@ -76,18 +79,21 @@ def read_json(
 
 def read_parquet(
     file: FileInput,
+    fs: fsspec.AbstractFileSystem | None = None,
     read_options: vPartitionReadOptions = vPartitionReadOptions(),
 ) -> Table:
     """Reads a Table from a Parquet file
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
+        fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
+            By default, Daft will automatically construct a FileSystem instance internally.
         read_options (vPartitionReadOptions, optional): Options for reading the file
 
     Returns:
         Table: Parsed Table from Parquet
     """
-    with _get_file(file) as f:
+    with _get_file(file, fs) as f:
         pqf = papq.ParquetFile(f)
         # If no rows required, we manually construct an empty table with the right schema
         if read_options.num_rows == 0:
@@ -116,6 +122,7 @@ def read_parquet(
 
 def read_csv(
     file: FileInput,
+    fs: fsspec.AbstractFileSystem | None = None,
     csv_options: vPartitionParseCSVOptions = vPartitionParseCSVOptions(),
     schema_options: vPartitionSchemaInferenceOptions = vPartitionSchemaInferenceOptions(),
     read_options: vPartitionReadOptions = vPartitionReadOptions(),
@@ -124,6 +131,8 @@ def read_csv(
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
+        fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
+            By default, Daft will automatically construct a FileSystem instance internally.
         csv_options (vPartitionParseCSVOptions, optional): CSV-specific configs to apply when reading the file
         schema_options (vPartitionSchemaInferenceOptions, optional): configs to apply when inferring schema from the file
         read_options (vPartitionReadOptions, optional): Options for reading the file
@@ -141,8 +150,7 @@ def read_csv(
     skip_header_row = full_column_names is not None and csv_options.has_headers
     pyarrow_skip_rows_after_names = (1 if skip_header_row else 0) + csv_options.skip_rows_after_header
 
-    with _get_file(file) as f:
-
+    with _get_file(file, fs) as f:
         if read_options.num_rows is not None:
             num_rows_to_read = (
                 csv_options.skip_rows_before_header
