@@ -115,7 +115,6 @@ def glob_path_with_stats(
     filepaths_to_infos: dict[str, dict[str, Any]] = defaultdict(dict)
 
     if _path_is_glob(path):
-        print("REACHED")
         globbed_data = fs.glob(path, detail=True)
 
         for path, details in globbed_data.items():
