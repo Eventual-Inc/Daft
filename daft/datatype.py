@@ -207,6 +207,11 @@ class DataType:
             return cls.python()
 
     @classmethod
+    def from_numpy_dtype(cls, np_type) -> DataType:
+        arrow_type = pa.from_numpy_dtype(np_type)
+        return cls.from_arrow_type(arrow_type)
+
+    @classmethod
     def python(cls) -> DataType:
         return cls._from_pydatatype(PyDataType.python())
 

@@ -14,7 +14,8 @@ pub struct LogicalArray<L: DaftLogicalType> {
 }
 
 impl<L: DaftLogicalType + 'static> LogicalArray<L> {
-    pub fn new(field: Arc<Field>, physical: DataArray<L::PhysicalType>) -> Self {
+    pub fn new<F: Into<Arc<Field>>>(field: F, physical: DataArray<L::PhysicalType>) -> Self {
+        let field = field.into();
         assert!(
             field.dtype.is_logical(),
             "Can only construct Logical Arrays on Logical Types, got {}",
@@ -37,7 +38,7 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
 
     pub fn empty(name: &str, dtype: &DataType) -> Self {
         let field = Field::new(name, dtype.clone());
-        Self::new(field.into(), DataArray::empty(name, &dtype.to_physical()))
+        Self::new(field, DataArray::empty(name, &dtype.to_physical()))
     }
 
     pub fn name(&self) -> &str {
@@ -47,7 +48,7 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
     pub fn rename(&self, name: &str) -> Self {
         let new_field = self.field.rename(name);
         let new_array = self.physical.rename(name);
-        Self::new(new_field.into(), new_array)
+        Self::new(new_field, new_array)
     }
 
     pub fn field(&self) -> &Field {

@@ -125,6 +125,10 @@ impl DataType {
                 Box::new(dtype.to_arrow()?),
                 metadata.clone(),
             )),
+            // TODO: Embedding should be exported as an extension type
+            DataType::Embedding(field, size) => {
+                Ok(ArrowType::FixedSizeList(Box::new(field.to_arrow()?), *size))
+            }
             _ => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
@@ -145,6 +149,10 @@ impl DataType {
                     Field::new(field.name.clone(), field.dtype.to_physical())
                         .with_metadata(field.metadata.clone()),
                 ),
+                *size,
+            ),
+            Embedding(field, size) => FixedSizeList(
+                Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
                 *size,
             ),
             _ => self.clone(),
@@ -209,7 +217,7 @@ impl DataType {
 
     #[inline]
     pub fn is_logical(&self) -> bool {
-        matches!(self, DataType::Date)
+        matches!(self, DataType::Date | DataType::Embedding(..))
     }
 
     #[inline]
@@ -293,6 +301,9 @@ impl Display for DataType {
             DataType::List(nested) => write!(f, "List[{}]", nested.dtype),
             DataType::FixedSizeList(inner, size) => {
                 write!(f, "FixedSizeList[{}; {}]", inner.dtype, size)
+            }
+            DataType::Embedding(inner, size) => {
+                write!(f, "Embedding[{}; {}]", inner.dtype, size)
             }
             DataType::Struct(fields) => {
                 let fields: String = fields

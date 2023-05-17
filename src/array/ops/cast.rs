@@ -17,6 +17,7 @@ use crate::{
     datatypes::logical::{EmbeddingArray, LogicalArray},
     with_match_numeric_daft_types,
 };
+use num_traits::{NumCast, ToPrimitive};
 
 use std::iter;
 
@@ -180,59 +181,83 @@ macro_rules! pycast_then_arrowcast {
         }
     }
 }
-use crate::datatypes::DaftNumericType;
 
 #[cfg(feature = "python")]
-fn extract_numpy_array_to_fixed_size_list<T: DaftNumericType>(
+fn extract_numpy_array_to_fixed_size_list<
+    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+>(
     py: Python<'_>,
     python_objects: &PythonArray,
+    child_field: &Field,
     list_size: usize,
-) -> DaftResult<FixedSizeListArray>
-where
-    T::Native: numpy::Element,
-{
+) -> DaftResult<FixedSizeListArray> {
+    use crate::python::PyDataType;
     use arrow2::array::Array;
     use numpy::PyArray1;
+    use std::num::Wrapping;
 
-    let mut values_vec = Vec::with_capacity(list_size * python_objects.len());
+    let mut values_vec: Vec<Tgt> = Vec::with_capacity(list_size * python_objects.len());
+
+    let from_numpy_dtype = {
+        PyModule::import(py, pyo3::intern!(py, "daft.datatype"))?
+            .getattr(pyo3::intern!(py, "DataType"))?
+            .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
+    };
 
     for object in python_objects.as_arrow().iter() {
         if let Some(object) = object {
             let pyarray = object.call_method0(py, pyo3::intern!(py, "__array__"));
             if pyarray.is_err() {
                 return Err(DaftError::ValueError(format!(
-                    "An error occurred when extracting array out of type: {:?}",
+                    "An error occurred when extracting __array__ out of type: {:?}",
                     object.getattr(py, pyo3::intern!(py, "__class__"))
                 )));
             }
+            let pyarray = pyarray.unwrap();
 
-            let pyarray = pyarray?.call_method0(py, "__array__")?;
-            let pyarray: PyReadonlyArrayDyn<'_, T::Native> = pyarray.extract(py)?;
-            if pyarray.ndim() != 1 {
+            let np_dtype = pyarray.getattr(py, pyo3::intern!(py, "dtype"))?;
+
+            let datatype = from_numpy_dtype
+                .call1((np_dtype,))?
+                .getattr(pyo3::intern!(py, "_dtype"))?
+                .extract::<PyDataType>()?;
+            let datatype = datatype.dtype;
+
+            if !datatype.is_numeric() {
                 return Err(DaftError::ValueError(format!(
-                    "we only support 1 dim numpy arrays, got {}",
-                    pyarray.ndim()
+                    "Numpy array has unsupported type {}",
+                    datatype
                 )));
             }
+            with_match_numeric_daft_types!(datatype, |$N| {
+                type Src = <$N as DaftNumericType>::Native;
+                let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract(py)?;
+                if pyarray.ndim() != 1 {
+                    return Err(DaftError::ValueError(format!(
+                        "we only support 1 dim numpy arrays, got {}",
+                        pyarray.ndim()
+                    )));
+                }
 
-            let pyarray = pyarray.downcast::<PyArray1<T::Native>>().unwrap();
-            if pyarray.len() != list_size {
-                return Err(DaftError::ValueError(format!(
-                    "Expected Array-like Object to have {list_size} elements but got {}",
-                    pyarray.len()
-                )));
-            }
-            values_vec.extend_from_slice(unsafe { pyarray.as_slice() }.unwrap())
+                let pyarray = pyarray.downcast::<PyArray1<Src>>().unwrap();
+                if pyarray.len() != list_size {
+                    return Err(DaftError::ValueError(format!(
+                        "Expected Array-like Object to have {list_size} elements but got {}",
+                        pyarray.len()
+                    )));
+                }
+                let sl: &[Src] = unsafe { pyarray.as_slice()}.unwrap();
+                values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
+            });
         } else {
-            values_vec.extend(iter::repeat(T::Native::default()).take(list_size));
+            values_vec.extend(iter::repeat(Tgt::default()).take(list_size));
         }
     }
 
     let values_array: Box<dyn arrow2::array::Array> =
         Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
 
-    let inner_field =
-        arrow2::datatypes::Field::new(python_objects.name(), T::get_dtype().to_arrow()?, true);
+    let inner_field = child_field.to_arrow()?;
 
     let list_dtype = arrow2::datatypes::DataType::FixedSizeList(Box::new(inner_field), list_size);
 
@@ -285,12 +310,27 @@ impl PythonArray {
             DataType::Date => unimplemented!(),
             DataType::List(_) => unimplemented!(),
             DataType::FixedSizeList(field, size) => {
+                if !field.dtype.is_numeric() {
+                    return Err(DaftError::ValueError(format!(
+                        "We can only convert numeric python types to FixedSizeList, got {}",
+                        field.dtype
+                    )));
+                }
                 with_match_numeric_daft_types!(field.dtype, |$T| {
+                    type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_numpy_array_to_fixed_size_list::<$T>(py, self, *size)?;
+                        let result = extract_numpy_array_to_fixed_size_list::<Tgt>(py, self, field, *size)?;
                         Ok(result.into_series())
                     })
                 })
+            }
+            DataType::Embedding(..) => {
+                let result = self.cast(&dtype.to_physical())?;
+                let embedding_array = EmbeddingArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    result.fixed_size_list()?.clone(),
+                );
+                Ok(embedding_array.into_series())
             }
             DataType::Struct(_) => unimplemented!(),
             // TODO: Add implementations for these types
