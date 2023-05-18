@@ -4,6 +4,7 @@ use arrow2::compute::{
 };
 
 use crate::datatypes::FixedSizeListArray;
+use crate::datatypes::ListArray;
 use crate::series::IntoSeries;
 use crate::{
     array::DataArray,
@@ -17,8 +18,8 @@ use crate::{
     datatypes::logical::{EmbeddingArray, LogicalArray},
     with_match_numeric_daft_types,
 };
+use arrow2::array::Array;
 use num_traits::{NumCast, ToPrimitive};
-
 use std::iter;
 
 use log;
@@ -185,20 +186,27 @@ macro_rules! pycast_then_arrowcast {
 }
 
 #[cfg(feature = "python")]
-fn extract_numpy_array_to_fixed_size_list<
+fn extract_python_to_vec<
     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
 >(
     py: Python<'_>,
     python_objects: &PythonArray,
-    child_field: &Field,
-    list_size: usize,
-) -> DaftResult<FixedSizeListArray> {
+    child_dtype: &DataType,
+    list_size: Option<usize>,
+) -> DaftResult<(Vec<Tgt>, Option<Vec<i64>>)> {
     use crate::python::PyDataType;
-    use arrow2::array::Array;
     use numpy::PyArray1;
     use std::num::Wrapping;
 
-    let mut values_vec: Vec<Tgt> = Vec::with_capacity(list_size * python_objects.len());
+    let mut values_vec: Vec<Tgt> =
+        Vec::with_capacity(list_size.unwrap_or(0) * python_objects.len());
+
+    let mut offsets_vec: Vec<i64> = vec![];
+
+    if list_size.is_none() {
+        offsets_vec.reserve(python_objects.len() + 1);
+        offsets_vec.push(0);
+    }
 
     let from_numpy_dtype = {
         PyModule::import(py, pyo3::intern!(py, "daft.datatype"))?
@@ -206,7 +214,7 @@ fn extract_numpy_array_to_fixed_size_list<
             .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
     };
 
-    let pytype = match &child_field.dtype {
+    let pytype = match child_dtype {
         dtype if dtype.is_integer() => Ok("int"),
         dtype if dtype.is_floating() => Ok("float"),
         dtype => Err(DaftError::ValueError(format!(
@@ -250,14 +258,20 @@ fn extract_numpy_array_to_fixed_size_list<
                         )));
                     }
 
-                    let pyarray = pyarray.downcast::<PyArray1<Src>>().unwrap();
-                    if pyarray.len() != list_size {
-                        return Err(DaftError::ValueError(format!(
-                            "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                            pyarray.len(), i
-                        )));
+                    let pyarray = pyarray.downcast::<PyArray1<Src>>().expect("downcasted to numpy array");
+                    let sl: &[Src] = unsafe { pyarray.as_slice()}.expect("convert numpy array to slice");
+
+                    if let Some(list_size) = list_size {
+                        if sl.len() != list_size {
+                            return Err(DaftError::ValueError(format!(
+                                "Expected Array-like Object to have {list_size} elements but got {} at index {}",
+                                sl.len(), i
+                            )));
+                        }
+                    } else {
+                        let offset = offsets_vec.last().unwrap() + sl.len() as i64;
+                        offsets_vec.push(offset);
                     }
-                    let sl: &[Src] = unsafe { pyarray.as_slice()}.unwrap();
                     values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
                 })
             } else {
@@ -267,7 +281,7 @@ fn extract_numpy_array_to_fixed_size_list<
                 if let Ok(pyiter) = pyiter {
                     // has an iter
                     let casted_iter = pyiter.map(|v| v.and_then(|f| py_type_fn.call1((f,))));
-                    if child_field.dtype.is_integer() {
+                    let collected = if child_dtype.is_integer() {
                         let int_iter = casted_iter
                             .map(|v| v.and_then(|v| v.extract::<i64>()))
                             .map(|v| {
@@ -282,21 +296,8 @@ fn extract_numpy_array_to_fixed_size_list<
                             })
                             .map(|v| v.map(|v| v.0));
 
-                        let collected = int_iter.collect::<PyResult<Vec<_>>>();
-
-                        if collected.is_err() {
-                            log::warn!("Could not convert python object to fixed size list at index: {i} for input series: {}", python_objects.name())
-                        }
-                        let collected: Vec<Tgt> = collected?;
-
-                        if collected.len() != list_size {
-                            return Err(DaftError::ValueError(format!(
-                                "Expected Iterable Object to have {list_size} elements but got {} at index {}",
-                                collected.len(), i
-                            )));
-                        }
-                        values_vec.extend_from_slice(collected.as_slice());
-                    } else if child_field.dtype.is_floating() {
+                        int_iter.collect::<PyResult<Vec<_>>>()
+                    } else if child_dtype.is_floating() {
                         let float_iter = casted_iter
                             .map(|v| v.and_then(|v| v.extract::<f64>()))
                             .map(|v| {
@@ -310,30 +311,59 @@ fn extract_numpy_array_to_fixed_size_list<
                                 })
                             })
                             .map(|v| v.map(|v| v.0));
-                        let collected = float_iter.collect::<PyResult<Vec<_>>>();
-                        if collected.is_err() {
-                            log::warn!("Could not convert python object to fixed size list at index: {i} for input series: {}", python_objects.name())
-                        }
-                        let collected: Vec<Tgt> = collected?;
-                        if collected.len() != list_size {
-                            return Err(DaftError::ValueError(format!(
-                                "Expected Iterable Object to have {list_size} elements but got {} at index {}",
-                                collected.len(), i
-                            )));
-                        }
-                        values_vec.extend_from_slice(collected.as_slice());
-                    }
-                } else {
-                    return Err(DaftError::ValueError(format!(
+                        float_iter.collect::<PyResult<Vec<_>>>()
+                    } else {
+                        return Err(DaftError::ValueError(format!(
                         "Python Object is neither array-like or an iterable at index {}. Can not convert to a list. object type: {}",
                         i, object.getattr(pyo3::intern!(py, "__class__"))?.to_string()
                     )));
+                    };
+
+                    if collected.is_err() {
+                        log::warn!("Could not convert python object to fixed size list at index: {i} for input series: {}", python_objects.name())
+                    }
+                    let collected: Vec<Tgt> = collected?;
+                    if let Some(list_size) = list_size {
+                        if collected.len() != list_size {
+                            return Err(DaftError::ValueError(format!(
+                            "Expected Array-like Object to have {list_size} elements but got {} at index {}",
+                            collected.len(), i
+                        )));
+                        }
+                    } else {
+                        let offset = offsets_vec.last().unwrap() + collected.len() as i64;
+                        offsets_vec.push(offset);
+                    }
+                    values_vec.extend_from_slice(collected.as_slice());
                 }
             }
         } else {
-            values_vec.extend(iter::repeat(Tgt::default()).take(list_size));
+            if let Some(list_size) = list_size {
+                values_vec.extend(iter::repeat(Tgt::default()).take(list_size));
+            } else {
+                let offset = offsets_vec.last().unwrap();
+                offsets_vec.push(*offset);
+            }
         }
     }
+    if let Some(_) = list_size {
+        return Ok((values_vec, None));
+    } else {
+        return Ok((values_vec, Some(offsets_vec)));
+    }
+}
+
+#[cfg(feature = "python")]
+fn extract_python_like_to_fixed_size_list<
+    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+>(
+    py: Python<'_>,
+    python_objects: &PythonArray,
+    child_field: &Field,
+    list_size: usize,
+) -> DaftResult<FixedSizeListArray> {
+    let (values_vec, _) =
+        extract_python_to_vec::<Tgt>(py, python_objects, &child_field.dtype, Some(list_size))?;
 
     let values_array: Box<dyn arrow2::array::Array> =
         Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
@@ -351,6 +381,41 @@ fn extract_numpy_array_to_fixed_size_list<
     );
 
     FixedSizeListArray::new(
+        Field::new(python_objects.name(), daft_type).into(),
+        Box::new(list_array),
+    )
+}
+
+#[cfg(feature = "python")]
+fn extract_python_like_to_list<
+    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+>(
+    py: Python<'_>,
+    python_objects: &PythonArray,
+    child_field: &Field,
+) -> DaftResult<ListArray> {
+    let (values_vec, offsets) =
+        extract_python_to_vec::<Tgt>(py, python_objects, &child_field.dtype, None)?;
+
+    let offsets = offsets.expect("Offsets should but non-None for dynamic list");
+
+    let values_array: Box<dyn arrow2::array::Array> =
+        Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
+
+    let inner_field = child_field.to_arrow()?;
+
+    let list_dtype = arrow2::datatypes::DataType::LargeList(Box::new(inner_field));
+
+    let daft_type = (&list_dtype).into();
+
+    let list_array = arrow2::array::ListArray::new(
+        list_dtype,
+        arrow2::offset::OffsetsBuffer::try_from(offsets)?,
+        values_array,
+        python_objects.as_arrow().validity().cloned(),
+    );
+
+    ListArray::new(
         Field::new(python_objects.name(), daft_type).into(),
         Box::new(list_array),
     )
@@ -389,7 +454,21 @@ impl PythonArray {
                 pycast_then_arrowcast!(self, dt, "float")
             }
             DataType::Date => unimplemented!(),
-            DataType::List(_) => unimplemented!(),
+            DataType::List(field) => {
+                if !field.dtype.is_numeric() {
+                    return Err(DaftError::ValueError(format!(
+                        "We can only convert numeric python types to List, got {}",
+                        field.dtype
+                    )));
+                }
+                with_match_numeric_daft_types!(field.dtype, |$T| {
+                    type Tgt = <$T as DaftNumericType>::Native;
+                    pyo3::Python::with_gil(|py| {
+                        let result = extract_python_like_to_list::<Tgt>(py, self, field)?;
+                        Ok(result.into_series())
+                    })
+                })
+            }
             DataType::FixedSizeList(field, size) => {
                 if !field.dtype.is_numeric() {
                     return Err(DaftError::ValueError(format!(
@@ -400,7 +479,7 @@ impl PythonArray {
                 with_match_numeric_daft_types!(field.dtype, |$T| {
                     type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_numpy_array_to_fixed_size_list::<Tgt>(py, self, field, *size)?;
+                        let result = extract_python_like_to_fixed_size_list::<Tgt>(py, self, field, *size)?;
                         Ok(result.into_series())
                     })
                 })
