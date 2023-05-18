@@ -77,7 +77,7 @@ def _glob_path_into_details_vpartitions(
     schema: Schema,
     source_info: SourceInfo | None,
     fs: fsspec.AbstractFileSystem | None,
-) -> tuple[list[tuple[PartID, Table]], fsspec.AbstractFileSystem]:
+) -> list[tuple[PartID, Table]]:
     if fs is None:
         fs = get_filesystem_from_path(path)
 
@@ -99,7 +99,7 @@ def _glob_path_into_details_vpartitions(
     partition_ref = ray.put(partition)
     partition_refs = [(0, partition_ref)]
 
-    return partition_refs, fs
+    return partition_refs
 
 
 @ray.remote
@@ -143,7 +143,7 @@ def sample_schema_from_filepath_vpartition(
     p: Table,
     filepath_column: str,
     source_info: SourceInfo,
-    fs: fsspec.AbstractFileSystem,
+    fs: fsspec.AbstractFileSystem | None,
     schema_inference_options: vPartitionSchemaInferenceOptions,
 ) -> Schema:
     """Ray remote function to run schema sampling on top of a Table containing filepaths"""
@@ -232,17 +232,17 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
         source_path: str,
         source_info: SourceInfo | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
-    ) -> tuple[RayPartitionSet, fsspec.AbstractFileSystem]:
-        partition_refs, fs = ray.get(
+    ) -> RayPartitionSet:
+        partition_refs = ray.get(
             _glob_path_into_details_vpartitions.remote(source_path, RayRunnerIO.FS_LISTING_SCHEMA, source_info, fs=fs)
         )
-        return RayPartitionSet({part_id: part for part_id, part in partition_refs}), fs
+        return RayPartitionSet({part_id: part for part_id, part in partition_refs})
 
     def get_schema_from_first_filepath(
         self,
         listing_details_partitions: PartitionSet[ray.ObjectRef],
         source_info: SourceInfo,
-        fs: fsspec.AbstractFileSystem,
+        fs: fsspec.AbstractFileSystem | None,
         schema_inference_options: vPartitionSchemaInferenceOptions,
     ) -> Schema:
         nonempty_partitions: list[ray.ObjectRef] = [

@@ -87,7 +87,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
         source_path: str,
         source_info: SourceInfo | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
-    ) -> tuple[LocalPartitionSet, fsspec.AbstractFileSystem]:
+    ) -> LocalPartitionSet:
         if fs is None:
             fs = get_filesystem_from_path(source_path)
 
@@ -116,13 +116,13 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
                 0: partition,
             }
         )
-        return pset, fs
+        return pset
 
     def get_schema_from_first_filepath(
         self,
         listing_details_partitions: PartitionSet[Table],
         source_info: SourceInfo,
-        fs: fsspec.AbstractFileSystem,
+        fs: fsspec.AbstractFileSystem | None,
         schema_inference_options: vPartitionSchemaInferenceOptions,
     ) -> Schema:
         # Naively retrieve the first filepath in the PartitionSet

@@ -13,6 +13,7 @@ from daft.datasources import (
     StorageType,
 )
 from daft.datatype import DataType
+from daft.filesystem import get_filesystem_from_path
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     PartitionSet,
@@ -53,7 +54,7 @@ class RunnerIO(Generic[PartitionT]):
         source_path: str,
         source_info: SourceInfo | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
-    ) -> tuple[PartitionSet[PartitionT], fsspec.AbstractFileSystem]:
+    ) -> PartitionSet[PartitionT]:
         """Globs the specified filepath to construct Partitions containing file and dir metadata
 
         Args:
@@ -69,7 +70,7 @@ class RunnerIO(Generic[PartitionT]):
         self,
         listing_details_partitions: PartitionSet[PartitionT],
         source_info: SourceInfo,
-        fs: fsspec.AbstractFileSystem,
+        fs: fsspec.AbstractFileSystem | None,
         schema_inference_options: vPartitionSchemaInferenceOptions,
     ) -> Schema:
         raise NotImplementedError()
@@ -78,10 +79,12 @@ class RunnerIO(Generic[PartitionT]):
 def sample_schema(
     filepath: str,
     source_info: SourceInfo,
-    fs: fsspec.AbstractFileSystem,
+    fs: fsspec.AbstractFileSystem | None,
     schema_inference_options: vPartitionSchemaInferenceOptions,
 ) -> Schema:
     """Helper method that samples a schema from the specified source"""
+    if fs is None:
+        fs = get_filesystem_from_path(filepath)
 
     sampled_partition: Table
     if source_info.scan_type() == StorageType.CSV:

@@ -211,7 +211,7 @@ class TabularFilesScan(UnaryNode):
         *,
         schema: Schema,
         source_info: SourceInfo,
-        fs: fsspec.AbstractFileSystem,
+        fs: fsspec.AbstractFileSystem | None,
         predicate: ExpressionsProjection | None = None,
         columns: list[str] | None = None,
         filepaths_child: LogicalPlan,

@@ -43,6 +43,7 @@ def _get_file(file: FileInput, fs: fsspec.AbstractFileSystem | None) -> Iterator
         file = str(file)
     if isinstance(file, str):
         if fs is None:
+            # TODO(Clark): Add filesystem cache based on protocol.
             fs = get_filesystem_from_path(file)
         with fs.open(file, compression="infer") as f:
             yield f
