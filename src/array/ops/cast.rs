@@ -187,10 +187,9 @@ macro_rules! pycast_then_arrowcast {
 
 #[cfg(feature = "python")]
 fn append_values_from_numpy<
-    'a,
     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
 >(
-    pyarray: &'a PyAny,
+    pyarray: &PyAny,
     index: usize,
     from_numpy_dtype_fn: &PyAny,
     values_vec: &mut Vec<Tgt>,
