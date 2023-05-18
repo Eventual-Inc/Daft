@@ -3,15 +3,15 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
 
 use crate::{
-    array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, BaseArray, DataArray},
+    array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
     datatypes::{DataType, Field, PythonType, UInt64Type},
     ffi,
-    series::{self, Series},
+    series::{self, IntoSeries, Series},
     utils::arrow::cast_array_if_needed,
 };
 
 use super::datatype::PyDataType;
-use crate::array::ops::downcast::Downcastable;
+use crate::array::ops::as_arrow::AsArrow;
 
 #[pyclass]
 #[derive(Clone)]
@@ -44,13 +44,13 @@ impl PySeries {
     // This is for PythonArrays only,
     // to convert the Rust PythonArray to a Python list[object].
     pub fn to_pylist(&self) -> PyResult<PyObject> {
-        let pseudo_arrow_array = self.series.python()?.downcast();
+        let pseudo_arrow_array = self.series.python()?.as_arrow();
         let pyobj_vec = pseudo_arrow_array.to_pyobj_vec();
         Python::with_gil(|py| Ok(PyList::new(py, pyobj_vec).into()))
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
-        let arrow_array = self.series.array().data().to_boxed();
+        let arrow_array = self.series.to_arrow();
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
             ffi::to_py_array(arrow_array, py, pyarrow)
@@ -123,7 +123,7 @@ impl PySeries {
                 mask.series.data_type()
             )));
         }
-        Ok(self.series.filter(mask.series.downcast().unwrap())?.into())
+        Ok(self.series.filter(mask.series.downcast()?)?.into())
     }
 
     pub fn sort(&self, descending: bool) -> PyResult<Self> {

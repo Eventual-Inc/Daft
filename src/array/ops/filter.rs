@@ -1,50 +1,48 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, NullArray,
-        StructArray, Utf8Array,
+        logical::DateArray, BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray,
+        ListArray, NullArray, StructArray, Utf8Array,
     },
     error::DaftResult,
 };
 
-use crate::array::BaseArray;
-
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where
     T: DaftNumericType,
 {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
-        DataArray::try_from((self.name(), result))
+        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 impl Utf8Array {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
-        DataArray::try_from((self.name(), result))
+        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 impl BinaryArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
-        DataArray::try_from((self.name(), result))
+        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 impl BooleanArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
-        DataArray::try_from((self.name(), result))
+        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 impl NullArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let set_bits = mask.len() - mask.downcast().values().unset_bits();
+        let set_bits = mask.len() - mask.as_arrow().values().unset_bits();
         Ok(NullArray::full_null(
             self.name(),
             self.data_type(),
@@ -55,22 +53,22 @@ impl NullArray {
 
 impl ListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
-        DataArray::try_from((self.name(), result))
+        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 impl FixedSizeListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
-        DataArray::try_from((self.name(), result))
+        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 impl StructArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.downcast(), mask.downcast())?;
-        DataArray::try_from((self.name(), result))
+        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
+        Self::try_from((self.field.clone(), result))
     }
 }
 
@@ -83,20 +81,20 @@ impl crate::datatypes::PythonArray {
         use crate::array::pseudo_arrow::PseudoArrowArray;
         use crate::datatypes::PythonType;
 
-        let mask = mask.downcast();
+        let mask = mask.as_arrow();
 
         // Apply the filter mask to the data values, regardless of validity.
         let new_values = {
             mask.iter()
                 .map(|x| x.unwrap_or(false))
-                .zip(self.downcast().values().iter())
+                .zip(self.as_arrow().values().iter())
                 .filter_map(|(f, item)| if f { Some(item.clone()) } else { None })
                 .collect::<Vec<PyObject>>()
         };
 
         // Apply the filter mask to the validity bitmap.
         let new_validity = {
-            self.downcast()
+            self.as_arrow()
                 .validity()
                 .map(|old_validity| {
                     let old_validity_array = {
@@ -125,5 +123,12 @@ impl crate::datatypes::PythonArray {
             Box::new(PseudoArrowArray::new(new_values.into(), new_validity));
 
         DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
+    }
+}
+
+impl DateArray {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let new_array = self.physical.filter(mask)?;
+        Ok(Self::new(self.field.clone(), new_array))
     }
 }

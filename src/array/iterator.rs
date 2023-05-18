@@ -4,7 +4,7 @@ use crate::datatypes::{BooleanArray, DaftNumericType};
 
 use super::DataArray;
 
-use super::ops::downcast::Downcastable;
+use super::ops::as_arrow::AsArrow;
 
 impl<'a, T> IntoIterator for &'a DataArray<T>
 where
@@ -14,7 +14,7 @@ where
     type IntoIter = ZipValidity<&'a T::Native, std::slice::Iter<'a, T::Native>, BitmapIter<'a>>;
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        self.downcast().into_iter()
+        self.as_arrow().into_iter()
     }
 }
 
@@ -24,6 +24,6 @@ impl<'a> IntoIterator for &'a BooleanArray {
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        self.downcast().into_iter()
+        self.as_arrow().into_iter()
     }
 }

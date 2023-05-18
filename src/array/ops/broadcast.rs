@@ -1,5 +1,5 @@
 use crate::{
-    array::{BaseArray, DataArray},
+    array::DataArray,
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DataType, FixedSizeListArray, ListArray,
         NullArray, StructArray, Utf8Array,
@@ -7,7 +7,7 @@ use crate::{
     error::{DaftError, DaftResult},
 };
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 pub trait Broadcastable {
     fn broadcast(&self, num: usize) -> DaftResult<Self>
@@ -26,7 +26,7 @@ where
                 self.name()
             )));
         }
-        let maybe_val = self.downcast().iter().next().unwrap();
+        let maybe_val = self.as_arrow().iter().next().unwrap();
         match maybe_val {
             Some(val) => {
                 let repeated_values: Vec<<T as DaftNumericType>::Native> =
@@ -46,7 +46,7 @@ impl Broadcastable for Utf8Array {
                 self.name()
             )));
         }
-        let maybe_val = self.downcast().iter().next().unwrap();
+        let maybe_val = self.as_arrow().iter().next().unwrap();
         match maybe_val {
             Some(val) => {
                 let repeated_values: Vec<&str> = std::iter::repeat(val).take(num).collect();
@@ -77,7 +77,7 @@ impl Broadcastable for BooleanArray {
                 self.name()
             )));
         }
-        let maybe_val = self.downcast().iter().next().unwrap();
+        let maybe_val = self.as_arrow().iter().next().unwrap();
         match maybe_val {
             Some(val) => {
                 let repeated_values: Vec<bool> = std::iter::repeat(val).take(num).collect();
@@ -96,7 +96,7 @@ impl Broadcastable for BinaryArray {
                 self.name()
             )));
         }
-        let maybe_val = self.downcast().iter().next().unwrap();
+        let maybe_val = self.as_arrow().iter().next().unwrap();
         match maybe_val {
             Some(val) => {
                 let repeated_values: Vec<&[u8]> = std::iter::repeat(val).take(num).collect();
@@ -120,7 +120,7 @@ impl Broadcastable for ListArray {
                 self.name()
             )));
         }
-        let maybe_val = self.downcast().iter().next().unwrap();
+        let maybe_val = self.as_arrow().iter().next().unwrap();
         match maybe_val {
             Some(val) => match i64::try_from(val.len()) {
                 Ok(array_length) => {
@@ -173,7 +173,7 @@ impl Broadcastable for FixedSizeListArray {
                 self.name()
             )));
         }
-        let maybe_val = self.downcast().iter().next().unwrap();
+        let maybe_val = self.as_arrow().iter().next().unwrap();
         match maybe_val {
             Some(val) => {
                 let repeated_values = arrow2::compute::concatenate::concatenate(
@@ -213,7 +213,7 @@ impl Broadcastable for StructArray {
                 self.name()
             )));
         }
-        let arrow_arr: &arrow2::array::StructArray = self.downcast();
+        let arrow_arr: &arrow2::array::StructArray = self.as_arrow();
         let arrays = arrow_arr
             .values()
             .iter()

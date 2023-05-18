@@ -1,5 +1,7 @@
+mod array_impl;
 mod from;
 mod ops;
+mod series_like;
 
 use std::{
     fmt::{Display, Formatter, Result},
@@ -7,47 +9,45 @@ use std::{
 };
 
 use crate::{
-    array::BaseArray,
     datatypes::{DataType, Field},
     error::DaftResult,
 };
 
-#[derive(Debug, Clone)]
+pub use array_impl::IntoSeries;
+
+use self::series_like::SeriesLike;
+
+#[derive(Clone)]
 pub struct Series {
-    data_array: Arc<dyn BaseArray>,
+    pub inner: Arc<dyn SeriesLike>,
 }
 
 impl Series {
-    pub fn new(data_array: Arc<dyn BaseArray>) -> Self {
-        Series { data_array }
-    }
-
-    pub fn array(&self) -> &dyn BaseArray {
-        self.data_array.as_ref()
+    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+        self.inner.to_arrow()
     }
 
     pub fn data_type(&self) -> &DataType {
-        self.data_array.data_type()
+        self.inner.data_type()
     }
 
     pub fn name(&self) -> &str {
-        self.data_array.name()
+        self.inner.name()
     }
 
     pub fn rename<S: AsRef<str>>(&self, name: S) -> Self {
-        Self::new(Arc::from(self.data_array.rename(name.as_ref())))
+        self.inner.rename(name.as_ref())
     }
 
     pub fn field(&self) -> &Field {
-        self.data_array.field()
+        self.inner.field()
     }
-
     pub fn as_physical(&self) -> DaftResult<Series> {
         let physical_dtype = self.data_type().to_physical();
         if &physical_dtype == self.data_type() {
             Ok(self.clone())
         } else {
-            self.cast(&physical_dtype)
+            self.inner.cast(&physical_dtype)
         }
     }
 }
@@ -58,7 +58,7 @@ impl Display for Series {
         let mut table = prettytable::Table::new();
 
         let header =
-            prettytable::Cell::new(format!("{}\n{:?}", self.name(), self.data_type()).as_str())
+            prettytable::Cell::new(format!("{}\n{}", self.name(), self.data_type()).as_str())
                 .with_style(prettytable::Attr::Bold);
         table.add_row(prettytable::Row::new(vec![header]));
 

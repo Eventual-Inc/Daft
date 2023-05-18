@@ -128,6 +128,14 @@ impl DataType {
         match self {
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
+            List(field) => List(Box::new(Field::new(
+                field.name.clone(),
+                field.dtype.to_physical(),
+            ))),
+            FixedSizeList(field, size) => FixedSizeList(
+                Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
+                *size,
+            ),
             _ => self.clone(),
         }
     }
@@ -168,6 +176,25 @@ impl DataType {
     #[inline]
     pub fn is_python(&self) -> bool {
         matches!(self, DataType::Python)
+    }
+
+    #[inline]
+    pub fn is_logical(&self) -> bool {
+        matches!(self, DataType::Date)
+    }
+
+    #[inline]
+    pub fn is_physical(&self) -> bool {
+        !self.is_logical()
+    }
+
+    #[inline]
+    pub fn is_nested(&self) -> bool {
+        let p: DataType = self.to_physical();
+        matches!(
+            p,
+            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Struct(..)
+        )
     }
 
     #[inline]

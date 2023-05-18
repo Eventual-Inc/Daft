@@ -1,12 +1,12 @@
 use crate::{
-    array::{ops::arrow2::comparison::build_multi_array_is_equal, BaseArray},
+    array::ops::arrow2::comparison::build_multi_array_is_equal,
     datatypes::{DataType, UInt64Array},
     error::{DaftError, DaftResult},
-    series::Series,
+    series::{IntoSeries, Series},
     table::Table,
 };
 
-use crate::array::ops::downcast::Downcastable;
+use crate::array::ops::as_arrow::AsArrow;
 
 pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series, Series)> {
     // TODO(sammy) add tests for mismatched types for multiple columns for joins
@@ -27,8 +27,8 @@ pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series
         || right.columns.iter().any(|s| s.data_type().is_null());
     if has_null_type {
         return Ok((
-            Series::empty("left_indices", &DataType::UInt64)?,
-            Series::empty("right_indices", &DataType::UInt64)?,
+            UInt64Array::empty("left_indices", &DataType::UInt64).into_series(),
+            UInt64Array::empty("right_indices", &DataType::UInt64).into_series(),
         ));
     }
     let types_not_match = left
@@ -53,7 +53,7 @@ pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series
         false,
         false,
     )?;
-    for (r_idx, h) in r_hashes.downcast().values_iter().enumerate() {
+    for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
         if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
             *h == other.hash && {
                 let l_idx = other.idx;

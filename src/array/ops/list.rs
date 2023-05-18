@@ -1,20 +1,17 @@
-use std::sync::Arc;
-
-use crate::array::BaseArray;
-use crate::datatypes::{DataType, FixedSizeListArray, ListArray, UInt64Array};
+use crate::datatypes::{FixedSizeListArray, ListArray, UInt64Array};
 
 use crate::series::Series;
-use crate::with_match_arrow_daft_types;
+
 use arrow2;
 use arrow2::array::Array;
 
 use crate::error::DaftResult;
 
-use super::downcast::Downcastable;
+use super::as_arrow::AsArrow;
 
 impl ListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {
-        let list_array = self.downcast();
+        let list_array = self.as_arrow();
         let offsets = list_array.offsets();
 
         let mut lens = Vec::with_capacity(self.len());
@@ -29,7 +26,7 @@ impl ListArray {
     }
 
     pub fn explode(&self) -> DaftResult<Series> {
-        let list_array = self.downcast();
+        let list_array = self.as_arrow();
         let child_array = list_array.values().as_ref();
         let offsets = list_array.offsets();
 
@@ -58,24 +55,13 @@ impl ListArray {
             }
         }
 
-        let child_data_type = match self.data_type() {
-            DataType::List(field) => &field.dtype,
-            _ => panic!("Expected List type but received {:?}", self.data_type()),
-        };
-
-        with_match_arrow_daft_types!(child_data_type,|$T| {
-            let new_data_arr = DataArray::<$T>::new(Arc::new(Field {
-                name: self.field.name.clone(),
-                dtype: child_data_type.clone(),
-            }), growable.as_box())?;
-            Ok(new_data_arr.into_series())
-        })
+        Series::try_from((self.field.name.as_ref(), growable.as_box()))
     }
 }
 
 impl FixedSizeListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {
-        let list_array = self.downcast();
+        let list_array = self.as_arrow();
         let list_size = list_array.size();
         let lens = (0..self.len())
             .map(|_| list_size as u64)
@@ -88,7 +74,7 @@ impl FixedSizeListArray {
     }
 
     pub fn explode(&self) -> DaftResult<Series> {
-        let list_array = self.downcast();
+        let list_array = self.as_arrow();
         let child_array = list_array.values().as_ref();
 
         let list_size = list_array.size();
@@ -110,21 +96,6 @@ impl FixedSizeListArray {
                 true => growable.extend(0, i * list_size, list_size),
             }
         }
-
-        let child_data_type = match self.data_type() {
-            DataType::FixedSizeList(field, _) => &field.dtype,
-            _ => panic!(
-                "Expected FixedSizeList type but received {:?}",
-                self.data_type()
-            ),
-        };
-
-        with_match_arrow_daft_types!(child_data_type,|$T| {
-            let new_data_arr = DataArray::<$T>::new(Arc::new(Field {
-                name: self.field.name.clone(),
-                dtype: child_data_type.clone(),
-            }), growable.as_box())?;
-            Ok(new_data_arr.into_series())
-        })
+        Series::try_from((self.field.name.as_ref(), growable.as_box()))
     }
 }

@@ -9,7 +9,6 @@ use crate::{
 };
 
 mod hash_join;
-mod naive_join;
 
 fn match_types_for_tables(left: &Table, right: &Table) -> DaftResult<(Table, Table)> {
     let mut lseries = vec![];

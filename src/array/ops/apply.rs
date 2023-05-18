@@ -1,10 +1,6 @@
 use arrow2::array::PrimitiveArray;
 
-use crate::{
-    array::{BaseArray, DataArray},
-    datatypes::DaftNumericType,
-    error::DaftResult,
-};
+use crate::{array::DataArray, datatypes::DaftNumericType, error::DaftResult};
 
 impl<T> DataArray<T>
 where

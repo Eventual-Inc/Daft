@@ -8,7 +8,7 @@ use super::{DaftCountAggable, GroupIndices};
 
 impl<T> DaftCountAggable for &DataArray<T>
 where
-    T: DaftDataType,
+    T: DaftPhysicalType,
 {
     type Output = DaftResult<DataArray<UInt64Type>>;
 
