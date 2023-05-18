@@ -278,7 +278,7 @@ fn extract_numpy_array_to_fixed_size_list<
                                     )
                                 })
                             })
-                            .map(|v| v.and_then(|v| Ok(v.0)));
+                            .map(|v| v.map(|v| v.0));
 
                         let collected = int_iter.collect::<PyResult<Vec<_>>>()?;
                         if collected.len() != list_size {
@@ -301,7 +301,7 @@ fn extract_numpy_array_to_fixed_size_list<
                                     )
                                 })
                             })
-                            .map(|v| v.and_then(|v| Ok(v.0)));
+                            .map(|v| v.map(|v| v.0));
                         let collected = float_iter.collect::<PyResult<Vec<_>>>()?;
 
                         if collected.len() != list_size {

@@ -185,25 +185,25 @@ impl DataType {
 
     #[inline]
     pub fn is_integer(&self) -> bool {
-        match self {
+        matches!(
+            self,
             DataType::Int8
-            | DataType::Int16
-            | DataType::Int32
-            | DataType::Int64
-            | DataType::UInt8
-            | DataType::UInt16
-            | DataType::UInt32
-            | DataType::UInt64 => true,
-            _ => false,
-        }
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+        )
     }
 
     #[inline]
     pub fn is_floating(&self) -> bool {
-        match self {
-            DataType::Float16 | DataType::Float32 | DataType::Float64 => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            DataType::Float16 | DataType::Float32 | DataType::Float64
+        )
     }
 
     #[inline]
