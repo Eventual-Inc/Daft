@@ -21,6 +21,8 @@ use num_traits::{NumCast, ToPrimitive};
 
 use std::iter;
 
+use log;
+
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
 #[cfg(feature = "python")]
@@ -280,7 +282,13 @@ fn extract_numpy_array_to_fixed_size_list<
                             })
                             .map(|v| v.map(|v| v.0));
 
-                        let collected = int_iter.collect::<PyResult<Vec<_>>>()?;
+                        let collected = int_iter.collect::<PyResult<Vec<_>>>();
+
+                        if collected.is_err() {
+                            log::warn!("Could not convert python object to fixed size list at index: {i} for input series: {}", python_objects.name())
+                        }
+                        let collected: Vec<Tgt> = collected?;
+
                         if collected.len() != list_size {
                             return Err(DaftError::ValueError(format!(
                                 "Expected Iterable Object to have {list_size} elements but got {} at index {}",
@@ -302,8 +310,11 @@ fn extract_numpy_array_to_fixed_size_list<
                                 })
                             })
                             .map(|v| v.map(|v| v.0));
-                        let collected = float_iter.collect::<PyResult<Vec<_>>>()?;
-
+                        let collected = float_iter.collect::<PyResult<Vec<_>>>();
+                        if collected.is_err() {
+                            log::warn!("Could not convert python object to fixed size list at index: {i} for input series: {}", python_objects.name())
+                        }
+                        let collected: Vec<Tgt> = collected?;
                         if collected.len() != list_size {
                             return Err(DaftError::ValueError(format!(
                                 "Expected Iterable Object to have {list_size} elements but got {} at index {}",

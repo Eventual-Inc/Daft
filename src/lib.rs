@@ -46,6 +46,8 @@ pub mod pylib {
 
     #[pymodule]
     fn daft(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+        pyo3_log::init();
+
         python::register_modules(_py, m)?;
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
