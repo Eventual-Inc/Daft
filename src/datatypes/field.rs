@@ -25,11 +25,11 @@ impl Field {
         }
     }
 
-    pub fn with_metadata(self, metadata: Arc<Metadata>) -> Self {
+    pub fn with_metadata<M: Into<Arc<Metadata>>>(self, metadata: M) -> Self {
         Self {
             name: self.name,
             dtype: self.dtype,
-            metadata,
+            metadata: metadata.into(),
         }
     }
 
@@ -66,7 +66,7 @@ impl From<&ArrowField> for Field {
         Self {
             name: af.name.clone(),
             dtype: af.data_type().into(),
-            metadata: Arc::new(af.metadata.clone()),
+            metadata: af.metadata.clone().into(),
         }
     }
 }
