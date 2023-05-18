@@ -204,51 +204,121 @@ fn extract_numpy_array_to_fixed_size_list<
             .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
     };
 
-    for object in python_objects.as_arrow().iter() {
+    let pytype = match &child_field.dtype {
+        dtype if dtype.is_integer() => Ok("int"),
+        dtype if dtype.is_floating() => Ok("float"),
+        dtype => Err(DaftError::ValueError(format!(
+            "We only support numeric types when converting to FixedSizeList, got {dtype}"
+        ))),
+    }?;
+
+    let py_type_fn = { PyModule::import(py, pyo3::intern!(py, "builtins"))?.getattr(pytype)? };
+
+    for (i, object) in python_objects.as_arrow().iter().enumerate() {
         if let Some(object) = object {
-            let pyarray = object.call_method0(py, pyo3::intern!(py, "__array__"));
-            if pyarray.is_err() {
-                return Err(DaftError::ValueError(format!(
-                    "An error occurred when extracting __array__ out of type: {:?}",
-                    object.getattr(py, pyo3::intern!(py, "__class__"))
-                )));
-            }
-            let pyarray = pyarray.unwrap();
+            let object = object.into_py(py);
+            let object = object.as_ref(py);
 
-            let np_dtype = pyarray.getattr(py, pyo3::intern!(py, "dtype"))?;
+            let pyarray = object.call_method0(pyo3::intern!(py, "__array__"));
 
-            let datatype = from_numpy_dtype
-                .call1((np_dtype,))?
-                .getattr(pyo3::intern!(py, "_dtype"))?
-                .extract::<PyDataType>()?;
-            let datatype = datatype.dtype;
+            if let Ok(pyarray) = pyarray {
+                // Path if object is array-like
 
-            if !datatype.is_numeric() {
-                return Err(DaftError::ValueError(format!(
-                    "Numpy array has unsupported type {}",
-                    datatype
-                )));
-            }
-            with_match_numeric_daft_types!(datatype, |$N| {
-                type Src = <$N as DaftNumericType>::Native;
-                let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract(py)?;
-                if pyarray.ndim() != 1 {
+                let np_dtype = pyarray.getattr(pyo3::intern!(py, "dtype"))?;
+
+                let datatype = from_numpy_dtype
+                    .call1((np_dtype,))?
+                    .getattr(pyo3::intern!(py, "_dtype"))?
+                    .extract::<PyDataType>()?;
+                let datatype = datatype.dtype;
+
+                if !datatype.is_numeric() {
                     return Err(DaftError::ValueError(format!(
-                        "we only support 1 dim numpy arrays, got {}",
-                        pyarray.ndim()
+                        "Numpy array has unsupported type {} at index: {i}",
+                        datatype
                     )));
                 }
+                with_match_numeric_daft_types!(datatype, |$N| {
+                    type Src = <$N as DaftNumericType>::Native;
+                    let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
+                    if pyarray.ndim() != 1 {
+                        return Err(DaftError::ValueError(format!(
+                            "we only support 1 dim numpy arrays, got {} at index: {}",
+                            pyarray.ndim(), i
+                        )));
+                    }
 
-                let pyarray = pyarray.downcast::<PyArray1<Src>>().unwrap();
-                if pyarray.len() != list_size {
+                    let pyarray = pyarray.downcast::<PyArray1<Src>>().unwrap();
+                    if pyarray.len() != list_size {
+                        return Err(DaftError::ValueError(format!(
+                            "Expected Array-like Object to have {list_size} elements but got {} at index {}",
+                            pyarray.len(), i
+                        )));
+                    }
+                    let sl: &[Src] = unsafe { pyarray.as_slice()}.unwrap();
+                    values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
+                })
+            } else {
+                // Path if object is no array-like
+                // try to see if we can iterate over the object
+                let pyiter = object.iter();
+                if let Ok(pyiter) = pyiter {
+                    // has an iter
+                    let casted_iter = pyiter.map(|v| v.and_then(|f| py_type_fn.call1((f,))));
+                    if child_field.dtype.is_integer() {
+                        let int_iter = casted_iter
+                            .map(|v| v.and_then(|v| v.extract::<i64>()))
+                            .map(|v| {
+                                v.and_then(|v| {
+                                    <Wrapping<Tgt> as NumCast>::from(v).ok_or(
+                                        DaftError::ComputeError(format!(
+                                            "Could not convert pyint to i64 at index {i}"
+                                        ))
+                                        .into(),
+                                    )
+                                })
+                            })
+                            .map(|v| v.and_then(|v| Ok(v.0)));
+
+                        let collected = int_iter.collect::<PyResult<Vec<_>>>()?;
+                        if collected.len() != list_size {
+                            return Err(DaftError::ValueError(format!(
+                                "Expected Iterable Object to have {list_size} elements but got {} at index {}",
+                                collected.len(), i
+                            )));
+                        }
+                        values_vec.extend_from_slice(collected.as_slice());
+                    } else if child_field.dtype.is_floating() {
+                        let float_iter = casted_iter
+                            .map(|v| v.and_then(|v| v.extract::<f64>()))
+                            .map(|v| {
+                                v.and_then(|v| {
+                                    <Wrapping<Tgt> as NumCast>::from(v).ok_or(
+                                        DaftError::ComputeError(
+                                            "Could not convert pyfloat to f64".into(),
+                                        )
+                                        .into(),
+                                    )
+                                })
+                            })
+                            .map(|v| v.and_then(|v| Ok(v.0)));
+                        let collected = float_iter.collect::<PyResult<Vec<_>>>()?;
+
+                        if collected.len() != list_size {
+                            return Err(DaftError::ValueError(format!(
+                                "Expected Iterable Object to have {list_size} elements but got {} at index {}",
+                                collected.len(), i
+                            )));
+                        }
+                        values_vec.extend_from_slice(collected.as_slice());
+                    }
+                } else {
                     return Err(DaftError::ValueError(format!(
-                        "Expected Array-like Object to have {list_size} elements but got {}",
-                        pyarray.len()
+                        "Python Object is neither array-like or an iterable at index {}. Can not convert to a list. object type: {}",
+                        i, object.getattr(pyo3::intern!(py, "__class__"))?.to_string()
                     )));
                 }
-                let sl: &[Src] = unsafe { pyarray.as_slice()}.unwrap();
-                values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
-            });
+            }
         } else {
             values_vec.extend(iter::repeat(Tgt::default()).take(list_size));
         }
