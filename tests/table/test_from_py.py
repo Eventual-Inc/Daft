@@ -120,7 +120,7 @@ ARROW_ROUNDTRIP_TYPES = {
     "timestamp": pa.timestamp("us"),
 }
 
-if ARROW_VERSION >= (12, 0, 0) and get_context().runner_config.name == "ray":
+if ARROW_VERSION >= (12, 0, 0) and get_context().runner_config.name != "ray":
     ARROW_ROUNDTRIP_TYPES["canonical_tensor"] = pa.fixed_shape_tensor(pa.int64(), (2, 2))
     ARROW_TYPE_ARRAYS["canonical_tensor"] = pa.FixedShapeTensorArray.from_numpy_ndarray(
         np.array(PYTHON_TYPE_ARRAYS["tensor"])
@@ -158,6 +158,7 @@ def test_from_pydict_roundtrip() -> None:
 
 def test_from_pydict_arrow_roundtrip(uuid_ext_type) -> None:
     arrow_roundtrip_types, arrow_type_arrays = _with_uuid_ext_type(uuid_ext_type)
+    print(arrow_roundtrip_types)
     table = Table.from_pydict(arrow_type_arrays)
     assert len(table) == 2
     assert set(table.column_names()) == set(arrow_type_arrays.keys())
