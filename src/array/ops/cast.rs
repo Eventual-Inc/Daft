@@ -186,6 +186,51 @@ macro_rules! pycast_then_arrowcast {
 }
 
 #[cfg(feature = "python")]
+fn append_values_from_numpy<
+    'a,
+    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+>(
+    pyarray: &'a PyAny,
+    index: usize,
+    from_numpy_dtype_fn: &PyAny,
+    values_vec: &mut Vec<Tgt>,
+) -> DaftResult<usize> {
+    use crate::python::PyDataType;
+    use numpy::PyArray1;
+    use std::num::Wrapping;
+
+    let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;
+
+    let datatype = from_numpy_dtype_fn
+        .call1((np_dtype,))?
+        .getattr(pyo3::intern!(pyarray.py(), "_dtype"))?
+        .extract::<PyDataType>()?;
+    let datatype = datatype.dtype;
+
+    if !datatype.is_numeric() {
+        return Err(DaftError::ValueError(format!(
+            "Numpy array has unsupported type {} at index: {index}",
+            datatype
+        )));
+    }
+    with_match_numeric_daft_types!(datatype, |$N| {
+        type Src = <$N as DaftNumericType>::Native;
+        let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
+        if pyarray.ndim() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "we only support 1 dim numpy arrays, got {} at index: {}",
+                pyarray.ndim(), index
+            )));
+        }
+
+        let pyarray = pyarray.downcast::<PyArray1<Src>>().expect("downcasted to numpy array");
+        let sl: &[Src] = unsafe { pyarray.as_slice()}.expect("convert numpy array to slice");
+        values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
+        Ok(sl.len())
+    })
+}
+
+#[cfg(feature = "python")]
 fn extract_python_to_vec<
     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
 >(
@@ -194,8 +239,6 @@ fn extract_python_to_vec<
     child_dtype: &DataType,
     list_size: Option<usize>,
 ) -> DaftResult<(Vec<Tgt>, Option<Vec<i64>>)> {
-    use crate::python::PyDataType;
-    use numpy::PyArray1;
     use std::num::Wrapping;
 
     let mut values_vec: Vec<Tgt> =
@@ -233,49 +276,20 @@ fn extract_python_to_vec<
 
             if let Ok(pyarray) = pyarray {
                 // Path if object is array-like
-
-                let np_dtype = pyarray.getattr(pyo3::intern!(py, "dtype"))?;
-
-                let datatype = from_numpy_dtype
-                    .call1((np_dtype,))?
-                    .getattr(pyo3::intern!(py, "_dtype"))?
-                    .extract::<PyDataType>()?;
-                let datatype = datatype.dtype;
-
-                if !datatype.is_numeric() {
-                    return Err(DaftError::ValueError(format!(
-                        "Numpy array has unsupported type {} at index: {i}",
-                        datatype
-                    )));
-                }
-                with_match_numeric_daft_types!(datatype, |$N| {
-                    type Src = <$N as DaftNumericType>::Native;
-                    let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
-                    if pyarray.ndim() != 1 {
+                let num_values =
+                    append_values_from_numpy(pyarray, i, from_numpy_dtype, &mut values_vec)?;
+                if let Some(list_size) = list_size {
+                    if num_values != list_size {
                         return Err(DaftError::ValueError(format!(
-                            "we only support 1 dim numpy arrays, got {} at index: {}",
-                            pyarray.ndim(), i
-                        )));
-                    }
-
-                    let pyarray = pyarray.downcast::<PyArray1<Src>>().expect("downcasted to numpy array");
-                    let sl: &[Src] = unsafe { pyarray.as_slice()}.expect("convert numpy array to slice");
-
-                    if let Some(list_size) = list_size {
-                        if sl.len() != list_size {
-                            return Err(DaftError::ValueError(format!(
                                 "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                                sl.len(), i
+                                num_values, i
                             )));
-                        }
-                    } else {
-                        let offset = offsets_vec.last().unwrap() + sl.len() as i64;
-                        offsets_vec.push(offset);
                     }
-                    values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
-                })
+                } else {
+                    offsets_vec.push(offsets_vec.last().unwrap() + num_values as i64);
+                }
             } else {
-                // Path if object is no array-like
+                // Path if object is not array-like
                 // try to see if we can iterate over the object
                 let pyiter = object.iter();
                 if let Ok(pyiter) = pyiter {
