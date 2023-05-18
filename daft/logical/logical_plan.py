@@ -8,6 +8,8 @@ from enum import Enum, IntEnum
 from pprint import pformat
 from typing import Any, Generic, TypeVar
 
+import fsspec
+
 from daft.datasources import SourceInfo, StorageType
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -139,7 +141,6 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
 
                     helper(child, depth=depth, index=index + 1, prefix=prefix, header=header)
             else:
-
                 connector = "└─"
                 middle_child_header = "─┬─"
 
@@ -168,7 +169,6 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         return "".join(builder)
 
     def _repr_helper(self, **fields: Any) -> str:
-
         fields_to_print: dict[str, Any] = {}
         if "output" not in fields:
             fields_to_print["output"] = self.schema()
@@ -211,6 +211,7 @@ class TabularFilesScan(UnaryNode):
         *,
         schema: Schema,
         source_info: SourceInfo,
+        fs: fsspec.AbstractFileSystem | None,
         predicate: ExpressionsProjection | None = None,
         columns: list[str] | None = None,
         filepaths_child: LogicalPlan,
@@ -238,6 +239,7 @@ class TabularFilesScan(UnaryNode):
         self._column_names = columns
         self._columns = self._schema
         self._source_info = source_info
+        self._fs = fs
         self._limit_rows = limit_rows
 
         # TabularFilesScan has a single child node that provides the filepaths to read from.
@@ -279,6 +281,7 @@ class TabularFilesScan(UnaryNode):
         return TabularFilesScan(
             schema=self.schema(),
             source_info=self._source_info,
+            fs=self._fs,
             predicate=self._predicate if self._predicate is not None else None,
             columns=self._column_names,
             filepaths_child=child,
@@ -290,6 +293,7 @@ class TabularFilesScan(UnaryNode):
         return TabularFilesScan(
             schema=self.schema(),
             source_info=self._source_info,
+            fs=self._fs,
             predicate=self._predicate,
             columns=self._column_names,
             filepaths_child=new_children[0],
@@ -301,7 +305,6 @@ class InMemoryScan(UnaryNode):
     def __init__(
         self, cache_entry: PartitionCacheEntry, schema: Schema, partition_spec: PartitionSpec | None = None
     ) -> None:
-
         if partition_spec is None:
             partition_spec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=1)
 
@@ -829,7 +832,6 @@ class LocalDistinct(UnaryNode):
         input: LogicalPlan,
         group_by: ExpressionsProjection,
     ) -> None:
-
         self._group_by = group_by
         schema = group_by.resolve_schema(input.schema())
         super().__init__(schema, partition_spec=input.partition_spec(), op_level=OpLevel.PARTITION)
