@@ -5,6 +5,8 @@ import sys
 from datetime import date
 from typing import Callable, Iterable, Iterator, TypeVar, overload
 
+import fsspec
+
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
@@ -394,7 +396,10 @@ class ExpressionNamespace:
 
 class ExpressionUrlNamespace(ExpressionNamespace):
     def download(
-        self, max_worker_threads: int = 8, on_error: Literal["raise"] | Literal["null"] = "raise"
+        self,
+        max_worker_threads: int = 8,
+        on_error: Literal["raise"] | Literal["null"] = "raise",
+        fs: fsspec.AbstractFileSystem | None = None,
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column
 
@@ -402,6 +407,8 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             max_worker_threads: The maximum number of threads to use for downloading URLs, defaults to 8
             on_error: Behavior when a URL download error is encountered - "raise" to raise the error immediately or "null" to log
                 the error but fallback to a Null value. Defaults to "raise".
+            fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for downloading data.
+                By default, Daft will automatically construct a FileSystem instance internally.
 
         Returns:
             UdfExpression: a BYTES expression which is the bytes contents of the URL, or None if an error occured during download
@@ -409,7 +416,10 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         from daft.udf_library import url_udfs
 
         return url_udfs.download_udf(
-            Expression._from_pyexpr(self._expr), max_worker_threads=max_worker_threads, on_error=on_error
+            Expression._from_pyexpr(self._expr),
+            max_worker_threads=max_worker_threads,
+            on_error=on_error,
+            fs=fs,
         )
 
 

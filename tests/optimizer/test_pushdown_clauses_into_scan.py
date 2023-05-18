@@ -27,6 +27,7 @@ def test_push_projection_scan_all_cols(valid_data_json_path: str, optimizer):
             predicate=df_unoptimized_scan.plan()._predicate,
             columns=["sepal_length"],
             source_info=df_unoptimized_scan.plan()._source_info,
+            fs=df_unoptimized_scan.plan()._fs,
             filepaths_child=df_unoptimized_scan.plan()._filepaths_child,
             filepaths_column_name=df_unoptimized_scan.plan()._filepaths_column_name,
         )
@@ -47,6 +48,7 @@ def test_push_projection_scan_all_cols_alias(valid_data_json_path: str, optimize
             predicate=df_unoptimized_scan.plan()._predicate,
             columns=["sepal_length"],
             source_info=df_unoptimized_scan.plan()._source_info,
+            fs=df_unoptimized_scan.plan()._fs,
             filepaths_child=df_unoptimized_scan.plan()._filepaths_child,
             filepaths_column_name=df_unoptimized_scan.plan()._filepaths_column_name,
         )
@@ -68,6 +70,7 @@ def test_push_projection_scan_some_cols_aliases(valid_data_json_path: str, optim
             predicate=df_unoptimized_scan.plan()._predicate,
             columns=["sepal_length", "sepal_width"],
             source_info=df_unoptimized_scan.plan()._source_info,
+            fs=df_unoptimized_scan.plan()._fs,
             filepaths_child=df_unoptimized_scan.plan()._filepaths_child,
             filepaths_column_name=df_unoptimized_scan.plan()._filepaths_column_name,
         )

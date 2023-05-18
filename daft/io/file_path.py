@@ -1,5 +1,9 @@
 # isort: dont-add-import: from __future__ import annotations
 
+from typing import Optional
+
+import fsspec
+
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
 from daft.dataframe import DataFrame
@@ -7,7 +11,7 @@ from daft.logical import logical_plan
 
 
 @PublicAPI
-def from_glob_path(path: str) -> DataFrame:
+def from_glob_path(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) -> DataFrame:
     """Creates a DataFrame of file paths and other metadata from a glob path.
 
     This method supports wildcards:
@@ -30,13 +34,15 @@ def from_glob_path(path: str) -> DataFrame:
 
     Args:
         path (str): Path to files on disk (allows wildcards).
+        fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for globbing and fetching metadata.
+            By default, Daft will automatically construct a FileSystem instance internally.
 
     Returns:
         DataFrame: DataFrame containing the path to each file as a row, along with other metadata
             parsed from the provided filesystem.
     """
     runner_io = get_context().runner().runner_io()
-    partition_set = runner_io.glob_paths_details(path)
+    partition_set = runner_io.glob_paths_details(path, fs=fs)
     cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
     filepath_plan = logical_plan.InMemoryScan(
         cache_entry=cache_entry,

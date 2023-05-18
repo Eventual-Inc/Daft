@@ -5,6 +5,7 @@ from concurrent import futures
 from dataclasses import dataclass
 from typing import Iterable
 
+import fsspec
 import psutil
 import pyarrow as pa
 from loguru import logger
@@ -13,7 +14,7 @@ from daft.datasources import SourceInfo
 from daft.execution import physical_plan, physical_plan_factory
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
 from daft.execution.logical_op_runners import LogicalPartitionOpRunner
-from daft.filesystem import glob_path_with_stats
+from daft.filesystem import get_filesystem_from_path, glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
 from daft.logical import logical_plan
@@ -85,8 +86,12 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
         self,
         source_path: str,
         source_info: SourceInfo | None = None,
+        fs: fsspec.AbstractFileSystem | None = None,
     ) -> LocalPartitionSet:
-        files_info = glob_path_with_stats(source_path, source_info)
+        if fs is None:
+            fs = get_filesystem_from_path(source_path)
+
+        files_info = glob_path_with_stats(source_path, source_info, fs)
 
         if len(files_info) == 0:
             raise FileNotFoundError(f"No files found at {source_path}")
@@ -117,6 +122,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
         self,
         listing_details_partitions: PartitionSet[Table],
         source_info: SourceInfo,
+        fs: fsspec.AbstractFileSystem | None,
         schema_inference_options: vPartitionSchemaInferenceOptions,
     ) -> Schema:
         # Naively retrieve the first filepath in the PartitionSet
@@ -129,7 +135,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
             raise ValueError("No files to get schema from")
         first_filepath = nonempty_partitions[0].to_pydict()[PyRunnerIO.FS_LISTING_PATH_COLUMN_NAME][0]
 
-        return runner_io.sample_schema(first_filepath, source_info, schema_inference_options)
+        return runner_io.sample_schema(first_filepath, source_info, fs, schema_inference_options)
 
 
 class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
@@ -210,7 +216,6 @@ class PyRunner(Runner):
                     while next_step is not None and self._can_admit_task(
                         next_step.resource_request, inflight_tasks_resources.values()
                     ):
-
                         # Run the task in the main thread, instead of the thread pool, in certain conditions:
                         # - Threading is disabled in runner config.
                         # - Task is a no-op.
