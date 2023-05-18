@@ -337,19 +337,17 @@ fn extract_python_to_vec<
                     values_vec.extend_from_slice(collected.as_slice());
                 }
             }
+        } else if let Some(list_size) = list_size {
+            values_vec.extend(iter::repeat(Tgt::default()).take(list_size));
         } else {
-            if let Some(list_size) = list_size {
-                values_vec.extend(iter::repeat(Tgt::default()).take(list_size));
-            } else {
-                let offset = offsets_vec.last().unwrap();
-                offsets_vec.push(*offset);
-            }
+            let offset = offsets_vec.last().unwrap();
+            offsets_vec.push(*offset);
         }
     }
-    if let Some(_) = list_size {
-        return Ok((values_vec, None));
+    if list_size.is_some() {
+        Ok((values_vec, None))
     } else {
-        return Ok((values_vec, Some(offsets_vec)));
+        Ok((values_vec, Some(offsets_vec)))
     }
 }
 
