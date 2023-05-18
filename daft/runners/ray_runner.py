@@ -522,8 +522,8 @@ def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]
 
     build_remote = build_remote.options(**ray_options)
     [metadatas_ref, *partitions] = build_remote.remote(task.instructions, *task.inputs)
-
-    task.set_result([RayMaterializedResult(partition, metadatas_ref, i) for i, partition in enumerate(partitions)])
+    metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
+    task.set_result([RayMaterializedResult(partition, metadatas_accessor, i) for i, partition in enumerate(partitions)])
 
     return partitions
 
