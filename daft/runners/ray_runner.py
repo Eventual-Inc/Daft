@@ -647,13 +647,13 @@ class PartitionMetadataAccessor:
     """Wrapper class around Remote[List[PartitionMetadata]] to memoize lookups."""
 
     def __init__(self, ref: ray.ObjectRef) -> None:
-        self._ref = ref
-        self._metadatas = None
+        self._ref: ray.ObjectRef = ref
+        self._metadatas: None | list[PartitionMetadata] = None
 
-    def _get_metadatas(self):
+    def _get_metadatas(self) -> list[PartitionMetadata]:
         if self._metadatas is None:
             self._metadatas = ray.get(self._ref)
         return self._metadatas
 
-    def get_index(self, key):
-        self._get_metadatas()[key]
+    def get_index(self, key) -> PartitionMetadata:
+        return self._get_metadatas()[key]
