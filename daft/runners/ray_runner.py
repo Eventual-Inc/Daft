@@ -522,8 +522,8 @@ def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]
 
     build_remote = build_remote.options(**ray_options)
     [metadatas_ref, *partitions] = build_remote.remote(task.instructions, *task.inputs)
-
-    task.set_result([RayMaterializedResult(partition, metadatas_ref, i) for i, partition in enumerate(partitions)])
+    metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
+    task.set_result([RayMaterializedResult(partition, metadatas_accessor, i) for i, partition in enumerate(partitions)])
 
     return partitions
 
@@ -621,7 +621,7 @@ class RayRunner(Runner):
 @dataclass(frozen=True)
 class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
     _partition: ray.ObjectRef
-    _metadatas: ray.ObjectRef | None = None
+    _metadatas: PartitionMetadataAccessor | None = None
     _metadata_index: int | None = None
 
     def partition(self) -> ray.ObjectRef:
@@ -632,7 +632,7 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
 
     def metadata(self) -> PartitionMetadata:
         if self._metadatas is not None and self._metadata_index is not None:
-            return ray.get(self._metadatas)[self._metadata_index]
+            return self._metadatas.get_index(self._metadata_index)
         else:
             return ray.get(get_meta.remote(self._partition))
 
@@ -641,3 +641,19 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
 
     def _noop(self, _: ray.ObjectRef) -> None:
         return None
+
+
+class PartitionMetadataAccessor:
+    """Wrapper class around Remote[List[PartitionMetadata]] to memoize lookups."""
+
+    def __init__(self, ref: ray.ObjectRef) -> None:
+        self._ref: ray.ObjectRef = ref
+        self._metadatas: None | list[PartitionMetadata] = None
+
+    def _get_metadatas(self) -> list[PartitionMetadata]:
+        if self._metadatas is None:
+            self._metadatas = ray.get(self._ref)
+        return self._metadatas
+
+    def get_index(self, key) -> PartitionMetadata:
+        return self._get_metadatas()[key]
