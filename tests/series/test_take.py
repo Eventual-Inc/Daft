@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import numpy as np
 import pyarrow as pa
 import pytest
 
+from daft.context import get_context
 from daft.datatype import DataType
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
+
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES + ARROW_STRING_TYPES)
@@ -103,6 +107,62 @@ def test_series_struct_take() -> None:
     )
 
     s = Series.from_arrow(data)
+    pyidx = [2, 0, None, 5]
+    idx = Series.from_pylist(pyidx)
+
+    result = s.take(idx)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 4
+
+    original_data = s.to_pylist()
+    expected = [original_data[i] if i is not None else None for i in pyidx]
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
+def test_series_extension_type_take(uuid_ext_type) -> None:
+    pydata = [f"{i}".encode() for i in range(6)]
+    pydata[2] = None
+    storage = pa.array(pydata)
+    data = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
+
+    s = Series.from_arrow(data)
+    assert s.datatype() == DataType.extension(
+        uuid_ext_type.NAME, DataType.from_arrow_type(uuid_ext_type.storage_type), ""
+    )
+    pyidx = [2, 0, None, 5]
+    idx = Series.from_pylist(pyidx)
+
+    result = s.take(idx)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 4
+
+    expected = [pydata[i] if i is not None else None for i in pyidx]
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.skipif(
+    ARROW_VERSION < (12, 0, 0),
+    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="Pickling canonical tensor extension type is not supported by pyarrow",
+)
+def test_series_canonical_tensor_extension_type_take() -> None:
+    pydata = np.arange(24).reshape((6, 4)).tolist()
+    pydata[2] = None
+    storage = pa.array(pydata, pa.list_(pa.int64(), 4))
+    tensor_type = pa.fixed_shape_tensor(pa.int64(), (2, 2))
+    data = pa.FixedShapeTensorArray.from_storage(tensor_type, storage)
+
+    s = Series.from_arrow(data)
+    assert s.datatype() == DataType.extension(
+        "arrow.fixed_shape_tensor", DataType.from_arrow_type(tensor_type.storage_type), '{"shape":[2,2]}'
+    )
     pyidx = [2, 0, None, 5]
     idx = Series.from_pylist(pyidx)
 

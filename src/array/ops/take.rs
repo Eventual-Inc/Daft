@@ -2,7 +2,7 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::DateArray, BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType,
-        FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
+        ExtensionArray, FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
     },
     error::DaftResult,
 };
@@ -268,6 +268,41 @@ impl StructArray {
                     .map(|v| unsafe { v.sliced_unchecked(idx, 1) })
                     .collect(),
             )
+        } else {
+            None
+        }
+    }
+
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
+        Self::try_from((self.field.clone(), result))
+    }
+
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => Ok(format!("{v:?}")),
+        }
+    }
+}
+
+impl ExtensionArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::scalar::Scalar>> {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        let is_valid = self
+            .data
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
+        if is_valid {
+            Some(arrow2::scalar::new_scalar(self.data(), idx))
         } else {
             None
         }

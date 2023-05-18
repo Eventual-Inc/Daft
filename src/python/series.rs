@@ -7,7 +7,7 @@ use crate::{
     datatypes::{DataType, Field, PythonType, UInt64Type},
     ffi,
     series::{self, IntoSeries, Series},
-    utils::arrow::cast_array_if_needed,
+    utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
 
 use super::datatype::PyDataType;
@@ -24,7 +24,7 @@ impl PySeries {
     #[staticmethod]
     pub fn from_arrow(name: &str, pyarrow_array: &PyAny) -> PyResult<Self> {
         let arrow_array = ffi::array_to_rust(pyarrow_array)?;
-        let arrow_array = cast_array_if_needed(arrow_array.to_boxed());
+        let arrow_array = cast_array_for_daft_if_needed(arrow_array.to_boxed());
         let series = series::Series::try_from((name, arrow_array))?;
         Ok(series.into())
     }
@@ -51,6 +51,7 @@ impl PySeries {
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
         let arrow_array = self.series.to_arrow();
+        let arrow_array = cast_array_from_daft_if_needed(arrow_array);
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
             ffi::to_py_array(arrow_array, py, pyarrow)

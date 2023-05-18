@@ -20,6 +20,9 @@ from daft.api_annotations import APITypeError
 from daft.context import get_context
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
+from tests.conftest import UuidType
+
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 class MyObj:
@@ -154,9 +157,10 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     assert df.to_arrow() == expected
 
 
-def test_create_dataframe_arrow_tensor(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    pydict["obj"] = ArrowTensorArray.from_numpy(np.ones((len(valid_data), 2, 2)))
+    ata = ArrowTensorArray.from_numpy(np.ones((len(valid_data), 2, 2)))
+    pydict["obj"] = ata
     t = pa.Table.from_pydict(pydict)
     df = daft.from_arrow(t)
     assert set(df.column_names) == set(t.column_names)
@@ -166,6 +170,87 @@ def test_create_dataframe_arrow_tensor(valid_data: list[dict[str, float]]) -> No
     expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
     # Check roundtrip.
     assert df.to_arrow() == expected
+
+
+@pytest.mark.skipif(
+    ARROW_VERSION < (12, 0, 0),
+    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="Pickling canonical tensor extension type is not supported by pyarrow",
+)
+def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, float]]) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    dtype = pa.fixed_shape_tensor(pa.int64(), (2, 2))
+    storage = pa.array([list(range(4 * i, 4 * (i + 1))) for i in range(len(valid_data))], pa.list_(pa.int64(), 4))
+    ata = pa.ExtensionArray.from_storage(dtype, storage)
+    pydict["obj"] = ata
+    t = pa.Table.from_pydict(pydict)
+    df = daft.from_arrow(t)
+    assert set(df.column_names) == set(t.column_names)
+    assert df.schema()["obj"].dtype == DataType.extension(
+        "arrow.fixed_shape_tensor", DataType.from_arrow_type(dtype.storage_type), '{"shape":[2,2]}'
+    )
+    casted_field = t.schema.field("variety").with_type(pa.large_string())
+    expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
+    # Check roundtrip.
+    assert df.to_arrow() == expected
+
+
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
+def test_create_dataframe_arrow_extension_type(valid_data: list[dict[str, float]], uuid_ext_type: UuidType) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    storage = pa.array([f"{i}".encode() for i in range(len(valid_data))])
+    pydict["obj"] = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
+    t = pa.Table.from_pydict(pydict)
+    df = daft.from_arrow(t)
+    assert set(df.column_names) == set(t.column_names)
+    assert df.schema()["obj"].dtype == DataType.extension(
+        uuid_ext_type.NAME, DataType.from_arrow_type(uuid_ext_type.storage_type), ""
+    )
+    casted_field = t.schema.field("variety").with_type(pa.large_string())
+    expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
+    # Check roundtrip.
+    assert df.to_arrow() == expected
+
+
+# TODO(Clark): Remove this test once pyarrow extension types are supported for Ray clusters.
+@pytest.mark.skipif(
+    get_context().runner_config.name != "ray",
+    reason="This test requires the Ray runner.",
+)
+def test_create_dataframe_arrow_extension_type_fails_for_ray(
+    valid_data: list[dict[str, float]], uuid_ext_type: UuidType
+) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    storage = pa.array([f"{i}".encode() for i in range(len(valid_data))])
+    pydict["obj"] = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
+    t = pa.Table.from_pydict(pydict)
+    with pytest.raises(ValueError):
+        daft.from_arrow(t).to_arrow()
+
+
+class PyExtType(pa.PyExtensionType):
+    def __init__(self):
+        pa.PyExtensionType.__init__(self, pa.binary())
+
+    def __reduce__(self):
+        return PyExtType, ()
+
+
+def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, float]]) -> None:
+    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
+    uuid_type = PyExtType()
+    storage_array = pa.array([f"foo-{i}".encode() for i in range(len(valid_data))], pa.binary())
+    arr = pa.ExtensionArray.from_storage(uuid_type, storage_array)
+    pydict["obj"] = arr
+    t = pa.Table.from_pydict(pydict)
+    with pytest.raises(ValueError):
+        daft.from_arrow(t)
 
 
 def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, float]]) -> None:

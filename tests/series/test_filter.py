@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import numpy as np
 import pyarrow as pa
 import pytest
 
+from daft.context import get_context
 from daft.datatype import DataType
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
+
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES + ARROW_STRING_TYPES)
@@ -100,6 +104,48 @@ def test_series_filter_on_struct_array() -> None:
     )
 
     s = Series.from_arrow(data.cast(dtype))
+    pymask = [False, True, True, None, False]
+    mask = Series.from_pylist(pymask)
+
+    result = s.filter(mask)
+
+    assert s.datatype() == result.datatype()
+    expected = [val for val, keep in zip(s.to_pylist(), pymask) if keep]
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
+def test_series_filter_on_extension_array(uuid_ext_type) -> None:
+    arr = pa.array(f"{i}".encode() for i in range(5))
+    data = pa.ExtensionArray.from_storage(uuid_ext_type, arr)
+
+    s = Series.from_arrow(data)
+    pymask = [False, True, True, None, False]
+    mask = Series.from_pylist(pymask)
+
+    result = s.filter(mask)
+
+    assert s.datatype() == result.datatype()
+    expected = [val for val, keep in zip(s.to_pylist(), pymask) if keep]
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.skipif(
+    ARROW_VERSION < (12, 0, 0),
+    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="Pickling canonical tensor extension type is not supported by pyarrow",
+)
+def test_series_filter_on_canonical_tensor_extension_array() -> None:
+    arr = np.arange(20).reshape((5, 2, 2))
+    data = pa.FixedShapeTensorArray.from_numpy_ndarray(arr)
+
+    s = Series.from_arrow(data)
     pymask = [False, True, True, None, False]
     mask = Series.from_pylist(pymask)
 

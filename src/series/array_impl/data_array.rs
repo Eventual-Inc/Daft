@@ -12,9 +12,9 @@ use crate::datatypes::PythonArray;
 use crate::series::Field;
 use crate::{
     datatypes::{
-        BinaryArray, BooleanArray, FixedSizeListArray, Float32Array, Float64Array, Int16Array,
-        Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray, UInt16Array,
-        UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        BinaryArray, BooleanArray, ExtensionArray, FixedSizeListArray, Float32Array, Float64Array,
+        Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray,
+        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     error::DaftResult,
     series::series_like::SeriesLike,
@@ -273,5 +273,6 @@ impl_series_like_for_data_array!(Utf8Array);
 impl_series_like_for_data_array!(FixedSizeListArray);
 impl_series_like_for_data_array!(ListArray);
 impl_series_like_for_data_array!(StructArray);
+impl_series_like_for_data_array!(ExtensionArray);
 #[cfg(feature = "python")]
 impl_series_like_for_data_array!(PythonArray);

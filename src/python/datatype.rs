@@ -141,6 +141,20 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn extension(
+        name: &str,
+        storage_data_type: Self,
+        metadata: Option<&str>,
+    ) -> PyResult<Self> {
+        Ok(DataType::Extension(
+            name.to_string(),
+            Box::new(storage_data_type.dtype),
+            metadata.map(|s| s.to_string()),
+        )
+        .into())
+    }
+
+    #[staticmethod]
     pub fn python() -> PyResult<Self> {
         Ok(DataType::Python.into())
     }

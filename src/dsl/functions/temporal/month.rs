@@ -18,10 +18,9 @@ impl FunctionEvaluator for MonthEvaluator {
     fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
-                Ok(field) if field.dtype.is_temporal() => Ok(Field {
-                    name: field.name,
-                    dtype: DataType::UInt32,
-                }),
+                Ok(field) if field.dtype.is_temporal() => {
+                    Ok(Field::new(field.name, DataType::UInt32))
+                }
                 Ok(field) => Err(DaftError::TypeError(format!(
                     "Expected input to month to be temporal, got {}",
                     field.dtype

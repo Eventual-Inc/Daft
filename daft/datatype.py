@@ -4,7 +4,32 @@ import builtins
 
 import pyarrow as pa
 
+from daft.context import get_context
 from daft.daft import PyDataType
+
+_RAY_DATA_EXTENSIONS_AVAILABLE = True
+_TENSOR_EXTENSION_TYPES = []
+try:
+    import ray
+except ImportError:
+    _RAY_DATA_EXTENSIONS_AVAILABLE = False
+else:
+    _RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
+    try:
+        # Variable-shaped tensor column support was added in Ray 2.1.0.
+        if _RAY_VERSION >= (2, 2, 0):
+            from ray.data.extensions import (
+                ArrowTensorType,
+                ArrowVariableShapedTensorType,
+            )
+
+            _TENSOR_EXTENSION_TYPES = [ArrowTensorType, ArrowVariableShapedTensorType]
+        else:
+            from ray.data.extensions import ArrowTensorType
+
+            _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
+    except ImportError:
+        _RAY_DATA_EXTENSIONS_AVAILABLE = False
 
 
 class DataType:
@@ -97,6 +122,10 @@ class DataType:
         return cls._from_pydatatype(PyDataType.struct({name: datatype._dtype for name, datatype in fields.items()}))
 
     @classmethod
+    def extension(cls, name: str, storage_dtype: DataType, metadata: str | None = None) -> DataType:
+        return cls._from_pydatatype(PyDataType.extension(name, storage_dtype._dtype, metadata))
+
+    @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
         if pa.types.is_int8(arrow_type):
             return cls.int8()
@@ -140,9 +169,35 @@ class DataType:
             assert isinstance(arrow_type, pa.StructType)
             fields = [arrow_type[i] for i in range(arrow_type.num_fields)]
             return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
+        elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
+            # TODO(Clark): Add a native cross-lang extension type representation for Ray's tensor extension types.
+            return cls.python()
+        elif isinstance(arrow_type, pa.PyExtensionType):
+            # TODO(Clark): Add a native cross-lang extension type representation for PyExtensionTypes.
+            raise ValueError(
+                "pyarrow extension types that subclass pa.PyExtensionType can't be used in Daft, since they can't be "
+                f"used in non-Python Arrow implementations and Daft uses the Rust Arrow2 implementation: {arrow_type}"
+            )
+        elif isinstance(arrow_type, pa.BaseExtensionType):
+            if get_context().runner_config.name == "ray":
+                raise ValueError(
+                    f"pyarrow extension types are not supported for the Ray runner: {arrow_type}. If you need support "
+                    "for this, please let us know on this issue: "
+                    "https://github.com/Eventual-Inc/Daft/issues/933"
+                )
+            name = arrow_type.extension_name
+            try:
+                metadata = arrow_type.__arrow_ext_serialize__().decode()
+            except AttributeError:
+                metadata = None
+            return cls.extension(
+                name,
+                cls.from_arrow_type(arrow_type.storage_type),
+                metadata,
+            )
         else:
             # Fall back to a Python object type.
-            # TODO(Clark): Add native support for remaining Arrow types and extension types.
+            # TODO(Clark): Add native support for remaining Arrow types.
             return cls.python()
 
     @classmethod

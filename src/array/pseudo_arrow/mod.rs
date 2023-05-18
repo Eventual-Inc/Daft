@@ -313,4 +313,8 @@ impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
             .map(|x| x.unset_bits())
             .unwrap_or(0)
     }
+
+    fn change_type(&mut self, _: arrow2::datatypes::DataType) {
+        unimplemented!("PseudoArray doesn't hold a data type and therefore does not support the change_type API.")
+    }
 }

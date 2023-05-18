@@ -63,7 +63,6 @@ class _FixEmptyStructArrays:
 
 
 class _FixSliceOffsets:
-
     # TODO(Clark): For pyarrow < 12.0.0, struct array slice offsets are dropped
     # when converting to record batches. We work around this below by flattening
     # the field arrays for all struct arrays, which propagates said offsets to

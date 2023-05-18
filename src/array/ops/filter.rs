@@ -1,9 +1,6 @@
 use crate::{
     array::DataArray,
-    datatypes::{
-        logical::DateArray, BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray,
-        ListArray, NullArray, StructArray, Utf8Array,
-    },
+    datatypes::{logical::DateArray, BooleanArray, DaftArrowBackedType},
     error::DaftResult,
 };
 
@@ -11,63 +8,10 @@ use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftArrowBackedType,
 {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        Self::try_from((self.field.clone(), result))
-    }
-}
-
-impl Utf8Array {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        Self::try_from((self.field.clone(), result))
-    }
-}
-
-impl BinaryArray {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        Self::try_from((self.field.clone(), result))
-    }
-}
-
-impl BooleanArray {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        Self::try_from((self.field.clone(), result))
-    }
-}
-
-impl NullArray {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let set_bits = mask.len() - mask.as_arrow().values().unset_bits();
-        Ok(NullArray::full_null(
-            self.name(),
-            self.data_type(),
-            set_bits,
-        ))
-    }
-}
-
-impl ListArray {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        Self::try_from((self.field.clone(), result))
-    }
-}
-
-impl FixedSizeListArray {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
-        Self::try_from((self.field.clone(), result))
-    }
-}
-
-impl StructArray {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow2::compute::filter::filter(self.as_arrow(), mask.as_arrow())?;
+        let result = arrow2::compute::filter::filter(self.data(), mask.as_arrow())?;
         Self::try_from((self.field.clone(), result))
     }
 }

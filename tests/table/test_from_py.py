@@ -11,8 +11,11 @@ import pytest
 from ray.data.extensions import ArrowTensorArray, ArrowTensorType
 
 from daft import DataType
+from daft.context import get_context
 from daft.series import Series
 from daft.table import Table
+
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 PYTHON_TYPE_ARRAYS = {
     "int": [1, 2],
@@ -26,7 +29,7 @@ PYTHON_TYPE_ARRAYS = {
     "empty_struct": [{}, {}],
     "null": [None, None],
     # The following types are not natively supported and will be cast to Python object types.
-    "tensor": list(np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])),
+    "tensor": list(np.arange(8).reshape(2, 2, 2)),
     "timestamp": [datetime.datetime.now(), datetime.datetime.now()],
 }
 
@@ -43,6 +46,7 @@ INFERRED_TYPES = {
     "empty_struct": DataType.struct({"": DataType.null()}),
     "null": DataType.null(),
     # The following types are not natively supported and will be cast to Python object types.
+    # TODO(Clark): Change the tensor inferred type to be the canonical fixed-shape tensor extension type.
     "tensor": DataType.python(),
     "timestamp": DataType.python(),
 }
@@ -116,6 +120,24 @@ ARROW_ROUNDTRIP_TYPES = {
     "timestamp": pa.timestamp("us"),
 }
 
+if ARROW_VERSION >= (12, 0, 0) and get_context().runner_config.name != "ray":
+    ARROW_ROUNDTRIP_TYPES["canonical_tensor"] = pa.fixed_shape_tensor(pa.int64(), (2, 2))
+    ARROW_TYPE_ARRAYS["canonical_tensor"] = pa.FixedShapeTensorArray.from_numpy_ndarray(
+        np.array(PYTHON_TYPE_ARRAYS["tensor"])
+    )
+
+
+def _with_uuid_ext_type(uuid_ext_type) -> tuple[dict, dict]:
+    if get_context().runner_config.name == "ray":
+        # pyarrow extension types aren't supported in Ray clusters yet.
+        return ARROW_ROUNDTRIP_TYPES, ARROW_TYPE_ARRAYS
+    arrow_roundtrip_types = ARROW_ROUNDTRIP_TYPES.copy()
+    arrow_type_arrays = ARROW_TYPE_ARRAYS.copy()
+    arrow_roundtrip_types["ext_type"] = uuid_ext_type
+    storage = ARROW_TYPE_ARRAYS["binary"]
+    arrow_type_arrays["ext_type"] = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
+    return arrow_roundtrip_types, arrow_type_arrays
+
 
 def test_from_pydict_roundtrip() -> None:
     table = Table.from_pydict(PYTHON_TYPE_ARRAYS)
@@ -134,24 +156,27 @@ def test_from_pydict_roundtrip() -> None:
     assert table.to_arrow() == expected_table
 
 
-def test_from_pydict_arrow_roundtrip() -> None:
-    table = Table.from_pydict(ARROW_TYPE_ARRAYS)
+def test_from_pydict_arrow_roundtrip(uuid_ext_type) -> None:
+    arrow_roundtrip_types, arrow_type_arrays = _with_uuid_ext_type(uuid_ext_type)
+    print(arrow_roundtrip_types)
+    table = Table.from_pydict(arrow_type_arrays)
     assert len(table) == 2
-    assert set(table.column_names()) == set(ARROW_TYPE_ARRAYS.keys())
+    assert set(table.column_names()) == set(arrow_type_arrays.keys())
     for field in table.schema():
-        assert field.dtype == DataType.from_arrow_type(ARROW_TYPE_ARRAYS[field.name].type)
-    expected_table = pa.table(ARROW_TYPE_ARRAYS).cast(pa.schema(ARROW_ROUNDTRIP_TYPES))
+        assert field.dtype == DataType.from_arrow_type(arrow_type_arrays[field.name].type)
+    expected_table = pa.table(arrow_type_arrays).cast(pa.schema(arrow_roundtrip_types))
     assert table.to_arrow() == expected_table
 
 
-def test_from_arrow_roundtrip() -> None:
-    pa_table = pa.table(ARROW_TYPE_ARRAYS)
+def test_from_arrow_roundtrip(uuid_ext_type) -> None:
+    arrow_roundtrip_types, arrow_type_arrays = _with_uuid_ext_type(uuid_ext_type)
+    pa_table = pa.table(arrow_type_arrays)
     table = Table.from_arrow(pa_table)
     assert len(table) == 2
-    assert set(table.column_names()) == set(ARROW_TYPE_ARRAYS.keys())
+    assert set(table.column_names()) == set(arrow_type_arrays.keys())
     for field in table.schema():
-        assert field.dtype == DataType.from_arrow_type(ARROW_TYPE_ARRAYS[field.name].type)
-    expected_table = pa.table(ARROW_TYPE_ARRAYS).cast(pa.schema(ARROW_ROUNDTRIP_TYPES))
+        assert field.dtype == DataType.from_arrow_type(arrow_type_arrays[field.name].type)
+    expected_table = pa.table(arrow_type_arrays).cast(pa.schema(arrow_roundtrip_types))
     assert table.to_arrow() == expected_table
 
 
@@ -222,6 +247,24 @@ def test_from_pydict_arrow_struct_array() -> None:
         data, type=pa.struct([("a", pa.large_string()), ("b", pa.large_string()), ("c", pa.large_string())])
     )
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
+
+
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
+def test_from_pydict_arrow_extension_array(uuid_ext_type) -> None:
+    pydata = [f"{i}".encode() for i in range(6)]
+    pydata[2] = None
+    storage = pa.array(pydata)
+    arrow_arr = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
+    daft_table = Table.from_pydict({"a": arrow_arr})
+    assert "a" in daft_table.column_names()
+    # Although Daft will internally represent the binary storage array as a large_binary array,
+    # it should be cast back to the ingress extension type.
+    result = daft_table.to_arrow()["a"].combine_chunks()
+    assert result.type == uuid_ext_type
+    assert result == arrow_arr
 
 
 def test_from_pydict_arrow_deeply_nested() -> None:
@@ -376,6 +419,24 @@ def test_from_arrow_struct_array() -> None:
         data, type=pa.struct([("a", pa.large_string()), ("b", pa.large_string()), ("c", pa.large_string())])
     )
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
+
+
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
+def test_from_arrow_extension_array(uuid_ext_type) -> None:
+    pydata = [f"{i}".encode() for i in range(6)]
+    pydata[2] = None
+    storage = pa.array(pydata)
+    arrow_arr = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
+    daft_table = Table.from_arrow(pa.table({"a": arrow_arr}))
+    assert "a" in daft_table.column_names()
+    # Although Daft will internally represent the binary storage array as a large_binary array,
+    # it should be cast back to the ingress extension type.
+    result = daft_table.to_arrow()["a"].combine_chunks()
+    assert result.type == uuid_ext_type
+    assert result == arrow_arr
 
 
 def test_from_arrow_deeply_nested() -> None:

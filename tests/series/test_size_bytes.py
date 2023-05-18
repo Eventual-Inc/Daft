@@ -3,14 +3,17 @@ from __future__ import annotations
 import itertools
 import math
 
+import numpy as np
 import pyarrow as pa
 import pytest
 
+from daft.context import get_context
 from daft.datatype import DataType
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
 
-PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
+PYARROW_GE_7_0_0 = ARROW_VERSION >= (7, 0, 0)
 
 
 def get_total_buffer_size(arr: pa.Array) -> int:
@@ -177,3 +180,60 @@ def test_series_struct_size_bytes(size, with_nulls) -> None:
         )
     else:
         assert s.size_bytes() == get_total_buffer_size(data) + conversion_to_large_string_bytes
+
+
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
+@pytest.mark.parametrize("size", [1, 2, 8, 9, 16])
+@pytest.mark.parametrize("with_nulls", [True, False])
+def test_series_extension_type_size_bytes(uuid_ext_type, size, with_nulls) -> None:
+    pydata = [f"{i}".encode() for i in range(size)]
+
+    # TODO(Clark): Change to size > 0 condition when pyarrow extension arrays support generic construction on null arrays.
+    if with_nulls and size > 1:
+        pydata = pydata[:-1] + [None]
+    storage = pa.array(pydata)
+    data = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
+
+    s = Series.from_arrow(data)
+
+    size_bytes = s.size_bytes()
+
+    assert s.datatype() == DataType.extension(
+        uuid_ext_type.NAME, DataType.from_arrow_type(uuid_ext_type.storage_type), ""
+    )
+    post_daft_cast_data = storage.cast(pa.large_binary())
+    assert size_bytes == get_total_buffer_size(post_daft_cast_data)
+
+
+@pytest.mark.skipif(
+    ARROW_VERSION < (12, 0, 0),
+    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+@pytest.mark.skipif(
+    get_context().runner_config.name == "ray",
+    reason="Pickling canonical tensor extension type is not supported by pyarrow",
+)
+@pytest.mark.parametrize("dtype, size", itertools.product(ARROW_INT_TYPES + ARROW_FLOAT_TYPES, [0, 1, 2, 8, 9, 16]))
+@pytest.mark.parametrize("with_nulls", [True, False])
+def test_series_canonical_tensor_extension_type_size_bytes(dtype, size, with_nulls) -> None:
+    tensor_type = pa.fixed_shape_tensor(pa.int64(), (2, 2))
+    if size == 0:
+        storage = pa.array([], pa.list_(pa.int64(), 4))
+        data = pa.FixedShapeTensorArray.from_storage(tensor_type, storage)
+    elif with_nulls:
+        pydata = np.arange(4 * size).reshape((size, 4)).tolist()[:-1] + [None]
+        storage = pa.array(pydata, pa.list_(pa.int64(), 4))
+        data = pa.FixedShapeTensorArray.from_storage(tensor_type, storage)
+    else:
+        arr = np.arange(4 * size).reshape((size, 2, 2))
+        data = pa.FixedShapeTensorArray.from_numpy_ndarray(arr)
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.extension(
+        "arrow.fixed_shape_tensor", DataType.from_arrow_type(data.type.storage_type), '{"shape":[2,2]}'
+    )
+    assert s.size_bytes() == get_total_buffer_size(data)
