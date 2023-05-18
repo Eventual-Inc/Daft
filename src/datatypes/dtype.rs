@@ -135,12 +135,15 @@ impl DataType {
         match self {
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
-            List(field) => List(Box::new(Field::new(
-                field.name.clone(),
-                field.dtype.to_physical(),
-            ))),
+            List(field) => List(Box::new(
+                Field::new(field.name.clone(), field.dtype.to_physical())
+                    .with_metadata(field.metadata.clone()),
+            )),
             FixedSizeList(field, size) => FixedSizeList(
-                Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
+                Box::new(
+                    Field::new(field.name.clone(), field.dtype.to_physical())
+                        .with_metadata(field.metadata.clone()),
+                ),
                 *size,
             ),
             _ => self.clone(),

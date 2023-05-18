@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter, Result};
+use std::sync::Arc;
 
 use arrow2::datatypes::Field as ArrowField;
 
@@ -12,19 +13,19 @@ pub type Metadata = std::collections::BTreeMap<String, String>;
 pub struct Field {
     pub name: String,
     pub dtype: DataType,
-    pub metadata: Metadata,
+    pub metadata: Arc<Metadata>,
 }
 
 impl Field {
     pub fn new<S: Into<String>>(name: S, dtype: DataType) -> Self {
-        Field {
+        Self {
             name: name.into(),
             dtype,
             metadata: Default::default(),
         }
     }
 
-    pub fn with_metadata(self, metadata: Metadata) -> Self {
+    pub fn with_metadata(self, metadata: Arc<Metadata>) -> Self {
         Self {
             name: self.name,
             dtype: self.dtype,
@@ -35,7 +36,7 @@ impl Field {
     pub fn to_arrow(&self) -> DaftResult<ArrowField> {
         Ok(
             ArrowField::new(self.name.clone(), self.dtype.to_arrow()?, true)
-                .with_metadata(self.metadata.clone()),
+                .with_metadata(self.metadata.as_ref().clone()),
         )
     }
 
@@ -52,7 +53,7 @@ impl Field {
             return Ok(self.clone());
         }
         let list_dtype = DataType::List(Box::new(self.clone()));
-        Ok(Field {
+        Ok(Self {
             name: self.name.clone(),
             dtype: list_dtype,
             metadata: self.metadata.clone(),
@@ -62,10 +63,10 @@ impl Field {
 
 impl From<&ArrowField> for Field {
     fn from(af: &ArrowField) -> Self {
-        Field {
+        Self {
             name: af.name.clone(),
             dtype: af.data_type().into(),
-            metadata: af.metadata.clone(),
+            metadata: Arc::new(af.metadata.clone()),
         }
     }
 }
