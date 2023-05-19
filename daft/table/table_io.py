@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import contextlib
-import io
 import pathlib
-from typing import IO, Iterator, Union
+from collections.abc import Generator
+from typing import IO, Union
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import fsspec
@@ -25,28 +26,33 @@ from daft.table import Table
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
 
-def _limit_num_rows(buf: IO, num_rows: int) -> IO:
-    """Limites a buffer to a certain number of rows using an in-memory buffer."""
-    sampled_bytes = io.BytesIO()
-    for i, line in enumerate(buf):
-        if i >= num_rows:
-            break
-        sampled_bytes.write(line)
-    sampled_bytes.seek(0)
-    return sampled_bytes
-
-
 @contextlib.contextmanager
-def _get_file(file: FileInput, fs: fsspec.AbstractFileSystem | None) -> Iterator[IO[bytes]]:
-    """Helper method to return a file handle if input is a string."""
+def _get_file(
+    file: FileInput,
+    fs: fsspec.AbstractFileSystem | None,
+) -> Generator[FileInput, None, None]:
+    """Helper method to return an appropriate file handle
+
+    1. If `fs` is not None, we fall-back onto the provided fsspec FileSystem and return an fsspec file handle
+    2. If `file` is a pathlib, we stringify it
+    3. If `file` is a string, we leave it unmodified
+    """
     if isinstance(file, pathlib.Path):
         file = str(file)
+
     if isinstance(file, str):
-        if fs is None:
-            # TODO(Clark): Add filesystem cache based on protocol.
-            fs = get_filesystem_from_path(file)
-        with fs.open(file, compression="infer") as f:
-            yield f
+        # Use provided fsspec filesystem, slow but necessary for backward-compatibility
+        if fs is not None:
+            with fs.open(file, compression="infer") as f:
+                yield f
+        # Corner-case to handle `http` filepaths using fsspec because PyArrow cannot handle it
+        elif urlparse(file).scheme in {"http", "https"}:
+            fsspec_fs = get_filesystem_from_path(file)
+            with fsspec_fs.open(file, compression="infer") as f:
+                yield f
+        # Safely yield a string path, which can be correctly interpreted by PyArrow filesystem
+        else:
+            yield file
     else:
         yield file
 
@@ -68,12 +74,14 @@ def read_json(
         Table: Parsed Table from JSON
     """
     with _get_file(file, fs) as f:
-        if read_options.num_rows is not None:
-            f = _limit_num_rows(f, read_options.num_rows)
         table = pajson.read_json(f)
 
     if read_options.column_names is not None:
         table = table.select(read_options.column_names)
+
+    # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
+    if read_options.num_rows is not None:
+        table = table[: read_options.num_rows]
 
     return Table.from_arrow(table)
 
@@ -111,7 +119,6 @@ def read_parquet(
                     break
             table = pa.concat_tables(tables)
             table = table.slice(length=read_options.num_rows)
-
         else:
             table = papq.read_table(
                 f,
@@ -152,15 +159,6 @@ def read_csv(
     pyarrow_skip_rows_after_names = (1 if skip_header_row else 0) + csv_options.skip_rows_after_header
 
     with _get_file(file, fs) as f:
-        if read_options.num_rows is not None:
-            num_rows_to_read = (
-                csv_options.skip_rows_before_header
-                + (1 if csv_options.has_headers else 0)
-                + pyarrow_skip_rows_after_names
-                + read_options.num_rows
-            )
-            f = _limit_num_rows(f, num_rows_to_read)
-
         table = pacsv.read_csv(
             f,
             parse_options=pacsv.ParseOptions(
@@ -175,6 +173,10 @@ def read_csv(
             ),
             convert_options=pacsv.ConvertOptions(include_columns=read_options.column_names),
         )
+
+    # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
+    if read_options.num_rows is not None:
+        table = table[: read_options.num_rows]
 
     return Table.from_arrow(table)
 
