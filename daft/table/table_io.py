@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse
 import contextlib
-import io
 import pathlib
-from typing import IO, Iterator, Union
+from collections.abc import Generator
+from typing import IO, Union
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import fsspec
@@ -30,7 +30,7 @@ FileInput = Union[pathlib.Path, str, IO[bytes]]
 def _get_file(
     file: FileInput,
     fs: fsspec.AbstractFileSystem | None,
-) -> FileInput:
+) -> Generator[FileInput, None, None]:
     """Helper method to return an appropriate file handle
 
     1. If `fs` is not None, we fall-back onto the provided fsspec FileSystem and return an fsspec file handle
@@ -81,7 +81,7 @@ def read_json(
 
     # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
     if read_options.num_rows is not None:
-        table = table[:read_options.num_rows]
+        table = table[: read_options.num_rows]
 
     return Table.from_arrow(table)
 
@@ -176,7 +176,7 @@ def read_csv(
 
     # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
     if read_options.num_rows is not None:
-        table = table[:read_options.num_rows]
+        table = table[: read_options.num_rows]
 
     return Table.from_arrow(table)
 
