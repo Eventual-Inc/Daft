@@ -97,6 +97,7 @@ impl DataTypePayload {
         }
     }
 }
+const DAFT_SUPER_EXTENSION_NAME: &str = "daft.super_extension";
 
 impl DataType {
     pub fn new_null() -> DataType {
@@ -145,7 +146,7 @@ impl DataType {
             DataType::Embedding(..) => {
                 let physical = Box::new(self.to_physical());
                 let embedding_extension = DataType::Extension(
-                    "daft.super_extension".into(),
+                    DAFT_SUPER_EXTENSION_NAME.into(),
                     physical,
                     Some(self.to_json()?),
                 );
@@ -340,12 +341,13 @@ impl From<&ArrowType> for DataType {
                 DataType::Struct(fields)
             }
             ArrowType::Extension(name, dtype, metadata) => {
-                if let Some(metadata) = metadata {
-                    if let Ok(daft_extension) = Self::from_json(metadata.as_str()) {
-                        return daft_extension;
+                if name == DAFT_SUPER_EXTENSION_NAME {
+                    if let Some(metadata) = metadata {
+                        if let Ok(daft_extension) = Self::from_json(metadata.as_str()) {
+                            return daft_extension;
+                        }
                     }
                 }
-
                 DataType::Extension(
                     name.clone(),
                     Box::new(dtype.as_ref().into()),
