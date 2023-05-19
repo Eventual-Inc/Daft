@@ -328,7 +328,7 @@ fn extract_python_to_vec<
                     } else {
                         return Err(DaftError::ValueError(format!(
                             "Python Object is neither array-like or an iterable at index {}. Can not convert to a list. object type: {}",
-                            i, object.getattr(pyo3::intern!(py, "__class__"))?.to_string())));
+                            i, object.getattr(pyo3::intern!(py, "__class__"))?)));
                     };
 
                     if collected.is_err() {
