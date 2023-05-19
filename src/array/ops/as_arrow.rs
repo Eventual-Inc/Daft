@@ -104,7 +104,7 @@ impl AsArrow for crate::datatypes::PythonArray {
 impl AsArrow for EmbeddingArray {
     type Output = array::FixedSizeListArray;
 
-    // downcasts a DataArray<T> to an Arrow DateArray.
+    // downcasts a DataArray<T> to an Arrow FixedSizeListArray.
     fn as_arrow(&self) -> &Self::Output {
         self.physical.data().as_any().downcast_ref().unwrap()
     }
