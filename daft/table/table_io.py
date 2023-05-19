@@ -52,7 +52,7 @@ def _get_file(
                 yield f
         # Safely yield a string path, which can be correctly interpreted by PyArrow filesystem
         else:
-            yield f
+            yield file
     else:
         yield file
 
