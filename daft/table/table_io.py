@@ -46,7 +46,7 @@ def _get_file(
             with fs.open(file, compression="infer") as f:
                 yield f
         # Corner-case to handle `http` filepaths using fsspec because PyArrow cannot handle it
-        elif isinstance(file, str) and "http" in urlparse(file).scheme:
+        elif urlparse(file).scheme in {"http", "https"}:
             fsspec_fs = get_filesystem_from_path(file)
             with fsspec_fs.open(file, compression="infer") as f:
                 yield f
