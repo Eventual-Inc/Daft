@@ -18,8 +18,8 @@ class UuidType(pa.ExtensionType):
         return UuidType, ()
 
     @classmethod
-    def __arrow_ext_deserialize__(self, storage_type, serialized):
-        return UuidType()
+    def __arrow_ext_deserialize__(cls, storage_type, serialized):
+        return cls()
 
 
 @pytest.fixture

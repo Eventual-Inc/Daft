@@ -4,6 +4,7 @@ import builtins
 
 import pyarrow as pa
 
+from daft.context import get_context
 from daft.daft import PyDataType
 
 _RAY_DATA_EXTENSIONS_AVAILABLE = True
@@ -185,6 +186,16 @@ class DataType:
             )
         elif isinstance(arrow_type, pa.BaseExtensionType):
             name = arrow_type.extension_name
+
+            if (get_context().runner_config.name == "ray") and (
+                type(arrow_type).__reduce__ == pa.BaseExtensionType.__reduce__
+            ):
+                raise ValueError(
+                    f"You are attempting to use a Extension Type: {arrow_type} with the default pyarrow `__reduce__` which breaks pickling for Extensions"
+                    "To fix this, implement your own `__reduce__` on your extension type"
+                    "For more details see this issue: "
+                    "https://github.com/apache/arrow/issues/35599"
+                )
             try:
                 metadata = arrow_type.__arrow_ext_serialize__().decode()
             except AttributeError:
