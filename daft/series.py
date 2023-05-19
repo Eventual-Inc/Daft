@@ -373,6 +373,10 @@ class Series:
     def dt(self) -> SeriesDateNamespace:
         return SeriesDateNamespace.from_series(self)
 
+    @property
+    def arr(self) -> SeriesArrayNamespace:
+        return SeriesArrayNamespace.from_series(self)
+
     def __reduce__(self) -> tuple:
         if self.datatype()._is_python_type():
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
@@ -443,3 +447,8 @@ class SeriesDateNamespace(SeriesNamespace):
 
     def day_of_week(self) -> Series:
         return Series._from_pyseries(self._series.dt_day_of_week())
+
+
+class SeriesArrayNamespace(SeriesNamespace):
+    def lengths(self) -> Series:
+        return Series._from_pyseries(self._series.arr_lengths())

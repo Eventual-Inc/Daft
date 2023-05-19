@@ -293,11 +293,11 @@ impl DataType {
 
     pub fn to_json(&self) -> DaftResult<String> {
         let payload = DataTypePayload::new(self);
-        Ok(serde_json::to_string(&payload).unwrap())
+        Ok(serde_json::to_string(&payload)?)
     }
 
     pub fn from_json(input: &str) -> DaftResult<Self> {
-        let val: DataTypePayload = serde_json::from_str(input).unwrap();
+        let val: DataTypePayload = serde_json::from_str(input)?;
         Ok(val.datatype)
     }
 }

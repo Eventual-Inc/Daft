@@ -15,11 +15,13 @@ impl Series {
         }
     }
 
-    pub fn lengths(&self) -> DaftResult<UInt64Array> {
+    pub fn arr_lengths(&self) -> DaftResult<UInt64Array> {
         use DataType::*;
-        match self.data_type() {
-            List(_) => self.list()?.lengths(),
-            FixedSizeList(..) => self.fixed_size_list()?.lengths(),
+
+        let p = self.as_physical()?;
+        match p.data_type() {
+            List(_) => p.list()?.lengths(),
+            FixedSizeList(..) => p.fixed_size_list()?.lengths(),
             dt => Err(DaftError::TypeError(format!(
                 "lengths not implemented for {}",
                 dt

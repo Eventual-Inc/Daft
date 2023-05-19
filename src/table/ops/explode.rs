@@ -59,11 +59,11 @@ impl Table {
                 }
             }
         }
-        let first_len = evaluated_columns.first().unwrap().lengths()?;
+        let first_len = evaluated_columns.first().unwrap().arr_lengths()?;
         if evaluated_columns
             .iter()
             .skip(1)
-            .any(|c| c.lengths().unwrap().ne(&first_len))
+            .any(|c| c.arr_lengths().unwrap().ne(&first_len))
         {
             return Err(DaftError::ValueError(
                 "In multicolumn explode, list length did not match".to_string(),

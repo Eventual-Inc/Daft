@@ -1,4 +1,7 @@
-use std::fmt::{Display, Formatter, Result};
+use std::{
+    fmt::{Display, Formatter, Result},
+    io,
+};
 
 #[derive(Debug)]
 pub enum DaftError {
@@ -10,6 +13,7 @@ pub enum DaftError {
     ValueError(String),
     #[cfg(feature = "python")]
     PyO3Error(pyo3::PyErr),
+    IoError(io::Error),
 }
 
 impl From<arrow2::error::Error> for DaftError {
@@ -22,6 +26,12 @@ impl From<arrow2::error::Error> for DaftError {
 impl From<pyo3::PyErr> for DaftError {
     fn from(error: pyo3::PyErr) -> Self {
         DaftError::PyO3Error(error)
+    }
+}
+
+impl From<serde_json::Error> for DaftError {
+    fn from(error: serde_json::Error) -> Self {
+        DaftError::IoError(error.into())
     }
 }
 
@@ -39,6 +49,7 @@ impl Display for DaftError {
             Self::ValueError(s) => write!(f, "DaftError::ValueError {s}"),
             #[cfg(feature = "python")]
             Self::PyO3Error(e) => write!(f, "DaftError::PyO3Error {e}"),
+            Self::IoError(e) => write!(f, "DaftError::IoError {e}"),
         }
     }
 }

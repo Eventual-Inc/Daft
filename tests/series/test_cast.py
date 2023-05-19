@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import itertools
 
+import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pytest
 
@@ -122,3 +124,66 @@ def test_series_cast_python_to_null() -> None:
 
     assert t.datatype() == DataType.null()
     assert t.to_pylist() == [None, None, None]
+
+
+@pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
+def test_series_cast_python_to_list(dtype) -> None:
+    data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2]), (1, 2), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.list("arr", DataType.from_arrow_type(dtype))
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+    assert len(t) == len(data)
+
+    assert t.arr.lengths().to_pylist() == [3, 3, 3, 3, 2, 2, None]
+
+    pydata = t.to_pylist()
+    assert pydata[-1] is None
+    assert list(map(int, itertools.chain.from_iterable(data[:-1]))) == list(
+        map(int, itertools.chain.from_iterable(pydata[:-1]))
+    )
+
+
+@pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
+def test_series_cast_python_to_fixed_size_list(dtype) -> None:
+    data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2, 3]), (1, 2, 3), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.fixed_size_list("arr", DataType.from_arrow_type(dtype), 3)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+    assert len(t) == len(data)
+
+    assert t.arr.lengths().to_pylist() == [3, 3, 3, 3, 3, 3, None]
+
+    pydata = t.to_pylist()
+    assert pydata[-1] is None
+    assert list(map(int, itertools.chain.from_iterable(data[:-1]))) == list(
+        map(int, itertools.chain.from_iterable(pydata[:-1]))
+    )
+
+
+@pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
+def test_series_cast_python_to_embedding(dtype) -> None:
+    data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2, 3]), (1, 2, 3), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.embedding("arr", DataType.from_arrow_type(dtype), 3)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+    assert len(t) == len(data)
+
+    assert t.arr.lengths().to_pylist() == [3, 3, 3, 3, 3, 3, None]
+
+    pydata = t.to_pylist()
+    assert pydata[-1] is None
+    assert list(map(int, itertools.chain.from_iterable(data[:-1]))) == list(
+        map(int, itertools.chain.from_iterable(pydata[:-1]))
+    )
