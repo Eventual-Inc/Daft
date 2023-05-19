@@ -237,3 +237,28 @@ class DataType:
 
     def __hash__(self) -> int:
         return self._dtype.__hash__()
+
+
+class DaftExtension(pa.ExtensionType):
+    def __init__(self, dtype, metadata):
+        # attributes need to be set first before calling
+        # super init (as that calls serialize)
+        self._dtype = dtype
+        self._metadata = metadata
+        pa.ExtensionType.__init__(self, dtype, "daft.super_extension")
+
+    def __reduce__(self):
+        return DaftExtension, (self._dtype, self._metadata)
+
+    def __arrow_ext_serialize__(self):
+        return self._metadata
+
+    @classmethod
+    def __arrow_ext_deserialize__(cls, storage_type, serialized):
+        return DaftExtension(storage_type, serialized)
+
+
+pa.register_extension_type(DaftExtension(pa.null(), b""))
+import atexit
+
+atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))

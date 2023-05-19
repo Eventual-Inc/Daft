@@ -17,7 +17,7 @@ mod ffi;
 #[cfg(feature = "python")]
 mod python;
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const BUILD_TYPE_DEV: &str = "dev";
 const DAFT_BUILD_TYPE: &str = {
     let env_build_type: Option<&str> = option_env!("RUST_DAFT_PKG_BUILD_TYPE");

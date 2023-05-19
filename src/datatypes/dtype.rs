@@ -81,6 +81,23 @@ pub enum DataType {
     Unknown,
 }
 
+#[derive(Serialize, Deserialize)]
+struct DataTypePayload {
+    datatype: DataType,
+    daft_version: String,
+    daft_build_type: String,
+}
+
+impl DataTypePayload {
+    pub fn new(datatype: &DataType) -> Self {
+        DataTypePayload {
+            datatype: datatype.clone(),
+            daft_version: crate::VERSION.into(),
+            daft_build_type: crate::DAFT_BUILD_TYPE.into(),
+        }
+    }
+}
+
 impl DataType {
     pub fn new_null() -> DataType {
         DataType::Null
@@ -125,12 +142,12 @@ impl DataType {
                 Box::new(dtype.to_arrow()?),
                 metadata.clone(),
             )),
-            DataType::Embedding(_field, size) => {
+            DataType::Embedding(..) => {
                 let physical = Box::new(self.to_physical());
                 let embedding_extension = DataType::Extension(
-                    "daft.embedding".into(),
+                    "daft.super_extension".into(),
                     physical,
-                    Some(format!("{{\"size\": \"{size}\"}}")),
+                    Some(self.to_json()?),
                 );
                 embedding_extension.to_arrow()
             }
@@ -273,6 +290,16 @@ impl DataType {
             ))),
         }
     }
+
+    pub fn to_json(&self) -> DaftResult<String> {
+        let payload = DataTypePayload::new(self);
+        Ok(serde_json::to_string(&payload).unwrap())
+    }
+
+    pub fn from_json(input: &str) -> DaftResult<Self> {
+        let val: DataTypePayload = serde_json::from_str(input).unwrap();
+        Ok(val.datatype)
+    }
 }
 
 impl From<&ArrowType> for DataType {
@@ -312,11 +339,20 @@ impl From<&ArrowType> for DataType {
                 let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
                 DataType::Struct(fields)
             }
-            ArrowType::Extension(name, dtype, metadata) => DataType::Extension(
-                name.clone(),
-                Box::new(dtype.as_ref().into()),
-                metadata.clone(),
-            ),
+            ArrowType::Extension(name, dtype, metadata) => {
+                if let Some(metadata) = metadata {
+                    if let Ok(daft_extension) = Self::from_json(metadata.as_str()) {
+                        return daft_extension;
+                    }
+                }
+
+                DataType::Extension(
+                    name.clone(),
+                    Box::new(dtype.as_ref().into()),
+                    metadata.clone(),
+                )
+            }
+
             _ => panic!("DataType :{item:?} is not supported"),
         }
     }

@@ -4,6 +4,7 @@ fnv = "1.0.7"
 prettytable-rs = "^0.10"
 pyo3-log = "0.8.1"
 rand = "^0.8"
+serde_json = "1.0.96"
 
 [dependencies.arrow2]
 branch = "clark/expand-casting-support"
