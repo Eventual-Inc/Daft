@@ -14,6 +14,9 @@ class UuidType(pa.ExtensionType):
     def __arrow_ext_serialize__(self):
         return b""
 
+    def __reduce__(self):
+        return UuidType, ()
+
     @classmethod
     def __arrow_ext_deserialize__(self, storage_type, serialized):
         return UuidType()
