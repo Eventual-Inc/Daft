@@ -11,6 +11,7 @@ import fsspec
 import pyarrow as pa
 from pyarrow import csv as pacsv
 from pyarrow import dataset as pads
+from pyarrow import fs as pafs
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
 
@@ -55,6 +56,20 @@ def _get_file(
             yield file
     else:
         yield file
+
+
+@contextlib.contextmanager
+def _ensure_pyarrow_files_for_parquet(file: FileInput) -> Generator[FileInput, None, None]:
+    # NOTE: Before PyArrow 10.0.0, the Parquet metadata methods cannot read s3 URLs, so we open
+    # any strings as URLs manually here if we encounter them. Otherwise, this function is a no-op.
+    #
+    # See: https://issues.apache.org/jira/browse/ARROW-16719
+    if isinstance(file, str):
+        fs, path = pafs.FileSystem.from_uri(file)
+        with fs.open_input_file(path) as f:
+            yield f
+    else:
+        yield f
 
 
 def read_json(
@@ -103,27 +118,30 @@ def read_parquet(
         Table: Parsed Table from Parquet
     """
     with _get_file(file, fs) as f:
-        pqf = papq.ParquetFile(f)
-        # If no rows required, we manually construct an empty table with the right schema
-        if read_options.num_rows == 0:
-            arrow_schema = pqf.metadata.schema.to_arrow_schema()
-            table = pa.Table.from_arrays([pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema)
-        elif read_options.num_rows is not None:
-            # Read the file by rowgroup.
-            tables = []
-            rows_read = 0
-            for i in range(pqf.metadata.num_row_groups):
-                tables.append(pqf.read_row_group(i, columns=read_options.column_names))
-                rows_read += len(tables[i])
-                if rows_read >= read_options.num_rows:
-                    break
-            table = pa.concat_tables(tables)
-            table = table.slice(length=read_options.num_rows)
-        else:
-            table = papq.read_table(
-                f,
-                columns=read_options.column_names,
-            )
+        with _ensure_pyarrow_files_for_parquet(f) as f:
+            pqf = papq.ParquetFile(f)
+            # If no rows required, we manually construct an empty table with the right schema
+            if read_options.num_rows == 0:
+                arrow_schema = pqf.metadata.schema.to_arrow_schema()
+                table = pa.Table.from_arrays(
+                    [pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema
+                )
+            elif read_options.num_rows is not None:
+                # Read the file by rowgroup.
+                tables = []
+                rows_read = 0
+                for i in range(pqf.metadata.num_row_groups):
+                    tables.append(pqf.read_row_group(i, columns=read_options.column_names))
+                    rows_read += len(tables[i])
+                    if rows_read >= read_options.num_rows:
+                        break
+                table = pa.concat_tables(tables)
+                table = table.slice(length=read_options.num_rows)
+            else:
+                table = papq.read_table(
+                    f,
+                    columns=read_options.column_names,
+                )
 
     return Table.from_arrow(table)
 
