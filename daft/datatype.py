@@ -118,6 +118,12 @@ class DataType:
         return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
 
     @classmethod
+    def embedding(cls, name: str, dtype: DataType, size: int) -> DataType:
+        if not isinstance(size, int) or size <= 0:
+            raise ValueError("The size for a embedding must be a positive integer, but got: ", size)
+        return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
+
+    @classmethod
     def struct(cls, fields: dict[str, DataType]) -> DataType:
         return cls._from_pydatatype(PyDataType.struct({name: datatype._dtype for name, datatype in fields.items()}))
 
@@ -179,13 +185,17 @@ class DataType:
                 f"used in non-Python Arrow implementations and Daft uses the Rust Arrow2 implementation: {arrow_type}"
             )
         elif isinstance(arrow_type, pa.BaseExtensionType):
-            if get_context().runner_config.name == "ray":
-                raise ValueError(
-                    f"pyarrow extension types are not supported for the Ray runner: {arrow_type}. If you need support "
-                    "for this, please let us know on this issue: "
-                    "https://github.com/Eventual-Inc/Daft/issues/933"
-                )
             name = arrow_type.extension_name
+
+            if (get_context().runner_config.name == "ray") and (
+                type(arrow_type).__reduce__ == pa.BaseExtensionType.__reduce__
+            ):
+                raise ValueError(
+                    f"You are attempting to use a Extension Type: {arrow_type} with the default pyarrow `__reduce__` which breaks pickling for Extensions"
+                    "To fix this, implement your own `__reduce__` on your extension type"
+                    "For more details see this issue: "
+                    "https://github.com/apache/arrow/issues/35599"
+                )
             try:
                 metadata = arrow_type.__arrow_ext_serialize__().decode()
             except AttributeError:
@@ -199,6 +209,11 @@ class DataType:
             # Fall back to a Python object type.
             # TODO(Clark): Add native support for remaining Arrow types.
             return cls.python()
+
+    @classmethod
+    def from_numpy_dtype(cls, np_type) -> DataType:
+        arrow_type = pa.from_numpy_dtype(np_type)
+        return cls.from_arrow_type(arrow_type)
 
     @classmethod
     def python(cls) -> DataType:
@@ -226,3 +241,28 @@ class DataType:
 
     def __hash__(self) -> int:
         return self._dtype.__hash__()
+
+
+class DaftExtension(pa.ExtensionType):
+    def __init__(self, dtype, metadata):
+        # attributes need to be set first before calling
+        # super init (as that calls serialize)
+        self._dtype = dtype
+        self._metadata = metadata
+        pa.ExtensionType.__init__(self, dtype, "daft.super_extension")
+
+    def __reduce__(self):
+        return DaftExtension, (self._dtype, self._metadata)
+
+    def __arrow_ext_serialize__(self):
+        return self._metadata
+
+    @classmethod
+    def __arrow_ext_deserialize__(cls, storage_type, serialized):
+        return DaftExtension(storage_type, serialized)
+
+
+pa.register_extension_type(DaftExtension(pa.null(), b""))
+import atexit
+
+atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))

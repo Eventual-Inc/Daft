@@ -231,6 +231,7 @@ macro_rules! with_match_daft_logical_types {(
 
     match $key_type {
         Date => __with_ty__! { DateType },
+        Embedding(..) => __with_ty__! { EmbeddingType },
         _ => panic!("{:?} not implemented for with_match_daft_logical_types", $key_type)
     }
 })}

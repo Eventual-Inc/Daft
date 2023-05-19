@@ -1,4 +1,5 @@
 use crate::datatypes::logical::DateArray;
+use crate::datatypes::logical::EmbeddingArray;
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
@@ -140,3 +141,4 @@ macro_rules! impl_series_like_for_logical_array {
 }
 
 impl_series_like_for_logical_array!(DateArray);
+impl_series_like_for_logical_array!(EmbeddingArray);

@@ -1,9 +1,10 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::DateArray, BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType,
-        ExtensionArray, FixedSizeListArray, Float32Array, Float64Array, ListArray, NullArray,
-        StructArray, Utf8Array,
+        logical::{DateArray, EmbeddingArray},
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
+        FixedSizeListArray, Float32Array, Float64Array, ListArray, NullArray, StructArray,
+        Utf8Array,
     },
     error::DaftResult,
     kernels::search_sorted::{build_compare_with_nulls, cmp_float},
@@ -587,6 +588,12 @@ impl ExtensionArray {
 impl PythonArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
         todo!("impl sort for python array")
+    }
+}
+
+impl EmbeddingArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for FixedSizeListArray")
     }
 }
 

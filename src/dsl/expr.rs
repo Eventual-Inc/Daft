@@ -331,11 +331,7 @@ impl Expr {
                                 return Ok(Field::new(left_field.name.as_str(), supertype));
                             }
                         }
-                        if !left_field.dtype.is_castable(&DataType::Float64)
-                            || !right_field.dtype.is_castable(&DataType::Float64)
-                            || !left_field.dtype.is_numeric()
-                            || !right_field.dtype.is_numeric()
-                        {
+                        if !left_field.dtype.is_numeric() || !right_field.dtype.is_numeric() {
                             return Err(DaftError::TypeError(format!("Expected left and right arguments for {op} to both be numeric and castable to {}, but received {left_field} and {right_field}", DataType::Float64)));
                         }
                         Ok(Field::new(left_field.name.as_str(), DataType::Float64))

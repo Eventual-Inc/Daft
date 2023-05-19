@@ -75,10 +75,29 @@ pub enum DataType {
     /// Extension type.
     Extension(String, Box<DataType>, Option<String>),
     // Stop ArrowTypes
-    DaftType(Box<DataType>),
+    /// A Embedding Logical Type
+    Embedding(Box<Field>, usize),
     Python,
     Unknown,
 }
+
+#[derive(Serialize, Deserialize)]
+struct DataTypePayload {
+    datatype: DataType,
+    daft_version: String,
+    daft_build_type: String,
+}
+
+impl DataTypePayload {
+    pub fn new(datatype: &DataType) -> Self {
+        DataTypePayload {
+            datatype: datatype.clone(),
+            daft_version: crate::VERSION.into(),
+            daft_build_type: crate::DAFT_BUILD_TYPE.into(),
+        }
+    }
+}
+const DAFT_SUPER_EXTENSION_NAME: &str = "daft.super_extension";
 
 impl DataType {
     pub fn new_null() -> DataType {
@@ -124,6 +143,15 @@ impl DataType {
                 Box::new(dtype.to_arrow()?),
                 metadata.clone(),
             )),
+            DataType::Embedding(..) => {
+                let physical = Box::new(self.to_physical());
+                let embedding_extension = DataType::Extension(
+                    DAFT_SUPER_EXTENSION_NAME.into(),
+                    physical,
+                    Some(self.to_json()?),
+                );
+                embedding_extension.to_arrow()
+            }
             _ => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
@@ -144,6 +172,10 @@ impl DataType {
                     Field::new(field.name.clone(), field.dtype.to_physical())
                         .with_metadata(field.metadata.clone()),
                 ),
+                *size,
+            ),
+            Embedding(field, size) => FixedSizeList(
+                Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
                 *size,
             ),
             _ => self.clone(),
@@ -172,6 +204,29 @@ impl DataType {
              DataType::Extension(_, inner, _) => inner.is_numeric(),
              _ => false
          }
+    }
+
+    #[inline]
+    pub fn is_integer(&self) -> bool {
+        matches!(
+            self,
+            DataType::Int8
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+        )
+    }
+
+    #[inline]
+    pub fn is_floating(&self) -> bool {
+        matches!(
+            self,
+            DataType::Float16 | DataType::Float32 | DataType::Float64
+        )
     }
 
     #[inline]
@@ -208,7 +263,7 @@ impl DataType {
 
     #[inline]
     pub fn is_logical(&self) -> bool {
-        matches!(self, DataType::Date)
+        matches!(self, DataType::Date | DataType::Embedding(..))
     }
 
     #[inline]
@@ -237,14 +292,14 @@ impl DataType {
         }
     }
 
-    #[inline]
-    pub fn is_castable(&self, cast_to: &DataType) -> bool {
-        match (self.to_arrow(), cast_to.to_arrow()) {
-            (Ok(self_arrow_type), Ok(cast_to_arrow_type)) => {
-                arrow2::compute::cast::can_cast_types(&self_arrow_type, &cast_to_arrow_type)
-            }
-            _ => false,
-        }
+    pub fn to_json(&self) -> DaftResult<String> {
+        let payload = DataTypePayload::new(self);
+        Ok(serde_json::to_string(&payload)?)
+    }
+
+    pub fn from_json(input: &str) -> DaftResult<Self> {
+        let val: DataTypePayload = serde_json::from_str(input)?;
+        Ok(val.datatype)
     }
 }
 
@@ -285,11 +340,21 @@ impl From<&ArrowType> for DataType {
                 let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
                 DataType::Struct(fields)
             }
-            ArrowType::Extension(name, dtype, metadata) => DataType::Extension(
-                name.clone(),
-                Box::new(dtype.as_ref().into()),
-                metadata.clone(),
-            ),
+            ArrowType::Extension(name, dtype, metadata) => {
+                if name == DAFT_SUPER_EXTENSION_NAME {
+                    if let Some(metadata) = metadata {
+                        if let Ok(daft_extension) = Self::from_json(metadata.as_str()) {
+                            return daft_extension;
+                        }
+                    }
+                }
+                DataType::Extension(
+                    name.clone(),
+                    Box::new(dtype.as_ref().into()),
+                    metadata.clone(),
+                )
+            }
+
             _ => panic!("DataType :{item:?} is not supported"),
         }
     }
@@ -300,6 +365,12 @@ impl Display for DataType {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             DataType::List(nested) => write!(f, "List[{}]", nested.dtype),
+            DataType::FixedSizeList(inner, size) => {
+                write!(f, "FixedSizeList[{}; {}]", inner.dtype, size)
+            }
+            DataType::Embedding(inner, size) => {
+                write!(f, "Embedding[{}; {}]", inner.dtype, size)
+            }
             DataType::Struct(fields) => {
                 let fields: String = fields
                     .iter()

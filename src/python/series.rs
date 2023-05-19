@@ -262,6 +262,10 @@ impl PySeries {
         Ok(self.series.dt_day_of_week()?.into())
     }
 
+    pub fn arr_lengths(&self) -> PyResult<Self> {
+        Ok(self.series.arr_lengths()?.into_series().into())
+    }
+
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {
         Ok(self
             .series
