@@ -40,14 +40,18 @@ def _get_file(
     if isinstance(file, pathlib.Path):
         file = str(file)
 
-    # Use provided fsspec filesystem, slow but necessary for backward-compatibility
-    if fs is not None:
-        with fs.open(file, compression="infer") as f:
-            yield f
-    # Corner-case to handle `http` filepaths using fsspec because PyArrow cannot handle it
-    elif isinstance(file, str) and "http" in urlparse(file).scheme:
-        fsspec_fs = get_filesystem_from_path(file)
-        with fsspec_fs.open(file, compression="infer") as f:
+    if isinstance(file, str):
+        # Use provided fsspec filesystem, slow but necessary for backward-compatibility
+        if fs is not None:
+            with fs.open(file, compression="infer") as f:
+                yield f
+        # Corner-case to handle `http` filepaths using fsspec because PyArrow cannot handle it
+        elif isinstance(file, str) and "http" in urlparse(file).scheme:
+            fsspec_fs = get_filesystem_from_path(file)
+            with fsspec_fs.open(file, compression="infer") as f:
+                yield f
+        # Safely yield a string path, which can be correctly interpreted by PyArrow filesystem
+        else:
             yield f
     else:
         yield file
