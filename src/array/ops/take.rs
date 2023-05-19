@@ -2,8 +2,8 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{DateArray, EmbeddingArray},
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeListArray, ListArray,
-        NullArray, StructArray, Utf8Array, ExtensionArray
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
+        FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
     },
     error::DaftResult,
 };

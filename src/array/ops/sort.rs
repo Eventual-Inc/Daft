@@ -2,8 +2,9 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{DateArray, EmbeddingArray},
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeListArray,
-        Float32Array, Float64Array, ListArray, NullArray, StructArray, Utf8Array, ExtensionArray
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
+        FixedSizeListArray, Float32Array, Float64Array, ListArray, NullArray, StructArray,
+        Utf8Array,
     },
     error::DaftResult,
     kernels::search_sorted::{build_compare_with_nulls, cmp_float},

@@ -125,9 +125,14 @@ impl DataType {
                 Box::new(dtype.to_arrow()?),
                 metadata.clone(),
             )),
-            // TODO: Embedding should be exported as an extension type
-            DataType::Embedding(field, size) => {
-                Ok(ArrowType::FixedSizeList(Box::new(field.to_arrow()?), *size))
+            DataType::Embedding(_field, size) => {
+                let physical = Box::new(self.to_physical());
+                let embedding_extension = DataType::Extension(
+                    "daft.embedding".into(),
+                    physical,
+                    Some(format!("{{\"size\": \"{size}\"}}")),
+                );
+                embedding_extension.to_arrow()
             }
             _ => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"

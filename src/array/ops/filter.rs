@@ -1,6 +1,9 @@
 use crate::{
     array::DataArray,
-    datatypes::{logical::{DateArray, EmbeddingArray}, BooleanArray, DaftArrowBackedType},
+    datatypes::{
+        logical::{DateArray, EmbeddingArray},
+        BooleanArray, DaftArrowBackedType,
+    },
     error::DaftResult,
 };
 
