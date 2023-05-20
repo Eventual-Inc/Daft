@@ -44,7 +44,13 @@ class Series:
             return Series._from_pyseries(pys)
         elif isinstance(array, pa.ChunkedArray):
             array = ensure_chunked_array(array)
-            combined_array = array.combine_chunks()
+            arr_type = array.type
+            if isinstance(arr_type, pa.BaseExtensionType):
+                combined_storage_array = array.cast(arr_type.storage_type).combine_chunks()
+                combined_array = arr_type.wrap_array(combined_storage_array)
+            else:
+                combined_array = array.combine_chunks()
+
             pys = PySeries.from_arrow(name, combined_array)
             return Series._from_pyseries(pys)
         else:

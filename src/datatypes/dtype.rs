@@ -364,7 +364,7 @@ impl Display for DataType {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            DataType::List(nested) => write!(f, "List[{}]", nested.dtype),
+            DataType::List(nested) => write!(f, "List[{}:{}]", nested.name, nested.dtype),
             DataType::FixedSizeList(inner, size) => {
                 write!(f, "FixedSizeList[{}; {}]", inner.dtype, size)
             }

@@ -262,9 +262,9 @@ def test_from_pydict_arrow_extension_array(uuid_ext_type) -> None:
     assert "a" in daft_table.column_names()
     # Although Daft will internally represent the binary storage array as a large_binary array,
     # it should be cast back to the ingress extension type.
-    result = daft_table.to_arrow()["a"].combine_chunks()
+    result = daft_table.to_arrow()["a"]
     assert result.type == uuid_ext_type
-    assert result == arrow_arr
+    assert result.to_pylist() == arrow_arr.to_pylist()
 
 
 def test_from_pydict_arrow_deeply_nested() -> None:
@@ -276,7 +276,8 @@ def test_from_pydict_arrow_deeply_nested() -> None:
     # Perform the expected Daft cast, where each list array is cast to a large list array and
     # the string array is cast to a large string array.
     expected = pa.array(
-        data, type=pa.struct([("a", pa.large_list(pa.struct([("b", pa.large_list(pa.large_string()))])))])
+        data,
+        type=pa.struct([("a", pa.large_list(pa.field("a", pa.struct([("b", pa.large_list(pa.large_string()))]))))]),
     )
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
@@ -434,9 +435,9 @@ def test_from_arrow_extension_array(uuid_ext_type) -> None:
     assert "a" in daft_table.column_names()
     # Although Daft will internally represent the binary storage array as a large_binary array,
     # it should be cast back to the ingress extension type.
-    result = daft_table.to_arrow()["a"].combine_chunks()
+    result = daft_table.to_arrow()["a"]
     assert result.type == uuid_ext_type
-    assert result == arrow_arr
+    assert result.to_pylist() == arrow_arr.to_pylist()
 
 
 def test_from_arrow_deeply_nested() -> None:
@@ -448,8 +449,19 @@ def test_from_arrow_deeply_nested() -> None:
     # Perform the expected Daft cast, where each list array is cast to a large list array and
     # the string array is cast to a large string array.
     expected = pa.array(
-        data, type=pa.struct([("a", pa.large_list(pa.struct([("b", pa.large_list(pa.large_string()))])))])
+        data,
+        type=pa.struct(
+            [
+                (
+                    "a",
+                    pa.large_list(
+                        pa.field("a", pa.struct([("b", pa.large_list(pa.field("item", pa.large_string())))]))
+                    ),
+                )
+            ]
+        ),
     )
+
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
 
@@ -472,8 +484,8 @@ def test_nested_list_dates(levels: int) -> None:
     data = [datetime.date.today(), datetime.date.today()]
     for _ in range(levels):
         data = [data, data]
-    table = Table.from_pydict({"data": data})
-    back_again = table.get_column("data")
+    table = Table.from_pydict({"item": data})
+    back_again = table.get_column("item")
 
     dtype = back_again.datatype()
 
@@ -481,9 +493,11 @@ def test_nested_list_dates(levels: int) -> None:
     expected_arrow_type = pa.date32()
     for _ in range(levels):
         expected_dtype = DataType.list("item", expected_dtype)
-        expected_arrow_type = pa.large_list(expected_arrow_type)
+        expected_arrow_type = pa.large_list(pa.field("item", expected_arrow_type))
+
     assert dtype == expected_dtype
-    assert back_again.to_arrow() == pa.array(data, type=expected_arrow_type)
+
+    assert back_again.to_arrow().type == expected_arrow_type
     assert back_again.to_pylist() == data
 
 
@@ -508,7 +522,7 @@ def test_nested_fixed_size_list_dates(levels: int) -> None:
     dtype = back_again.datatype()
 
     assert dtype == expected_dtype
-    assert back_again.to_arrow() == pa.array(data, type=expected_arrow_type)
+    assert back_again.to_arrow().type == expected_arrow_type
     assert back_again.to_pylist() == data
 
 
@@ -528,5 +542,6 @@ def test_nested_struct_dates(levels: int) -> None:
         expected_dtype = DataType.struct({"data": expected_dtype})
         expected_arrow_type = pa.struct([("data", expected_arrow_type)])
     assert dtype == expected_dtype
-    assert back_again.to_arrow() == pa.array(data, type=expected_arrow_type)
+
+    assert back_again.to_arrow().type == expected_arrow_type
     assert back_again.to_pylist() == data
