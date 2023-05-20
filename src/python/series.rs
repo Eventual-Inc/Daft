@@ -58,6 +58,11 @@ impl PySeries {
         })
     }
 
+    #[staticmethod]
+    pub fn arange(name: &str, start: i64, end: i64, step: usize) -> PyResult<Self> {
+        Ok(Series::arange(name, start, end, step)?.into())
+    }
+
     pub fn __abs__(&self) -> PyResult<Self> {
         Ok(self.series.abs()?.into())
     }

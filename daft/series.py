@@ -381,7 +381,17 @@ class Series:
         if self.datatype()._is_python_type():
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
         else:
-            return (Series.from_arrow, (self.to_arrow(), self.name()))
+            arrow_array = self.to_arrow()
+
+            if arrow_array.get_total_buffer_size() > (self.size_bytes() + 32):
+                idx = Series.arange("arange", 0, len(self))
+                arrow_array = self.take(idx).to_arrow()
+
+            return (Series.from_arrow, (arrow_array, self.name()))
+
+    @classmethod
+    def arange(cls, name, start, stop, step: int = 1) -> Series:
+        return cls._from_pyseries(PySeries.arange(name, start, stop, step))
 
 
 SomeSeriesNamespace = TypeVar("SomeSeriesNamespace", bound="SeriesNamespace")
