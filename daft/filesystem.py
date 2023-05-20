@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 import sys
-import urllib
+import urllib.parse
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
@@ -17,11 +17,16 @@ from typing import Any
 import fsspec
 import pyarrow as pa
 from fsspec.implementations.http import HTTPFileSystem
-from pyarrow.fs import FileSystem
+from fsspec.registry import get_filesystem_class
+from pyarrow.fs import (
+    FileSystem,
+    FSSpecHandler,
+    PyFileSystem,
+    _resolve_filesystem_and_path,
+)
 
 from daft.datasources import ParquetSourceInfo, SourceInfo
 
-_LOCAL_SCHEME = "local"
 _CACHED_FSES: dict[str, FileSystem] = {}
 
 
@@ -106,6 +111,26 @@ def get_protocol_from_path(path: str) -> str:
     return parsed_scheme
 
 
+_CANONICAL_PROTOCOLS = {
+    "gcs": "gs",
+    "https": "http",
+    "s3a": "s3",
+    "ssh": "sftp",
+    "arrow_hdfs": "hdfs",
+    "az": "abfs",
+    "blockcache": "cached",
+    "jlab": "jupyter",
+}
+
+
+def canonicalize_protocol(protocol: str) -> str:
+    """
+    Return the canonical protocol from the provided protocol, such that there's a 1:1
+    mapping between protocols and pyarrow/fsspec filesystem implementations.
+    """
+    return _CANONICAL_PROTOCOLS.get(protocol, protocol)
+
+
 def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
     protocol = get_protocol_from_path(path)
     fs = get_filesystem(protocol, **kwargs)
@@ -114,8 +139,8 @@ def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
 
 def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
-    filesystem: pa.fs.FileSystem | None = None,
-) -> tuple[list[str], pa.fs.FileSystem]:
+    filesystem: FileSystem | fsspec.AbstractFileSystem | None = None,
+) -> tuple[list[str], FileSystem]:
     """
     Resolves and normalizes all provided paths, infers a filesystem from the
     paths, and ensures that all paths use the same filesystem.
@@ -129,79 +154,125 @@ def _resolve_paths_and_filesystem(
             filesystems inferred from the provided paths to ensure
             compatibility.
     """
-    import pyarrow as pa
-    from loguru import logger
-    from pyarrow.fs import (
-        FileSystem,
-        FSSpecHandler,
-        PyFileSystem,
-        _resolve_filesystem_and_path,
-    )
-
     if isinstance(paths, pathlib.Path):
         paths = str(paths)
     if isinstance(paths, str):
         paths = [paths]
-    elif not isinstance(paths, list) or any(not isinstance(p, str) for p in paths):
-        raise ValueError(f"paths must be a path string or a list of path strings, got: {paths}")
-    elif len(paths) == 0:
-        raise ValueError("Must provide at least one path.")
+    assert isinstance(paths, list), paths
+    assert all(isinstance(p, str) for p in paths), paths
+    assert len(paths) > 0, paths
 
-    if filesystem and not isinstance(filesystem, FileSystem):
-        err_msg = (
-            "The filesystem passed must be either pyarrow.fs.FileSystem or "
-            f"fsspec.spec.AbstractFileSystem. The provided filesystem was: {filesystem}"
+    # Ensure that protocols for all paths are consistent, i.e. that they would map to the
+    # same filesystem.
+    protocols = {get_protocol_from_path(path) for path in paths}
+    canonicalized_protocols = {canonicalize_protocol(protocol) for protocol in protocols}
+    if len(canonicalized_protocols) > 1:
+        raise ValueError(
+            "All paths must have the same canonical protocol to ensure that they are all "
+            f"hitting the same storage backend, but got protocols {protocols} with canonical "
+            f"protocols - {canonicalized_protocols} and full paths - {paths}"
         )
-        if not isinstance(filesystem, fsspec.spec.AbstractFileSystem):
-            raise TypeError(err_msg) from None
 
+    # Canonical protocol shared by all paths.
+    protocol = next(iter(canonicalized_protocols))
+
+    if filesystem is None:
+        # Try to get filesystem from protocol -> fs cache.
+        filesystem = _get_fs_from_cache(protocol)
+    elif isinstance(filesystem, fsspec.AbstractFileSystem):
+        # Wrap fsspec filesystems so they are valid pyarrow filesystems.
         filesystem = PyFileSystem(FSSpecHandler(filesystem))
 
-    resolved_paths = []
-    for path in paths:
-        path = _resolve_custom_scheme(path)
-        protocol = get_protocol_from_path(path)
-        cached_fs = _get_fs_from_cache(protocol)
-        if cached_fs is not None:
-            filesystem = cached_fs
-        try:
-            resolved_filesystem, resolved_path = _resolve_filesystem_and_path(path, filesystem)
-        except pa.lib.ArrowInvalid as e:
-            if "Cannot parse URI" in str(e):
-                resolved_filesystem, resolved_path = _resolve_filesystem_and_path(_encode_url(path), filesystem)
-                resolved_path = _decode_url(resolved_path)
-            elif "Unrecognized filesystem type in URI" in str(e):
-                # Fall back to fsspec.
-                logger.debug(f"pyarrow doesn't support paths with protocol {protocol}, falling back to fsspec.")
-                try:
-                    from fsspec.registry import get_filesystem_class
-                except ModuleNotFoundError:
-                    raise ImportError(f"Please install fsspec to read files with protocol {protocol}.") from None
-                try:
-                    fsspec_fs_cls = get_filesystem_class(protocol)
-                except ValueError:
-                    raise ValueError("pyarrow and fsspec don't recognize protocol {protocol} for path {path}.")
-                resolved_filesystem = PyFileSystem(FSSpecHandler(fsspec_fs_cls()))
-                resolved_path = path
-            else:
-                raise
-        _put_fs_in_cache(protocol, resolved_filesystem)
-        if filesystem is None:
-            filesystem = resolved_filesystem
-        # If filesystem is fsspec HTTPFileSystem, the protocol/scheme of paths
-        # should not be unwrapped/removed, because HTTPFileSystem expects full file
-        # paths including protocol/scheme. This is different behavior compared to
-        # filesystems implementated in pyarrow.
-        elif not (
-            isinstance(resolved_filesystem, PyFileSystem)
-            and isinstance(resolved_filesystem.handler, FSSpecHandler)
-            and isinstance(resolved_filesystem.handler.fs, HTTPFileSystem)
-        ):
-            resolved_path = _unwrap_protocol(resolved_path)
-        resolved_path = filesystem.normalize_path(resolved_path)
+    # Resolve path and filesystem for the first path.
+    # We use this first resolved filesystem for validation on all other paths.
+    resolved_path, resolved_filesystem = _resolve_path_and_filesystem(paths[0], filesystem)
+
+    if filesystem is None:
+        filesystem = resolved_filesystem
+        # Put resolved filesystem in cache under these paths' canonical protocol.
+        _put_fs_in_cache(protocol, filesystem)
+
+    # filesystem should be a non-None pyarrow FileSystem at this point, either
+    # user-provided, taken from the cache, or inferred from the first path.
+    assert filesystem is not None and isinstance(filesystem, FileSystem)
+
+    # Resolve all other paths and validate with the user-provided/cached/inferred filesystem.
+    resolved_paths = [resolved_path]
+    for path in paths[1:]:
+        resolved_path, _ = _resolve_path_and_filesystem(path, filesystem)
         resolved_paths.append(resolved_path)
 
     return resolved_paths, filesystem
+
+
+def _resolve_path_and_filesystem(
+    path: str,
+    filesystem: FileSystem | fsspec.AbstractFileSystem | None,
+) -> tuple[str, FileSystem]:
+    """
+    Resolves and normalizes the provided path, infers a filesystem from the
+    path, and ensures that the inferred filesystem is compatible with the passed
+    filesystem, if provided.
+
+    Args:
+        path: A single file/directory path.
+        filesystem: The filesystem implementation that should be used for
+            reading these files. If None, a filesystem will be inferred. If not
+            None, the provided filesystem will still be validated against the
+            filesystem inferred from the provided path to ensure compatibility.
+    """
+    from loguru import logger
+
+    # Use pyarrow utility to resolve filesystem and this particular path.
+    # If a non-None filesystem is provided to this utility, it will ensure that
+    # it is compatible with the provided path.
+    # A non-None filesystem will be provided if:
+    #  - a user-provided filesystem was passed to _resolve_paths_and_filesystem.
+    #  - a filesystem for the paths' protocol exists in the protocol -> fs cache.
+    #  - a filesystem was resolved for a previous path; i.e., filesystem is
+    #    guaranteed to be non-None for all but the first path.
+    try:
+        resolved_filesystem, resolved_path = _resolve_filesystem_and_path(path, filesystem)
+    except pa.lib.ArrowInvalid as e:
+        if "Cannot parse URI" in str(e):
+            # We try resolving the path with proper URL encoding.
+            encoded_path = _encode_url(path)
+            if encoded_path == path:
+                # If encoding the path is a no-op, no use in retrying resolution, so we reraise.
+                raise
+            resolved_filesystem, resolved_path = _resolve_filesystem_and_path(encoded_path, filesystem)
+            resolved_path = _decode_url(resolved_path)
+        elif "Unrecognized filesystem type in URI" in str(e):
+            # Fall back to fsspec.
+            protocol = get_protocol_from_path(path)
+            logger.debug(f"pyarrow doesn't support paths with protocol {protocol}, falling back to fsspec.")
+            try:
+                fsspec_fs_cls = get_filesystem_class(protocol)
+            except ValueError:
+                raise ValueError("pyarrow and fsspec don't recognize protocol {protocol} for path {path}.")
+            fsspec_fs = fsspec_fs_cls()
+            resolved_filesystem, resolved_path = _resolve_filesystem_and_path(path, fsspec_fs)
+        else:
+            raise
+
+    # If filesystem is fsspec HTTPFileSystem, the protocol/scheme of paths
+    # should not be unwrapped/removed, because HTTPFileSystem expects full file
+    # paths including protocol/scheme. This is different behavior compared to
+    # pyarrow filesystems.
+    if not _is_http_fs(resolved_filesystem):
+        resolved_path = _unwrap_protocol(resolved_path)
+
+    resolved_path = resolved_filesystem.normalize_path(resolved_path)
+    return resolved_path, resolved_filesystem
+
+
+def _is_http_fs(fs: FileSystem) -> bool:
+    """Returns whether the provided pyarrow filesystem is an HTTP filesystem."""
+    return (
+        isinstance(fs, PyFileSystem)
+        and isinstance(fs.handler, FSSpecHandler)
+        and isinstance(fs.handler.fs, HTTPFileSystem)
+    )
 
 
 def _encode_url(path):
@@ -252,20 +323,6 @@ def _is_local_windows_path(path: str) -> bool:
     if len(path) >= 3 and path[1] == ":" and (path[2] == "/" or path[2] == "\\") and path[0].isalpha():
         return True
     return False
-
-
-def _resolve_custom_scheme(path: str) -> str:
-    """Returns the resolved path if the given path follows a Ray-specific custom
-    scheme. Othewise, returns the path unchanged.
-
-    The supported custom schemes are: "local", "example".
-    """
-    import urllib.parse
-
-    parsed_uri = urllib.parse.urlparse(path)
-    if parsed_uri.scheme == _LOCAL_SCHEME:
-        path = parsed_uri.netloc + parsed_uri.path
-    return path
 
 
 ###
