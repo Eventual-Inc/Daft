@@ -26,6 +26,11 @@ from daft.table import Table
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
 
+# The number of rows to read per batch. This is sized to generate 10MiB batches
+# for rows about 1KiB in size.
+_PARQUET_FRAGMENT_BATCH_SIZE = 100000
+
+
 @contextlib.contextmanager
 def _open_stream(
     file: FileInput,
@@ -37,23 +42,6 @@ def _open_stream(
         assert len(paths) == 1
         path = paths[0]
         with fs.open_input_stream(path) as f:
-            yield f
-    else:
-        yield file
-
-
-@contextlib.contextmanager
-def _open_file(
-    file: FileInput,
-    fs: FileSystem | fsspec.AbstractFileSystem | None,
-) -> Generator[pa.NativeFile, None, None]:
-    """Opens the provided file for reading, yield a pyarrow file handle."""
-    if isinstance(file, (pathlib.Path, str)):
-        paths, fs = _resolve_paths_and_filesystem(file, fs)
-        assert len(paths) == 1
-        path = paths[0]
-        # TODO(Clark): Support (de)compression for random access files.
-        with fs.open_input_file(path) as f:
             yield f
     else:
         yield file
@@ -111,19 +99,19 @@ def read_parquet(
     paths, fs = _resolve_paths_and_filesystem(file, fs)
     assert len(paths) == 1
     path = paths[0]
-    ds = papq.ParquetDataset(path, filesystem=fs, use_legacy_dataset=False, buffer_size=32 * 1024 * 1024)
+    fragment = pads.ParquetFileFormat().make_fragment(path, filesystem=fs)
+    schema = fragment.metadata.schema.to_arrow_schema()
     # If no rows required, we manually construct an empty table with the right schema
     if read_options.num_rows == 0:
-        arrow_schema = ds.schema
-        table = pa.Table.from_arrays([pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema)
+        table = pa.Table.from_arrays([pa.array([], type=field.type) for field in schema], schema=schema)
     elif read_options.num_rows is not None:
         # Read the file by row group.
-        frags = [frag for fragment in ds.fragments for frag in fragment.split_by_row_group()]
+        frags = fragment.split_by_row_group()
         tables = []
         rows_read = 0
         for frag in frags:
-            for batch in frag.to_batches(columns=read_options.column_names, batch_size=100000):
-                tables.append(pa.Table.from_batches([batch], schema=ds.schema))
+            for batch in frag.to_batches(columns=read_options.column_names, batch_size=_PARQUET_FRAGMENT_BATCH_SIZE):
+                tables.append(pa.Table.from_batches([batch], schema=schema))
                 rows_read += len(batch)
                 if rows_read >= read_options.num_rows:
                     break
@@ -132,7 +120,7 @@ def read_parquet(
         table = pa.concat_tables(tables)
         table = table.slice(length=read_options.num_rows)
     else:
-        table = ds.read(columns=read_options.column_names)
+        table = fragment.to_table(columns=read_options.column_names)
 
     return Table.from_arrow(table)
 
