@@ -167,7 +167,10 @@ def test_series_concat_extension_type(uuid_ext_type, chunks) -> None:
     concated_arrow = concated.to_arrow()
     assert isinstance(concated_arrow.type, UuidType)
     assert concated_arrow.type == uuid_ext_type
-    assert concated_arrow == pa.concat_arrays(ext_arrays)
+
+    expected = uuid_ext_type.wrap_array(pa.concat_arrays(storage_arrays))
+
+    assert concated_arrow == expected
 
 
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
