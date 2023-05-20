@@ -8,5 +8,5 @@ def setup_logger() -> None:
     from loguru._defaults import env
 
     logger.remove()
-    LOGURU_LEVEL = env("LOGURU_LEVEL", str, "INFO")
+    LOGURU_LEVEL = env("LOGURU_LEVEL", str, "DEBUG")
     logger.add(sys.stderr, level=LOGURU_LEVEL)

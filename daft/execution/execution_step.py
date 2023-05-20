@@ -57,7 +57,7 @@ class PartitionTask(Generic[PartitionT]):
     def __str__(self) -> str:
         return (
             f"{self.id()}\n"
-            f"  Inputs: {self.inputs}\n"
+            f"  Inputs: [{len(self.inputs)} num partitions]\n"
             f"  Resource Request: {self.resource_request}\n"
             f"  Instructions: {[i.__class__.__name__ for i in self.instructions]}"
         )
@@ -137,7 +137,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
     def __str__(self) -> str:
         return (
             f"PartitionTaskBuilder\n"
-            f"  Inputs: {self.inputs}\n"
+            f"  Inputs: [{len(self.inputs)} num partitions]\n"
             f"  Resource Request: {self.resource_request}\n"
             f"  Instructions: {[i.__class__.__name__ for i in self.instructions]}"
         )

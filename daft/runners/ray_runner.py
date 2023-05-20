@@ -470,7 +470,7 @@ class Scheduler:
                     )
                     for task in tasks_to_dispatch:
                         results = _build_partitions(task)
-                        logger.debug(f"{task} -> {results}")
+                        logger.debug(f"{task} -> [{len(results)} partitions]")
                         inflight_tasks[task.id()] = task
                         for result in results:
                             inflight_ref_to_task[result] = task.id()
@@ -506,6 +506,11 @@ class SchedulerActor(Scheduler):
 
 def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]:
     """Run a PartitionTask and return the resulting list of partitions."""
+
+    import pickle
+
+    from loguru import logger
+
     ray_options: dict[str, Any] = {
         "num_returns": task.num_results + 1,
     }
@@ -521,6 +526,7 @@ def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]
         )
 
     build_remote = build_remote.options(**ray_options)
+    logger.debug(f"Size of instructions: {len(pickle.dumps(task.instructions)) / 1000}K")
     [metadatas_ref, *partitions] = build_remote.remote(task.instructions, *task.inputs)
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
     task.set_result([RayMaterializedResult(partition, metadatas_accessor, i) for i, partition in enumerate(partitions)])
