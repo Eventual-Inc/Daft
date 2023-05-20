@@ -71,6 +71,37 @@ from daft.logical.schema import Schema
 RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
 
 
+class LogInputParamPickleSize:
+    def __init__(self, ray_remote_func):
+        self.f = ray_remote_func
+        self.name = None
+        try:
+            self.name = ray_remote_func._name
+        except:
+            pass
+
+    def remote(self, *args, **kwargs):
+        import pickle
+
+        from loguru import logger
+        from ray.cloudpickle import dumps
+
+        for i, arg in enumerate(args):
+            logger.debug(
+                f"Size of {self.name} arg {i} <Pickle: {len(pickle.dumps(arg)) / 1000}K> <Cloudpickle: {len(dumps(arg)) / 1000}K>"
+            )
+        for i, k in enumerate(kwargs):
+            logger.debug(
+                f"Size of {self.name} kwarg {k} <Pickle: {len(pickle.dumps(kwargs[k])) / 1000}K> <Cloudpickle: {len(dumps(kwargs[k])) / 1000}K>"
+            )
+
+        return self.f.remote(*args, **kwargs)
+
+    def options(self, *args, **kwargs):
+        return LogInputParamPickleSize(self.f.options(*args, **kwargs))
+
+
+@LogInputParamPickleSize
 @ray.remote
 def _glob_path_into_details_vpartitions(
     path: str,
@@ -102,6 +133,7 @@ def _glob_path_into_details_vpartitions(
     return partition_refs
 
 
+@LogInputParamPickleSize
 @ray.remote
 def _make_ray_block_from_vpartition(partition: Table) -> RayDatasetBlock:
     try:
@@ -110,11 +142,13 @@ def _make_ray_block_from_vpartition(partition: Table) -> RayDatasetBlock:
         return partition.to_pylist()
 
 
+@LogInputParamPickleSize
 @ray.remote
 def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: pa.Table, daft_schema: Schema) -> Table:
     return Table.from_arrow(ray_dataset_block)
 
 
+@LogInputParamPickleSize
 @ray.remote(num_returns=2)
 def _make_daft_partition_from_dask_dataframe_partitions(dask_df_partition: pd.DataFrame) -> tuple[Table, pa.Schema]:
     vpart = Table.from_pandas(dask_df_partition)
@@ -133,11 +167,13 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef[pd.DataFrame]) -> ray.Object
         raise ValueError("Expected a Ray object ref or a Pandas DataFrame, " f"got {type(df)}")
 
 
+@LogInputParamPickleSize
 @ray.remote
 def remote_len_partition(p: Table) -> int:
     return len(p)
 
 
+@LogInputParamPickleSize
 @ray.remote
 def sample_schema_from_filepath_vpartition(
     p: Table,
@@ -347,6 +383,7 @@ def build_partitions(instruction_stack: list[Instruction], *inputs: Table) -> li
 # Give the same function different names to aid in profiling data distribution.
 
 
+@LogInputParamPickleSize
 @ray.remote
 def single_partition_pipeline(
     instruction_stack: list[Instruction], *inputs: Table
@@ -354,21 +391,25 @@ def single_partition_pipeline(
     return build_partitions(instruction_stack, *inputs)
 
 
+@LogInputParamPickleSize
 @ray.remote
 def fanout_pipeline(instruction_stack: list[Instruction], *inputs: Table) -> list[list[PartitionMetadata] | Table]:
     return build_partitions(instruction_stack, *inputs)
 
 
+@LogInputParamPickleSize
 @ray.remote(scheduling_strategy="SPREAD")
 def reduce_pipeline(instruction_stack: list[Instruction], *inputs: Table) -> list[list[PartitionMetadata] | Table]:
     return build_partitions(instruction_stack, *inputs)
 
 
+@LogInputParamPickleSize
 @ray.remote(scheduling_strategy="SPREAD")
 def reduce_and_fanout(instruction_stack: list[Instruction], *inputs: Table) -> list[list[PartitionMetadata] | Table]:
     return build_partitions(instruction_stack, *inputs)
 
 
+@LogInputParamPickleSize
 @ray.remote
 def get_meta(partition: Table) -> PartitionMetadata:
     return PartitionMetadata.from_table(partition)
@@ -506,11 +547,6 @@ class SchedulerActor(Scheduler):
 
 def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]:
     """Run a PartitionTask and return the resulting list of partitions."""
-
-    import pickle
-
-    from loguru import logger
-
     ray_options: dict[str, Any] = {
         "num_returns": task.num_results + 1,
     }
@@ -526,7 +562,6 @@ def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]
         )
 
     build_remote = build_remote.options(**ray_options)
-    logger.debug(f"Size of instructions: {len(pickle.dumps(task.instructions)) / 1000}K")
     [metadatas_ref, *partitions] = build_remote.remote(task.instructions, *task.inputs)
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
     task.set_result([RayMaterializedResult(partition, metadatas_accessor, i) for i, partition in enumerate(partitions)])
