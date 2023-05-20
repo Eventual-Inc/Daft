@@ -19,7 +19,10 @@ class LogicalPartitionOpRunner:
     # TODO(charles): move to ExecutionStep
 
     def _handle_tabular_files_scan(
-        self, inputs: dict[int, Table], scan: TabularFilesScan, index: int | None = None
+        self,
+        inputs: dict[int, Table],
+        scan: TabularFilesScan,
+        index: int | None = None,
     ) -> Table:
         child_id = scan._children()[0].id()
         prev_partition = inputs[child_id]

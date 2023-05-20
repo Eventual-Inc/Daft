@@ -173,7 +173,14 @@ def join(
                 resource_request=ResourceRequest(
                     memory_bytes=next_left.partition_metadata().size_bytes + next_right.partition_metadata().size_bytes
                 ),
-            ).add_instruction(instruction=execution_step.Join(join))
+            ).add_instruction(
+                instruction=execution_step.Join(
+                    left_on=join._left_on,
+                    right_on=join._right_on,
+                    output_projection=join._output_projection,
+                    how=join._how,
+                )
+            )
             yield join_step
 
         # Exhausted all ready inputs; execute a single child step to get more join inputs.

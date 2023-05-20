@@ -512,7 +512,11 @@ class Aggregate(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class Join(SingleOutputInstruction):
-    logplan: logical_plan.Join
+
+    left_on: ExpressionsProjection
+    right_on: ExpressionsProjection
+    output_projection: ExpressionsProjection
+    how: logical_plan.JoinType
 
     def run(self, inputs: list[Table]) -> list[Table]:
         return self._join(inputs)
@@ -521,10 +525,10 @@ class Join(SingleOutputInstruction):
         [left, right] = inputs
         result = left.join(
             right,
-            left_on=self.logplan._left_on,
-            right_on=self.logplan._right_on,
-            output_projection=self.logplan._output_projection,
-            how=self.logplan._how.value,
+            left_on=self.left_on,
+            right_on=self.right_on,
+            output_projection=self.output_projection,
+            how=self.how.value,
         )
         return [result]
 
