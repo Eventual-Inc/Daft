@@ -21,13 +21,10 @@ jobs:
       matrix:
         python-version: ['3.7', '3.10']
         daft-runner: [py, ray]
-        include:
-        - python-version: 3.7
-          daft-runner: py
+        pyarrow-version: [6.0.1, 12.0]
+        exclude:
+        - daft-runner: ray
           pyarrow-version: 6.0.1
-        - python-version: 3.7
-          daft-runner: py
-          pyarrow-version: 12.0
 
     steps:
     - uses: actions/checkout@v3
