@@ -78,7 +78,7 @@ jobs:
         coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.xml
         cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.lcov
       env:
-        daft-runner: ${{ matrix.daft-runner }}
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v3
@@ -163,7 +163,7 @@ jobs:
         maturin develop --release
         pytest tests/integration/ --durations=50
       env:
-        daft-runner: ${{ matrix.daft-runner }}
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
