@@ -59,7 +59,7 @@ jobs:
         pip install -r requirements-dev.txt
 
     - name: Override pyarrow
-      if: ${{ matrix.pyarrow-version != '' }}
+      if: ${{ matrix.pyarrow-version }}
       run: pip install pyarrow==${{ matrix.pyarrow-version }}
 
     - name: Build library and Test with pytest
