@@ -20,11 +20,14 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.7', '3.10']
-        daft_runner: [py, ray]
+        daft-runner: [py, ray]
         include:
         - python-version: 3.7
-          daft_runner: py
-          pyarrow_version: 6.0.1
+          daft-runner: py
+          pyarrow-version: 6.0.1
+        - python-version: 3.7
+          daft-runner: py
+          pyarrow-version: 12.0
 
     steps:
     - uses: actions/checkout@v3
@@ -72,10 +75,10 @@ jobs:
         maturin develop
         mkdir -p report-output && pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
-        coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft_runner }}.xml
-        cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft_runner }}.lcov
+        coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.xml
+        cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.lcov
       env:
-        DAFT_RUNNER: ${{ matrix.daft_runner }}
+        daft-runner: ${{ matrix.daft-runner }}
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v3
@@ -110,7 +113,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.7']
-        daft_runner: [py, ray]
+        daft-runner: [py, ray]
     steps:
     - uses: actions/checkout@v3
     - uses: moonrepo/setup-rust@v0
@@ -160,7 +163,7 @@ jobs:
         maturin develop --release
         pytest tests/integration/ --durations=50
       env:
-        DAFT_RUNNER: ${{ matrix.daft_runner }}
+        daft-runner: ${{ matrix.daft-runner }}
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
