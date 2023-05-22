@@ -1,4 +1,8 @@
 # isort: dont-add-import: from __future__ import annotations
+#
+# This file uses strings for forward type annotations in public APIs,
+# in order to support runtime typechecking across different Python versions.
+# For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import pathlib
 from dataclasses import dataclass
