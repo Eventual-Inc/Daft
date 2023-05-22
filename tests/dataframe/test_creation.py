@@ -388,11 +388,9 @@ def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> N
         # which would make this test pass without the passed filesystem being used.
         fs = LocalFileSystem(skip_instance_cache=True)
         mock_cache = MagicMock(return_value=None)
-        with (
-            patch.object(fs, "info", wraps=fs.info) as mock_info,
-            patch.object(fs, "open", wraps=fs.open) as mock_open,
-            patch("daft.filesystem._get_fs_from_cache", mock_cache),
-        ):
+        with patch.object(fs, "info", wraps=fs.info) as mock_info, patch.object(
+            fs, "open", wraps=fs.open
+        ) as mock_open, patch("daft.filesystem._get_fs_from_cache", mock_cache):
             df = daft.read_csv(f.name, fs=fs)
             # Check that info() is called on the passed filesystem.
             mock_info.assert_called()
@@ -510,11 +508,9 @@ def test_create_dataframe_json_custom_fs(valid_data: list[dict[str, float]]) -> 
         # which would make this test pass without the passed filesystem being used.
         fs = LocalFileSystem(skip_instance_cache=True)
         mock_cache = MagicMock(return_value=None)
-        with (
-            patch.object(fs, "info", wraps=fs.info) as mock_info,
-            patch.object(fs, "open", wraps=fs.open) as mock_open,
-            patch("daft.filesystem._get_fs_from_cache", mock_cache),
-        ):
+        with patch.object(fs, "info", wraps=fs.info) as mock_info, patch.object(
+            fs, "open", wraps=fs.open
+        ) as mock_open, patch("daft.filesystem._get_fs_from_cache", mock_cache):
             df = daft.read_json(f.name, fs=fs)
 
             # Check that info() is called on the passed filesystem.
@@ -586,11 +582,9 @@ def test_create_dataframe_parquet_custom_fs(valid_data: list[dict[str, float]]) 
         # which would make this test pass without the passed filesystem being used.
         fs = LocalFileSystem(skip_instance_cache=True)
         mock_cache = MagicMock(return_value=None)
-        with (
-            patch.object(fs, "info", wraps=fs.info) as mock_info,
-            patch.object(fs, "open", wraps=fs.open) as mock_open,
-            patch("daft.filesystem._get_fs_from_cache", mock_cache),
-        ):
+        with patch.object(fs, "info", wraps=fs.info) as mock_info, patch.object(
+            fs, "open", wraps=fs.open
+        ) as mock_open, patch("daft.filesystem._get_fs_from_cache", mock_cache):
             df = daft.read_parquet(f.name, fs=fs)
 
             # Check that info() is called on the passed filesystem.
