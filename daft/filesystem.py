@@ -18,6 +18,7 @@ import fsspec
 import pyarrow as pa
 from fsspec.implementations.http import HTTPFileSystem
 from fsspec.registry import get_filesystem_class
+from loguru import logger
 from pyarrow.fs import (
     FileSystem,
     FSSpecHandler,
@@ -62,8 +63,6 @@ def _get_s3fs_kwargs() -> dict[str, Any]:
     try:
         import botocore.session
     except ImportError:
-        from loguru import logger
-
         logger.error(
             "Error when importing botocore. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
         )
@@ -74,8 +73,6 @@ def _get_s3fs_kwargs() -> dict[str, Any]:
     # If accessing S3 without credentials, use anonymous access: https://github.com/Eventual-Inc/Daft/issues/503
     credentials_available = botocore.session.get_session().get_credentials() is not None
     if not credentials_available:
-        from loguru import logger
-
         logger.warning(
             "AWS credentials not found - using anonymous access to S3 which will fail if the bucket you are accessing is not a public bucket. See boto3 documentation for more details on configuring your AWS credentials: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html"
         )
@@ -93,8 +90,6 @@ def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
     try:
         klass = fsspec.get_filesystem_class(protocol)
     except ImportError:
-        from loguru import logger
-
         logger.error(
             f"Error when importing dependencies for accessing data with: {protocol}. Please ensure that getdaft was installed with the appropriate extra dependencies (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
         )
@@ -221,8 +216,6 @@ def _resolve_path_and_filesystem(
             None, the provided filesystem will still be validated against the
             filesystem inferred from the provided path to ensure compatibility.
     """
-    from loguru import logger
-
     # Use pyarrow utility to resolve filesystem and this particular path.
     # If a non-None filesystem is provided to this utility, it will ensure that
     # it is compatible with the provided path.
