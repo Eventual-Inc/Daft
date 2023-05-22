@@ -61,7 +61,7 @@ git-fetch-with-cli = true
 [package]
 edition = "2021"
 name = "daft"
-version = "0.1.1"
+version = "0.1.2"
 
 [profile.dev]
 overflow-checks = false
