@@ -4,7 +4,6 @@ import contextlib
 import pathlib
 from collections.abc import Generator
 from typing import IO, Union
-from urllib.parse import urlparse
 from uuid import uuid4
 
 import fsspec
@@ -13,9 +12,10 @@ from pyarrow import csv as pacsv
 from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
+from pyarrow.fs import FileSystem
 
 from daft.expressions import ExpressionsProjection
-from daft.filesystem import get_filesystem_from_path
+from daft.filesystem import _resolve_paths_and_filesystem
 from daft.runners.partitioning import (
     vPartitionParseCSVOptions,
     vPartitionReadOptions,
@@ -26,33 +26,23 @@ from daft.table import Table
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
 
+# The number of rows to read per batch. This is sized to generate 10MiB batches
+# for rows about 1KiB in size.
+_PARQUET_FRAGMENT_BATCH_SIZE = 100000
+
+
 @contextlib.contextmanager
-def _get_file(
+def _open_stream(
     file: FileInput,
-    fs: fsspec.AbstractFileSystem | None,
-) -> Generator[FileInput, None, None]:
-    """Helper method to return an appropriate file handle
-
-    1. If `fs` is not None, we fall-back onto the provided fsspec FileSystem and return an fsspec file handle
-    2. If `file` is a pathlib, we stringify it
-    3. If `file` is a string, we leave it unmodified
-    """
-    if isinstance(file, pathlib.Path):
-        file = str(file)
-
-    if isinstance(file, str):
-        # Use provided fsspec filesystem, slow but necessary for backward-compatibility
-        if fs is not None:
-            with fs.open(file, compression="infer") as f:
-                yield f
-        # Corner-case to handle `http` filepaths using fsspec because PyArrow cannot handle it
-        elif urlparse(file).scheme in {"http", "https"}:
-            fsspec_fs = get_filesystem_from_path(file)
-            with fsspec_fs.open(file, compression="infer") as f:
-                yield f
-        # Safely yield a string path, which can be correctly interpreted by PyArrow filesystem
-        else:
-            yield file
+    fs: FileSystem | fsspec.AbstractFileSystem | None,
+) -> Generator[pa.NativeFile, None, None]:
+    """Opens the provided file for reading, yield a pyarrow file handle."""
+    if isinstance(file, (pathlib.Path, str)):
+        paths, fs = _resolve_paths_and_filesystem(file, fs)
+        assert len(paths) == 1
+        path = paths[0]
+        with fs.open_input_stream(path) as f:
+            yield f
     else:
         yield file
 
@@ -73,7 +63,7 @@ def read_json(
     Returns:
         Table: Parsed Table from JSON
     """
-    with _get_file(file, fs) as f:
+    with _open_stream(file, fs) as f:
         table = pajson.read_json(f)
 
     if read_options.column_names is not None:
@@ -102,28 +92,35 @@ def read_parquet(
     Returns:
         Table: Parsed Table from Parquet
     """
-    with _get_file(file, fs) as f:
-        pqf = papq.ParquetFile(f)
-        # If no rows required, we manually construct an empty table with the right schema
-        if read_options.num_rows == 0:
-            arrow_schema = pqf.metadata.schema.to_arrow_schema()
-            table = pa.Table.from_arrays([pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema)
-        elif read_options.num_rows is not None:
-            # Read the file by rowgroup.
-            tables = []
-            rows_read = 0
-            for i in range(pqf.metadata.num_row_groups):
-                tables.append(pqf.read_row_group(i, columns=read_options.column_names))
-                rows_read += len(tables[i])
+    if not isinstance(file, (str, pathlib.Path)):
+        # BytesIO path.
+        return Table.from_arrow(papq.read_table(file, columns=read_options.column_names))
+
+    paths, fs = _resolve_paths_and_filesystem(file, fs)
+    assert len(paths) == 1
+    path = paths[0]
+    fragment = pads.ParquetFileFormat().make_fragment(path, filesystem=fs)
+    schema = fragment.metadata.schema.to_arrow_schema()
+    # If no rows required, we manually construct an empty table with the right schema
+    if read_options.num_rows == 0:
+        table = pa.Table.from_arrays([pa.array([], type=field.type) for field in schema], schema=schema)
+    elif read_options.num_rows is not None:
+        # Read the file by row group.
+        frags = fragment.split_by_row_group()
+        tables = []
+        rows_read = 0
+        for frag in frags:
+            for batch in frag.to_batches(columns=read_options.column_names, batch_size=_PARQUET_FRAGMENT_BATCH_SIZE):
+                tables.append(pa.Table.from_batches([batch], schema=schema))
+                rows_read += len(batch)
                 if rows_read >= read_options.num_rows:
                     break
-            table = pa.concat_tables(tables)
-            table = table.slice(length=read_options.num_rows)
-        else:
-            table = papq.read_table(
-                f,
-                columns=read_options.column_names,
-            )
+            if rows_read >= read_options.num_rows:
+                break
+        table = pa.concat_tables(tables)
+        table = table.slice(length=read_options.num_rows)
+    else:
+        table = fragment.to_table(columns=read_options.column_names)
 
     return Table.from_arrow(table)
 
@@ -158,7 +155,7 @@ def read_csv(
     skip_header_row = full_column_names is not None and csv_options.has_headers
     pyarrow_skip_rows_after_names = (1 if skip_header_row else 0) + csv_options.skip_rows_after_header
 
-    with _get_file(file, fs) as f:
+    with _open_stream(file, fs) as f:
         table = pacsv.read_csv(
             f,
             parse_options=pacsv.ParseOptions(
