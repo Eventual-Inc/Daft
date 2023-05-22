@@ -234,15 +234,7 @@ def _resolve_path_and_filesystem(
     try:
         resolved_filesystem, resolved_path = _resolve_filesystem_and_path(path, filesystem)
     except pa.lib.ArrowInvalid as e:
-        if "Cannot parse URI" in str(e):
-            # We try resolving the path with proper URL encoding.
-            encoded_path = _encode_url(path)
-            if encoded_path == path:
-                # If encoding the path is a no-op, no use in retrying resolution, so we reraise.
-                raise
-            resolved_filesystem, resolved_path = _resolve_filesystem_and_path(encoded_path, filesystem)
-            resolved_path = _decode_url(resolved_path)
-        elif "Unrecognized filesystem type in URI" in str(e):
+        if "Unrecognized filesystem type in URI" in str(e):
             # Fall back to fsspec.
             protocol = get_protocol_from_path(path)
             logger.debug(f"pyarrow doesn't support paths with protocol {protocol}, falling back to fsspec.")
@@ -275,54 +267,13 @@ def _is_http_fs(fs: FileSystem) -> bool:
     )
 
 
-def _encode_url(path):
-    return urllib.parse.quote(path, safe="/:")
-
-
-def _decode_url(path):
-    return urllib.parse.unquote(path)
-
-
 def _unwrap_protocol(path):
     """
     Slice off any protocol prefixes on path.
     """
-    if sys.platform == "win32" and _is_local_windows_path(path):
-        # Represent as posix path such that downstream functions properly handle it.
-        # This is executed when 'file://' is NOT included in the path.
-        return pathlib.Path(path).as_posix()
-
     parsed = urllib.parse.urlparse(path, allow_fragments=False)  # support '#' in path
     query = "?" + parsed.query if parsed.query else ""  # support '?' in path
-    netloc = parsed.netloc
-    if parsed.scheme == "s3" and "@" in parsed.netloc:
-        # If the path contains an @, it is assumed to be an anonymous
-        # credentialed path, and we need to strip off the credentials.
-        netloc = parsed.netloc.split("@")[-1]
-
-    parsed_path = parsed.path
-    # urlparse prepends the path with a '/'. This does not work on Windows
-    # so if this is the case strip the leading slash.
-    if (
-        sys.platform == "win32"
-        and not netloc
-        and len(parsed_path) >= 3
-        and parsed_path[0] == "/"  # The problematic leading slash
-        and parsed_path[1].isalpha()  # Ensure it is a drive letter.
-        and parsed_path[2:4] in (":", ":/")
-    ):
-        parsed_path = parsed_path[1:]
-
-    return netloc + parsed_path + query
-
-
-def _is_local_windows_path(path: str) -> bool:
-    """Determines if path is a Windows file-system location."""
-    if len(path) >= 1 and path[0] == "\\":
-        return True
-    if len(path) >= 3 and path[1] == ":" and (path[2] == "/" or path[2] == "\\") and path[0].isalpha():
-        return True
-    return False
+    return parsed.netloc + parsed.path + query
 
 
 ###
