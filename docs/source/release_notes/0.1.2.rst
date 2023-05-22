@@ -1,0 +1,53 @@
+Daft 0.1.2 Release Notes
+========================
+
+The Daft 0.1.2 release features performance improvements, bugfixes and some of our first Daft logical types!
+
+
+New Features
+------------
+
+Extension Types for Ray Runner and Embedding Logical Type
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Adds our first "Logical Type": Embeddings!
+
+An Embedding is a "Logical Type" that encompasses a Fixed Size List. It is common in applications for Machine Learning and AI.
+
+See: `#929 <https://github.com/Eventual-Inc/Daft/pull/929>`_
+
+Enhancements
+------------
+
+* Use PyArrow filesystem for tabular file reads `#939 <https://github.com/Eventual-Inc/Daft/pull/939>`_
+* \[I/O\] Port to `pyarrow` filesystems by default. `#942 <https://github.com/Eventual-Inc/Daft/pull/942>`_
+* Memoize ray.get for batch metadata lookup `#937 <https://github.com/Eventual-Inc/Daft/pull/937>`_
+* \[I/O\] Expose user-provided fsspec filesystem arg in read APIs. `#931 <https://github.com/Eventual-Inc/Daft/pull/931>`_
+* Introduce Logical Arrays and SeriesLike Trait `#920 <https://github.com/Eventual-Inc/Daft/pull/920>`_
+* \[Extension Types\] Add support for cross-lang extension types. `#899 <https://github.com/Eventual-Inc/Daft/pull/899>`_
+
+
+Bug Fixes
+---------
+
+* fix concats for extension array for old versions of pyarrow `#944 <https://github.com/Eventual-Inc/Daft/pull/944>`_
+
+Build Changes
+-------------
+
+* \[ci\] enable pyrunner for 310 `#946 <https://github.com/Eventual-Inc/Daft/pull/946>`_
+* Add Pyarrow 6.0 in matrix for CI testing `#945 <https://github.com/Eventual-Inc/Daft/pull/945>`_
+* Update requirement of tabulate to \>=0.9.0 `#940 <https://github.com/Eventual-Inc/Daft/pull/940>`_
+* unpin numpy for 3.7 to get dependabot to stop complaining `#938 <https://github.com/Eventual-Inc/Daft/pull/938>`_
+* Bump slackapi/slack-github-action from 1.23.0 to 1.24.0 `#936 <https:github.com/Eventual-Inc/Daft/pull/936>`_
+* Bump hypothesis from 6.75.2 to 6.75.3 `#928 <https:github.com/Eventual-Inc/Daft/pull/928>`_
+* Bump dask from 2023.4.1 to 2023.5.0 `#927 <https:github.com/Eventual-Inc/Daft/pull/927>`_
+* Bump serde from 1.0.162 to 1.0.163 `#921 <https:github.com/Eventual-Inc/Daft/pull/921>`_
+
+
+Documentation
+-------------
+
+* Add comment to explain \_\_future\_\_ annotations isort rule in dataframe.py `#947 <https://github.com/Eventual-Inc/Daft/pull/947>`_
+* \[Embedding tutorial\] Suggest running on GPU cluster `#932 <https://github.com/Eventual-Inc/Daft/pull/932>`_
+* Embeddings tutorial `#930 <https://github.com/Eventual-Inc/Daft/pull/930>`_
