@@ -360,13 +360,17 @@ def fanout_pipeline(instruction_stack: list[Instruction], *inputs: Table) -> lis
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def reduce_pipeline(instruction_stack: list[Instruction], *inputs: Table) -> list[list[PartitionMetadata] | Table]:
-    return build_partitions(instruction_stack, *inputs)
+def reduce_pipeline(instruction_stack: list[Instruction], inputs: list) -> list[list[PartitionMetadata] | Table]:
+    import ray
+
+    return build_partitions(instruction_stack, *ray.get(inputs))
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def reduce_and_fanout(instruction_stack: list[Instruction], *inputs: Table) -> list[list[PartitionMetadata] | Table]:
-    return build_partitions(instruction_stack, *inputs)
+def reduce_and_fanout(instruction_stack: list[Instruction], inputs: list) -> list[list[PartitionMetadata] | Table]:
+    import ray
+
+    return build_partitions(instruction_stack, *ray.get(inputs))
 
 
 @ray.remote
@@ -401,7 +405,7 @@ class Scheduler:
 
         # This default is a vacuous limit for now.
         # The option exists because Ray clusters anecdotally sometimes choke when there are too many object refs in flight.
-        self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 10000.0
+        self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 1000000.0
 
         # Theoretically, this should be 1.0: we should batch enough tasks for all the cores in a single dispatch;
         # otherwise, we begin dispatching downstream dependencies (that are not immediately executable)
@@ -515,13 +519,16 @@ def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]
 
     if isinstance(task.instructions[0], ReduceInstruction):
         build_remote = reduce_and_fanout if isinstance(task.instructions[-1], FanoutInstruction) else reduce_pipeline
+        build_remote = build_remote.options(**ray_options)
+        [metadatas_ref, *partitions] = build_remote.remote(task.instructions, task.inputs)
+
     else:
         build_remote = (
             fanout_pipeline if isinstance(task.instructions[-1], FanoutInstruction) else single_partition_pipeline
         )
+        build_remote = build_remote.options(**ray_options)
+        [metadatas_ref, *partitions] = build_remote.remote(task.instructions, *task.inputs)
 
-    build_remote = build_remote.options(**ray_options)
-    [metadatas_ref, *partitions] = build_remote.remote(task.instructions, *task.inputs)
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
     task.set_result([RayMaterializedResult(partition, metadatas_accessor, i) for i, partition in enumerate(partitions)])
 
