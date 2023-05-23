@@ -99,28 +99,28 @@ def read_parquet(
     paths, fs = _resolve_paths_and_filesystem(file, fs)
     assert len(paths) == 1
     path = paths[0]
-    fragment = pads.ParquetFileFormat().make_fragment(path, filesystem=fs)
-    schema = fragment.metadata.schema.to_arrow_schema()
+    pqf = papq.ParquetFile(path, filesystem=fs)
     # If no rows required, we manually construct an empty table with the right schema
     if read_options.num_rows == 0:
-        table = pa.Table.from_arrays([pa.array([], type=field.type) for field in schema], schema=schema)
+        arrow_schema = pqf.metadata.schema.to_arrow_schema()
+        table = pa.Table.from_arrays([pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema)
     elif read_options.num_rows is not None:
-        # Read the file by row group.
-        frags = fragment.split_by_row_group()
+        # Read the file by rowgroup.
         tables = []
         rows_read = 0
-        for frag in frags:
-            for batch in frag.to_batches(columns=read_options.column_names, batch_size=_PARQUET_FRAGMENT_BATCH_SIZE):
-                tables.append(pa.Table.from_batches([batch], schema=schema))
-                rows_read += len(batch)
-                if rows_read >= read_options.num_rows:
-                    break
+        for i in range(pqf.metadata.num_row_groups):
+            tables.append(pqf.read_row_group(i, columns=read_options.column_names))
+            rows_read += len(tables[i])
             if rows_read >= read_options.num_rows:
                 break
         table = pa.concat_tables(tables)
         table = table.slice(length=read_options.num_rows)
     else:
-        table = fragment.to_table(columns=read_options.column_names)
+        table = papq.read_table(
+            path,
+            columns=read_options.column_names,
+            filesystem=fs,
+        )
 
     return Table.from_arrow(table)
 
