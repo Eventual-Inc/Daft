@@ -426,7 +426,9 @@ class Scheduler:
         # Note: For autoscaling clusters, we will probably want to query cores dynamically.
         # Keep in mind this call takes about 0.3ms.
         cores = int(ray.cluster_resources()["CPU"]) - self.reserved_cores
-        batch_dispatch_size = int(cores * self.batch_dispatch_coeff) or 1
+        int(cores * self.batch_dispatch_coeff) or 1
+
+        max_inflight_tasks = cores + 180
 
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
@@ -438,15 +440,17 @@ class Scheduler:
             f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
         )
         with profiler(profile_filename):
-            while True:
-                while (
-                    len(inflight_tasks) < self.max_tasks_per_core * cores
-                    and len(inflight_ref_to_task) < self.max_refs_per_core * cores
-                ):
+            while True:  # Loop: Dispatch -> await.
+
+                while True:  # Loop: Dispatch (in batches).
+                    dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
+                    if dispatches_allowed <= 0:
+                        break
+
                     # Get the next batch of tasks to dispatch.
                     tasks_to_dispatch = []
                     try:
-                        for _ in range(batch_dispatch_size):
+                        for _ in range(min(cores, dispatches_allowed)):
                             next_step = next(phys_plan)
 
                             # If this task is a no-op, just run it locally immediately.
@@ -484,21 +488,41 @@ class Scheduler:
                         return result_partitions
 
                 # Await a batch of tasks.
-                for i in range(min(batch_dispatch_size, len(inflight_tasks))):
-                    dispatch = datetime.now()
-                    [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
-                    task_id = inflight_ref_to_task[ready]
-                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
+                # (Awaits the next task, and then the next batch of tasks within 10ms.)
 
-                    # Mark the entire task associated with the result as done.
-                    task = inflight_tasks[task_id]
-                    if isinstance(task, SingleOutputPartitionTask):
-                        del inflight_ref_to_task[ready]
-                    elif isinstance(task, MultiOutputPartitionTask):
-                        for partition in task.partitions():
-                            del inflight_ref_to_task[partition]
+                dispatch = datetime.now()
+                completed_task_ids = []
+                for wait_for in ("next_one", "next_batch"):
+                    if wait_for == "next_one":
+                        num_returns = 1
+                        timeout = None
+                    elif wait_for == "next_batch":
+                        num_returns == len(inflight_ref_to_task)
+                        timeout = 0.01  # 10ms
 
-                    del inflight_tasks[task_id]
+                    if num_returns == 0:
+                        break
+
+                    readies, _ = ray.wait(
+                        list(inflight_ref_to_task.keys()), num_returns=num_returns, timeout=timeout, fetch_local=False
+                    )
+
+                    for ready in readies:
+                        task_id = inflight_ref_to_task[ready]
+                        completed_task_ids.append(task_id)
+                        # Mark the entire task associated with the result as done.
+                        task = inflight_tasks[task_id]
+                        if isinstance(task, SingleOutputPartitionTask):
+                            del inflight_ref_to_task[ready]
+                        elif isinstance(task, MultiOutputPartitionTask):
+                            for partition in task.partitions():
+                                del inflight_ref_to_task[partition]
+
+                        del inflight_tasks[task_id]
+
+                logger.debug(
+                    f"+{(datetime.now() - dispatch).total_seconds()}s to await results from {completed_task_ids}"
+                )
 
 
 @ray.remote(num_cpus=1)
