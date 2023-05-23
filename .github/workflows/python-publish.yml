@@ -145,7 +145,7 @@ jobs:
 
     - name: Install anaconda client
       shell: bash -el {0}
-      run: conda install -q -y anaconda-client
+      run: conda install -q -y anaconda-client "urllib3<2.0"
 
     - name: Upload wheels to anaconda nightly
       if: ${{ success() && (env.IS_SCHEDULE_DISPATCH == 'true' || env.IS_PUSH == 'true') }}
