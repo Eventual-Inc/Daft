@@ -94,7 +94,8 @@ def read_parquet(
     paths, fs = _resolve_paths_and_filesystem(file, fs)
     assert len(paths) == 1
     path = paths[0]
-    pqf = papq.ParquetFile(path, filesystem=fs)
+    f = fs.open_input_file(path)
+    pqf = papq.ParquetFile(f)
     # If no rows required, we manually construct an empty table with the right schema
     if read_options.num_rows == 0:
         arrow_schema = pqf.metadata.schema.to_arrow_schema()
@@ -112,9 +113,8 @@ def read_parquet(
         table = table.slice(length=read_options.num_rows)
     else:
         table = papq.read_table(
-            path,
+            f,
             columns=read_options.column_names,
-            filesystem=fs,
         )
 
     return Table.from_arrow(table)
