@@ -187,13 +187,14 @@ def test_from_ray_dataset_tensor(n_partitions: int):
     ds = ds.map(lambda i: {"int": i, "np": np.ones((3, 3))}).repartition(n_partitions)
 
     df = daft.from_ray_dataset(ds)
-    np.testing.assert_equal(
-        freeze(df.to_pydict()),
-        freeze({
-            "int": list(range(8)),
-            "np": [np.ones((3, 3)) for i in range(8)],
-        }),
-    )
+    out = df.to_pydict()
+    out["np"] = [arr.tolist() for arr in out["np"]]
+    expected = {
+        "int": list(range(8)),
+        "np": [np.ones((3, 3)) for i in range(8)],
+    }
+    expected["np"] = [arr.tolist() for arr in expected["np"]]
+    assert freeze(out) == freeze(expected)
 
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
