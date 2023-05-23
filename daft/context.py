@@ -25,9 +25,7 @@ class _PyRunnerConfig(_RunnerConfig):
 class _RayRunnerConfig(_RunnerConfig):
     name = "ray"
     address: str | None
-    max_tasks_per_core: float | None
-    max_refs_per_core: float | None
-    batch_dispatch_coeff: float | None
+    max_task_backlog: int | None
 
 
 def _get_runner_config_from_env() -> _RunnerConfig:
@@ -40,14 +38,10 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     """
     runner = os.getenv("DAFT_RUNNER") or "PY"
     if runner.upper() == "RAY":
-        tasks_per_core_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_TASKS_PER_CORE")
-        refs_per_core_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_REFS_PER_CORE")
-        batch_dispatch_env = os.getenv("DAFT_DEVELOPER_RAY_BATCH_DISPATCH_COEFF")
+        task_backlog_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG")
         return _RayRunnerConfig(
             address=os.getenv("DAFT_RAY_ADDRESS"),
-            max_tasks_per_core=float(tasks_per_core_env) if tasks_per_core_env else None,
-            max_refs_per_core=float(refs_per_core_env) if refs_per_core_env else None,
-            batch_dispatch_coeff=float(batch_dispatch_env) if batch_dispatch_env else None,
+            max_task_backlog=int(task_backlog_env) if task_backlog_env else None,
         )
     elif runner.upper() == "PY":
         use_thread_pool_env = os.getenv("DAFT_DEVELOPER_USE_THREAD_POOL")
@@ -78,9 +72,7 @@ class DaftContext:
             assert isinstance(self.runner_config, _RayRunnerConfig)
             _RUNNER = RayRunner(
                 address=self.runner_config.address,
-                max_tasks_per_core=self.runner_config.max_tasks_per_core,
-                max_refs_per_core=self.runner_config.max_refs_per_core,
-                batch_dispatch_coeff=self.runner_config.batch_dispatch_coeff,
+                max_task_backlog=self.runner_config.max_task_backlog,
             )
         elif self.runner_config.name == "py":
             from daft.runners.pyrunner import PyRunner
@@ -113,9 +105,7 @@ def get_context() -> DaftContext:
 def set_runner_ray(
     address: str | None = None,
     noop_if_initialized: bool = False,
-    max_tasks_per_core: float | None = None,
-    max_refs_per_core: float | None = None,
-    batch_dispatch_coeff: float | None = None,
+    max_task_backlog: int | None = None,
 ) -> DaftContext:
     """Set the runner for executing Daft dataframes to a Ray cluster
 
@@ -147,9 +137,7 @@ def set_runner_ray(
         _DaftContext,
         runner_config=_RayRunnerConfig(
             address=address,
-            max_tasks_per_core=max_tasks_per_core,
-            max_refs_per_core=max_refs_per_core,
-            batch_dispatch_coeff=batch_dispatch_coeff,
+            max_task_backlog=max_task_backlog,
         ),
         disallow_set_runner=True,
     )
