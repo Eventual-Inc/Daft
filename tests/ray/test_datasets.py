@@ -188,11 +188,11 @@ def test_from_ray_dataset_tensor(n_partitions: int):
 
     df = daft.from_ray_dataset(ds)
     np.testing.assert_equal(
-        df.to_pydict(),
-        {
+        freeze(df.to_pydict()),
+        freeze({
             "int": list(range(8)),
             "np": [np.ones((3, 3)) for i in range(8)],
-        },
+        }),
     )
 
 
