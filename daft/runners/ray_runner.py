@@ -478,7 +478,7 @@ class Scheduler:
                         num_returns = 1
                         timeout = None
                     elif wait_for == "next_batch":
-                        num_returns == len(inflight_ref_to_task)
+                        num_returns = len(inflight_ref_to_task)
                         timeout = 0.01  # 10ms
 
                     if num_returns == 0:
@@ -489,17 +489,18 @@ class Scheduler:
                     )
 
                     for ready in readies:
-                        task_id = inflight_ref_to_task[ready]
-                        completed_task_ids.append(task_id)
-                        # Mark the entire task associated with the result as done.
-                        task = inflight_tasks[task_id]
-                        if isinstance(task, SingleOutputPartitionTask):
-                            del inflight_ref_to_task[ready]
-                        elif isinstance(task, MultiOutputPartitionTask):
-                            for partition in task.partitions():
-                                del inflight_ref_to_task[partition]
+                        if ready in inflight_ref_to_task:
+                            task_id = inflight_ref_to_task[ready]
+                            completed_task_ids.append(task_id)
+                            # Mark the entire task associated with the result as done.
+                            task = inflight_tasks[task_id]
+                            if isinstance(task, SingleOutputPartitionTask):
+                                del inflight_ref_to_task[ready]
+                            elif isinstance(task, MultiOutputPartitionTask):
+                                for partition in task.partitions():
+                                    del inflight_ref_to_task[partition]
 
-                        del inflight_tasks[task_id]
+                            del inflight_tasks[task_id]
 
                 logger.debug(
                     f"+{(datetime.now() - dispatch).total_seconds()}s to await results from {completed_task_ids}"
