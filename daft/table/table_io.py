@@ -26,11 +26,6 @@ from daft.table import Table
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
 
-# The number of rows to read per batch. This is sized to generate 10MiB batches
-# for rows about 1KiB in size.
-_PARQUET_FRAGMENT_BATCH_SIZE = 100000
-
-
 @contextlib.contextmanager
 def _open_stream(
     file: FileInput,
