@@ -101,16 +101,17 @@ def read_parquet(
         arrow_schema = pqf.metadata.schema.to_arrow_schema()
         table = pa.Table.from_arrays([pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema)
     elif read_options.num_rows is not None:
-        # Read the file by rowgroup.
-        tables = []
-        rows_read = 0
+        # Only read the required row groups.
+        rows_needed = read_options.num_rows
         for i in range(pqf.metadata.num_row_groups):
-            tables.append(pqf.read_row_group(i, columns=read_options.column_names))
-            rows_read += len(tables[i])
-            if rows_read >= read_options.num_rows:
+            row_group_meta = pqf.metadata.row_group(i)
+            rows_needed -= row_group_meta.num_rows
+            if rows_needed <= 0:
                 break
-        table = pa.concat_tables(tables)
-        table = table.slice(length=read_options.num_rows)
+        table = pqf.read_row_groups(list(range(i + 1)), columns=read_options.column_names)
+        if rows_needed < 0:
+            # Need to truncate the table to the row limit.
+            table = table.slice(length=read_options.num_rows)
     else:
         table = papq.read_table(
             f,
