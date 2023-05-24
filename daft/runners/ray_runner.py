@@ -379,38 +379,20 @@ def get_meta(partition: Table) -> PartitionMetadata:
 
 
 class Scheduler:
-    def __init__(
-        self,
-        max_tasks_per_core: float | None,
-        max_refs_per_core: float | None,
-        batch_dispatch_coeff: float | None,
-    ) -> None:
+    def __init__(self, max_task_backlog: int | None) -> None:
         """
-        max_tasks_per_core:
-            Maximum allowed inflight tasks per core.
-        max_refs_per_core:
-            Maximum allowed inflight objectrefs per core.
-        batch_dispatch_coeff:
-            When dispatching or awaiting tasks, do it in batches of size coeff * number of cores.
-            If 0, batching is disabled (i.e. batch size is set to 1).
+        max_task_backlog: Max number of inflight tasks waiting for cores.
         """
-        # The default values set below were determined in empirical benchmarking to deliver the best performance
-        # (runtime, data locality, memory pressure) across different configurations.
-        # They differ from the original intended values of the scheduler; the original values are discussed in comments.
 
-        # Theoretically, this should be around 2;
-        # higher values increase the likelihood of dispatching redundant tasks,
-        # and lower values reduce the cluster's ability to pipeline tasks and introduces worker idling during scheduling.
-        self.max_tasks_per_core = max_tasks_per_core if max_tasks_per_core is not None else 4.0
-
-        # This default is a vacuous limit for now.
-        # The option exists because Ray clusters anecdotally sometimes choke when there are too many object refs in flight.
-        self.max_refs_per_core = max_refs_per_core if max_refs_per_core is not None else 1000000.0
-
-        # Theoretically, this should be 1.0: we should batch enough tasks for all the cores in a single dispatch;
-        # otherwise, we begin dispatching downstream dependencies (that are not immediately executable)
-        # before saturating all the cores (and their pipelines).
-        self.batch_dispatch_coeff = batch_dispatch_coeff if batch_dispatch_coeff is not None else 1.0
+        # As of writing, Ray does not seem to be guaranteed to support
+        # more than this number of pending scheduling tasks.
+        # Ray has an internal proto that reports backlogged tasks [1],
+        # and each task proto can be up to 10 MiB [2],
+        # and protobufs have a max size of 2GB (from errors empirically encountered).
+        #
+        # https://github.com/ray-project/ray/blob/8427de2776717b30086c277e5e8e140316dbd193/src/ray/protobuf/node_manager.proto#L32
+        # https://github.com/ray-project/ray/blob/fb95f03f05981f232aa7a9073dd2c2512729e99a/src/ray/common/ray_config_def.h#LL513C1-L513C1
+        self.max_task_backlog = max_task_backlog if max_task_backlog is not None else 180
 
         self.reserved_cores = 0
 
@@ -426,7 +408,8 @@ class Scheduler:
         # Note: For autoscaling clusters, we will probably want to query cores dynamically.
         # Keep in mind this call takes about 0.3ms.
         cores = int(ray.cluster_resources()["CPU"]) - self.reserved_cores
-        batch_dispatch_size = int(cores * self.batch_dispatch_coeff) or 1
+
+        max_inflight_tasks = cores + self.max_task_backlog
 
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
@@ -438,15 +421,17 @@ class Scheduler:
             f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
         )
         with profiler(profile_filename):
-            while True:
-                while (
-                    len(inflight_tasks) < self.max_tasks_per_core * cores
-                    and len(inflight_ref_to_task) < self.max_refs_per_core * cores
-                ):
+            while True:  # Loop: Dispatch -> await.
+
+                while True:  # Loop: Dispatch (in batches).
+                    dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
+                    if dispatches_allowed <= 0:
+                        break
+
                     # Get the next batch of tasks to dispatch.
                     tasks_to_dispatch = []
                     try:
-                        for _ in range(batch_dispatch_size):
+                        for _ in range(min(cores, dispatches_allowed)):
                             next_step = next(phys_plan)
 
                             # If this task is a no-op, just run it locally immediately.
@@ -484,21 +469,42 @@ class Scheduler:
                         return result_partitions
 
                 # Await a batch of tasks.
-                for i in range(min(batch_dispatch_size, len(inflight_tasks))):
-                    dispatch = datetime.now()
-                    [ready], _ = ray.wait(list(inflight_ref_to_task.keys()), fetch_local=False)
-                    task_id = inflight_ref_to_task[ready]
-                    logger.debug(f"+{(datetime.now() - dispatch).total_seconds()}s to await a result from {task_id}")
+                # (Awaits the next task, and then the next batch of tasks within 10ms.)
 
-                    # Mark the entire task associated with the result as done.
-                    task = inflight_tasks[task_id]
-                    if isinstance(task, SingleOutputPartitionTask):
-                        del inflight_ref_to_task[ready]
-                    elif isinstance(task, MultiOutputPartitionTask):
-                        for partition in task.partitions():
-                            del inflight_ref_to_task[partition]
+                dispatch = datetime.now()
+                completed_task_ids = []
+                for wait_for in ("next_one", "next_batch"):
+                    if wait_for == "next_one":
+                        num_returns = 1
+                        timeout = None
+                    elif wait_for == "next_batch":
+                        num_returns = len(inflight_ref_to_task)
+                        timeout = 0.01  # 10ms
 
-                    del inflight_tasks[task_id]
+                    if num_returns == 0:
+                        break
+
+                    readies, _ = ray.wait(
+                        list(inflight_ref_to_task.keys()), num_returns=num_returns, timeout=timeout, fetch_local=False
+                    )
+
+                    for ready in readies:
+                        if ready in inflight_ref_to_task:
+                            task_id = inflight_ref_to_task[ready]
+                            completed_task_ids.append(task_id)
+                            # Mark the entire task associated with the result as done.
+                            task = inflight_tasks[task_id]
+                            if isinstance(task, SingleOutputPartitionTask):
+                                del inflight_ref_to_task[ready]
+                            elif isinstance(task, MultiOutputPartitionTask):
+                                for partition in task.partitions():
+                                    del inflight_ref_to_task[partition]
+
+                            del inflight_tasks[task_id]
+
+                logger.debug(
+                    f"+{(datetime.now() - dispatch).total_seconds()}s to await results from {completed_task_ids}"
+                )
 
 
 @ray.remote(num_cpus=1)
@@ -539,9 +545,7 @@ class RayRunner(Runner):
     def __init__(
         self,
         address: str | None,
-        max_tasks_per_core: float | None,
-        max_refs_per_core: float | None,
-        batch_dispatch_coeff: float | None,
+        max_task_backlog: int | None,
     ) -> None:
         super().__init__()
         if ray.is_initialized():
@@ -571,15 +575,11 @@ class RayRunner(Runner):
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             # Run scheduler remotely if the cluster is connected remotely.
             self.scheduler_actor = SchedulerActor.remote(  # type: ignore
-                max_tasks_per_core=max_tasks_per_core,
-                max_refs_per_core=max_refs_per_core,
-                batch_dispatch_coeff=batch_dispatch_coeff,
+                max_task_backlog=max_task_backlog,
             )
         else:
             self.scheduler = Scheduler(
-                max_tasks_per_core=max_tasks_per_core,
-                max_refs_per_core=max_refs_per_core,
-                batch_dispatch_coeff=batch_dispatch_coeff,
+                max_task_backlog=max_task_backlog,
             )
 
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
