@@ -107,7 +107,7 @@ impl_daft_logical_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_datatype!(TimeType, Unknown, Int64Type);
 impl_daft_logical_datatype!(DurationType, Unknown, Int64Type);
 impl_daft_logical_datatype!(EmbeddingType, Unknown, FixedSizeListType);
-impl_daft_logical_datatype!(ImageType, Unknown, ListType);
+impl_daft_logical_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_datatype!(FixedShapeImageType, Unknown, FixedSizeListType);
 
 pub trait NumericNative:

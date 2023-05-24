@@ -78,9 +78,9 @@ pub enum DataType {
     /// A logical type for embeddings.
     Embedding(Box<Field>, usize),
     /// A logical type for images with variable shapes.
-    Image(Box<Field>),
+    Image(Box<DataType>),
     /// A logical type for images with the same shape.
-    FixedShapeImage(Box<Field>, Vec<usize>),
+    FixedShapeImage(Box<DataType>, Vec<usize>),
     Python,
     Unknown,
 }
@@ -182,12 +182,15 @@ impl DataType {
                 Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
                 *size,
             ),
-            Image(field) => List(Box::new(Field::new(
-                field.name.clone(),
-                field.dtype.to_physical(),
-            ))),
-            FixedShapeImage(field, shape) => FixedSizeList(
-                Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
+            Image(dtype) => Struct(vec![
+                Field::new(
+                    "data",
+                    List(Box::new(Field::new("data", dtype.to_physical()))),
+                ),
+                Field::new("shapes", List(Box::new(Field::new("shapes", UInt64)))),
+            ]),
+            FixedShapeImage(dtype, shape) => FixedSizeList(
+                Box::new(Field::new("data", dtype.to_physical())),
                 shape.iter().product(),
             ),
             _ => self.clone(),
@@ -397,11 +400,11 @@ impl Display for DataType {
             DataType::Embedding(inner, size) => {
                 write!(f, "Embedding[{}; {}]", inner.dtype, size)
             }
-            DataType::Image(inner) => {
-                write!(f, "Image[{}]", inner.dtype)
+            DataType::Image(dtype) => {
+                write!(f, "Image[{}]", dtype)
             }
-            DataType::FixedShapeImage(inner, shape) => {
-                write!(f, "Image[{}; {:?}]", inner.dtype, shape)
+            DataType::FixedShapeImage(dtype, shape) => {
+                write!(f, "Image[{}; {:?}]", dtype, shape)
             }
             _ => write!(f, "{self:?}"),
         }

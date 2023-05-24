@@ -177,14 +177,13 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn image(name: &str, data_type: Self, shape: Option<Vec<usize>>) -> PyResult<Self> {
+    pub fn image(data_type: Self, shape: Option<Vec<usize>>) -> PyResult<Self> {
         if !data_type.dtype.is_numeric() {
             return Err(PyValueError::new_err(format!(
                 "The data type for an image must be numeric, but got: {}",
                 data_type.dtype
             )));
         }
-        let field = Box::new(Field::new(name, data_type.dtype));
         match shape {
             Some(shape) => {
                 if shape.is_empty() {
@@ -193,9 +192,9 @@ impl PyDataType {
                         shape,
                     )));
                 }
-                Ok(DataType::FixedShapeImage(field, shape).into())
+                Ok(DataType::FixedShapeImage(Box::new(data_type.dtype), shape).into())
             }
-            None => Ok(DataType::Image(field).into()),
+            None => Ok(DataType::Image(Box::new(data_type.dtype)).into()),
         }
     }
 

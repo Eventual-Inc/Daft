@@ -132,12 +132,14 @@ class DataType:
         return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
 
     @classmethod
-    def image(cls, name: str, dtype: DataType, shape: tuple | None = None) -> DataType:
-        if isinstance(shape, tuple) and (not shape or any(not isinstance(n, int) for n in shape)):
-            raise ValueError(
-                "The shape for a fixed-sized image type must be a non-empty tuple of ints, but got: ", shape
-            )
-        return cls._from_pydatatype(PyDataType.image(name, dtype._dtype, shape))
+    def image(cls, dtype: DataType, hwc_shape: tuple[int, int, int] | None = None) -> DataType:
+        if isinstance(hwc_shape, tuple):
+            if len(hwc_shape) != 3 or any(not isinstance(n, int) for n in hwc_shape):
+                raise ValueError(
+                    "The shape for a fixed-sized image type must be a 3-element (height, width, channel) tuple of ints, but got: ",
+                    hwc_shape,
+                )
+        return cls._from_pydatatype(PyDataType.image(dtype._dtype, hwc_shape))
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
@@ -252,15 +254,14 @@ class DataType:
 
 
 class DaftExtension(pa.ExtensionType):
-    def __init__(self, dtype, metadata):
+    def __init__(self, dtype, metadata=b""):
         # attributes need to be set first before calling
         # super init (as that calls serialize)
-        self._dtype = dtype
         self._metadata = metadata
-        pa.ExtensionType.__init__(self, dtype, "daft.super_extension")
+        super().__init__(dtype, "daft.super_extension")
 
     def __reduce__(self):
-        return DaftExtension, (self._dtype, self._metadata)
+        return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
 
     def __arrow_ext_serialize__(self):
         return self._metadata
@@ -270,7 +271,7 @@ class DaftExtension(pa.ExtensionType):
         return cls(storage_type, serialized)
 
 
-pa.register_extension_type(DaftExtension(pa.null(), b""))
+pa.register_extension_type(DaftExtension(pa.null()))
 import atexit
 
 atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))

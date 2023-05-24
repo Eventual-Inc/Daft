@@ -12,7 +12,7 @@ def test_image_arrow_round_trip():
     data = [np.arange(4).reshape((2, 2)), np.arange(4, 13).reshape((3, 3)), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.image("arr", DataType.int32())
+    target_dtype = DataType.image(DataType.int32())
 
     t = s.cast(target_dtype)
 
@@ -32,11 +32,11 @@ def test_image_arrow_round_trip():
 
 
 def test_fixed_shape_image_arrow_round_trip():
-    shape = (2, 2)
+    shape = (2, 2, 1)
     data = [np.arange(4).reshape(shape), np.arange(4, 8).reshape(shape), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.image("arr", DataType.int32(), shape)
+    target_dtype = DataType.image(DataType.int32(), shape)
 
     t = s.cast(target_dtype)
 
