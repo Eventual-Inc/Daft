@@ -64,8 +64,11 @@ def estimate_size_bytes_pylist(pylist: list) -> int:
         return sum(sampled_sizes)
 
     # Otherwise, reduce to a one-item estimate and extrapolate.
-    mean, stdev = statistics.mean(sampled_sizes), statistics.stdev(sampled_sizes)
-    one_item_size_estimate = int(mean + stdev)
+    if len(sampled_sizes) == 1:
+        [one_item_size_estimate] = sampled_sizes
+    else:
+        mean, stdev = statistics.mean(sampled_sizes), statistics.stdev(sampled_sizes)
+        one_item_size_estimate = int(mean + stdev)
 
     return one_item_size_estimate * len(pylist)
 
