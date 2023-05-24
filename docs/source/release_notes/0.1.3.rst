@@ -1,0 +1,22 @@
+Daft 0.1.3 Release Notes
+========================
+
+The Daft 0.1.3 release features fixes for a few performance regressions.
+
+Enhancements
+------------
+
+* Very basic s3 parquet microbenchmark `#954 <https://github.com/Eventual-Inc/Daft/pull/954>`_
+
+Bug Fixes
+---------
+
+* \[I/O\] Change back to random access read for Parquet. `#953 <https://github.com/Eventual-Inc/Daft/pull/953>`_
+* \[CI\] Fix flaky Ray Datasets integration test. `#952 <https://github.com/Eventual-Inc/Daft/pull/952>`_
+* \[Ray Runner\] Unfixing batch size for task awaiting `#951 <https://github.com/Eventual-Inc/Daft/pull/951>`_
+* Testing object related performance fixes `#949 <https://github.com/Eventual-Inc/Daft/pull/949>`_
+
+Build Changes
+-------------
+
+* \[ci\] \[daft publish\] pin urllib to \< 2 for conda `#950 <https://github.com/Eventual-Inc/Daft/pull/950>`_
