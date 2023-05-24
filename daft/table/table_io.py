@@ -26,11 +26,6 @@ from daft.table import Table
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
 
-# The number of rows to read per batch. This is sized to generate 10MiB batches
-# for rows about 1KiB in size.
-_PARQUET_FRAGMENT_BATCH_SIZE = 100000
-
-
 @contextlib.contextmanager
 def _open_stream(
     file: FileInput,
@@ -99,28 +94,29 @@ def read_parquet(
     paths, fs = _resolve_paths_and_filesystem(file, fs)
     assert len(paths) == 1
     path = paths[0]
-    fragment = pads.ParquetFileFormat().make_fragment(path, filesystem=fs)
-    schema = fragment.metadata.schema.to_arrow_schema()
+    f = fs.open_input_file(path)
+    pqf = papq.ParquetFile(f)
     # If no rows required, we manually construct an empty table with the right schema
     if read_options.num_rows == 0:
-        table = pa.Table.from_arrays([pa.array([], type=field.type) for field in schema], schema=schema)
+        arrow_schema = pqf.metadata.schema.to_arrow_schema()
+        table = pa.Table.from_arrays([pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema)
     elif read_options.num_rows is not None:
-        # Read the file by row group.
-        frags = fragment.split_by_row_group()
-        tables = []
-        rows_read = 0
-        for frag in frags:
-            for batch in frag.to_batches(columns=read_options.column_names, batch_size=_PARQUET_FRAGMENT_BATCH_SIZE):
-                tables.append(pa.Table.from_batches([batch], schema=schema))
-                rows_read += len(batch)
-                if rows_read >= read_options.num_rows:
-                    break
-            if rows_read >= read_options.num_rows:
+        # Only read the required row groups.
+        rows_needed = read_options.num_rows
+        for i in range(pqf.metadata.num_row_groups):
+            row_group_meta = pqf.metadata.row_group(i)
+            rows_needed -= row_group_meta.num_rows
+            if rows_needed <= 0:
                 break
-        table = pa.concat_tables(tables)
-        table = table.slice(length=read_options.num_rows)
+        table = pqf.read_row_groups(list(range(i + 1)), columns=read_options.column_names)
+        if rows_needed < 0:
+            # Need to truncate the table to the row limit.
+            table = table.slice(length=read_options.num_rows)
     else:
-        table = fragment.to_table(columns=read_options.column_names)
+        table = papq.read_table(
+            f,
+            columns=read_options.column_names,
+        )
 
     return Table.from_arrow(table)
 
