@@ -118,18 +118,26 @@ class DataType:
         return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
 
     @classmethod
-    def embedding(cls, name: str, dtype: DataType, size: int) -> DataType:
-        if not isinstance(size, int) or size <= 0:
-            raise ValueError("The size for a embedding must be a positive integer, but got: ", size)
-        return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
-
-    @classmethod
     def struct(cls, fields: dict[str, DataType]) -> DataType:
         return cls._from_pydatatype(PyDataType.struct({name: datatype._dtype for name, datatype in fields.items()}))
 
     @classmethod
     def extension(cls, name: str, storage_dtype: DataType, metadata: str | None = None) -> DataType:
         return cls._from_pydatatype(PyDataType.extension(name, storage_dtype._dtype, metadata))
+
+    @classmethod
+    def embedding(cls, name: str, dtype: DataType, size: int) -> DataType:
+        if not isinstance(size, int) or size <= 0:
+            raise ValueError("The size for a embedding must be a positive integer, but got: ", size)
+        return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
+
+    @classmethod
+    def image(cls, name: str, dtype: DataType, shape: tuple | None = None) -> DataType:
+        if isinstance(shape, tuple) and (not shape or any(not isinstance(n, int) for n in shape)):
+            raise ValueError(
+                "The shape for a fixed-sized image type must be a non-empty tuple of ints, but got: ", shape
+            )
+        return cls._from_pydatatype(PyDataType.image(name, dtype._dtype, shape))
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
@@ -259,7 +267,7 @@ class DaftExtension(pa.ExtensionType):
 
     @classmethod
     def __arrow_ext_deserialize__(cls, storage_type, serialized):
-        return DaftExtension(storage_type, serialized)
+        return cls(storage_type, serialized)
 
 
 pa.register_extension_type(DaftExtension(pa.null(), b""))

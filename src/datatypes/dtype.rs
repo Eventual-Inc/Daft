@@ -75,8 +75,12 @@ pub enum DataType {
     /// Extension type.
     Extension(String, Box<DataType>, Option<String>),
     // Stop ArrowTypes
-    /// A Embedding Logical Type
+    /// A logical type for embeddings.
     Embedding(Box<Field>, usize),
+    /// A logical type for images with variable shapes.
+    Image(Box<Field>),
+    /// A logical type for images with the same shape.
+    FixedShapeImage(Box<Field>, Vec<usize>),
     Python,
     Unknown,
 }
@@ -143,7 +147,7 @@ impl DataType {
                 Box::new(dtype.to_arrow()?),
                 metadata.clone(),
             )),
-            DataType::Embedding(..) => {
+            DataType::Embedding(..) | DataType::Image(..) | DataType::FixedShapeImage(..) => {
                 let physical = Box::new(self.to_physical());
                 let embedding_extension = DataType::Extension(
                     DAFT_SUPER_EXTENSION_NAME.into(),
@@ -177,6 +181,14 @@ impl DataType {
             Embedding(field, size) => FixedSizeList(
                 Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
                 *size,
+            ),
+            Image(field) => List(Box::new(Field::new(
+                field.name.clone(),
+                field.dtype.to_physical(),
+            ))),
+            FixedShapeImage(field, shape) => FixedSizeList(
+                Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
+                shape.iter().product(),
             ),
             _ => self.clone(),
         }
@@ -263,7 +275,13 @@ impl DataType {
 
     #[inline]
     pub fn is_logical(&self) -> bool {
-        matches!(self, DataType::Date | DataType::Embedding(..))
+        matches!(
+            self,
+            DataType::Date
+                | DataType::Embedding(..)
+                | DataType::Image(..)
+                | DataType::FixedShapeImage(..)
+        )
     }
 
     #[inline]
@@ -368,9 +386,6 @@ impl Display for DataType {
             DataType::FixedSizeList(inner, size) => {
                 write!(f, "FixedSizeList[{}; {}]", inner.dtype, size)
             }
-            DataType::Embedding(inner, size) => {
-                write!(f, "Embedding[{}; {}]", inner.dtype, size)
-            }
             DataType::Struct(fields) => {
                 let fields: String = fields
                     .iter()
@@ -378,6 +393,15 @@ impl Display for DataType {
                     .collect::<Vec<String>>()
                     .join(", ");
                 write!(f, "Struct[{fields}]")
+            }
+            DataType::Embedding(inner, size) => {
+                write!(f, "Embedding[{}; {}]", inner.dtype, size)
+            }
+            DataType::Image(inner) => {
+                write!(f, "Image[{}]", inner.dtype)
+            }
+            DataType::FixedShapeImage(inner, shape) => {
+                write!(f, "Image[{}; {:?}]", inner.dtype, shape)
             }
             _ => write!(f, "{self:?}"),
         }

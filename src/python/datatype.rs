@@ -125,28 +125,6 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn embedding(name: &str, data_type: Self, size: i64) -> PyResult<Self> {
-        if size <= 0 {
-            return Err(PyValueError::new_err(format!(
-                "The size for embedding types must be a positive integer, but got: {}",
-                size
-            )));
-        }
-        if !data_type.dtype.is_numeric() {
-            return Err(PyValueError::new_err(format!(
-                "The data type for an embedding must be numeric, but got: {}",
-                data_type.dtype
-            )));
-        }
-
-        Ok(DataType::Embedding(
-            Box::new(Field::new(name, data_type.dtype)),
-            usize::try_from(size)?,
-        )
-        .into())
-    }
-
-    #[staticmethod]
     pub fn r#struct(fields: &PyDict) -> PyResult<Self> {
         Ok(DataType::Struct(
             fields
@@ -174,6 +152,51 @@ impl PyDataType {
             metadata.map(|s| s.to_string()),
         )
         .into())
+    }
+
+    #[staticmethod]
+    pub fn embedding(name: &str, data_type: Self, size: i64) -> PyResult<Self> {
+        if size <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "The size for embedding types must be a positive integer, but got: {}",
+                size
+            )));
+        }
+        if !data_type.dtype.is_numeric() {
+            return Err(PyValueError::new_err(format!(
+                "The data type for an embedding must be numeric, but got: {}",
+                data_type.dtype
+            )));
+        }
+
+        Ok(DataType::Embedding(
+            Box::new(Field::new(name, data_type.dtype)),
+            usize::try_from(size)?,
+        )
+        .into())
+    }
+
+    #[staticmethod]
+    pub fn image(name: &str, data_type: Self, shape: Option<Vec<usize>>) -> PyResult<Self> {
+        if !data_type.dtype.is_numeric() {
+            return Err(PyValueError::new_err(format!(
+                "The data type for an image must be numeric, but got: {}",
+                data_type.dtype
+            )));
+        }
+        let field = Box::new(Field::new(name, data_type.dtype));
+        match shape {
+            Some(shape) => {
+                if shape.is_empty() {
+                    return Err(PyValueError::new_err(format!(
+                        "The shape for fixed-shape image types must be non-empty, but got: {:?}",
+                        shape,
+                    )));
+                }
+                Ok(DataType::FixedShapeImage(field, shape).into())
+            }
+            None => Ok(DataType::Image(field).into()),
+        }
     }
 
     #[staticmethod]

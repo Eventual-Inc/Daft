@@ -8,15 +8,13 @@ use crate::datatypes::ListArray;
 use crate::series::IntoSeries;
 use crate::{
     array::DataArray,
-    datatypes::{logical::DateArray, Field},
-    datatypes::{DaftArrowBackedType, DataType, Utf8Array},
+    datatypes::logical::{
+        DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray,
+    },
+    datatypes::{DaftArrowBackedType, DataType, Field, Utf8Array},
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_arrow_daft_types, with_match_daft_logical_types,
-};
-use crate::{
-    datatypes::logical::{EmbeddingArray, LogicalArray},
-    with_match_numeric_daft_types,
+    with_match_arrow_daft_types, with_match_daft_logical_types, with_match_numeric_daft_types,
 };
 use arrow2::array::Array;
 use num_traits::{NumCast, ToPrimitive};
@@ -195,7 +193,6 @@ fn append_values_from_numpy<
     values_vec: &mut Vec<Tgt>,
 ) -> DaftResult<usize> {
     use crate::python::PyDataType;
-    use numpy::PyArray1;
     use std::num::Wrapping;
 
     let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;
@@ -215,15 +212,38 @@ fn append_values_from_numpy<
     with_match_numeric_daft_types!(datatype, |$N| {
         type Src = <$N as DaftNumericType>::Native;
         let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
-        if pyarray.ndim() != 1 {
+        // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
+        // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
+        // Relevant:
+        //  1. Must be C-contiguous.
+        //  2. Must have non-negative strides.
+
+        // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
+        // TODO(Clark): Relax the C-contiguous constraint, using the ndarray crate to copy the array so it's C-contiguous.
+        // TODO(Clark): Delegate to NumPy's np.ravel() in Python land for the necessary conversions if the ndarray isn't already
+        // C-contiguous and the ndarray crate doesn't expose the requisite functionality, since having to acquire the GIL and
+        // make a copy is better than failing.
+        if !pyarray.is_c_contiguous() {
+            if pyarray.is_fortran_contiguous() {
+                return Err(DaftError::ValueError(format!(
+                    "we only support c-contiguous numpy arrays, got fortran-contiguous ndarray at index: {}",
+                    index
+                )));
+            }
             return Err(DaftError::ValueError(format!(
-                "we only support 1 dim numpy arrays, got {} at index: {}",
-                pyarray.ndim(), index
+                "we only support c-contiguous numpy arrays, but got non-contiguous ndarray at index: {}",
+                index
+            )));
+        }
+        if pyarray.strides().iter().any(|s| *s < 0) {
+            return Err(DaftError::ValueError(format!(
+                "we only support numpy arrays with non-negative strides, but got {:?} at index: {}",
+                pyarray.strides(), index
             )));
         }
 
-        let pyarray = pyarray.downcast::<PyArray1<Src>>().expect("downcasted to numpy array");
-        let sl: &[Src] = unsafe { pyarray.as_slice()}.expect("convert numpy array to slice");
+        let pyarray = pyarray.as_array();
+        let sl: &[Src] = pyarray.as_slice().expect("convert numpy array to slice");
         values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
         Ok(sl.len())
     })
@@ -260,7 +280,7 @@ fn extract_python_to_vec<
         dtype if dtype.is_integer() => Ok("int"),
         dtype if dtype.is_floating() => Ok("float"),
         dtype => Err(DaftError::ValueError(format!(
-            "We only support numeric types when converting to FixedSizeList, got {dtype}"
+            "We only support numeric types when converting to List or FixedSizeList, got {dtype}"
         ))),
     }?;
 
@@ -332,7 +352,7 @@ fn extract_python_to_vec<
                     };
 
                     if collected.is_err() {
-                        log::warn!("Could not convert python object to fixed size list at index: {i} for input series: {}", python_objects.name())
+                        log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name())
                     }
                     let collected: Vec<Tgt> = collected?;
                     if let Some(list_size) = list_size {
@@ -494,6 +514,7 @@ impl PythonArray {
                     })
                 })
             }
+            DataType::Struct(_) => unimplemented!(),
             DataType::Embedding(..) => {
                 let result = self.cast(&dtype.to_physical())?;
                 let embedding_array = EmbeddingArray::new(
@@ -502,7 +523,22 @@ impl PythonArray {
                 );
                 Ok(embedding_array.into_series())
             }
-            DataType::Struct(_) => unimplemented!(),
+            DataType::Image(..) => {
+                let result = self.cast(&dtype.to_physical())?;
+                let image_array = ImageArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    result.list()?.clone(),
+                );
+                Ok(image_array.into_series())
+            }
+            DataType::FixedShapeImage(..) => {
+                let result = self.cast(&dtype.to_physical())?;
+                let image_array = FixedShapeImageArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    result.fixed_size_list()?.clone(),
+                );
+                Ok(image_array.into_series())
+            }
             // TODO: Add implementations for these types
             // DataType::Timestamp(_, _) => $self.timestamp().unwrap().$method($($args),*),
             dt => unimplemented!("dtype {:?} not supported", dt),
@@ -511,6 +547,18 @@ impl PythonArray {
 }
 
 impl EmbeddingArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        self.physical.cast(dtype)
+    }
+}
+
+impl ImageArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        self.physical.cast(dtype)
+    }
+}
+
+impl FixedShapeImageArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         self.physical.cast(dtype)
     }

@@ -1,7 +1,7 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, EmbeddingArray},
+        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray},
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
         FixedSizeListArray, Float32Array, Float64Array, ListArray, NullArray, StructArray,
         Utf8Array,
@@ -591,15 +591,27 @@ impl PythonArray {
     }
 }
 
+impl DateArray {
+    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
+        let new_array = self.physical.sort(descending)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+}
+
 impl EmbeddingArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
         todo!("impl sort for FixedSizeListArray")
     }
 }
 
-impl DateArray {
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        let new_array = self.physical.sort(descending)?;
-        Ok(Self::new(self.field.clone(), new_array))
+impl ImageArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for ListArray")
+    }
+}
+
+impl FixedShapeImageArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for FixedSizeListArray")
     }
 }

@@ -4,7 +4,7 @@ use arrow2::array;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, EmbeddingArray},
+        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray},
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, StructArray,
         Utf8Array,
     },
@@ -104,7 +104,25 @@ impl AsArrow for crate::datatypes::PythonArray {
 impl AsArrow for EmbeddingArray {
     type Output = array::FixedSizeListArray;
 
-    // downcasts a DataArray<T> to an Arrow FixedSizeListArray.
+    // downcasts an EmbeddingArray to an Arrow FixedSizeListArray.
+    fn as_arrow(&self) -> &Self::Output {
+        self.physical.data().as_any().downcast_ref().unwrap()
+    }
+}
+
+impl AsArrow for ImageArray {
+    type Output = array::ListArray<i64>;
+
+    // downcasts an ImageArray to an Arrow ListArray.
+    fn as_arrow(&self) -> &Self::Output {
+        self.physical.data().as_any().downcast_ref().unwrap()
+    }
+}
+
+impl AsArrow for FixedShapeImageArray {
+    type Output = array::FixedSizeListArray;
+
+    // downcasts a FixedShapeImageArray to an Arrow FixedSizeListArray.
     fn as_arrow(&self) -> &Self::Output {
         self.physical.data().as_any().downcast_ref().unwrap()
     }

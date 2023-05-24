@@ -187,3 +187,42 @@ def test_series_cast_python_to_embedding(dtype) -> None:
     assert list(map(int, itertools.chain.from_iterable(data[:-1]))) == list(
         map(int, itertools.chain.from_iterable(pydata[:-1]))
     )
+
+
+@pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
+def test_series_cast_python_to_image(dtype) -> None:
+    data = [np.arange(4).reshape((2, 2)), np.arange(4, 13).reshape((3, 3)), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image("arr", DataType.float32())
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+    assert len(t) == len(data)
+
+    assert t.arr.lengths().to_pylist() == [4, 9, None]
+
+    pydata = t.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal([data[0].ravel(), data[1].ravel()], pydata[:-1])
+
+
+@pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
+def test_series_cast_python_to_fixed_shape_image(dtype) -> None:
+    shape = (2, 2)
+    data = [np.arange(4).reshape(shape), np.arange(4, 8).reshape(shape), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image("arr", DataType.float32(), shape)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+    assert len(t) == len(data)
+
+    assert t.arr.lengths().to_pylist() == [4, 4, None]
+
+    pydata = t.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal([data[0].ravel(), data[1].ravel()], pydata[:-1])
