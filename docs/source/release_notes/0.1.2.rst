@@ -40,9 +40,9 @@ Build Changes
 * Update requirement of tabulate to \>=0.9.0 `#940 <https://github.com/Eventual-Inc/Daft/pull/940>`_
 * unpin numpy for 3.7 to get dependabot to stop complaining `#938 <https://github.com/Eventual-Inc/Daft/pull/938>`_
 * Bump slackapi/slack-github-action from 1.23.0 to 1.24.0 `#936 <https:github.com/Eventual-Inc/Daft/pull/936>`_
-* Bump hypothesis from 6.75.2 to 6.75.3 `#928 <https:github.com/Eventual-Inc/Daft/pull/928>`_
-* Bump dask from 2023.4.1 to 2023.5.0 `#927 <https:github.com/Eventual-Inc/Daft/pull/927>`_
-* Bump serde from 1.0.162 to 1.0.163 `#921 <https:github.com/Eventual-Inc/Daft/pull/921>`_
+* Bump hypothesis from 6.75.2 to 6.75.3 `#928 <https://github.com/Eventual-Inc/Daft/pull/928>`_
+* Bump dask from 2023.4.1 to 2023.5.0 `#927 <https://github.com/Eventual-Inc/Daft/pull/927>`_
+* Bump serde from 1.0.162 to 1.0.163 `#921 <https://github.com/Eventual-Inc/Daft/pull/921>`_
 
 
 Documentation
