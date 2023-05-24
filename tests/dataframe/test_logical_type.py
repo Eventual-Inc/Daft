@@ -22,10 +22,10 @@ def test_embedding_type_df() -> None:
 
 
 def test_image_type_df() -> None:
-    data = [np.arange(4).reshape((2, 2)), np.arange(4, 13).reshape((3, 3)), None]
+    data = [np.arange(4).reshape((1, 2, 2)), np.arange(4, 13).reshape((1, 3, 3)), None]
     df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="force")})
 
-    target = DataType.image(DataType.float32())
+    target = DataType.image("F")
     df = df.select(col("index"), col("image").cast(target))
     df = df.repartition(4, "index")
     df = df.sort("index")
@@ -35,11 +35,11 @@ def test_image_type_df() -> None:
 
 
 def test_fixed_shape_image_type_df() -> None:
-    shape = (2, 2, 1)
-    data = [np.arange(4).reshape(shape), np.arange(4, 8).reshape(shape), None]
+    shape = (3, 2, 2)
+    data = [np.arange(12).reshape(shape), np.arange(12, 24).reshape(shape), None]
     df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="force")})
 
-    target = DataType.image(DataType.float32(), shape)
+    target = DataType.image("RGB", shape[1:])
     df = df.select(col("index"), col("image").cast(target))
     df = df.repartition(4, "index")
     df = df.sort("index")

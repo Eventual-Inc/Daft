@@ -191,10 +191,10 @@ def test_series_cast_python_to_embedding(dtype) -> None:
 
 @pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
 def test_series_cast_python_to_image(dtype) -> None:
-    data = [np.arange(4).reshape((2, 2)), np.arange(4, 13).reshape((3, 3)), None]
+    data = [np.arange(4).reshape((1, 2, 2)), np.arange(4, 13).reshape((1, 3, 3)), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.image(DataType.float32())
+    target_dtype = DataType.image("F")
 
     t = s.cast(target_dtype)
 
@@ -212,19 +212,21 @@ def test_series_cast_python_to_image(dtype) -> None:
 
 @pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
 def test_series_cast_python_to_fixed_shape_image(dtype) -> None:
-    shape = (2, 2, 1)
-    data = [np.arange(4).reshape(shape), np.arange(4, 8).reshape(shape), None]
+    shape = (3, 2, 2)
+    data = [np.arange(12).reshape(shape), np.arange(12, 24).reshape(shape), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.image(DataType.float32(), shape)
+    target_dtype = DataType.image("RGB", shape[1:])
 
     t = s.cast(target_dtype)
 
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.arr.lengths().to_pylist() == [4, 4, None]
+    assert t.arr.lengths().to_pylist() == [12, 12, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
     np.testing.assert_equal([data[0].ravel(), data[1].ravel()], pydata[:-1])
+    # TODO(Clark): Fix the Daft --> pyarrow egress so it reconstitutes the NumPy ndarrays.
+    # np.testing.assert_equal([data[0].ravel(), data[1].ravel()], pydata[:-1])

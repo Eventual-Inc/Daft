@@ -10,7 +10,7 @@ use arrow2::{
     compute::{arithmetics::basic::NativeArithmetics, comparison::Simd8},
     types::{simd::Simd, NativeType},
 };
-pub use dtype::DataType;
+pub use dtype::{DataType, ImageMode};
 pub use field::Field;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 pub use time_unit::TimeUnit;

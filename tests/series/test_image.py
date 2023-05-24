@@ -9,10 +9,10 @@ from daft.series import Series
 
 
 def test_image_arrow_round_trip():
-    data = [np.arange(4).reshape((2, 2)), np.arange(4, 13).reshape((3, 3)), None]
+    data = [np.arange(4).reshape((1, 2, 2)), np.arange(4, 13).reshape((1, 3, 3)), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.image(DataType.int32())
+    target_dtype = DataType.image("F")
 
     t = s.cast(target_dtype)
 
@@ -32,11 +32,11 @@ def test_image_arrow_round_trip():
 
 
 def test_fixed_shape_image_arrow_round_trip():
-    shape = (2, 2, 1)
-    data = [np.arange(4).reshape(shape), np.arange(4, 8).reshape(shape), None]
+    shape = (3, 2, 2)
+    data = [np.arange(12).reshape(shape), np.arange(12, 24).reshape(shape), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.image(DataType.int32(), shape)
+    target_dtype = DataType.image("RGB", shape[1:])
 
     t = s.cast(target_dtype)
 

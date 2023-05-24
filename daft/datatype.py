@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+from enum import Enum
 
 import pyarrow as pa
 
@@ -30,6 +31,36 @@ else:
             _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
     except ImportError:
         _RAY_DATA_EXTENSIONS_AVAILABLE = False
+
+
+class ImageMode(str, Enum):
+    """
+    Supported image modes for Daft's image type.
+    """
+
+    B = "1"
+    L = "L"
+    P = "P"
+    RGB = "RGB"
+    RGBA = "RGBA"
+    CMYK = "CMYK"
+    YCbCr = "YCbCr"
+    LAB = "LAB"
+    HSV = "HSV"
+    I = "I"
+    F = "F"
+
+    @classmethod
+    def from_mode_string(cls, mode: str) -> ImageMode:
+        if mode == "1":
+            mode = "B"
+        try:
+            return cls[mode]
+        except KeyError:
+            enum_values = [e.value for e in cls]
+            raise ValueError(
+                f"Image type doesn't support mode {mode}; the following modes are supported: {enum_values}"
+            )
 
 
 class DataType:
@@ -132,14 +163,16 @@ class DataType:
         return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
 
     @classmethod
-    def image(cls, dtype: DataType, hwc_shape: tuple[int, int, int] | None = None) -> DataType:
-        if isinstance(hwc_shape, tuple):
-            if len(hwc_shape) != 3 or any(not isinstance(n, int) for n in hwc_shape):
+    def image(cls, mode: str | ImageMode, size: tuple[int, int] | None = None) -> DataType:
+        if isinstance(mode, str):
+            mode = ImageMode.from_mode_string(mode)
+        if isinstance(size, tuple):
+            if len(size) != 2 or any(not isinstance(n, int) for n in size):
                 raise ValueError(
-                    "The shape for a fixed-sized image type must be a 3-element (height, width, channel) tuple of ints, but got: ",
-                    hwc_shape,
+                    "The size for a fixed-sized image type must be a 2-element (height, width) tuple of ints, but got: ",
+                    size,
                 )
-        return cls._from_pydatatype(PyDataType.image(dtype._dtype, hwc_shape))
+        return cls._from_pydatatype(PyDataType.image(mode, size))
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:

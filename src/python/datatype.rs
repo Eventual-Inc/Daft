@@ -1,4 +1,6 @@
-use crate::datatypes::{DataType, Field};
+use std::str::FromStr;
+
+use crate::datatypes::{DataType, Field, ImageMode};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -177,24 +179,27 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn image(data_type: Self, shape: Option<Vec<usize>>) -> PyResult<Self> {
-        if !data_type.dtype.is_numeric() {
-            return Err(PyValueError::new_err(format!(
+    pub fn image(mode: &PyAny, size: Option<Vec<usize>>) -> PyResult<Self> {
+        let mode_str = mode.getattr("value")?.downcast::<PyString>()?.to_str()?;
+        let image_mode = ImageMode::from_str(mode_str)?;
+        let dtype = DataType::from(&image_mode);
+        if !dtype.is_numeric() {
+            panic!(
                 "The data type for an image must be numeric, but got: {}",
-                data_type.dtype
-            )));
+                dtype
+            );
         }
-        match shape {
-            Some(shape) => {
-                if shape.is_empty() {
+        match size {
+            Some(size) => {
+                if size.is_empty() {
                     return Err(PyValueError::new_err(format!(
-                        "The shape for fixed-shape image types must be non-empty, but got: {:?}",
-                        shape,
+                        "The size for fixed-shape image types must be non-empty, but got: {:?}",
+                        size,
                     )));
                 }
-                Ok(DataType::FixedShapeImage(Box::new(data_type.dtype), shape).into())
+                Ok(DataType::FixedShapeImage(Box::new(dtype), Box::new(image_mode), size).into())
             }
-            None => Ok(DataType::Image(Box::new(data_type.dtype)).into()),
+            None => Ok(DataType::Image(Box::new(dtype), Box::new(image_mode)).into()),
         }
     }
 

@@ -11,6 +11,67 @@ use serde::{Deserialize, Serialize};
 
 // pub type TimeZone = String;
 
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub enum ImageMode {
+    B,
+    L,
+    P,
+    RGB,
+    RGBA,
+    CMYK,
+    YCbCr,
+    LAB,
+    HSV,
+    I,
+    F,
+}
+
+impl ImageMode {
+    pub fn num_channels(&self) -> usize {
+        use ImageMode::*;
+
+        match self {
+            B | L | P | I | F => 1,
+            RGB | YCbCr | LAB | HSV => 3,
+            RGBA | CMYK => 4,
+        }
+    }
+    pub fn iterator() -> std::slice::Iter<'static, ImageMode> {
+        use ImageMode::*;
+
+        static MODES: [ImageMode; 11] = [B, L, P, RGB, RGBA, CMYK, YCbCr, LAB, HSV, I, F];
+        MODES.iter()
+    }
+}
+
+impl std::str::FromStr for ImageMode {
+    type Err = DaftError;
+
+    fn from_str(mode: &str) -> DaftResult<Self> {
+        use ImageMode::*;
+
+        match mode {
+            "1" => Ok(B),
+            "L" => Ok(L),
+            "P" => Ok(P),
+            "RGB" => Ok(RGB),
+            "RGBA" => Ok(RGBA),
+            "CMYK" => Ok(CMYK),
+            "YCbCr" => Ok(YCbCr),
+            "LAB" => Ok(LAB),
+            "HSV" => Ok(HSV),
+            "I" => Ok(I),
+            "F" => Ok(F),
+            _ => Err(DaftError::TypeError(format!(
+                "Image mode {} is not supported; only the following modes are supported: {:?}",
+                mode,
+                ImageMode::iterator().as_slice()
+            ))),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum DataType {
     // Start ArrowTypes
@@ -78,9 +139,9 @@ pub enum DataType {
     /// A logical type for embeddings.
     Embedding(Box<Field>, usize),
     /// A logical type for images with variable shapes.
-    Image(Box<DataType>),
-    /// A logical type for images with the same shape.
-    FixedShapeImage(Box<DataType>, Vec<usize>),
+    Image(Box<DataType>, Box<ImageMode>),
+    /// A logical type for images with the same size (height x width).
+    FixedShapeImage(Box<DataType>, Box<ImageMode>, Vec<usize>),
     Python,
     Unknown,
 }
@@ -182,16 +243,22 @@ impl DataType {
                 Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
                 *size,
             ),
-            Image(dtype) => Struct(vec![
+            Image(dtype, mode) => Struct(vec![
                 Field::new(
                     "data",
                     List(Box::new(Field::new("data", dtype.to_physical()))),
                 ),
-                Field::new("shapes", List(Box::new(Field::new("shapes", UInt64)))),
+                Field::new(
+                    "shapes",
+                    FixedSizeList(
+                        Box::new(Field::new("shapes", UInt64)),
+                        mode.num_channels() + 2,
+                    ),
+                ),
             ]),
-            FixedShapeImage(dtype, shape) => FixedSizeList(
+            FixedShapeImage(dtype, mode, size) => FixedSizeList(
                 Box::new(Field::new("data", dtype.to_physical())),
-                shape.iter().product(),
+                mode.num_channels() * size.iter().product::<usize>(),
             ),
             _ => self.clone(),
         }
@@ -381,6 +448,17 @@ impl From<&ArrowType> for DataType {
     }
 }
 
+impl From<&ImageMode> for DataType {
+    fn from(mode: &ImageMode) -> Self {
+        match mode {
+            ImageMode::B => DataType::Boolean,
+            ImageMode::I => DataType::Int32,
+            ImageMode::F => DataType::Float32,
+            _ => DataType::UInt8,
+        }
+    }
+}
+
 impl Display for DataType {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
@@ -400,11 +478,11 @@ impl Display for DataType {
             DataType::Embedding(inner, size) => {
                 write!(f, "Embedding[{}; {}]", inner.dtype, size)
             }
-            DataType::Image(dtype) => {
-                write!(f, "Image[{}]", dtype)
+            DataType::Image(dtype, mode) => {
+                write!(f, "Image[{}; {:?}]", dtype, mode)
             }
-            DataType::FixedShapeImage(dtype, shape) => {
-                write!(f, "Image[{}; {:?}]", dtype, shape)
+            DataType::FixedShapeImage(dtype, mode, size) => {
+                write!(f, "Image[{}; {:?}; {:?}]", dtype, mode, size)
             }
             _ => write!(f, "{self:?}"),
         }
