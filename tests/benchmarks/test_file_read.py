@@ -55,3 +55,35 @@ def test_csv_read(gen_simple_csvs, benchmark):
     df = benchmark(bench)
 
     assert len(df) == num_rows
+
+
+@pytest.mark.benchmark(group="file_read")
+@pytest.mark.parametrize("prune", [True, False])
+def test_s3_parquet_read_1x64mb(benchmark, prune):
+    parquet_glob = "s3://daft-public-data/test_fixtures/parquet/*"
+    expected_rows = 1500000
+
+    def bench() -> DataFrame:
+        df = daft.read_parquet(parquet_glob)
+        if prune:
+            df = df.select(df["O_SHIPPRIORITY"])  # rightmost int64 column
+        return df.collect()
+
+    df = benchmark(bench)
+    assert len(df.to_pandas()) == expected_rows
+
+
+@pytest.mark.benchmark(group="file_read")
+@pytest.mark.parametrize("prune", [True, False])
+def test_s3_parquet_read_32x2mb(benchmark, prune):
+    parquet_glob = "s3://daft-public-data/test_fixtures/parquet_small/*"
+    expected_rows = 2000000
+
+    def bench() -> DataFrame:
+        df = daft.read_parquet(parquet_glob)
+        if prune:
+            df = df.select(df["P_SIZE"])  # rightmost int64 column
+        return df.collect()
+
+    df = benchmark(bench)
+    assert len(df.to_pandas()) == expected_rows
