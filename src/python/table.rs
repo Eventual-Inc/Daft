@@ -253,6 +253,25 @@ impl PyTable {
         py.allow_threads(|| Ok(Table::concat(tables.as_slice())?.into()))
     }
 
+    pub fn slice(&self, start: i64, end: i64) -> PyResult<Self> {
+        if start < 0 {
+            return Err(PyValueError::new_err(format!(
+                "slice start can not be negative: {start}"
+            )));
+        }
+        if end < 0 {
+            return Err(PyValueError::new_err(format!(
+                "slice end can not be negative: {start}"
+            )));
+        }
+        if start > end {
+            return Err(PyValueError::new_err(format!(
+                "slice length can not be negative: start: {start} end: {end}"
+            )));
+        }
+        Ok(self.table.slice(start as usize, end as usize)?.into())
+    }
+
     #[staticmethod]
     pub fn from_arrow_record_batches(
         py: Python,

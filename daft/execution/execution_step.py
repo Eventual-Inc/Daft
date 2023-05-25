@@ -16,7 +16,6 @@ from daft.logical import logical_plan
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartialPartitionMetadata, PartitionMetadata
-from daft.series import Series
 from daft.table import Table
 
 PartitionT = TypeVar("PartitionT")
@@ -693,8 +692,7 @@ class FanoutSlices(FanoutInstruction):
             assert start >= 0, f"start must be positive, but got {start}"
             end = min(end, len(input))
 
-            indices_block = Series.from_pylist(list(range(start, end)))
-            results.append(input.take(indices_block))
+            results.append(input.slice(start, end))
 
         return results
 

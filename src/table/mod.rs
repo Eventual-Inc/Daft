@@ -100,6 +100,15 @@ impl Table {
         }
     }
 
+    pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
+        let new_series: DaftResult<Vec<_>> =
+            self.columns.iter().map(|s| s.slice(start, end)).collect();
+        Ok(Table {
+            schema: self.schema.clone(),
+            columns: new_series?,
+        })
+    }
+
     pub fn head(&self, num: usize) -> DaftResult<Self> {
         if num >= self.len() {
             return Ok(Table {
@@ -107,12 +116,7 @@ impl Table {
                 columns: self.columns.clone(),
             });
         }
-
-        let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.head(num)).collect();
-        Ok(Table {
-            schema: self.schema.clone(),
-            columns: new_series?,
-        })
+        self.slice(0, num)
     }
 
     pub fn sample(&self, num: usize) -> DaftResult<Self> {
