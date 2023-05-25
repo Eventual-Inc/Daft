@@ -10,7 +10,7 @@ use crate::{
     datatypes::logical::{
         DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray,
     },
-    datatypes::{DaftArrowBackedType, DataType, Field, Utf8Array},
+    datatypes::{DaftArrowBackedType, DataType, Field, ImageMode, Utf8Array},
     error::{DaftError, DaftResult},
     series::Series,
     with_match_arrow_daft_types, with_match_daft_logical_types, with_match_numeric_daft_types,
@@ -472,14 +472,17 @@ fn extract_python_like_to_list<
 }
 
 #[cfg(feature = "python")]
-fn extract_python_like_to_struct<
+fn extract_python_like_to_image_struct<
     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
 >(
     py: Python<'_>,
     python_objects: &PythonArray,
     child_dtype: DataType,
-    shape_size: usize,
+    mode_from_dtype: Option<Box<ImageMode>>,
 ) -> DaftResult<StructArray> {
+    // 3 dimensions - channel x height x width.
+
+    let shape_size = 3;
     let (values_vec, offsets, shapes) =
         extract_python_to_vec::<Tgt>(py, python_objects, &child_dtype, None, Some(shape_size))?;
 
@@ -503,31 +506,67 @@ fn extract_python_like_to_struct<
         values_array,
         validity.cloned(),
     ));
-    let offset_dtype = arrow2::datatypes::DataType::FixedSizeList(
-        Box::new(arrow2::datatypes::Field::new(
-            "shapes",
-            arrow2::datatypes::DataType::UInt64,
-            true,
-        )),
-        shape_size,
-    );
-    let shape_array = Box::new(arrow2::array::PrimitiveArray::from_vec(shapes));
-    let offsets_array = Box::new(arrow2::array::FixedSizeListArray::new(
-        offset_dtype.clone(),
-        shape_array,
-        validity.cloned(),
-    ));
+
+    let mut channels: Vec<u8> = vec![];
+    channels.reserve(shapes.len());
+    let mut heights: Vec<u16> = vec![];
+    heights.reserve(shapes.len());
+    let mut widths: Vec<u16> = vec![];
+    widths.reserve(shapes.len());
+    let mut modes: Vec<u8> = vec![];
+    modes.reserve(shapes.len());
+    assert!(shapes.len() % shape_size == 0);
+    assert!(shapes.len() / shape_size == data_array.len());
+    for i in (0..shapes.len()).step_by(shape_size) {
+        channels.push(
+            shapes[i]
+                .try_into()
+                .expect("Number of channels should fit into a uint8"),
+        );
+        heights.push(
+            shapes[i + 1]
+                .try_into()
+                .expect("Image height should fit into a uint16"),
+        );
+        widths.push(
+            shapes[i + 2]
+                .try_into()
+                .expect("Image width should fit into a uint16"),
+        );
+        let mode = match mode_from_dtype {
+            Some(ref mode) => **mode as u8,
+            None => {
+                ImageMode::try_from_num_channels(shapes[i].try_into().unwrap(), &child_dtype)? as u8
+            }
+        };
+        modes.push(mode);
+    }
+
+    let channel_array = Box::new(arrow2::array::PrimitiveArray::from_vec(channels));
+    let height_array = Box::new(arrow2::array::PrimitiveArray::from_vec(heights));
+    let width_array = Box::new(arrow2::array::PrimitiveArray::from_vec(widths));
+    let mode_array = Box::new(arrow2::array::PrimitiveArray::from_vec(modes));
+
     let struct_dtype = arrow2::datatypes::DataType::Struct(vec![
         arrow2::datatypes::Field::new("data", data_dtype, true),
-        arrow2::datatypes::Field::new("shapes", offset_dtype, true),
+        arrow2::datatypes::Field::new("channel", channel_array.data_type().clone(), true),
+        arrow2::datatypes::Field::new("height", height_array.data_type().clone(), true),
+        arrow2::datatypes::Field::new("width", width_array.data_type().clone(), true),
+        arrow2::datatypes::Field::new("mode", mode_array.data_type().clone(), true),
     ]);
 
     let daft_type = (&struct_dtype).into();
 
     let struct_array = arrow2::array::StructArray::new(
         struct_dtype,
-        vec![data_array, offsets_array],
-        python_objects.as_arrow().validity().cloned(),
+        vec![
+            data_array,
+            channel_array,
+            height_array,
+            width_array,
+            mode_array,
+        ],
+        validity.cloned(),
     );
 
     StructArray::new(
@@ -618,7 +657,7 @@ impl PythonArray {
                 with_match_numeric_daft_types!(**inner_dtype, |$T| {
                     type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_struct::<Tgt>(py, self, *inner_dtype.clone(), mode.num_channels() + 2)?;
+                        let result = extract_python_like_to_image_struct::<Tgt>(py, self, *inner_dtype.clone(), mode.clone())?;
                         Ok(
                             ImageArray::new(
                                 Field::new(self.name(), dtype.clone()),

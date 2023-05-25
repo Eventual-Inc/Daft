@@ -179,10 +179,21 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn image(mode: &PyAny, size: Option<Vec<usize>>) -> PyResult<Self> {
-        let mode_str = mode.getattr("value")?.downcast::<PyString>()?.to_str()?;
-        let image_mode = ImageMode::from_str(mode_str)?;
-        let dtype = DataType::from(&image_mode);
+    pub fn image(mode: Option<&PyAny>, size: Option<Vec<usize>>) -> PyResult<Self> {
+        let image_mode = mode.and_then(|m| {
+            let mode_str = m
+                .getattr("value")
+                .ok()?
+                .downcast::<PyString>()
+                .ok()?
+                .to_str()
+                .ok()?;
+            Some(Box::new(ImageMode::from_str(mode_str).ok()?))
+        });
+        // TODO(Clark): Make dtype optional instead of falling back to UInt8 here.
+        let dtype = image_mode.clone().map_or(Box::new(DataType::UInt8), |m| {
+            Box::new(DataType::from(m.as_ref()))
+        });
         if !dtype.is_numeric() {
             panic!(
                 "The data type for an image must be numeric, but got: {}",
@@ -197,9 +208,12 @@ impl PyDataType {
                         size,
                     )));
                 }
-                Ok(DataType::FixedShapeImage(Box::new(dtype), Box::new(image_mode), size).into())
+                let image_mode = image_mode.ok_or(PyValueError::new_err(
+                    "Image mode must be provided if specifying an image size.",
+                ))?;
+                Ok(DataType::FixedShapeImage(dtype, image_mode, size).into())
             }
-            None => Ok(DataType::Image(Box::new(dtype), Box::new(image_mode)).into()),
+            None => Ok(DataType::Image(dtype, image_mode).into()),
         }
     }
 

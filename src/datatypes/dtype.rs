@@ -12,35 +12,69 @@ use serde::{Deserialize, Serialize};
 // pub type TimeZone = String;
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum ImageMode {
-    B,
-    L,
-    P,
-    RGB,
-    RGBA,
-    CMYK,
-    YCbCr,
-    LAB,
-    HSV,
-    I,
-    F,
+    B = 1,
+    L = 2,
+    P = 3,
+    LA = 4,
+    RGB = 5,
+    RGBA = 6,
+    CMYK = 7,
+    YCbCr = 8,
+    LAB = 9,
+    HSV = 10,
+    I = 11,
+    F = 12,
+    L16 = 13,
+    LA16 = 14,
+    RGB16 = 15,
+    RGBA16 = 16,
+    RGB32F = 17,
+    RGBA32F = 18,
 }
 
 impl ImageMode {
+    pub fn try_from_num_channels(num_channels: usize, dtype: &DataType) -> DaftResult<Self> {
+        use ImageMode::*;
+
+        match num_channels {
+            4 => Ok(RGBA),
+            3 => Ok(RGB),
+            2 => Ok(LA),
+            1 => match dtype {
+                DataType::UInt8 => Ok(L),
+                DataType::Boolean => Ok(B),
+                DataType::Int32 => Ok(I),
+                DataType::Float32 => Ok(F),
+                _ => Err(DaftError::TypeError(format!(
+                    "dtype not supported for single-channel image: {}",
+                    dtype
+                ))),
+            },
+            _ => Err(DaftError::ValueError(format!(
+                "Images with more than 4 channels are not supported, but got: {}",
+                num_channels
+            ))),
+        }
+    }
     pub fn num_channels(&self) -> usize {
         use ImageMode::*;
 
         match self {
-            B | L | P | I | F => 1,
-            RGB | YCbCr | LAB | HSV => 3,
-            RGBA | CMYK => 4,
+            B | L | P | I | F | L16 => 1,
+            LA | LA16 => 2,
+            RGB | YCbCr | LAB | HSV | RGB16 | RGB32F => 3,
+            RGBA | CMYK | RGBA16 | RGBA32F => 4,
         }
     }
     pub fn iterator() -> std::slice::Iter<'static, ImageMode> {
         use ImageMode::*;
 
-        static MODES: [ImageMode; 11] = [B, L, P, RGB, RGBA, CMYK, YCbCr, LAB, HSV, I, F];
+        static MODES: [ImageMode; 18] = [
+            B, L, P, LA, RGB, RGBA, CMYK, YCbCr, LAB, HSV, I, F, L16, LA16, RGB16, RGBA16, RGB32F,
+            RGBA32F,
+        ];
         MODES.iter()
     }
 }
@@ -55,6 +89,7 @@ impl std::str::FromStr for ImageMode {
             "1" => Ok(B),
             "L" => Ok(L),
             "P" => Ok(P),
+            "LA" => Ok(LA),
             "RGB" => Ok(RGB),
             "RGBA" => Ok(RGBA),
             "CMYK" => Ok(CMYK),
@@ -63,6 +98,12 @@ impl std::str::FromStr for ImageMode {
             "HSV" => Ok(HSV),
             "I" => Ok(I),
             "F" => Ok(F),
+            "L16" => Ok(L16),
+            "LA16" => Ok(LA16),
+            "RGB16" => Ok(RGB16),
+            "RGBA16" => Ok(RGBA16),
+            "RGB32F" => Ok(RGB32F),
+            "RGBA32F" => Ok(RGBA32F),
             _ => Err(DaftError::TypeError(format!(
                 "Image mode {} is not supported; only the following modes are supported: {:?}",
                 mode,
@@ -139,7 +180,7 @@ pub enum DataType {
     /// A logical type for embeddings.
     Embedding(Box<Field>, usize),
     /// A logical type for images with variable shapes.
-    Image(Box<DataType>, Box<ImageMode>),
+    Image(Box<DataType>, Option<Box<ImageMode>>),
     /// A logical type for images with the same size (height x width).
     FixedShapeImage(Box<DataType>, Box<ImageMode>, Vec<usize>),
     Python,
@@ -243,18 +284,15 @@ impl DataType {
                 Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
                 *size,
             ),
-            Image(dtype, mode) => Struct(vec![
+            Image(dtype, _) => Struct(vec![
                 Field::new(
                     "data",
                     List(Box::new(Field::new("data", dtype.to_physical()))),
                 ),
-                Field::new(
-                    "shapes",
-                    FixedSizeList(
-                        Box::new(Field::new("shapes", UInt64)),
-                        mode.num_channels() + 2,
-                    ),
-                ),
+                Field::new("channel", UInt8),
+                Field::new("height", UInt16),
+                Field::new("width", UInt16),
+                Field::new("mode", UInt8),
             ]),
             FixedShapeImage(dtype, mode, size) => FixedSizeList(
                 Box::new(Field::new("data", dtype.to_physical())),

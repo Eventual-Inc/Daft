@@ -41,6 +41,7 @@ class ImageMode(str, Enum):
     B = "1"
     L = "L"
     P = "P"
+    LA = "LA"
     RGB = "RGB"
     RGBA = "RGBA"
     CMYK = "CMYK"
@@ -49,6 +50,12 @@ class ImageMode(str, Enum):
     HSV = "HSV"
     I = "I"
     F = "F"
+    L16 = "L16"
+    LA16 = "LA16"
+    RGB16 = "RGB16"
+    RGBA16 = "RGBA16"
+    RGB32F = "RGB32F"
+    RGBA32 = "RGBA32F"
 
     @classmethod
     def from_mode_string(cls, mode: str) -> ImageMode:
