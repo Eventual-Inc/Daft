@@ -177,7 +177,7 @@ def test_from_ray_dataset_simple(n_partitions: int):
 
     df = daft.from_ray_dataset(ds)
     # Sort data since partition ordering in Datasets is not deterministic.
-    assert freeze(df.to_pydict()) == freeze({"value": list(range(8))})
+    assert sorted(df.to_pydict()["values"]) == list(range(8))
 
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
