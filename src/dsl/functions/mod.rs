@@ -5,14 +5,14 @@ pub mod numeric;
 pub mod temporal;
 pub mod utf8;
 
+use self::float::FloatExpr;
+use self::image::ImageExpr;
+use self::list::ListExpr;
+use self::numeric::NumericExpr;
 use self::temporal::TemporalExpr;
+use self::utf8::Utf8Expr;
 use crate::{datatypes::Field, error::DaftResult, schema::Schema, series::Series};
-use float::FloatExpr;
-use image::ImageExpr;
-use list::ListExpr;
-use numeric::NumericExpr;
 use serde::{Deserialize, Serialize};
-use utf8::Utf8Expr;
 
 #[cfg(feature = "python")]
 pub mod python;
