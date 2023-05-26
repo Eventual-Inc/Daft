@@ -506,7 +506,10 @@ impl ImageArray {
             .validity()
             .map_or(true, |validity| validity.get_bit(idx));
         if is_valid {
-            Some(unsafe { arrow_array.value_unchecked(idx) })
+            let data_array = arrow_array.values()[0]
+                .as_any()
+                .downcast_ref::<arrow2::array::ListArray<i64>>()?;
+            Some(unsafe { data_array.value_unchecked(idx) })
         } else {
             None
         }

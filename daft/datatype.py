@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import builtins
-from enum import Enum
 
 import pyarrow as pa
 
 from daft.context import get_context
-from daft.daft import PyDataType
+from daft.daft import ImageMode, PyDataType
 
 _RAY_DATA_EXTENSIONS_AVAILABLE = True
 _TENSOR_EXTENSION_TYPES = []
@@ -31,43 +30,6 @@ else:
             _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
     except ImportError:
         _RAY_DATA_EXTENSIONS_AVAILABLE = False
-
-
-class ImageMode(str, Enum):
-    """
-    Supported image modes for Daft's image type.
-    """
-
-    B = "1"
-    L = "L"
-    P = "P"
-    LA = "LA"
-    RGB = "RGB"
-    RGBA = "RGBA"
-    CMYK = "CMYK"
-    YCbCr = "YCbCr"
-    LAB = "LAB"
-    HSV = "HSV"
-    I = "I"
-    F = "F"
-    L16 = "L16"
-    LA16 = "LA16"
-    RGB16 = "RGB16"
-    RGBA16 = "RGBA16"
-    RGB32F = "RGB32F"
-    RGBA32 = "RGBA32F"
-
-    @classmethod
-    def from_mode_string(cls, mode: str) -> ImageMode:
-        if mode == "1":
-            mode = "B"
-        try:
-            return cls[mode]
-        except KeyError:
-            enum_values = [e.value for e in cls]
-            raise ValueError(
-                f"Image type doesn't support mode {mode}; the following modes are supported: {enum_values}"
-            )
 
 
 class DataType:
@@ -170,16 +132,19 @@ class DataType:
         return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
 
     @classmethod
-    def image(cls, mode: str | ImageMode, size: tuple[int, int] | None = None) -> DataType:
+    def image(cls, mode: str | ImageMode, height: int | None = None, width: int | None = None) -> DataType:
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode)
-        if isinstance(size, tuple):
-            if len(size) != 2 or any(not isinstance(n, int) for n in size):
-                raise ValueError(
-                    "The size for a fixed-sized image type must be a 2-element (height, width) tuple of ints, but got: ",
-                    size,
-                )
-        return cls._from_pydatatype(PyDataType.image(mode, size))
+        if height is not None and width is not None:
+            if not isinstance(height, int) or height <= 0:
+                raise ValueError("Image height must be a positive integer, but got: ", height)
+            if not isinstance(width, int) or width <= 0:
+                raise ValueError("Image width must be a positive integer, but got: ", width)
+        elif height is not None or width is not None:
+            raise ValueError(
+                f"Image height and width must either both be specified, or both not be specified, but got height={height}, width={width}"
+            )
+        return cls._from_pydatatype(PyDataType.image(mode, height, width))
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:

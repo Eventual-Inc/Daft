@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use crate::datatypes::{DataType, Field, ImageMode};
 use pyo3::{
     exceptions::PyValueError,
@@ -179,41 +177,28 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn image(mode: Option<&PyAny>, size: Option<Vec<usize>>) -> PyResult<Self> {
-        let image_mode = mode.and_then(|m| {
-            let mode_str = m
-                .getattr("value")
-                .ok()?
-                .downcast::<PyString>()
-                .ok()?
-                .to_str()
-                .ok()?;
-            Some(Box::new(ImageMode::from_str(mode_str).ok()?))
-        });
+    pub fn image(
+        mode: Option<ImageMode>,
+        height: Option<u32>,
+        width: Option<u32>,
+    ) -> PyResult<Self> {
         // TODO(Clark): Make dtype optional instead of falling back to UInt8 here.
-        let dtype = image_mode.clone().map_or(Box::new(DataType::UInt8), |m| {
-            Box::new(DataType::from(m.as_ref()))
-        });
+        let dtype = mode.map_or(Box::new(DataType::UInt8), |m| Box::new(DataType::from(&m)));
         if !dtype.is_numeric() {
             panic!(
                 "The data type for an image must be numeric, but got: {}",
                 dtype
             );
         }
-        match size {
-            Some(size) => {
-                if size.is_empty() {
-                    return Err(PyValueError::new_err(format!(
-                        "The size for fixed-shape image types must be non-empty, but got: {:?}",
-                        size,
-                    )));
-                }
-                let image_mode = image_mode.ok_or(PyValueError::new_err(
+        match (height, width) {
+            (Some(height), Some(width)) => {
+                let image_mode = mode.ok_or(PyValueError::new_err(
                     "Image mode must be provided if specifying an image size.",
                 ))?;
-                Ok(DataType::FixedShapeImage(dtype, image_mode, size).into())
+                Ok(DataType::FixedShapeImage(dtype, image_mode, height, width).into())
             }
-            None => Ok(DataType::Image(dtype, image_mode).into()),
+            (None, None) => Ok(DataType::Image(dtype, mode).into()),
+            (_, _) => Err(PyValueError::new_err(format!("Height and width for image type must both be specified or both not specified, but got: height={:?}, width={:?}", height, width))),
         }
     }
 

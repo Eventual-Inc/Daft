@@ -111,9 +111,9 @@ impl AsArrow for EmbeddingArray {
 }
 
 impl AsArrow for ImageArray {
-    type Output = array::ListArray<i64>;
+    type Output = array::StructArray;
 
-    // downcasts an ImageArray to an Arrow ListArray.
+    // downcasts an ImageArray to an Arrow StructArray.
     fn as_arrow(&self) -> &Self::Output {
         self.physical.data().as_any().downcast_ref().unwrap()
     }

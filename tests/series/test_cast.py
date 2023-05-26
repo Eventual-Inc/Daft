@@ -191,17 +191,17 @@ def test_series_cast_python_to_embedding(dtype) -> None:
 
 @pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
 def test_series_cast_python_to_image(dtype) -> None:
-    data = [np.arange(4).reshape((1, 2, 2)), np.arange(4, 13).reshape((1, 3, 3)), None]
+    data = [np.arange(12).reshape((3, 2, 2)), np.arange(12, 39).reshape((3, 3, 3)), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.image("F")
+    target_dtype = DataType.image("RGB")
 
     t = s.cast(target_dtype)
 
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.arr.lengths().to_pylist() == [4, 9, None]
+    assert t.arr.lengths().to_pylist() == [12, 27, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -212,11 +212,13 @@ def test_series_cast_python_to_image(dtype) -> None:
 
 @pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
 def test_series_cast_python_to_fixed_shape_image(dtype) -> None:
-    shape = (3, 2, 2)
+    height = 2
+    width = 2
+    shape = (3, height, width)
     data = [np.arange(12).reshape(shape), np.arange(12, 24).reshape(shape), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.image("RGB", shape[1:])
+    target_dtype = DataType.image("RGB", height, width)
 
     t = s.cast(target_dtype)
 
