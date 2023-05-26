@@ -290,8 +290,6 @@ fn extract_python_to_vec<
     let py_memory_view = py
         .import("builtins")?
         .getattr(pyo3::intern!(py, "memoryview"))?;
-    let np_as_array_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?;
-    let np_move_axis_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "moveaxis"))?;
     let py_pil_image_type = py
         .import("PIL.Image")
         .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
@@ -302,15 +300,16 @@ fn extract_python_to_vec<
             let object = object.as_ref(py);
 
             let supports_buffer_protocol = py_memory_view.call1((object,)).is_ok();
-            let supports_array_protocol = object.hasattr(pyo3::intern!(py, "__array__"))?;
             let supports_array_interface_protocol =
                 object.hasattr(pyo3::intern!(py, "__array_interface__"))?;
+            let supports_array_protocol = object.hasattr(pyo3::intern!(py, "__array__"))?;
 
             if supports_buffer_protocol
                 || supports_array_interface_protocol
                 || supports_array_protocol
             {
                 // Path if object is supports buffer/array protocols.
+                let np_as_array_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?;
                 let mut pyarray = np_as_array_fn.call1((object,))?;
                 // If object is PIL image and it has a channel dimension defined,
                 // transpose the channel dimension to convert HWC to CHW.
@@ -323,6 +322,8 @@ fn extract_python_to_vec<
                             .unwrap()
                             == 3
                     {
+                        let np_move_axis_fn =
+                            py.import("numpy")?.getattr(pyo3::intern!(py, "moveaxis"))?;
                         pyarray = np_move_axis_fn.call1((pyarray, -1, 0))?;
                     }
                 }
