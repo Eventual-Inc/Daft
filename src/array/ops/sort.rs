@@ -600,18 +600,18 @@ impl DateArray {
 
 impl EmbeddingArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
-        todo!("impl sort for FixedSizeListArray")
+        todo!("impl sort for EmbeddingArray")
     }
 }
 
 impl ImageArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
-        todo!("impl sort for ListArray")
+        todo!("impl sort for ImageArray")
     }
 }
 
 impl FixedShapeImageArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
-        todo!("impl sort for FixedSizeListArray")
+        todo!("impl sort for FixedShapeImageArray")
     }
 }
