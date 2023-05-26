@@ -103,6 +103,7 @@ Example: ``e1.str.concat(e2)``
     daft.expressions.expressions.ExpressionStringNamespace.startswith
     daft.expressions.expressions.ExpressionStringNamespace.length
 
+.. _api-expressions-temporal:
 
 Dates
 *****

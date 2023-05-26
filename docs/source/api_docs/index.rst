@@ -5,6 +5,7 @@ API Documentation
 
    input_output
    dataframe
+   datatype
    expressions
    groupby
    udf
