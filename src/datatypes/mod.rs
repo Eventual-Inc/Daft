@@ -1,5 +1,6 @@
 mod dtype;
 mod field;
+mod image_mode;
 mod matching;
 mod time_unit;
 
@@ -12,6 +13,7 @@ use arrow2::{
 };
 pub use dtype::DataType;
 pub use field::Field;
+pub use image_mode::ImageMode;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 pub use time_unit::TimeUnit;
 pub mod logical;
@@ -107,6 +109,8 @@ impl_daft_logical_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_datatype!(TimeType, Unknown, Int64Type);
 impl_daft_logical_datatype!(DurationType, Unknown, Int64Type);
 impl_daft_logical_datatype!(EmbeddingType, Unknown, FixedSizeListType);
+impl_daft_logical_datatype!(ImageType, Unknown, StructType);
+impl_daft_logical_datatype!(FixedShapeImageType, Unknown, FixedSizeListType);
 
 pub trait NumericNative:
     PartialOrd

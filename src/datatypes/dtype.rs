@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter, Result};
 use arrow2::datatypes::DataType as ArrowType;
 
 use crate::{
-    datatypes::{field::Field, time_unit::TimeUnit},
+    datatypes::{field::Field, image_mode::ImageMode, time_unit::TimeUnit},
     error::{DaftError, DaftResult},
 };
 
@@ -75,8 +75,12 @@ pub enum DataType {
     /// Extension type.
     Extension(String, Box<DataType>, Option<String>),
     // Stop ArrowTypes
-    /// A Embedding Logical Type
+    /// A logical type for embeddings.
     Embedding(Box<Field>, usize),
+    /// A logical type for images with variable shapes.
+    Image(Box<DataType>, Option<ImageMode>),
+    /// A logical type for images with the same size (height x width).
+    FixedShapeImage(Box<DataType>, ImageMode, u32, u32),
     Python,
     Unknown,
 }
@@ -143,7 +147,7 @@ impl DataType {
                 Box::new(dtype.to_arrow()?),
                 metadata.clone(),
             )),
-            DataType::Embedding(..) => {
+            DataType::Embedding(..) | DataType::Image(..) | DataType::FixedShapeImage(..) => {
                 let physical = Box::new(self.to_physical());
                 let embedding_extension = DataType::Extension(
                     DAFT_SUPER_EXTENSION_NAME.into(),
@@ -177,6 +181,20 @@ impl DataType {
             Embedding(field, size) => FixedSizeList(
                 Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
                 *size,
+            ),
+            Image(dtype, _) => Struct(vec![
+                Field::new(
+                    "data",
+                    List(Box::new(Field::new("data", dtype.to_physical()))),
+                ),
+                Field::new("channel", UInt16),
+                Field::new("height", UInt32),
+                Field::new("width", UInt32),
+                Field::new("mode", UInt8),
+            ]),
+            FixedShapeImage(dtype, mode, height, width) => FixedSizeList(
+                Box::new(Field::new("data", dtype.to_physical())),
+                usize::try_from(mode.num_channels() as u32 * height * width).unwrap(),
             ),
             _ => self.clone(),
         }
@@ -263,7 +281,13 @@ impl DataType {
 
     #[inline]
     pub fn is_logical(&self) -> bool {
-        matches!(self, DataType::Date | DataType::Embedding(..))
+        matches!(
+            self,
+            DataType::Date
+                | DataType::Embedding(..)
+                | DataType::Image(..)
+                | DataType::FixedShapeImage(..)
+        )
     }
 
     #[inline]
@@ -360,6 +384,18 @@ impl From<&ArrowType> for DataType {
     }
 }
 
+impl From<&ImageMode> for DataType {
+    fn from(mode: &ImageMode) -> Self {
+        use ImageMode::*;
+
+        match mode {
+            L16 | LA16 | RGB16 | RGBA16 => DataType::UInt16,
+            RGB32F | RGBA32F => DataType::Float32,
+            _ => DataType::UInt8,
+        }
+    }
+}
+
 impl Display for DataType {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
@@ -368,9 +404,6 @@ impl Display for DataType {
             DataType::FixedSizeList(inner, size) => {
                 write!(f, "FixedSizeList[{}; {}]", inner.dtype, size)
             }
-            DataType::Embedding(inner, size) => {
-                write!(f, "Embedding[{}; {}]", inner.dtype, size)
-            }
             DataType::Struct(fields) => {
                 let fields: String = fields
                     .iter()
@@ -378,6 +411,19 @@ impl Display for DataType {
                     .collect::<Vec<String>>()
                     .join(", ");
                 write!(f, "Struct[{fields}]")
+            }
+            DataType::Embedding(inner, size) => {
+                write!(f, "Embedding[{}; {}]", inner.dtype, size)
+            }
+            DataType::Image(dtype, mode) => {
+                write!(f, "Image[{}; {:?}]", dtype, mode)
+            }
+            DataType::FixedShapeImage(dtype, mode, height, width) => {
+                write!(
+                    f,
+                    "Image[{}; {:?}; {:?} x {:?}]",
+                    dtype, mode, height, width
+                )
             }
             _ => write!(f, "{self:?}"),
         }

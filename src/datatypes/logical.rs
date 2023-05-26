@@ -5,7 +5,7 @@ use crate::{
     error::DaftResult,
 };
 
-use super::{DataArray, DataType, EmbeddingType};
+use super::{DataArray, DataType, EmbeddingType, FixedShapeImageType, ImageType};
 
 pub struct LogicalArray<L: DaftLogicalType> {
     pub field: Arc<Field>,
@@ -94,3 +94,5 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
 
 pub type DateArray = LogicalArray<DateType>;
 pub type EmbeddingArray = LogicalArray<EmbeddingType>;
+pub type ImageArray = LogicalArray<ImageType>;
+pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;

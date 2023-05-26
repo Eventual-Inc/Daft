@@ -5,7 +5,7 @@ import builtins
 import pyarrow as pa
 
 from daft.context import get_context
-from daft.daft import PyDataType
+from daft.daft import ImageMode, PyDataType
 
 _RAY_DATA_EXTENSIONS_AVAILABLE = True
 _TENSOR_EXTENSION_TYPES = []
@@ -118,18 +118,35 @@ class DataType:
         return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
 
     @classmethod
-    def embedding(cls, name: str, dtype: DataType, size: int) -> DataType:
-        if not isinstance(size, int) or size <= 0:
-            raise ValueError("The size for a embedding must be a positive integer, but got: ", size)
-        return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
-
-    @classmethod
     def struct(cls, fields: dict[str, DataType]) -> DataType:
         return cls._from_pydatatype(PyDataType.struct({name: datatype._dtype for name, datatype in fields.items()}))
 
     @classmethod
     def extension(cls, name: str, storage_dtype: DataType, metadata: str | None = None) -> DataType:
         return cls._from_pydatatype(PyDataType.extension(name, storage_dtype._dtype, metadata))
+
+    @classmethod
+    def embedding(cls, name: str, dtype: DataType, size: int) -> DataType:
+        if not isinstance(size, int) or size <= 0:
+            raise ValueError("The size for a embedding must be a positive integer, but got: ", size)
+        return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
+
+    @classmethod
+    def image(
+        cls, mode: str | ImageMode | None = None, height: int | None = None, width: int | None = None
+    ) -> DataType:
+        if isinstance(mode, str):
+            mode = ImageMode.from_mode_string(mode)
+        if height is not None and width is not None:
+            if not isinstance(height, int) or height <= 0:
+                raise ValueError("Image height must be a positive integer, but got: ", height)
+            if not isinstance(width, int) or width <= 0:
+                raise ValueError("Image width must be a positive integer, but got: ", width)
+        elif height is not None or width is not None:
+            raise ValueError(
+                f"Image height and width must either both be specified, or both not be specified, but got height={height}, width={width}"
+            )
+        return cls._from_pydatatype(PyDataType.image(mode, height, width))
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
@@ -244,25 +261,24 @@ class DataType:
 
 
 class DaftExtension(pa.ExtensionType):
-    def __init__(self, dtype, metadata):
+    def __init__(self, dtype, metadata=b""):
         # attributes need to be set first before calling
         # super init (as that calls serialize)
-        self._dtype = dtype
         self._metadata = metadata
-        pa.ExtensionType.__init__(self, dtype, "daft.super_extension")
+        super().__init__(dtype, "daft.super_extension")
 
     def __reduce__(self):
-        return DaftExtension, (self._dtype, self._metadata)
+        return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
 
     def __arrow_ext_serialize__(self):
         return self._metadata
 
     @classmethod
     def __arrow_ext_deserialize__(cls, storage_type, serialized):
-        return DaftExtension(storage_type, serialized)
+        return cls(storage_type, serialized)
 
 
-pa.register_extension_type(DaftExtension(pa.null(), b""))
+pa.register_extension_type(DaftExtension(pa.null()))
 import atexit
 
 atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))

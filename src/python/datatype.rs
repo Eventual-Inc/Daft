@@ -1,4 +1,4 @@
-use crate::datatypes::{DataType, Field};
+use crate::datatypes::{DataType, Field, ImageMode};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -125,28 +125,6 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn embedding(name: &str, data_type: Self, size: i64) -> PyResult<Self> {
-        if size <= 0 {
-            return Err(PyValueError::new_err(format!(
-                "The size for embedding types must be a positive integer, but got: {}",
-                size
-            )));
-        }
-        if !data_type.dtype.is_numeric() {
-            return Err(PyValueError::new_err(format!(
-                "The data type for an embedding must be numeric, but got: {}",
-                data_type.dtype
-            )));
-        }
-
-        Ok(DataType::Embedding(
-            Box::new(Field::new(name, data_type.dtype)),
-            usize::try_from(size)?,
-        )
-        .into())
-    }
-
-    #[staticmethod]
     pub fn r#struct(fields: &PyDict) -> PyResult<Self> {
         Ok(DataType::Struct(
             fields
@@ -174,6 +152,54 @@ impl PyDataType {
             metadata.map(|s| s.to_string()),
         )
         .into())
+    }
+
+    #[staticmethod]
+    pub fn embedding(name: &str, data_type: Self, size: i64) -> PyResult<Self> {
+        if size <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "The size for embedding types must be a positive integer, but got: {}",
+                size
+            )));
+        }
+        if !data_type.dtype.is_numeric() {
+            return Err(PyValueError::new_err(format!(
+                "The data type for an embedding must be numeric, but got: {}",
+                data_type.dtype
+            )));
+        }
+
+        Ok(DataType::Embedding(
+            Box::new(Field::new(name, data_type.dtype)),
+            usize::try_from(size)?,
+        )
+        .into())
+    }
+
+    #[staticmethod]
+    pub fn image(
+        mode: Option<ImageMode>,
+        height: Option<u32>,
+        width: Option<u32>,
+    ) -> PyResult<Self> {
+        // TODO(Clark): Make dtype optional instead of falling back to UInt8 here.
+        let dtype = mode.map_or(Box::new(DataType::UInt8), |m| Box::new(DataType::from(&m)));
+        if !dtype.is_numeric() {
+            panic!(
+                "The data type for an image must be numeric, but got: {}",
+                dtype
+            );
+        }
+        match (height, width) {
+            (Some(height), Some(width)) => {
+                let image_mode = mode.ok_or(PyValueError::new_err(
+                    "Image mode must be provided if specifying an image size.",
+                ))?;
+                Ok(DataType::FixedShapeImage(dtype, image_mode, height, width).into())
+            }
+            (None, None) => Ok(DataType::Image(dtype, mode).into()),
+            (_, _) => Err(PyValueError::new_err(format!("Height and width for image type must both be specified or both not specified, but got: height={:?}, width={:?}", height, width))),
+        }
     }
 
     #[staticmethod]

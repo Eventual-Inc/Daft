@@ -1,7 +1,7 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, EmbeddingArray},
+        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray},
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
         FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
     },
@@ -461,6 +461,79 @@ impl DateArray {
 }
 
 impl EmbeddingArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::array::Array>> {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        let arrow_array = self.as_arrow();
+        let is_valid = arrow_array
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
+        if is_valid {
+            Some(unsafe { arrow_array.value_unchecked(idx) })
+        } else {
+            None
+        }
+    }
+
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let new_array = self.physical.take(idx)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => Ok(format!("{v:?}")),
+        }
+    }
+}
+
+impl ImageArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::array::Array>> {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        let arrow_array = self.as_arrow();
+        let is_valid = arrow_array
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
+        if is_valid {
+            let data_array = arrow_array.values()[0]
+                .as_any()
+                .downcast_ref::<arrow2::array::ListArray<i64>>()?;
+            Some(unsafe { data_array.value_unchecked(idx) })
+        } else {
+            None
+        }
+    }
+
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let new_array = self.physical.take(idx)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => Ok(format!("{v:?}")),
+        }
+    }
+}
+
+impl FixedShapeImageArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::array::Array>> {
         if idx >= self.len() {
