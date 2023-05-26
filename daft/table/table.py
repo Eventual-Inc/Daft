@@ -141,6 +141,13 @@ class Table:
             tables.append(t._table)
         return Table._from_pytable(_PyTable.concat(tables))
 
+    def slice(self, start: int, end: int) -> Table:
+        if not isinstance(start, int):
+            raise TypeError(f"expected int for start but got {type(start)}")
+        if not isinstance(end, int):
+            raise TypeError(f"expected int for end but got {type(end)}")
+        return Table._from_pytable(self._table.slice(start, end))
+
     ###
     # Exporting methods
     ###
