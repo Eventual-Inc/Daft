@@ -56,6 +56,8 @@ You may find yourself needing to hardcode a "single value" oftentimes as an expr
 
 This special ``lit`` expression we just created evaluates always to the value ``42``.
 
+.. _userguide-numeric-expressions:
+
 Numeric Expressions
 -------------------
 
@@ -91,6 +93,8 @@ Since column "A" is an integer, we can run numeric computation such as addition,
 Notice that the returned types of these operations are also well-typed according to their input types. For example, calling ``df["A"] > 1`` returns a column of type ``Boolean``.
 
 Both The Float and Int types are numeric types, and inherit many of the same arithmetic Expression operations. You may find the full list of numeric operations in the :ref:`Expressions API reference <api-numeric-expression-operations>`.
+
+.. _userguide-string-expressions:
 
 String Expressions
 ------------------
@@ -200,7 +204,9 @@ Daft provides the ``Expression.url.*`` method namespace with functionality for w
 
 This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), local filepaths or even paths to a file in an object store such as AWS S3 as well!
 
-Boolean Expressions
+.. _userguide-logical-expressions:
+
+Logical Expressions
 -------------------
 
 Logical Expressions are an expression that refers to a column of type ``Boolean``, and can only take on the values True or False.

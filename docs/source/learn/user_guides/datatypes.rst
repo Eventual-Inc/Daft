@@ -1,68 +1,125 @@
 Datatypes
 =========
 
-All columns in a Daft DataFrame have a DataType \(dtype\). All items in a column are of the same dtype, or they can be the special Null value \(indicating a missing value\).
+All columns in a Daft DataFrame have a DataType \(also often abbreviated as ``dtype``\).
 
-+-------------------------+----------------------------------------------------------------------------------------------+
-| DataType                | Description                                                                                  |
-+=========================+==============================================================================================+
-| **Simple Types**                                                                                                       |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Null``                | Always the ``Null`` value                                                                    |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Boolean``             | Either ``True`` or ``False``                                                                 |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| **Numeric**                                                                                                            |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``UInt8``               | 8-bit unsigned integer                                                                       |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``UInt16``              | 16-bit unsigned integer                                                                      |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``UInt32``              | 32-bit unsigned integer                                                                      |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``UInt64``              | 64-bit unsigned integer                                                                      |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Int8``                | 8-bit signed integer                                                                         |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Int16``               | 16-bit signed integer                                                                        |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Int32``               | 32-bit signed integer                                                                        |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Int64``               | 64-bit signed integer                                                                        |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Float32``             | 32-bit float                                                                                 |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Float64``             | 64-bit float                                                                                 |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| **Temporal**                                                                                                           |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Date``                | A date with a year, month and day                                                            |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Timestamp(U, Z)``     | (Coming soon) timestamp with a unit of resolution (``U``) and an optional timezone (``Z``)   |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Duration(U)``         | (Coming soon) a duration of time with a unit of resolution (``U``)                           |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Time(U)``             | (Coming soon) Time since midnight with a unit of resolution (``U``)                          |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| **Nested**                                                                                                             |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``List(D)``             | Variable-length list of dtype (``D``)                                                        |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``FixedSizeList(D, N)`` | Fixed-size list of dtype (``D``) and constant length (``N``)                                 |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Struct(M)``           | Struct with a mapping (``M``) of field names to dtypes                                       |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| **Python**                                                                                                             |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Python``              | Python objects                                                                               |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| **Images**                                                                                                             |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Image``               | (Coming soon) Images                                                                         |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``FixedSizeImage(W, H)``| (Coming soon) Images of a fixed size of width ``W`` and height ``H``                         |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| **Machine Learning**                                                                                                   |
-+-------------------------+----------------------------------------------------------------------------------------------+
-| ``Embeddings(D, S)``    | Fixed-sized array of ``S`` number of elements, each of numerical dtype ``D``                 |
-+-------------------------+----------------------------------------------------------------------------------------------+
+All elements of a column are of the same dtype, or they can be the special Null value \(indicating a missing value\).
+
+Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings and dates - all the way up to more complex types like images and embeddings.
+
+.. NOTE::
+
+    For a full overview on all the DataTypes that Daft supports, see the :doc:`DataType API Reference <../../api_docs/datatype>`.
+
+Numeric DataTypes
+-----------------
+
+Numeric DataTypes allows Daft to represent numbers. These numbers can differ in terms of the number of bits used to represent them (8, 16, 32 or 64 bits) and the semantic meaning of those bits
+(float vs integer vs unsigned integers).
+
+Examples:
+
+1. ``DataType.int8()``: represents an 8-bit signed integer (-128 to 127)
+2. ``DataType.float32()``: represents a 32-bit float (a float number with about 7 decimal digits of precision)
+
+Columns/expressions with these datatypes can be operated on with many numeric expressions such as ``+`` and ``*``.
+
+See also:
+
+* :ref:`Numeric DataTypes <api-datatypes-numeric>`
+* :ref:`Numeric Expressions <userguide-numeric-expressions>`
+
+Logical DataTypes
+-----------------
+
+The ``DataType.bool()`` DataType represents values which are boolean values: ``True``, ``False`` or ``Null``.
+
+Columns/expressions with this dtype can be operated on using logical expressions such as ``&`` and ``if_else``.
+
+See also:
+
+* :ref:`Logical DataTypes <api-datatypes-logical>`
+* :ref:`Logical Expressions <userguide-logical-expressions>`
+
+String Types
+------------
+
+Daft has string types, which represent a variable-length string of characters.
+
+As a convenience method, string types also support the ``+`` Expression, which has been overloaded to support concatenation of elements between two ``DataType.string()`` columns.
+
+1. ``DataType.string()``: represents a string of UTF-8 characters
+2. ``DataType.binary()``: represents a string of bytes
+
+See also:
+
+* :ref:`String DataTypes <api-datatypes-string>`
+* :ref:`String Expressions <userguide-string-expressions>`
+
+Temporal
+--------
+
+Temporal dtypes represent data that have to do with time.
+
+Examples:
+
+1. ``DataType.date()``: represents a Date (year, month and day)
+2. ``DataType.duration()``: [COMING SOON] represents the duration between two instances in time
+
+NOTE: Many temporal types are still a work-in-progress!
+
+See also:
+
+* :ref:`Temporal DataTypes <api-datatypes-temporal>`
+* :ref:`Temporal Expressions <api-expressions-temporal>`
+
+Nested
+------
+
+Nested DataTypes wrap other DataTypes, allowing you to compose types into complex datastructures.
+
+Examples:
+
+1. ``DataType.list(child_dtype)``: represents a list where each element is of the child dtype
+2. ``DataType.struct({"field_name": child_dtype})``: represents a structure that has children dtypes, each mapped to a field name
+
+See also:
+
+* :ref:`Nested DataTypes <api-datatypes-nested>`
+
+Python
+------
+
+The ``DataType.python()`` dtype represent items that are Python objects.
+
+.. WARNING::
+
+    Daft does not impose any invariants about what *Python types* these objects are. To Daft, these are just generic Python objects!
+
+Python is AWESOME because it's so flexible, but it's also slow and memory inefficient! Thus we recommend:
+
+1. **Cast early!**: Casting your Python data into native Daft DataTypes if possible - this results in much more efficient downstream data serialization and computation.
+2. **Use Python UDFs**: If there is no suitable Daft representation for your Python objects, use Python UDFs to process your Python data and extract the relevant data to be returned as native Daft DataTypes!
+
+.. NOTE::
+
+    If you work with Python class for a generalizable use-case (e.g. images, documents, protobufs), it may be that these types are good candidates for "promotion" into a native Daft type!
+    Please get in touch with the Daft team and we would love to work together on building your type into canonical Daft types.
+
+Other Complex Types
+-------------------
+
+Daft supports many more interesting complex DataTypes, for example:
+
+* ``DataType.embedding()``: Embeddings used in Machine Learning
+* ``DataType.image()``: 2D Images!
+
+Daft abstracts away the in-memory representation of your data, as well as provides kernels for many common operations on top of this type of data (e.g. resizing an image).
+
+For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
+
+Please add suggestions for new DataTypes to our Github Discussions page!
+
+See also:
+
+* :ref:`Complex Types <api-datatypes-complex>`

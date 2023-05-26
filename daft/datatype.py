@@ -33,6 +33,8 @@ else:
 
 
 class DataType:
+    """A Daft DataType defines the type of all the values in an Expression or DataFrame column"""
+
     _dtype: PyDataType
 
     def __init__(self) -> None:
@@ -49,76 +51,108 @@ class DataType:
 
     @classmethod
     def int8(cls) -> DataType:
+        """Create an 8-bit integer DataType"""
         return cls._from_pydatatype(PyDataType.int8())
 
     @classmethod
     def int16(cls) -> DataType:
+        """Create an 16-bit integer DataType"""
         return cls._from_pydatatype(PyDataType.int16())
 
     @classmethod
     def int32(cls) -> DataType:
+        """Create an 32-bit integer DataType"""
         return cls._from_pydatatype(PyDataType.int32())
 
     @classmethod
     def int64(cls) -> DataType:
+        """Create an 64-bit integer DataType"""
         return cls._from_pydatatype(PyDataType.int64())
 
     @classmethod
     def uint8(cls) -> DataType:
+        """Create an unsigned 8-bit integer DataType"""
         return cls._from_pydatatype(PyDataType.uint8())
 
     @classmethod
     def uint16(cls) -> DataType:
+        """Create an unsigned 16-bit integer DataType"""
         return cls._from_pydatatype(PyDataType.uint16())
 
     @classmethod
     def uint32(cls) -> DataType:
+        """Create an unsigned 32-bit integer DataType"""
         return cls._from_pydatatype(PyDataType.uint32())
 
     @classmethod
     def uint64(cls) -> DataType:
+        """Create an unsigned 64-bit integer DataType"""
         return cls._from_pydatatype(PyDataType.uint64())
 
     @classmethod
     def float32(cls) -> DataType:
+        """Create a 32-bit float DataType"""
         return cls._from_pydatatype(PyDataType.float32())
 
     @classmethod
     def float64(cls) -> DataType:
+        """Create a 64-bit float DataType"""
         return cls._from_pydatatype(PyDataType.float64())
 
     @classmethod
     def string(cls) -> DataType:
+        """Create a String DataType: A string of UTF8 characters"""
         return cls._from_pydatatype(PyDataType.string())
 
     @classmethod
     def bool(cls) -> DataType:
+        """Create the Boolean DataType: Either ``True`` or ``False``"""
         return cls._from_pydatatype(PyDataType.bool())
 
     @classmethod
     def binary(cls) -> DataType:
+        """Create a Binary DataType: A string of bytes"""
         return cls._from_pydatatype(PyDataType.binary())
 
     @classmethod
     def null(cls) -> DataType:
+        """Creates the Null DataType: Always the ``Null`` value"""
         return cls._from_pydatatype(PyDataType.null())
 
     @classmethod
     def date(cls) -> DataType:
+        """Create a Date DataType: A date with a year, month and day"""
         return cls._from_pydatatype(PyDataType.date())
 
     @classmethod
     def list(cls, name: str, dtype: DataType) -> DataType:
+        """Create a List DataType: Variable-length list, where each element in the list has type ``dtype``
+
+        Args:
+            dtype: DataType of each element in the list
+        """
         return cls._from_pydatatype(PyDataType.list(name, dtype._dtype))
 
     @classmethod
     def fixed_size_list(cls, name: str, dtype: DataType, size: int) -> DataType:
+        """Create a FixedSizeList DataType: Fixed-size list, where each element in the list has type ``dtype``
+        and each list has length ``size``.
+
+        Args:
+            dtype: DataType of each element in the list
+            size: length of each list
+        """
         if not isinstance(size, int) or size <= 0:
             raise ValueError("The size for a fixed-size list must be a positive integer, but got: ", size)
         return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
 
     @classmethod
     def struct(cls, fields: dict[str, DataType]) -> DataType:
+        """Create a Struct DataType: a nested type which has names mapped to child types
+
+        Args:
+            fields: Nested fields of the Struct
+        """
         return cls._from_pydatatype(PyDataType.struct({name: datatype._dtype for name, datatype in fields.items()}))
 
     @classmethod
@@ -127,6 +161,13 @@ class DataType:
 
     @classmethod
     def embedding(cls, name: str, dtype: DataType, size: int) -> DataType:
+        """Create an Embedding DataType: embeddings are fixed size arrays, where each element
+        in the array has a **numeric** ``dtype`` and each array has a fixed length of ``size``.
+
+        Args:
+            dtype: DataType of each element in the list (must be numeric)
+            size: length of each list
+        """
         if not isinstance(size, int) or size <= 0:
             raise ValueError("The size for a embedding must be a positive integer, but got: ", size)
         return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
@@ -150,6 +191,7 @@ class DataType:
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
+        """Maps a PyArrow DataType to a Daft DataType"""
         if pa.types.is_int8(arrow_type):
             return cls.int8()
         elif pa.types.is_int16(arrow_type):
@@ -229,11 +271,13 @@ class DataType:
 
     @classmethod
     def from_numpy_dtype(cls, np_type) -> DataType:
+        """Maps a Numpy datatype to a Daft DataType"""
         arrow_type = pa.from_numpy_dtype(np_type)
         return cls.from_arrow_type(arrow_type)
 
     @classmethod
     def python(cls) -> DataType:
+        """Create a Python DataType: a type which refers to an arbitrary Python object"""
         return cls._from_pydatatype(PyDataType.python())
 
     def _is_python_type(self) -> builtins.bool:
