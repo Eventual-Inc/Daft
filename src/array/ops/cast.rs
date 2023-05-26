@@ -28,7 +28,7 @@ use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 use numpy::PyReadonlyArrayDyn;
 #[cfg(feature = "python")]
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyType};
 #[cfg(feature = "python")]
 use std::iter;
 
@@ -219,26 +219,9 @@ fn append_values_from_numpy<
         // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
         // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
         // Relevant:
-        //  1. Must be C-contiguous.
-        //  2. Must have non-negative strides.
+        //  1. Must have non-negative strides.
 
         // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
-        // TODO(Clark): Relax the C-contiguous constraint, using the ndarray crate to copy the array so it's C-contiguous.
-        // TODO(Clark): Delegate to NumPy's np.ravel() in Python land for the necessary conversions if the ndarray isn't already
-        // C-contiguous and the ndarray crate doesn't expose the requisite functionality, since having to acquire the GIL and
-        // make a copy is better than failing.
-        if !pyarray.is_c_contiguous() {
-            if pyarray.is_fortran_contiguous() {
-                return Err(DaftError::ValueError(format!(
-                    "we only support c-contiguous numpy arrays, got fortran-contiguous ndarray at index: {}",
-                    index
-                )));
-            }
-            return Err(DaftError::ValueError(format!(
-                "we only support c-contiguous numpy arrays, but got non-contiguous ndarray at index: {}",
-                index
-            )));
-        }
         if pyarray.strides().iter().any(|s| *s < 0) {
             return Err(DaftError::ValueError(format!(
                 "we only support numpy arrays with non-negative strides, but got {:?} at index: {}",
@@ -247,16 +230,17 @@ fn append_values_from_numpy<
         }
 
         let pyarray = pyarray.as_array();
-        let sl: &[Src] = pyarray.as_slice().expect("convert numpy array to slice");
+        let owned_arr;
+        // Create 1D slice from potentially non-contiguous and non-C-order arrays.
+        // This will only create a copy if the ndarray is non-contiguous.
+        let sl: &[Src] = match pyarray.as_slice_memory_order() {
+            Some(sl) => sl,
+            None => {
+                owned_arr = pyarray.to_owned();
+                owned_arr.as_slice_memory_order().unwrap()
+            }
+        };
         values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
-        // let mut shape = pyarray.shape().iter().map(|v| *v as u64).collect::<Vec<u64>>();
-        // if let Some(shape_size) = shape_size {
-        //     if shape_size > shape.len() {
-        //         // Pad shape with unit dimensions to meet expected shape size.
-        //         shape.splice(0..0, iter::repeat(1).take(shape_size - shape.len()));
-        //     }
-        // }
-        // shapes_vec.extend(shape);
         shapes_vec.push(pyarray.shape().iter().map(|v| *v as u64).collect::<Vec<u64>>());
         Ok((sl.len()))
     })
@@ -303,16 +287,45 @@ fn extract_python_to_vec<
     }?;
 
     let py_type_fn = { PyModule::import(py, pyo3::intern!(py, "builtins"))?.getattr(pytype)? };
+    let py_memory_view = py
+        .import("builtins")?
+        .getattr(pyo3::intern!(py, "memoryview"))?;
+    let np_as_array_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?;
+    let np_move_axis_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "moveaxis"))?;
+    let py_pil_image_type = py
+        .import("PIL.Image")
+        .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
 
     for (i, object) in python_objects.as_arrow().iter().enumerate() {
         if let Some(object) = object {
             let object = object.into_py(py);
             let object = object.as_ref(py);
 
-            let pyarray = object.call_method0(pyo3::intern!(py, "__array__"));
+            let supports_buffer_protocol = py_memory_view.call1((object,)).is_ok();
+            let supports_array_protocol = object.hasattr(pyo3::intern!(py, "__array__"))?;
+            let supports_array_interface_protocol =
+                object.hasattr(pyo3::intern!(py, "__array_interface__"))?;
 
-            if let Ok(pyarray) = pyarray {
-                // Path if object is array-like
+            if supports_buffer_protocol
+                || supports_array_interface_protocol
+                || supports_array_protocol
+            {
+                // Path if object is supports buffer/array protocols.
+                let mut pyarray = np_as_array_fn.call1((object,))?;
+                // If object is PIL image and it has a channel dimension defined,
+                // transpose the channel dimension to convert HWC to CHW.
+                if let Ok(pil_image_type) = py_pil_image_type {
+                    if object.is_instance(pil_image_type.downcast::<PyType>().unwrap())?
+                        && pyarray
+                            .getattr(pyo3::intern!(py, "ndim"))
+                            .unwrap()
+                            .extract::<i64>()
+                            .unwrap()
+                            == 3
+                    {
+                        pyarray = np_move_axis_fn.call1((pyarray, -1, 0))?;
+                    }
+                }
                 let num_values = append_values_from_numpy(
                     pyarray,
                     i,
@@ -331,8 +344,8 @@ fn extract_python_to_vec<
                     offsets_vec.push(offsets_vec.last().unwrap() + num_values as i64);
                 }
             } else {
-                // Path if object is not array-like
-                // try to see if we can iterate over the object
+                // Path if object does not support buffer/array protocols.
+                // Try a best-effort conversion of the elements.
                 let pyiter = object.iter();
                 if let Ok(pyiter) = pyiter {
                     // has an iter
@@ -369,9 +382,9 @@ fn extract_python_to_vec<
                             .map(|v| v.map(|v| v.0));
                         float_iter.collect::<PyResult<Vec<_>>>()
                     } else {
-                        return Err(DaftError::ValueError(format!(
-                            "Python Object is neither array-like or an iterable at index {}. Can not convert to a list. object type: {}",
-                            i, object.getattr(pyo3::intern!(py, "__class__"))?)));
+                        unreachable!(
+                            "dtype should either be int or float at this point; this is a bug"
+                        );
                     };
 
                     if collected.is_err() {
@@ -381,9 +394,9 @@ fn extract_python_to_vec<
                     if let Some(list_size) = list_size {
                         if collected.len() != list_size {
                             return Err(DaftError::ValueError(format!(
-                            "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                            collected.len(), i
-                        )));
+                                "Expected Array-like Object to have {list_size} elements but got {} at index {}",
+                                collected.len(), i
+                            )));
                         }
                     } else {
                         let offset = offsets_vec.last().unwrap() + collected.len() as i64;
@@ -391,6 +404,10 @@ fn extract_python_to_vec<
                         shapes_vec.push(vec![1]);
                     }
                     values_vec.extend_from_slice(collected.as_slice());
+                } else {
+                    return Err(DaftError::ValueError(format!(
+                        "Python Object is neither array-like or an iterable at index {}. Can not convert to a list. object type: {}",
+                        i, object.getattr(pyo3::intern!(py, "__class__"))?)));
                 }
             }
         } else if let Some(list_size) = list_size {
@@ -519,12 +536,28 @@ fn extract_python_like_to_image_struct<
         validity.cloned(),
     ));
 
-    let mut channels = Vec::<u16>::with_capacity(shapes.len());
-    let mut heights = Vec::<u32>::with_capacity(shapes.len());
-    let mut widths = Vec::<u32>::with_capacity(shapes.len());
-    let mut modes = Vec::<u8>::with_capacity(shapes.len());
-    for shape in shapes.iter() {
-        let mut shape = shape.to_owned();
+    let num_rows = shapes.len();
+
+    let mut channels = Vec::<u16>::with_capacity(num_rows);
+    let mut heights = Vec::<u32>::with_capacity(num_rows);
+    let mut widths = Vec::<u32>::with_capacity(num_rows);
+    let mut modes = Vec::<u8>::with_capacity(num_rows);
+    for (mut shape, is_valid) in iter::zip(
+        shapes.into_iter(),
+        validity
+            .unwrap_or(&arrow2::bitmap::Bitmap::from_iter(
+                iter::repeat(true).take(num_rows),
+            ))
+            .iter(),
+    ) {
+        if !is_valid {
+            // Handle invalid row by populating dummy data.
+            channels.push(1);
+            heights.push(1);
+            widths.push(1);
+            modes.push(mode_from_dtype.unwrap_or(ImageMode::L) as u8);
+            continue;
+        }
         if shape.len() == shape_size - 1 {
             shape.splice(0..0, [1]);
         } else if shape.len() != shape_size {
@@ -551,13 +584,10 @@ fn extract_python_like_to_image_struct<
                 .try_into()
                 .expect("Image width should fit into a uint16"),
         );
-        let mode = match mode_from_dtype {
-            Some(mode) => mode as u8,
-            None => {
-                ImageMode::try_from_num_channels(shape[0].try_into().unwrap(), &child_dtype)? as u8
-            }
-        };
-        modes.push(mode);
+        modes.push(mode_from_dtype.unwrap_or(ImageMode::try_from_num_channels(
+            shape[0].try_into().unwrap(),
+            &child_dtype,
+        )?) as u8);
     }
 
     let channel_array = Box::new(arrow2::array::PrimitiveArray::from_vec(channels));

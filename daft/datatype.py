@@ -132,7 +132,9 @@ class DataType:
         return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
 
     @classmethod
-    def image(cls, mode: str | ImageMode, height: int | None = None, width: int | None = None) -> DataType:
+    def image(
+        cls, mode: str | ImageMode | None = None, height: int | None = None, width: int | None = None
+    ) -> DataType:
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode)
         if height is not None and width is not None:
