@@ -11,7 +11,7 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
 from daft.daft import udf as _udf
-from daft.datatype import DataType
+from daft.datatype import DataType, ImageMode
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
 
@@ -668,5 +668,5 @@ class ExpressionsProjection(Iterable[Expression]):
 
 
 class ExpressionImageNamespace(ExpressionNamespace):
-    def decode(self, dtype: DataType) -> Expression:
-        return Expression._from_pyexpr(self._expr.image_decode(dtype))
+    def decode(self, mode: ImageMode, height: int, width: int) -> Expression:
+        return Expression._from_pyexpr(self._expr.image_decode(mode, height, width))
