@@ -6,7 +6,7 @@ import pyarrow as pa
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import PySeries
-from daft.datatype import DataType
+from daft.datatype import DataType, ImageMode
 
 _NUMPY_AVAILABLE = True
 try:
@@ -383,6 +383,10 @@ class Series:
     def arr(self) -> SeriesArrayNamespace:
         return SeriesArrayNamespace.from_series(self)
 
+    @property
+    def image(self) -> SeriesImageNamespace:
+        return SeriesImageNamespace.from_series(self)
+
     def __reduce__(self) -> tuple:
         if self.datatype()._is_python_type():
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
@@ -458,3 +462,8 @@ class SeriesDateNamespace(SeriesNamespace):
 class SeriesArrayNamespace(SeriesNamespace):
     def lengths(self) -> Series:
         return Series._from_pyseries(self._series.arr_lengths())
+
+
+class SeriesImageNamespace(SeriesNamespace):
+    def decode(self, mode: ImageMode, height: int, width: int) -> Series:
+        return Series._from_pyseries(self._series.image_decode(mode, height, width))

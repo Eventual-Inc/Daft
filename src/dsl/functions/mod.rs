@@ -1,4 +1,5 @@
 pub mod float;
+pub mod image;
 pub mod list;
 pub mod numeric;
 pub mod temporal;
@@ -7,6 +8,7 @@ pub mod utf8;
 use self::temporal::TemporalExpr;
 use crate::{datatypes::Field, error::DaftResult, schema::Schema, series::Series};
 use float::FloatExpr;
+use image::ImageExpr;
 use list::ListExpr;
 use numeric::NumericExpr;
 use serde::{Deserialize, Serialize};
@@ -15,7 +17,7 @@ use utf8::Utf8Expr;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]
-use python::PythonUDF;
+use python::PythonUDFExpr;
 
 use super::Expr;
 
@@ -26,8 +28,9 @@ pub enum FunctionExpr {
     Utf8(Utf8Expr),
     Temporal(TemporalExpr),
     List(ListExpr),
+    Image(ImageExpr),
     #[cfg(feature = "python")]
-    Python(PythonUDF),
+    Python(PythonUDFExpr),
 }
 
 pub trait FunctionEvaluator {
@@ -38,7 +41,7 @@ pub trait FunctionEvaluator {
 
 impl FunctionExpr {
     #[inline]
-    fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         use FunctionExpr::*;
         match self {
             Numeric(expr) => expr.get_evaluator(),
@@ -46,8 +49,9 @@ impl FunctionExpr {
             Utf8(expr) => expr.get_evaluator(),
             Temporal(expr) => expr.get_evaluator(),
             List(expr) => expr.get_evaluator(),
+            Image(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
-            Python(expr) => expr,
+            Python(expr) => expr.get_evaluator(),
         }
     }
 }

@@ -23,13 +23,13 @@ pub enum Utf8Expr {
 
 impl Utf8Expr {
     #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         use Utf8Expr::*;
         match self {
-            EndsWith => &EndswithEvaluator {},
-            StartsWith => &StartswithEvaluator {},
-            Contains => &ContainsEvaluator {},
-            Length => &LengthEvaluator {},
+            EndsWith => Box::new(EndswithEvaluator {}),
+            StartsWith => Box::new(StartswithEvaluator {}),
+            Contains => Box::new(ContainsEvaluator {}),
+            Length => Box::new(LengthEvaluator {}),
         }
     }
 }

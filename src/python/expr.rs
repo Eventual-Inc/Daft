@@ -308,6 +308,11 @@ impl PyExpr {
         use dsl::functions::utf8::length;
         Ok(length(&self.expr).into())
     }
+
+    pub fn image_decode(&self, dtype: PyDataType) -> PyResult<Self> {
+        use dsl::functions::image::decode;
+        Ok(decode(&self.expr, &dtype.dtype).into())
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

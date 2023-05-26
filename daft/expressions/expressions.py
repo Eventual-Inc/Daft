@@ -82,6 +82,11 @@ class Expression:
         """Access methods that work on columns of URLs"""
         return ExpressionUrlNamespace.from_expression(self)
 
+    @property
+    def image(self) -> ExpressionImageNamespace:
+        """Access methods that work on columns of images"""
+        return ExpressionImageNamespace.from_expression(self)
+
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)
@@ -660,3 +665,8 @@ class ExpressionsProjection(Iterable[Expression]):
     def resolve_schema(self, schema: Schema) -> Schema:
         fields = [e._to_field(schema) for e in self]
         return Schema._from_field_name_and_types([(f.name, f.dtype) for f in fields])
+
+
+class ExpressionImageNamespace(ExpressionNamespace):
+    def decode(self, dtype: DataType) -> Expression:
+        return Expression._from_pyexpr(self._expr.image_decode(dtype))

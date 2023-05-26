@@ -22,13 +22,13 @@ pub enum TemporalExpr {
 
 impl TemporalExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         use TemporalExpr::*;
         match self {
-            Day => &DayEvaluator {},
-            Month => &MonthEvaluator {},
-            Year => &YearEvaluator {},
-            DayOfWeek => &DayOfWeekEvaluator {},
+            Day => Box::new(DayEvaluator {}),
+            Month => Box::new(MonthEvaluator {}),
+            Year => Box::new(YearEvaluator {}),
+            DayOfWeek => Box::new(DayOfWeekEvaluator {}),
         }
     }
 }

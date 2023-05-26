@@ -1,7 +1,7 @@
 use pyo3::{types::PyModule, PyAny, PyResult};
 
 use crate::{
-    datatypes::Field,
+    datatypes::{DataType, Field},
     dsl::Expr,
     error::{DaftError, DaftResult},
     schema::Schema,
@@ -9,10 +9,16 @@ use crate::{
 };
 
 use super::super::FunctionEvaluator;
-use super::PythonUDF;
+use super::partial_udf::PartialUDF;
 use crate::python::PySeries;
 
-impl FunctionEvaluator for PythonUDF {
+pub(super) struct PythonUDFEvaluator {
+    pub func: PartialUDF,
+    pub num_expressions: usize,
+    pub return_dtype: DataType,
+}
+
+impl FunctionEvaluator for PythonUDFEvaluator {
     fn fn_name(&self) -> &'static str {
         "py_udf"
     }
