@@ -4,7 +4,7 @@ maturin
 pre-commit
 
 # Tracing
-orjson==3.8.13  # orjson recommended for viztracer
+orjson==3.8.14  # orjson recommended for viztracer
 py-spy==0.3.14
 viztracer==0.15.6
 
