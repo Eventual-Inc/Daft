@@ -9,7 +9,7 @@ use crate::{
 use super::super::FunctionEvaluator;
 
 pub struct DecodeEvaluator {
-    pub image_format: ImageFormat,
+    pub image_format: Option<ImageFormat>,
 }
 
 impl FunctionEvaluator for DecodeEvaluator {

@@ -9,7 +9,7 @@ use super::FunctionEvaluator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ImageExpr {
-    Decode(ImageFormat),
+    Decode(Option<ImageFormat>),
 }
 
 impl ImageExpr {
@@ -25,9 +25,9 @@ impl ImageExpr {
     }
 }
 
-pub fn decode(input: &Expr, image_format: &ImageFormat) -> Expr {
+pub fn decode(input: &Expr, image_format: Option<ImageFormat>) -> Expr {
     Expr::Function {
-        func: super::FunctionExpr::Image(ImageExpr::Decode(*image_format)),
+        func: super::FunctionExpr::Image(ImageExpr::Decode(image_format)),
         inputs: vec![input.clone()],
     }
 }

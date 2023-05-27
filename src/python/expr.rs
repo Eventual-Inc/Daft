@@ -310,9 +310,9 @@ impl PyExpr {
         Ok(length(&self.expr).into())
     }
 
-    pub fn image_decode(&self, image_format: ImageFormat) -> PyResult<Self> {
+    pub fn image_decode(&self, image_format: Option<ImageFormat>) -> PyResult<Self> {
         use dsl::functions::image::decode;
-        Ok(decode(&self.expr, &image_format).into())
+        Ok(decode(&self.expr, image_format).into())
     }
 }
 

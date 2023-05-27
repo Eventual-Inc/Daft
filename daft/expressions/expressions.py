@@ -669,5 +669,7 @@ class ExpressionsProjection(Iterable[Expression]):
 
 
 class ExpressionImageNamespace(ExpressionNamespace):
-    def decode(self, image_format: ImageFormat) -> Expression:
+    def decode(self, image_format: str | ImageFormat | None = None) -> Expression:
+        if isinstance(image_format, str):
+            image_format = ImageFormat.from_format_string(image_format)
         return Expression._from_pyexpr(self._expr.image_decode(image_format))
