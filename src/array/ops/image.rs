@@ -207,16 +207,16 @@ impl ImageArray {
         Some(match m {
             ImageMode::L => {
                 DaftImageBuffer::<'a>::L(ImageBuffer::from_raw(w, h, slice_data).unwrap())
-            },
+            }
             ImageMode::LA => {
                 DaftImageBuffer::<'a>::LA(ImageBuffer::from_raw(w, h, slice_data).unwrap())
-            },
+            }
             ImageMode::RGB => {
                 DaftImageBuffer::<'a>::RGB(ImageBuffer::from_raw(w, h, slice_data).unwrap())
-            },
+            }
             ImageMode::RGBA => {
                 DaftImageBuffer::<'a>::RGBA(ImageBuffer::from_raw(w, h, slice_data).unwrap())
-            },
+            }
             _ => unimplemented!("{m} is currently not implemented!"),
         })
     }

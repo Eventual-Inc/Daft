@@ -18,6 +18,10 @@ version = "0.17.1"
 [dependencies.bincode]
 version = "1.3.3"
 
+[dependencies.image]
+features = ["gif", "jpeg", "ico", "png", "tiff", "webp", "bmp", "hdr"]
+version = "0.24.6"
+
 [dependencies.indexmap]
 features = ["serde"]
 version = "1.9.2"
