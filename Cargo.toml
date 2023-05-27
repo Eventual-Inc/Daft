@@ -19,6 +19,7 @@ version = "0.17.1"
 version = "1.3.3"
 
 [dependencies.image]
+default-features = false
 features = ["gif", "jpeg", "ico", "png", "tiff", "webp", "bmp", "hdr"]
 version = "0.24.6"
 
