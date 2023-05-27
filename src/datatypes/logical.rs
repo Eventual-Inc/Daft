@@ -6,7 +6,6 @@ use crate::{
 };
 
 use super::{DataArray, DataType, EmbeddingType, FixedShapeImageType, ImageType};
-
 pub struct LogicalArray<L: DaftLogicalType> {
     pub field: Arc<Field>,
     pub physical: DataArray<L::PhysicalType>,

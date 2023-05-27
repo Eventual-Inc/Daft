@@ -33,3 +33,13 @@ where
         )
     }
 }
+
+impl<T> DataArray<T>
+where
+    T: DaftPhysicalType,
+{
+    #[inline]
+    pub fn is_valid(&self, idx: usize) -> bool {
+        self.data.is_valid(idx)
+    }
+}

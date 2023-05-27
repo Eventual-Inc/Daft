@@ -18,6 +18,7 @@ mod full;
 pub(crate) mod groups;
 mod hash;
 mod if_else;
+mod image;
 mod len;
 mod list;
 mod list_agg;

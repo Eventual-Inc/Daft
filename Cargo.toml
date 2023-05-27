@@ -1,8 +1,8 @@
 [dependencies]
 dyn-clone = "1.0.11"
 fnv = "1.0.7"
-image = "0.24.6"
 ndarray = "0.15.6"
+num-derive = "0.3.3"
 prettytable-rs = "^0.10"
 pyo3-log = "0.8.1"
 rand = "^0.8"
