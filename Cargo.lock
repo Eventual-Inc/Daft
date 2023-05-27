@@ -244,6 +244,7 @@ dependencies = [
  "indexmap",
  "lazy_static",
  "log",
+ "ndarray",
  "num-traits",
  "numpy",
  "prettytable-rs",

@@ -4,7 +4,7 @@ use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyLi
 
 use crate::{
     array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
-    datatypes::{DataType, Field, ImageMode, PythonType, UInt64Type},
+    datatypes::{DataType, Field, ImageFormat, PythonType, UInt64Type},
     ffi,
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
@@ -266,9 +266,8 @@ impl PySeries {
         Ok(self.series.arr_lengths()?.into_series().into())
     }
 
-    pub fn image_decode(&self, mode: ImageMode, height: u32, width: u32) -> PyResult<Self> {
-        let py_dtype = PyDataType::image(Some(mode), Some(height), Some(width))?;
-        Ok(self.series.image_decode(&py_dtype.dtype)?.into())
+    pub fn image_decode(&self, image_format: Option<ImageFormat>) -> PyResult<Self> {
+        Ok(self.series.image_decode(image_format)?.into())
     }
 
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {

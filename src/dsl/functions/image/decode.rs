@@ -1,5 +1,5 @@
 use crate::{
-    datatypes::{DataType, Field},
+    datatypes::{Field, ImageFormat},
     dsl::Expr,
     error::DaftResult,
     schema::Schema,
@@ -9,7 +9,7 @@ use crate::{
 use super::super::FunctionEvaluator;
 
 pub struct DecodeEvaluator {
-    pub dtype: DataType,
+    pub image_format: ImageFormat,
 }
 
 impl FunctionEvaluator for DecodeEvaluator {

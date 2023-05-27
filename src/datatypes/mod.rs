@@ -1,5 +1,6 @@
 mod dtype;
 mod field;
+mod image_format;
 mod image_mode;
 mod matching;
 mod time_unit;
@@ -13,6 +14,7 @@ use arrow2::{
 };
 pub use dtype::DataType;
 pub use field::Field;
+pub use image_format::ImageFormat;
 pub use image_mode::ImageMode;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 pub use time_unit::TimeUnit;
