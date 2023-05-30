@@ -1,16 +1,8 @@
-use crate::{
-    datatypes::{Field, ImageFormat},
-    dsl::Expr,
-    error::DaftResult,
-    schema::Schema,
-    series::Series,
-};
+use crate::{datatypes::Field, dsl::Expr, error::DaftResult, schema::Schema, series::Series};
 
 use super::super::FunctionEvaluator;
 
-pub struct DecodeEvaluator {
-    pub image_format: Option<ImageFormat>,
-}
+pub struct DecodeEvaluator {}
 
 impl FunctionEvaluator for DecodeEvaluator {
     fn fn_name(&self) -> &'static str {

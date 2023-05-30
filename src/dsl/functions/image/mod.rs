@@ -3,31 +3,29 @@ mod decode;
 use decode::DecodeEvaluator;
 use serde::{Deserialize, Serialize};
 
-use crate::{datatypes::ImageFormat, dsl::Expr};
+use crate::dsl::Expr;
 
 use super::FunctionEvaluator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ImageExpr {
-    Decode(Option<ImageFormat>),
+    Decode(),
 }
 
 impl ImageExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
+    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use ImageExpr::*;
 
         match self {
-            Decode(image_format) => Box::new(DecodeEvaluator {
-                image_format: *image_format,
-            }),
+            Decode() => &DecodeEvaluator {},
         }
     }
 }
 
-pub fn decode(input: &Expr, image_format: Option<ImageFormat>) -> Expr {
+pub fn decode(input: &Expr) -> Expr {
     Expr::Function {
-        func: super::FunctionExpr::Image(ImageExpr::Decode(image_format)),
+        func: super::FunctionExpr::Image(ImageExpr::Decode()),
         inputs: vec![input.clone()],
     }
 }

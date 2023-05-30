@@ -7,7 +7,6 @@ from typing import Callable, Iterable, Iterator, TypeVar, overload
 
 import fsspec
 
-from daft.daft import ImageFormat
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
@@ -669,7 +668,5 @@ class ExpressionsProjection(Iterable[Expression]):
 
 
 class ExpressionImageNamespace(ExpressionNamespace):
-    def decode(self, image_format: str | ImageFormat | None = None) -> Expression:
-        if isinstance(image_format, str):
-            image_format = ImageFormat.from_format_string(image_format)
-        return Expression._from_pyexpr(self._expr.image_decode(image_format))
+    def decode(self) -> Expression:
+        return Expression._from_pyexpr(self._expr.image_decode())

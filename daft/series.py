@@ -5,7 +5,7 @@ from typing import TypeVar
 import pyarrow as pa
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import ImageFormat, PySeries
+from daft.daft import PySeries
 from daft.datatype import DataType
 
 _NUMPY_AVAILABLE = True
@@ -465,7 +465,5 @@ class SeriesArrayNamespace(SeriesNamespace):
 
 
 class SeriesImageNamespace(SeriesNamespace):
-    def decode(self, image_format: str | ImageFormat | None = None) -> Series:
-        if isinstance(image_format, str):
-            image_format = ImageFormat.from_format_string(image_format)
-        return Series._from_pyseries(self._series.image_decode(image_format))
+    def decode(self) -> Series:
+        return Series._from_pyseries(self._series.image_decode())

@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]
-use python::PythonUDFExpr;
+use python::PythonUDF;
 
 use super::Expr;
 
@@ -30,7 +30,7 @@ pub enum FunctionExpr {
     List(ListExpr),
     Image(ImageExpr),
     #[cfg(feature = "python")]
-    Python(PythonUDFExpr),
+    Python(PythonUDF),
 }
 
 pub trait FunctionEvaluator {
@@ -41,7 +41,7 @@ pub trait FunctionEvaluator {
 
 impl FunctionExpr {
     #[inline]
-    fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
+    fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use FunctionExpr::*;
         match self {
             Numeric(expr) => expr.get_evaluator(),
@@ -51,7 +51,7 @@ impl FunctionExpr {
             List(expr) => expr.get_evaluator(),
             Image(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
-            Python(expr) => expr.get_evaluator(),
+            Python(expr) => expr,
         }
     }
 }

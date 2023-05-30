@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use super::field::PyField;
 use super::{datatype::PyDataType, schema::PySchema};
-use crate::datatypes::ImageFormat;
 use crate::dsl::{self, functions, optimization, Expr};
 use pyo3::{
     exceptions::PyValueError,
@@ -310,9 +309,9 @@ impl PyExpr {
         Ok(length(&self.expr).into())
     }
 
-    pub fn image_decode(&self, image_format: Option<ImageFormat>) -> PyResult<Self> {
+    pub fn image_decode(&self) -> PyResult<Self> {
         use dsl::functions::image::decode;
-        Ok(decode(&self.expr, image_format).into())
+        Ok(decode(&self.expr).into())
     }
 }
 

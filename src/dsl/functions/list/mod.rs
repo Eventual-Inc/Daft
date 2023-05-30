@@ -14,10 +14,10 @@ pub enum ListExpr {
 
 impl ListExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
+    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use ListExpr::*;
         match self {
-            Explode => Box::new(ExplodeEvaluator {}),
+            Explode => &ExplodeEvaluator {},
         }
     }
 }
