@@ -1,10 +1,10 @@
-use std::fmt::{Display, Formatter, Result};
-use std::str::FromStr;
-use std::string::ToString;
-
+use num_derive::FromPrimitive;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter, Result};
+use std::str::FromStr;
+use std::string::ToString;
 
 use crate::{
     datatypes::DataType,
@@ -24,7 +24,7 @@ use crate::{
 /// RGB32F  - 32-bit floating RGB
 /// RGBA32F - 32-bit floating RGB + alpha
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, FromPrimitive)]
 #[cfg_attr(feature = "python", pyclass)]
 pub enum ImageMode {
     L = 1,

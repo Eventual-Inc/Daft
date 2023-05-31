@@ -33,7 +33,7 @@ impl FunctionEvaluator for PythonUDF {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         use pyo3::Python;
 
         if inputs.len() != self.num_expressions {

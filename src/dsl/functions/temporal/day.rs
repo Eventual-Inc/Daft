@@ -34,7 +34,7 @@ impl FunctionEvaluator for DayEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
             [input] => input.dt_day(),
             _ => Err(DaftError::ValueError(format!(

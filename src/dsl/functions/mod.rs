@@ -36,7 +36,7 @@ pub enum FunctionExpr {
 pub trait FunctionEvaluator {
     fn fn_name(&self) -> &'static str;
     fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field>;
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series>;
+    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series>;
 }
 
 impl FunctionExpr {
@@ -65,7 +65,7 @@ impl FunctionEvaluator for FunctionExpr {
         self.get_evaluator().to_field(inputs, schema)
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        self.get_evaluator().evaluate(inputs)
+    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+        self.get_evaluator().evaluate(inputs, expr)
     }
 }

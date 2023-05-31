@@ -32,7 +32,7 @@ impl FunctionEvaluator for AbsEvaluator {
         Ok(field)
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         if inputs.len() != 1 {
             return Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",

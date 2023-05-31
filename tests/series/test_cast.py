@@ -215,7 +215,11 @@ def test_series_cast_pil_to_image() -> None:
 
 
 def test_series_cast_numpy_to_image() -> None:
-    data = [np.arange(12).reshape((3, 2, 2)), np.arange(12, 39).reshape((3, 3, 3)), None]
+    data = [
+        np.arange(12, dtype=np.uint8).reshape((3, 2, 2)),
+        np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
+        None,
+    ]
     s = Series.from_pylist(data, pyobj="force")
 
     target_dtype = DataType.image("RGB")
@@ -235,7 +239,7 @@ def test_series_cast_numpy_to_image() -> None:
 
 
 def test_series_cast_numpy_to_image_infer_mode() -> None:
-    data = [np.arange(4).reshape((2, 2)), np.arange(4, 31).reshape((3, 3, 3)), None]
+    data = [np.arange(4, dtype=np.uint8).reshape((2, 2)), np.arange(4, 31, dtype=np.uint8).reshape((3, 3, 3)), None]
     s = Series.from_pylist(data, pyobj="force")
 
     target_dtype = DataType.image()

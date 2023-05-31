@@ -28,7 +28,7 @@ use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 use numpy::PyReadonlyArrayDyn;
 #[cfg(feature = "python")]
-use pyo3::{prelude::*, types::PyType};
+use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use std::iter;
 
@@ -38,8 +38,6 @@ fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
 where
     T: DaftArrowBackedType,
 {
-    let _arrow_type = dtype.to_arrow();
-
     if !dtype.is_arrow() || !to_cast.data_type().is_arrow() {
         return Err(DaftError::TypeError(format!(
             "Can not cast {:?} to type: {:?}: not convertible to Arrow",
@@ -193,6 +191,7 @@ fn append_values_from_numpy<
     pyarray: &PyAny,
     index: usize,
     from_numpy_dtype_fn: &PyAny,
+    enforce_dtype: Option<&DataType>,
     values_vec: &mut Vec<Tgt>,
     shapes_vec: &mut Vec<Vec<u64>>,
 ) -> DaftResult<usize> {
@@ -206,7 +205,13 @@ fn append_values_from_numpy<
         .getattr(pyo3::intern!(pyarray.py(), "_dtype"))?
         .extract::<PyDataType>()?;
     let datatype = datatype.dtype;
-
+    if let Some(enforce_dtype) = enforce_dtype {
+        if enforce_dtype != &datatype {
+            return Err(DaftError::ValueError(format!(
+                "Expected Numpy array to be of type: {enforce_dtype} but is {datatype} at index: {index}",
+            )));
+        }
+    }
     if !datatype.is_numeric() {
         return Err(DaftError::ValueError(format!(
             "Numpy array has unsupported type {} at index: {index}",
@@ -255,6 +260,7 @@ fn extract_python_to_vec<
     py: Python<'_>,
     python_objects: &PythonArray,
     child_dtype: &DataType,
+    enforce_dtype: Option<&DataType>,
     list_size: Option<usize>,
     shape_size: Option<usize>,
 ) -> DaftResult<ArrayPayload<Tgt>> {
@@ -290,9 +296,11 @@ fn extract_python_to_vec<
     let py_memory_view = py
         .import("builtins")?
         .getattr(pyo3::intern!(py, "memoryview"))?;
-    let py_pil_image_type = py
-        .import("PIL.Image")
-        .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
+
+    // TODO: use this to extract our the image mode
+    // let py_pil_image_type = py
+    //     .import("PIL.Image")
+    //     .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
 
     for (i, object) in python_objects.as_arrow().iter().enumerate() {
         if let Some(object) = object {
@@ -310,27 +318,12 @@ fn extract_python_to_vec<
             {
                 // Path if object is supports buffer/array protocols.
                 let np_as_array_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?;
-                let mut pyarray = np_as_array_fn.call1((object,))?;
-                // If object is PIL image and it has a channel dimension defined,
-                // transpose the channel dimension to convert HWC to CHW.
-                if let Ok(pil_image_type) = py_pil_image_type {
-                    if object.is_instance(pil_image_type.downcast::<PyType>().unwrap())?
-                        && pyarray
-                            .getattr(pyo3::intern!(py, "ndim"))
-                            .unwrap()
-                            .extract::<i64>()
-                            .unwrap()
-                            == 3
-                    {
-                        let np_move_axis_fn =
-                            py.import("numpy")?.getattr(pyo3::intern!(py, "moveaxis"))?;
-                        pyarray = np_move_axis_fn.call1((pyarray, -1, 0))?;
-                    }
-                }
+                let pyarray = np_as_array_fn.call1((object,))?;
                 let num_values = append_values_from_numpy(
                     pyarray,
                     i,
                     from_numpy_dtype,
+                    enforce_dtype,
                     &mut values_vec,
                     &mut shapes_vec,
                 )?;
@@ -441,6 +434,7 @@ fn extract_python_like_to_fixed_size_list<
         py,
         python_objects,
         &child_field.dtype,
+        None,
         Some(list_size),
         None,
     )?;
@@ -475,7 +469,7 @@ fn extract_python_like_to_list<
     child_field: &Field,
 ) -> DaftResult<ListArray> {
     let (values_vec, offsets, _) =
-        extract_python_to_vec::<Tgt>(py, python_objects, &child_field.dtype, None, None)?;
+        extract_python_to_vec::<Tgt>(py, python_objects, &child_field.dtype, None, None, None)?;
 
     let offsets = offsets.expect("Offsets should but non-None for dynamic list");
 
@@ -507,14 +501,20 @@ fn extract_python_like_to_image_struct<
 >(
     py: Python<'_>,
     python_objects: &PythonArray,
-    child_dtype: DataType,
+    child_dtype: &DataType,
     mode_from_dtype: Option<ImageMode>,
 ) -> DaftResult<StructArray> {
-    // 3 dimensions - channel x height x width.
+    // 3 dimensions - height x width x channel.
 
     let shape_size = 3;
-    let (values_vec, offsets, shapes) =
-        extract_python_to_vec::<Tgt>(py, python_objects, &child_dtype, None, Some(shape_size))?;
+    let (values_vec, offsets, shapes) = extract_python_to_vec::<Tgt>(
+        py,
+        python_objects,
+        child_dtype,
+        Some(child_dtype),
+        None,
+        Some(shape_size),
+    )?;
 
     let offsets = offsets.expect("Offsets should but non-None for image struct array");
     let shapes = shapes.expect("Shapes should be non-None for image struct array");
@@ -560,7 +560,7 @@ fn extract_python_like_to_image_struct<
             continue;
         }
         if shape.len() == shape_size - 1 {
-            shape.splice(0..0, [1]);
+            shape.push(1);
         } else if shape.len() != shape_size {
             return Err(DaftError::ValueError(format!(
                 "Image expected to have {} dimensions, but has {}. Image shape = {:?}",
@@ -570,24 +570,25 @@ fn extract_python_like_to_image_struct<
             )));
         }
         assert!(shape.len() == shape_size);
-        channels.push(
-            shape[0]
-                .try_into()
-                .expect("Number of channels should fit into a uint8"),
-        );
         heights.push(
-            shape[1]
+            shape[0]
                 .try_into()
                 .expect("Image height should fit into a uint16"),
         );
         widths.push(
-            shape[2]
+            shape[1]
                 .try_into()
                 .expect("Image width should fit into a uint16"),
         );
+        channels.push(
+            shape[2]
+                .try_into()
+                .expect("Number of channels should fit into a uint8"),
+        );
+
         modes.push(mode_from_dtype.unwrap_or(ImageMode::try_from_num_channels(
-            shape[0].try_into().unwrap(),
-            &child_dtype,
+            shape[2].try_into().unwrap(),
+            child_dtype,
         )?) as u8);
     }
 
@@ -706,7 +707,7 @@ impl PythonArray {
                 with_match_numeric_daft_types!(**inner_dtype, |$T| {
                     type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_image_struct::<Tgt>(py, self, *inner_dtype.clone(), *mode)?;
+                        let result = extract_python_like_to_image_struct::<Tgt>(py, self, inner_dtype, *mode)?;
                         Ok(
                             ImageArray::new(
                                 Field::new(self.name(), dtype.clone()),

@@ -34,7 +34,7 @@ impl FunctionEvaluator for DayOfWeekEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
             [input] => input.dt_day_of_week(),
             _ => Err(DaftError::ValueError(format!(

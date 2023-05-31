@@ -106,7 +106,7 @@ impl PySeries {
         }
         if end < 0 {
             return Err(PyValueError::new_err(format!(
-                "slice end can not be negative: {start}"
+                "slice end can not be negative: {end}"
             )));
         }
         if start > end {
@@ -268,6 +268,20 @@ impl PySeries {
 
     pub fn image_decode(&self) -> PyResult<Self> {
         Ok(self.series.image_decode()?.into())
+    }
+    pub fn image_resize(&self, w: i64, h: i64) -> PyResult<Self> {
+        if w < 0 {
+            return Err(PyValueError::new_err(format!(
+                "width can not be negative: {w}"
+            )));
+        }
+        if h < 0 {
+            return Err(PyValueError::new_err(format!(
+                "height can not be negative: {h}"
+            )));
+        }
+
+        Ok(self.series.image_resize(w as u32, h as u32)?.into())
     }
 
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {
