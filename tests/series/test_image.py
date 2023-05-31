@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from daft.datatype import DaftExtension, DataType
@@ -10,7 +11,11 @@ from daft.series import Series
 
 
 def test_image_arrow_round_trip():
-    data = [np.arange(12).reshape((2, 2, 3)), np.arange(12, 39).reshape((3, 3, 3)), None]
+    data = [
+        np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
+        np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
+        None,
+    ]
     s = Series.from_pylist(data, pyobj="force")
 
     target_dtype = DataType.image("RGB")
@@ -70,7 +75,7 @@ def test_fixed_shape_image_arrow_round_trip():
     height = 2
     width = 2
     shape = (height, width, 3)
-    data = [np.arange(12).reshape(shape), np.arange(12, 24).reshape(shape), None]
+    data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
     s = Series.from_pylist(data, pyobj="force")
 
     target_dtype = DataType.image("RGB", height, width)
@@ -90,3 +95,31 @@ def test_fixed_shape_image_arrow_round_trip():
     t_copy = copy.deepcopy(t)
     assert t_copy.datatype() == t.datatype()
     assert t_copy.to_pylist() == t.to_pylist()
+
+
+def test_bad_cast_image():
+    data = [
+        np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
+        np.arange(12, 39, dtype=np.uint64).reshape((3, 3, 3)),
+        None,
+    ]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image("RGB")
+    with pytest.raises(ValueError, match="Expected Numpy array to be of type: UInt8"):
+        s.cast(target_dtype)
+
+
+# Add enforcement for fixed sized list
+@pytest.mark.skip()
+def test_bad_cast_fixed_shape_image():
+    height = 2
+    width = 2
+    shape = (height, width, 3)
+    data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint64).reshape(shape), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image("RGB", height, width)
+
+    with pytest.raises(ValueError, match="Expected Numpy array to be of type: UInt8"):
+        s.cast(target_dtype)
