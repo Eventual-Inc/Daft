@@ -22,7 +22,11 @@ def test_embedding_type_df() -> None:
 
 
 def test_image_type_df() -> None:
-    data = [np.arange(12).reshape((3, 2, 2)), np.arange(12, 39).reshape((3, 3, 3)), None]
+    data = [
+        np.arange(12, dtype=np.uint8).reshape((3, 2, 2)),
+        np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
+        None,
+    ]
     df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="force")})
 
     target = DataType.image("RGB")
@@ -38,7 +42,7 @@ def test_fixed_shape_image_type_df() -> None:
     height = 2
     width = 2
     shape = (3, height, width)
-    data = [np.arange(12).reshape(shape), np.arange(12, 24).reshape(shape), None]
+    data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
     df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="force")})
 
     target = DataType.image("RGB", height, width)
