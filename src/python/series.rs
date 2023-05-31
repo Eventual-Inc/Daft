@@ -266,6 +266,10 @@ impl PySeries {
         Ok(self.series.arr_lengths()?.into_series().into())
     }
 
+    pub fn image_decode(&self) -> PyResult<Self> {
+        Ok(self.series.image_decode()?.into())
+    }
+
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {
         Ok(self
             .series
