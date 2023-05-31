@@ -123,92 +123,6 @@ impl<'a> DaftImageBuffer<'a> {
     }
 }
 
-fn collate_daft_image_buffers(
-    name: &str,
-    inputs: &[Option<DaftImageBuffer<'_>>],
-) -> DaftResult<ImageArray> {
-    use DaftImageBuffer::*;
-    let is_all_u8 = inputs
-        .iter()
-        .filter_map(|b| b.as_ref())
-        .all(|b| matches!(b, L(..) | LA(..) | RGB(..) | RGBA(..)));
-    assert!(is_all_u8);
-
-    let mut data_ref = Vec::with_capacity(inputs.len());
-    let mut heights = Vec::with_capacity(inputs.len());
-    let mut channels = Vec::with_capacity(inputs.len());
-    let mut modes = Vec::with_capacity(inputs.len());
-    let mut widths = Vec::with_capacity(inputs.len());
-    let mut offsets = Vec::with_capacity(inputs.len() + 1);
-    let mut is_valid = Vec::with_capacity(inputs.len());
-    offsets.push(0i64);
-
-    for ib in inputs {
-        if let Some(ib) = ib {
-            heights.push(ib.height());
-            widths.push(ib.width());
-            channels.push(ib.channels());
-
-            let buffer = ib.get_as_u8();
-            data_ref.push(buffer);
-            offsets.push(buffer.len() as i64 + offsets.last().unwrap());
-            modes.push(ib.mode() as u8);
-            is_valid.push(true);
-        } else {
-            heights.push(0u32);
-            widths.push(0u32);
-            channels.push(0u16);
-            offsets.push(*offsets.last().unwrap());
-            modes.push(0);
-            is_valid.push(false);
-        }
-    }
-
-    let collected_data = data_ref.concat();
-    let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
-    let data_type =
-        crate::datatypes::DataType::Image(Box::new(crate::datatypes::DataType::UInt8), None);
-
-    let validity = arrow2::bitmap::Bitmap::from(is_valid);
-
-    let list_datatype = arrow2::datatypes::DataType::LargeList(Box::new(
-        arrow2::datatypes::Field::new("data", arrow2::datatypes::DataType::UInt8, true),
-    ));
-    let data_array = Box::new(arrow2::array::ListArray::<i64>::new(
-        list_datatype,
-        offsets,
-        Box::new(arrow2::array::UInt8Array::from_vec(collected_data)),
-        Some(validity.clone()),
-    ));
-
-    let values: Vec<Box<dyn arrow2::array::Array>> = vec![
-        data_array,
-        Box::new(
-            arrow2::array::UInt16Array::from_vec(channels).with_validity(Some(validity.clone())),
-        ),
-        Box::new(
-            arrow2::array::UInt32Array::from_vec(heights).with_validity(Some(validity.clone())),
-        ),
-        Box::new(
-            arrow2::array::UInt32Array::from_vec(widths).with_validity(Some(validity.clone())),
-        ),
-        Box::new(arrow2::array::UInt8Array::from_vec(modes).with_validity(Some(validity.clone()))),
-    ];
-    let physical_type = data_type.to_physical();
-    let struct_array = Box::new(arrow2::array::StructArray::new(
-        physical_type.to_arrow()?,
-        values,
-        Some(validity),
-    ));
-
-    let daft_struct_array =
-        crate::datatypes::StructArray::new(Field::new(name, physical_type).into(), struct_array)?;
-    Ok(ImageArray::new(
-        Field::new(name, data_type),
-        daft_struct_array,
-    ))
-}
-
 fn image_buffer_vec_to_cow<'a, P, T>(input: ImageBuffer<P, Vec<T>>) -> ImageBuffer<P, Cow<'a, [T]>>
 where
     P: image::Pixel<Subpixel = T>,
@@ -311,6 +225,97 @@ impl ImageArray {
             .map(|img| img.map(|img| img.resize(w, h)))
             .collect::<Vec<_>>();
 
-        collate_daft_image_buffers(self.name(), result.as_slice())
+        Self::from_daft_image_buffers(self.name(), result.as_slice())
+    }
+
+    fn from_daft_image_buffers(
+        name: &str,
+        inputs: &[Option<DaftImageBuffer<'_>>],
+    ) -> DaftResult<Self> {
+        use DaftImageBuffer::*;
+        let is_all_u8 = inputs
+            .iter()
+            .filter_map(|b| b.as_ref())
+            .all(|b| matches!(b, L(..) | LA(..) | RGB(..) | RGBA(..)));
+        assert!(is_all_u8);
+
+        let mut data_ref = Vec::with_capacity(inputs.len());
+        let mut heights = Vec::with_capacity(inputs.len());
+        let mut channels = Vec::with_capacity(inputs.len());
+        let mut modes = Vec::with_capacity(inputs.len());
+        let mut widths = Vec::with_capacity(inputs.len());
+        let mut offsets = Vec::with_capacity(inputs.len() + 1);
+        let mut is_valid = Vec::with_capacity(inputs.len());
+        offsets.push(0i64);
+
+        for ib in inputs {
+            if let Some(ib) = ib {
+                heights.push(ib.height());
+                widths.push(ib.width());
+                channels.push(ib.channels());
+
+                let buffer = ib.get_as_u8();
+                data_ref.push(buffer);
+                offsets.push(buffer.len() as i64 + offsets.last().unwrap());
+                modes.push(ib.mode() as u8);
+                is_valid.push(true);
+            } else {
+                heights.push(0u32);
+                widths.push(0u32);
+                channels.push(0u16);
+                offsets.push(*offsets.last().unwrap());
+                modes.push(0);
+                is_valid.push(false);
+            }
+        }
+
+        let collected_data = data_ref.concat();
+        let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
+        let data_type =
+            crate::datatypes::DataType::Image(Box::new(crate::datatypes::DataType::UInt8), None);
+
+        let validity = arrow2::bitmap::Bitmap::from(is_valid);
+
+        let list_datatype = arrow2::datatypes::DataType::LargeList(Box::new(
+            arrow2::datatypes::Field::new("data", arrow2::datatypes::DataType::UInt8, true),
+        ));
+        let data_array = Box::new(arrow2::array::ListArray::<i64>::new(
+            list_datatype,
+            offsets,
+            Box::new(arrow2::array::UInt8Array::from_vec(collected_data)),
+            Some(validity.clone()),
+        ));
+
+        let values: Vec<Box<dyn arrow2::array::Array>> = vec![
+            data_array,
+            Box::new(
+                arrow2::array::UInt16Array::from_vec(channels)
+                    .with_validity(Some(validity.clone())),
+            ),
+            Box::new(
+                arrow2::array::UInt32Array::from_vec(heights).with_validity(Some(validity.clone())),
+            ),
+            Box::new(
+                arrow2::array::UInt32Array::from_vec(widths).with_validity(Some(validity.clone())),
+            ),
+            Box::new(
+                arrow2::array::UInt8Array::from_vec(modes).with_validity(Some(validity.clone())),
+            ),
+        ];
+        let physical_type = data_type.to_physical();
+        let struct_array = Box::new(arrow2::array::StructArray::new(
+            physical_type.to_arrow()?,
+            values,
+            Some(validity),
+        ));
+
+        let daft_struct_array = crate::datatypes::StructArray::new(
+            Field::new(name, physical_type).into(),
+            struct_array,
+        )?;
+        Ok(ImageArray::new(
+            Field::new(name, data_type),
+            daft_struct_array,
+        ))
     }
 }
