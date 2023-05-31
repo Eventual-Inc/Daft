@@ -35,7 +35,7 @@ impl FunctionEvaluator for IsNanEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
             [data] => data.is_nan(),
             _ => Err(DaftError::ValueError(format!(

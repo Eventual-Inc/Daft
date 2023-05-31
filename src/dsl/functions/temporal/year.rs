@@ -34,7 +34,7 @@ impl FunctionEvaluator for YearEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
             [input] => input.dt_year(),
             _ => Err(DaftError::ValueError(format!(

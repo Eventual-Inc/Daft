@@ -670,3 +670,10 @@ class ExpressionsProjection(Iterable[Expression]):
 class ExpressionImageNamespace(ExpressionNamespace):
     def decode(self) -> Expression:
         return Expression._from_pyexpr(self._expr.image_decode())
+
+    def resize(self, w: int, h: int) -> Expression:
+        if not isinstance(w, int):
+            raise TypeError(f"expected int for w but got {type(w)}")
+        if not isinstance(h, int):
+            raise TypeError(f"expected int for h but got {type(h)}")
+        return Expression._from_pyexpr(self._expr.image_resize(w, h))

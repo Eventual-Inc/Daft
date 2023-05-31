@@ -37,7 +37,7 @@ impl FunctionEvaluator for StartswithEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
             [data, pattern] => data.utf8_startswith(pattern),
             _ => Err(DaftError::ValueError(format!(

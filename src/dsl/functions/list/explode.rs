@@ -29,7 +29,7 @@ impl FunctionEvaluator for ExplodeEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
             [input] => input.explode(),
             _ => Err(DaftError::ValueError(format!(

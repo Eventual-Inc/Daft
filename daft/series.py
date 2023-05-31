@@ -467,3 +467,11 @@ class SeriesArrayNamespace(SeriesNamespace):
 class SeriesImageNamespace(SeriesNamespace):
     def decode(self) -> Series:
         return Series._from_pyseries(self._series.image_decode())
+
+    def resize(self, w: int, h: int) -> Series:
+        if not isinstance(w, int):
+            raise TypeError(f"expected int for w but got {type(w)}")
+        if not isinstance(h, int):
+            raise TypeError(f"expected int for h but got {type(h)}")
+
+        return Series._from_pyseries(self._series.image_resize(w, h))

@@ -13,7 +13,7 @@ impl FunctionEvaluator for DecodeEvaluator {
         todo!("not implemented");
     }
 
-    fn evaluate(&self, _: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, _: &[Series], _: &Expr) -> DaftResult<Series> {
         todo!("not implemented");
     }
 }

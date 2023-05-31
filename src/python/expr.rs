@@ -313,6 +313,21 @@ impl PyExpr {
         use dsl::functions::image::decode;
         Ok(decode(&self.expr).into())
     }
+
+    pub fn image_resize(&self, w: i64, h: i64) -> PyResult<Self> {
+        if w < 0 {
+            return Err(PyValueError::new_err(format!(
+                "width can not be negative: {w}"
+            )));
+        }
+        if h < 0 {
+            return Err(PyValueError::new_err(format!(
+                "height can not be negative: {h}"
+            )));
+        }
+        use dsl::functions::image::resize;
+        Ok(resize(&self.expr, w as u32, h as u32).into())
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

@@ -33,7 +33,7 @@ impl FunctionEvaluator for LengthEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
             [data] => data.utf8_length(),
             _ => Err(DaftError::ValueError(format!(
