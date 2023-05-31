@@ -570,11 +570,6 @@ fn extract_python_like_to_image_struct<
             )));
         }
         assert!(shape.len() == shape_size);
-        channels.push(
-            shape[2]
-                .try_into()
-                .expect("Number of channels should fit into a uint8"),
-        );
         heights.push(
             shape[0]
                 .try_into()
@@ -585,8 +580,14 @@ fn extract_python_like_to_image_struct<
                 .try_into()
                 .expect("Image width should fit into a uint16"),
         );
+        channels.push(
+            shape[2]
+                .try_into()
+                .expect("Number of channels should fit into a uint8"),
+        );
+
         modes.push(mode_from_dtype.unwrap_or(ImageMode::try_from_num_channels(
-            shape[0].try_into().unwrap(),
+            shape[2].try_into().unwrap(),
             child_dtype,
         )?) as u8);
     }

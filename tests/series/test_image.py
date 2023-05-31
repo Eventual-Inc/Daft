@@ -65,10 +65,50 @@ def test_image_resize():
     assert np.all(first_resized[..., 2] == 3)
 
     sec_resized = np.array(as_py[1]["data"]).reshape(5, 5, 3)
-    sec_resized_gt = np.asarray(Image.fromarray(second).resize((5, 5)))
+    sec_resized_gt = np.asarray(Image.fromarray(second).resize((5, 5), resample=Image.BILINEAR))
     assert np.all(sec_resized == sec_resized_gt)
 
     assert as_py[2] == None
+
+
+def test_image_resize_mixed_modes():
+
+    first = np.ones((2, 2, 3), dtype=np.uint8)
+    first[..., 1] = 2
+    first[..., 2] = 3
+
+    second = np.arange(12, dtype=np.uint8).reshape((1, 4, 3))
+
+    third = np.arange(12, dtype=np.uint8).reshape((3, 4)) * 10
+    data = [first, second, third, None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image()
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+
+    resized = t.image.resize(5, 5)
+
+    as_py = resized.to_pylist()
+
+    assert resized.datatype() == target_dtype
+
+    first_resized = np.array(as_py[0]["data"]).reshape(5, 5, 3)
+    assert np.all(first_resized[..., 0] == 1)
+    assert np.all(first_resized[..., 1] == 2)
+    assert np.all(first_resized[..., 2] == 3)
+
+    sec_resized = np.array(as_py[1]["data"]).reshape(5, 5, 3)
+    sec_resized_gt = np.asarray(Image.fromarray(second).resize((5, 5), resample=Image.BILINEAR))
+    assert np.all(sec_resized == sec_resized_gt)
+
+    third_resized = np.array(as_py[2]["data"]).reshape(5, 5)
+    third_resized_gt = np.asarray(Image.fromarray(third).resize((5, 5), resample=Image.BILINEAR))
+    assert np.all(third_resized == third_resized_gt)
+
+    assert as_py[3] == None
 
 
 def test_fixed_shape_image_arrow_round_trip():
