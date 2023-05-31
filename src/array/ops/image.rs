@@ -4,7 +4,7 @@ use std::vec;
 use image::ImageBuffer;
 
 use crate::datatypes::logical::ImageArray;
-use crate::datatypes::{DataType, Field, ImageMode, ImageType};
+use crate::datatypes::{DataType, Field, ImageMode};
 use crate::error::DaftResult;
 use image::{Luma, LumaA, Rgb, Rgba};
 
@@ -286,7 +286,7 @@ impl ImageArray {
         let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
         let data_type = crate::datatypes::DataType::Image(
             Box::new(crate::datatypes::DataType::UInt8),
-            image_mode.clone(),
+            *image_mode,
         );
 
         let validity = arrow2::bitmap::Bitmap::from(is_valid);

@@ -28,7 +28,7 @@ use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 use numpy::PyReadonlyArrayDyn;
 #[cfg(feature = "python")]
-use pyo3::{prelude::*, types::PyType};
+use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use std::iter;
 
@@ -290,7 +290,7 @@ fn extract_python_to_vec<
     let py_memory_view = py
         .import("builtins")?
         .getattr(pyo3::intern!(py, "memoryview"))?;
-    let py_pil_image_type = py
+    let _py_pil_image_type = py
         .import("PIL.Image")
         .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
 
@@ -310,7 +310,7 @@ fn extract_python_to_vec<
             {
                 // Path if object is supports buffer/array protocols.
                 let np_as_array_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?;
-                let mut pyarray = np_as_array_fn.call1((object,))?;
+                let pyarray = np_as_array_fn.call1((object,))?;
                 // If object is PIL image and it has a channel dimension defined,
                 // transpose the channel dimension to convert HWC to CHW.
                 // if let Ok(pil_image_type) = py_pil_image_type {
