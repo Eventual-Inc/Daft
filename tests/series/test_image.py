@@ -73,14 +73,20 @@ def test_image_resize():
 
 def test_image_resize_mixed_modes():
 
-    first = np.ones((2, 2, 3), dtype=np.uint8)
-    first[..., 1] = 2
-    first[..., 2] = 3
+    rgba = np.ones((2, 2, 4), dtype=np.uint8)
+    rgba[..., 1] = 2
+    rgba[..., 2] = 3
+    rgba[..., 3] = 4
 
-    second = np.arange(12, dtype=np.uint8).reshape((1, 4, 3))
+    data = [
+        rgba[..., :3],  # rgb
+        rgba,  # RGBA
+        np.arange(12, dtype=np.uint8).reshape((1, 4, 3)),  # RGB
+        np.arange(12, dtype=np.uint8).reshape((3, 4)) * 10,  # L
+        np.ones(24, dtype=np.uint8).reshape((3, 4, 2)) * 10,  # LA
+        None,
+    ]
 
-    third = np.arange(12, dtype=np.uint8).reshape((3, 4)) * 10
-    data = [first, second, third, None]
     s = Series.from_pylist(data, pyobj="force")
 
     target_dtype = DataType.image()
@@ -100,15 +106,22 @@ def test_image_resize_mixed_modes():
     assert np.all(first_resized[..., 1] == 2)
     assert np.all(first_resized[..., 2] == 3)
 
-    sec_resized = np.array(as_py[1]["data"]).reshape(5, 5, 3)
-    sec_resized_gt = np.asarray(Image.fromarray(second).resize((5, 5), resample=Image.BILINEAR))
-    assert np.all(sec_resized == sec_resized_gt)
+    second_resized = np.array(as_py[1]["data"]).reshape(5, 5, 4)
+    assert np.all(second_resized[..., 0] == 1)
+    assert np.all(second_resized[..., 1] == 2)
+    assert np.all(second_resized[..., 2] == 3)
+    assert np.all(second_resized[..., 3] == 4)
 
-    third_resized = np.array(as_py[2]["data"]).reshape(5, 5)
-    third_resized_gt = np.asarray(Image.fromarray(third).resize((5, 5), resample=Image.BILINEAR))
-    assert np.all(third_resized == third_resized_gt)
+    for i in range(2, 4):
+        resized_i = np.array(as_py[i]["data"]).reshape(5, 5, -1)
+        resized_i_gt = np.asarray(Image.fromarray(data[i]).resize((5, 5), resample=Image.BILINEAR)).reshape(5, 5, -1)
+        assert np.all(resized_i == resized_i_gt), f"{i} does not match"
 
-    assert as_py[3] == None
+    # LA sampling doesn't work for some reason in PIL
+    resized_i = np.array(as_py[4]["data"]).reshape(5, 5, -1)
+    assert np.all(resized_i == 10)
+
+    assert as_py[-1] == None
 
 
 def test_fixed_shape_image_arrow_round_trip():
