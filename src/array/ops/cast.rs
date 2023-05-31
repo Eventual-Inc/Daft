@@ -313,20 +313,20 @@ fn extract_python_to_vec<
                 let mut pyarray = np_as_array_fn.call1((object,))?;
                 // If object is PIL image and it has a channel dimension defined,
                 // transpose the channel dimension to convert HWC to CHW.
-                if let Ok(pil_image_type) = py_pil_image_type {
-                    if object.is_instance(pil_image_type.downcast::<PyType>().unwrap())?
-                        && pyarray
-                            .getattr(pyo3::intern!(py, "ndim"))
-                            .unwrap()
-                            .extract::<i64>()
-                            .unwrap()
-                            == 3
-                    {
-                        let np_move_axis_fn =
-                            py.import("numpy")?.getattr(pyo3::intern!(py, "moveaxis"))?;
-                        pyarray = np_move_axis_fn.call1((pyarray, -1, 0))?;
-                    }
-                }
+                // if let Ok(pil_image_type) = py_pil_image_type {
+                //     if object.is_instance(pil_image_type.downcast::<PyType>().unwrap())?
+                //         && pyarray
+                //             .getattr(pyo3::intern!(py, "ndim"))
+                //             .unwrap()
+                //             .extract::<i64>()
+                //             .unwrap()
+                //             == 3
+                //     {
+                //         let np_move_axis_fn =
+                //             py.import("numpy")?.getattr(pyo3::intern!(py, "moveaxis"))?;
+                //         pyarray = np_move_axis_fn.call1((pyarray, -1, 0))?;
+                //     }
+                // }
                 let num_values = append_values_from_numpy(
                     pyarray,
                     i,
@@ -560,7 +560,7 @@ fn extract_python_like_to_image_struct<
             continue;
         }
         if shape.len() == shape_size - 1 {
-            shape.splice(0..0, [1]);
+            shape.push(1);
         } else if shape.len() != shape_size {
             return Err(DaftError::ValueError(format!(
                 "Image expected to have {} dimensions, but has {}. Image shape = {:?}",
@@ -571,17 +571,17 @@ fn extract_python_like_to_image_struct<
         }
         assert!(shape.len() == shape_size);
         channels.push(
-            shape[0]
+            shape[2]
                 .try_into()
                 .expect("Number of channels should fit into a uint8"),
         );
         heights.push(
-            shape[1]
+            shape[0]
                 .try_into()
                 .expect("Image height should fit into a uint16"),
         );
         widths.push(
-            shape[2]
+            shape[1]
                 .try_into()
                 .expect("Image width should fit into a uint16"),
         );

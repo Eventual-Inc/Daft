@@ -4,7 +4,7 @@ use std::vec;
 use image::ImageBuffer;
 
 use crate::datatypes::logical::ImageArray;
-use crate::datatypes::{Field, ImageMode};
+use crate::datatypes::{DataType, Field, ImageMode, ImageType};
 use crate::error::DaftResult;
 use image::{Luma, LumaA, Rgb, Rgba};
 
@@ -137,6 +137,13 @@ where
 }
 
 impl ImageArray {
+    fn image_mode(&self) -> &Option<ImageMode> {
+        match self.logical_type() {
+            DataType::Image(_, mode) => mode,
+            _ => panic!("Expected dtype to be Image"),
+        }
+    }
+
     fn data_array(&self) -> &arrow2::array::ListArray<i64> {
         let p = self.physical.as_arrow();
         const IMAGE_DATA_IDX: usize = 0;
@@ -202,7 +209,7 @@ impl ImageArray {
         let w = wa.value(idx);
         let m: ImageMode = ImageMode::from_u8(ma.value(idx)).unwrap();
         assert_eq!(m.num_channels(), c);
-        Some(match m {
+        let result = match m {
             ImageMode::L => {
                 DaftImageBuffer::<'a>::L(ImageBuffer::from_raw(w, h, slice_data).unwrap())
             }
@@ -216,7 +223,12 @@ impl ImageArray {
                 DaftImageBuffer::<'a>::RGBA(ImageBuffer::from_raw(w, h, slice_data).unwrap())
             }
             _ => unimplemented!("{m} is currently not implemented!"),
-        })
+        };
+
+        assert_eq!(result.height(), h);
+        assert_eq!(result.width(), w);
+        assert_eq!(result.channels(), c);
+        Some(result)
     }
 
     pub fn resize(&self, w: u32, h: u32) -> DaftResult<Self> {
@@ -225,12 +237,13 @@ impl ImageArray {
             .map(|img| img.map(|img| img.resize(w, h)))
             .collect::<Vec<_>>();
 
-        Self::from_daft_image_buffers(self.name(), result.as_slice())
+        Self::from_daft_image_buffers(self.name(), result.as_slice(), self.image_mode())
     }
 
     fn from_daft_image_buffers(
         name: &str,
         inputs: &[Option<DaftImageBuffer<'_>>],
+        image_mode: &Option<ImageMode>,
     ) -> DaftResult<Self> {
         use DaftImageBuffer::*;
         let is_all_u8 = inputs
@@ -271,8 +284,10 @@ impl ImageArray {
 
         let collected_data = data_ref.concat();
         let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
-        let data_type =
-            crate::datatypes::DataType::Image(Box::new(crate::datatypes::DataType::UInt8), None);
+        let data_type = crate::datatypes::DataType::Image(
+            Box::new(crate::datatypes::DataType::UInt8),
+            image_mode.clone(),
+        );
 
         let validity = arrow2::bitmap::Bitmap::from(is_valid);
 
