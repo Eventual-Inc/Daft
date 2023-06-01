@@ -54,6 +54,8 @@ Evaluating Daft for a new project or system? Read more about why you should choo
    Telemetry <telemetry>
    dataframe_comparison
    technical_architecture
+   benchmarks/index
+
 
 .. Indices and tables
 .. ==================
