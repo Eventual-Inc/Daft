@@ -91,15 +91,15 @@ impl ImageMode {
             [L, LA, RGB, RGBA, L16, LA16, RGB16, RGBA16, RGB32F, RGBA32F];
         MODES.iter()
     }
-    pub fn to_dtype(&self) -> DataType {
+    pub fn get_dtype(&self) -> DataType {
         self.into()
     }
 }
 
-impl TryFrom<&image::ColorType> for ImageMode {
+impl TryFrom<image::ColorType> for ImageMode {
     type Error = DaftError;
 
-    fn try_from(color: &image::ColorType) -> DaftResult<Self> {
+    fn try_from(color: image::ColorType) -> DaftResult<Self> {
         use image::ColorType;
         use ImageMode::*;
 

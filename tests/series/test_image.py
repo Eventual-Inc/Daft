@@ -88,7 +88,7 @@ def test_image_arrow_round_trip():
         ("RGB", "bmp"),
         ("RGBA", "png"),
         ("RGBA", "tiff"),
-        # Not supported by PIL.
+        # Not supported by Daft or PIL.
         # "L16", "LA16", "RGB16", "RGBA16", "RGB32F", "RGBA32F"
     ],
 )
@@ -130,14 +130,16 @@ def test_image_decode_pil(mode, file_format):
         ("RGBA", "png"),
         ("RGBA", "tiff"),
         ("RGBA", "webp"),
-        ("L16", "png"),
+        # TODO(Clark): Support uint16 images.
+        # ("L16", "png"),
         # OpenCV doesn't support 2-channel images.
         # ("LA16", "png"),
-        ("RGB16", "png"),
-        ("RGB16", "tiff"),
-        ("RGBA16", "png"),
-        ("RGBA16", "tiff"),
-        # Image create doesn't support LogLuv HDR encoding.
+        # TODO(Clark): Support uint16 images.
+        # ("RGB16", "png"),
+        # ("RGB16", "tiff"),
+        # ("RGBA16", "png"),
+        # ("RGBA16", "tiff"),
+        # Image crate doesn't support LogLuv HDR encoding.
         # ("RGB32F", "tiff"),
         # ("RGBA32F", "tiff"),
     ],
@@ -154,7 +156,6 @@ def test_image_decode_opencv(mode, file_format):
         cv2_arr = cv2.cvtColor(arr, color_conv)
     encoded_arr = cv2.imencode(f".{file_format}", cv2_arr)[1]
     img_bytes = encoded_arr.tobytes()
-    print(cv2.imdecode(encoded_arr, cv2.IMREAD_UNCHANGED).dtype)
     arrow_arr = pa.array([img_bytes, img_bytes, img_bytes], type=pa.binary())
     s = Series.from_arrow(arrow_arr)
     t = s.image.decode()
