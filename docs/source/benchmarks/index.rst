@@ -48,44 +48,48 @@ Highlights
 
 .. note::
    We were unable to obtain results for Modin due to cluster OOMs, errors and timeouts (after one hour).
-   Similarly, Dask was unable to provide comparable results for the 1TB benchmark.
+   Similarly, Dask was unable to provide comparable results for the Terabyte scale benchmark.
    It is possible that these frameworks may perform and function better with additional tuning and configuration.
    Logs for all the runs are provided in a public AWS S3 bucket.
+
+100 Scale Factor
+^^^^^^^^^^^^^^^^
+
 
 .. raw:: html
    :file: ../_static/tpch-100sf.html
 
-+-----------+----------------------+---------------------+------------------+
-| Dataframe | Total Time (seconds) | Questions Completed | Relative to Daft |
-+===========+======================+=====================+==================+
-| Daft      | 785                  | 10/10               | 1.0x             |
-+-----------+----------------------+---------------------+------------------+
-| Spark     | 2648                 | 10/10               | 3.3x             |
-+-----------+----------------------+---------------------+------------------+
-| Dask      | 6010                 | 10/10               | 7.7x             |
-+-----------+----------------------+---------------------+------------------+
-| Modin     | Did not finish       | 4/10                | Did not finish   |
-+-----------+----------------------+---------------------+------------------+
++-----------+---------------------+----------------------+------------------+
+| Dataframe | Questions Completed | Total Time (seconds) | Relative to Daft |
++===========+=====================+======================+==================+
+| Daft      | 10/10               | 785                  | 1.0x             |
++-----------+---------------------+----------------------+------------------+
+| Spark     | 10/10               | 2648                 | 3.3x             |
++-----------+---------------------+----------------------+------------------+
+| Dask      | 10/10               | 6010                 | 7.7x             |
++-----------+---------------------+----------------------+------------------+
+| Modin     | 4/10                | Did not finish       | Did not finish   |
++-----------+---------------------+----------------------+------------------+
 
 1000 Scale Factor
 ^^^^^^^^^^^^^^^^^
 
-We are only able to compare Daft against EMR Spark at the 1000 Scale Factor (Terabyte Scale), as the other frameworks that we attempted to use were unable to provide sufficient comparable results due to OOMs and errors.
+We are only able to compare Daft against EMR Spark at the TPCH 1000 Scale Factor (Terabyte Scale), as the other frameworks that we attempted to use were unable to provide sufficient comparable results due to OOMs and errors.
 
 .. raw:: html
    :file: ../_static/tpch-1000sf.html
 
-+-----------+----------------------+---------------------+------------------+
-| Dataframe | Total Time (seconds) | Questions Completed | Relative to Daft |
-+===========+======================+=====================+==================+
-| Daft      | 7774                 | 10/10               | 1.0x             |
-+-----------+----------------------+---------------------+------------------+
-| Spark     | 27161                | 10/10               | 3.5x             |
-+-----------+----------------------+---------------------+------------------+
-| Dask      | Did not finish       | 3/10                | Did not finish   |
-+-----------+----------------------+---------------------+------------------+
-| Modin     | Did not finish       | 0/10                | Did not finish   |
-+-----------+----------------------+---------------------+------------------+
++-----------+---------------------+----------------------+------------------+
+| Dataframe | Questions Completed | Total Time (seconds) | Relative to Daft |
++===========+=====================+======================+==================+
+| Daft      | 10/10               | 7774                 | 1.0x             |
++-----------+---------------------+----------------------+------------------+
+| Spark     | 10/10               | 27161                | 3.5x             |
++-----------+---------------------+----------------------+------------------+
+| Dask      | 3/10                | Did not finish       | Did not finish   |
++-----------+---------------------+----------------------+------------------+
+| Modin     | 0/10                | Did not finish       | Did not finish   |
++-----------+---------------------+----------------------+------------------+
 
 
 
