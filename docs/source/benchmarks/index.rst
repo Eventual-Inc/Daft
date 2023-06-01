@@ -93,7 +93,7 @@ We are only able to compare Daft against EMR Spark at the TPCH 1000 Scale Factor
 
 
 .. raw:: html
-   :file: ../_static/tpch-nodes-count-daft-1000sf.html
+   :file: ../_static/tpch-nodes-count-daft-1000-sf.html
 
 
 
