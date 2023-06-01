@@ -1,13 +1,51 @@
 from __future__ import annotations
 
 import copy
+import io
 
+import cv2
 import numpy as np
+import pyarrow as pa
 import pytest
 from PIL import Image
 
-from daft.datatype import DaftExtension, DataType
+from daft.datatype import DaftExtension, DataType, ImageMode
 from daft.series import Series
+
+MODE_TO_NP_DTYPE = {
+    "L": np.uint8,
+    "LA": np.uint8,
+    "RGB": np.uint8,
+    "RGBA": np.uint8,
+    "L16": np.uint16,
+    "LA16": np.uint16,
+    "RGB16": np.uint16,
+    "RGBA16": np.uint16,
+    "RGB32F": np.float32,
+    "RGBA32F": np.float32,
+}
+
+MODE_TO_NUM_CHANNELS = {
+    "L": 1,
+    "LA": 2,
+    "RGB": 3,
+    "RGBA": 4,
+    "L16": 1,
+    "LA16": 2,
+    "RGB16": 3,
+    "RGBA16": 4,
+    "RGB32F": 3,
+    "RGBA32F": 4,
+}
+
+MODE_TO_OPENCV_COLOR_CONVERSION = {
+    "RGB": cv2.COLOR_RGB2BGR,
+    "RGBA": cv2.COLOR_RGBA2BGRA,
+    "RGB16": cv2.COLOR_RGB2BGR,
+    "RGBA16": cv2.COLOR_RGBA2BGRA,
+    "RGB32F": cv2.COLOR_RGB2BGR,
+    "RGBA32F": cv2.COLOR_RGBA2BGRA,
+}
 
 
 def test_image_arrow_round_trip():
@@ -37,8 +75,102 @@ def test_image_arrow_round_trip():
     assert t_copy.to_pylist() == t.to_pylist()
 
 
-def test_image_resize():
+@pytest.mark.parametrize(
+    ["mode", "file_format"],
+    [
+        ("L", "png"),
+        ("L", "tiff"),
+        ("LA", "png"),
+        # Image crate doesn't support 2 samples per pixel.
+        # ("LA", "tiff"),
+        ("RGB", "png"),
+        ("RGB", "tiff"),
+        ("RGB", "bmp"),
+        ("RGBA", "png"),
+        ("RGBA", "tiff"),
+        # Not supported by PIL.
+        # "L16", "LA16", "RGB16", "RGBA16", "RGB32F", "RGBA32F"
+    ],
+)
+def test_image_decode_pil(mode, file_format):
+    np_dtype = MODE_TO_NP_DTYPE[mode]
+    img_mode = ImageMode.from_mode_string(mode)
+    num_channels = MODE_TO_NUM_CHANNELS[mode]
+    shape = (4, 4)
+    if num_channels > 1:
+        shape += (num_channels,)
+    arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+    img = Image.fromarray(arr, mode=mode)
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, file_format)
+    img_bytes = img_bytes.getvalue()
+    arrow_arr = pa.array([img_bytes, img_bytes, img_bytes], type=pa.binary())
+    s = Series.from_arrow(arrow_arr)
+    t = s.image.decode()
+    # TODO(Clark): Infer type-leve mode if all images are the same mode.
+    assert t.datatype() == DataType.image()
+    for py_img in t.to_pylist():
+        assert py_img["channel"] == num_channels
+        assert py_img["height"] == shape[0]
+        assert py_img["width"] == shape[1]
+        assert py_img["mode"] == img_mode
+        np.testing.assert_equal(np.array(py_img["data"]).reshape(shape).astype(np_dtype), arr)
 
+
+@pytest.mark.parametrize(
+    ["mode", "file_format"],
+    [
+        ("L", "png"),
+        ("L", "tiff"),
+        # OpenCV doesn't support 2-channel images.
+        # ("LA", "png"),
+        ("RGB", "png"),
+        ("RGB", "tiff"),
+        ("RGB", "bmp"),
+        ("RGBA", "png"),
+        ("RGBA", "tiff"),
+        ("RGBA", "webp"),
+        ("L16", "png"),
+        # OpenCV doesn't support 2-channel images.
+        # ("LA16", "png"),
+        ("RGB16", "png"),
+        ("RGB16", "tiff"),
+        ("RGBA16", "png"),
+        ("RGBA16", "tiff"),
+        # Image create doesn't support LogLuv HDR encoding.
+        # ("RGB32F", "tiff"),
+        # ("RGBA32F", "tiff"),
+    ],
+)
+def test_image_decode_opencv(mode, file_format):
+    np_dtype = MODE_TO_NP_DTYPE[mode]
+    img_mode = ImageMode.from_mode_string(mode)
+    num_channels = MODE_TO_NUM_CHANNELS[mode]
+    shape = (4, 4, num_channels)
+    arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+    cv2_arr = arr
+    color_conv = MODE_TO_OPENCV_COLOR_CONVERSION.get(mode)
+    if color_conv is not None:
+        cv2_arr = cv2.cvtColor(arr, color_conv)
+    encoded_arr = cv2.imencode(f".{file_format}", cv2_arr)[1]
+    img_bytes = encoded_arr.tobytes()
+    print(cv2.imdecode(encoded_arr, cv2.IMREAD_UNCHANGED).dtype)
+    arrow_arr = pa.array([img_bytes, img_bytes, img_bytes], type=pa.binary())
+    s = Series.from_arrow(arrow_arr)
+    t = s.image.decode()
+    # TODO(Clark): Support constructing an Image type with an unknown mode by known dtype.
+    if np_dtype == np.uint8:
+        # TODO(Clark): Infer type-leve mode if all images are the same mode.
+        assert t.datatype() == DataType.image()
+    for py_img in t.to_pylist():
+        assert py_img["channel"] == num_channels
+        assert py_img["height"] == shape[0]
+        assert py_img["width"] == shape[1]
+        assert py_img["mode"] == img_mode
+        np.testing.assert_equal(np.array(py_img["data"]).reshape(shape).astype(np_dtype), arr)
+
+
+def test_image_resize():
     first = np.ones((2, 2, 3), dtype=np.uint8)
     first[..., 1] = 2
     first[..., 2] = 3
@@ -72,7 +204,6 @@ def test_image_resize():
 
 
 def test_image_resize_mixed_modes():
-
     rgba = np.ones((2, 2, 4), dtype=np.uint8)
     rgba[..., 1] = 2
     rgba[..., 2] = 3

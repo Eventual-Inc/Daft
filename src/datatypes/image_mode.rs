@@ -91,6 +91,35 @@ impl ImageMode {
             [L, LA, RGB, RGBA, L16, LA16, RGB16, RGBA16, RGB32F, RGBA32F];
         MODES.iter()
     }
+    pub fn to_dtype(&self) -> DataType {
+        self.into()
+    }
+}
+
+impl TryFrom<&image::ColorType> for ImageMode {
+    type Error = DaftError;
+
+    fn try_from(color: &image::ColorType) -> DaftResult<Self> {
+        use image::ColorType;
+        use ImageMode::*;
+
+        match color {
+            ColorType::L8 => Ok(L),
+            ColorType::La8 => Ok(LA),
+            ColorType::Rgb8 => Ok(RGB),
+            ColorType::Rgba8 => Ok(RGBA),
+            ColorType::L16 => Ok(L16),
+            ColorType::La16 => Ok(LA16),
+            ColorType::Rgb16 => Ok(RGB16),
+            ColorType::Rgba16 => Ok(RGBA16),
+            ColorType::Rgb32F => Ok(RGB32F),
+            ColorType::Rgba32F => Ok(RGBA32F),
+            _ => Err(DaftError::ValueError(format!(
+                "Color type {:?} is not supported.",
+                color
+            ))),
+        }
+    }
 }
 
 impl FromStr for ImageMode {
