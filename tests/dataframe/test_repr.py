@@ -125,3 +125,14 @@ def test_alias_repr():
     }
     assert parse_str_table(df.__repr__()) == expected_data
     assert parse_html_table(df._repr_html_()) == expected_data_html
+
+
+def test_repr_with_html_string():
+    df = daft.from_pydict({"A": [f"<div>body{i}</div>" for i in range(3)]})
+    df.collect()
+
+    non_html_table = df.__repr__()
+    html_table = df._repr_html_()
+    for i in range(3):
+        assert f"<div>body{i}</div>" in non_html_table
+        assert f"<tr><td>&lt;div&gt;body{i}&lt;/div&gt;</td></tr>" in html_table
