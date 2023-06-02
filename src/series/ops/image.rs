@@ -1,6 +1,4 @@
-use arrow2;
-
-use crate::datatypes::{DataType, ImageType, NullArray};
+use crate::datatypes::{DataType, ImageType};
 
 use crate::{
     error::{DaftError, DaftResult},
@@ -10,15 +8,7 @@ use crate::{
 impl Series {
     pub fn image_decode(&self) -> DaftResult<Series> {
         match self.data_type() {
-            DataType::Binary => {
-                let binary_array = self.binary()?;
-                if binary_array.data().null_count() == self.len() {
-                    // All images are None, so return a NullArray.
-                    Ok(NullArray::from(("item", Box::new(arrow2::array::NullArray::new(arrow2::datatypes::DataType::Null, self.len())))).into_series())
-                } else {
-                    Ok(self.binary()?.image_decode()?.into_series())
-                }
-            },
+            DataType::Binary => Ok(self.binary()?.image_decode()?.into_series()),
             dtype => Err(DaftError::ValueError(format!(
                 "Decoding in-memory data into images is only supported for binary arrays, but got {}", dtype
             ))),

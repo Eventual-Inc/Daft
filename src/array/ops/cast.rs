@@ -5,7 +5,7 @@ use arrow2::compute::{
 
 use crate::series::IntoSeries;
 use crate::{
-    array::DataArray,
+    array::{ops::image::ImageArrayVecs, DataArray},
     datatypes::logical::{
         DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray,
     },
@@ -18,7 +18,7 @@ use arrow2::array::Array;
 use num_traits::NumCast;
 
 #[cfg(feature = "python")]
-use crate::datatypes::{FixedSizeListArray, ListArray, StructArray};
+use crate::datatypes::{FixedSizeListArray, ListArray};
 #[cfg(feature = "python")]
 use crate::datatypes::{ImageMode, PythonArray};
 #[cfg(feature = "python")]
@@ -496,14 +496,15 @@ fn extract_python_like_to_list<
 }
 
 #[cfg(feature = "python")]
-fn extract_python_like_to_image_struct<
+fn extract_python_like_to_image_array<
     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
 >(
     py: Python<'_>,
     python_objects: &PythonArray,
+    dtype: &DataType,
     child_dtype: &DataType,
     mode_from_dtype: Option<ImageMode>,
-) -> DaftResult<StructArray> {
+) -> DaftResult<ImageArray> {
     // 3 dimensions - height x width x channel.
 
     let shape_size = 3;
@@ -519,23 +520,7 @@ fn extract_python_like_to_image_struct<
     let offsets = offsets.expect("Offsets should but non-None for image struct array");
     let shapes = shapes.expect("Shapes should be non-None for image struct array");
 
-    let values_array: Box<dyn arrow2::array::Array> =
-        Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
-
-    let inner_dtype = child_dtype.to_arrow()?;
-
-    let data_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
-        arrow2::datatypes::Field::new("data", inner_dtype, true),
-    ));
-
     let validity = python_objects.as_arrow().validity();
-
-    let data_array = Box::new(arrow2::array::ListArray::new(
-        data_dtype.clone(),
-        arrow2::offset::OffsetsBuffer::try_from(offsets)?,
-        values_array,
-        validity.cloned(),
-    ));
 
     let num_rows = shapes.len();
 
@@ -591,37 +576,18 @@ fn extract_python_like_to_image_struct<
             child_dtype,
         )?) as u8);
     }
-
-    let channel_array = Box::new(arrow2::array::PrimitiveArray::from_vec(channels));
-    let height_array = Box::new(arrow2::array::PrimitiveArray::from_vec(heights));
-    let width_array = Box::new(arrow2::array::PrimitiveArray::from_vec(widths));
-    let mode_array = Box::new(arrow2::array::PrimitiveArray::from_vec(modes));
-
-    let struct_dtype = arrow2::datatypes::DataType::Struct(vec![
-        arrow2::datatypes::Field::new("data", data_dtype, true),
-        arrow2::datatypes::Field::new("channel", channel_array.data_type().clone(), true),
-        arrow2::datatypes::Field::new("height", height_array.data_type().clone(), true),
-        arrow2::datatypes::Field::new("width", width_array.data_type().clone(), true),
-        arrow2::datatypes::Field::new("mode", mode_array.data_type().clone(), true),
-    ]);
-
-    let daft_type = (&struct_dtype).into();
-
-    let struct_array = arrow2::array::StructArray::new(
-        struct_dtype,
-        vec![
-            data_array,
-            channel_array,
-            height_array,
-            width_array,
-            mode_array,
-        ],
-        validity.cloned(),
-    );
-
-    StructArray::new(
-        Field::new(python_objects.name(), daft_type).into(),
-        Box::new(struct_array),
+    ImageArray::from_vecs(
+        python_objects.name(),
+        dtype.clone(),
+        ImageArrayVecs {
+            data: values_vec,
+            channels,
+            heights,
+            widths,
+            modes,
+            offsets,
+            validity: validity.cloned(),
+        },
     )
 }
 
@@ -707,13 +673,8 @@ impl PythonArray {
                 with_match_numeric_daft_types!(**inner_dtype, |$T| {
                     type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_image_struct::<Tgt>(py, self, inner_dtype, *mode)?;
-                        Ok(
-                            ImageArray::new(
-                                Field::new(self.name(), dtype.clone()),
-                                result,
-                            ).into_series()
-                        )
+                        let result = extract_python_like_to_image_array::<Tgt>(py, self, dtype, inner_dtype, *mode)?;
+                        Ok(result.into_series())
                     })
                 })
             }

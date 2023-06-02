@@ -3,8 +3,7 @@ use std::vec;
 
 use image::{ColorType, DynamicImage, ImageBuffer};
 
-use crate::datatypes::logical::ImageArray;
-use crate::datatypes::{BinaryArray, DataType, Field, ImageMode};
+use crate::datatypes::{logical::ImageArray, BinaryArray, DataType, Field, ImageMode, StructArray};
 use crate::error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
 
@@ -174,6 +173,16 @@ impl<'a> From<DynamicImage> for DaftImageBuffer<'a> {
     }
 }
 
+pub struct ImageArrayVecs<T> {
+    pub data: Vec<T>,
+    pub channels: Vec<u16>,
+    pub heights: Vec<u32>,
+    pub widths: Vec<u32>,
+    pub modes: Vec<u8>,
+    pub offsets: Vec<i64>,
+    pub validity: Option<arrow2::bitmap::Bitmap>,
+}
+
 impl ImageArray {
     fn image_mode(&self) -> &Option<ImageMode> {
         match self.logical_type() {
@@ -215,6 +224,77 @@ impl ImageArray {
         const IMAGE_MODE_IDX: usize = 4;
         let array = p.values().get(IMAGE_MODE_IDX).unwrap();
         array.as_ref().as_any().downcast_ref().unwrap()
+    }
+
+    pub fn from_vecs<T: arrow2::types::NativeType>(
+        name: &str,
+        data_type: DataType,
+        vecs: ImageArrayVecs<T>,
+    ) -> DaftResult<Self> {
+        if vecs.data.is_empty() {
+            // Create an all-null array if the data array is empty.
+            let physical_type = data_type.to_physical();
+            let null_struct_array =
+                arrow2::array::new_null_array(physical_type.to_arrow()?, vecs.channels.len());
+            let daft_struct_array =
+                StructArray::new(Field::new(name, physical_type).into(), null_struct_array)?;
+            return Ok(ImageArray::new(
+                Field::new(name, data_type),
+                daft_struct_array,
+            ));
+        }
+        let offsets = arrow2::offset::OffsetsBuffer::try_from(vecs.offsets)?;
+        let arrow_dtype: arrow2::datatypes::DataType = T::PRIMITIVE.into();
+        if let DataType::Image(inner_dtype, _) = &data_type {
+            if inner_dtype.to_arrow()? != arrow_dtype {
+                panic!("Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}");
+            }
+        }
+
+        let list_datatype = arrow2::datatypes::DataType::LargeList(Box::new(
+            arrow2::datatypes::Field::new("data", arrow_dtype, true),
+        ));
+        let data_array = Box::new(arrow2::array::ListArray::<i64>::new(
+            list_datatype,
+            offsets,
+            Box::new(arrow2::array::PrimitiveArray::from_vec(vecs.data)),
+            vecs.validity.clone(),
+        ));
+
+        let values: Vec<Box<dyn arrow2::array::Array>> = vec![
+            data_array,
+            Box::new(
+                arrow2::array::UInt16Array::from_vec(vecs.channels)
+                    .with_validity(vecs.validity.clone()),
+            ),
+            Box::new(
+                arrow2::array::UInt32Array::from_vec(vecs.heights)
+                    .with_validity(vecs.validity.clone()),
+            ),
+            Box::new(
+                arrow2::array::UInt32Array::from_vec(vecs.widths)
+                    .with_validity(vecs.validity.clone()),
+            ),
+            Box::new(
+                arrow2::array::UInt8Array::from_vec(vecs.modes)
+                    .with_validity(vecs.validity.clone()),
+            ),
+        ];
+        let physical_type = data_type.to_physical();
+        let struct_array = Box::new(arrow2::array::StructArray::new(
+            physical_type.to_arrow()?,
+            values,
+            vecs.validity,
+        ));
+
+        let daft_struct_array = crate::datatypes::StructArray::new(
+            Field::new(name, physical_type).into(),
+            struct_array,
+        )?;
+        Ok(ImageArray::new(
+            Field::new(name, data_type),
+            daft_struct_array,
+        ))
     }
 
     fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
@@ -311,51 +391,24 @@ impl ImageArray {
             offsets.push(offsets.last().unwrap() + buffer.len() as i64);
         }
 
-        let collected_data = data_ref.concat();
-        let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
-        let value_dtype = DataType::UInt8;
-        let data_type = DataType::Image(Box::new(value_dtype.clone()), *image_mode);
-
+        let data = data_ref.concat();
         let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
             0 => None,
             _ => Some(validity.into()),
         };
-        let arrow_dtype = value_dtype.to_arrow()?;
-
-        let list_datatype = arrow2::datatypes::DataType::LargeList(Box::new(
-            arrow2::datatypes::Field::new("data", arrow_dtype, true),
-        ));
-        let data_array = Box::new(arrow2::array::ListArray::<i64>::new(
-            list_datatype,
-            offsets,
-            Box::new(arrow2::array::PrimitiveArray::from_vec(collected_data)),
-            validity.clone(),
-        ));
-
-        let values: Vec<Box<dyn arrow2::array::Array>> = vec![
-            data_array,
-            Box::new(
-                arrow2::array::UInt16Array::from_vec(channels).with_validity(validity.clone()),
-            ),
-            Box::new(arrow2::array::UInt32Array::from_vec(heights).with_validity(validity.clone())),
-            Box::new(arrow2::array::UInt32Array::from_vec(widths).with_validity(validity.clone())),
-            Box::new(arrow2::array::UInt8Array::from_vec(modes).with_validity(validity.clone())),
-        ];
-        let physical_type = data_type.to_physical();
-        let struct_array = Box::new(arrow2::array::StructArray::new(
-            physical_type.to_arrow()?,
-            values,
-            validity,
-        ));
-
-        let daft_struct_array = crate::datatypes::StructArray::new(
-            Field::new(name, physical_type).into(),
-            struct_array,
-        )?;
-        Ok(ImageArray::new(
-            Field::new(name, data_type),
-            daft_struct_array,
-        ))
+        ImageArray::from_vecs(
+            name,
+            DataType::Image(Box::new(DataType::UInt8), *image_mode),
+            ImageArrayVecs {
+                data,
+                channels,
+                heights,
+                widths,
+                modes,
+                offsets,
+                validity,
+            },
+        )
     }
 }
 
@@ -386,8 +439,8 @@ impl BinaryArray {
             }
             img_bufs.push(img_buf);
         }
-        // Series::image_decode() guarantees that we have at least one non-None element in this array.
-        let cached_dtype = cached_dtype.unwrap();
+        // Fall back to UInt8 dtype if series is all nulls.
+        let cached_dtype = cached_dtype.unwrap_or(DataType::UInt8);
         match cached_dtype {
             DataType::UInt8 => Ok(ImageArray::from_daft_image_buffers(self.name(), img_bufs.as_slice(), &None)?),
             _ => unimplemented!("Decoding images of dtype {cached_dtype:?} is not supported, only uint8 images are supported."),
