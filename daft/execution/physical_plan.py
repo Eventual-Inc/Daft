@@ -159,6 +159,8 @@ def join(
     left_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     right_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
+    yield_left = True
+
     while True:
         # Emit new join steps if we have left and right partitions ready.
         while (
@@ -177,11 +179,15 @@ def join(
             yield join_step
 
         # Exhausted all ready inputs; execute a single child step to get more join inputs.
-        # Choose whether to execute from left child or right child (whichever one is more behind),
-        if len(left_requests) <= len(right_requests):
+        # Choose whether to execute from left child or right child (whichever one is more behind)
+        if len(left_requests) < len(right_requests):
             next_plan, next_requests = left_plan, left_requests
-        else:
+        elif len(left_requests) > len(right_requests):
             next_plan, next_requests = right_plan, right_requests
+        elif len(left_requests) == len(right_requests):
+            # Both plans have progressed equally; alternate between the two plans to avoid starving either one
+            next_plan, next_requests = (left_plan, left_requests) if yield_left else (right_plan, right_requests)
+            yield_left = not yield_left
 
         try:
             step = next(next_plan)
