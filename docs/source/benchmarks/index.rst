@@ -1,26 +1,26 @@
 Benchmarks
 ##########
 
-TPCH Benchmark
-**************
-Here we compare Daft against some popular Distributed Dataframes such as Spark, Modin, and Dask on the TPCH benchmark.
+TPC-H Benchmark
+***************
+Here we compare Daft against some popular Distributed Dataframes such as Spark, Modin, and Dask on the TPC-H benchmark.
 
 Our goals for this benchmark is to demonstrate that Daft is able to meet the following development goals:
 
 #. **Solid out of the box performance:** great performance without having to tune esoteric flags or configurations specific to this workload
 #. **Reliable out-of-core execution:** highly performant and reliable processing on larger-than-memory datasets, without developer intervention and Out-Of-Memory (OOM) errors
-#. **Ease of use:** getting up and running should be easy on typical cloud infrastructure that is easy to spin up for an individual developer or in an enterprise cloud setting
+#. **Ease of use:** getting up and running should be easy on cloud infrastructure for an individual developer or in an enterprise cloud setting
 
 
-A great stress-test of Daft is the `TPC-H benchmark <https://www.tpc.org/tpch/>`_, which is a standard benchmark for analytical query engines.
-This benchmark helps ensure that while Daft makes it very easy to work with multimodal data, it can also do a great job at larger scales (Terabytes) of more traditional tabular analytical workloads.
+A great stress test for Daft is the `TPC-H benchmark <https://www.tpc.org/tpch/>`_, which is a standard benchmark for analytical query engines.
+This benchmark helps ensure that while Daft makes it very easy to work with multimodal data, it can also do a great job at larger scales (terabytes) of more traditional tabular analytical workloads.
 
 Setup
 -----
 The basic setup for our benchmarks are as follows:
 
 #. We run questions 1 to 10 of the TPC-H benchmarks using Daft and other commonly used Python Distributed Dataframes.
-#. The data for the queries are stored and retrieved from AWS S3 as partitioned Apache Parquet files which is typical of enterprise workloads. No on disk/in-memory caching was performed.
+#. The data for the queries are stored and retrieved from AWS S3 as partitioned Apache Parquet files, which is typical of enterprise workloads. No on disk/in-memory caching was performed.
 #. We run each framework on a cluster of AWS i3.2xlarge instances that each have:
 
    * 8 vCPUs
@@ -28,7 +28,7 @@ The basic setup for our benchmarks are as follows:
    * 1900G of NVMe SSD space
 
 
-The frameworks that we benchmark against are Spark, Modin and Dask. We chose these comparable Dataframes as they are the most commonly referenced frameworks for running large scale distributed analytical queries in Python.
+The frameworks that we benchmark against are Spark, Modin, and Dask. We chose these comparable Dataframes as they are the most commonly referenced frameworks for running large scale distributed analytical queries in Python.
 
 For benchmarking against Spark, we use AWS EMR which is a hosted Spark service.
 
@@ -42,20 +42,20 @@ Results
 
 Highlights
 ^^^^^^^^^^
-#. Out of all the benchmarked frameworks, only Daft and EMR Spark are able to run Terabyte scale queries reliably on out-of-the-box configurations.
+#. Out of all the benchmarked frameworks, only Daft and EMR Spark are able to run terabyte scale queries reliably on out-of-the-box configurations.
 #. Daft is consistently much faster (3.3x faster than EMR Spark and 7.7x faster than Dask Dataframes).
 
 
 .. note::
    We were unable to obtain results for Modin due to cluster OOMs, errors and timeouts (one hour limit per question attempt).
-   Similarly, Dask was unable to provide comparable results for the Terabyte scale benchmark.
+   Similarly, Dask was unable to provide comparable results for the terabyte scale benchmark.
    It is possible that these frameworks may perform and function better with additional tuning and configuration.
    Logs for all the runs are provided in a public AWS S3 bucket.
 
 100 Scale Factor
 ^^^^^^^^^^^^^^^^
 
-First we run TPCH 100 Scale Factor (around 100GB) benchmark  on 4 i3.2xlarge worker instances.
+First we run TPC-H 100 Scale Factor (around 100GB) benchmark  on 4 i3.2xlarge worker instances.
 In total, these instances add up to 244GB of cluster memory which will require the Dataframe library to perform disk spilling and out-of-core processing for certain questions that have a large join or sort.
 
 .. raw:: html
@@ -73,7 +73,7 @@ In total, these instances add up to 244GB of cluster memory which will require t
 | Modin     | 4/10                | Did not finish       | Did not finish   |
 +-----------+---------------------+----------------------+------------------+
 
-From the results we see that Daft, Spark and Dask are able to complete all the questions and Modin completes less than half.
+From the results we see that Daft, Spark, and Dask are able to complete all the questions and Modin completes less than half.
 We also see that Daft is **3.3x** faster than Spark and **7.7x** faster than Dask including S3 IO.
 We expect these speed-ups to be much larger if the data is loaded in memory instead of cloud storage, which we will show in future benchmarks.
 
@@ -107,8 +107,8 @@ This shows that Daft and Spark are the only Dataframes in this comparison capabl
 1000 Scale Factor - Node Count Ablation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Finally, we compare how Daft performs on varying size clusters on the Terabyte scale dataset.
-We run the same Daft TPCH questions on the same dataset as the :ref:`previous section<1000_scale_factor>` but sweep the worker node count.
+Finally, we compare how Daft performs on varying size clusters on the terabyte scale dataset.
+We run the same Daft TPC-H questions on the same dataset as the :ref:`previous section<1000_scale_factor>` but sweep the worker node count.
 
 .. raw:: html
    :file: ../_static/tpch-nodes-count-daft-1000-sf.html
@@ -116,8 +116,8 @@ We run the same Daft TPCH questions on the same dataset as the :ref:`previous se
 
 We note two interesting results here:
 
-#. We can run process 1TB+ of analytical data on a single 61GB instance with Daft without being distributed. (16x more data than memory)
-#. Daft Query times scales linearly with the number of nodes. (e.g. 4 nodes being 4 times faster than a single node) Allowing for faster queries for the same compute cost!
+#. Daft can process 1TB+ of analytical data on a single 61GB instance without being distributed (16x more data than memory).
+#. Daft query times scale linearly with the number of nodes (e.g. 4 nodes being 4 times faster than a single node). This allows for faster queries while maintaining the same compute cost!
 
 Detailed Benchmarking Setup
 ---------------------------
