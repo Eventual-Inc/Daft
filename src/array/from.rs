@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataType, Field, Utf8Array,
-    Utf8Type,
+    BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataType, Field, NullArray,
+    Utf8Array, Utf8Type,
 };
 
 use crate::array::DataArray;
@@ -14,6 +14,13 @@ impl<T: DaftNumericType> From<(&str, Box<arrow2::array::PrimitiveArray<T::Native
     fn from(item: (&str, Box<arrow2::array::PrimitiveArray<T::Native>>)) -> Self {
         let (name, array) = item;
         DataArray::new(Field::new(name, T::get_dtype()).into(), array).unwrap()
+    }
+}
+
+impl From<(&str, Box<arrow2::array::NullArray>)> for NullArray {
+    fn from(item: (&str, Box<arrow2::array::NullArray>)) -> Self {
+        let (name, array) = item;
+        DataArray::new(Field::new(name, DataType::Null).into(), array).unwrap()
     }
 }
 

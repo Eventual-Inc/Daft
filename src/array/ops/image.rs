@@ -1,11 +1,10 @@
 use std::borrow::Cow;
 use std::vec;
 
-use image::ImageBuffer;
+use image::{ColorType, DynamicImage, ImageBuffer};
 
-use crate::datatypes::logical::ImageArray;
-use crate::datatypes::{DataType, Field, ImageMode};
-use crate::error::DaftResult;
+use crate::datatypes::{logical::ImageArray, BinaryArray, DataType, Field, ImageMode, StructArray};
+use crate::error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
 
 use super::as_arrow::AsArrow;
@@ -15,7 +14,7 @@ use std::ops::Deref;
 
 #[allow(clippy::upper_case_acronyms, dead_code)]
 #[derive(Debug)]
-enum DaftImageBuffer<'a> {
+pub enum DaftImageBuffer<'a> {
     L(ImageBuffer<Luma<u8>, Cow<'a, [u8]>>),
     LA(ImageBuffer<LumaA<u8>, Cow<'a, [u8]>>),
     RGB(ImageBuffer<Rgb<u8>, Cow<'a, [u8]>>),
@@ -58,17 +57,7 @@ impl<'a> DaftImageBuffer<'a> {
         with_method_on_image_buffer!(self, width)
     }
 
-    pub fn channels(&self) -> u16 {
-        use DaftImageBuffer::*;
-        match self {
-            L(..) | L16(..) => 1,
-            LA(..) | LA16(..) => 2,
-            RGB(..) | RGB16(..) | RGB32F(..) => 3,
-            RGBA(..) | RGBA16(..) | RGBA32F(..) => 4,
-        }
-    }
-
-    pub fn get_as_u8(&'a self) -> &'a [u8] {
+    pub fn as_u8_slice(&'a self) -> &'a [u8] {
         use DaftImageBuffer::*;
         match self {
             L(img) => img.as_raw(),
@@ -79,20 +68,30 @@ impl<'a> DaftImageBuffer<'a> {
         }
     }
 
-    pub fn mode(&self) -> ImageMode {
+    pub fn color(&self) -> ColorType {
         use DaftImageBuffer::*;
         match self {
-            L(..) => ImageMode::L,
-            LA(..) => ImageMode::LA,
-            RGB(..) => ImageMode::RGB,
-            RGBA(..) => ImageMode::RGBA,
-            L16(..) => ImageMode::L16,
-            LA16(..) => ImageMode::LA16,
-            RGB16(..) => ImageMode::RGB16,
-            RGBA16(..) => ImageMode::RGBA16,
-            RGB32F(..) => ImageMode::RGB32F,
-            RGBA32F(..) => ImageMode::RGBA32F,
+            L(..) => ColorType::L8,
+            LA(..) => ColorType::La8,
+            RGB(..) => ColorType::Rgb8,
+            RGBA(..) => ColorType::Rgba8,
+            L16(..) => ColorType::L16,
+            LA16(..) => ColorType::La16,
+            RGB16(..) => ColorType::Rgb16,
+            RGBA16(..) => ColorType::Rgba16,
+            RGB32F(..) => ColorType::Rgb32F,
+            RGBA32F(..) => ColorType::Rgba32F,
         }
+    }
+
+    pub fn mode(&self) -> ImageMode {
+        self.color().try_into().unwrap()
+    }
+
+    pub fn decode(bytes: &[u8]) -> DaftResult<Self> {
+        image::load_from_memory(bytes)
+            .map(|v| v.into())
+            .map_err(|e| DaftError::ValueError(format!("Decoding image from bytes failed: {}", e)))
     }
 
     pub fn resize(&self, w: u32, h: u32) -> Self {
@@ -118,7 +117,7 @@ impl<'a> DaftImageBuffer<'a> {
                     image::imageops::resize(imgbuf, w, h, image::imageops::FilterType::Triangle);
                 DaftImageBuffer::RGBA(image_buffer_vec_to_cow(result))
             }
-            _ => unimplemented!("mode not implemented"),
+            _ => unimplemented!("Mode {self:?} not implemented"),
         }
     }
 }
@@ -134,6 +133,54 @@ where
     let w = input.width();
     let owned: Cow<[T]> = input.into_raw().into();
     ImageBuffer::from_raw(w, h, owned).unwrap()
+}
+
+impl<'a> From<DynamicImage> for DaftImageBuffer<'a> {
+    fn from(dyn_img: DynamicImage) -> Self {
+        match dyn_img {
+            DynamicImage::ImageLuma8(img_buf) => {
+                DaftImageBuffer::<'a>::L(image_buffer_vec_to_cow(img_buf))
+            }
+            DynamicImage::ImageLumaA8(img_buf) => {
+                DaftImageBuffer::<'a>::LA(image_buffer_vec_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgb8(img_buf) => {
+                DaftImageBuffer::<'a>::RGB(image_buffer_vec_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgba8(img_buf) => {
+                DaftImageBuffer::<'a>::RGBA(image_buffer_vec_to_cow(img_buf))
+            }
+            DynamicImage::ImageLuma16(img_buf) => {
+                DaftImageBuffer::<'a>::L16(image_buffer_vec_to_cow(img_buf))
+            }
+            DynamicImage::ImageLumaA16(img_buf) => {
+                DaftImageBuffer::<'a>::LA16(image_buffer_vec_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgb16(img_buf) => {
+                DaftImageBuffer::<'a>::RGB16(image_buffer_vec_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgba16(img_buf) => {
+                DaftImageBuffer::<'a>::RGBA16(image_buffer_vec_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgb32F(img_buf) => {
+                DaftImageBuffer::<'a>::RGB32F(image_buffer_vec_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgba32F(img_buf) => {
+                DaftImageBuffer::<'a>::RGBA32F(image_buffer_vec_to_cow(img_buf))
+            }
+            _ => unimplemented!("{dyn_img:?} not implemented"),
+        }
+    }
+}
+
+pub struct ImageArrayVecs<T> {
+    pub data: Vec<T>,
+    pub channels: Vec<u16>,
+    pub heights: Vec<u32>,
+    pub widths: Vec<u32>,
+    pub modes: Vec<u8>,
+    pub offsets: Vec<i64>,
+    pub validity: Option<arrow2::bitmap::Bitmap>,
 }
 
 impl ImageArray {
@@ -177,6 +224,77 @@ impl ImageArray {
         const IMAGE_MODE_IDX: usize = 4;
         let array = p.values().get(IMAGE_MODE_IDX).unwrap();
         array.as_ref().as_any().downcast_ref().unwrap()
+    }
+
+    pub fn from_vecs<T: arrow2::types::NativeType>(
+        name: &str,
+        data_type: DataType,
+        vecs: ImageArrayVecs<T>,
+    ) -> DaftResult<Self> {
+        if vecs.data.is_empty() {
+            // Create an all-null array if the data array is empty.
+            let physical_type = data_type.to_physical();
+            let null_struct_array =
+                arrow2::array::new_null_array(physical_type.to_arrow()?, vecs.channels.len());
+            let daft_struct_array =
+                StructArray::new(Field::new(name, physical_type).into(), null_struct_array)?;
+            return Ok(ImageArray::new(
+                Field::new(name, data_type),
+                daft_struct_array,
+            ));
+        }
+        let offsets = arrow2::offset::OffsetsBuffer::try_from(vecs.offsets)?;
+        let arrow_dtype: arrow2::datatypes::DataType = T::PRIMITIVE.into();
+        if let DataType::Image(inner_dtype, _) = &data_type {
+            if inner_dtype.to_arrow()? != arrow_dtype {
+                panic!("Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}");
+            }
+        }
+
+        let list_datatype = arrow2::datatypes::DataType::LargeList(Box::new(
+            arrow2::datatypes::Field::new("data", arrow_dtype, true),
+        ));
+        let data_array = Box::new(arrow2::array::ListArray::<i64>::new(
+            list_datatype,
+            offsets,
+            Box::new(arrow2::array::PrimitiveArray::from_vec(vecs.data)),
+            vecs.validity.clone(),
+        ));
+
+        let values: Vec<Box<dyn arrow2::array::Array>> = vec![
+            data_array,
+            Box::new(
+                arrow2::array::UInt16Array::from_vec(vecs.channels)
+                    .with_validity(vecs.validity.clone()),
+            ),
+            Box::new(
+                arrow2::array::UInt32Array::from_vec(vecs.heights)
+                    .with_validity(vecs.validity.clone()),
+            ),
+            Box::new(
+                arrow2::array::UInt32Array::from_vec(vecs.widths)
+                    .with_validity(vecs.validity.clone()),
+            ),
+            Box::new(
+                arrow2::array::UInt8Array::from_vec(vecs.modes)
+                    .with_validity(vecs.validity.clone()),
+            ),
+        ];
+        let physical_type = data_type.to_physical();
+        let struct_array = Box::new(arrow2::array::StructArray::new(
+            physical_type.to_arrow()?,
+            values,
+            vecs.validity,
+        ));
+
+        let daft_struct_array = crate::datatypes::StructArray::new(
+            Field::new(name, physical_type).into(),
+            struct_array,
+        )?;
+        Ok(ImageArray::new(
+            Field::new(name, data_type),
+            daft_struct_array,
+        ))
     }
 
     fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
@@ -227,7 +345,6 @@ impl ImageArray {
 
         assert_eq!(result.height(), h);
         assert_eq!(result.width(), w);
-        assert_eq!(result.channels(), c);
         Some(result)
     }
 
@@ -236,11 +353,10 @@ impl ImageArray {
             .map(|i| self.as_image_obj(i))
             .map(|img| img.map(|img| img.resize(w, h)))
             .collect::<Vec<_>>();
-
         Self::from_daft_image_buffers(self.name(), result.as_slice(), self.image_mode())
     }
 
-    fn from_daft_image_buffers(
+    pub fn from_daft_image_buffers(
         name: &str,
         inputs: &[Option<DaftImageBuffer<'_>>],
         image_mode: &Option<ImageMode>,
@@ -258,79 +374,76 @@ impl ImageArray {
         let mut modes = Vec::with_capacity(inputs.len());
         let mut widths = Vec::with_capacity(inputs.len());
         let mut offsets = Vec::with_capacity(inputs.len() + 1);
-        let mut is_valid = Vec::with_capacity(inputs.len());
         offsets.push(0i64);
+        let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(inputs.len());
 
         for ib in inputs {
-            if let Some(ib) = ib {
-                heights.push(ib.height());
-                widths.push(ib.width());
-                channels.push(ib.channels());
-
-                let buffer = ib.get_as_u8();
-                data_ref.push(buffer);
-                offsets.push(buffer.len() as i64 + offsets.last().unwrap());
-                modes.push(ib.mode() as u8);
-                is_valid.push(true);
-            } else {
-                heights.push(0u32);
-                widths.push(0u32);
-                channels.push(0u16);
-                offsets.push(*offsets.last().unwrap());
-                modes.push(0);
-                is_valid.push(false);
-            }
+            validity.push(ib.is_some());
+            let (height, width, mode, buffer) = match ib {
+                Some(ib) => (ib.height(), ib.width(), ib.mode(), ib.as_u8_slice()),
+                None => (0u32, 0u32, ImageMode::L, &[] as &[u8]),
+            };
+            heights.push(height);
+            widths.push(width);
+            modes.push(mode as u8);
+            channels.push(mode.num_channels());
+            data_ref.push(buffer);
+            offsets.push(offsets.last().unwrap() + buffer.len() as i64);
         }
 
-        let collected_data = data_ref.concat();
-        let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
-        let data_type = crate::datatypes::DataType::Image(
-            Box::new(crate::datatypes::DataType::UInt8),
-            *image_mode,
-        );
+        let data = data_ref.concat();
+        let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+            0 => None,
+            _ => Some(validity.into()),
+        };
+        ImageArray::from_vecs(
+            name,
+            DataType::Image(Box::new(DataType::UInt8), *image_mode),
+            ImageArrayVecs {
+                data,
+                channels,
+                heights,
+                widths,
+                modes,
+                offsets,
+                validity,
+            },
+        )
+    }
+}
 
-        let validity = arrow2::bitmap::Bitmap::from(is_valid);
-
-        let list_datatype = arrow2::datatypes::DataType::LargeList(Box::new(
-            arrow2::datatypes::Field::new("data", arrow2::datatypes::DataType::UInt8, true),
-        ));
-        let data_array = Box::new(arrow2::array::ListArray::<i64>::new(
-            list_datatype,
-            offsets,
-            Box::new(arrow2::array::UInt8Array::from_vec(collected_data)),
-            Some(validity.clone()),
-        ));
-
-        let values: Vec<Box<dyn arrow2::array::Array>> = vec![
-            data_array,
-            Box::new(
-                arrow2::array::UInt16Array::from_vec(channels)
-                    .with_validity(Some(validity.clone())),
-            ),
-            Box::new(
-                arrow2::array::UInt32Array::from_vec(heights).with_validity(Some(validity.clone())),
-            ),
-            Box::new(
-                arrow2::array::UInt32Array::from_vec(widths).with_validity(Some(validity.clone())),
-            ),
-            Box::new(
-                arrow2::array::UInt8Array::from_vec(modes).with_validity(Some(validity.clone())),
-            ),
-        ];
-        let physical_type = data_type.to_physical();
-        let struct_array = Box::new(arrow2::array::StructArray::new(
-            physical_type.to_arrow()?,
-            values,
-            Some(validity),
-        ));
-
-        let daft_struct_array = crate::datatypes::StructArray::new(
-            Field::new(name, physical_type).into(),
-            struct_array,
-        )?;
-        Ok(ImageArray::new(
-            Field::new(name, data_type),
-            daft_struct_array,
-        ))
+impl BinaryArray {
+    pub fn image_decode(&self) -> DaftResult<ImageArray> {
+        let arrow_array = self
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::BinaryArray<i64>>()
+            .unwrap();
+        let mut img_bufs = Vec::<Option<DaftImageBuffer>>::with_capacity(arrow_array.len());
+        let mut cached_dtype: Option<DataType> = None;
+        // Load images from binary buffers.
+        // Confirm that all images have the same value dtype.
+        for row in arrow_array.iter() {
+            let img_buf = row.map(DaftImageBuffer::decode).transpose()?;
+            let dtype = img_buf.as_ref().map(|im| im.mode().get_dtype());
+            match (dtype.as_ref(), cached_dtype.as_ref()) {
+                (Some(t1), Some(t2)) => {
+                    if t1 != t2 {
+                        return Err(DaftError::ValueError(format!("All images in a column must have the same dtype, but got: {:?} and {:?}", t1, t2)));
+                    }
+                }
+                (Some(t1), None) => {
+                    cached_dtype = Some(t1.clone());
+                }
+                (None, _) => {}
+            }
+            img_bufs.push(img_buf);
+        }
+        // Fall back to UInt8 dtype if series is all nulls.
+        let cached_dtype = cached_dtype.unwrap_or(DataType::UInt8);
+        match cached_dtype {
+            DataType::UInt8 => Ok(ImageArray::from_daft_image_buffers(self.name(), img_bufs.as_slice(), &None)?),
+            _ => unimplemented!("Decoding images of dtype {cached_dtype:?} is not supported, only uint8 images are supported."),
+        }
     }
 }
