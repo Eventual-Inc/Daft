@@ -58,7 +58,9 @@ def _stringify_vpartition(
             # BUG: tabulate library does not handle string literal values "True" and "False" correctly, so we lowercase them.
             data_stringified[colname] = [_truncate(str(val).lower(), max_col_width, max_lines) for val in data[colname]]
         else:
-            data_stringified[colname] = [_truncate(str(val), max_col_width, max_lines) for val in data[colname]]
+            data_stringified[colname] = [
+                html.escape(_truncate(str(val), max_col_width, max_lines)) for val in data[colname]
+            ]
 
     return data_stringified
 
