@@ -19,7 +19,7 @@ Setup
 -----
 The basic setup for our benchmarks are as follows:
 
-#. We run questions 1 to 10 of the TPC-H benchmarks using Daft and other commonly used Python distributed query engines.
+#. We run questions 1 to 10 of the TPC-H benchmarks using Daft and other commonly used Python Distributed Dataframes.
 #. The data for the queries are stored and retrieved from AWS S3 as partitioned Apache Parquet files which is typical of enterprise workloads. No on disk/in-memory caching was performed.
 #. We run each framework on a cluster of AWS i3.2xlarge instances that each have:
 
@@ -28,13 +28,13 @@ The basic setup for our benchmarks are as follows:
    * 1900G of NVMe SSD space
 
 
-The frameworks that we benchmark against are Spark, Modin and Dask. We chose these comparable frameworks as they are the most commonly referenced frameworks for running large scale distributed analytical queries in Python.
+The frameworks that we benchmark against are Spark, Modin and Dask. We chose these comparable Dataframes as they are the most commonly referenced frameworks for running large scale distributed analytical queries in Python.
 
-For benchmarking against Spark, we used AWS EMR, which is a hosted Spark service.
+For benchmarking against Spark, we use AWS EMR which is a hosted Spark service.
 
-For other benchmarks, we were able to host our own Ray and Dask clusters on Kubernetes.
+For other benchmarks, we host our own Ray and Dask clusters on Kubernetes.
 
-Please refer to the section on our Detailed Benchmarking Setup for additional information. [add reference]
+Please refer to the section on our :ref:`Detailed Benchmarking Setup <benchmarking-setup>` for additional information.
 
 Results
 -------
@@ -42,18 +42,21 @@ Results
 
 Highlights
 ^^^^^^^^^^
-#. Out of all the benchmarked frameworks, only Daft and EMR Spark were able to run Terabyte scale queries reliably on out-of-the-box configurations.
+#. Out of all the benchmarked frameworks, only Daft and EMR Spark are able to run Terabyte scale queries reliably on out-of-the-box configurations.
 #. Daft is consistently much faster (3.3x faster than EMR Spark and 7.7x faster than Dask Dataframes).
 
 
 .. note::
-   We were unable to obtain results for Modin due to cluster OOMs, errors and timeouts (after one hour).
+   We were unable to obtain results for Modin due to cluster OOMs, errors and timeouts (one hour limit per question attempt).
    Similarly, Dask was unable to provide comparable results for the Terabyte scale benchmark.
    It is possible that these frameworks may perform and function better with additional tuning and configuration.
    Logs for all the runs are provided in a public AWS S3 bucket.
 
 100 Scale Factor
 ^^^^^^^^^^^^^^^^
+
+First we run TPCH 100 Scale Factor (around 100GB) benchmark  on 4 i3.2xlarge worker instances.
+In total, these instances add up to 244GB of cluster memory which will require the Dataframe library to perform disk spilling and out-of-core processing for certain questions that have a large join or sort.
 
 .. raw:: html
    :file: ../_static/tpch-100sf.html
@@ -70,10 +73,16 @@ Highlights
 | Modin     | 4/10                | Did not finish       | Did not finish   |
 +-----------+---------------------+----------------------+------------------+
 
+From the results we see that Daft, Spark and Dask are able to complete all the questions and Modin completes less than half.
+We also see that Daft is **3.3x** faster than Spark and **7.7x** faster than Dask including S3 IO.
+We expect these speed-ups to be much larger if the data is loaded in memory instead of cloud storage, which we will show in future benchmarks.
+
 1000 Scale Factor
 ^^^^^^^^^^^^^^^^^
+.. _1000_scale_factor:
 
-We are only able to compare Daft against EMR Spark at the TPCH 1000 Scale Factor (Terabyte Scale), as the other frameworks that we attempted to use were unable to provide sufficient comparable results due to OOMs and errors.
+Next we scale up the data size by 10x while keeping the cluster size the same. Since we only have 244GB of memory and 1TB+ of tabular data,
+the DataFrame library will be required to perform disk spilling and out-of-core processing for all questions at nearly all stages of the query.
 
 .. raw:: html
    :file: ../_static/tpch-1000sf.html
@@ -90,15 +99,29 @@ We are only able to compare Daft against EMR Spark at the TPCH 1000 Scale Factor
 | Modin     | 0/10                | Did not finish       | Did not finish   |
 +-----------+---------------------+----------------------+------------------+
 
+From the results we see that only Daft and Spark are able to complete all the questions.
+Dask completes less than a third and Modin is unable to complete any due to OOMs and cluster crashes.
+Since we can only compare to Spark here, we see that Daft is **3.5x** faster including S3 IO.
+This shows that Daft and Spark are the only Dataframes in this comparison capable of processing data larger than memory, with Daft standing out as the significantly faster option.
 
+1000 Scale Factor - Node Count Ablation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Finally, we compare how Daft performs on varying size clusters on the Terabyte scale dataset.
+We run the same Daft TPCH questions on the same dataset as the :ref:`previous section<1000_scale_factor>` but sweep the worker node count.
 
 .. raw:: html
    :file: ../_static/tpch-nodes-count-daft-1000-sf.html
 
 
+We note two interesting results here:
+
+#. We can run process 1TB+ of analytical data on a single 61GB instance with Daft without being distributed. (16x more data than memory)
+#. Daft Query times scales linearly with the number of nodes. (e.g. 4 nodes being 4 times faster than a single node) Allowing for faster queries for the same compute cost!
 
 Detailed Benchmarking Setup
 ---------------------------
+.. _benchmarking-setup:
 
 Benchmarking Code
 ^^^^^^^^^^^^^^^^^
@@ -141,11 +164,11 @@ Cluster Setup
 Dask and Ray
 ============
 
-To help us deploy the necessary software to run clusters for Dataframe libraries, we used Kubernetes for deploying Dask and Ray clusters.
+To help us run the Distributed Dataframe libraries, we used Kubernetes for deploying Dask and Ray clusters.
 The configuration files for these setups can be found in our `open source benchmarking repository. <https://github.com/Eventual-Inc/distributed-query-benchmarking/tree/main/cluster_setup>`_
 
 Our benchmarks for Daft and Modin were run on a `KubeRay <https://github.com/ray-project/kuberay>`_ cluster, and our benchmarks for Dask was run on a `Dask-on-Kubernetes <https://github.com/dask/dask-kubernetes>`_ cluster.
-Both projects are owned and maintained officially by the creators of these cluster frameworks as one of the main methods of deploying their software.
+Both projects are owned and maintained officially by the creators of these libraries as one of the main methods of deploying.
 
 Spark
 =====
@@ -156,7 +179,7 @@ Logs
 ^^^^
 
 ================================== ============== ======= =====================================================================================================================================================================================================================================================================================================================
-Framework                          Scale Factor   Nodes   Links
+Dataframe                          Scale Factor   Nodes   Links
 ================================== ============== ======= =====================================================================================================================================================================================================================================================================================================================
 Daft                               1000           8       #. s3://daft-public-data/benchmarking/logs/daft.0_1_3.1tb.8-i32xlarge.log
 Daft                               1000           4       #. s3://daft-public-data/benchmarking/logs/daft.0_1_3.1tb.4-i32xlarge.log
