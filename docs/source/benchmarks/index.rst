@@ -42,12 +42,12 @@ Results
 
 Highlights
 ^^^^^^^^^^
-#. Out of all the benchmarked frameworks, only Daft and EMR Spark are able to run terabyte scale queries reliably on out-of-the-box configurations.
-#. Daft is consistently much faster (3.3x faster than EMR Spark and 7.7x faster than Dask Dataframes).
+   #. Out of all the benchmarked frameworks, **only Daft and EMR Spark are able to run terabyte scale queries reliably** on out-of-the-box configurations.
+   #. **Daft is consistently much faster** (3.3x faster than EMR Spark, 7.7x faster than Dask Dataframes, and 44.4x faster than Modin).
 
 
 .. note::
-   We were unable to obtain results for Modin due to cluster OOMs, errors and timeouts (one hour limit per question attempt).
+   We were unable to obtain full results for Modin due to cluster OOMs, errors and timeouts (one hour limit per question attempt).
    Similarly, Dask was unable to provide comparable results for the terabyte scale benchmark.
    It is possible that these frameworks may perform and function better with additional tuning and configuration.
    Logs for all the runs are provided in a public AWS S3 bucket.
@@ -70,8 +70,10 @@ In total, these instances add up to 244GB of cluster memory which will require t
 +-----------+---------------------+----------------------+------------------+
 | Dask      | 10/10               | 6010                 | 7.7x             |
 +-----------+---------------------+----------------------+------------------+
-| Modin     | 4/10                | Did not finish       | Did not finish   |
+| Modin     | 5/10                | Did not finish       | 44.4x*           |
 +-----------+---------------------+----------------------+------------------+
+
+*\* Only for queries that completed.*
 
 From the results we see that Daft, Spark, and Dask are able to complete all the questions and Modin completes less than half.
 We also see that Daft is **3.3x** faster than Spark and **7.7x** faster than Dask including S3 IO.
@@ -94,10 +96,12 @@ the DataFrame library will be required to perform disk spilling and out-of-core 
 +-----------+---------------------+----------------------+------------------+
 | Spark     | 10/10               | 27161                | 3.5x             |
 +-----------+---------------------+----------------------+------------------+
-| Dask      | 3/10                | Did not finish       | Did not finish   |
+| Dask      | 3/10                | Did not finish       | 5.8x*            |
 +-----------+---------------------+----------------------+------------------+
-| Modin     | 0/10                | Did not finish       | Did not finish   |
+| Modin     | 0/10                | Did not finish       | No data          |
 +-----------+---------------------+----------------------+------------------+
+
+*\* Only for queries that completed.*
 
 From the results we see that only Daft and Spark are able to complete all the questions.
 Dask completes less than a third and Modin is unable to complete any due to OOMs and cluster crashes.
