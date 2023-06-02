@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import html
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable
 
 from tabulate import tabulate
 
@@ -22,11 +22,6 @@ def _truncate(s: str, max_col_width: int, max_lines: int):
     return s
 
 
-def _stringify_object_default(val: Any, max_col_width: int, max_lines: int):
-    """Stringifies Python objects for the REPL"""
-    return _truncate(str(val), max_col_width, max_lines)
-
-
 def _stringify_object_html(val: Any, max_col_width: int, max_lines: int):
     """Stringifies Python objects, with custom handling for specific objects that Daft recognizes as media types"""
     viz_hook = get_viz_hook(val)
@@ -38,7 +33,6 @@ def _stringify_object_html(val: Any, max_col_width: int, max_lines: int):
 def _stringify_vpartition(
     data: dict[str, list[Any]],
     daft_schema: Schema,
-    custom_stringify_object: Callable = _stringify_object_default,
     max_col_width: int = DEFAULT_MAX_COL_WIDTH,
     max_lines: int = DEFAULT_MAX_LINES,
 ) -> dict[str, Iterable[str]]:
@@ -51,9 +45,32 @@ def _stringify_vpartition(
     for colname in daft_schema.column_names():
         field = daft_schema[colname]
         if field.dtype._is_python_type():
-            data_stringified[colname] = [
-                custom_stringify_object(val, max_col_width, max_lines) for val in data[colname]
-            ]
+            data_stringified[colname] = [_truncate(str(val), max_col_width, max_lines) for val in data[colname]]
+        elif field.dtype == DataType.bool():
+            # BUG: tabulate library does not handle string literal values "True" and "False" correctly, so we lowercase them.
+            data_stringified[colname] = [_truncate(str(val).lower(), max_col_width, max_lines) for val in data[colname]]
+        else:
+            data_stringified[colname] = [_truncate(str(val), max_col_width, max_lines) for val in data[colname]]
+
+    return data_stringified
+
+
+def _stringify_vpartition_html(
+    data: dict[str, list[Any]],
+    daft_schema: Schema,
+    max_col_width: int = DEFAULT_MAX_COL_WIDTH,
+    max_lines: int = DEFAULT_MAX_LINES,
+) -> dict[str, Iterable[str]]:
+    """Converts a vPartition into a dictionary of display-friendly stringified values"""
+    assert all(
+        colname in data for colname in daft_schema.column_names()
+    ), f"Data does not contain columns: {set(daft_schema.column_names()) - set(data.keys())}"
+
+    data_stringified: dict[str, Iterable[str]] = {}
+    for colname in daft_schema.column_names():
+        field = daft_schema[colname]
+        if field.dtype._is_python_type():
+            data_stringified[colname] = [_stringify_object_html(val, max_col_width, max_lines) for val in data[colname]]
         elif field.dtype == DataType.bool():
             # BUG: tabulate library does not handle string literal values "True" and "False" correctly, so we lowercase them.
             data_stringified[colname] = [_truncate(str(val).lower(), max_col_width, max_lines) for val in data[colname]]
@@ -81,10 +98,9 @@ def vpartition_repr_html(
         if vpartition is not None
         else {colname: [] for colname in daft_schema.column_names()}
     )
-    data_stringified = _stringify_vpartition(
+    data_stringified = _stringify_vpartition_html(
         data,
         daft_schema,
-        custom_stringify_object=_stringify_object_html,
         max_col_width=max_col_width,
         max_lines=max_lines,
     )
@@ -143,7 +159,6 @@ def vpartition_repr(
     data_stringified = _stringify_vpartition(
         data,
         daft_schema,
-        custom_stringify_object=_stringify_object_default,
         max_col_width=max_col_width,
         max_lines=max_lines,
     )
