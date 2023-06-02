@@ -4,8 +4,8 @@ use std::vec;
 use image::{ColorType, DynamicImage, ImageBuffer};
 
 use crate::datatypes::logical::ImageArray;
-use crate::datatypes::{DataType, Field, ImageMode};
-use crate::error::DaftResult;
+use crate::datatypes::{BinaryArray, DataType, Field, ImageMode};
+use crate::error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
 
 use super::as_arrow::AsArrow;
@@ -87,6 +87,12 @@ impl<'a> DaftImageBuffer<'a> {
 
     pub fn mode(&self) -> ImageMode {
         self.color().try_into().unwrap()
+    }
+
+    pub fn decode(bytes: &[u8]) -> DaftResult<Self> {
+        image::load_from_memory(bytes)
+            .map(|v| v.into())
+            .map_err(|e| DaftError::ValueError(format!("Decoding image from bytes failed: {}", e)))
     }
 
     pub fn resize(&self, w: u32, h: u32) -> Self {
@@ -350,5 +356,41 @@ impl ImageArray {
             Field::new(name, data_type),
             daft_struct_array,
         ))
+    }
+}
+
+impl BinaryArray {
+    pub fn image_decode(&self) -> DaftResult<ImageArray> {
+        let arrow_array = self
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::BinaryArray<i64>>()
+            .unwrap();
+        let mut img_bufs = Vec::<Option<DaftImageBuffer>>::with_capacity(arrow_array.len());
+        let mut cached_dtype: Option<DataType> = None;
+        // Load images from binary buffers.
+        // Confirm that all images have the same value dtype.
+        for row in arrow_array.iter() {
+            let img_buf = row.map(DaftImageBuffer::decode).transpose()?;
+            let dtype = img_buf.as_ref().map(|im| im.mode().get_dtype());
+            match (dtype.as_ref(), cached_dtype.as_ref()) {
+                (Some(t1), Some(t2)) => {
+                    if t1 != t2 {
+                        return Err(DaftError::ValueError(format!("All images in a column must have the same dtype, but got: {:?} and {:?}", t1, t2)));
+                    }
+                }
+                (Some(t1), None) => {
+                    cached_dtype = Some(t1.clone());
+                }
+                (None, _) => {}
+            }
+            img_bufs.push(img_buf);
+        }
+        // Series::image_decode() guarantees that we have at least one non-None element in this array.
+        let cached_dtype = cached_dtype.unwrap();
+        match cached_dtype {
+            DataType::UInt8 => Ok(ImageArray::from_daft_image_buffers(self.name(), img_bufs.as_slice(), &None)?),
+            _ => unimplemented!("Decoding images of dtype {cached_dtype:?} is not supported, only uint8 images are supported."),
+        }
     }
 }
