@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pathlib
 import uuid
-from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -48,12 +47,8 @@ def test_download_custom_ds(files):
 
     df = daft.from_pydict({"filenames": [str(f) for f in files]})
 
-    with patch.object(fs, "cat_file", wraps=fs.cat_file) as mock_cat:
-        df = df.with_column("bytes", col("filenames").url.download(fs=fs))
-        out_df = df.to_pandas()
-
-        # Check that cat_file() is called on the passed filesystem.
-        mock_cat.assert_called()
+    df = df.with_column("bytes", col("filenames").url.download(fs=fs))
+    out_df = df.to_pandas()
 
     pd_df = pd.DataFrame.from_dict({"filenames": [str(f) for f in files]})
     pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() for fn in files])

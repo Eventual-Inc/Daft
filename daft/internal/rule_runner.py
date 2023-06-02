@@ -31,6 +31,9 @@ class RuleRunner(Generic[TreeNodeType]):
         self._batches = batches
 
     def optimize(self, root: TreeNodeType) -> TreeNodeType:
+        from copy import deepcopy
+
+        root = deepcopy(root)
         for batch in self._batches:
             root = self._run_single_batch(root, batch)
         return root
