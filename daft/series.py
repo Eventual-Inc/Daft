@@ -434,6 +434,10 @@ class Series:
     def image(self) -> SeriesImageNamespace:
         return SeriesImageNamespace.from_series(self)
 
+    @property
+    def url(self) -> SeriesUrlNamespace:
+        return SeriesUrlNamespace.from_series(self)
+
     def __reduce__(self) -> tuple:
         if self.datatype()._is_python_type():
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
@@ -529,3 +533,8 @@ class SeriesImageNamespace(SeriesNamespace):
             raise TypeError(f"expected int for h but got {type(h)}")
 
         return Series._from_pyseries(self._series.image_resize(w, h))
+
+
+class SeriesUrlNamespace(SeriesNamespace):
+    def download(self) -> Series:
+        return Series._from_pyseries(self._series.url_download())

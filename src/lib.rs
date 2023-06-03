@@ -6,6 +6,7 @@ mod array;
 mod datatypes;
 mod dsl;
 mod error;
+mod io;
 mod kernels;
 mod schema;
 mod series;
