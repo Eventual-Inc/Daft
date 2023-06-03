@@ -35,6 +35,12 @@ impl From<serde_json::Error> for DaftError {
     }
 }
 
+impl From<io::Error> for DaftError {
+    fn from(error: io::Error) -> Self {
+        DaftError::IoError(error)
+    }
+}
+
 pub type DaftResult<T> = std::result::Result<T, DaftError>;
 
 impl Display for DaftError {
