@@ -5,7 +5,7 @@ use arrow2::compute::{
 
 use crate::series::IntoSeries;
 use crate::{
-    array::{ops::image::ImageArrayVecs, DataArray},
+    array::DataArray,
     datatypes::logical::{
         DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray,
     },
@@ -14,23 +14,27 @@ use crate::{
     series::Series,
     with_match_arrow_daft_types, with_match_daft_logical_types, with_match_numeric_daft_types,
 };
-use arrow2::array::Array;
-use num_traits::NumCast;
 
 #[cfg(feature = "python")]
-use crate::datatypes::{FixedSizeListArray, ListArray};
+use crate::array::{ops::image::ImageArrayVecs, pseudo_arrow::PseudoArrowArray};
 #[cfg(feature = "python")]
-use crate::datatypes::{ImageMode, PythonArray};
+use crate::datatypes::{FixedSizeListArray, ImageMode, ListArray, PythonArray};
+#[cfg(feature = "python")]
+use arrow2::array::Array;
 #[cfg(feature = "python")]
 use log;
 #[cfg(feature = "python")]
-use num_traits::ToPrimitive;
+use ndarray::IntoDimension;
 #[cfg(feature = "python")]
-use numpy::PyReadonlyArrayDyn;
+use num_traits::{NumCast, ToPrimitive};
+#[cfg(feature = "python")]
+use numpy::{PyArray, PyReadonlyArrayDyn};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use std::iter;
+#[cfg(feature = "python")]
+use std::ops::Deref;
 
 use super::as_arrow::AsArrow;
 use std::sync::Arc;
@@ -267,7 +271,7 @@ fn extract_python_to_vec<
     use std::num::Wrapping;
 
     let mut values_vec: Vec<Tgt> =
-        Vec::with_capacity(list_size.unwrap_or(0) * python_objects.len());
+        Vec::with_capacity(list_size.unwrap_or(1) * python_objects.len());
 
     let mut offsets_vec: Vec<i64> = vec![];
     let mut shapes_vec: Vec<Vec<u64>> = vec![];
@@ -701,12 +705,120 @@ impl EmbeddingArray {
 
 impl ImageArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        self.physical.cast(dtype)
+        match dtype {
+            #[cfg(feature = "python")]
+            DataType::Python => {
+                Python::with_gil(|py| {
+                    let mut ndarrays = Vec::with_capacity(self.len());
+                    let mut bitmap = arrow2::bitmap::MutableBitmap::with_capacity(self.len());
+                    for i in 0..self.len() {
+                        let img_buf = self.as_image_obj(i);
+                        let ndarray = img_buf
+                            .map(|buf| {
+                                let slice = buf.as_u8_slice();
+                                let shape = (
+                                    buf.height() as usize,
+                                    buf.width() as usize,
+                                    buf.mode().num_channels() as usize,
+                                );
+                                // NOTE(Clark): This will create a copy in the Python heap, using NumPy for allocation.
+                                PyArray::from_slice(py, slice).reshape(shape.into_dimension())
+                            })
+                            .transpose()
+                            .map_err(|e| {
+                                DaftError::ValueError(format!(
+                                    "Converting image to ndarray failed: {}",
+                                    e
+                                ))
+                            })?;
+                        ndarrays.push(
+                            ndarray
+                                .unwrap_or(PyArray::zeros(
+                                    py,
+                                    (1_usize, 1_usize, 1_usize).into_dimension(),
+                                    false,
+                                ))
+                                .deref()
+                                .to_object(py),
+                        );
+                        bitmap.push(ndarray.is_some());
+                    }
+                    let values_array = PseudoArrowArray::new(ndarrays.into(), bitmap.into());
+                    Ok(PythonArray::new(
+                        Field::new(self.name(), dtype.clone()).into(),
+                        values_array.to_boxed(),
+                    )?
+                    .into_series())
+                })
+            }
+            _ => self.physical.cast(dtype),
+        }
     }
+}
+
+#[cfg(feature = "python")]
+fn fixed_shape_image_array_to_python_array<
+    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+>(
+    py: Python<'_>,
+    image_array: &FixedShapeImageArray,
+    dtype: &DataType,
+    height: &u32,
+    width: &u32,
+    mode: ImageMode,
+) -> DaftResult<PythonArray> {
+    let shape = (
+        *height as usize,
+        *width as usize,
+        mode.num_channels() as usize,
+    )
+        .into_dimension();
+    let mut ndarrays = Vec::with_capacity(image_array.len());
+    let mut bitmap = arrow2::bitmap::MutableBitmap::with_capacity(image_array.len());
+    for arr in image_array.as_arrow().iter() {
+        let ndarray = arr
+            .map(|arrow_arr| {
+                let slice = arrow_arr
+                    .as_any()
+                    .downcast_ref::<arrow2::array::PrimitiveArray<Tgt>>()
+                    .unwrap()
+                    .values()
+                    .as_slice();
+                PyArray::from_slice(py, slice).reshape(shape)
+            })
+            .transpose()
+            .map_err(|e| {
+                DaftError::ValueError(format!("Converting image to ndarray failed: {}", e))
+            })?;
+        ndarrays.push(
+            ndarray
+                .unwrap_or(PyArray::zeros(py, shape, false))
+                .deref()
+                .to_object(py),
+        );
+        bitmap.push(ndarray.is_some());
+    }
+    let values_array = PseudoArrowArray::new(ndarrays.into(), bitmap.into());
+    PythonArray::new(
+        Field::new(image_array.name(), dtype.clone()).into(),
+        values_array.to_boxed(),
+    )
 }
 
 impl FixedShapeImageArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        self.physical.cast(dtype)
+        match (dtype, self.logical_type()) {
+            #[cfg(feature = "python")]
+            (DataType::Python, DataType::FixedShapeImage(inner_dtype, mode, height, width)) => {
+                with_match_numeric_daft_types!(**inner_dtype, |$T| {
+                    type Tgt = <$T as DaftNumericType>::Native;
+                    pyo3::Python::with_gil(|py| {
+                        let result = fixed_shape_image_array_to_python_array::<Tgt>(py, self, dtype, height, width, *mode)?;
+                        Ok(result.into_series())
+                    })
+                })
+            }
+            (_, _) => self.physical.cast(dtype),
+        }
     }
 }

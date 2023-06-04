@@ -9,6 +9,11 @@ use crate::{
 
 use super::as_arrow::AsArrow;
 
+#[cfg(feature = "python")]
+use crate::array::pseudo_arrow::PseudoArrowArray;
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
+
 pub trait Broadcastable {
     fn broadcast(&self, num: usize) -> DaftResult<Self>
     where
@@ -292,9 +297,8 @@ impl Broadcastable for crate::datatypes::PythonArray {
             }
         };
 
-        let repeated_values_array: Box<dyn arrow2::array::Array> = Box::new(
-            crate::array::pseudo_arrow::PseudoArrowArray::new(repeated_values.into(), validity),
-        );
-        crate::datatypes::PythonArray::new(self.field.clone(), repeated_values_array)
+        let repeated_values_array: Box<dyn arrow2::array::Array> =
+            Box::new(PseudoArrowArray::new(repeated_values.into(), validity));
+        PythonArray::new(self.field.clone(), repeated_values_array)
     }
 }

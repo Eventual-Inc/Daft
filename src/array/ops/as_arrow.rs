@@ -10,6 +10,11 @@ use crate::{
     },
 };
 
+#[cfg(feature = "python")]
+use crate::array::pseudo_arrow::PseudoArrowArray;
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
+
 pub trait AsArrow {
     type Output;
 
@@ -92,8 +97,8 @@ impl AsArrow for StructArray {
 }
 
 #[cfg(feature = "python")]
-impl AsArrow for crate::datatypes::PythonArray {
-    type Output = crate::array::pseudo_arrow::PseudoArrowArray<pyo3::PyObject>;
+impl AsArrow for PythonArray {
+    type Output = PseudoArrowArray<pyo3::PyObject>;
 
     // downcasts a DataArray<T> to a PseudoArrowArray of PyObject.
     fn as_arrow(&self) -> &Self::Output {

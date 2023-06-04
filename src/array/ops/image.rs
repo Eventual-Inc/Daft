@@ -297,7 +297,7 @@ impl ImageArray {
         ))
     }
 
-    fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
+    pub fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
         assert!(idx < self.len());
         if !self.physical.is_valid(idx) {
             return None;
