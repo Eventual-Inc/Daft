@@ -754,22 +754,29 @@ impl FixedShapeImageArray {
             (DataType::Python, DataType::FixedShapeImage(_, mode, height, width)) => {
                 pyo3::Python::with_gil(|py| {
                     let shape = (
+                        self.len(),
                         *height as usize,
                         *width as usize,
                         mode.num_channels() as usize,
                     );
-                    let mut ndarrays = Vec::with_capacity(self.len());
                     let pyarrow = py.import("pyarrow")?;
-                    for arrow_array in self.as_arrow().iter() {
-                        let py_array = match arrow_array {
-                            Some(arrow_array) => ffi::to_py_array(arrow_array, py, pyarrow)?
-                                .call_method0(py, pyo3::intern!(py, "to_numpy"))?
-                                .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?,
-                            None => PyArray3::<u8>::zeros(py, shape.into_dimension(), false)
-                                .deref()
-                                .to_object(py),
+                    let py_array = ffi::to_py_array(self.as_arrow().values().clone(), py, pyarrow)?
+                        .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
+                        .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?;
+                    let mut ndarrays = Vec::with_capacity(self.len());
+                    for i in 0..self.len() {
+                        let image_array = if self.physical.is_valid(i) {
+                            py_array.as_ref(py).get_item(i)?.to_object(py)
+                        } else {
+                            PyArray3::<u8>::zeros(
+                                py,
+                                (shape.1, shape.2, shape.3).into_dimension(),
+                                false,
+                            )
+                            .deref()
+                            .to_object(py)
                         };
-                        ndarrays.push(py_array);
+                        ndarrays.push(image_array);
                     }
                     let values_array =
                         PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
