@@ -13,16 +13,26 @@ fn join_arrow_list_of_utf8s(
     list_element: Option<Box<dyn arrow2::array::Array>>,
     delimiter_str: &str,
 ) -> Option<String> {
-    list_element.map(|list_element| {
-        list_element
-            .as_any()
-            .downcast_ref::<arrow2::array::Utf8Array<i64>>()
-            .unwrap()
-            .iter()
-            .fold(String::from(""), |acc, str_item| {
-                acc + delimiter_str + str_item.unwrap_or("")
-            })
-    })
+    list_element
+        .map(|list_element| {
+            list_element
+                .as_any()
+                .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+                .unwrap()
+                .iter()
+                .fold(String::from(""), |acc, str_item| {
+                    acc + str_item.unwrap_or("") + delimiter_str
+                })
+            // Remove trailing `delimiter_str`
+        })
+        .map(|result| {
+            let result_len = result.len();
+            if result_len > 0 {
+                result[..result_len - delimiter_str.len()].to_string()
+            } else {
+                result
+            }
+        })
 }
 
 impl ListArray {
