@@ -73,7 +73,7 @@ Comparing expressions and values, returning a logical expression
 
 .. _expression-accessor-properties:
 
-.. _api-string-expression-operations:
+.. _api-float-expression-operations:
 
 Floats
 ******
@@ -86,6 +86,8 @@ Example: ``e1.float.is_nan()``
     :toctree: expression_methods
 
     daft.expressions.expressions.ExpressionFloatNamespace.is_nan
+
+.. _api-string-expression-operations:
 
 Strings
 *******
@@ -121,6 +123,7 @@ Example: ``e.dt.day()``
     daft.expressions.expressions.ExpressionDatetimeNamespace.year
     daft.expressions.expressions.ExpressionDatetimeNamespace.day_of_week
 
+.. _api-expressions-urls:
 
 URLs
 ****
@@ -134,6 +137,22 @@ Example: ``e.url.download()``
     :toctree: expression_methods
 
     daft.expressions.expressions.ExpressionUrlNamespace.download
+
+.. _api-expressions-images:
+
+Images
+******
+
+Operations on images, accessible through the ``Expression.image`` method accessor:
+
+Example: ``e.image.resize()``
+
+.. autosummary::
+    :nosignatures:
+    :toctree: expression_methods
+
+    daft.expressions.expressions.ExpressionImageNamespace.resize
+    daft.expressions.expressions.ExpressionImageNamespace.decode
 
 
 Changing Column Names/Types

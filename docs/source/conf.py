@@ -20,6 +20,13 @@ html_favicon = "_static/daft-favicon.png"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
+# The name of a reST role (builtin or Sphinx extension) to use as the default role, that
+# is, for text marked up `like this`. This can be set to 'py:obj' to make `filter` a
+# cross-reference to the Python function “filter”. The default is None, which doesn’t
+# reassign the default role.
+
+default_role = "py:obj"
+
 extensions = [
     "sphinx_reredirects",
     "sphinx.ext.autodoc",

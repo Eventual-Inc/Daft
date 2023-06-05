@@ -107,8 +107,8 @@ Python
 
 .. _api-datatypes-complex:
 
-More Complex Types
-------------------
+Complex Types
+-------------
 
 Machine Learning
 ^^^^^^^^^^^^^^^^
@@ -118,6 +118,15 @@ Machine Learning
     :toctree: datatype_methods
 
     daft.DataType.embedding
+
+Computer Vision
+^^^^^^^^^^^^^^^
+
+.. autosummary::
+    :nosignatures:
+    :toctree: datatype_methods
+
+    daft.DataType.image
 
 
 Miscellaneous

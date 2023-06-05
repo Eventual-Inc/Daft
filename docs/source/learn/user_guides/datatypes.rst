@@ -103,18 +103,18 @@ Python is AWESOME because it's so flexible, but it's also slow and memory ineffi
 
 .. NOTE::
 
-    If you work with Python class for a generalizable use-case (e.g. images, documents, protobufs), it may be that these types are good candidates for "promotion" into a native Daft type!
+    If you work with Python classes for a generalizable use-case (e.g. images, documents, protobufs), it may be that these types are good candidates for "promotion" into a native Daft type!
     Please get in touch with the Daft team and we would love to work together on building your type into canonical Daft types.
 
-Other Complex Types
--------------------
+Complex Types
+-------------
 
 Daft supports many more interesting complex DataTypes, for example:
 
-* ``DataType.embedding()``: Embeddings used in Machine Learning
-* ``DataType.image()``: 2D Images!
+* :meth:`~daft.DataType.embedding()`: Lower-dimensional vector representation of data (e.g. words)
+* :meth:`~daft.DataType.image()`: NHWC images
 
-Daft abstracts away the in-memory representation of your data, as well as provides kernels for many common operations on top of this type of data (e.g. resizing an image).
+Daft abstracts away the in-memory representation of your data and provides kernels for many common operations on top of these data types. For supported image operations see the :ref:`image expressions API reference <api-expressions-images>`.
 
 For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
 
