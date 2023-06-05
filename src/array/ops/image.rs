@@ -184,42 +184,42 @@ pub struct ImageArrayVecs<T> {
 }
 
 impl ImageArray {
-    fn image_mode(&self) -> &Option<ImageMode> {
+    pub fn image_mode(&self) -> &Option<ImageMode> {
         match self.logical_type() {
             DataType::Image(_, mode) => mode,
             _ => panic!("Expected dtype to be Image"),
         }
     }
 
-    fn data_array(&self) -> &arrow2::array::ListArray<i64> {
+    pub fn data_array(&self) -> &arrow2::array::ListArray<i64> {
         let p = self.physical.as_arrow();
         const IMAGE_DATA_IDX: usize = 0;
         let array = p.values().get(IMAGE_DATA_IDX).unwrap();
         array.as_ref().as_any().downcast_ref().unwrap()
     }
 
-    fn channel_array(&self) -> &arrow2::array::UInt16Array {
+    pub fn channel_array(&self) -> &arrow2::array::UInt16Array {
         let p = self.physical.as_arrow();
         const IMAGE_CHANNEL_IDX: usize = 1;
         let array = p.values().get(IMAGE_CHANNEL_IDX).unwrap();
         array.as_ref().as_any().downcast_ref().unwrap()
     }
 
-    fn height_array(&self) -> &arrow2::array::UInt32Array {
+    pub fn height_array(&self) -> &arrow2::array::UInt32Array {
         let p = self.physical.as_arrow();
         const IMAGE_HEIGHT_IDX: usize = 2;
         let array = p.values().get(IMAGE_HEIGHT_IDX).unwrap();
         array.as_ref().as_any().downcast_ref().unwrap()
     }
 
-    fn width_array(&self) -> &arrow2::array::UInt32Array {
+    pub fn width_array(&self) -> &arrow2::array::UInt32Array {
         let p = self.physical.as_arrow();
         const IMAGE_WIDTH_IDX: usize = 3;
         let array = p.values().get(IMAGE_WIDTH_IDX).unwrap();
         array.as_ref().as_any().downcast_ref().unwrap()
     }
 
-    fn mode_array(&self) -> &arrow2::array::UInt8Array {
+    pub fn mode_array(&self) -> &arrow2::array::UInt8Array {
         let p = self.physical.as_arrow();
         const IMAGE_MODE_IDX: usize = 4;
         let array = p.values().get(IMAGE_MODE_IDX).unwrap();
@@ -297,7 +297,7 @@ impl ImageArray {
         ))
     }
 
-    fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
+    pub fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
         assert!(idx < self.len());
         if !self.physical.is_valid(idx) {
             return None;

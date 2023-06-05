@@ -5,32 +5,40 @@ use arrow2::compute::{
 
 use crate::series::IntoSeries;
 use crate::{
-    array::{ops::image::ImageArrayVecs, DataArray},
+    array::DataArray,
     datatypes::logical::{
         DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray,
     },
     datatypes::{DaftArrowBackedType, DataType, Field, Utf8Array},
     error::{DaftError, DaftResult},
     series::Series,
-    with_match_arrow_daft_types, with_match_daft_logical_types, with_match_numeric_daft_types,
+    with_match_arrow_daft_types, with_match_daft_logical_types,
 };
-use arrow2::array::Array;
-use num_traits::NumCast;
 
 #[cfg(feature = "python")]
-use crate::datatypes::{FixedSizeListArray, ListArray};
+use crate::array::{ops::image::ImageArrayVecs, pseudo_arrow::PseudoArrowArray};
 #[cfg(feature = "python")]
-use crate::datatypes::{ImageMode, PythonArray};
+use crate::datatypes::{FixedSizeListArray, ImageMode, ListArray, PythonArray};
+#[cfg(feature = "python")]
+use crate::ffi;
+#[cfg(feature = "python")]
+use crate::with_match_numeric_daft_types;
+#[cfg(feature = "python")]
+use arrow2::array::Array;
 #[cfg(feature = "python")]
 use log;
 #[cfg(feature = "python")]
-use num_traits::ToPrimitive;
+use ndarray::IntoDimension;
 #[cfg(feature = "python")]
-use numpy::PyReadonlyArrayDyn;
+use num_traits::{NumCast, ToPrimitive};
+#[cfg(feature = "python")]
+use numpy::{PyArray3, PyReadonlyArrayDyn};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use std::iter;
+#[cfg(feature = "python")]
+use std::ops::Deref;
 
 use super::as_arrow::AsArrow;
 use std::sync::Arc;
@@ -701,12 +709,87 @@ impl EmbeddingArray {
 
 impl ImageArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        self.physical.cast(dtype)
+        match dtype {
+            #[cfg(feature = "python")]
+            DataType::Python => Python::with_gil(|py| {
+                let mut ndarrays = Vec::with_capacity(self.len());
+                let da = self.data_array();
+                let ca = self.channel_array();
+                let ha = self.height_array();
+                let wa = self.width_array();
+                let pyarrow = py.import("pyarrow")?;
+                for (i, arrow_array) in da.iter().enumerate() {
+                    let shape = (
+                        ha.value(i) as usize,
+                        wa.value(i) as usize,
+                        ca.value(i) as usize,
+                    );
+                    let py_array = match arrow_array {
+                        Some(arrow_array) => ffi::to_py_array(arrow_array, py, pyarrow)?
+                            .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
+                            .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?,
+                        None => PyArray3::<u8>::zeros(py, shape.into_dimension(), false)
+                            .deref()
+                            .to_object(py),
+                    };
+                    ndarrays.push(py_array);
+                }
+                let values_array =
+                    PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
+                Ok(PythonArray::new(
+                    Field::new(self.name(), dtype.clone()).into(),
+                    values_array.to_boxed(),
+                )?
+                .into_series())
+            }),
+            _ => self.physical.cast(dtype),
+        }
     }
 }
 
 impl FixedShapeImageArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        self.physical.cast(dtype)
+        match (dtype, self.logical_type()) {
+            #[cfg(feature = "python")]
+            (DataType::Python, DataType::FixedShapeImage(_, mode, height, width)) => {
+                pyo3::Python::with_gil(|py| {
+                    let shape = (
+                        self.len(),
+                        *height as usize,
+                        *width as usize,
+                        mode.num_channels() as usize,
+                    );
+                    let pyarrow = py.import("pyarrow")?;
+                    // Only go through FFI layer once instead of for every image.
+                    // We create an (N, H, W, C) ndarray view on the entire image array
+                    // buffer sans the validity mask, and then create a subndarray view
+                    // for each image ndarray in the PythonArray.
+                    let py_array = ffi::to_py_array(
+                        self.as_arrow().values().with_validity(None),
+                        py,
+                        pyarrow,
+                    )?
+                    .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
+                    .call_method1(
+                        py,
+                        pyo3::intern!(py, "reshape"),
+                        (shape,),
+                    )?;
+                    let ndarrays = py_array
+                        .as_ref(py)
+                        .iter()?
+                        .map(|a| a.unwrap().to_object(py))
+                        .collect::<Vec<PyObject>>();
+                    let values_array =
+                        PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
+                    Ok(PythonArray::new(
+                        Field::new(self.name(), dtype.clone()).into(),
+                        values_array.to_boxed(),
+                    )?
+                    .into_series())
+                })
+            }
+            (_, _) => self.physical.cast(dtype),
+        }
     }
 }
