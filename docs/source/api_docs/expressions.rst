@@ -161,6 +161,19 @@ Example: ``e.image.resize()``
     daft.expressions.expressions.ExpressionImageNamespace.encode
 
 
+Nested
+******
+
+Operations on nested types (such as List and FixedSizeList), accessible through the ``Expression.list`` method accessor.
+
+Example: ``e1.str.concat(e2)``
+
+.. autosummary::
+    :toctree: expression_methods
+
+    daft.expressions.expressions.ExpressionListNamespace.join
+
+
 Changing Column Names/Types
 ###########################
 
