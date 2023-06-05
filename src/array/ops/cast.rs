@@ -760,24 +760,26 @@ impl FixedShapeImageArray {
                         mode.num_channels() as usize,
                     );
                     let pyarrow = py.import("pyarrow")?;
-                    let py_array = ffi::to_py_array(self.as_arrow().values().clone(), py, pyarrow)?
-                        .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
-                        .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?;
-                    let mut ndarrays = Vec::with_capacity(self.len());
-                    for i in 0..self.len() {
-                        let image_array = if self.physical.is_valid(i) {
-                            py_array.as_ref(py).get_item(i)?.to_object(py)
-                        } else {
-                            PyArray3::<u8>::zeros(
-                                py,
-                                (shape.1, shape.2, shape.3).into_dimension(),
-                                false,
-                            )
-                            .deref()
-                            .to_object(py)
-                        };
-                        ndarrays.push(image_array);
-                    }
+                    // Only go through FFI layer once instead of for every image.
+                    // We create an (N, H, W, C) ndarray view on the entire image array
+                    // buffer sans the validity mask, and then create a subndarray view
+                    // for each image ndarray in the PythonArray.
+                    let py_array = ffi::to_py_array(
+                        self.as_arrow().values().with_validity(None),
+                        py,
+                        pyarrow,
+                    )?
+                    .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
+                    .call_method1(
+                        py,
+                        pyo3::intern!(py, "reshape"),
+                        (shape,),
+                    )?;
+                    let ndarrays = py_array
+                        .as_ref(py)
+                        .iter()?
+                        .map(|a| a.unwrap().to_object(py))
+                        .collect::<Vec<PyObject>>();
                     let values_array =
                         PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
                     Ok(PythonArray::new(
