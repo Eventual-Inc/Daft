@@ -271,7 +271,7 @@ fn extract_python_to_vec<
     use std::num::Wrapping;
 
     let mut values_vec: Vec<Tgt> =
-        Vec::with_capacity(list_size.unwrap_or(1) * python_objects.len());
+        Vec::with_capacity(list_size.unwrap_or(0) * python_objects.len());
 
     let mut offsets_vec: Vec<i64> = vec![];
     let mut shapes_vec: Vec<Vec<u64>> = vec![];
@@ -710,7 +710,6 @@ impl ImageArray {
             DataType::Python => {
                 Python::with_gil(|py| {
                     let mut ndarrays = Vec::with_capacity(self.len());
-                    let mut bitmap = arrow2::bitmap::MutableBitmap::with_capacity(self.len());
                     for i in 0..self.len() {
                         let img_buf = self.as_image_obj(i);
                         let ndarray = img_buf
@@ -735,15 +734,15 @@ impl ImageArray {
                             ndarray
                                 .unwrap_or(PyArray::zeros(
                                     py,
-                                    (1_usize, 1_usize, 1_usize).into_dimension(),
+                                    (0_usize, 0_usize, 0_usize).into_dimension(),
                                     false,
                                 ))
                                 .deref()
                                 .to_object(py),
                         );
-                        bitmap.push(ndarray.is_some());
                     }
-                    let values_array = PseudoArrowArray::new(ndarrays.into(), bitmap.into());
+                    let values_array =
+                        PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
                     Ok(PythonArray::new(
                         Field::new(self.name(), dtype.clone()).into(),
                         values_array.to_boxed(),
@@ -774,7 +773,6 @@ fn fixed_shape_image_array_to_python_array<
     )
         .into_dimension();
     let mut ndarrays = Vec::with_capacity(image_array.len());
-    let mut bitmap = arrow2::bitmap::MutableBitmap::with_capacity(image_array.len());
     for arr in image_array.as_arrow().iter() {
         let ndarray = arr
             .map(|arrow_arr| {
@@ -796,9 +794,9 @@ fn fixed_shape_image_array_to_python_array<
                 .deref()
                 .to_object(py),
         );
-        bitmap.push(ndarray.is_some());
     }
-    let values_array = PseudoArrowArray::new(ndarrays.into(), bitmap.into());
+    let values_array =
+        PseudoArrowArray::new(ndarrays.into(), image_array.as_arrow().validity().cloned());
     PythonArray::new(
         Field::new(image_array.name(), dtype.clone()).into(),
         values_array.to_boxed(),
