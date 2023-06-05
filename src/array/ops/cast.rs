@@ -726,7 +726,7 @@ impl ImageArray {
                     );
                     let py_array = match arrow_array {
                         Some(arrow_array) => ffi::to_py_array(arrow_array, py, pyarrow)?
-                            .call_method0(py, pyo3::intern!(py, "to_numpy"))?
+                            .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
                             .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?,
                         None => PyArray3::<u8>::zeros(py, shape.into_dimension(), false)
                             .deref()
