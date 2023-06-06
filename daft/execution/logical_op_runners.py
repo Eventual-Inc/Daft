@@ -59,6 +59,7 @@ class LogicalPartitionOpRunner:
                 [
                     table_io.read_json(
                         file=fp,
+                        schema=schema,
                         fs=fs,
                         read_options=read_options,
                     )

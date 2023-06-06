@@ -41,6 +41,7 @@ def _open_stream(
 
 def read_json(
     file: FileInput,
+    schema: Schema,
     fs: fsspec.AbstractFileSystem | None = None,
     read_options: TableReadOptions = TableReadOptions(),
 ) -> Table:
@@ -64,6 +65,12 @@ def read_json(
     # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
     if read_options.num_rows is not None:
         table = table[: read_options.num_rows]
+
+    # TODO(jaychia): Need to implement casting functionality to ensure types match up
+    # Note that not having this may result in Tables having different types depending on PyArrow's parsing logic
+    # for this particular file, and there is no enforcement of types nor column ordering here.
+    # pruned_schema = schema.select_columns(read_options.column_names)
+    # table = table.cast_to_schema(pruned_schema)
 
     return Table.from_arrow(table)
 
@@ -164,13 +171,6 @@ def read_csv(
         table = table[: read_options.num_rows]
 
     table = Table.from_arrow(table)
-
-    # TODO(jaychia): Need to implement casting functionality to ensure types match up
-    # Note that not having this may result in Tables having different types depending on PyArrow's parsing logic
-    # for this particular file, and there is no enforcement of types nor column ordering here.
-    # pruned_schema = schema.select_columns(read_options.column_names)
-    # table = table.cast_to_schema(pruned_schema)
-
     return table
 
 

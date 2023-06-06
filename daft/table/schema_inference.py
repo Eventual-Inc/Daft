@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pyarrow.csv as pacsv
+import pyarrow.json as pajson
 
+from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
 from daft.table import Table
 from daft.table.table_io import FileInput, _open_stream
@@ -18,7 +20,7 @@ def from_csv(
     override_column_names: list[str] | None = None,
     csv_options: TableParseCSVOptions = TableParseCSVOptions(),
     read_options: TableReadOptions = TableReadOptions(),
-):
+) -> Schema:
     """Infers a Schema from a CSV file
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
@@ -56,5 +58,29 @@ def from_csv(
             ),
             convert_options=pacsv.ConvertOptions(include_columns=read_options.column_names),
         )
+
+    return Table.from_arrow(table).schema()
+
+
+def from_json(
+    file: FileInput,
+    fs: fsspec.AbstractFileSystem | None = None,
+    read_options: TableReadOptions = TableReadOptions(),
+) -> Schema:
+    """Reads a Schema from a JSON file
+
+    Args:
+        file (FileInput): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
+        read_options (TableReadOptions, optional): Options for reading the file
+
+    Returns:
+        Schema: Inferred Schema from the JSON
+    """
+    with _open_stream(file, fs) as f:
+        # TODO(jay): Can't limit number of rows with current PyArrow filesystem so this reads the entire JSON to sample the schema
+        table = pajson.read_json(f)
+
+    if read_options.column_names is not None:
+        table = table.select(read_options.column_names)
 
     return Table.from_arrow(table).schema()

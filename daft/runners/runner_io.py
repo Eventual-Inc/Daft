@@ -104,7 +104,7 @@ def sample_schema(
         )
     elif source_info.scan_type() == StorageType.JSON:
         assert isinstance(source_info, JSONSourceInfo)
-        sampled_partition = table_io.read_json(
+        return schema_inference.from_json(
             file=filepath,
             fs=fs,
             read_options=TableReadOptions(
@@ -122,7 +122,6 @@ def sample_schema(
                 column_names=None,  # read all columns
             ),
         )
+        return sampled_partition.schema()
     else:
         raise NotImplementedError(f"Schema inference for {source_info} not implemented")
-
-    return sampled_partition.schema()
