@@ -18,6 +18,7 @@ Daft: the distributed Python dataframe for complex data
 * `About Daft`_
 * `Getting Started`_
 * `Benchmarks`_
+* `Related Projects`_
 * `License`_
 
 About Daft
@@ -128,6 +129,8 @@ Related Projects
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `Dask DF <https://github.com/dask/dask>`_         | No              | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
+
+Check out our `dataframe comparison page <https://www.getdaft.io/projects/docs/en/latest/dataframe_comparison.html>`_ for more details!
 
 License
 -------
