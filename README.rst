@@ -80,7 +80,7 @@ Benchmarks
 ----------
 |Benchmark Image|
 
-To see the full benchmarks, detailed setup, and logs, checkout our `benchmarking page. <https://www.getdaft.io/projects/docs/en/latest/benchmarks/index.html>`_
+To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://www.getdaft.io/projects/docs/en/latest/benchmarks/index.html>`_
 
 
 More Resources
@@ -109,6 +109,25 @@ The data that we collect is:
 3. **For development only:** we do not buy or sell any user data
 
 Please see our `documentation <https://www.getdaft.io/projects/docs/en/latest/telemetry.html>`_ for more details.
+
+Related Projects
+----------------
+
++---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
+| Dataframe                                         | Query Optimizer | Complex Types | Distributed | Arrow Backed    | Vectorized Execution Engine | Out-of-core |
++===================================================+=================+===============+=============+=================+=============================+=============+
+| Daft                                              | Yes             | Yes           | Yes         | Yes             | Yes                         | Yes         |
++---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
+| `Pandas <https://github.com/pandas-dev/pandas>`_  | No              | Python object | No          | optional >= 2.0 | Some(Numpy)                 | No          |
++---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
+| `Polars <https://github.com/pola-rs/polars>`_     | Yes             | Python object | No          | Yes             | Yes                         | Yes         |
++---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
+| `Modin <https://github.com/modin-project/modin>`_ | Eagar           | Python object | Yes         | No              | Some(Pandas)                | Yes         |
++---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
+| `Pyspark <https://github.com/apache/spark>`_      | Yes             | No            | Yes         | Pandas UDF/IO   | Pandas UDF                  | Yes         |
++---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
+| `Dask DF <https://github.com/dask/dask>`_         | No              | Python object | Yes         | No              | Some(Pandas)                | Yes         |
++---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 
 License
 -------
