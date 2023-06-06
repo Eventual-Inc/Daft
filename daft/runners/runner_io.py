@@ -17,11 +17,11 @@ from daft.filesystem import get_filesystem_from_path
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     PartitionSet,
-    vPartitionParseCSVOptions,
-    vPartitionReadOptions,
+    TableParseCSVOptions,
+    TableReadOptions,
     vPartitionSchemaInferenceOptions,
 )
-from daft.table import Table, table_io
+from daft.table import Table, schema_inference, table_io
 
 PartitionT = TypeVar("PartitionT")
 
@@ -89,17 +89,15 @@ def sample_schema(
     sampled_partition: Table
     if source_info.scan_type() == StorageType.CSV:
         assert isinstance(source_info, CSVSourceInfo)
-        sampled_partition = table_io.read_csv(
+        return schema_inference.from_csv(
             file=filepath,
             fs=fs,
-            csv_options=vPartitionParseCSVOptions(
+            csv_options=TableParseCSVOptions(
                 delimiter=source_info.delimiter,
-                has_headers=source_info.has_headers,
-                skip_rows_before_header=0,
-                skip_rows_after_header=0,
+                header_index=0 if source_info.has_headers else None,
             ),
-            schema_options=schema_inference_options,
-            read_options=vPartitionReadOptions(
+            override_column_names=schema_inference_options.inference_column_names,
+            read_options=TableReadOptions(
                 num_rows=100,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns
             ),
@@ -109,7 +107,7 @@ def sample_schema(
         sampled_partition = table_io.read_json(
             file=filepath,
             fs=fs,
-            read_options=vPartitionReadOptions(
+            read_options=TableReadOptions(
                 num_rows=100,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns
             ),
@@ -119,7 +117,7 @@ def sample_schema(
         sampled_partition = table_io.read_parquet(
             file=filepath,
             fs=fs,
-            read_options=vPartitionReadOptions(
+            read_options=TableReadOptions(
                 num_rows=0,  # sample 100 rows for schema inference
                 column_names=None,  # read all columns
             ),

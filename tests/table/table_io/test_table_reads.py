@@ -7,7 +7,7 @@ from __future__ import annotations
 
 # from daft.datatype import DataType
 # from daft.logical.schema import Schema
-# from daft.runners.partitioning import vPartitionParseCSVOptions, vPartitionReadOptions
+# from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
 # from daft.table import table_io
 # from tests.table.table_io.conftest import InputType
 # ###
@@ -38,7 +38,7 @@ from __future__ import annotations
 # def test_json_reads_limit_rows(json_input, json_expected_data):
 #     row_limit = 3
 #     table = table_io.read_json_with_schema(
-#         json_input, JSON_SCHEMA, read_options=vPartitionReadOptions(num_rows=row_limit)
+#         json_input, JSON_SCHEMA, read_options=TableReadOptions(num_rows=row_limit)
 #     )
 #     d = table.to_pydict()
 #     assert d == {k: v[:row_limit] for k, v in json_expected_data.items()}
@@ -47,7 +47,7 @@ from __future__ import annotations
 # def test_json_reads_pruned_columns(json_input, json_expected_data):
 #     included_columns = ["strings", "integers"]
 #     table = table_io.read_json_with_schema(
-#         json_input, JSON_SCHEMA, read_options=vPartitionReadOptions(column_names=included_columns)
+#         json_input, JSON_SCHEMA, read_options=TableReadOptions(column_names=included_columns)
 #     )
 #     d = table.to_pydict()
 #     assert d == {k: v for k, v in json_expected_data.items() if k in included_columns}
@@ -81,7 +81,7 @@ from __future__ import annotations
 # def test_parquet_reads_limit_rows(parquet_input, parquet_expected_data):
 #     row_limit = 3
 #     table = table_io.read_parquet_with_schema(
-#         parquet_input, PARQUET_SCHEMA, read_options=vPartitionReadOptions(num_rows=row_limit)
+#         parquet_input, PARQUET_SCHEMA, read_options=TableReadOptions(num_rows=row_limit)
 #     )
 #     d = table.to_pydict()
 #     assert d == {k: v[:row_limit] for k, v in parquet_expected_data.items()}
@@ -90,7 +90,7 @@ from __future__ import annotations
 # def test_parquet_reads_no_rows(parquet_input, parquet_expected_data):
 #     row_limit = 0
 #     table = table_io.read_parquet_with_schema(
-#         parquet_input, PARQUET_SCHEMA, read_options=vPartitionReadOptions(num_rows=row_limit)
+#         parquet_input, PARQUET_SCHEMA, read_options=TableReadOptions(num_rows=row_limit)
 #     )
 #     d = table.to_pydict()
 #     assert d == {k: [] for k, _ in parquet_expected_data.items()}
@@ -99,7 +99,7 @@ from __future__ import annotations
 # def test_parquet_reads_pruned_columns(parquet_input, parquet_expected_data):
 #     included_columns = ["strings", "integers"]
 #     table = table_io.read_parquet_with_schema(
-#         parquet_input, PARQUET_SCHEMA, read_options=vPartitionReadOptions(column_names=included_columns)
+#         parquet_input, PARQUET_SCHEMA, read_options=TableReadOptions(column_names=included_columns)
 #     )
 #     d = table.to_pydict()
 #     assert d == {k: v for k, v in parquet_expected_data.items() if k in included_columns}

@@ -18,7 +18,7 @@ PartID = int
 
 
 @dataclass(frozen=True)
-class vPartitionReadOptions:
+class TableReadOptions:
     """Options for reading a vPartition
 
     Args:
@@ -50,21 +50,16 @@ class vPartitionSchemaInferenceOptions:
 
 
 @dataclass(frozen=True)
-class vPartitionParseCSVOptions:
+class TableParseCSVOptions:
     """Options for parsing CSVs
 
     Args:
         delimiter: The delimiter to use when parsing CSVs, defaults to ","
-        has_headers: Whether the CSV has headers, defaults to True
-        column_names: Column names to use in place of headers, defaults to None
-        skip_rows_before_header: Number of rows to skip before the header, defaults to 0
-        skip_rows_after_header: Number of rows to skip after the header, defaults to 0
+        header_index: Index of the header row, or None if no header
     """
 
     delimiter: str = ","
-    has_headers: bool = True
-    skip_rows_before_header: int = 0
-    skip_rows_after_header: int = 0
+    header_index: int | None = 0
 
 
 @dataclass(frozen=True)

@@ -18,7 +18,7 @@ from __future__ import annotations
 # else:
 #     from typing import Literal
 
-# from daft.runners.partitioning import vPartitionParseCSVOptions
+# from daft.runners.partitioning import TableParseCSVOptions
 # from daft.table import table_io
 
 # InputType = Union[Literal["file"], Literal["filepath"], Literal["pathlib.Path"]]
@@ -70,7 +70,7 @@ from __future__ import annotations
 
 
 # @pytest.fixture(scope="function", params=[(it,) for it in TEST_INPUT_TYPES])
-# def generate_csv_input(request, tmpdir: str) -> Callable[[vPartitionParseCSVOptions], str]:
+# def generate_csv_input(request, tmpdir: str) -> Callable[[TableParseCSVOptions], str]:
 #     (input_type,) = request.param
 
 #     @contextlib.contextmanager

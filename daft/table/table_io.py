@@ -16,11 +16,8 @@ from pyarrow.fs import FileSystem
 
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
-from daft.runners.partitioning import (
-    vPartitionParseCSVOptions,
-    vPartitionReadOptions,
-    vPartitionSchemaInferenceOptions,
-)
+from daft.logical.schema import Schema
+from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
 from daft.table import Table
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
@@ -45,7 +42,7 @@ def _open_stream(
 def read_json(
     file: FileInput,
     fs: fsspec.AbstractFileSystem | None = None,
-    read_options: vPartitionReadOptions = vPartitionReadOptions(),
+    read_options: TableReadOptions = TableReadOptions(),
 ) -> Table:
     """Reads a Table from a JSON file
 
@@ -53,7 +50,7 @@ def read_json(
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
-        read_options (vPartitionReadOptions, optional): Options for reading the file
+        read_options (TableReadOptions, optional): Options for reading the file
 
     Returns:
         Table: Parsed Table from JSON
@@ -74,7 +71,7 @@ def read_json(
 def read_parquet(
     file: FileInput,
     fs: fsspec.AbstractFileSystem | None = None,
-    read_options: vPartitionReadOptions = vPartitionReadOptions(),
+    read_options: TableReadOptions = TableReadOptions(),
 ) -> Table:
     """Reads a Table from a Parquet file
 
@@ -82,7 +79,7 @@ def read_parquet(
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
-        read_options (vPartitionReadOptions, optional): Options for reading the file
+        read_options (TableReadOptions, optional): Options for reading the file
 
     Returns:
         Table: Parsed Table from Parquet
@@ -123,33 +120,24 @@ def read_parquet(
 
 def read_csv(
     file: FileInput,
+    schema: Schema,
     fs: fsspec.AbstractFileSystem | None = None,
-    csv_options: vPartitionParseCSVOptions = vPartitionParseCSVOptions(),
-    schema_options: vPartitionSchemaInferenceOptions = vPartitionSchemaInferenceOptions(),
-    read_options: vPartitionReadOptions = vPartitionReadOptions(),
+    csv_options: TableParseCSVOptions = TableParseCSVOptions(),
+    read_options: TableReadOptions = TableReadOptions(),
 ) -> Table:
     """Reads a Table from a CSV file
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
+        schema (Schema): Daft schema to read the CSV file into
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
-        csv_options (vPartitionParseCSVOptions, optional): CSV-specific configs to apply when reading the file
-        schema_options (vPartitionSchemaInferenceOptions, optional): configs to apply when inferring schema from the file
-        read_options (vPartitionReadOptions, optional): Options for reading the file
+        csv_options (TableParseCSVOptions, optional): CSV-specific configs to apply when reading the file
+        read_options (TableReadOptions, optional): Options for reading the file
 
     Returns:
         Table: Parsed Table from CSV
     """
-    # Use provided CSV column names, or None if nothing provided
-    full_column_names = schema_options.full_schema_column_names()
-
-    # Have PyArrow generate the column names if the CSV has no header and no column names were provided
-    pyarrow_autogenerate_column_names = (not csv_options.has_headers) and (full_column_names is None)
-
-    # Have Pyarrow skip the header row if column names were provided, and a header exists in the CSV
-    skip_header_row = full_column_names is not None and csv_options.has_headers
-    pyarrow_skip_rows_after_names = (1 if skip_header_row else 0) + csv_options.skip_rows_after_header
 
     with _open_stream(file, fs) as f:
         table = pacsv.read_csv(
@@ -159,19 +147,31 @@ def read_csv(
             ),
             # skip_rows applied, header row is read if column_names is not None, skip_rows_after_names is applied
             read_options=pacsv.ReadOptions(
-                autogenerate_column_names=pyarrow_autogenerate_column_names,
-                column_names=full_column_names,
-                skip_rows_after_names=pyarrow_skip_rows_after_names,
-                skip_rows=csv_options.skip_rows_before_header,
+                # Use the provided schema's field names as the column names, and skip parsing headers entirely
+                column_names=schema.column_names(),
+                skip_rows=(0 if csv_options.header_index is None else csv_options.header_index + 1),
             ),
-            convert_options=pacsv.ConvertOptions(include_columns=read_options.column_names),
+            convert_options=pacsv.ConvertOptions(
+                # Column pruning
+                include_columns=read_options.column_names,
+                # If any columns are missing, parse as null array
+                include_missing_columns=True,
+            ),
         )
 
     # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
     if read_options.num_rows is not None:
         table = table[: read_options.num_rows]
 
-    return Table.from_arrow(table)
+    table = Table.from_arrow(table)
+
+    # TODO(jaychia): Need to implement casting functionality to ensure types match up
+    # Note that not having this may result in Tables having different types depending on PyArrow's parsing logic
+    # for this particular file, and there is no enforcement of types nor column ordering here.
+    # pruned_schema = schema.select_columns(read_options.column_names)
+    # table = table.cast_to_schema(pruned_schema)
+
+    return table
 
 
 def write_csv(
