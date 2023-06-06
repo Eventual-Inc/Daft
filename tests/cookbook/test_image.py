@@ -4,8 +4,10 @@ import numpy as np
 from PIL import Image
 
 import daft
+from daft import col
 from daft.datatype import DataType
 from daft.series import Series
+from tests.cookbook.assets import ASSET_FOLDER
 
 
 def test_image_resize_mixed_modes():
@@ -35,15 +37,7 @@ def test_image_resize_mixed_modes():
 
     assert df.schema()["resized"].dtype == target_dtype
 
-    import ipdb
-
-    ipdb.set_trace()
-
-    resized = t.image.resize(5, 5)
-
-    as_py = resized.to_pylist()
-
-    assert resized.datatype() == target_dtype
+    as_py = df.to_pydict()["resized"]
 
     first_resized = np.array(as_py[0]["data"]).reshape(5, 5, 3)
     assert np.all(first_resized[..., 0] == 1)
@@ -66,3 +60,14 @@ def test_image_resize_mixed_modes():
     assert np.all(resized_i == 10)
 
     assert as_py[-1] == None
+
+
+def test_image_decode() -> None:
+    df = (
+        daft.from_glob_path(f"{ASSET_FOLDER}/images/**")
+        .into_partitions(2)
+        .with_column("image", col("path").url.download().image.decode().image.resize(10, 10))
+    )
+    target_dtype = DataType.image()
+    assert df.schema()["image"] == target_dtype
+    df.collect()
