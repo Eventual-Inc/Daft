@@ -78,7 +78,9 @@ In this example, we load images from an AWS S3 bucket and run a simple function 
 
 Benchmarks
 ----------
-benchmark img here
+|Benchmark Image|
+
+To see the full benchmarks, detailed setup, and logs, checkout our `benchmarking page. <https://www.getdaft.io/projects/docs/en/latest/benchmarks/index.html>`_
 
 
 More Resources
@@ -115,6 +117,10 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 
 .. |Quickstart Image| image:: https://user-images.githubusercontent.com/17691182/200086119-fb73037b-8b4e-414a-9060-a44122f0c290.png
    :alt: Dataframe code to load a folder of images from AWS S3 and create thumbnails
+   :height: 256
+
+.. |Benchmark Image| image:: https://github-production-user-asset-6210df.s3.amazonaws.com/2550285/243524430-338e427d-f049-40b3-b555-4059d6be7bfd.png
+   :alt: Benchmarks for SF100 TPCH
    :height: 256
 
 .. |Banner| image:: https://user-images.githubusercontent.com/17691182/190476440-28f29e87-8e3b-41c4-9c28-e112e595f558.png
