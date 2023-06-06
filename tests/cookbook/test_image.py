@@ -69,5 +69,5 @@ def test_image_decode() -> None:
         .with_column("image", col("path").url.download().image.decode().image.resize(10, 10))
     )
     target_dtype = DataType.image()
-    assert df.schema()["image"] == target_dtype
+    assert df.schema()["image"].dtype == target_dtype
     df.collect()
