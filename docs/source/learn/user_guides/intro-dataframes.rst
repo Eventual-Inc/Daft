@@ -58,11 +58,11 @@ In this case, Daft is just deferring the work required to read data from the Pyt
 
 .. NOTE::
 
-    When you call methods on a Daft Dataframe, it defers the work by adding to an internal "plan". You can examine the current plan of a DataFrame by calling ``DataFrame.explain()``!
+    When you call methods on a Daft Dataframe, it defers the work by adding to an internal "plan". You can examine the current plan of a DataFrame by calling :meth:`df.explain() <daft.DataFrame.explain>`!
 
     Passing the ``show_optimized=True`` argument will show you the plan after Daft applies its query optimizations.
 
-We can tell Daft to execute our DataFrame and cache the results using ``df.collect()``:
+We can tell Daft to execute our DataFrame and cache the results using :meth:`df.collect() <daft.DataFrame.collect>`:
 
 .. code:: python
 
@@ -92,14 +92,14 @@ Any subsequent operations on ``df`` will avoid recomputations, and just use this
 When should I materialize my DataFrame?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you "eagerly" call ``.collect()`` immediately on every DataFrame, you may run into issues:
+If you "eagerly" call :meth:`df.collect() <daft.DataFrame.collect>` immediately on every DataFrame, you may run into issues:
 
 1. If data is too large at any step, materializing all of it may cause memory issues
 2. Optimizations are not possible since we cannot "predict future operations"
 
 However, data science is all about experimentation and trying different things on the same data. This means that materialization crucial when working interactively with DataFrames, since it speeds up all subsequent experimentation on that DataFrame.
 
-We suggest materializing DataFrames using ``.collect()`` when they contain expensive operations (e.g. sorts or expensive function calls) and have to be called multiple times by downstream code:
+We suggest materializing DataFrames using :meth:`df.collect() <daft.DataFrame.collect>` when they contain expensive operations (e.g. sorts or expensive function calls) and have to be called multiple times by downstream code:
 
 .. code:: python
 
@@ -112,11 +112,11 @@ We suggest materializing DataFrames using ``.collect()`` when they contain expen
     df.mean().show()
     df.with_column("try_this", df["A"] + 1).show(5)
 
-In many other cases however, there are better options than materializing your entire DataFrame with ``.collect()``:
+In many other cases however, there are better options than materializing your entire DataFrame with :meth:`df.collect() <daft.DataFrame.collect>`:
 
-1. **Peeking with df.show(N)**: If you only want to "peek" at the first few rows of your data for visualization purposes, you can use ``df.show(N)``, which processes and shows only the first ``N`` rows.
+1. **Peeking with df.show(N)**: If you only want to "peek" at the first few rows of your data for visualization purposes, you can use :meth:`df.show(N) <daft.DataFrame.show>`, which processes and shows only the first ``N`` rows.
 2. **Writing to disk**: The ``df.write_*`` methods will process and write your data to disk per-partition, avoiding materializing it all in memory at once.
-3. **Pruning data**: You can materialize your DataFrame after performing a ``.limit``, ``.where`` or ``.select`` operation which processes your data or prune it down to a smaller size.
+3. **Pruning data**: You can materialize your DataFrame after performing a :meth:`df.limit() <daft.DataFrame.limit>`, :meth:`df.where() <daft.DataFrame.where>` or :meth:`df.select() <daft.DataFrame.select>` operation which processes your data or prune it down to a smaller size.
 
 Schemas and Types
 -----------------
@@ -135,7 +135,7 @@ Running Computations
 
 To run computations on data in our DataFrame, we use Expressions.
 
-The following statement will ``.show()`` a DataFrame that has only one column - the column ``A`` from our original DataFrame but with every row incremented by 1.
+The following statement will :meth:`df.show() <daft.DataFrame.show>` a DataFrame that has only one column - the column ``A`` from our original DataFrame but with every row incremented by 1.
 
 .. code:: python
 
@@ -176,9 +176,9 @@ Expressions are how you define computations on your columns in Daft.
 
 The world of Daft contains much more than just numbers, and you can do much more than just add numbers together. Daft's rich Expressions API allows you to do things such as:
 
-1. Convert between different types with ``df["numbers"].cast(float)``
-2. Download Bytes from a column containing String URLs using ``df["urls"].url.download()``
-3. Run arbitrary Python functions on your data using ``df["objects"].apply(my_python_function)``
+1. Convert between different types with :meth:`df["numbers"].cast(float) <daft.DataFrame.cast>`
+2. Download Bytes from a column containing String URLs using :meth:`df["urls"].url.download() <daft.expressions.expressions.ExpressionUrlNamespace.download>`
+3. Run arbitrary Python functions on your data using :meth:`df["objects"].apply(my_python_function) <daft.DataFrame.apply>`
 
 We are also constantly looking to improve Daft and add more Expression functionality. Please contribute to the project with your ideas and code if you have an Expression in mind!
 

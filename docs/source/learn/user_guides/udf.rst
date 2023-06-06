@@ -27,10 +27,10 @@ Let's first create a dataframe that will be used as a running example throughout
     +----------+---------------+
     (No data to display: Dataframe not materialized)
 
-Per-column per-row functions using ``Expression.apply``
+Per-column per-row functions using :meth:`.apply <daft.expressions.Expression.apply>`
 -------------------------------------------------------
 
-You can use ``Expression.apply`` to run a Python function on every row in a column.
+You can use :meth:`.apply <daft.expressions.Expression.apply>` to run a Python function on every row in a column.
 
 For example, the following example creates a new ``"flattened_image"`` column by calling ``.flatten()`` on every object in the ``"image"`` column.
 
@@ -62,7 +62,7 @@ Note here that we use the ``return_dtype`` keyword argument to specify that our 
 Multi-column per-partition functions using ``@udf``
 ---------------------------------------------------
 
-``Expression.apply`` is great for convenience, but has two main limitations:
+:meth:`.apply <daft.expressions.Expression.apply>` is great for convenience, but has two main limitations:
 
 1. It can only run on single columns
 2. It can only run on single items at a time
@@ -112,20 +112,20 @@ There's a few things happening here, let's break it down:
     c. An integer indicating how much padding to apply to the right and bottom of the cropping: ``padding``
 2. To allow Daft to pass column data into the ``images`` and ``crops`` arguments, we decorate the function with ``@udf``
     a. ``return_dtype`` defines the returned data type. In this case, we return a column containing Python objects of numpy arrays
-    b. At runtime, because we call the UDF on the ``"image"`` and ``"crop"`` columns, the UDF will receive a ``daft.series.Series`` object for each argument.
-3. We can create a new column in our DataFrame by applying our UDF on the ``"image"`` and ``"crop"`` columns inside of a ``df.with_column`` call.
+    b. At runtime, because we call the UDF on the ``"image"`` and ``"crop"`` columns, the UDF will receive a :class:`daft.series.Series` object for each argument.
+3. We can create a new column in our DataFrame by applying our UDF on the ``"image"`` and ``"crop"`` columns inside of a :meth:`df.with_column() <daft.DataFrame.with_column>` call.
 
 UDF Inputs
 ^^^^^^^^^^
 
-When you specify an Expression as an input to a UDF, Daft will calculate the result of that Expression and pass it into your function as a ``daft.series.Series`` object.
+When you specify an Expression as an input to a UDF, Daft will calculate the result of that Expression and pass it into your function as a :class:`daft.series.Series` object.
 
-The Daft ``Series`` is just an abstraction on a "column" of data! You can obtain several different data representations from a ``Series``:
+The Daft :class:`~daft.series.Series` is just an abstraction on a "column" of data! You can obtain several different data representations from a :class:`~daft.series.Series`:
 
-1. Numpy Arrays (``np.ndarray``): ``Series.to_numpy()``
-2. Pandas Series (``pd.Series``): ``Series.to_pandas()``
-3. PyArrow Arrays (``pa.Array``): ``Series.to_arrow()``
-4. Python lists (``list``): ``Series.to_pylist()``
+1. Numpy Arrays (``np.ndarray``): :meth:`s.to_numpy() <daft.series.Series.to_numpy>`
+2. Pandas Series (``pd.Series``): :meth:`s.to_pandas() <daft.series.Series.to_pandas>`
+3. PyArrow Arrays (``pa.Array``): :meth:`s.to_arrow() <daft.series.Series.to_arrow>`
+4. Python lists (``list``): :meth:`s.to_pylist() <daft.series.Series.to_pylist>`
 
 Depending on your application, you may choose a different data representation that is more performant or more convenient!
 
@@ -143,7 +143,7 @@ Depending on your application, you may choose a different data representation th
 Return Types
 ^^^^^^^^^^^^
 
-The ``return_dtype`` argument specifies what type of column your UDF will return. Types can be specified using the ``daft.DataType`` class.
+The ``return_dtype`` argument specifies what type of column your UDF will return. Types can be specified using the :class:`daft.DataType` class.
 
 Your UDF function itself needs to return a batch of columnar data, and can do so as any one of the following array types:
 
@@ -183,7 +183,7 @@ Resource Requests
 
 Sometimes, you may want to request for specific resources for your UDF. For example, some UDFs need one GPU to run as they will load a model onto the GPU.
 
-Custom resources can be requested when you call ``.with_column``:
+Custom resources can be requested when you call :meth:`df.with_column() <daft.DataFrame.with_column>`:
 
 .. code:: python
 

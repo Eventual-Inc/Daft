@@ -19,8 +19,8 @@ Numeric DataTypes allows Daft to represent numbers. These numbers can differ in 
 
 Examples:
 
-1. ``DataType.int8()``: represents an 8-bit signed integer (-128 to 127)
-2. ``DataType.float32()``: represents a 32-bit float (a float number with about 7 decimal digits of precision)
+1. :meth:`DataType.int8() <daft.DataType.int8>`: represents an 8-bit signed integer (-128 to 127)
+2. :meth:`DataType.float32() <daft.DataType.float32>`: represents a 32-bit float (a float number with about 7 decimal digits of precision)
 
 Columns/expressions with these datatypes can be operated on with many numeric expressions such as ``+`` and ``*``.
 
@@ -32,9 +32,9 @@ See also:
 Logical DataTypes
 -----------------
 
-The ``DataType.bool()`` DataType represents values which are boolean values: ``True``, ``False`` or ``Null``.
+The :meth:`DataType.bool() <daft.DataType.bool>` DataType represents values which are boolean values: ``True``, ``False`` or ``Null``.
 
-Columns/expressions with this dtype can be operated on using logical expressions such as ``&`` and ``if_else``.
+Columns/expressions with this dtype can be operated on using logical expressions such as ``&`` and :meth:`.if_else() <daft.expressions.Expression.if_else>`.
 
 See also:
 
@@ -46,10 +46,10 @@ String Types
 
 Daft has string types, which represent a variable-length string of characters.
 
-As a convenience method, string types also support the ``+`` Expression, which has been overloaded to support concatenation of elements between two ``DataType.string()`` columns.
+As a convenience method, string types also support the ``+`` Expression, which has been overloaded to support concatenation of elements between two :meth:`DataType.string() <daft.DataType.string>` columns.
 
-1. ``DataType.string()``: represents a string of UTF-8 characters
-2. ``DataType.binary()``: represents a string of bytes
+1. :meth:`DataType.string() <daft.DataType.string>`: represents a string of UTF-8 characters
+2. :meth:`DataType.binary() <daft.DataType.binary>`: represents a string of bytes
 
 See also:
 
@@ -63,8 +63,8 @@ Temporal dtypes represent data that have to do with time.
 
 Examples:
 
-1. ``DataType.date()``: represents a Date (year, month and day)
-2. ``DataType.duration()``: [COMING SOON] represents the duration between two instances in time
+1. :meth:`DataType.date() <daft.DataType.date>`: represents a Date (year, month and day)
+2. :meth:`DataType.duration() <daft.DataType.duration>`: [COMING SOON] represents the duration between two instances in time
 
 NOTE: Many temporal types are still a work-in-progress!
 
@@ -80,8 +80,8 @@ Nested DataTypes wrap other DataTypes, allowing you to compose types into comple
 
 Examples:
 
-1. ``DataType.list(child_dtype)``: represents a list where each element is of the child dtype
-2. ``DataType.struct({"field_name": child_dtype})``: represents a structure that has children dtypes, each mapped to a field name
+1. :meth:`DataType.list(child_dtype) <daft.DataType.list>`: represents a list where each element is of the child dtype
+2. :meth:`DataType.struct({"field_name": child_dtype}) <daft.DataType.struct>`: represents a structure that has children dtypes, each mapped to a field name
 
 See also:
 
@@ -90,7 +90,7 @@ See also:
 Python
 ------
 
-The ``DataType.python()`` dtype represent items that are Python objects.
+The :meth:`DataType.python() <daft.DataType.python>` dtype represent items that are Python objects.
 
 .. WARNING::
 
@@ -103,7 +103,7 @@ Python is AWESOME because it's so flexible, but it's also slow and memory ineffi
 
 .. NOTE::
 
-    If you work with Python classes for a generalizable use-case (e.g. images, documents, protobufs), it may be that these types are good candidates for "promotion" into a native Daft type!
+    If you work with Python classes for a generalizable use-case (e.g. documents, protobufs), it may be that these types are good candidates for "promotion" into a native Daft type!
     Please get in touch with the Daft team and we would love to work together on building your type into canonical Daft types.
 
 Complex Types

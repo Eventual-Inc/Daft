@@ -78,13 +78,14 @@ Comparing expressions and values, returning a logical expression
 Floats
 ******
 
-Operations on strings, accessible through the ``Expression.float`` method accessor.
+Operations on strings, accessible through the :meth:`Expression.float <daft.expressions.Expression.float>` method accessor.
 
 Example: ``e1.float.is_nan()``
 
 .. autosummary::
     :toctree: doc_gen/expression_methods
 
+    daft.expressions.Expression.float
     daft.expressions.expressions.ExpressionFloatNamespace.is_nan
 
 .. _api-string-expression-operations:
@@ -92,13 +93,14 @@ Example: ``e1.float.is_nan()``
 Strings
 *******
 
-Operations on strings, accessible through the ``Expression.str`` method accessor.
+Operations on strings, accessible through the :meth:`Expression.str <daft.expressions.Expression.str>` method accessor.
 
 Example: ``e1.str.concat(e2)``
 
 .. autosummary::
     :toctree: doc_gen/expression_methods
 
+    daft.expressions.Expression.str
     daft.expressions.expressions.ExpressionStringNamespace.concat
     daft.expressions.expressions.ExpressionStringNamespace.contains
     daft.expressions.expressions.ExpressionStringNamespace.endswith
@@ -110,7 +112,7 @@ Example: ``e1.str.concat(e2)``
 Dates
 *****
 
-Operations on datetimes, accessible through the ``Expression.dt`` method accessor:
+Operations on datetimes, accessible through the :meth:`Expression.dt <daft.expressions.Expression.dt>` method accessor:
 
 Example: ``e.dt.day()``
 
@@ -118,6 +120,7 @@ Example: ``e.dt.day()``
     :nosignatures:
     :toctree: doc_gen/expression_methods
 
+    daft.expressions.Expression.dt
     daft.expressions.expressions.ExpressionDatetimeNamespace.day
     daft.expressions.expressions.ExpressionDatetimeNamespace.month
     daft.expressions.expressions.ExpressionDatetimeNamespace.year
@@ -128,7 +131,7 @@ Example: ``e.dt.day()``
 URLs
 ****
 
-Operations on URLs, accessible through the ``Expression.url`` method accessor:
+Operations on URLs, accessible through the :meth:`Expression.url <daft.expressions.Expression.url>` method accessor:
 
 Example: ``e.url.download()``
 
@@ -136,6 +139,7 @@ Example: ``e.url.download()``
     :nosignatures:
     :toctree: doc_gen/expression_methods
 
+    daft.expressions.Expression.url
     daft.expressions.expressions.ExpressionUrlNamespace.download
 
 .. _api-expressions-images:
@@ -143,7 +147,7 @@ Example: ``e.url.download()``
 Images
 ******
 
-Operations on images, accessible through the ``Expression.image`` method accessor:
+Operations on images, accessible through the :meth:`Expression.image <daft.expressions.Expression.image>` method accessor:
 
 Example: ``e.image.resize()``
 
@@ -151,6 +155,7 @@ Example: ``e.image.resize()``
     :nosignatures:
     :toctree: doc_gen/expression_methods
 
+    daft.expressions.Expression.image
     daft.expressions.expressions.ExpressionImageNamespace.resize
     daft.expressions.expressions.ExpressionImageNamespace.decode
 

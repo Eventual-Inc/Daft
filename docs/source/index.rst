@@ -1,7 +1,7 @@
 Daft Documentation
 ==================
 
-Daft is a **fast and scalable Python dataframe** for Complex Data and Machine Learning workloads.
+Daft is a **fast and scalable Python dataframe** for complex data and machine learning workloads.
 
 .. NOTE::
 
@@ -29,7 +29,7 @@ Learning Daft
 Use Daft
 --------
 
-Reference the :doc:`Daft API Documentation <api_docs/index>` for Daft.
+Refer to the :doc:`Daft API Documentation <api_docs/index>`.
 
 Keep up to date
 ---------------

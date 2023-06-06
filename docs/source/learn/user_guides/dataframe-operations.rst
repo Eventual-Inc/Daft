@@ -10,7 +10,7 @@ This section of the user guide covers these operations, and how to use them.
 Selecting Columns
 -----------------
 
-Select specific columns in a DataFrame using ``.select``, which also takes Expressions as an input.
+Select specific columns in a DataFrame using :meth:`df.select() <daft.DataFrame.select>`, which also takes Expressions as an input.
 
 .. code-block:: python
 
@@ -34,7 +34,7 @@ Select specific columns in a DataFrame using ``.select``, which also takes Expre
     +---------+
     (Showing first 3 rows)
 
-A useful alias for ``.select`` is indexing a DataFrame with a list of column names or Expressions:
+A useful alias for :meth:`df.select() <daft.DataFrame.select>` is indexing a DataFrame with a list of column names or Expressions:
 
 .. code-block:: python
 
@@ -54,7 +54,7 @@ A useful alias for ``.select`` is indexing a DataFrame with a list of column nam
     +---------+---------+
     (Showing first 3 rows)
 
-Sometimes, it may be useful to exclude certain columns from a DataFrame. This can be done with ``.exclude``:
+Sometimes, it may be useful to exclude certain columns from a DataFrame. This can be done with :meth:`df.exclude() <daft.DataFrame.exclude>`:
 
 .. code-block:: python
 
@@ -74,7 +74,7 @@ Sometimes, it may be useful to exclude certain columns from a DataFrame. This ca
     +---------+
     (Showing first 3 rows)
 
-As we have already seen in previous guides, adding a new column can be achieved with ``.with_column``:
+As we have already seen in previous guides, adding a new column can be achieved with :meth:`df.with_column() <daft.DataFrame.with_column>`:
 
 .. code-block:: python
 
@@ -97,7 +97,7 @@ As we have already seen in previous guides, adding a new column can be achieved 
 Selecting Rows
 --------------
 
-We can limit the rows to the first ``N`` rows using ``.limit``:
+We can limit the rows to the first ``N`` rows using :meth:`df.limit(N) <daft.DataFrame.limit>`:
 
 .. code-block:: python
 
@@ -123,7 +123,7 @@ We can limit the rows to the first ``N`` rows using ``.limit``:
     (Showing first 3 rows)
 
 
-We can also filter rows using ``.where``, which takes an input a Logical Expression predicate:
+We can also filter rows using :meth:`df.where() <daft.DataFrame.where>`, which takes an input a Logical Expression predicate:
 
 .. code-block:: python
 
@@ -144,7 +144,7 @@ We can also filter rows using ``.where``, which takes an input a Logical Express
 Combining DataFrames
 --------------------
 
-Two DataFrames can be column-wise joined using ``.join``.
+Two DataFrames can be column-wise joined using :meth:`df.join() <daft.DataFrame.join>`.
 
 This requires a "join key", which can be supplied as the ``on`` argument if both DataFrames have the same name for their key columns, or the ``left_on`` and ``right_on`` argument if the key column has different names in each dataframe.
 
@@ -174,7 +174,7 @@ Daft also supports multi-column joins key you have a join key comprising of mult
 Reordering Rows
 ---------------
 
-Rows in a DataFrame can be reordered based on some column using ``.sort``. Daft also supports multi-column sorts for sorting on multiple columns at once.
+Rows in a DataFrame can be reordered based on some column using :meth:`df.sort() <daft.DataFrame.sort>`. Daft also supports multi-column sorts for sorting on multiple columns at once.
 
 .. code-block:: python
 
@@ -202,7 +202,7 @@ Rows in a DataFrame can be reordered based on some column using ``.sort``. Daft 
 Exploding Columns
 -----------------
 
-The ``df.explode`` method can be used to explode a column containing a list of values into multiple rows. All other rows will be **duplicated**.
+The :meth:`df.explode() <daft.DataFrame.explode>` method can be used to explode a column containing a list of values into multiple rows. All other rows will be **duplicated**.
 
 .. code:: python
 
@@ -242,7 +242,7 @@ Repartitioning
 
 Daft is a distributed DataFrame, and the dataframe is broken in multiple "partitions" which are distributed across the cluster.
 
-You may choose to increase or decrease the number of partitions with ``.repartition``.
+You may choose to increase or decrease the number of partitions with :meth:`df.repartition() <daft.DataFrame.partition>`.
 
 1. Increasing the number of partitions to 2x the total number of CPUs could help with resource utilization
 2. If each partition is potentially overly large (e.g. containing large images), causing memory issues, you may increase the number of partitions to reduce the size of each individual partition

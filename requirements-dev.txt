@@ -39,3 +39,4 @@ myst-nb>=0.16.0
 Sphinx <= 5
 sphinx-book-theme>=0.3.3,<1.0.0
 sphinx-reredirects>=0.1.1
+sphinx-copybutton>=0.5.2

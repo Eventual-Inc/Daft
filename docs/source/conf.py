@@ -35,6 +35,7 @@ extensions = [
     "sphinx.ext.linkcode",
     "IPython.sphinxext.ipython_console_highlighting",
     "myst_nb",
+    "sphinx_copybutton",
 ]
 
 templates_path = ["_templates"]
@@ -61,6 +62,16 @@ html_theme_options = {
     # Remove title under the logo on the left sidebar
     "logo_only": True,
 }
+
+# -- Copy button configuration
+
+# This pattern matches:
+# - Python Repl prompts (">>> ") and it's continuation ("... ")
+# - Bash prompts ("$ ")
+# - IPython prompts ("In []: ", "In [999]: ") and it's continuations
+#   ("  ...: ", "     : ")
+copybutton_prompt_text = r">>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: "
+copybutton_prompt_is_regexp = True
 
 # -- Options for redirecting URLs
 redirects = {
