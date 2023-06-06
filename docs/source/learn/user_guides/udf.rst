@@ -28,7 +28,7 @@ Let's first create a dataframe that will be used as a running example throughout
     (No data to display: Dataframe not materialized)
 
 Per-column per-row functions using :meth:`.apply <daft.expressions.Expression.apply>`
--------------------------------------------------------
+-------------------------------------------------------------------------------------
 
 You can use :meth:`.apply <daft.expressions.Expression.apply>` to run a Python function on every row in a column.
 
@@ -118,14 +118,12 @@ There's a few things happening here, let's break it down:
 UDF Inputs
 ^^^^^^^^^^
 
-When you specify an Expression as an input to a UDF, Daft will calculate the result of that Expression and pass it into your function as a :class:`daft.series.Series` object.
+When you specify an Expression as an input to a UDF, Daft will calculate the result of that Expression and pass it into your function as a :class:`daft.Series` object.
 
-The Daft :class:`~daft.series.Series` is just an abstraction on a "column" of data! You can obtain several different data representations from a :class:`~daft.series.Series`:
+The Daft :class:`~daft.series.Series` is just an abstraction on a "column" of data! You can obtain several different data representations from a :class:`~daft.Series`:
 
-1. Numpy Arrays (``np.ndarray``): :meth:`s.to_numpy() <daft.series.Series.to_numpy>`
-2. Pandas Series (``pd.Series``): :meth:`s.to_pandas() <daft.series.Series.to_pandas>`
-3. PyArrow Arrays (``pa.Array``): :meth:`s.to_arrow() <daft.series.Series.to_arrow>`
-4. Python lists (``list``): :meth:`s.to_pylist() <daft.series.Series.to_pylist>`
+1. PyArrow Arrays (``pa.Array``): :meth:`s.to_arrow() <daft.Series.to_arrow>`
+2. Python lists (``list``): :meth:`s.to_pylist() <daft.Series.to_pylist>`
 
 Depending on your application, you may choose a different data representation that is more performant or more convenient!
 
@@ -135,6 +133,7 @@ Depending on your application, you may choose a different data representation th
     1. **Null Handling**: In Pandas and Numpy, nulls are represented as NaNs for numeric types, and Nones for non-numeric types.
     Additionally, the existence of nulls will trigger a type casting from integer to float arrays. If null handling is important to
     your use-case, we recommend using one of the other available options.
+
     2. **Python Objects**: PyArrow array formats cannot support Python columns.
 
     We recommend using Python lists if performance is not a major consideration, and using the arrow-native formats such as

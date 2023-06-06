@@ -5,6 +5,7 @@ API Documentation
 
    input_output
    dataframe
+   series
    datatype
    expressions
    groupby
