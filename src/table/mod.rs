@@ -363,11 +363,8 @@ impl Table {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.as_physical()).collect();
         Table::from_columns(new_series?)
     }
-}
 
-impl Display for Table {
-    // `f` is a buffer, and this method must write the formatted string into it
-    fn fmt(&self, f: &mut Formatter) -> Result {
+    pub fn to_prettytable(&self, max_col_width: Option<usize>) -> prettytable::Table {
         let mut table = prettytable::Table::new();
         let header = self
             .schema
@@ -395,9 +392,16 @@ impl Display for Table {
             let row = self
                 .columns
                 .iter()
-                .map(|s| s.str_value(i))
-                .collect::<DaftResult<Vec<String>>>()
-                .unwrap();
+                .map(|s| {
+                    let mut str_val = s.str_value(i).unwrap();
+                    if let Some(max_col_width) = max_col_width {
+                        if str_val.len() > max_col_width {
+                            str_val = format!("{}...", &str_val[..max_col_width - 3]);
+                        }
+                    }
+                    str_val
+                })
+                .collect::<Vec<String>>();
             table.add_row(row.into());
         }
         if tail_rows != 0 {
@@ -405,15 +409,31 @@ impl Display for Table {
             table.add_row(row);
         }
 
-        for i in 0..tail_rows {
+        for i in (self.len() - tail_rows)..(self.len()) {
             let row = self
                 .columns
                 .iter()
-                .map(|s| s.str_value(self.len() - tail_rows - 1 + i))
-                .collect::<DaftResult<Vec<String>>>()
-                .unwrap();
+                .map(|s| {
+                    let mut str_val = s.str_value(i).unwrap();
+                    if let Some(max_col_width) = max_col_width {
+                        if s.len() > max_col_width {
+                            str_val = format!("{}...", &str_val[..max_col_width - 3]);
+                        }
+                    }
+                    str_val
+                })
+                .collect::<Vec<String>>();
             table.add_row(row.into());
         }
+
+        table
+    }
+}
+
+impl Display for Table {
+    // `f` is a buffer, and this method must write the formatted string into it
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        let table = self.to_prettytable(Some(20));
 
         write!(f, "{table}")
     }

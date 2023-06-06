@@ -50,11 +50,8 @@ impl Series {
             self.inner.cast(&physical_dtype)
         }
     }
-}
 
-impl Display for Series {
-    // `f` is a buffer, and this method must write the formatted string into it
-    fn fmt(&self, f: &mut Formatter) -> Result {
+    pub fn to_prettytable(&self) -> prettytable::Table {
         let mut table = prettytable::Table::new();
 
         let header =
@@ -87,6 +84,14 @@ impl Display for Series {
             table.add_row(row.into());
         }
 
+        table
+    }
+}
+
+impl Display for Series {
+    // `f` is a buffer, and this method must write the formatted string into it
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        let table = self.to_prettytable();
         write!(f, "{table}")
     }
 }
