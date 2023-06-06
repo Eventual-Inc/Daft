@@ -121,7 +121,6 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 
 .. |Benchmark Image| image:: https://github-production-user-asset-6210df.s3.amazonaws.com/2550285/243524430-338e427d-f049-40b3-b555-4059d6be7bfd.png
    :alt: Benchmarks for SF100 TPCH
-   :height: 256
 
 .. |Banner| image:: https://user-images.githubusercontent.com/17691182/190476440-28f29e87-8e3b-41c4-9c28-e112e595f558.png
    :target: https://www.getdaft.io
