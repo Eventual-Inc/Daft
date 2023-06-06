@@ -1,0 +1,7 @@
+Dataframe,Query Optimizer,Complex Types,Distributed,Arrow Backed,Vectorized Execution Engine,Out-of-core
+Daft,✅,✅,✅,✅,✅,✅
+`Pandas <https://github.com/pandas-dev/pandas>`_,❌,Python object,❌,optional >= 2.0,some(Numpy),❌
+`Polars <https://github.com/pola-rs/polars>`_,✅,Python object,❌,✅,✅,✅
+`Modin <https://github.com/modin-project/modin>`_,Eagar,Python object,✅,❌,some(Pandas),✅
+`Pyspark <https://github.com/apache/spark>`_,✅,❌,✅,Pandas UDF/IO,Pandas UDF,✅
+`Dask DF <https://github.com/dask/dask>`_,❌,Python object,✅,❌,some(Pandas),✅
