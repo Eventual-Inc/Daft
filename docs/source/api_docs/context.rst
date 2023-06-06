@@ -8,7 +8,7 @@ Control the execution backend that Daft will run on by calling these functions o
 
 .. autosummary::
     :nosignatures:
-    :toctree: configuration_functions
+    :toctree: doc_gen/configuration_functions
 
     daft.context.set_runner_py
     daft.context.set_runner_ray

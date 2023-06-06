@@ -5,7 +5,7 @@ DataTypes
 
 .. autosummary::
     :nosignatures:
-    :toctree: datatype_methods
+    :toctree: doc_gen/datatype_methods
 
     daft.DataType
 
@@ -30,7 +30,7 @@ Numeric
 
 .. autosummary::
     :nosignatures:
-    :toctree: datatype_methods
+    :toctree: doc_gen/datatype_methods
 
     daft.DataType.int8
     daft.DataType.int16
@@ -51,7 +51,7 @@ Logical
 
 .. autosummary::
     :nosignatures:
-    :toctree: datatype_methods
+    :toctree: doc_gen/datatype_methods
 
     daft.DataType.bool
 
@@ -63,7 +63,7 @@ Strings
 
 .. autosummary::
     :nosignatures:
-    :toctree: datatype_methods
+    :toctree: doc_gen/datatype_methods
 
     daft.DataType.binary
     daft.DataType.string
@@ -76,7 +76,7 @@ Temporal
 
 .. autosummary::
     :nosignatures:
-    :toctree: datatype_methods
+    :toctree: doc_gen/datatype_methods
 
     daft.DataType.date
 
@@ -88,7 +88,7 @@ Nested
 
 .. autosummary::
     :nosignatures:
-    :toctree: datatype_methods
+    :toctree: doc_gen/datatype_methods
 
     daft.DataType.list
     daft.DataType.fixed_size_list
@@ -100,7 +100,7 @@ Python
 
 .. autosummary::
     :nosignatures:
-    :toctree: datatype_methods
+    :toctree: doc_gen/datatype_methods
 
     daft.DataType.python
 
@@ -115,7 +115,7 @@ Machine Learning
 
 .. autosummary::
     :nosignatures:
-    :toctree: datatype_methods
+    :toctree: doc_gen/datatype_methods
 
     daft.DataType.embedding
 
@@ -124,7 +124,7 @@ Computer Vision
 
 .. autosummary::
     :nosignatures:
-    :toctree: datatype_methods
+    :toctree: doc_gen/datatype_methods
 
     daft.DataType.image
 
@@ -138,11 +138,11 @@ Miscellaneous
 ^^^^^^^^^^^^^
 .. autosummary::
     :nosignatures:
-    :toctree: datatype_methods
+    :toctree: doc_gen/datatype_methods
 
     daft.DataType.null
 
 .. toctree::
     :hidden:
 
-    datatype_aux/image_mode
+    datatype_image_mode/daft.ImageMode

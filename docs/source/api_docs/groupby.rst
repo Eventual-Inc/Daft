@@ -9,7 +9,7 @@ Calling ``DataFrame.groupby`` returns a ``GroupedDataFrame`` object which is a v
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     daft.dataframe.dataframe.GroupedDataFrame.sum
     daft.dataframe.dataframe.GroupedDataFrame.mean

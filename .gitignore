@@ -32,4 +32,4 @@ log/
 
 
 # docs autogen
-/docs/source/api_docs/*/
+/docs/source/api_docs/doc_gen/

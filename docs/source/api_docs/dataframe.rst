@@ -5,7 +5,7 @@ DataFrame
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     DataFrame
 
@@ -26,7 +26,7 @@ Manipulating Columns
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.select
     daft.DataFrame.with_column
@@ -41,7 +41,7 @@ Filtering Rows
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.distinct
     daft.DataFrame.where
@@ -54,7 +54,7 @@ Reordering
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.sort
     daft.DataFrame.repartition
@@ -66,7 +66,7 @@ Combining
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.join
 
@@ -81,7 +81,7 @@ Aggregations
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.groupby
     daft.DataFrame.sum
@@ -102,7 +102,7 @@ Materialization
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.collect
 
@@ -113,7 +113,7 @@ Visualization
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.show
 
@@ -127,7 +127,7 @@ Writing Data
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.write_parquet
     daft.DataFrame.write_csv
@@ -139,7 +139,7 @@ Integrations
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.to_pandas
     daft.DataFrame.to_ray_dataset
@@ -150,7 +150,7 @@ Schema and Lineage
 
 .. autosummary::
     :nosignatures:
-    :toctree: dataframe_methods
+    :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.explain
     daft.DataFrame.schema
