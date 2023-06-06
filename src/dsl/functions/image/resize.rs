@@ -1,3 +1,4 @@
+use crate::datatypes::DataType;
 use crate::dsl::functions::image::ImageExpr;
 use crate::error::DaftError;
 use crate::{datatypes::Field, dsl::Expr, error::DaftResult, schema::Schema, series::Series};
@@ -13,8 +14,24 @@ impl FunctionEvaluator for ResizeEvaluator {
         "resize"
     }
 
-    fn to_field(&self, _: &[Expr], _: &Schema) -> DaftResult<Field> {
-        todo!("not implemented");
+    fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
+        match inputs {
+            [input] => {
+                let field = input.to_field(schema)?;
+
+                match &field.dtype {
+                    DataType::Image(_, _) => Ok(field.clone()),
+                    _ => Err(DaftError::TypeError(format!(
+                        "ImageResize can only resize ImageArrays, got {}",
+                        field
+                    ))),
+                }
+            }
+            _ => Err(DaftError::SchemaMismatch(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
     }
 
     fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
