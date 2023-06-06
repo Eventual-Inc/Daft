@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import pathlib
 from typing import TYPE_CHECKING
 
 import pyarrow.csv as pacsv
 import pyarrow.json as pajson
+import pyarrow.parquet as papq
 
+from daft.datatype import DataType
+from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
 from daft.table import Table
@@ -84,3 +88,23 @@ def from_json(
         table = table.select(read_options.column_names)
 
     return Table.from_arrow(table).schema()
+
+
+def from_parquet(
+    file: FileInput,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> Schema:
+    """Infers a Schema from a Parquet file"""
+    if not isinstance(file, (str, pathlib.Path)):
+        # BytesIO path.
+        f = file
+    else:
+        paths, fs = _resolve_paths_and_filesystem(file, fs)
+        assert len(paths) == 1
+        path = paths[0]
+        f = fs.open_input_file(path)
+
+    pqf = papq.ParquetFile(f)
+    arrow_schema = pqf.metadata.schema.to_arrow_schema()
+
+    return Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])
