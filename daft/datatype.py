@@ -176,6 +176,28 @@ class DataType:
     def image(
         cls, mode: str | ImageMode | None = None, height: int | None = None, width: int | None = None
     ) -> DataType:
+        """Create an Image DataType: image arrays contain (height, width, channel) ndarrays of pixel values.
+
+        Each image in the array has an :class:`~daft.ImageMode`, which describes the pixel dtype (e.g. uint8) and
+        the number of image channels/bands and their logical interpretation (e.g. RGB).
+
+        If the height, width, and mode are the same for all images in the array, specifying them when constructing
+        this type is advised, since that will allow Daft to create a more optimized physical representation
+        of the image array.
+
+        If the height, width, or mode may vary across images in the array, leaving these fields unspecified when
+        creating this type will cause Daft to respresent this image array as a heterogeneous collection of images,
+        where each image can have a different mode, height, and width. This is much more flexible, but will result
+        in a less compact representation and may be make some operations less efficient.
+
+        Args:
+            mode: The mode of the image. By default, this is inferred from the underlying data.
+                If height and width are specified, the mode must also be specified.
+            height: The height of the image. By default, this is inferred from the underlying data.
+                Must be specified if the width is specified.
+            width: The width of the image. By default, this is inferred from the underlying data.
+                Must be specified if the width is specified.
+        """
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode)
         if height is not None and width is not None:

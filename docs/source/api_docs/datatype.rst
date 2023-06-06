@@ -128,6 +128,11 @@ Computer Vision
 
     daft.DataType.image
 
+.. autosummary::
+    :nosignatures:
+
+    ImageMode
+
 
 Miscellaneous
 ^^^^^^^^^^^^^
@@ -136,3 +141,8 @@ Miscellaneous
     :toctree: datatype_methods
 
     daft.DataType.null
+
+.. toctree::
+    :hidden:
+
+    datatype_aux/image_mode

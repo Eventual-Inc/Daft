@@ -13,16 +13,16 @@ use crate::{
 
 /// Supported image modes for Daft's image type.
 ///
-/// L       - 8-bit grayscale
-/// LA      - 8-bit grayscale + alpha
-/// RGB     - 8-bit RGB
-/// RGBA    - 8-bit RGB + alpha
-/// L16     - 16-bit grayscale
-/// LA16    - 16-bit grayscale + alpha
-/// RGB16   - 16-bit RGB
-/// RGBA16  - 16-bit RGB + alpha
-/// RGB32F  - 32-bit floating RGB
-/// RGBA32F - 32-bit floating RGB + alpha
+/// | L       - 8-bit grayscale
+/// | LA      - 8-bit grayscale + alpha
+/// | RGB     - 8-bit RGB
+/// | RGBA    - 8-bit RGB + alpha
+/// | L16     - 16-bit grayscale
+/// | LA16    - 16-bit grayscale + alpha
+/// | RGB16   - 16-bit RGB
+/// | RGBA16  - 16-bit RGB + alpha
+/// | RGB32F  - 32-bit floating RGB
+/// | RGBA32F - 32-bit floating RGB + alpha
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, FromPrimitive)]
 #[cfg_attr(feature = "python", pyclass)]
@@ -43,6 +43,11 @@ pub enum ImageMode {
 #[pymethods]
 impl ImageMode {
     /// Create an ImageMode from its string representation.
+    ///
+    /// Args:
+    ///     mode: String representation of the mode. This is the same as the enum
+    ///         attribute name, e.g. ``ImageMode.from_mode_string("RGB")`` would
+    ///         return ``ImageMode.RGB``.
     #[staticmethod]
     pub fn from_mode_string(mode: &str) -> PyResult<Self> {
         Self::from_str(mode).map_err(|e| PyValueError::new_err(e.to_string()))

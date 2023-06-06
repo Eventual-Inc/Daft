@@ -77,7 +77,7 @@ from daft.convert import (
     from_ray_dataset,
 )
 from daft.dataframe import DataFrame
-from daft.datatype import DataType
+from daft.datatype import DataType, ImageMode
 from daft.expressions import col, lit
 from daft.io import from_glob_path, read_csv, read_json, read_parquet
 from daft.series import Series
@@ -98,6 +98,7 @@ __all__ = [
     "DataFrame",
     "col",
     "DataType",
+    "ImageMode",
     "lit",
     "Series",
     "register_viz_hook",
