@@ -10,13 +10,14 @@ Daft: the distributed Python dataframe for complex data
 
 `Daft <https://www.getdaft.io>`_ is a fast, Pythonic and scalable open-source dataframe library built for Python and Machine Learning workloads.
 
-  **Daft is currently in its Alpha release phase - please expect bugs and rapid improvements to the project.**
+  **Daft is currently in its Beta release phase - please expect bugs and rapid improvements to the project.**
   **We welcome user feedback/feature requests in our** `Discussions forums <https://github.com/Eventual-Inc/Daft/discussions>`_
 
 **Table of Contents**
 
 * `About Daft`_
 * `Getting Started`_
+* `Benchmarks`_
 * `License`_
 
 About Daft
@@ -73,6 +74,11 @@ In this example, we load images from an AWS S3 bucket and run a simple function 
     df.show(3)
 
 |Quickstart Image|
+
+
+Benchmarks
+----------
+benchmark img here
 
 
 More Resources

@@ -5,7 +5,7 @@ Daft is a **fast and scalable Python dataframe** for Complex Data and Machine Le
 
 .. NOTE::
 
-   *Daft is currently in its Alpha release phase - please expect bugs and rapid improvements to the project. We welcome user feedback/feature requests in our* `Discussions forums <https://github.com/Eventual-Inc/Daft/discussions>`_.
+   *Daft is currently in its Beta release phase - please expect bugs and rapid improvements to the project. We welcome user feedback/feature requests in our* `Discussions forums <https://github.com/Eventual-Inc/Daft/discussions>`_.
 
 Installing Daft
 ---------------
