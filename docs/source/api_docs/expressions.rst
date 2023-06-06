@@ -5,7 +5,7 @@ Expressions
 
 .. autosummary::
     :nosignatures:
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.Expression
 
@@ -14,7 +14,7 @@ Expression Constructors
 
 .. autosummary::
     :nosignatures:
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.DataFrame.__getitem__
     daft.expressions.col
@@ -31,7 +31,7 @@ Numeric
 Operations on numbers (floats and integers)
 
 .. autosummary::
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.Expression.__abs__
     daft.expressions.Expression.__add__
@@ -46,7 +46,7 @@ Logical
 Operations on logical expressions (True/False booleans)
 
 .. autosummary::
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.Expression.__invert__
     daft.expressions.Expression.__and__
@@ -61,7 +61,7 @@ Comparisons
 Comparing expressions and values, returning a logical expression
 
 .. autosummary::
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.Expression.__lt__
     daft.expressions.Expression.__le__
@@ -83,7 +83,7 @@ Operations on strings, accessible through the ``Expression.float`` method access
 Example: ``e1.float.is_nan()``
 
 .. autosummary::
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.expressions.ExpressionFloatNamespace.is_nan
 
@@ -97,7 +97,7 @@ Operations on strings, accessible through the ``Expression.str`` method accessor
 Example: ``e1.str.concat(e2)``
 
 .. autosummary::
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.expressions.ExpressionStringNamespace.concat
     daft.expressions.expressions.ExpressionStringNamespace.contains
@@ -116,7 +116,7 @@ Example: ``e.dt.day()``
 
 .. autosummary::
     :nosignatures:
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.expressions.ExpressionDatetimeNamespace.day
     daft.expressions.expressions.ExpressionDatetimeNamespace.month
@@ -134,7 +134,7 @@ Example: ``e.url.download()``
 
 .. autosummary::
     :nosignatures:
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.expressions.ExpressionUrlNamespace.download
 
@@ -149,7 +149,7 @@ Example: ``e.image.resize()``
 
 .. autosummary::
     :nosignatures:
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.expressions.ExpressionImageNamespace.resize
     daft.expressions.expressions.ExpressionImageNamespace.decode
@@ -160,7 +160,7 @@ Changing Column Names/Types
 
 .. autosummary::
     :nosignatures:
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.Expression.alias
     daft.expressions.Expression.cast
@@ -170,6 +170,6 @@ Running Python Functions
 
 .. autosummary::
     :nosignatures:
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.Expression.apply

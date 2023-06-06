@@ -111,8 +111,8 @@ Complex Types
 
 Daft supports many more interesting complex DataTypes, for example:
 
-* :meth:`~daft.DataType.embedding()`: Lower-dimensional vector representation of data (e.g. words)
-* :meth:`~daft.DataType.image()`: NHWC images
+* :meth:`DataType.embedding() <daft.DataType.embedding>`: Lower-dimensional vector representation of data (e.g. words)
+* :meth:`DataType.image() <daft.DataType.image>`: NHWC images
 
 Daft abstracts away the in-memory representation of your data and provides kernels for many common operations on top of these data types. For supported image operations see the :ref:`image expressions API reference <api-expressions-images>`.
 
