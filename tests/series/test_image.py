@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 import pyarrow as pa
 import pytest
-from PIL import Image
+from PIL import Image, ImageSequence
 
 from daft.datatype import DaftExtension, DataType
 from daft.series import Series
@@ -107,8 +107,10 @@ def test_image_round_trip(give_mode):
         ("RGB", "png"),
         ("RGB", "tiff"),
         ("RGB", "bmp"),
+        ("RGB", "gif"),
         ("RGBA", "png"),
         ("RGBA", "tiff"),
+        ("RGBA", "gif"),
         # Not supported by Daft or PIL.
         # "L16", "LA16", "RGB16", "RGBA16", "RGB32F", "RGBA32F"
     ],
@@ -120,6 +122,8 @@ def test_image_encode_pil(mode, file_format):
     if num_channels > 1:
         shape += (num_channels,)
     arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+    if mode in ("LA", "RGBA"):
+        arr[..., -1] = 255
     arrs = [arr, arr, arr]
 
     s = Series.from_pylist(arrs)
@@ -127,7 +131,19 @@ def test_image_encode_pil(mode, file_format):
     assert t.datatype() == DataType.image(mode)
 
     u = t.image.encode(file_format.upper())
-    pil_decoded_imgs = [np.asarray(Image.open(io.BytesIO(bytes_))) for bytes_ in u.to_pylist()]
+    pil_imgs = [Image.open(io.BytesIO(bytes_)) for bytes_ in u.to_pylist()]
+
+    def pil_img_to_ndarray(img):
+        if file_format == "gif":
+            frames = [np.asarray(frame.copy().convert(mode), dtype=np.uint8) for frame in ImageSequence.Iterator(img)]
+            if len(frames) == 1:
+                return frames[0]
+            else:
+                return np.array(frames)
+        else:
+            return np.asarray(img)
+
+    pil_decoded_imgs = [pil_img_to_ndarray(img) for img in pil_imgs]
     np.testing.assert_equal(pil_decoded_imgs, arrs)
 
 
