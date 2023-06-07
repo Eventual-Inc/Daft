@@ -78,7 +78,7 @@ impl Utf8Array {
         let val = self.get(idx);
         match val {
             None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v}")),
+            Some(v) => Ok(v.to_string()),
         }
     }
 }
