@@ -117,15 +117,11 @@ def test_alias_repr():
         ),
         "B": (
             "Utf8",
-            ['"a"', '"b"', '"c"'],
+            ["a", "b", "c"],
         ),
     }
     expected_data_html = {
         **expected_data,
-        "B": (
-            "Utf8",
-            ["a", "b", "c"],
-        ),
     }
     assert parse_str_table(df.__repr__()) == expected_data
     assert parse_html_table(df._repr_html_()) == expected_data_html
