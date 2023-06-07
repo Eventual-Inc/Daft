@@ -17,8 +17,5 @@
       ~ImageFormat.PNG
       ~ImageFormat.JPEG
       ~ImageFormat.TIFF
-      ~ImageFormat.WEBP
       ~ImageFormat.GIF
       ~ImageFormat.BMP
-      ~ImageFormat.HDR
-   

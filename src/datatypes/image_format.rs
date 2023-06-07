@@ -13,10 +13,8 @@ use crate::error::{DaftError, DaftResult};
 /// | PNG
 /// | JPEG
 /// | TIFF
-/// | WEBP
 /// | GIF
 /// | BMP
-/// | HDR
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass)]
@@ -24,10 +22,8 @@ pub enum ImageFormat {
     PNG,
     JPEG,
     TIFF,
-    WEBP,
     GIF,
     BMP,
-    HDR,
 }
 
 #[cfg(feature = "python")]
@@ -53,7 +49,7 @@ impl ImageFormat {
     pub fn iterator() -> std::slice::Iter<'static, ImageFormat> {
         use ImageFormat::*;
 
-        static FORMATS: [ImageFormat; 7] = [PNG, JPEG, TIFF, WEBP, GIF, BMP, HDR];
+        static FORMATS: [ImageFormat; 5] = [PNG, JPEG, TIFF, GIF, BMP];
         FORMATS.iter()
     }
 }
@@ -68,10 +64,8 @@ impl FromStr for ImageFormat {
             "PNG" => Ok(PNG),
             "JPEG" => Ok(JPEG),
             "TIFF" => Ok(TIFF),
-            "WEBP" => Ok(WEBP),
             "GIF" => Ok(GIF),
             "BMP" => Ok(BMP),
-            "HDR" => Ok(HDR),
             _ => Err(DaftError::TypeError(format!(
                 "Image format {} is not supported; only the following formats are supported: {:?}",
                 format,
@@ -87,10 +81,8 @@ impl From<image::ImageFormat> for ImageFormat {
             image::ImageFormat::Png => ImageFormat::PNG,
             image::ImageFormat::Jpeg => ImageFormat::JPEG,
             image::ImageFormat::Tiff => ImageFormat::TIFF,
-            image::ImageFormat::WebP => ImageFormat::WEBP,
             image::ImageFormat::Gif => ImageFormat::GIF,
             image::ImageFormat::Bmp => ImageFormat::BMP,
-            image::ImageFormat::Hdr => ImageFormat::HDR,
             _ => unimplemented!("Image format {:?} is not supported", image_format),
         }
     }
@@ -102,10 +94,8 @@ impl From<ImageFormat> for image::ImageFormat {
             ImageFormat::PNG => image::ImageFormat::Png,
             ImageFormat::JPEG => image::ImageFormat::Jpeg,
             ImageFormat::TIFF => image::ImageFormat::Tiff,
-            ImageFormat::WEBP => image::ImageFormat::WebP,
             ImageFormat::GIF => image::ImageFormat::Gif,
             ImageFormat::BMP => image::ImageFormat::Bmp,
-            ImageFormat::HDR => image::ImageFormat::Hdr,
         }
     }
 }
