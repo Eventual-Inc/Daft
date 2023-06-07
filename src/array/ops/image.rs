@@ -120,7 +120,7 @@ impl<'a> DaftImageBuffer<'a> {
     }
 
     pub fn encode(&self, image_format: ImageFormat) -> DaftResult<Vec<u8>> {
-        let mut writer = std::io::Cursor::new(Vec::new());
+        let mut writer = std::io::BufWriter::new(std::io::Cursor::new(Vec::new()));
         image::write_buffer_with_format(
             &mut writer,
             self.as_u8_slice(),
@@ -135,7 +135,13 @@ impl<'a> DaftImageBuffer<'a> {
                 image_format, e
             ))
         })?;
-        Ok(writer.into_inner())
+        let out = writer.into_inner().map_err(|e| {
+            DaftError::ValueError(format!(
+                "Encoding image into file format {} failed: {}",
+                image_format, e
+            ))
+        })?;
+        Ok(out.into_inner())
     }
 
     pub fn resize(&self, w: u32, h: u32) -> Self {
