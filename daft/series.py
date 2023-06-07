@@ -22,6 +22,10 @@ except ImportError:
 
 
 class Series:
+    """
+    A Daft Series is an array of data of a single type, and is usually a column in a DataFrame.
+    """
+
     _series: PySeries
 
     def __init__(self) -> None:
@@ -35,6 +39,13 @@ class Series:
 
     @staticmethod
     def from_arrow(array: pa.Array | pa.ChunkedArray, name: str = "arrow_series") -> Series:
+        """
+        Construct a Series from an pyarrow array or chunked array.
+
+        Args:
+            array: The pyarrow (chunked) array whose data we wish to put in the Series.
+            name: The name associated with the Series; this is usually the column name.
+        """
         if DataType.from_arrow_type(array.type) == DataType.python():
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
@@ -58,12 +69,19 @@ class Series:
 
     @staticmethod
     def from_pylist(data: list, name: str = "list_series", pyobj: str = "allow") -> Series:
-        """Make a series from the given data.
+        """Construct a Series from a Python list.
 
         The resulting type depends on the setting of pyobjects:
-            - "allow": Arrow-backed types if possible, else PyObject;
-            - "disallow": Arrow-backed types only, raising error if not convertible;
-            - "force": Store as PyObject types.
+            - ``"allow"``: Arrow-backed types if possible, else PyObject;
+            - ``"disallow"``: Arrow-backed types only, raising error if not convertible;
+            - ``"force"``: Store as PyObject types.
+
+        Args:
+            data: The Python list whose data we wish to put in the Series.
+            name: The name associated with the Series; this is usually the column name.
+            pyobj: Whether we want to ``"allow"`` coercion to Arrow types, ``"disallow"``
+                falling back to Python type representation, or ``"force"`` the data to only
+                have a Python type representation. Default is ``"allow"``.
         """
 
         if not isinstance(data, list):
@@ -87,6 +105,17 @@ class Series:
 
     @classmethod
     def from_numpy(cls, data: np.ndarray, name: str = "numpy_series") -> Series:
+        """
+        Construct a Series from a NumPy ndarray.
+
+        If the provided NumPy ndarray is 1-dimensional, Daft will attempt to store the ndarray
+        in a pyarrow Array. If the ndarray has more than 1 dimension OR storing the 1D array in Arrow failed,
+        Daft will store the ndarray data as a Python list of NumPy ndarrays.
+
+        Args:
+            data: The NumPy ndarray whose data we wish to put in the Series.
+            name: The name associated with the Series; this is usually the column name.
+        """
         if not isinstance(data, np.ndarray):
             raise TypeError(f"Expected a NumPy ndarray, got {type(data)}")
         if data.ndim <= 1:
@@ -103,6 +132,18 @@ class Series:
 
     @classmethod
     def from_pandas(cls, data: pd.Series, name: str = "pd_series") -> Series:
+        """
+        Construct a Series from a pandas Series.
+
+        This will first try to convert the series into a pyarrow array, then will fall
+        back to converting the series to a NumPy ndarray and going through that construction path,
+        and will finally fall back to converting the series to a Python list and going through that
+        path.
+
+        Args:
+            data: The pandas Series whose data we wish to put in the Daft Series.
+            name: The name associated with the Series; this is usually the column name.
+        """
         if not isinstance(data, pd.Series):
             raise TypeError(f"expected a pandas Series, got {type(data)}")
         # First, try Arrow path.
@@ -176,9 +217,15 @@ class Series:
         return DataType._from_pydatatype(self._series.data_type())
 
     def to_arrow(self) -> pa.Array:
+        """
+        Convert this Series to an pyarrow array.
+        """
         return self._series.to_arrow()
 
     def to_pylist(self) -> list:
+        """
+        Convert this Series to a Python list.
+        """
         if self.datatype()._is_python_type():
             return self._series.to_pylist()
         else:

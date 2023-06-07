@@ -41,7 +41,6 @@ class PartialUDF:
 
         args = []
         for name in arg_keys:
-
             # special-case to skip `self` since that would be a redundant argument in a method call to a class-UDF
             if name == "self":
                 continue
@@ -151,10 +150,11 @@ def udf(
     In the example below, we create a UDF that:
 
     1. Receives data under the argument name ``x``
-    2. Converts the ``x`` Daft Series into a Python list using ``x.to_pylist()``
+    2. Converts the ``x`` Daft Series into a Python list using :meth:`x.to_pylist() <daft.Series.to_pylist>`
     3. Adds a Python constant value ``c`` to every element in ``x``
     4. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
-    5. We can call our UDF on a dataframe using any of the dataframe projection operations (``with_column``, ``select`` etc)
+    5. We can call our UDF on a dataframe using any of the dataframe projection operations (:meth:`df.with_column() <daft.DataFrame.with_column>`,
+       :meth:`df.select() <daft.DataFrame.select>`, etc.)
 
     Example:
         >>> @udf(return_dtype=DataType.int64())

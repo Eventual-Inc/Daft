@@ -31,7 +31,7 @@ When we evaluate this ``df["A"]`` Expression, it will evaluate to the column fro
 Refer to a column with a certain name
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-You may also find it necessary in certain situations to create an Expression with just the name of a column, without having an existing DataFrame to refer to. You can do this with the ``col`` helper:
+You may also find it necessary in certain situations to create an Expression with just the name of a column, without having an existing DataFrame to refer to. You can do this with the :func:`~daft.expressions.col` helper:
 
 .. code:: python
 
@@ -45,7 +45,7 @@ When this Expression is evaluated, it will resolve to "the column named A" in wh
 Literals
 ^^^^^^^^
 
-You may find yourself needing to hardcode a "single value" oftentimes as an expression. Daft provides a ``lit`` helper to do so:
+You may find yourself needing to hardcode a "single value" oftentimes as an expression. Daft provides a :func:`~daft.expressions.lit` helper to do so:
 
 .. code:: python
 
@@ -54,7 +54,7 @@ You may find yourself needing to hardcode a "single value" oftentimes as an expr
     # Refers to an expression which always evaluates to 42
     lit(42)
 
-This special ``lit`` expression we just created evaluates always to the value ``42``.
+This special :func:`~daft.expressions.lit` expression we just created evaluates always to the value ``42``.
 
 .. _userguide-numeric-expressions:
 
@@ -90,9 +90,9 @@ Since column "A" is an integer, we can run numeric computation such as addition,
     +---------+-------------+----------------+-----------+
     (Showing first 3 of 3 rows)
 
-Notice that the returned types of these operations are also well-typed according to their input types. For example, calling ``df["A"] > 1`` returns a column of type ``Boolean``.
+Notice that the returned types of these operations are also well-typed according to their input types. For example, calling ``df["A"] > 1`` returns a column of type :meth:`Boolean <daft.DataType.boolean>`.
 
-Both The Float and Int types are numeric types, and inherit many of the same arithmetic Expression operations. You may find the full list of numeric operations in the :ref:`Expressions API reference <api-numeric-expression-operations>`.
+Both the :meth:`Float <daft.DataType.float>` and :meth:`Int <daft.DataType.int>` types are numeric types, and inherit many of the same arithmetic Expression operations. You may find the full list of numeric operations in the :ref:`Expressions API reference <api-numeric-expression-operations>`.
 
 .. _userguide-string-expressions:
 
@@ -141,9 +141,9 @@ Unlike the numeric types, the string type does not support arithmetic operations
     +--------+--------+
     (Showing first 3 rows)
 
-There are also many string operators that are accessed through a separate ``Expression.str.*`` "method namespace".
+There are also many string operators that are accessed through a separate :meth:`.str.* <daft.expressions.Expresison.str>` "method namespace".
 
-For example, to check if each element in column "B" contains the substring "a", we can use the ``.str.contains`` method:
+For example, to check if each element in column "B" contains the substring "a", we can use the :meth:`.str.contains <daft.expressions.expressions.ExpressionStringNamespace.contains>` method:
 
 .. code:: python
 
@@ -171,7 +171,7 @@ URL Expressions
 
 One special case of a String column you may find yourself working with is a column of URL strings.
 
-Daft provides the ``Expression.url.*`` method namespace with functionality for working with URL strings. For example, to download data from URLs:
+Daft provides the :meth:`.url.* <daft.expressions.Expression.url>` method namespace with functionality for working with URL strings. For example, to download data from URLs:
 
 .. code:: python
 
@@ -209,7 +209,7 @@ This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), loc
 Logical Expressions
 -------------------
 
-Logical Expressions are an expression that refers to a column of type ``Boolean``, and can only take on the values True or False.
+Logical Expressions are an expression that refers to a column of type :meth:`Boolean <daft.DataType.boolean>`, and can only take on the values True or False.
 
 .. code:: python
 
@@ -252,7 +252,7 @@ Other useful comparisons can be found in the :ref:`Expressions API reference <ap
 If Else Pattern
 ^^^^^^^^^^^^^^^
 
-The ``.if_else`` method is a useful expression to have up your sleeve for choosing values between two other expressions based on a logical expression:
+The :meth:`.if_else() <daft.expressions.Expression.if_else>` method is a useful expression to have up your sleeve for choosing values between two other expressions based on a logical expression:
 
 .. code:: python
 

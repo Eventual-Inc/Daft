@@ -37,7 +37,7 @@ To learn more about each of these constructors, as well as the options that they
 From File Paths
 ^^^^^^^^^^^^^^^
 
-However, if instead you are reading a set of files that are not container file formats, you can use the ``daft.from_glob_path`` method which will read a DataFrame of globbed filepaths.
+However, if instead you are reading a set of files that are not container file formats, you can use the :func:`daft.from_glob_path` method which will read a DataFrame of globbed filepaths.
 
 .. code:: python
 
@@ -49,7 +49,7 @@ However, if instead you are reading a set of files that are not container file f
     #   ...
 
 
-This is especially useful for reading things such as a folder of images or documents into Daft. A common pattern is to then download data from these files into your DataFrame as bytes, using the ``Expression.url.download()`` method.
+This is especially useful for reading things such as a folder of images or documents into Daft. A common pattern is to then download data from these files into your DataFrame as bytes, using the :meth:`.url.download() <daft.expressions.expressions.ExpressionUrlNamespace.download>` method.
 
 
 From Memory

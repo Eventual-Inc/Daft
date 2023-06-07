@@ -15,11 +15,11 @@ Conceptually, a DataFrame is a "table" of data, with rows and columns.
 
 Using this abstraction of a DataFrame, you can run common tabular operations such as:
 
-1. Filters: ``df.where(...)``
-2. Creating new columns as a computation of existing columns: ``df.with_column(...)``
-3. Joining two tables together: ``df.join(...)``
-4. Sorting a table by the values in specified column(s): ``df.sort(...)``
-5. Grouping and aggregations: ``df.groupby(...).agg(...)``
+1. Filters: :meth:`df.where(...) <daft.DataFrame.where>`
+2. Creating new columns as a computation of existing columns: :meth:`df.with_column(...) <daft.DataFrame.with_column>`
+3. Joining two tables together: :meth:`df.join(...) <daft.DataFrame.join>`
+4. Sorting a table by the values in specified column(s): :meth:`df.sort(...) <daft.DataFrame.sort>`
+5. Grouping and aggregations: :meth:`df.groupby(...).agg(...) <daft.DataFrame.groupby>`
 
 Daft DataFrames are:
 
@@ -71,7 +71,7 @@ Daft does not execute the computations defined on a DataFrame until explicitly i
 
 Notice that when printing the DataFrame, Daft will say that there is "No data to display". This is because Daft enqueues all your operations into a "query plan" instead of executing it immediately when you define your operations.
 
-To actually execute your DataFrame, you can call a method such as ``df.show()``. This method will run just the necessary computation required to show the first few rows of your DataFrame:
+To actually execute your DataFrame, you can call a method such as :meth:`df.show() <daft.DataFrame.show>`. This method will run just the necessary computation required to show the first few rows of your DataFrame:
 
 .. code:: python
 
@@ -143,15 +143,15 @@ Similarly, working with complex types such as images, tensors, Python objects an
 Expressions
 -----------
 
-The other important concept to understand when working with Daft are ``Expressions``.
+The other important concept to understand when working with Daft are **expressions**.
 
-Because Daft is "lazy", it needs a way to represent computations that need to be performed on its data so that it can execute these computations at some later time. The answer to this is an ``Expression``!
+Because Daft is "lazy", it needs a way to represent computations that need to be performed on its data so that it can execute these computations at some later time. The answer to this is an :class:`~daft.expressions.Expression`!
 
 The simplest Expressions are:
 
-1. The column expression: ``col("a")`` which is used to refer to "some column named 'a'"
+1. The column expression: :func:`col("a") <daft.expressions.col>` which is used to refer to "some column named 'a'"
 2. Or, if you already have an existing DataFrame ``df`` with a column named "a", you can refer to its column like we did before with square brackets: ``df["a"]``
-3. The literal expression: ``lit(100)`` which represents a column that always takes on the provided value
+3. The literal expression: :func:`lit(100) <daft.expressions.lit>` which represents a column that always takes on the provided value
 
 Daft then provides an extremely rich Expressions library to allow you to compose different computations that need to happen. For example:
 
