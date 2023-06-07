@@ -11,7 +11,6 @@ import ray
 import daft
 from daft import DataType
 from daft.context import get_context
-from daft.utils import freeze
 
 RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
 
@@ -157,7 +156,8 @@ def test_from_ray_dataset_all_arrow(n_partitions: int):
             assert ds._dataset_format() == "arrow", "Ray Dataset format should be arrow"
 
     df = daft.from_ray_dataset(ds)
-    out_table = df.to_arrow()
+    # Sort data since partition ordering in Datasets is not deterministic.
+    out_table = df.to_arrow().sort_by("intcol")
     expected_table = add_float(table).cast(
         pa.schema(
             [
@@ -177,7 +177,9 @@ def test_from_ray_dataset_simple(n_partitions: int):
 
     df = daft.from_ray_dataset(ds)
     # Sort data since partition ordering in Datasets is not deterministic.
-    assert freeze(df.to_pydict()) == freeze({"value": list(range(8))})
+    out = df.to_pydict()
+    assert list(out.keys()) == ["value"]
+    assert sorted(out["value"]) == list(range(8))
 
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
@@ -188,13 +190,16 @@ def test_from_ray_dataset_tensor(n_partitions: int):
 
     df = daft.from_ray_dataset(ds)
     out = df.to_pydict()
-    out["np"] = [arr.tolist() for arr in out["np"]]
+    assert out.keys() == {"int", "np"}
+    # Sort data since partition ordering in Datasets is not deterministic.
+    out_sorted_rows = sorted(list(zip(out["int"], out["np"])), key=lambda row: row[0])
+    int_col, np_col = zip(*out_sorted_rows)
+    out_sorted = {"int": int_col, "np": np_col}
     expected = {
         "int": list(range(8)),
         "np": [np.ones((3, 3)) for i in range(8)],
     }
-    expected["np"] = [arr.tolist() for arr in expected["np"]]
-    assert freeze(out) == freeze(expected)
+    np.testing.assert_equal(out_sorted, expected)
 
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
