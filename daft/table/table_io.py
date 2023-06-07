@@ -39,6 +39,20 @@ def _open_stream(
         yield file
 
 
+def _cast_table_to_schema(table: Table, read_options: TableReadOptions, schema: Schema) -> pa.Table:
+    """Performs a cast of a Daft Table to the requested Schema/Data. This is required because:
+
+    1. Data read from the datasource may have types that do not match the inferred global schema
+    2. Data read from the datasource may have columns that are out-of-order with the inferred schema
+    3. We may need only a subset of columns, or differently-ordered columns, in `read_options`
+
+    This helper function takes care of all that, ensuring that the resulting Table has all column types matching
+    their corresponding dtype in `schema`, and column ordering/inclusion matches `read_options.column_names` (if provided).
+    """
+    # TODO(jaychia): Currently a no-op
+    return table
+
+
 def read_json(
     file: FileInput,
     schema: Schema,
@@ -66,13 +80,7 @@ def read_json(
     if read_options.num_rows is not None:
         table = table[: read_options.num_rows]
 
-    # TODO(jaychia): Need to implement casting functionality to ensure types match up
-    # Note that not having this may result in Tables having different types depending on PyArrow's parsing logic
-    # for this particular file, and there is no enforcement of types nor column ordering here.
-    # pruned_schema = schema.select_columns(read_options.column_names)
-    # table = table.cast_to_schema(pruned_schema)
-
-    return Table.from_arrow(table)
+    return _cast_table_to_schema(Table.from_arrow(table), read_options=read_options, schema=schema)
 
 
 def read_parquet(
@@ -123,7 +131,7 @@ def read_parquet(
             columns=read_options.column_names,
         )
 
-    return Table.from_arrow(table)
+    return _cast_table_to_schema(Table.from_arrow(table), read_options=read_options, schema=schema)
 
 
 def read_csv(
@@ -171,8 +179,7 @@ def read_csv(
     if read_options.num_rows is not None:
         table = table[: read_options.num_rows]
 
-    table = Table.from_arrow(table)
-    return table
+    return _cast_table_to_schema(Table.from_arrow(table), read_options=read_options, schema=schema)
 
 
 def write_csv(
