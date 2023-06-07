@@ -30,31 +30,6 @@ def _stringify_object_html(val: Any, max_col_width: int, max_lines: int):
     return html.escape(_truncate(str(val), max_col_width, max_lines))
 
 
-def _stringify_vpartition(
-    data: dict[str, list[Any]],
-    daft_schema: Schema,
-    max_col_width: int = DEFAULT_MAX_COL_WIDTH,
-    max_lines: int = DEFAULT_MAX_LINES,
-) -> dict[str, Iterable[str]]:
-    """Converts a vPartition into a dictionary of display-friendly stringified values"""
-    assert all(
-        colname in data for colname in daft_schema.column_names()
-    ), f"Data does not contain columns: {set(daft_schema.column_names()) - set(data.keys())}"
-
-    data_stringified: dict[str, Iterable[str]] = {}
-    for colname in daft_schema.column_names():
-        field = daft_schema[colname]
-        if field.dtype._is_python_type():
-            data_stringified[colname] = [_truncate(str(val), max_col_width, max_lines) for val in data[colname]]
-        elif field.dtype == DataType.bool():
-            # BUG: tabulate library does not handle string literal values "True" and "False" correctly, so we lowercase them.
-            data_stringified[colname] = [_truncate(str(val).lower(), max_col_width, max_lines) for val in data[colname]]
-        else:
-            data_stringified[colname] = [_truncate(str(val), max_col_width, max_lines) for val in data[colname]]
-
-    return data_stringified
-
-
 def _stringify_vpartition_html(
     data: dict[str, list[Any]],
     daft_schema: Schema,
@@ -137,41 +112,3 @@ def vpartition_repr_html(
     {tabulate_html_string}
     <small>{user_message}</small>
 </div>"""
-
-
-def vpartition_repr(
-    vpartition: Table | None,
-    daft_schema: Schema,
-    num_rows: int,
-    user_message: str,
-    max_col_width: int = DEFAULT_MAX_COL_WIDTH,
-    max_lines: int = DEFAULT_MAX_LINES,
-) -> str:
-    """Converts a vPartition into a prettified string for display in a REPL"""
-    if len(daft_schema) == 0:
-        return "(No data to display: Dataframe has no columns)"
-
-    data = (
-        {k: v[:num_rows] for k, v in vpartition.to_pydict().items()}
-        if vpartition is not None
-        else {colname: [] for colname in daft_schema.column_names()}
-    )
-    data_stringified = _stringify_vpartition(
-        data,
-        daft_schema,
-        max_col_width=max_col_width,
-        max_lines=max_lines,
-    )
-
-    return (
-        tabulate(
-            data_stringified,
-            headers=[f"{name}\n{daft_schema[name].dtype}" for name in daft_schema.column_names()],
-            tablefmt="grid",
-            missingval="None",
-            # Workaround for https://github.com/astanin/python-tabulate/issues/223
-            # If table has no rows, specifying maxcolwidths always raises error.
-            maxcolwidths=max_col_width if vpartition is not None and len(vpartition) else None,
-        )
-        + f"\n{user_message}"
-    )

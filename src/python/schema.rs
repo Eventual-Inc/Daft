@@ -77,6 +77,10 @@ impl PySchema {
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         Ok(PyBytes::new(py, &bincode::serialize(&self.schema).unwrap()).to_object(py))
     }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.schema))
+    }
 }
 
 impl From<schema::SchemaRef> for PySchema {

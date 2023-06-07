@@ -27,7 +27,7 @@ def parse_str_table(
     column_types = _split_table_row(lines[2])
 
     data = []
-    for line in lines[4:-1]:
+    for line in lines[4:-2]:
         if ROW_DIVIDER_REGEX.match(line):
             continue
         data.append(_split_table_row(line))
