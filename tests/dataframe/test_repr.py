@@ -27,7 +27,7 @@ def parse_str_table(
     column_types = _split_table_row(lines[2])
 
     data = []
-    for line in lines[4:-1]:
+    for line in lines[4:-2]:
         if ROW_DIVIDER_REGEX.match(line):
             continue
         data.append(_split_table_row(line))
@@ -117,11 +117,15 @@ def test_alias_repr():
         ),
         "B": (
             "Utf8",
-            ["a", "b", "c"],
+            ['"a"', '"b"', '"c"'],
         ),
     }
     expected_data_html = {
         **expected_data,
+        "B": (
+            "Utf8",
+            ["a", "b", "c"],
+        ),
     }
     assert parse_str_table(df.__repr__()) == expected_data
     assert parse_html_table(df._repr_html_()) == expected_data_html

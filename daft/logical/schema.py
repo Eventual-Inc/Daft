@@ -86,7 +86,7 @@ class Schema:
         return set(self.column_names())
 
     def __repr__(self) -> str:
-        return repr([(field.name, field.dtype) for field in self])
+        return repr(self._schema)
 
     def union(self, other: Schema) -> Schema:
         if not isinstance(other, Schema):

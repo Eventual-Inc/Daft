@@ -47,4 +47,14 @@ class DataFrameDisplay:
         )
 
     def __repr__(self) -> str:
-        return repr(self.preview.preview_partition)
+        if len(self.schema) == 0:
+            return "(No data to display: Dataframe has no columns)"
+
+        if self.preview.preview_partition is not None:
+            res = repr(self.preview.preview_partition)
+        else:
+            res = repr(self.schema)
+
+        res += f"\n{self._get_user_message()}"
+
+        return res
