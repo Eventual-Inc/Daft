@@ -101,6 +101,7 @@ def test_image_round_trip(give_mode):
     [
         ("L", "png"),
         ("L", "tiff"),
+        ("L", "jpeg"),
         ("LA", "png"),
         # Image crate doesn't support 2 samples per pixel.
         # ("LA", "tiff"),
@@ -108,6 +109,7 @@ def test_image_round_trip(give_mode):
         ("RGB", "tiff"),
         ("RGB", "bmp"),
         ("RGB", "gif"),
+        ("RGB", "jpeg"),
         ("RGBA", "png"),
         ("RGBA", "tiff"),
         ("RGBA", "gif"),
@@ -144,7 +146,11 @@ def test_image_encode_pil(mode, file_format):
             return np.asarray(img)
 
     pil_decoded_imgs = [pil_img_to_ndarray(img) for img in pil_imgs]
-    np.testing.assert_equal(pil_decoded_imgs, arrs)
+    if file_format == "jpeg":
+        # Do lossy check; JPEG format is encoded at 0.75 quality.
+        np.testing.assert_allclose(pil_decoded_imgs, arrs, rtol=1, atol=4)
+    else:
+        np.testing.assert_equal(pil_decoded_imgs, arrs)
 
 
 @pytest.mark.parametrize(
