@@ -10,7 +10,7 @@ import pyarrow.parquet as papq
 from daft.datatype import DataType
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
-from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
+from daft.runners.partitioning import TableParseCSVOptions
 from daft.table import Table
 from daft.table.table_io import FileInput, _open_stream
 
@@ -23,7 +23,6 @@ def from_csv(
     fs: fsspec.AbstractFileSystem | None = None,
     override_column_names: list[str] | None = None,
     csv_options: TableParseCSVOptions = TableParseCSVOptions(),
-    read_options: TableReadOptions = TableReadOptions(),
 ) -> Schema:
     """Infers a Schema from a CSV file
     Args:
@@ -47,7 +46,6 @@ def from_csv(
     )
 
     with _open_stream(file, fs) as f:
-        # TODO(jay): Can't limit number of rows with current PyArrow filesystem so this reads the entire CSV to sample the schema
         table = pacsv.read_csv(
             f,
             parse_options=pacsv.ParseOptions(
@@ -60,7 +58,6 @@ def from_csv(
                 skip_rows_after_names=pyarrow_skip_rows_after_names,
                 skip_rows=csv_options.header_index,
             ),
-            convert_options=pacsv.ConvertOptions(include_columns=read_options.column_names),
         )
 
     return Table.from_arrow(table).schema()
@@ -69,7 +66,6 @@ def from_csv(
 def from_json(
     file: FileInput,
     fs: fsspec.AbstractFileSystem | None = None,
-    read_options: TableReadOptions = TableReadOptions(),
 ) -> Schema:
     """Reads a Schema from a JSON file
 
@@ -81,11 +77,7 @@ def from_json(
         Schema: Inferred Schema from the JSON
     """
     with _open_stream(file, fs) as f:
-        # TODO(jay): Can't limit number of rows with current PyArrow filesystem so this reads the entire JSON to sample the schema
         table = pajson.read_json(f)
-
-    if read_options.column_names is not None:
-        table = table.select(read_options.column_names)
 
     return Table.from_arrow(table).schema()
 

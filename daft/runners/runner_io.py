@@ -18,10 +18,9 @@ from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     PartitionSet,
     TableParseCSVOptions,
-    TableReadOptions,
     vPartitionSchemaInferenceOptions,
 )
-from daft.table import Table, schema_inference
+from daft.table import schema_inference
 
 PartitionT = TypeVar("PartitionT")
 
@@ -86,7 +85,6 @@ def sample_schema(
     if fs is None:
         fs = get_filesystem_from_path(filepath)
 
-    sampled_partition: Table
     if source_info.scan_type() == StorageType.CSV:
         assert isinstance(source_info, CSVSourceInfo)
         return schema_inference.from_csv(
@@ -97,20 +95,12 @@ def sample_schema(
                 header_index=0 if source_info.has_headers else None,
             ),
             override_column_names=schema_inference_options.inference_column_names,
-            read_options=TableReadOptions(
-                num_rows=100,  # sample 100 rows for schema inference
-                column_names=None,  # read all columns
-            ),
         )
     elif source_info.scan_type() == StorageType.JSON:
         assert isinstance(source_info, JSONSourceInfo)
         return schema_inference.from_json(
             file=filepath,
             fs=fs,
-            read_options=TableReadOptions(
-                num_rows=100,  # sample 100 rows for schema inference
-                column_names=None,  # read all columns
-            ),
         )
     elif source_info.scan_type() == StorageType.PARQUET:
         assert isinstance(source_info, ParquetSourceInfo)
