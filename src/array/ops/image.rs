@@ -3,7 +3,9 @@ use std::vec;
 
 use image::{ColorType, DynamicImage, ImageBuffer};
 
-use crate::datatypes::{logical::ImageArray, BinaryArray, DataType, Field, ImageMode, StructArray};
+use crate::datatypes::{
+    logical::ImageArray, BinaryArray, DataType, Field, ImageFormat, ImageMode, StructArray,
+};
 use crate::error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
 
@@ -115,6 +117,20 @@ impl<'a> DaftImageBuffer<'a> {
             }
             _ => unimplemented!("Mode {self:?} not implemented"),
         }
+    }
+
+    pub fn encode(&self, image_format: ImageFormat) -> DaftResult<Vec<u8>> {
+        let mut writer = std::io::Cursor::new(Vec::new());
+        image::write_buffer_with_format(
+            &mut writer,
+            self.as_u8_slice(),
+            self.width(),
+            self.height(),
+            self.color(),
+            image::ImageFormat::from(image_format),
+        )
+        .map_err(|e| DaftError::ValueError(format!("Decoding image from bytes failed: {}", e)))?;
+        Ok(writer.into_inner())
     }
 
     pub fn resize(&self, w: u32, h: u32) -> Self {
@@ -369,6 +385,18 @@ impl ImageArray {
         assert_eq!(result.height(), h);
         assert_eq!(result.width(), w);
         Some(result)
+    }
+
+    pub fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray> {
+        let result = (0..self.len())
+            .map(|i| self.as_image_obj(i))
+            .map(|img| img.map(|img| img.encode(image_format)).transpose())
+            .collect::<DaftResult<Vec<_>>>()?;
+        let arrow_array = arrow2::array::BinaryArray::<i64>::from_iter(result.into_iter());
+        BinaryArray::new(
+            Field::new(self.name(), arrow_array.data_type().into()).into(),
+            arrow_array.boxed(),
+        )
     }
 
     pub fn resize(&self, w: u32, h: u32) -> DaftResult<Self> {

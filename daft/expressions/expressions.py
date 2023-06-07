@@ -7,6 +7,7 @@ from typing import Callable, Iterable, Iterator, TypeVar, overload
 
 import fsspec
 
+from daft.daft import ImageFormat
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
@@ -668,10 +669,45 @@ class ExpressionsProjection(Iterable[Expression]):
 
 
 class ExpressionImageNamespace(ExpressionNamespace):
+    """Expression operations for image columns."""
+
     def decode(self) -> Expression:
+        """
+        Decodes the binary data in this column into images.
+
+        This can only be applied to binary columns that contain encoded images (e.g. PNG, JPEG, etc.)
+
+        Returns:
+            Expression: An Image expression represnting an image column.
+        """
         return Expression._from_pyexpr(self._expr.image_decode())
 
+    def encode(self, image_format: str | ImageFormat) -> Expression:
+        """
+        Encode an image column as the provided image file format, returning a binary column
+        of encoded bytes.
+
+        Args:
+            image_format: The image file format into which the images will be encoded.
+
+        Returns:
+            Expression: A Binary expression representing a binary column of encoded image bytes.
+        """
+        if isinstance(image_format, str):
+            image_format = ImageFormat.from_format_string(image_format.upper())
+        return Expression._from_pyexpr(self._expr.image_encode(image_format))
+
     def resize(self, w: int, h: int) -> Expression:
+        """
+        Resize image into the provided width and height.
+
+        Args:
+            w: Desired width of the resized image.
+            h: Desired height of the resized image.
+
+        Returns:
+            Expression: An Image expression representing an image column of the resized images.
+        """
         if not isinstance(w, int):
             raise TypeError(f"expected int for w but got {type(w)}")
         if not isinstance(h, int):

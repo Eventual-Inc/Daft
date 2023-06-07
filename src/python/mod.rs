@@ -7,6 +7,7 @@ mod schema;
 mod series;
 mod table;
 
+use crate::datatypes::ImageFormat;
 use crate::datatypes::ImageMode;
 pub use datatype::PyDataType;
 pub use series::PySeries;
@@ -19,6 +20,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<schema::PySchema>()?;
     parent.add_class::<field::PyField>()?;
     parent.add_class::<ImageMode>()?;
+    parent.add_class::<ImageFormat>()?;
 
     parent.add_wrapped(wrap_pyfunction!(expr::col))?;
     parent.add_wrapped(wrap_pyfunction!(expr::lit))?;
