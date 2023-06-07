@@ -211,6 +211,10 @@ class Table:
     # Compute methods (Table -> Table)
     ###
 
+    def cast_to_schema(self, schema: Schema) -> Table:
+        """Casts a Table into the provided schema"""
+        return Table._from_pytable(self._table.cast_to_schema(schema._schema))
+
     def eval_expression_list(self, exprs: ExpressionsProjection) -> Table:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]

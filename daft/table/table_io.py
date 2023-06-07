@@ -55,9 +55,7 @@ def _cast_table_to_schema(table: Table, read_options: TableReadOptions, schema: 
     if read_options.column_names is not None:
         pruned_schema = Schema._from_fields([schema[name] for name in read_options.column_names])
 
-    # TODO(jaychia): impl
-    pruned_schema
-    # table = table.cast_to_schema(pruned_schema)
+    table = table.cast_to_schema(pruned_schema)
     return table
 
 
