@@ -59,13 +59,9 @@ class ImageFormat(Enum):
 
     TIFF: int
 
-    WEBP: int
-
     GIF: int
 
     BMP: int
-
-    HDR: int
 
     @staticmethod
     def from_format_string(mode: str) -> ImageFormat:
