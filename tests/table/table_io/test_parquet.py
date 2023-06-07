@@ -80,6 +80,8 @@ def test_parquet_infer_schema(data, expected_dtype):
                 [datetime.date(year=2021, month=1, day=1), datetime.date(year=2021, month=1, day=1), None]
             ),
         ),
+        ([[], [1, 2], None], daft.Series.from_pylist([[[], [1, 2], None], [[], [1, 2], None], None])),
+        ({"foo": 1}, daft.Series.from_pylist([{"foo": 1}, {"foo": 1}, None])),
     ],
 )
 def test_parquet_read_data(data, expected_data_series):

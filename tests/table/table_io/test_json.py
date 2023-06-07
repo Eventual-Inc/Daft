@@ -80,6 +80,8 @@ def test_json_infer_schema(data, expected_dtype):
         ["foo", daft.Series.from_pylist(["foo", "foo", None])],
         [1.5, daft.Series.from_pylist([1.5, 1.5, None])],
         (True, daft.Series.from_pylist([True, True, None])),
+        ([[], [1, 2], None], daft.Series.from_pylist([[[], [1, 2], None], [[], [1, 2], None], None])),
+        ({"foo": 1}, daft.Series.from_pylist([{"foo": 1}, {"foo": 1}, None])),
     ],
 )
 def test_json_read_data(data, expected_data_series):
