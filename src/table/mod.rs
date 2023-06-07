@@ -364,6 +364,81 @@ impl Table {
         Table::from_columns(new_series?)
     }
 
+    pub fn repr_html(&self) -> String {
+        // Produces a <table> HTML element.
+
+        let mut res = "<table class=\"dataframe\">".to_string();
+
+        // Begin the header.
+        res.push_str("<thead><tr>");
+
+        for (name, field) in &self.schema.fields {
+            res.push_str("<th>");
+            res.push_str(&html_escape::encode_text(name));
+            res.push_str("<br />");
+            res.push_str(&html_escape::encode_text(&format!("{}", field.dtype)));
+            res.push_str("</th>");
+        }
+
+        // End the header.
+        res.push_str("</thead></tr>");
+
+        // Begin the body.
+        res.push_str("<tbody>");
+
+        let head_rows;
+        let tail_rows;
+
+        if self.len() > 10 {
+            head_rows = 5;
+            tail_rows = 5;
+        } else {
+            head_rows = self.len();
+            tail_rows = 0;
+        }
+
+        for i in 0..head_rows {
+            // Begin row.
+            res.push_str("<tr>");
+
+            for col in self.columns.iter() {
+                res.push_str("<td>");
+                res.push_str(&col.html_value(i));
+                res.push_str("</td>");
+            }
+
+            // End row.
+            res.push_str("</tr>");
+        }
+
+        if tail_rows != 0 {
+            res.push_str("<tr>");
+            for _ in self.columns.iter() {
+                res.push_str("<td>...</td>");
+            }
+            res.push_str("</tr>");
+        }
+
+        for i in (self.len() - tail_rows)..(self.len()) {
+            // Begin row.
+            res.push_str("<tr>");
+
+            for col in self.columns.iter() {
+                res.push_str("<td>");
+                res.push_str(&col.html_value(i));
+                res.push_str("</td>");
+            }
+
+            // End row.
+            res.push_str("</tr>");
+        }
+
+        // End the body and the table.
+        res.push_str("</tbody></table");
+
+        res
+    }
+
     pub fn to_prettytable(&self, max_col_width: Option<usize>) -> prettytable::Table {
         let mut table = prettytable::Table::new();
         let header = self
@@ -393,7 +468,7 @@ impl Table {
                 .columns
                 .iter()
                 .map(|s| {
-                    let mut str_val = s.str_value(i).unwrap();
+                    let mut str_val = s.html_value(i);
                     if let Some(max_col_width) = max_col_width {
                         if str_val.len() > max_col_width {
                             str_val = format!("{}...", &str_val[..max_col_width - 3]);
