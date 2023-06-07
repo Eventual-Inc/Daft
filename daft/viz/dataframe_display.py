@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from daft.dataframe.preview import DataFramePreview
 from daft.logical.schema import Schema
-from daft.viz.repr import vpartition_repr, vpartition_repr_html
+from daft.viz.repr import vpartition_repr_html
 
 HAS_PILLOW = False
 try:
@@ -46,11 +46,4 @@ class DataFrameDisplay:
         )
 
     def __repr__(self) -> str:
-        return vpartition_repr(
-            self.preview.preview_partition,
-            self.schema,
-            self.num_rows,
-            self._get_user_message(),
-            max_col_width=self.column_char_width,
-            max_lines=self.max_col_rows,
-        )
+        return repr(self.preview.preview_partition)
