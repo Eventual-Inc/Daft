@@ -22,6 +22,7 @@ class DataFrameDisplay:
 
     preview: DataFramePreview
     schema: Schema
+    # These formatting options are deprecated for now and not guaranteed to be supported.
     column_char_width: int = 20
     max_col_rows: int = 3
     num_rows: int = 10
