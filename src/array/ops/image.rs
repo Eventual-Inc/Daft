@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::io::Write;
 use std::vec;
 
 use image::{ColorType, DynamicImage, ImageBuffer};
@@ -119,8 +120,8 @@ impl<'a> DaftImageBuffer<'a> {
         }
     }
 
-    pub fn encode(&self, image_format: ImageFormat) -> DaftResult<Vec<u8>> {
-        let mut writer = std::io::BufWriter::new(std::io::Cursor::new(Vec::new()));
+    pub fn encode(&self, image_format: ImageFormat, out: &mut Vec<u8>) -> DaftResult<()> {
+        let mut writer = std::io::BufWriter::new(std::io::Cursor::new(out));
         image::write_buffer_with_format(
             &mut writer,
             self.as_u8_slice(),
@@ -135,13 +136,12 @@ impl<'a> DaftImageBuffer<'a> {
                 image_format, e
             ))
         })?;
-        let out = writer.into_inner().map_err(|e| {
+        writer.flush().map_err(|e| {
             DaftError::ValueError(format!(
                 "Encoding image into file format {} failed: {}",
                 image_format, e
             ))
-        })?;
-        Ok(out.into_inner())
+        })
     }
 
     pub fn resize(&self, w: u32, h: u32) -> Self {
@@ -401,7 +401,14 @@ impl ImageArray {
     pub fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray> {
         let result = (0..self.len())
             .map(|i| self.as_image_obj(i))
-            .map(|img| img.map(|img| img.encode(image_format)).transpose())
+            .map(|img| {
+                img.map(|img| {
+                    let mut buf = Vec::new();
+                    img.encode(image_format, &mut buf)?;
+                    Ok(buf)
+                })
+                .transpose()
+            })
             .collect::<DaftResult<Vec<_>>>()?;
         let arrow_array = arrow2::array::BinaryArray::<i64>::from_iter(result.into_iter());
         BinaryArray::new(

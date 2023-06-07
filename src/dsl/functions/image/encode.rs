@@ -40,7 +40,7 @@ impl FunctionEvaluator for EncodeEvaluator {
                 func: FunctionExpr::Image(ImageExpr::Encode { image_format }),
                 inputs: _,
             } => image_format,
-            _ => panic!("Expected ImageResize Expr, got {expr}"),
+            _ => panic!("Expected ImageEncode Expr, got {expr}"),
         };
         match inputs {
             [input] => input.image_encode(*image_format),

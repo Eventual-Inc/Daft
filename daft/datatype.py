@@ -200,6 +200,8 @@ class DataType:
         """
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode.upper())
+        if not isinstance(mode, ImageMode):
+            raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
         if height is not None and width is not None:
             if not isinstance(height, int) or height <= 0:
                 raise ValueError("Image height must be a positive integer, but got: ", height)

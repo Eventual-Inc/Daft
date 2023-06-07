@@ -518,6 +518,8 @@ class SeriesImageNamespace(SeriesNamespace):
     def encode(self, image_format: str | ImageFormat) -> Series:
         if isinstance(image_format, str):
             image_format = ImageFormat.from_format_string(image_format.upper())
+        if not isinstance(image_format, ImageFormat):
+            raise ValueError(f"image_format must be a string or ImageFormat variant, but got: {image_format}")
         return Series._from_pyseries(self._series.image_encode(image_format))
 
     def resize(self, w: int, h: int) -> Series:
