@@ -6,7 +6,7 @@ use crate::{
     error::DaftResult,
 };
 
-pub fn url_download<S: ToString>(urls: &[S]) -> DaftResult<Vec<u8>> {
+pub fn url_download<S: ToString>(name: &str, urls: &[S]) -> DaftResult<BinaryArray> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -15,53 +15,48 @@ pub fn url_download<S: ToString>(urls: &[S]) -> DaftResult<Vec<u8>> {
         let owned_url: String = url.to_string();
         tokio::spawn(async move {
             match reqwest::get(owned_url).await {
-                Ok(result) => Ok((i, result.bytes().await?)),
-                Err(error) => Err(error),
+                Ok(result) => (i, result.bytes().await),
+                Err(error) => (i, Err(error)),
             }
         })
     }))
     .buffer_unordered(32)
     .map(|f| match f {
-        Ok(Ok((i, bytes))) => Some((i, bytes)),
-        _ => None,
+        Ok((i, Ok(bytes))) => (i, Some(bytes)),
+        Ok((i, Err(err))) => (i, None),
+        Err(err) => panic!("this shouldnt happen"),
     });
 
     let mut results = rt.block_on(async move {
-        // let mut result = vec![];
-
         fetches
-            .filter_map(|b| async move { b })
             .collect::<Vec<_>>()
             .await
-
-        // let _sizes = fetches.map(|b| match b {
-        //     Some((i, bytes)) => {
-        //         result.extend_from_slice(bytes.as_ref());
-        //         bytes.len()
-        //     }
-        //     None => 0,
-        // }).collect::<Vec<_>>().await;
-        // result
     });
 
     results.sort_by_key(|k| k.0);
-    let data = results
-        .iter()
-        .map(|(_, b)| b.as_ref())
-        .collect::<Vec<_>>()
-        .concat();
+    let mut offsets: Vec<i64> = Vec::with_capacity(urls.len() + 1);
+    let data = {
+        let mut to_concat = Vec::with_capacity(urls.len());
 
-    println!("data len: {}", data.len());
-    Ok(data)
+        for (i, b) in results.iter() {
+            match b {
+                Some(b) => {
+                    to_concat.push(b.as_ref());
+                    offsets.push(b.len() as i64 + offsets.last().unwrap());
+                }
+                None => {
+                    offsets.push(*offsets.last().unwrap());
+                }
+            }
+        }
+        to_concat.concat()
+    };
+    BinaryArray::try_from((name, data, offsets))
 }
 
 impl Utf8Array {
     pub fn url_download(&self) -> DaftResult<BinaryArray> {
         let urls = self.as_arrow().values_iter().collect::<Vec<_>>();
-        let _data = url_download(urls.as_slice())?;
-        Ok(BinaryArray::empty(
-            self.name(),
-            &crate::datatypes::DataType::Binary,
-        ))
+        url_download(self.name(), urls.as_slice())
     }
 }
