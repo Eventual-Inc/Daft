@@ -129,7 +129,12 @@ impl<'a> DaftImageBuffer<'a> {
             self.color(),
             image::ImageFormat::from(image_format),
         )
-        .map_err(|e| DaftError::ValueError(format!("Decoding image from bytes failed: {}", e)))?;
+        .map_err(|e| {
+            DaftError::ValueError(format!(
+                "Encoding image into file format {} failed: {}",
+                image_format, e
+            ))
+        })?;
         Ok(writer.into_inner())
     }
 

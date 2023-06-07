@@ -17,9 +17,13 @@ impl Series {
 
     pub fn image_encode(&self, image_format: ImageFormat) -> DaftResult<Series> {
         match self.data_type() {
-            DataType::Image(..) => Ok(self.downcast_logical::<ImageType>()?.encode(image_format)?.into_series()),
+            DataType::Image(..) => Ok(self
+                .downcast_logical::<ImageType>()?
+                .encode(image_format)?
+                .into_series()),
             dtype => Err(DaftError::ValueError(format!(
-                "Decoding in-memory data into images is only supported for binary arrays, but got {}", dtype
+                "Encoding images into bytes is only supported for image arrays, but got {}",
+                dtype
             ))),
         }
     }
