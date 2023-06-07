@@ -608,10 +608,15 @@ impl ImageArray {
         }
     }
     pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
+        let maybe_image = self.as_image_obj(idx);
+
+        match maybe_image {
+            None => "None".to_string(),
+            Some(image) => {
+                let _thumb = image.thumbnail(128, 128);
+                "todo".to_string()
+            }
+        }
     }
 }
 
