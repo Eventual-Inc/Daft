@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import io
+import pathlib
 
 import pyarrow as pa
 import pyarrow.parquet as papq
@@ -11,6 +12,22 @@ import daft
 from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.table import Table, schema_inference, table_io
+
+
+def test_read_input(tmpdir):
+    tmpdir = pathlib.Path(tmpdir)
+    data = pa.Table.from_pydict({"foo": [1, 2, 3]})
+    with open(tmpdir / "file.parquet", "wb") as f:
+        papq.write_table(data, f)
+
+    schema = Schema._from_field_name_and_types([("foo", DataType.int64())])
+
+    # Test pathlib, str and IO
+    assert table_io.read_parquet(tmpdir / "file.parquet", schema=schema).to_arrow() == data
+    assert table_io.read_parquet(str(tmpdir / "file.parquet"), schema=schema).to_arrow() == data
+
+    with open(tmpdir / "file.parquet", "rb") as f:
+        assert table_io.read_parquet(f, schema=schema).to_arrow() == data
 
 
 def _parquet_write_helper(data: pa.Table):

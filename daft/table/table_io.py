@@ -77,6 +77,7 @@ def read_json(
 
 def read_parquet(
     file: FileInput,
+    schema: Schema,
     fs: fsspec.AbstractFileSystem | None = None,
     read_options: TableReadOptions = TableReadOptions(),
 ) -> Table:

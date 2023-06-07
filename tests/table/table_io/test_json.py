@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import pathlib
 from typing import Any
 
 import pytest
@@ -10,6 +11,24 @@ import daft
 from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.table import Table, schema_inference, table_io
+
+
+def test_read_input(tmpdir):
+    tmpdir = pathlib.Path(tmpdir)
+    data = {"foo": [1, 2, 3]}
+    with open(tmpdir / "file.json", "w") as f:
+        for i in range(1, 4):
+            json.dump({"foo": i}, f)
+            f.write("\n")
+
+    schema = Schema._from_field_name_and_types([("foo", DataType.int64())])
+
+    # Test pathlib, str and IO
+    assert table_io.read_json(tmpdir / "file.json", schema=schema).to_pydict() == data
+    assert table_io.read_json(str(tmpdir / "file.json"), schema=schema).to_pydict() == data
+
+    with open(tmpdir / "file.json", "rb") as f:
+        assert table_io.read_json(f, schema=schema).to_pydict() == data
 
 
 def _json_write_helper(data: dict[str, list[Any]]):

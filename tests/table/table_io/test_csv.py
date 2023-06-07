@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import pathlib
 
 import pytest
 
@@ -9,6 +10,25 @@ import daft
 from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.table import Table, schema_inference, table_io
+
+
+def test_read_input(tmpdir):
+    tmpdir = pathlib.Path(tmpdir)
+    data = {"foo": [1, 2, 3]}
+    with open(tmpdir / "file.csv", "w") as f:
+        f.write("foo\n")
+        f.write("1\n")
+        f.write("2\n")
+        f.write("3\n")
+
+    schema = Schema._from_field_name_and_types([("foo", DataType.int64())])
+
+    # Test pathlib, str and IO
+    assert table_io.read_csv(tmpdir / "file.csv", schema=schema).to_pydict() == data
+    assert table_io.read_csv(str(tmpdir / "file.csv"), schema=schema).to_pydict() == data
+
+    with open(tmpdir / "file.csv", "rb") as f:
+        assert table_io.read_csv(f, schema=schema).to_pydict() == data
 
 
 def _csv_write_helper(header: list[str] | None, data: list[list[str | None]]):
