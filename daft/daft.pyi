@@ -48,4 +48,26 @@ class ImageMode(Enum):
         """
         ...
 
+class ImageFormat(Enum):
+    """
+    Supported image formats for Daft's image I/O.
+    """
+
+    PNG: int
+
+    JPEG: int
+
+    TIFF: int
+
+    GIF: int
+
+    BMP: int
+
+    @staticmethod
+    def from_format_string(mode: str) -> ImageFormat:
+        """
+        Create an ImageFormat from its string representation.
+        """
+        ...
+
 def __getattr__(name) -> Any: ...

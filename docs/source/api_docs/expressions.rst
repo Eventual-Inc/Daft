@@ -158,6 +158,7 @@ Example: ``e.image.resize()``
     daft.expressions.Expression.image
     daft.expressions.expressions.ExpressionImageNamespace.resize
     daft.expressions.expressions.ExpressionImageNamespace.decode
+    daft.expressions.expressions.ExpressionImageNamespace.encode
 
 
 Changing Column Names/Types

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+
 import numpy as np
 from PIL import Image
 
@@ -71,3 +73,25 @@ def test_image_decode() -> None:
     target_dtype = DataType.image()
     assert df.schema()["image"].dtype == target_dtype
     df.collect()
+
+
+def test_image_encode() -> None:
+    file_format = "png"
+    mode = "RGB"
+    np_dtype = np.uint8
+    shape = (4, 4, 3)
+    arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+    arrs = [arr, arr, arr]
+
+    s = Series.from_pylist(arrs, pyobj="force")
+
+    df = daft.from_pydict({"img": s}).into_partitions(2)
+    target_dtype = DataType.image(mode)
+    df = df.select(df["img"].cast(target_dtype))
+    assert df.schema()["img"].dtype == target_dtype
+
+    df = df.with_column("encoded", df["img"].image.encode(file_format))
+    assert df.schema()["encoded"].dtype == DataType.binary()
+
+    pil_decoded_imgs = [np.asarray(Image.open(io.BytesIO(bytes_))) for bytes_ in df.to_pydict()["encoded"]]
+    np.testing.assert_equal(pil_decoded_imgs, arrs)

@@ -133,6 +133,11 @@ Computer Vision
 
     ImageMode
 
+.. autosummary::
+    :nosignatures:
+
+    ImageFormat
+
 
 Miscellaneous
 ^^^^^^^^^^^^^
@@ -145,4 +150,5 @@ Miscellaneous
 .. toctree::
     :hidden:
 
+    datetype_image_format/daft.ImageFormat
     datatype_image_mode/daft.ImageMode

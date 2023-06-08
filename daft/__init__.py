@@ -76,6 +76,7 @@ from daft.convert import (
     from_pylist,
     from_ray_dataset,
 )
+from daft.daft import ImageFormat
 from daft.dataframe import DataFrame
 from daft.datatype import DataType, ImageMode
 from daft.expressions import col, lit
@@ -99,6 +100,7 @@ __all__ = [
     "col",
     "DataType",
     "ImageMode",
+    "ImageFormat",
     "lit",
     "Series",
     "register_viz_hook",
