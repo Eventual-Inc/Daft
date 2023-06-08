@@ -1,12 +1,13 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import fsspec
 
 from daft.api_annotations import PublicAPI
 from daft.dataframe import DataFrame
 from daft.datasources import CSVSourceInfo
+from daft.datatype import DataType
 from daft.io.common import _get_tabular_files_scan
 from daft.runners.partitioning import vPartitionSchemaInferenceOptions
 
@@ -14,6 +15,7 @@ from daft.runners.partitioning import vPartitionSchemaInferenceOptions
 @PublicAPI
 def read_csv(
     path: str,
+    schema_hints: Optional[Dict[str, DataType]] = None,
     fs: Optional[fsspec.AbstractFileSystem] = None,
     has_headers: bool = True,
     column_names: Optional[List[str]] = None,
@@ -29,6 +31,8 @@ def read_csv(
 
     Args:
         path (str): Path to CSV (allows for wildcards)
+        schema_hints (dict[str, DataType]): A mapping between column names and datatypes - passing this option will
+            disable all schema inference on data being read, and throw an error if data being read is incompatible.
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
         has_headers (bool): Whether the CSV has a header or not, defaults to True
@@ -40,6 +44,7 @@ def read_csv(
     """
     plan = _get_tabular_files_scan(
         path,
+        schema_hints,
         CSVSourceInfo(
             delimiter=delimiter,
             has_headers=has_headers,

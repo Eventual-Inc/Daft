@@ -4,12 +4,22 @@ import fsspec
 
 from daft.context import get_context
 from daft.datasources import SourceInfo
+from daft.datatype import DataType
 from daft.logical import logical_plan
+from daft.logical.schema import Schema
 from daft.runners.partitioning import vPartitionSchemaInferenceOptions
+
+
+def _get_schema_from_hints(hints: dict[str, DataType]) -> Schema:
+    if isinstance(hints, dict):
+        return Schema._from_field_name_and_types([(fname, dtype) for fname, dtype in hints.items()])
+    else:
+        raise NotImplementedError(f"Unsupported schema hints: {type(hints)}")
 
 
 def _get_tabular_files_scan(
     path: str,
+    schema_hints: dict[str, DataType] | None,
     source_info: SourceInfo,
     fs: fsspec.AbstractFileSystem | None,
     schema_inference_options: vPartitionSchemaInferenceOptions,
@@ -19,10 +29,13 @@ def _get_tabular_files_scan(
     runner_io = get_context().runner().runner_io()
     listing_details_partition_set = runner_io.glob_paths_details(path, source_info, fs)
 
-    # TODO: We should have a more sophisticated schema inference mechanism (sample >1 file and resolve schemas across files)
-    # Infer schema from the first filepath in the listings PartitionSet
-    data_schema = runner_io.get_schema_from_first_filepath(
-        listing_details_partition_set, source_info, fs, schema_inference_options
+    # Infer schema if no hints provided
+    inferred_or_provided_schema = (
+        _get_schema_from_hints(schema_hints)
+        if schema_hints is not None
+        else runner_io.get_schema_from_first_filepath(
+            listing_details_partition_set, source_info, fs, schema_inference_options
+        )
     )
 
     # Construct plan
@@ -35,7 +48,7 @@ def _get_tabular_files_scan(
         ),
     )
     return logical_plan.TabularFilesScan(
-        schema=data_schema,
+        schema=inferred_or_provided_schema,
         predicate=None,
         columns=None,
         source_info=source_info,
