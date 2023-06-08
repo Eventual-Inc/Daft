@@ -100,20 +100,22 @@ def read_parquet(
     Returns:
         Table: Parsed Table from Parquet
     """
+    f: IO
     if not isinstance(file, (str, pathlib.Path)):
-        # BytesIO path.
-        return Table.from_arrow(papq.read_table(file, columns=read_options.column_names))
+        f = file
+    else:
+        paths, fs = _resolve_paths_and_filesystem(file, fs)
+        assert len(paths) == 1
+        path = paths[0]
+        f = fs.open_input_file(path)
 
-    paths, fs = _resolve_paths_and_filesystem(file, fs)
-    assert len(paths) == 1
-    path = paths[0]
-    f = fs.open_input_file(path)
-    pqf = papq.ParquetFile(f)
     # If no rows required, we manually construct an empty table with the right schema
     if read_options.num_rows == 0:
+        pqf = papq.ParquetFile(f)
         arrow_schema = pqf.metadata.schema.to_arrow_schema()
         table = pa.Table.from_arrays([pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema)
     elif read_options.num_rows is not None:
+        pqf = papq.ParquetFile(f)
         # Only read the required row groups.
         rows_needed = read_options.num_rows
         for i in range(pqf.metadata.num_row_groups):

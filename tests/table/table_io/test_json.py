@@ -10,6 +10,7 @@ import pytest
 import daft
 from daft.datatype import DataType
 from daft.logical.schema import Schema
+from daft.runners.partitioning import TableReadOptions
 from daft.table import Table, schema_inference, table_io
 
 
@@ -100,4 +101,41 @@ def test_json_read_data(data, expected_data_series):
         }
     )
     table = table_io.read_json(f, schema)
+    assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_json_read_data_limit_rows():
+    f = _json_write_helper(
+        {
+            "id": [1, 2, 3],
+            "data": [1, 2, None],
+        }
+    )
+
+    schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
+    expected = Table.from_pydict(
+        {
+            "id": [1, 2],
+            "data": [1, 2],
+        }
+    )
+    table = table_io.read_json(f, schema, read_options=TableReadOptions(num_rows=2))
+    assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_json_read_data_select_columns():
+    f = _json_write_helper(
+        {
+            "id": [1, 2, 3],
+            "data": [1, 2, None],
+        }
+    )
+
+    schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
+    expected = Table.from_pydict(
+        {
+            "data": [1, 2, None],
+        }
+    )
+    table = table_io.read_json(f, schema, read_options=TableReadOptions(column_names=["data"]))
     assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"

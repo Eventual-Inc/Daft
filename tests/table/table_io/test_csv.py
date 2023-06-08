@@ -65,6 +65,35 @@ def test_csv_infer_schema(data, expected_dtype):
     assert schema == Schema._from_field_name_and_types([("id", DataType.int64()), ("data", expected_dtype)])
 
 
+def test_csv_infer_schema_custom_delimiter():
+    f = _csv_write_helper(
+        header=["id", "data"],
+        data=[
+            ["1", "1"],
+            ["2", "2"],
+            ["3", None],
+        ],
+        delimiter="|",
+    )
+
+    schema = schema_inference.from_csv(f, csv_options=TableParseCSVOptions(delimiter="|"))
+    assert schema == Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
+
+
+def test_csv_infer_schema_no_header():
+    f = _csv_write_helper(
+        header=None,
+        data=[
+            ["1", "1"],
+            ["2", "2"],
+            ["3", None],
+        ],
+    )
+
+    schema = schema_inference.from_csv(f, csv_options=TableParseCSVOptions(header_index=None))
+    assert schema == Schema._from_field_name_and_types([("f0", DataType.int64()), ("f1", DataType.int64())])
+
+
 @pytest.mark.parametrize(
     ["data", "expected_data_series"],
     [
@@ -96,9 +125,58 @@ def test_csv_read_data(data, expected_data_series):
     assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
-def test_csv_read_data_csv_options():
+def test_csv_read_data_csv_limit_rows():
     f = _csv_write_helper(
-        header=None,
+        header=["id", "data"],
+        data=[
+            ["1", "1"],
+            ["2", "2"],
+            ["3", None],
+        ],
+    )
+
+    schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
+    expected = Table.from_pydict(
+        {
+            "id": [1, 2],
+            "data": [1, 2],
+        }
+    )
+    table = table_io.read_csv(
+        f,
+        schema,
+        read_options=TableReadOptions(num_rows=2),
+    )
+    assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_csv_read_data_csv_select_columns():
+    f = _csv_write_helper(
+        header=["id", "data"],
+        data=[
+            ["1", "1"],
+            ["2", "2"],
+            ["3", None],
+        ],
+    )
+
+    schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
+    expected = Table.from_pydict(
+        {
+            "data": [1, 2, None],
+        }
+    )
+    table = table_io.read_csv(
+        f,
+        schema,
+        read_options=TableReadOptions(column_names=["data"]),
+    )
+    assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_csv_read_data_csv_custom_delimiter():
+    f = _csv_write_helper(
+        header=["id", "data"],
         data=[
             ["1", "1"],
             ["2", "2"],
@@ -110,13 +188,38 @@ def test_csv_read_data_csv_options():
     schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
     expected = Table.from_pydict(
         {
-            "data": [1, 2],
+            "id": [1, 2, 3],
+            "data": [1, 2, None],
         }
     )
     table = table_io.read_csv(
         f,
         schema,
-        csv_options=TableParseCSVOptions(header_index=None, delimiter="|"),
-        read_options=TableReadOptions(num_rows=2, column_names=["data"]),
+        csv_options=TableParseCSVOptions(delimiter="|"),
+    )
+    assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_csv_read_data_csv_no_header():
+    f = _csv_write_helper(
+        header=None,
+        data=[
+            ["1", "1"],
+            ["2", "2"],
+            ["3", None],
+        ],
+    )
+
+    schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
+    expected = Table.from_pydict(
+        {
+            "id": [1, 2, 3],
+            "data": [1, 2, None],
+        }
+    )
+    table = table_io.read_csv(
+        f,
+        schema,
+        csv_options=TableParseCSVOptions(header_index=None),
     )
     assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"

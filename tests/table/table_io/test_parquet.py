@@ -11,6 +11,7 @@ import pytest
 import daft
 from daft.datatype import DataType
 from daft.logical.schema import Schema
+from daft.runners.partitioning import TableReadOptions
 from daft.table import Table, schema_inference, table_io
 
 
@@ -30,9 +31,9 @@ def test_read_input(tmpdir):
         assert table_io.read_parquet(f, schema=schema).to_arrow() == data
 
 
-def _parquet_write_helper(data: pa.Table):
+def _parquet_write_helper(data: pa.Table, row_group_size: int = None):
     f = io.BytesIO()
-    papq.write_table(data, f)
+    papq.write_table(data, f, row_group_size=row_group_size)
     f.seek(0)
     return f
 
@@ -102,4 +103,47 @@ def test_parquet_read_data(data, expected_data_series):
         }
     )
     table = table_io.read_parquet(f, schema)
+    assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+@pytest.mark.parametrize("row_group_size", [None, 1, 3])
+def test_parquet_read_data_limit_rows(row_group_size):
+    f = _parquet_write_helper(
+        pa.Table.from_pydict(
+            {
+                "id": [1, 2, 3],
+                "data": [1, 2, None],
+            }
+        ),
+        row_group_size=row_group_size,
+    )
+
+    schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
+    expected = Table.from_pydict(
+        {
+            "id": [1, 2],
+            "data": [1, 2],
+        }
+    )
+    table = table_io.read_parquet(f, schema, read_options=TableReadOptions(num_rows=2))
+    assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_parquet_read_data_select_columns():
+    f = _parquet_write_helper(
+        pa.Table.from_pydict(
+            {
+                "id": [1, 2, 3],
+                "data": [1, 2, None],
+            }
+        )
+    )
+
+    schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
+    expected = Table.from_pydict(
+        {
+            "data": [1, 2, None],
+        }
+    )
+    table = table_io.read_parquet(f, schema, read_options=TableReadOptions(column_names=["data"]))
     assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
