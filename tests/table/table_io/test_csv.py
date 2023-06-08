@@ -9,6 +9,7 @@ import pytest
 import daft
 from daft.datatype import DataType
 from daft.logical.schema import Schema
+from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
 from daft.table import Table, schema_inference, table_io
 
 
@@ -31,9 +32,9 @@ def test_read_input(tmpdir):
         assert table_io.read_csv(f, schema=schema).to_pydict() == data
 
 
-def _csv_write_helper(header: list[str] | None, data: list[list[str | None]]):
+def _csv_write_helper(header: list[str] | None, data: list[list[str | None]], delimiter: str = ","):
     f = io.StringIO()
-    writer = csv.writer(f, delimiter=",")
+    writer = csv.writer(f, delimiter=delimiter)
     if header is not None:
         writer.writerow(header)
     writer.writerows(data)
@@ -92,4 +93,30 @@ def test_csv_read_data(data, expected_data_series):
         }
     )
     table = table_io.read_csv(f, schema)
+    assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_csv_read_data_csv_options():
+    f = _csv_write_helper(
+        header=None,
+        data=[
+            ["1", "1"],
+            ["2", "2"],
+            ["3", None],
+        ],
+        delimiter="|",
+    )
+
+    schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
+    expected = Table.from_pydict(
+        {
+            "data": [1, 2],
+        }
+    )
+    table = table_io.read_csv(
+        f,
+        schema,
+        csv_options=TableParseCSVOptions(header_index=None, delimiter="|"),
+        read_options=TableReadOptions(num_rows=2, column_names=["data"]),
+    )
     assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
