@@ -695,6 +695,8 @@ class ExpressionImageNamespace(ExpressionNamespace):
         """
         if isinstance(image_format, str):
             image_format = ImageFormat.from_format_string(image_format.upper())
+        if not isinstance(image_format, ImageFormat):
+            raise ValueError(f"image_format must be a string or ImageFormat variant, but got: {image_format}")
         return Expression._from_pyexpr(self._expr.image_encode(image_format))
 
     def resize(self, w: int, h: int) -> Expression:
