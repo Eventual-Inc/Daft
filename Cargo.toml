@@ -1,4 +1,5 @@
 [dependencies]
+base64 = "0.21.2"
 dyn-clone = "1.0.11"
 fnv = "1.0.7"
 html-escape = "0.2.13"
