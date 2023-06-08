@@ -1,4 +1,4 @@
-use crate::datatypes::{FixedSizeListArray, ListArray, UInt64Array};
+use crate::datatypes::{FixedSizeListArray, ListArray, UInt64Array, Utf8Array};
 
 use crate::series::Series;
 
@@ -8,6 +8,32 @@ use arrow2::array::Array;
 use crate::error::DaftResult;
 
 use super::as_arrow::AsArrow;
+
+fn join_arrow_list_of_utf8s(
+    list_element: Option<Box<dyn arrow2::array::Array>>,
+    delimiter_str: &str,
+) -> Option<String> {
+    list_element
+        .map(|list_element| {
+            list_element
+                .as_any()
+                .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+                .unwrap()
+                .iter()
+                .fold(String::from(""), |acc, str_item| {
+                    acc + str_item.unwrap_or("") + delimiter_str
+                })
+            // Remove trailing `delimiter_str`
+        })
+        .map(|result| {
+            let result_len = result.len();
+            if result_len > 0 {
+                result[..result_len - delimiter_str.len()].to_string()
+            } else {
+                result
+            }
+        })
+}
 
 impl ListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {
@@ -57,6 +83,37 @@ impl ListArray {
 
         Series::try_from((self.field.name.as_ref(), growable.as_box()))
     }
+
+    pub fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
+        let list_array = self.as_arrow();
+        assert_eq!(
+            list_array.values().data_type(),
+            &arrow2::datatypes::DataType::LargeUtf8
+        );
+
+        if delimiter.len() == 1 {
+            let delimiter_str = delimiter.get(0).unwrap();
+            let result = list_array
+                .iter()
+                .map(|list_element| join_arrow_list_of_utf8s(list_element, delimiter_str));
+            Ok(Utf8Array::from((
+                self.name(),
+                Box::new(arrow2::array::Utf8Array::from_iter(result)),
+            )))
+        } else {
+            assert_eq!(delimiter.len(), self.len());
+            let result = list_array.iter().zip(delimiter.as_arrow().iter()).map(
+                |(list_element, delimiter_element)| {
+                    let delimiter_str = delimiter_element.unwrap_or("");
+                    join_arrow_list_of_utf8s(list_element, delimiter_str)
+                },
+            );
+            Ok(Utf8Array::from((
+                self.name(),
+                Box::new(arrow2::array::Utf8Array::from_iter(result)),
+            )))
+        }
+    }
 }
 
 impl FixedSizeListArray {
@@ -97,5 +154,36 @@ impl FixedSizeListArray {
             }
         }
         Series::try_from((self.field.name.as_ref(), growable.as_box()))
+    }
+
+    pub fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
+        let list_array = self.as_arrow();
+        assert_eq!(
+            list_array.values().data_type(),
+            &arrow2::datatypes::DataType::LargeUtf8
+        );
+
+        if delimiter.len() == 1 {
+            let delimiter_str = delimiter.get(0).unwrap();
+            let result = list_array
+                .iter()
+                .map(|list_element| join_arrow_list_of_utf8s(list_element, delimiter_str));
+            Ok(Utf8Array::from((
+                self.name(),
+                Box::new(arrow2::array::Utf8Array::from_iter(result)),
+            )))
+        } else {
+            assert_eq!(delimiter.len(), self.len());
+            let result = list_array.iter().zip(delimiter.as_arrow().iter()).map(
+                |(list_element, delimiter_element)| {
+                    let delimiter_str = delimiter_element.unwrap_or("");
+                    join_arrow_list_of_utf8s(list_element, delimiter_str)
+                },
+            );
+            Ok(Utf8Array::from((
+                self.name(),
+                Box::new(arrow2::array::Utf8Array::from_iter(result)),
+            )))
+        }
     }
 }

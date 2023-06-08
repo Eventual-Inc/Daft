@@ -336,6 +336,11 @@ impl PyExpr {
         use dsl::functions::image::resize;
         Ok(resize(&self.expr, w as u32, h as u32).into())
     }
+
+    pub fn list_join(&self, delimiter: &Self) -> PyResult<Self> {
+        use dsl::functions::list::join;
+        Ok(join(&self.expr, &delimiter.expr).into())
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

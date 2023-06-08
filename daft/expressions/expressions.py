@@ -84,6 +84,11 @@ class Expression:
         return ExpressionUrlNamespace.from_expression(self)
 
     @property
+    def list(self) -> ExpressionListNamespace:
+        """Access methods that work on columns of lists"""
+        return ExpressionListNamespace.from_expression(self)
+
+    @property
     def image(self) -> ExpressionImageNamespace:
         """Access methods that work on columns of images"""
         return ExpressionImageNamespace.from_expression(self)
@@ -102,7 +107,7 @@ class Expression:
             return lit(obj)
 
     @staticmethod
-    def udf(func: Callable, expressions: list[Expression], return_dtype: DataType) -> Expression:
+    def udf(func: Callable, expressions: builtins.list[Expression], return_dtype: DataType) -> Expression:
         return Expression._from_pyexpr(_udf(func, [e._expr for e in expressions], return_dtype._dtype))
 
     def __bool__(self) -> bool:
@@ -560,6 +565,20 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: an UInt64 expression with the length of each string
         """
         return Expression._from_pyexpr(self._expr.utf8_length())
+
+
+class ExpressionListNamespace(ExpressionNamespace):
+    def join(self, delimiter: str | Expression) -> Expression:
+        """Joins every element of a list using the specified string delimiter
+
+        Args:
+            delimiter (str | Expression): the delimiter to use to join lists with
+
+        Returns:
+            Expression: a String expression which is every element of the list joined on the delimiter
+        """
+        delimiter_expr = Expression._to_expression(delimiter)
+        return Expression._from_pyexpr(self._expr.list_join(delimiter_expr._expr))
 
 
 class ExpressionsProjection(Iterable[Expression]):

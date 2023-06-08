@@ -1,5 +1,5 @@
 use crate::array::ops::as_arrow::AsArrow;
-use crate::datatypes::{DataType, UInt64Array};
+use crate::datatypes::{DataType, UInt64Array, Utf8Array};
 use crate::error::DaftError;
 use crate::{error::DaftResult, series::Series};
 
@@ -45,6 +45,17 @@ impl Series {
             }
             dt => Err(DaftError::TypeError(format!(
                 "lengths not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
+        match self.data_type() {
+            DataType::List(_) => self.list()?.join(delimiter),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.join(delimiter),
+            dt => Err(DaftError::TypeError(format!(
+                "Join not implemented for {}",
                 dt
             ))),
         }
