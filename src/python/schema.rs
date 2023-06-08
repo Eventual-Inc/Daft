@@ -88,6 +88,10 @@ impl PySchema {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.schema))
     }
+
+    pub fn _repr_html_(&self) -> PyResult<String> {
+        Ok(self.schema.repr_html())
+    }
 }
 
 impl From<schema::SchemaRef> for PySchema {
