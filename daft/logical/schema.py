@@ -62,6 +62,12 @@ class Schema:
         s._schema = _PySchema.from_field_name_and_types([(name, dtype._dtype) for name, dtype in fields])
         return s
 
+    @classmethod
+    def _from_fields(self, fields: list[Field]) -> Schema:
+        s = Schema.__new__(Schema)
+        s._schema = _PySchema.from_fields([f._field for f in fields])
+        return s
+
     def __getitem__(self, key: str) -> Field:
         assert isinstance(key, str), f"Expected str for key, but received: {type(key)}"
         if key not in self._schema.names():

@@ -7,6 +7,7 @@ from daft.datasources import (
     StorageType,
 )
 from daft.logical.logical_plan import FileWrite, TabularFilesScan
+from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
 from daft.table import Table, table_io
 
@@ -38,7 +39,7 @@ class LogicalPartitionOpRunner:
 
         if scan._source_info.scan_type() == StorageType.CSV:
             assert isinstance(scan._source_info, CSVSourceInfo)
-            return Table.concat(
+            table = Table.concat(
                 [
                     table_io.read_csv(
                         file=fp,
@@ -55,7 +56,7 @@ class LogicalPartitionOpRunner:
             )
         elif scan._source_info.scan_type() == StorageType.JSON:
             assert isinstance(scan._source_info, JSONSourceInfo)
-            return Table.concat(
+            table = Table.concat(
                 [
                     table_io.read_json(
                         file=fp,
@@ -68,7 +69,7 @@ class LogicalPartitionOpRunner:
             )
         elif scan._source_info.scan_type() == StorageType.PARQUET:
             assert isinstance(scan._source_info, ParquetSourceInfo)
-            return Table.concat(
+            table = Table.concat(
                 [
                     table_io.read_parquet(
                         file=fp,
@@ -81,6 +82,16 @@ class LogicalPartitionOpRunner:
             )
         else:
             raise NotImplementedError(f"PyRunner has not implemented scan: {scan._source_info.scan_type()}")
+
+        expected_schema = (
+            Schema._from_fields([schema[name] for name in read_options.column_names])
+            if read_options.column_names is not None
+            else schema
+        )
+        assert (
+            table.schema() == expected_schema
+        ), f"Expected table to have schema:\n{expected_schema}\n\nReceived instead:\n{table.schema()}"
+        return table
 
     def _handle_file_write(self, inputs: dict[int, Table], file_write: FileWrite) -> Table:
         child_id = file_write._children()[0].id()

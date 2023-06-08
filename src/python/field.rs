@@ -8,6 +8,7 @@ use super::datatype::PyDataType;
 use crate::datatypes::{self, DataType, Field};
 
 #[pyclass]
+#[derive(Clone)]
 pub struct PyField {
     pub field: datatypes::Field,
 }

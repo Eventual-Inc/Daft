@@ -49,7 +49,13 @@ def _cast_table_to_schema(table: Table, read_options: TableReadOptions, schema: 
     This helper function takes care of all that, ensuring that the resulting Table has all column types matching
     their corresponding dtype in `schema`, and column ordering/inclusion matches `read_options.column_names` (if provided).
     """
-    # TODO(jaychia): Currently a no-op
+    pruned_schema = schema
+
+    # If reading only a subset of fields, prune the schema
+    if read_options.column_names is not None:
+        pruned_schema = Schema._from_fields([schema[name] for name in read_options.column_names])
+
+    table = table.cast_to_schema(pruned_schema)
     return table
 
 

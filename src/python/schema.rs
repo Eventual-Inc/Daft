@@ -64,6 +64,13 @@ impl PySchema {
         })
     }
 
+    #[staticmethod]
+    pub fn from_fields(fields: Vec<PyField>) -> PyResult<PySchema> {
+        Ok(PySchema {
+            schema: schema::Schema::new(fields.iter().map(|f| f.field.clone()).collect())?.into(),
+        })
+    }
+
     pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
