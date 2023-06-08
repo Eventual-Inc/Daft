@@ -436,6 +436,58 @@ def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]
         assert len(pd_df) == len(valid_data)
 
 
+def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]]) -> None:
+    with tempfile.NamedTemporaryFile("w") as f:
+        header = list(valid_data[0].keys())
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerow(header)
+        writer.writerows([[item[col] for col in header] for item in valid_data])
+        f.flush()
+
+        df = daft.read_csv(
+            f.name,
+            delimiter="\t",
+            schema_hints={
+                "sepal_length": DataType.float32(),
+                "sepal_width": DataType.float32(),
+                "petal_length": DataType.float32(),
+                "petal_width": DataType.float32(),
+                "variety": DataType.string(),
+            },
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data)
+
+
+def test_create_dataframe_csv_specify_schema_no_headers(valid_data: list[dict[str, float]]) -> None:
+    with tempfile.NamedTemporaryFile("w") as f:
+        header = list(valid_data[0].keys())
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerows([[item[col] for col in header] for item in valid_data])
+        f.flush()
+
+        df = daft.read_csv(
+            f.name,
+            delimiter="\t",
+            schema_hints={
+                "sepal_length": DataType.float64(),
+                "sepal_width": DataType.float64(),
+                "petal_length": DataType.float64(),
+                "petal_width": DataType.float64(),
+                "variety": DataType.string(),
+            },
+            has_headers=False,
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data)
+
+
 ###
 # JSON tests
 ###
@@ -512,6 +564,30 @@ def test_create_dataframe_json_https() -> None:
     assert len(df) == 10000
 
 
+def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]) -> None:
+    with tempfile.NamedTemporaryFile("w") as f:
+        for data in valid_data:
+            f.write(json.dumps(data))
+            f.write("\n")
+        f.flush()
+
+        df = daft.read_json(
+            f.name,
+            schema_hints={
+                "sepal_length": DataType.float32(),
+                "sepal_width": DataType.float32(),
+                "petal_length": DataType.float32(),
+                "petal_width": DataType.float32(),
+                "variety": DataType.string(),
+            },
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data)
+
+
 ###
 # Parquet tests
 ###
@@ -575,4 +651,27 @@ def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, f
 
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == col_subset
+        assert len(pd_df) == len(valid_data)
+
+
+def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, float]]) -> None:
+    with tempfile.NamedTemporaryFile("w") as f:
+        table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+        papq.write_table(table, f.name)
+        f.flush()
+
+        df = daft.read_parquet(
+            f.name,
+            schema_hints={
+                "sepal_length": DataType.float32(),
+                "sepal_width": DataType.float32(),
+                "petal_length": DataType.float32(),
+                "petal_width": DataType.float32(),
+                "variety": DataType.string(),
+            },
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
         assert len(pd_df) == len(valid_data)
