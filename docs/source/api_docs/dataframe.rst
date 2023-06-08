@@ -69,6 +69,7 @@ Combining
     :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.join
+    daft.DataFrane.concat
 
 .. _df-aggregations:
 
