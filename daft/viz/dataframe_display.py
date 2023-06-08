@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from daft.dataframe.preview import DataFramePreview
 from daft.logical.schema import Schema
-from daft.viz.repr import vpartition_repr_html
 
 HAS_PILLOW = False
 try:
@@ -37,14 +36,17 @@ class DataFrameDisplay:
         return f"(Showing first {min(self.num_rows, len(self.preview.preview_partition))} of {self.preview.dataframe_num_rows} rows)"
 
     def _repr_html_(self) -> str:
-        return vpartition_repr_html(
-            self.preview.preview_partition,
-            self.schema,
-            self.num_rows,
-            self._get_user_message(),
-            max_col_width=self.column_char_width,
-            max_lines=self.max_col_rows,
-        )
+        if len(self.schema) == 0:
+            return "<small>(No data to display: Dataframe has no columns)</small>"
+
+        if self.preview.preview_partition is not None:
+            res = self.preview.preview_partition._repr_html_()
+        else:
+            res = self.schema._repr_html_()
+
+        res += f"<small>{self._get_user_message()}</small>"
+
+        return res
 
     def __repr__(self) -> str:
         if len(self.schema) == 0:
