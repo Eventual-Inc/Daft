@@ -43,10 +43,8 @@ def from_csv(
             parse_options=pacsv.ParseOptions(
                 delimiter=csv_options.delimiter,
             ),
-            # First skip_rows is applied, then header row is read if column_names is None, then skip_rows_after_names is applied
             read_options=pacsv.ReadOptions(
                 autogenerate_column_names=pyarrow_autogenerate_column_names,
-                skip_rows=csv_options.header_index,
             ),
         )
 
