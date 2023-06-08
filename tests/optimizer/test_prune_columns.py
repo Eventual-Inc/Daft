@@ -5,7 +5,7 @@ import pytest
 import daft
 from daft import col
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
-from daft.logical.logical_plan import LogicalPlan
+from daft.logical.logical_plan import Concat, LogicalPlan
 from daft.logical.optimizer import PruneColumns
 from tests.optimizer.conftest import assert_plan_eq
 
@@ -133,6 +133,20 @@ def test_projection_join_pruning(
         .select(*left_selection_final, *right_selection_final, *key_selection_final)
     )
     assert_plan_eq(optimizer(df_unoptimized.plan()), df_optimized.plan())
+
+
+def test_projection_concat_pruning(valid_data, optimizer):
+    df1 = daft.from_pylist(valid_data)
+    df2 = daft.from_pylist(valid_data)
+    concatted = df1.concat(df2)
+
+    selected = concatted.select("sepal_length")
+    optimized = optimizer(selected.plan())
+
+    expected = df1.select(col("sepal_length")).concat(df2.select(col("sepal_length")))
+    assert isinstance(optimized, Concat)
+    assert isinstance(expected.plan(), Concat)
+    assert_plan_eq(optimized, expected.plan())
 
 
 @pytest.mark.parametrize(
