@@ -1,11 +1,11 @@
-use html_escape;
+use base64::Engine;
 
 use crate::{
     array::DataArray,
     datatypes::{
         logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray},
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
-        FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
+        FixedSizeListArray, ImageFormat, ListArray, NullArray, StructArray, Utf8Array,
     },
     error::DaftResult,
 };
@@ -609,12 +609,19 @@ impl ImageArray {
     }
     pub fn html_value(&self, idx: usize) -> String {
         let maybe_image = self.as_image_obj(idx);
+        let str_val = self.str_value(idx).unwrap();
 
         match maybe_image {
             None => "None".to_string(),
             Some(image) => {
-                let _thumb = image.thumbnail(128, 128);
-                "todo".to_string()
+                let thumb = image.fit_to(128, 128);
+                let mut bytes: Vec<u8> = vec![];
+                thumb.encode(ImageFormat::JPEG, &mut bytes).unwrap();
+                format!(
+                    "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+                    base64::engine::general_purpose::STANDARD.encode(&bytes),
+                    str_val,
+                )
             }
         }
     }

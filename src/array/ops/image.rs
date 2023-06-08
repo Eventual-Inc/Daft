@@ -97,29 +97,6 @@ impl<'a> DaftImageBuffer<'a> {
             .map_err(|e| DaftError::ValueError(format!("Decoding image from bytes failed: {}", e)))
     }
 
-    pub fn thumbnail(&self, w: u32, h: u32) -> Self {
-        use DaftImageBuffer::*;
-        match self {
-            L(imgbuf) => {
-                let result = image::imageops::thumbnail(imgbuf, w, h);
-                DaftImageBuffer::L(image_buffer_vec_to_cow(result))
-            }
-            LA(imgbuf) => {
-                let result = image::imageops::thumbnail(imgbuf, w, h);
-                DaftImageBuffer::LA(image_buffer_vec_to_cow(result))
-            }
-            RGB(imgbuf) => {
-                let result = image::imageops::thumbnail(imgbuf, w, h);
-                DaftImageBuffer::RGB(image_buffer_vec_to_cow(result))
-            }
-            RGBA(imgbuf) => {
-                let result = image::imageops::thumbnail(imgbuf, w, h);
-                DaftImageBuffer::RGBA(image_buffer_vec_to_cow(result))
-            }
-            _ => unimplemented!("Mode {self:?} not implemented"),
-        }
-    }
-
     pub fn encode(&self, image_format: ImageFormat, out: &mut Vec<u8>) -> DaftResult<()> {
         let mut writer = std::io::BufWriter::new(std::io::Cursor::new(out));
         image::write_buffer_with_format(
@@ -142,6 +119,19 @@ impl<'a> DaftImageBuffer<'a> {
                 image_format, e
             ))
         })
+    }
+
+    pub fn fit_to(&self, w: u32, h: u32) -> Self {
+        // Preserving aspect ratio, resize an image to fit within the specified dimensions.
+        let scale_factor = {
+            let width_scale = w as f64 / self.width() as f64;
+            let height_scale = h as f64 / self.height() as f64;
+            width_scale.min(height_scale)
+        };
+        let new_w = self.width() as f64 * scale_factor;
+        let new_h = self.height() as f64 * scale_factor;
+
+        self.resize(new_w.floor() as u32, new_h.floor() as u32)
     }
 
     pub fn resize(&self, w: u32, h: u32) -> Self {
