@@ -117,6 +117,10 @@ impl PyTable {
         Ok(format!("{}", self.table))
     }
 
+    pub fn _repr_html_(&self) -> PyResult<String> {
+        Ok(self.table.repr_html())
+    }
+
     pub fn head(&self, py: Python, num: i64) -> PyResult<Self> {
         if num < 0 {
             return Err(PyValueError::new_err(format!(
