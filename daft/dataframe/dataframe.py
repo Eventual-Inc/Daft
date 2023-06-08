@@ -683,6 +683,28 @@ class DataFrame:
         return DataFrame(join_op)
 
     @DataframePublicAPI
+    def concat(self, other: "DataFrame") -> "DataFrame":
+        """Concatenates two DataFrames together in a "vertical" concatenation. The resulting DataFrame
+        has number of rows equal to the sum of the number of rows of the input DataFrames.
+
+        .. NOTE::
+            DataFrames being concatenated **must have exactly the same schema**. You may wish to use the
+            :meth:`df.select() <daft.DataFrame.select>` and :meth:`expr.cast() <daft.Expression.cast>` methods
+            to ensure schema compatibility before concatenation.
+
+        Args:
+            other (DataFrame): other DataFrame to concatenate
+
+        Returns:
+            DataFrame: DataFrame with rows from `self` on top and rows from `other` at the bottom.
+        """
+        if self.schema() != other.schema():
+            raise ValueError(
+                f"DataFrames must have exactly the same schema for concatenation! Expected:\n{self.schema()}\n\nReceived:\n{other.schema()}"
+            )
+        return DataFrame(logical_plan.Concat(self._plan, other._plan))
+
+    @DataframePublicAPI
     def drop_nan(self, *cols: ColumnInputType):
         """drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.

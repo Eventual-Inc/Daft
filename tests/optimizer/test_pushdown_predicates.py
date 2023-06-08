@@ -5,7 +5,7 @@ import pytest
 import daft
 from daft.expressions import ExpressionsProjection, col
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
-from daft.logical.logical_plan import Filter, Join, LogicalPlan
+from daft.logical.logical_plan import Concat, Filter, Join, LogicalPlan
 from daft.logical.optimizer import PushDownPredicates
 from tests.optimizer.conftest import assert_plan_eq
 
@@ -197,4 +197,17 @@ def test_filter_join_partial_predicate_pushdown(valid_data: list[dict[str, float
     )
     assert isinstance(optimized, Filter)
     assert isinstance(expected.plan(), Filter)
+    assert_plan_eq(optimized, expected.plan())
+
+
+def test_filter_concat_predicate_pushdown(valid_data, optimizer) -> None:
+    df1 = daft.from_pylist(valid_data)
+    df2 = daft.from_pylist(valid_data)
+    concatted = df1.concat(df2)
+    filtered = concatted.where(col("sepal_length") > 4.8)
+    optimized = optimizer(filtered.plan())
+
+    expected = df1.where(col("sepal_length") > 4.8).concat(df2.where(col("sepal_length") > 4.8))
+    assert isinstance(optimized, Concat)
+    assert isinstance(expected.plan(), Concat)
     assert_plan_eq(optimized, expected.plan())

@@ -1029,3 +1029,45 @@ class Join(BinaryNode):
             right_on=self._right_on,
             how=self._how,
         )
+
+
+class Concat(BinaryNode):
+    def __init__(self, top: LogicalPlan, bottom: LogicalPlan):
+        assert top.schema() == bottom.schema()
+        self._top = top
+        self._bottom = bottom
+
+        new_partition_spec = PartitionSpec(
+            PartitionScheme.UNKNOWN,
+            num_partitions=(top.partition_spec().num_partitions + bottom.partition_spec().num_partitions),
+            by=None,
+        )
+
+        super().__init__(top.schema(), partition_spec=new_partition_spec, op_level=OpLevel.GLOBAL)
+        self._register_child(self._top)
+        self._register_child(self._bottom)
+
+    def __repr__(self) -> str:
+        return self._repr_helper(num_partitions=self.num_partitions())
+
+    def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
+        assert len(new_children) == 2
+        return Concat(new_children[0], new_children[1])
+
+    def required_columns(self) -> list[set[str]]:
+        return [set(), set()]
+
+    def input_mapping(self) -> list[dict[str, str]]:
+        return [
+            {name: name for name in self._top.schema().column_names()},
+            {name: name for name in self._bottom.schema().column_names()},
+        ]
+
+    def _local_eq(self, other: Any) -> bool:
+        return isinstance(other, Concat) and self.schema() == other.schema()
+
+    def rebuild(self) -> LogicalPlan:
+        return Concat(
+            top=self._children()[0].rebuild(),
+            bottom=self._children()[1].rebuild(),
+        )

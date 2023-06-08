@@ -145,6 +145,12 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
                 join=node,
             )
 
+        elif isinstance(node, logical_plan.Concat):
+            return physical_plan.concat(
+                top_plan=_get_physical_plan(left_child, psets),
+                bottom_plan=_get_physical_plan(right_child, psets),
+            )
+
         else:
             raise NotImplementedError(f"Unsupported plan type {node}")
 

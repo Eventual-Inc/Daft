@@ -135,6 +135,18 @@ def test_projection_join_pruning(
     assert_plan_eq(optimizer(df_unoptimized.plan()), df_optimized.plan())
 
 
+def test_projection_concat_pruning(valid_data, optimizer):
+    df1 = daft.from_pylist(valid_data)
+    df2 = daft.from_pylist(valid_data)
+    concatted = df1.concat(df2)
+
+    selected = concatted.select("sepal_length")
+    optimized = optimizer(selected.plan())
+
+    expected = df1.select(col("sepal_length")).concat(df2.select(col("sepal_length"))).select(col("sepal_length"))
+    assert_plan_eq(optimized, expected.plan())
+
+
 @pytest.mark.parametrize(
     "key_aggregation",
     [pytest.param([], id="KeyAgg:0"), pytest.param([(col("variety").alias("count(variety)"), "count")], id="KeyAgg:1")],

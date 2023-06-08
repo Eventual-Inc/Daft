@@ -214,6 +214,15 @@ def join(
                 return
 
 
+def concat(
+    top_plan: InProgressPhysicalPlan[PartitionT], bottom_plan: InProgressPhysicalPlan[PartitionT]
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Vertical concat of the partitions in `top_plan` and `bottom_plan`"""
+    # Yield steps in order from the top_plan to bottom_plan
+    yield from top_plan
+    yield from bottom_plan
+
+
 def local_limit(
     child_plan: InProgressPhysicalPlan[PartitionT],
     limit: int,

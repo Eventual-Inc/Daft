@@ -7,6 +7,7 @@ from daft.expressions import ExpressionsProjection, col
 from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
     Coalesce,
+    Concat,
     Filter,
     GlobalLimit,
     Join,
@@ -33,6 +34,7 @@ class PushDownPredicates(Rule[LogicalPlan]):
         for op in self._supported_unary_nodes:
             self.register_fn(Filter, op, self._filter_through_unary_node)
         self.register_fn(Filter, Join, self._filter_through_join)
+        self.register_fn(Filter, Concat, self._filter_through_concat)
 
     def _filter_through_projection(self, parent: Filter, child: Projection) -> LogicalPlan | None:
         """Pushes Filter through Projections, only if filter does not rely on any projected columns
@@ -76,6 +78,19 @@ class PushDownPredicates(Rule[LogicalPlan]):
         grandchild = child._children()[0]
         logger.debug(f"Pushing Filter {parent} through {child}")
         return child.copy_with_new_children([Filter(grandchild, parent._predicate)])
+
+    def _filter_through_concat(self, parent: Filter, child: Concat) -> LogicalPlan | None:
+        """Pushes a Filter through a Concat to its left/right children
+
+        Filter-Concat-Bottom-* -> Concat-Filter-Bottom-*
+        Filter-Concat-Top-* -> Concat-Filter-Top-*
+        """
+        top = child._children()[0]
+        bottom = child._children()[1]
+        return Concat(
+            top=Filter(top, parent._predicate),
+            bottom=Filter(bottom, parent._predicate),
+        )
 
     def _filter_through_join(self, parent: Filter, child: Join) -> LogicalPlan | None:
         """Pushes Filter through a Join to its left/right children
