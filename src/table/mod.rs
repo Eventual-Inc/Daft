@@ -434,7 +434,7 @@ impl Table {
         }
 
         // End the body and the table.
-        res.push_str("</tbody></table");
+        res.push_str("</tbody></table>");
 
         res
     }
