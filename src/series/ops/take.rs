@@ -19,4 +19,8 @@ impl Series {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         self.inner.str_value(idx)
     }
+
+    pub fn html_value(&self, idx: usize) -> String {
+        self.inner.html_value(idx)
+    }
 }

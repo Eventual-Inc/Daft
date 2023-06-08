@@ -30,4 +30,5 @@ pub trait SeriesLike: Send + Sync + Any {
     fn slice(&self, start: usize, end: usize) -> DaftResult<Series>;
     fn take(&self, idx: &Series) -> DaftResult<Series>;
     fn str_value(&self, idx: usize) -> DaftResult<String>;
+    fn html_value(&self, idx: usize) -> String;
 }

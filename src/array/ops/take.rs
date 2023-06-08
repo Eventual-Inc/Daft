@@ -1,3 +1,5 @@
+use html_escape;
+
 use crate::{
     array::DataArray,
     datatypes::{
@@ -46,6 +48,13 @@ where
             Some(v) => Ok(format!("{v}")),
         }
     }
+
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
 }
 
 impl Utf8Array {
@@ -80,6 +89,13 @@ impl Utf8Array {
             None => Ok("None".to_string()),
             Some(v) => Ok(v.to_string()),
         }
+    }
+
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
     }
 }
 
@@ -116,6 +132,12 @@ impl BooleanArray {
             Some(v) => Ok(format!("{v}")),
         }
     }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
 }
 
 impl NullArray {
@@ -141,6 +163,12 @@ impl NullArray {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
         Ok("None".to_string())
+    }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
     }
 }
 
@@ -179,6 +207,12 @@ impl BinaryArray {
             Some(v) => Ok(format!("b\"{:?}\"", v)),
         }
     }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
 }
 
 impl ListArray {
@@ -214,6 +248,12 @@ impl ListArray {
             Some(v) => Ok(format!("{v:?}")),
         }
     }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
 }
 
 impl FixedSizeListArray {
@@ -248,6 +288,12 @@ impl FixedSizeListArray {
             None => Ok("None".to_string()),
             Some(v) => Ok(format!("{v:?}")),
         }
+    }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
     }
 }
 
@@ -290,6 +336,12 @@ impl StructArray {
             Some(v) => Ok(format!("{v:?}")),
         }
     }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
 }
 
 impl ExtensionArray {
@@ -324,6 +376,12 @@ impl ExtensionArray {
             None => Ok("None".to_string()),
             Some(v) => Ok(format!("{v:?}")),
         }
+    }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
     }
 }
 
@@ -423,6 +481,12 @@ impl crate::datatypes::PythonArray {
 
         Ok(extracted)
     }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
 }
 
 impl DateArray {
@@ -458,6 +522,12 @@ impl DateArray {
             Some(v) => Ok(format!("{v}")),
         }
     }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
 }
 
 impl EmbeddingArray {
@@ -492,6 +562,12 @@ impl EmbeddingArray {
             None => Ok("None".to_string()),
             Some(v) => Ok(format!("{v:?}")),
         }
+    }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
     }
 }
 
@@ -531,6 +607,17 @@ impl ImageArray {
             Some(v) => Ok(format!("{v:?}")),
         }
     }
+    pub fn html_value(&self, idx: usize) -> String {
+        let maybe_image = self.as_image_obj(idx);
+
+        match maybe_image {
+            None => "None".to_string(),
+            Some(image) => {
+                let _thumb = image.thumbnail(128, 128);
+                "todo".to_string()
+            }
+        }
+    }
 }
 
 impl FixedShapeImageArray {
@@ -565,5 +652,11 @@ impl FixedShapeImageArray {
             None => Ok("None".to_string()),
             Some(v) => Ok(format!("{v:?}")),
         }
+    }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
     }
 }

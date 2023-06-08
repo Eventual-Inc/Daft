@@ -103,6 +103,10 @@ macro_rules! impl_series_like_for_logical_array {
                 self.0.physical.str_value(idx)
             }
 
+            fn html_value(&self, idx: usize) -> String {
+                self.0.physical.html_value(idx)
+            }
+
             fn take(&self, idx: &Series) -> DaftResult<Series> {
                 with_match_integer_daft_types!(idx.data_type(), |$S| {
                     Ok(self.0.take(idx.downcast::<$S>()?)?.into_series())

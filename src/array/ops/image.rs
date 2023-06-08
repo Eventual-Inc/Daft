@@ -94,6 +94,29 @@ impl<'a> DaftImageBuffer<'a> {
             .map_err(|e| DaftError::ValueError(format!("Decoding image from bytes failed: {}", e)))
     }
 
+    pub fn thumbnail(&self, w: u32, h: u32) -> Self {
+        use DaftImageBuffer::*;
+        match self {
+            L(imgbuf) => {
+                let result = image::imageops::thumbnail(imgbuf, w, h);
+                DaftImageBuffer::L(image_buffer_vec_to_cow(result))
+            }
+            LA(imgbuf) => {
+                let result = image::imageops::thumbnail(imgbuf, w, h);
+                DaftImageBuffer::LA(image_buffer_vec_to_cow(result))
+            }
+            RGB(imgbuf) => {
+                let result = image::imageops::thumbnail(imgbuf, w, h);
+                DaftImageBuffer::RGB(image_buffer_vec_to_cow(result))
+            }
+            RGBA(imgbuf) => {
+                let result = image::imageops::thumbnail(imgbuf, w, h);
+                DaftImageBuffer::RGBA(image_buffer_vec_to_cow(result))
+            }
+            _ => unimplemented!("Mode {self:?} not implemented"),
+        }
+    }
+
     pub fn resize(&self, w: u32, h: u32) -> Self {
         use DaftImageBuffer::*;
         match self {

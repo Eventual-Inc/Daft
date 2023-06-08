@@ -1,6 +1,7 @@
 [dependencies]
 dyn-clone = "1.0.11"
 fnv = "1.0.7"
+html-escape = "0.2.13"
 ndarray = "0.15.6"
 num-derive = "0.3.3"
 prettytable-rs = "^0.10"

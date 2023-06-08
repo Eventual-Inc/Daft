@@ -60,6 +60,9 @@ class Table:
     def __repr__(self) -> str:
         return repr(self._table)
 
+    def _repr_html_(self) -> str:
+        return self._table._repr_html_()
+
     ###
     # Creation methods
     ###
