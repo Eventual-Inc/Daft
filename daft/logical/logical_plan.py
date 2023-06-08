@@ -1034,6 +1034,8 @@ class Join(BinaryNode):
 class Concat(BinaryNode):
     def __init__(self, top: LogicalPlan, bottom: LogicalPlan):
         assert top.schema() == bottom.schema()
+        self._top = top
+        self._bottom = bottom
 
         new_partition_spec = PartitionSpec(
             PartitionScheme.UNKNOWN,
@@ -1042,8 +1044,8 @@ class Concat(BinaryNode):
         )
 
         super().__init__(top.schema(), partition_spec=new_partition_spec, op_level=OpLevel.GLOBAL)
-        self._register_child(top)
-        self._register_child(bottom)
+        self._register_child(self._top)
+        self._register_child(self._bottom)
 
     def __repr__(self) -> str:
         return self._repr_helper(num_partitions=self.num_partitions())
@@ -1056,7 +1058,10 @@ class Concat(BinaryNode):
         return [set(), set()]
 
     def input_mapping(self) -> list[dict[str, str]]:
-        return [dict(), dict()]
+        return [
+            {name: name for name in self._top.schema().column_names()},
+            {name: name for name in self._bottom.schema().column_names()},
+        ]
 
     def _local_eq(self, other: Any) -> bool:
         return isinstance(other, Concat) and self.schema() == other.schema()

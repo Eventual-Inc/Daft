@@ -5,7 +5,7 @@ import pytest
 import daft
 from daft import col
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
-from daft.logical.logical_plan import Concat, LogicalPlan
+from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import PruneColumns
 from tests.optimizer.conftest import assert_plan_eq
 
@@ -143,9 +143,7 @@ def test_projection_concat_pruning(valid_data, optimizer):
     selected = concatted.select("sepal_length")
     optimized = optimizer(selected.plan())
 
-    expected = df1.select(col("sepal_length")).concat(df2.select(col("sepal_length")))
-    assert isinstance(optimized, Concat)
-    assert isinstance(expected.plan(), Concat)
+    expected = df1.select(col("sepal_length")).concat(df2.select(col("sepal_length"))).select(col("sepal_length"))
     assert_plan_eq(optimized, expected.plan())
 
 
