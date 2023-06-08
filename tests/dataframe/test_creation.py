@@ -385,25 +385,6 @@ def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> N
         assert len(pd_df) == len(valid_data)
 
 
-@pytest.mark.parametrize("has_headers", [True, False])
-def test_create_dataframe_csv_provide_headers(valid_data: list[dict[str, float]], has_headers: bool) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        header = list(valid_data[0].keys())
-        writer = csv.writer(f)
-        if has_headers:
-            writer.writerow(header)
-        writer.writerows([[item[col] for col in header] for item in valid_data])
-        f.flush()
-
-        cnames = [f"foo{i}" for i in range(5)]
-        df = daft.read_csv(f.name, has_headers=has_headers, column_names=cnames)
-        assert df.column_names == cnames
-
-        pd_df = df.to_pandas()
-        assert list(pd_df.columns) == cnames
-        assert len(pd_df) == len(valid_data)
-
-
 def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         header = list(valid_data[0].keys())

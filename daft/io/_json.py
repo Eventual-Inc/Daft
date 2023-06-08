@@ -9,7 +9,6 @@ from daft.dataframe import DataFrame
 from daft.datasources import JSONSourceInfo
 from daft.datatype import DataType
 from daft.io.common import _get_tabular_files_scan
-from daft.runners.partitioning import vPartitionSchemaInferenceOptions
 
 
 @PublicAPI
@@ -41,6 +40,5 @@ def read_json(
         schema_hints,
         JSONSourceInfo(),
         fs,
-        vPartitionSchemaInferenceOptions(),
     )
     return DataFrame(plan)

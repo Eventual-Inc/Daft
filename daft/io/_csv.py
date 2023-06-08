@@ -9,7 +9,6 @@ from daft.dataframe import DataFrame
 from daft.datasources import CSVSourceInfo
 from daft.datatype import DataType
 from daft.io.common import _get_tabular_files_scan
-from daft.runners.partitioning import vPartitionSchemaInferenceOptions
 
 
 @PublicAPI
@@ -36,12 +35,16 @@ def read_csv(
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
         has_headers (bool): Whether the CSV has a header or not, defaults to True
-        column_names (Optional[List[str]]): Custom column names to assign to the DataFrame, defaults to None
         delimiter (Str): Delimiter used in the CSV, defaults to ","
 
     returns:
         DataFrame: parsed DataFrame
     """
+    if column_names is not None:
+        raise NotImplementedError(
+            "The `column_names` option has been deprecated. Please rename your columns manually using a `df.select` call after Daft parses your data."
+        )
+
     plan = _get_tabular_files_scan(
         path,
         schema_hints,
@@ -50,6 +53,5 @@ def read_csv(
             has_headers=has_headers,
         ),
         fs,
-        vPartitionSchemaInferenceOptions(inference_column_names=column_names),
     )
     return DataFrame(plan)

@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 def from_csv(
     file: FileInput,
     fs: fsspec.AbstractFileSystem | None = None,
-    override_column_names: list[str] | None = None,
     csv_options: TableParseCSVOptions = TableParseCSVOptions(),
 ) -> Schema:
     """Infers a Schema from a CSV file
@@ -29,21 +28,14 @@ def from_csv(
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
-        override_column_names (list[str]): column names to use instead of those found in the CSV - will throw an error if its length does not
-            match the actual number of columns found in the CSV
         csv_options (vPartitionParseCSVOptions, optional): CSV-specific configs to apply when reading the file
         read_options (TableReadOptions, optional): Options for reading the file
     Returns:
         Schema: Inferred Schema from the CSV
     """
 
-    # Have PyArrow generate the column names if the CSV has no header and no column names were provided
-    pyarrow_autogenerate_column_names = (csv_options.header_index is None) and (override_column_names is None)
-
-    # Have Pyarrow skip the header row if override_column_names were provided, and a header exists in the CSV
-    pyarrow_skip_rows_after_names = (
-        1 if override_column_names is not None and csv_options.header_index is not None else 0
-    )
+    # Have PyArrow generate the column names if user specifies that there are no headers
+    pyarrow_autogenerate_column_names = csv_options.header_index is None
 
     with _open_stream(file, fs) as f:
         table = pacsv.read_csv(
@@ -54,8 +46,6 @@ def from_csv(
             # First skip_rows is applied, then header row is read if column_names is None, then skip_rows_after_names is applied
             read_options=pacsv.ReadOptions(
                 autogenerate_column_names=pyarrow_autogenerate_column_names,
-                column_names=override_column_names,
-                skip_rows_after_names=pyarrow_skip_rows_after_names,
                 skip_rows=csv_options.header_index,
             ),
         )

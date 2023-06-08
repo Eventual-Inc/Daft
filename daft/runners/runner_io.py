@@ -15,11 +15,7 @@ from daft.datasources import (
 from daft.datatype import DataType
 from daft.filesystem import get_filesystem_from_path
 from daft.logical.schema import Schema
-from daft.runners.partitioning import (
-    PartitionSet,
-    TableParseCSVOptions,
-    vPartitionSchemaInferenceOptions,
-)
+from daft.runners.partitioning import PartitionSet, TableParseCSVOptions
 from daft.table import schema_inference
 
 PartitionT = TypeVar("PartitionT")
@@ -70,7 +66,6 @@ class RunnerIO(Generic[PartitionT]):
         listing_details_partitions: PartitionSet[PartitionT],
         source_info: SourceInfo,
         fs: fsspec.AbstractFileSystem | None,
-        schema_inference_options: vPartitionSchemaInferenceOptions,
     ) -> Schema:
         raise NotImplementedError()
 
@@ -79,7 +74,6 @@ def sample_schema(
     filepath: str,
     source_info: SourceInfo,
     fs: fsspec.AbstractFileSystem | None,
-    schema_inference_options: vPartitionSchemaInferenceOptions,
 ) -> Schema:
     """Helper method that samples a schema from the specified source"""
     if fs is None:
@@ -94,7 +88,6 @@ def sample_schema(
                 delimiter=source_info.delimiter,
                 header_index=0 if source_info.has_headers else None,
             ),
-            override_column_names=schema_inference_options.inference_column_names,
         )
     elif source_info.scan_type() == StorageType.JSON:
         assert isinstance(source_info, JSONSourceInfo)

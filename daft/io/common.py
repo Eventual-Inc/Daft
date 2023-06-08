@@ -7,7 +7,6 @@ from daft.datasources import SourceInfo
 from daft.datatype import DataType
 from daft.logical import logical_plan
 from daft.logical.schema import Schema
-from daft.runners.partitioning import vPartitionSchemaInferenceOptions
 
 
 def _get_schema_from_hints(hints: dict[str, DataType]) -> Schema:
@@ -22,7 +21,6 @@ def _get_tabular_files_scan(
     schema_hints: dict[str, DataType] | None,
     source_info: SourceInfo,
     fs: fsspec.AbstractFileSystem | None,
-    schema_inference_options: vPartitionSchemaInferenceOptions,
 ) -> logical_plan.TabularFilesScan:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
     # Glob the path using the Runner
@@ -33,9 +31,7 @@ def _get_tabular_files_scan(
     inferred_or_provided_schema = (
         _get_schema_from_hints(schema_hints)
         if schema_hints is not None
-        else runner_io.get_schema_from_first_filepath(
-            listing_details_partition_set, source_info, fs, schema_inference_options
-        )
+        else runner_io.get_schema_from_first_filepath(listing_details_partition_set, source_info, fs)
     )
 
     # Construct plan

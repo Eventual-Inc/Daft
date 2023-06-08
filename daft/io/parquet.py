@@ -9,7 +9,6 @@ from daft.dataframe import DataFrame
 from daft.datasources import ParquetSourceInfo
 from daft.datatype import DataType
 from daft.io.common import _get_tabular_files_scan
-from daft.runners.partitioning import vPartitionSchemaInferenceOptions
 
 
 @PublicAPI
@@ -41,6 +40,5 @@ def read_parquet(
         schema_hints,
         ParquetSourceInfo(),
         fs,
-        vPartitionSchemaInferenceOptions(),
     )
     return DataFrame(plan)

@@ -31,25 +31,6 @@ class TableReadOptions:
 
 
 @dataclass(frozen=True)
-class vPartitionSchemaInferenceOptions:
-    """Options for schema inference when reading a vPartition
-
-    Args:
-        schema: A schema to use when reading the vPartition. If provided, all schema inference should be skipped.
-        inference_column_names: Column names to use when performing schema inference
-    """
-
-    schema: Schema | None = None
-    inference_column_names: list[str] | None = None
-
-    def full_schema_column_names(self) -> list[str] | None:
-        """Returns all column names for the schema, or None if not provided."""
-        if self.schema is not None:
-            return self.schema.column_names()
-        return self.inference_column_names
-
-
-@dataclass(frozen=True)
 class TableParseCSVOptions:
     """Options for parsing CSVs
 
