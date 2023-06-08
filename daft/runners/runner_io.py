@@ -17,11 +17,10 @@ from daft.filesystem import get_filesystem_from_path
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     PartitionSet,
-    vPartitionParseCSVOptions,
-    vPartitionReadOptions,
+    TableParseCSVOptions,
     vPartitionSchemaInferenceOptions,
 )
-from daft.table import Table, table_io
+from daft.table import schema_inference
 
 PartitionT = TypeVar("PartitionT")
 
@@ -86,45 +85,28 @@ def sample_schema(
     if fs is None:
         fs = get_filesystem_from_path(filepath)
 
-    sampled_partition: Table
     if source_info.scan_type() == StorageType.CSV:
         assert isinstance(source_info, CSVSourceInfo)
-        sampled_partition = table_io.read_csv(
+        return schema_inference.from_csv(
             file=filepath,
             fs=fs,
-            csv_options=vPartitionParseCSVOptions(
+            csv_options=TableParseCSVOptions(
                 delimiter=source_info.delimiter,
-                has_headers=source_info.has_headers,
-                skip_rows_before_header=0,
-                skip_rows_after_header=0,
+                header_index=0 if source_info.has_headers else None,
             ),
-            schema_options=schema_inference_options,
-            read_options=vPartitionReadOptions(
-                num_rows=100,  # sample 100 rows for schema inference
-                column_names=None,  # read all columns
-            ),
+            override_column_names=schema_inference_options.inference_column_names,
         )
     elif source_info.scan_type() == StorageType.JSON:
         assert isinstance(source_info, JSONSourceInfo)
-        sampled_partition = table_io.read_json(
+        return schema_inference.from_json(
             file=filepath,
             fs=fs,
-            read_options=vPartitionReadOptions(
-                num_rows=100,  # sample 100 rows for schema inference
-                column_names=None,  # read all columns
-            ),
         )
     elif source_info.scan_type() == StorageType.PARQUET:
         assert isinstance(source_info, ParquetSourceInfo)
-        sampled_partition = table_io.read_parquet(
+        return schema_inference.from_parquet(
             file=filepath,
             fs=fs,
-            read_options=vPartitionReadOptions(
-                num_rows=0,  # sample 100 rows for schema inference
-                column_names=None,  # read all columns
-            ),
         )
     else:
         raise NotImplementedError(f"Schema inference for {source_info} not implemented")
-
-    return sampled_partition.schema()
