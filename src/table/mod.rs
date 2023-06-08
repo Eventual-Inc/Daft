@@ -468,7 +468,7 @@ impl Table {
                 .columns
                 .iter()
                 .map(|s| {
-                    let mut str_val = s.html_value(i);
+                    let mut str_val = s.str_value(i).unwrap();
                     if let Some(max_col_width) = max_col_width {
                         if str_val.len() > max_col_width {
                             str_val = format!("{}...", &str_val[..max_col_width - 3]);
