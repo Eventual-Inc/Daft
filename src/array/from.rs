@@ -112,9 +112,6 @@ impl From<(&str, &[u8])> for BinaryArray {
     }
 }
 
-
-
-
 impl<T: DaftPhysicalType, F: Into<Arc<Field>>> TryFrom<(F, Box<dyn arrow2::array::Array>)>
     for DataArray<T>
 {
@@ -127,7 +124,6 @@ impl<T: DaftPhysicalType, F: Into<Arc<Field>>> TryFrom<(F, Box<dyn arrow2::array
     }
 }
 
-
 impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
     type Error = DaftError;
 
@@ -135,13 +131,14 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
         let (name, data, offsets) = item;
 
         if offsets.is_empty() {
-            return Err(DaftError::ValueError(format!("Expected non zero len offsets")))
+            return Err(DaftError::ValueError(format!(
+                "Expected non zero len offsets"
+            )));
         }
         let last_offset = *offsets.last().unwrap();
         if last_offset != data.len() as i64 {
-            return Err(DaftError::ValueError(format!("Expected Last offset in offsets to be the same as the length of the data array: {last_offset} vs {}", data.len())))
+            return Err(DaftError::ValueError(format!("Expected Last offset in offsets to be the same as the length of the data array: {last_offset} vs {}", data.len())));
         }
-
 
         assert_eq!(last_offset, data.len() as i64);
         let arrow_offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
@@ -149,9 +146,12 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
             arrow2::datatypes::DataType::LargeBinary,
             arrow_offsets,
             data.into(),
-            None
+            None,
         )?;
-        DataArray::new(Field::new(name, DataType::Binary).into(), Box::new(bin_array))
+        DataArray::new(
+            Field::new(name, DataType::Binary).into(),
+            Box::new(bin_array),
+        )
     }
 }
 
