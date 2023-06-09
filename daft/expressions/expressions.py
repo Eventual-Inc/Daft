@@ -425,17 +425,27 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occured during download
         """
 
-        raise_on_error = False
-        if on_error == "raise":
-            raise_on_error = True
-        elif on_error == "null":
+        if fs is None:
             raise_on_error = False
-        else:
-            raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
-        if not (isinstance(max_connections, int) and max_connections > 0):
-            raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
+            if on_error == "raise":
+                raise_on_error = True
+            elif on_error == "null":
+                raise_on_error = False
+            else:
+                raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+            if not (isinstance(max_connections, int) and max_connections > 0):
+                raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
 
-        return Expression._from_pyexpr(self._expr.url_download(max_connections, raise_on_error))
+            return Expression._from_pyexpr(self._expr.url_download(max_connections, raise_on_error))
+        else:
+            from daft.udf_library import url_udfs
+
+            return url_udfs.download_udf(
+                Expression._from_pyexpr(self._expr),
+                max_worker_threads=max_connections,
+                on_error=on_error,
+                fs=fs,
+            )
 
 
 class ExpressionFloatNamespace(ExpressionNamespace):
