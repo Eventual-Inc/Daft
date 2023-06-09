@@ -36,7 +36,7 @@ class TimeUnit:
     _timeunit: PyTimeUnit
 
     def __init__(self) -> None:
-        raise NotImplementedError("Please use TimeUnit.s(), .ms(), .us(), or .ns() instead.")
+        raise NotImplementedError("Please use TimeUnit.from_str(), .s(), .ms(), .us(), or .ns() instead.")
 
     @staticmethod
     def _from_pytimeunit(o3: PyTimeUnit) -> TimeUnit:
@@ -63,6 +63,20 @@ class TimeUnit:
     def ns(cls) -> TimeUnit:
         """Represents nanoseconds."""
         return cls._from_pytimeunit(PyTimeUnit.nanoseconds())
+
+    @classmethod
+    def from_str(cls, unit: str) -> TimeUnit:
+        unit = unit.lower()
+        if unit == "s":
+            return cls.s()
+        elif unit == "ms":
+            return cls.ms()
+        elif unit == "us":
+            return cls.us()
+        elif unit == "ns":
+            return cls.ns()
+        else:
+            raise ValueError("Unsupported unit: {unit}")
 
 
 class DataType:
@@ -284,6 +298,9 @@ class DataType:
             return cls.null()
         elif pa.types.is_date32(arrow_type):
             return cls.date()
+        elif pa.types.is_timestamp(arrow_type):
+            timeunit = TimeUnit.from_str(arrow_type.unit)
+            return cls.timestamp(timeunit=timeunit, timezone=arrow_type.tz)
         elif pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
             assert isinstance(arrow_type, (pa.ListType, pa.LargeListType))
             field = arrow_type.value_field
