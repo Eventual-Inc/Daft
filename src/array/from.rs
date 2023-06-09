@@ -7,7 +7,6 @@ use crate::datatypes::{
 
 use crate::array::DataArray;
 use crate::error::{DaftError, DaftResult};
-use crate::utils::arrow;
 
 impl<T: DaftNumericType> From<(&str, Box<arrow2::array::PrimitiveArray<T::Native>>)>
     for DataArray<T>
@@ -131,9 +130,9 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
         let (name, data, offsets) = item;
 
         if offsets.is_empty() {
-            return Err(DaftError::ValueError(format!(
-                "Expected non zero len offsets"
-            )));
+            return Err(DaftError::ValueError(
+                "Expected non zero len offsets".to_string(),
+            ));
         }
         let last_offset = *offsets.last().unwrap();
         if last_offset != data.len() as i64 {
