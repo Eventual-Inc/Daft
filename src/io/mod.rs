@@ -15,9 +15,14 @@ impl From<reqwest::Error> for DaftError {
 pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
     name: &str,
     urls: I,
+    max_connections: usize,
+    raise_error_on_failure: bool,
 ) -> DaftResult<BinaryArray> {
-    let raise_error_on_failure = true;
-
+    if max_connections == 0 {
+        return Err(DaftError::ValueError(
+            "max_connections for url_download must be non-zero".into(),
+        ));
+    }
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -29,18 +34,24 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
             if owned_url.is_none() {
                 return (i, None);
             }
-            match reqwest::get(owned_url.unwrap()).await {
-                Ok(result) => (i, Some(result.bytes().await)),
+            match reqwest::get(owned_url.unwrap())
+                .await
+                .and_then(|r| r.error_for_status())
+            {
+                Ok(response) => (i, Some(response.bytes().await)),
                 Err(error) => (i, Some(Err(error))),
             }
         })
     }))
-    .buffer_unordered(32)
+    .buffer_unordered(max_connections)
     .map(|f| match f {
         Ok((i, Some(Ok(bytes)))) => Ok((i, Some(bytes))),
         Ok((i, Some(Err(err)))) => match raise_error_on_failure {
             true => Err(err),
-            false => Ok((i, None)),
+            false => {
+                log::warn!("Error occurred during url_download at index: {i} {}", err);
+                Ok((i, None))
+            }
         },
         Ok((i, None)) => Ok((i, None)),
         Err(err) => panic!("Join error occured, this shouldnt happen: {}", err),
@@ -75,8 +86,12 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
 }
 
 impl Utf8Array {
-    pub fn url_download(&self) -> DaftResult<BinaryArray> {
+    pub fn url_download(
+        &self,
+        max_connections: usize,
+        raise_error_on_failure: bool,
+    ) -> DaftResult<BinaryArray> {
         let urls = self.as_arrow().iter();
-        url_download(self.name(), urls)
+        url_download(self.name(), urls, max_connections, raise_error_on_failure)
     }
 }
