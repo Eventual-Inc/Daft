@@ -559,7 +559,7 @@ class SeriesUrlNamespace(SeriesNamespace):
             raise_on_error = False
         else:
             raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
-        if isinstance(max_connections, int) and max_connections > 0:
-            raise ValueError("Invalid value for `max_connections`: {max_connections}")
+        if not (isinstance(max_connections, int) and max_connections > 0):
+            raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
 
         return Series._from_pyseries(self._series.url_download(max_connections, raise_on_error))
