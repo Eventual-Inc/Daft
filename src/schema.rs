@@ -89,7 +89,7 @@ impl Schema {
     pub fn repr_html(&self) -> String {
         // Produces a <table> HTML element.
 
-        let mut res = "<table class=\"dataframe\">".to_string();
+        let mut res = "<table class=\"dataframe\">\n".to_string();
 
         // Begin the header.
         res.push_str("<thead><tr>");
@@ -103,7 +103,7 @@ impl Schema {
         }
 
         // End the header.
-        res.push_str("</thead></tr>");
+        res.push_str("</tr></thead>\n");
 
         res.push_str("</table>");
 
