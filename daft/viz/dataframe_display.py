@@ -39,12 +39,14 @@ class DataFrameDisplay:
         if len(self.schema) == 0:
             return "<small>(No data to display: Dataframe has no columns)</small>"
 
-        if self.preview.preview_partition is not None:
-            res = self.preview.preview_partition._repr_html_()
-        else:
-            res = self.schema._repr_html_()
+        res = "<div>\n"
 
-        res += f"<small>{self._get_user_message()}</small>"
+        if self.preview.preview_partition is not None:
+            res += self.preview.preview_partition._repr_html_()
+        else:
+            res += self.schema._repr_html_()
+
+        res += f"\n<small>{self._get_user_message()}</small>\n</div>"
 
         return res
 
