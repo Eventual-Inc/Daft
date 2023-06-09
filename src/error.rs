@@ -13,7 +13,7 @@ pub enum DaftError {
     ValueError(String),
     #[cfg(feature = "python")]
     PyO3Error(pyo3::PyErr),
-    IoError(io::Error),
+    IoError(Box<dyn std::error::Error>),
 }
 
 impl From<arrow2::error::Error> for DaftError {
@@ -37,7 +37,13 @@ impl From<serde_json::Error> for DaftError {
 
 impl From<io::Error> for DaftError {
     fn from(error: io::Error) -> Self {
-        DaftError::IoError(error)
+        DaftError::IoError(Box::new(error))
+    }
+}
+
+impl From<std::fmt::Error> for DaftError {
+    fn from(error: std::fmt::Error) -> Self {
+        DaftError::IoError(Box::new(error))
     }
 }
 
