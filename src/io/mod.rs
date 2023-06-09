@@ -37,7 +37,7 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
         use crate::io::object_io::ObjectSource;
         tokio::spawn(async move {
             if owned_url.is_none() {
-                return (i, None);
+                (i, None)
             } else {
                 let res = HttpSource {}.get(owned_url.unwrap()).await;
 
@@ -45,7 +45,7 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
                     Ok(res) => res.bytes().await,
                     Err(err) => Err(err),
                 };
-                return (i, Some(res));
+                (i, Some(res))
             }
         })
     }))

@@ -204,7 +204,7 @@ fn pretty_print_bytes(bytes: &[u8], max_len: usize) -> DaftResult<String> {
             TAB => write!(builder, "\\t"),
             NEWLINE => write!(builder, "\\n"),
             CARRIAGE => write!(builder, "\\r"),
-            v if v < SPACE || v >= 0x7f => write!(builder, "\\x{:02x}", v),
+            v if !(SPACE..0x7f).contains(&v) => write!(builder, "\\x{:02x}", v),
             v => write!(builder, "{}", v as char),
         }?;
     }
