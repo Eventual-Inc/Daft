@@ -289,8 +289,15 @@ impl PySeries {
         Ok(self.series.image_resize(w as u32, h as u32)?.into())
     }
 
-    pub fn url_download(&self) -> PyResult<Self> {
-        Ok(self.series.url_download()?.into())
+    pub fn url_download(
+        &self,
+        max_connections: i64,
+        raise_error_on_failure: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .series
+            .url_download(max_connections.try_into()?, raise_error_on_failure)?
+            .into())
     }
 
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {

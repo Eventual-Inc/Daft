@@ -19,6 +19,12 @@ try:
     import pandas as pd
 except ImportError:
     _PANDAS_AVAILABLE = False
+import sys
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Literal
+else:
+    from typing import Literal
 
 
 class Series:
@@ -536,5 +542,24 @@ class SeriesImageNamespace(SeriesNamespace):
 
 
 class SeriesUrlNamespace(SeriesNamespace):
-    def download(self) -> Series:
-        return Series._from_pyseries(self._series.url_download())
+    def download(self, max_connections: int = 32, on_error: Literal["raise"] | Literal["null"] = "null") -> Series:
+        """Treats each string as a URL, and downloads the bytes contents as a bytes column
+        Args:
+            max_connections: The maximum number of IO connections to use for downloading URLs, defaults to 32
+            on_error: Behavior when a URL download error is encountered - "raise" to raise the error immediately or "null" to log
+                the error but fallback to a Null value. Defaults to "raise".
+        Returns:
+            Series: a Binary Type series which is the bytes contents of the URL, or None if an error occurred during download
+        """
+
+        raise_on_error = False
+        if on_error == "raise":
+            raise_on_error = True
+        elif on_error == "null":
+            raise_on_error = False
+        else:
+            raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+        if isinstance(max_connections, int) and max_connections > 0:
+            raise ValueError("Invalid value for `max_connections`: {max_connections}")
+
+        return Series._from_pyseries(self._series.url_download(max_connections, raise_on_error))
