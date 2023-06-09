@@ -72,7 +72,7 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
     let data = {
         let mut to_concat = Vec::with_capacity(results.len());
 
-        for (i, b) in results.iter() {
+        for (_, b) in results.iter() {
             match b {
                 Some(b) => {
                     to_concat.push(b.as_ref());

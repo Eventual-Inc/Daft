@@ -3,14 +3,15 @@ pub mod image;
 pub mod list;
 pub mod numeric;
 pub mod temporal;
+pub mod uri;
 pub mod utf8;
 
-use self::float::FloatExpr;
 use self::image::ImageExpr;
 use self::list::ListExpr;
 use self::numeric::NumericExpr;
 use self::temporal::TemporalExpr;
 use self::utf8::Utf8Expr;
+use self::{float::FloatExpr, uri::UriExpr};
 use crate::{datatypes::Field, error::DaftResult, schema::Schema, series::Series};
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +32,7 @@ pub enum FunctionExpr {
     Image(ImageExpr),
     #[cfg(feature = "python")]
     Python(PythonUDF),
+    Uri(UriExpr),
 }
 
 pub trait FunctionEvaluator {
@@ -50,6 +52,7 @@ impl FunctionExpr {
             Temporal(expr) => expr.get_evaluator(),
             List(expr) => expr.get_evaluator(),
             Image(expr) => expr.get_evaluator(),
+            Uri(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
             Python(expr) => expr,
         }
