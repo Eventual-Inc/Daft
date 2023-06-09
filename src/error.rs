@@ -13,7 +13,7 @@ pub enum DaftError {
     ValueError(String),
     #[cfg(feature = "python")]
     PyO3Error(pyo3::PyErr),
-    IoError(Box<dyn std::error::Error>),
+    IoError(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<arrow2::error::Error> for DaftError {

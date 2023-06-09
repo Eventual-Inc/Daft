@@ -1,3 +1,6 @@
+mod http;
+mod object_io;
+
 use futures::{StreamExt, TryStreamExt};
 
 use crate::{
@@ -5,6 +8,8 @@ use crate::{
     datatypes::{BinaryArray, Utf8Array},
     error::{DaftError, DaftResult},
 };
+
+use self::http::HttpSource;
 
 impl From<reqwest::Error> for DaftError {
     fn from(error: reqwest::Error) -> Self {
@@ -29,17 +34,18 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
 
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
-
+        use crate::io::object_io::ObjectSource;
         tokio::spawn(async move {
             if owned_url.is_none() {
                 return (i, None);
-            }
-            match reqwest::get(owned_url.unwrap())
-                .await
-                .and_then(|r| r.error_for_status())
-            {
-                Ok(response) => (i, Some(response.bytes().await)),
-                Err(error) => (i, Some(Err(error))),
+            } else {
+                let res = HttpSource {}.get(owned_url.unwrap()).await;
+
+                let res = match res {
+                    Ok(res) => res.bytes().await,
+                    Err(err) => Err(err),
+                };
+                return (i, Some(res));
             }
         })
     }))
@@ -56,7 +62,6 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
         Ok((i, None)) => Ok((i, None)),
         Err(err) => panic!("Join error occured, this shouldnt happen: {}", err),
     });
-
     let mut results = rt.block_on(async move { fetches.try_collect::<Vec<_>>().await })?;
 
     results.sort_by_key(|k| k.0);
