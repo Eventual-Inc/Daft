@@ -151,7 +151,20 @@ def test_alias_repr():
         **expected_data,
     }
     assert parse_str_table(df.__repr__()) == expected_data
-    assert parse_html_table(df._repr_html_()) == expected_data_html
+    assert (
+        df._repr_html_()
+        == """<div>
+<table class="dataframe">
+<thead><tr><th>A2<br />Int64</th><th>B<br />Utf8</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>a</td></tr>
+<tr><td>2</td><td>b</td></tr>
+<tr><td>3</td><td>c</td></tr>
+</tbody>
+</table>
+<small>(Showing first 3 of 3 rows)</small>
+</div>"""
+    )
 
 
 def test_repr_with_html_string():
