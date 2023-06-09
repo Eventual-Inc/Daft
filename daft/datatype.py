@@ -5,7 +5,7 @@ import builtins
 import pyarrow as pa
 
 from daft.context import get_context
-from daft.daft import ImageMode, PyDataType
+from daft.daft import ImageMode, PyDataType, PyTimeUnit
 
 _RAY_DATA_EXTENSIONS_AVAILABLE = True
 _TENSOR_EXTENSION_TYPES = []
@@ -30,6 +30,39 @@ else:
             _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
     except ImportError:
         _RAY_DATA_EXTENSIONS_AVAILABLE = False
+
+
+class TimeUnit:
+    _timeunit: PyTimeUnit
+
+    def __init__(self) -> None:
+        raise NotImplementedError("Please use TimeUnit.s(), .ms(), .us(), or .ns() instead.")
+
+    @staticmethod
+    def _from_pytimeunit(o3: PyTimeUnit) -> TimeUnit:
+        timeunit = TimeUnit.__new__(TimeUnit)
+        timeunit._timeunit = o3
+        return timeunit
+
+    @classmethod
+    def s(cls) -> TimeUnit:
+        """Represents seconds."""
+        return cls._from_pytimeunit(PyTimeUnit.seconds())
+
+    @classmethod
+    def ms(cls) -> TimeUnit:
+        """Represents milliseconds."""
+        return cls._from_pytimeunit(PyTimeUnit.milliseconds())
+
+    @classmethod
+    def us(cls) -> TimeUnit:
+        """Represents microseconds."""
+        return cls._from_pytimeunit(PyTimeUnit.microseconds())
+
+    @classmethod
+    def ns(cls) -> TimeUnit:
+        """Represents nanoseconds."""
+        return cls._from_pytimeunit(PyTimeUnit.nanoseconds())
 
 
 class DataType:
@@ -123,6 +156,11 @@ class DataType:
     def date(cls) -> DataType:
         """Create a Date DataType: A date with a year, month and day"""
         return cls._from_pydatatype(PyDataType.date())
+
+    @classmethod
+    def timestamp(cls, timeunit: TimeUnit, timezone: str | None = None) -> DataType:
+        """Timestamp DataType."""
+        return cls._from_pydatatype(PyDataType.timestamp(timeunit._timeunit, timezone))
 
     @classmethod
     def list(cls, name: str, dtype: DataType) -> DataType:

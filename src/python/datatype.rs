@@ -1,9 +1,50 @@
-use crate::datatypes::{DataType, Field, ImageMode};
+use crate::datatypes::{DataType, Field, ImageMode, TimeUnit};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     types::{PyBytes, PyDict, PyString, PyTuple},
 };
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyTimeUnit {
+    pub timeunit: TimeUnit,
+}
+
+impl From<TimeUnit> for PyTimeUnit {
+    fn from(value: TimeUnit) -> Self {
+        PyTimeUnit { timeunit: value }
+    }
+}
+
+impl From<PyTimeUnit> for TimeUnit {
+    fn from(item: PyTimeUnit) -> Self {
+        item.timeunit
+    }
+}
+
+#[pymethods]
+impl PyTimeUnit {
+    #[staticmethod]
+    pub fn nanoseconds() -> PyResult<Self> {
+        Ok(TimeUnit::Nanoseconds.into())
+    }
+    #[staticmethod]
+    pub fn microseconds() -> PyResult<Self> {
+        Ok(TimeUnit::Microseconds.into())
+    }
+    #[staticmethod]
+    pub fn milliseconds() -> PyResult<Self> {
+        Ok(TimeUnit::Milliseconds.into())
+    }
+    #[staticmethod]
+    pub fn seconds() -> PyResult<Self> {
+        Ok(TimeUnit::Seconds.into())
+    }
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{:?}", self.timeunit))
+    }
+}
 
 #[pyclass]
 #[derive(Clone)]
@@ -102,6 +143,11 @@ impl PyDataType {
     #[staticmethod]
     pub fn date() -> PyResult<Self> {
         Ok(DataType::Date.into())
+    }
+
+    #[staticmethod]
+    pub fn timestamp(timeunit: PyTimeUnit, timezone: Option<String>) -> PyResult<Self> {
+        Ok(DataType::Timestamp(timeunit.timeunit, timezone).into())
     }
 
     #[staticmethod]
