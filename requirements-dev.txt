@@ -32,7 +32,7 @@ ray[data, default]==2.4.0
 
 # AWS
 s3fs==2023.1.0; python_version < '3.8'
-s3fs==2023.5.0; python_version >= '3.8'
+s3fs==2023.6.0; python_version >= '3.8'
 
 # Documentation
 myst-nb>=0.16.0
