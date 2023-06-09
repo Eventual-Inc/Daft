@@ -82,8 +82,17 @@ def test_empty_df_repr():
     df = daft.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df = df.where(df["A"] > 10)
     expected_data = {"A": ("Int64", []), "B": ("Utf8", [])}
+
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
-    assert parse_html_table(df._repr_html_(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
+    assert (
+        df._repr_html_()
+        == """<div>
+<table class="dataframe">
+<thead><tr><th>A<br />Int64</th><th>B<br />Utf8</th></tr></thead>
+</table>
+<small>(No data to display: Dataframe not materialized)</small>
+</div>"""
+    )
 
     df.collect()
     expected_data = {
@@ -97,7 +106,17 @@ def test_empty_df_repr():
         ),
     }
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=MATERIALIZED_NO_ROWS_REGEX) == expected_data
-    assert parse_html_table(df._repr_html_(), expected_user_msg_regex=MATERIALIZED_NO_ROWS_REGEX) == expected_data
+    assert (
+        df._repr_html_()
+        == """<div>
+<table class="dataframe">
+<thead><tr><th>A<br />Int64</th><th>B<br />Utf8</th></tr></thead>
+<tbody>
+</tbody>
+</table>
+<small>(No data to display: Materialized dataframe has no rows)</small>
+</div>"""
+    )
 
 
 def test_alias_repr():
@@ -106,7 +125,15 @@ def test_alias_repr():
 
     expected_data = {"A2": ("Int64", []), "B": ("Utf8", [])}
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
-    assert parse_html_table(df._repr_html_(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
+    assert (
+        df._repr_html_()
+        == """<div>
+<table class="dataframe">
+<thead><tr><th>A2<br />Int64</th><th>B<br />Utf8</th></tr></thead>
+</table>
+<small>(No data to display: Dataframe not materialized)</small>
+</div>"""
+    )
 
     df.collect()
 
