@@ -385,7 +385,7 @@ impl Table {
     pub fn repr_html(&self) -> String {
         // Produces a <table> HTML element.
 
-        let mut res = "<table class=\"dataframe\">".to_string();
+        let mut res = "<table class=\"dataframe\">\n".to_string();
 
         // Begin the header.
         res.push_str("<thead><tr>");
@@ -399,10 +399,10 @@ impl Table {
         }
 
         // End the header.
-        res.push_str("</thead></tr>");
+        res.push_str("</tr></thead>\n");
 
         // Begin the body.
-        res.push_str("<tbody>");
+        res.push_str("<tbody>\n");
 
         let head_rows;
         let tail_rows;
@@ -426,7 +426,7 @@ impl Table {
             }
 
             // End row.
-            res.push_str("</tr>");
+            res.push_str("</tr>\n");
         }
 
         if tail_rows != 0 {
@@ -434,7 +434,7 @@ impl Table {
             for _ in self.columns.iter() {
                 res.push_str("<td>...</td>");
             }
-            res.push_str("</tr>");
+            res.push_str("</tr>\n");
         }
 
         for i in (self.len() - tail_rows)..(self.len()) {
@@ -448,11 +448,11 @@ impl Table {
             }
 
             // End row.
-            res.push_str("</tr>");
+            res.push_str("</tr>\n");
         }
 
         // End the body and the table.
-        res.push_str("</tbody></table>");
+        res.push_str("</tbody>\n</table>");
 
         res
     }

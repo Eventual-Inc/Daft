@@ -100,11 +100,11 @@ macro_rules! impl_series_like_for_logical_array {
             }
 
             fn str_value(&self, idx: usize) -> DaftResult<String> {
-                self.0.physical.str_value(idx)
+                self.0.str_value(idx)
             }
 
             fn html_value(&self, idx: usize) -> String {
-                self.0.physical.html_value(idx)
+                self.0.html_value(idx)
             }
 
             fn take(&self, idx: &Series) -> DaftResult<Series> {

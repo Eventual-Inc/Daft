@@ -85,6 +85,30 @@ impl Schema {
             )),
         }
     }
+
+    pub fn repr_html(&self) -> String {
+        // Produces a <table> HTML element.
+
+        let mut res = "<table class=\"dataframe\">\n".to_string();
+
+        // Begin the header.
+        res.push_str("<thead><tr>");
+
+        for (name, field) in &self.fields {
+            res.push_str("<th>");
+            res.push_str(&html_escape::encode_text(name));
+            res.push_str("<br />");
+            res.push_str(&html_escape::encode_text(&format!("{}", field.dtype)));
+            res.push_str("</th>");
+        }
+
+        // End the header.
+        res.push_str("</tr></thead>\n");
+
+        res.push_str("</table>");
+
+        res
+    }
 }
 
 impl Display for Schema {

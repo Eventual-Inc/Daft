@@ -94,6 +94,9 @@ class Schema:
     def __repr__(self) -> str:
         return repr(self._schema)
 
+    def _repr_html_(self) -> str:
+        return self._schema._repr_html_()
+
     def union(self, other: Schema) -> Schema:
         if not isinstance(other, Schema):
             raise ValueError(f"Expected Schema, got other: {type(other)}")
