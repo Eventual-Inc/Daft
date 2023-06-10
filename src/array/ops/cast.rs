@@ -7,7 +7,7 @@ use crate::series::IntoSeries;
 use crate::{
     array::DataArray,
     datatypes::logical::{
-        DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray,
+        DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray, TimestampArray,
     },
     datatypes::{DaftArrowBackedType, DataType, Field, Utf8Array},
     error::{DaftError, DaftResult},
@@ -149,6 +149,19 @@ impl DateArray {
             }
             DataType::Float32 => self.cast(&DataType::Int32)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int32)?.cast(&DataType::Float64),
+            _ => arrow_cast(&self.physical, dtype),
+        }
+    }
+}
+
+impl TimestampArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Utf8 => {
+                todo!("iso string")
+            }
+            DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
+            DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
             _ => arrow_cast(&self.physical, dtype),
         }
     }
@@ -631,7 +644,6 @@ impl PythonArray {
             dt @ DataType::Float32 | dt @ DataType::Float64 => {
                 pycast_then_arrowcast!(self, dt, "float")
             }
-            DataType::Date => unimplemented!(),
             DataType::List(field) => {
                 if !field.dtype.is_numeric() {
                     return Err(DaftError::ValueError(format!(

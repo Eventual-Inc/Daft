@@ -4,7 +4,7 @@ use arrow2::array;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray},
+        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray},
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, StructArray,
         Utf8Array,
     },
@@ -18,6 +18,7 @@ use crate::datatypes::PythonArray;
 pub trait AsArrow {
     type Output;
 
+    // Convert to an arrow2::array::Array.
     fn as_arrow(&self) -> &Self::Output;
 }
 
@@ -27,7 +28,6 @@ where
 {
     type Output = array::PrimitiveArray<T::Native>;
 
-    // downcasts a DataArray<T> to an Arrow PrimitiveArray.
     fn as_arrow(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
@@ -36,7 +36,6 @@ where
 impl AsArrow for Utf8Array {
     type Output = array::Utf8Array<i64>;
 
-    // downcasts a DataArray<T> to an Arrow Utf8Array.
     fn as_arrow(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
@@ -45,7 +44,6 @@ impl AsArrow for Utf8Array {
 impl AsArrow for BooleanArray {
     type Output = array::BooleanArray;
 
-    // downcasts a DataArray<T> to an Arrow BooleanArray.
     fn as_arrow(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
@@ -54,7 +52,6 @@ impl AsArrow for BooleanArray {
 impl AsArrow for BinaryArray {
     type Output = array::BinaryArray<i64>;
 
-    // downcasts a DataArray<T> to an Arrow BinaryArray.
     fn as_arrow(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
@@ -63,7 +60,14 @@ impl AsArrow for BinaryArray {
 impl AsArrow for DateArray {
     type Output = array::PrimitiveArray<i32>;
 
-    // downcasts a DataArray<T> to an Arrow DateArray.
+    fn as_arrow(&self) -> &Self::Output {
+        self.physical.data().as_any().downcast_ref().unwrap()
+    }
+}
+
+impl AsArrow for TimestampArray {
+    type Output = array::PrimitiveArray<i64>;
+
     fn as_arrow(&self) -> &Self::Output {
         self.physical.data().as_any().downcast_ref().unwrap()
     }
@@ -72,7 +76,6 @@ impl AsArrow for DateArray {
 impl AsArrow for ListArray {
     type Output = array::ListArray<i64>;
 
-    // downcasts a DataArray<T> to an Arrow ListArray.
     fn as_arrow(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
@@ -81,7 +84,6 @@ impl AsArrow for ListArray {
 impl AsArrow for FixedSizeListArray {
     type Output = array::FixedSizeListArray;
 
-    // downcasts a DataArray<T> to an Arrow FixedSizeListArray.
     fn as_arrow(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
@@ -90,7 +92,6 @@ impl AsArrow for FixedSizeListArray {
 impl AsArrow for StructArray {
     type Output = array::StructArray;
 
-    // downcasts a DataArray<T> to an Arrow StructArray.
     fn as_arrow(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
@@ -98,9 +99,9 @@ impl AsArrow for StructArray {
 
 #[cfg(feature = "python")]
 impl AsArrow for PythonArray {
+    // Converts DataArray<PythonType> to PseudoArrowArray<PyObject>.
     type Output = PseudoArrowArray<pyo3::PyObject>;
 
-    // downcasts a DataArray<T> to a PseudoArrowArray of PyObject.
     fn as_arrow(&self) -> &Self::Output {
         self.data().as_any().downcast_ref().unwrap()
     }
