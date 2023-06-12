@@ -341,7 +341,7 @@ impl PyExpr {
         use dsl::functions::list::join;
         Ok(join(&self.expr, &delimiter.expr).into())
     }
-    
+
     pub fn url_download(
         &self,
         max_connections: i64,

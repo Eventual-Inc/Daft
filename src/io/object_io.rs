@@ -15,7 +15,6 @@ where
 {
     // Taken from https://github.com/apache/arrow-rs/blob/ab56693985826bb8caea30558b8c25db286a5e37/object_store/src/util.rs#LL49C1-L71C2
     let first = stream.next().await.transpose()?.unwrap_or_default();
-
     // Avoid copying if single response
     match stream.next().await.transpose()? {
         None => Ok(first),
@@ -46,5 +45,5 @@ impl GetResult {
 
 #[async_trait]
 pub trait ObjectSource {
-    async fn get(&self, uri: String) -> DaftResult<GetResult>;
+    async fn get(&self, uri: String) -> anyhow::Result<GetResult>;
 }

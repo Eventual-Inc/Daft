@@ -92,7 +92,7 @@ impl Table {
 
             let mut curr_name = field.name.clone();
             while names_so_far.contains(&curr_name) {
-                curr_name = "right.".to_string() + &curr_name;
+                curr_name = "right.".to_string() + curr_name.as_str();
             }
             join_fields.push(field.rename(curr_name.clone()));
             join_series.push(
