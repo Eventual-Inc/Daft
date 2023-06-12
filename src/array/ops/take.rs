@@ -556,8 +556,63 @@ impl TimestampArray {
         Ok(Self::new(self.field.clone(), new_array))
     }
 
-    pub fn str_value(&self, _idx: usize) -> DaftResult<String> {
-        todo!("print iso")
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        match self.get(idx) {
+            Some(val) => {
+                // Get the timezone.
+                use crate::datatypes::DataType::Timestamp;
+                use crate::datatypes::TimeUnit::*;
+                match &self.field().dtype {
+                    Timestamp(unit, None) => {
+                        let res = match unit {
+                            Seconds => chrono::naive::NaiveDateTime::from_timestamp_opt(val, 0)
+                                .unwrap()
+                                .format("%Y-%m-%d %H:%M:%S")
+                                .to_string(),
+                            Milliseconds => {
+                                let seconds = val.div_euclid(1_000);
+                                let ns_remainder = 1_000_000 * val.rem_euclid(1_000) as u32;
+                                chrono::naive::NaiveDateTime::from_timestamp_opt(
+                                    seconds,
+                                    ns_remainder,
+                                )
+                                .unwrap()
+                                .format("%Y-%m-%d %H:%M:%S%.3f")
+                                .to_string()
+                            }
+                            Microseconds => {
+                                let seconds = val.div_euclid(1_000_000);
+                                let ns_remainder = 1_000 * val.rem_euclid(1_000_000) as u32;
+                                chrono::naive::NaiveDateTime::from_timestamp_opt(
+                                    seconds,
+                                    ns_remainder,
+                                )
+                                .unwrap()
+                                .format("%Y-%m-%d %H:%M:%S%.6f")
+                                .to_string()
+                            }
+                            Nanoseconds => {
+                                let seconds = val.div_euclid(1_000_000_000);
+                                let ns_remainder = val.rem_euclid(1_000_000_000) as u32;
+                                chrono::naive::NaiveDateTime::from_timestamp_opt(
+                                    seconds,
+                                    ns_remainder,
+                                )
+                                .unwrap()
+                                .format("%Y-%m-%d %H:%M:%S%.9f")
+                                .to_string()
+                            }
+                        };
+                        Ok(res)
+                    }
+                    Timestamp(_unit, Some(_timezone)) => {
+                        todo!()
+                    }
+                    other => panic!("TimestampArray has unexpected field {}", other),
+                }
+            }
+            None => Ok("None".to_string()),
+        }
     }
     pub fn html_value(&self, idx: usize) -> String {
         let str_value = self.str_value(idx).unwrap();
