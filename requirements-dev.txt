@@ -17,7 +17,7 @@ pytest-cov==4.1.0
 # Testing dependencies
 lxml==4.9.2
 dask==2022.2.0; python_version < '3.8'
-dask==2023.5.0; python_version == '3.8'
+dask==2023.6.0; python_version == '3.8'
 dask==2023.6.0; python_version >= '3.9'
 numpy; python_version < '3.8'
 numpy==1.24.3; python_version >= '3.8'
