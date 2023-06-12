@@ -169,11 +169,11 @@ def read_csv(
             parse_options=pacsv.ParseOptions(
                 delimiter=csv_options.delimiter,
             ),
-            # skip_rows applied, header row is read if column_names is not None, skip_rows_after_names is applied
             read_options=pacsv.ReadOptions(
-                # Use the provided schema's field names as the column names, and skip parsing headers entirely
-                column_names=schema.column_names(),
-                skip_rows=(0 if csv_options.header_index is None else csv_options.header_index + 1),
+                # If no header, we use the schema's column names. Otherwise we use the headers in the CSV file.
+                column_names=schema.column_names()
+                if csv_options.header_index is None
+                else None,
             ),
             convert_options=pacsv.ConvertOptions(
                 # Column pruning
