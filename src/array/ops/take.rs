@@ -559,54 +559,58 @@ impl TimestampArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         match self.get(idx) {
             Some(val) => {
-                // Get the timezone.
                 use crate::datatypes::DataType::Timestamp;
                 use crate::datatypes::TimeUnit::*;
+
+                // Naive vs timezone.
                 match &self.field().dtype {
                     Timestamp(unit, None) => {
-                        let res = match unit {
-                            Seconds => chrono::naive::NaiveDateTime::from_timestamp_opt(val, 0)
-                                .unwrap()
-                                .format("%Y-%m-%d %H:%M:%S")
-                                .to_string(),
-                            Milliseconds => {
-                                let seconds = val.div_euclid(1_000);
-                                let ns_remainder = 1_000_000 * val.rem_euclid(1_000) as u32;
-                                chrono::naive::NaiveDateTime::from_timestamp_opt(
-                                    seconds,
-                                    ns_remainder,
+                        let chrono_ts = {
+                            arrow2::temporal_conversions::timestamp_to_naive_datetime(
+                                val,
+                                unit.to_arrow()?,
+                            )
+                        };
+                        let format_str = match unit {
+                            Seconds => "%Y-%m-%dT%H:%M:%S",
+                            Milliseconds => "%Y-%m-%dT%H:%M:%S%.3f",
+                            Microseconds => "%Y-%m-%dT%H:%M:%S%.6f",
+                            Nanoseconds => "%Y-%m-%dT%H:%M:%S%.9f",
+                        };
+                        let res = chrono_ts.format(format_str).to_string();
+                        Ok(res)
+                    }
+                    Timestamp(unit, Some(timezone)) => {
+                        let seconds_format = match unit {
+                            Seconds => chrono::SecondsFormat::Secs,
+                            Milliseconds => chrono::SecondsFormat::Millis,
+                            Microseconds => chrono::SecondsFormat::Micros,
+                            Nanoseconds => chrono::SecondsFormat::Nanos,
+                        };
+                        let res = {
+                            // In arrow, timezone string can be either:
+                            // 1. a fixed offset "-07:00", parsed using parse_offset, or
+                            // 2. a timezone name e.g. "America/Los_Angeles", parsed using parse_offset_tz.
+                            if let Ok(offset) = arrow2::temporal_conversions::parse_offset(timezone)
+                            {
+                                arrow2::temporal_conversions::timestamp_to_datetime(
+                                    val,
+                                    unit.to_arrow()?,
+                                    &offset,
                                 )
-                                .unwrap()
-                                .format("%Y-%m-%d %H:%M:%S%.3f")
-                                .to_string()
-                            }
-                            Microseconds => {
-                                let seconds = val.div_euclid(1_000_000);
-                                let ns_remainder = 1_000 * val.rem_euclid(1_000_000) as u32;
-                                chrono::naive::NaiveDateTime::from_timestamp_opt(
-                                    seconds,
-                                    ns_remainder,
+                                .to_rfc3339_opts(seconds_format, false)
+                            } else {
+                                let offset_tz =
+                                    arrow2::temporal_conversions::parse_offset_tz(timezone)?;
+                                arrow2::temporal_conversions::timestamp_to_datetime(
+                                    val,
+                                    unit.to_arrow()?,
+                                    &offset_tz,
                                 )
-                                .unwrap()
-                                .format("%Y-%m-%d %H:%M:%S%.6f")
-                                .to_string()
-                            }
-                            Nanoseconds => {
-                                let seconds = val.div_euclid(1_000_000_000);
-                                let ns_remainder = val.rem_euclid(1_000_000_000) as u32;
-                                chrono::naive::NaiveDateTime::from_timestamp_opt(
-                                    seconds,
-                                    ns_remainder,
-                                )
-                                .unwrap()
-                                .format("%Y-%m-%d %H:%M:%S%.9f")
-                                .to_string()
+                                .to_rfc3339_opts(seconds_format, false)
                             }
                         };
                         Ok(res)
-                    }
-                    Timestamp(_unit, Some(_timezone)) => {
-                        todo!()
                     }
                     other => panic!("TimestampArray has unexpected field {}", other),
                 }
