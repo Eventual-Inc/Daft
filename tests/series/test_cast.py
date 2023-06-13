@@ -296,7 +296,7 @@ def test_series_cast_python_to_fixed_shape_image() -> None:
     [
         None,
         "UTC",
-        "-01:23",
+        "-04:00",
         "America/Los_Angeles",
     ],
 )
@@ -313,5 +313,29 @@ def test_series_cast_int_timestamp(timeunit, timezone) -> None:
     assert t.to_arrow() == pa.array([-1, 0, 1], type=pa.int64())
 
 
-# def test_Series_cast_timestamp_string() -> None:
-#     raise NotImplementedError
+@pytest.mark.parametrize(
+    ["timeunit", "sec_str"],
+    [
+        (TimeUnit.s(), ":01"),
+        (TimeUnit.ms(), ":00.001"),
+        (TimeUnit.us(), ":00.000001"),
+        (TimeUnit.ns(), ":00.000000001"),
+    ],
+)
+@pytest.mark.parametrize(
+    ["timezone", "expected_dt", "tz_suffix"],
+    [
+        (None, "1970-01-01T00:00", ""),
+        ("UTC", "1970-01-01T00:00", "+00:00"),
+        ("-04:00", "1969-12-31T20:00", "-04:00"),
+        ("America/Los_Angeles", "1969-12-31T16:00", "-08:00"),
+    ],
+)
+def test_series_cast_timestamp_string(timeunit, sec_str, timezone, expected_dt, tz_suffix) -> None:
+    # Ensure int->timestamp casting behaves identically to pyarrow
+    # (except that the delimiter is ISO 8601 "T").
+    arr = pa.array([1]).cast(pa.timestamp(str(timeunit), timezone))
+    series = Series.from_arrow(arr)
+
+    t = series.cast(DataType.string())
+    assert t.to_pylist()[0] == f"{expected_dt}{sec_str}{tz_suffix}"

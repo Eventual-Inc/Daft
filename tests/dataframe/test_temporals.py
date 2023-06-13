@@ -97,7 +97,7 @@ def test_temporal_file_roundtrip(format) -> None:
 )
 @pytest.mark.parametrize(
     "timezone",
-    [None, "UTC", "America/Los_Angeles", "+01:23"],
+    [None, "UTC", "America/Los_Angeles", "+04:00"],
 )
 def test_arrow_timestamp(timeunit, timezone) -> None:
     # Test roundtrip of Arrow timestamps.
