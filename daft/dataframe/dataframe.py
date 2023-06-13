@@ -1123,7 +1123,7 @@ class DataFrame:
     ) -> "dask.DataFrame":
         """Converts the current Daft DataFrame to a Dask DataFrame.
 
-        The returned Dask DataFrame will use `Dask-on-Ray <https://docs.ray.io/en/latest/data/dask-on-ray.html>`__
+        The returned Dask DataFrame will use `Dask-on-Ray <https://docs.ray.io/en/latest/ray-more-libs/dask-on-ray.html>`__
         to execute operations on a Ray cluster.
 
         .. NOTE::

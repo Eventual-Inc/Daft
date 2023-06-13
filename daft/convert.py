@@ -112,7 +112,7 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
     """Creates a Daft DataFrame from a Dask DataFrame.
 
     The provided Dask DataFrame must have been created using
-    `Dask-on-Ray <https://docs.ray.io/en/latest/data/dask-on-ray.html>`__.
+    `Dask-on-Ray <https://docs.ray.io/en/latest/ray-more-libs/dask-on-ray.html>`__.
 
     .. NOTE::
         This function can only work if Daft is running using the RayRunner
