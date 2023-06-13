@@ -78,6 +78,19 @@ class TimeUnit:
         else:
             raise ValueError("Unsupported unit: {unit}")
 
+    def __str__(self) -> str:
+        # These are the strings PyArrow uses.
+        if self._timeunit == PyTimeUnit.seconds():
+            return "s"
+        elif self._timeunit == PyTimeUnit.milliseconds():
+            return "ms"
+        elif self._timeunit == PyTimeUnit.microseconds():
+            return "us"
+        elif self._timeunit == PyTimeUnit.nanoseconds():
+            return "ns"
+        else:
+            assert False
+
 
 class DataType:
     """A Daft DataType defines the type of all the values in an Expression or DataFrame column"""

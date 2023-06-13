@@ -8,7 +8,7 @@ import pyarrow as pa
 import pytest
 from PIL import Image
 
-from daft.datatype import DataType, ImageMode
+from daft.datatype import DataType, ImageMode, TimeUnit
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
@@ -280,3 +280,38 @@ def test_series_cast_python_to_fixed_shape_image() -> None:
     np.testing.assert_equal([data[0].ravel(), data[1].ravel()], pydata[:-1])
     # TODO(Clark): Fix the Daft --> pyarrow egress so it reconstitutes the NumPy ndarrays.
     # np.testing.assert_equal([data[0].ravel(), data[1].ravel()], pydata[:-1])
+
+
+@pytest.mark.parametrize(
+    "timeunit",
+    [
+        TimeUnit.s(),
+        TimeUnit.ms(),
+        TimeUnit.us(),
+        TimeUnit.ns(),
+    ],
+)
+@pytest.mark.parametrize(
+    "timezone",
+    [
+        None,
+        "UTC",
+        "-01:23",
+        "America/Los_Angeles",
+    ],
+)
+def test_series_cast_int_timestamp(timeunit, timezone) -> None:
+    # Ensure int->timestamp casting behaves identically to pyarrow.
+    series = Series.from_pylist([-1, 0, 1])
+    t = series.cast(DataType.timestamp(timeunit, timezone))
+    assert t.to_arrow() == pa.array([-1, 0, 1]).cast(pa.timestamp(str(timeunit), timezone))
+
+    # Ensure timestamp->int casting behaves identically to pyarrow.
+    arr = pa.array([-1, 0, 1]).cast(pa.timestamp(str(timeunit), timezone))
+    series = Series.from_arrow(arr)
+    t = series.cast(DataType.int64())
+    assert t.to_arrow() == pa.array([-1, 0, 1], type=pa.int64())
+
+
+# def test_Series_cast_timestamp_string() -> None:
+#     raise NotImplementedError
