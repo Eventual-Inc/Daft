@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import zoneinfo
 from datetime import datetime, timedelta, timezone
 
 import pyarrow as pa
@@ -87,3 +88,32 @@ def test_temporal_file_roundtrip(format) -> None:
             df_readback = daft.read_parquet(dirname).collect()
 
     assert df.to_pydict() == df_readback.to_pydict()
+
+
+@pytest.mark.parametrize(
+    "timeunit",
+    ["s", "ms", "us", "ns"],
+)
+@pytest.mark.parametrize(
+    "timezone",
+    [None, "UTC", "America/Los_Angeles", "+01:23"],
+)
+def test_arrow_timestamp(timeunit, timezone) -> None:
+    # Test roundtrip of Arrow timestamps.
+    pa_table = pa.Table.from_pydict({"timestamp": pa.array([1, 0, -1], pa.timestamp(timeunit, tz=timezone))})
+
+    df = daft.from_arrow(pa_table)
+
+    assert df.to_arrow() == pa_table
+
+
+@pytest.mark.parametrize(
+    "timezone", [None, timezone.utc, timezone(timedelta(seconds=17)), zoneinfo.ZoneInfo("America/Los_Angeles")]
+)
+def test_python_timestamp(timezone) -> None:
+    # Test roundtrip of Python timestamps.
+    timestamp = datetime.now(timezone)
+    df = daft.from_pydict({"timestamp": [timestamp]})
+
+    res = df.to_pydict()["timestamp"][0]
+    assert res.isoformat() == timestamp.isoformat()
