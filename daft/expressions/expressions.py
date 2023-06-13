@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import builtins
 import sys
-from datetime import date
+from datetime import date, datetime
 from typing import Callable, Iterable, Iterator, TypeVar, overload
 
 import fsspec
+import pyarrow as pa
 
 from daft.daft import ImageFormat
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
 from daft.daft import udf as _udf
-from daft.datatype import DataType
+from daft.datatype import DataType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
 
@@ -34,7 +35,16 @@ def lit(value: object) -> Expression:
     Returns:
         Expression: Expression representing the value provided
     """
-    if isinstance(value, date):
+    if isinstance(value, datetime):
+        pa_timestamp = pa.scalar(value)
+        return lit(pa_timestamp.cast(pa.int64()).as_py()).cast(
+            DataType.timestamp(
+                TimeUnit.from_str(pa_timestamp.type.unit),
+                pa_timestamp.type.tz,
+            )
+        )
+
+    elif isinstance(value, date):
         epoch_time = value - date(1970, 1, 1)
         return lit(epoch_time.days).cast(DataType.date())
     else:
