@@ -3,7 +3,6 @@ use arrow2::compute::{
     cast::{can_cast_types, cast, CastOptions},
 };
 
-use crate::series::IntoSeries;
 use crate::{
     array::DataArray,
     datatypes::logical::{
@@ -14,6 +13,7 @@ use crate::{
     series::Series,
     with_match_arrow_daft_types, with_match_daft_logical_types,
 };
+use crate::{datatypes::TimeUnit, series::IntoSeries};
 
 #[cfg(feature = "python")]
 use crate::array::{ops::image::ImageArrayVecs, pseudo_arrow::PseudoArrowArray};
@@ -154,11 +154,80 @@ impl DateArray {
     }
 }
 
+pub(super) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
+    let chrono_ts = {
+        arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow().unwrap())
+    };
+    let format_str = match unit {
+        TimeUnit::Seconds => "%Y-%m-%dT%H:%M:%S",
+        TimeUnit::Milliseconds => "%Y-%m-%dT%H:%M:%S%.3f",
+        TimeUnit::Microseconds => "%Y-%m-%dT%H:%M:%S%.6f",
+        TimeUnit::Nanoseconds => "%Y-%m-%dT%H:%M:%S%.9f",
+    };
+    chrono_ts.format(format_str).to_string()
+}
+
+pub(super) fn timestamp_to_str_offset(
+    val: i64,
+    unit: &TimeUnit,
+    offset: &chrono::FixedOffset,
+) -> String {
+    let seconds_format = match unit {
+        TimeUnit::Seconds => chrono::SecondsFormat::Secs,
+        TimeUnit::Milliseconds => chrono::SecondsFormat::Millis,
+        TimeUnit::Microseconds => chrono::SecondsFormat::Micros,
+        TimeUnit::Nanoseconds => chrono::SecondsFormat::Nanos,
+    };
+    arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow().unwrap(), offset)
+        .to_rfc3339_opts(seconds_format, false)
+}
+
+pub(super) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
+    let seconds_format = match unit {
+        TimeUnit::Seconds => chrono::SecondsFormat::Secs,
+        TimeUnit::Milliseconds => chrono::SecondsFormat::Millis,
+        TimeUnit::Microseconds => chrono::SecondsFormat::Micros,
+        TimeUnit::Nanoseconds => chrono::SecondsFormat::Nanos,
+    };
+    arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow().unwrap(), tz)
+        .to_rfc3339_opts(seconds_format, false)
+}
+
 impl TimestampArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
             DataType::Utf8 => {
-                todo!("iso string")
+                let DataType::Timestamp(unit, timezone) = &self.field.dtype else { panic!("Wrong dtype for TimestampArray: {}", self.field.dtype) };
+
+                let str_array: arrow2::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
+                    || {
+                        self.as_arrow()
+                            .iter()
+                            .map(|val| val.map(|val| timestamp_to_str_naive(*val, unit)))
+                            .collect()
+                    },
+                    |timezone| {
+                        if let Ok(offset) = arrow2::temporal_conversions::parse_offset(timezone) {
+                            self.as_arrow()
+                                .iter()
+                                .map(|val| {
+                                    val.map(|val| timestamp_to_str_offset(*val, unit, &offset))
+                                })
+                                .collect()
+                        } else if let Ok(tz) =
+                            arrow2::temporal_conversions::parse_offset_tz(timezone)
+                        {
+                            self.as_arrow()
+                                .iter()
+                                .map(|val| val.map(|val| timestamp_to_str_tz(*val, unit, &tz)))
+                                .collect()
+                        } else {
+                            panic!("Unable to parse timezone string {}", timezone)
+                        }
+                    },
+                );
+
+                Ok(Utf8Array::from((self.name(), Box::new(str_array))).into_series())
             }
             DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),

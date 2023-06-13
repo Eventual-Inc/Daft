@@ -557,67 +557,38 @@ impl TimestampArray {
     }
 
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        match self.get(idx) {
-            Some(val) => {
+        let res = self.get(idx).map_or_else(
+            || "None".to_string(),
+            |val| -> String {
                 use crate::datatypes::DataType::Timestamp;
-                use crate::datatypes::TimeUnit::*;
+                use crate::array::ops::cast::{
+                    timestamp_to_str_naive,
+                    timestamp_to_str_offset,
+                    timestamp_to_str_tz,
+                };
 
-                // Naive vs timezone.
-                match &self.field().dtype {
-                    Timestamp(unit, None) => {
-                        let chrono_ts = {
-                            arrow2::temporal_conversions::timestamp_to_naive_datetime(
-                                val,
-                                unit.to_arrow()?,
-                            )
-                        };
-                        let format_str = match unit {
-                            Seconds => "%Y-%m-%dT%H:%M:%S",
-                            Milliseconds => "%Y-%m-%dT%H:%M:%S%.3f",
-                            Microseconds => "%Y-%m-%dT%H:%M:%S%.6f",
-                            Nanoseconds => "%Y-%m-%dT%H:%M:%S%.9f",
-                        };
-                        let res = chrono_ts.format(format_str).to_string();
-                        Ok(res)
-                    }
-                    Timestamp(unit, Some(timezone)) => {
-                        let seconds_format = match unit {
-                            Seconds => chrono::SecondsFormat::Secs,
-                            Milliseconds => chrono::SecondsFormat::Millis,
-                            Microseconds => chrono::SecondsFormat::Micros,
-                            Nanoseconds => chrono::SecondsFormat::Nanos,
-                        };
-                        let res = {
-                            // In arrow, timezone string can be either:
-                            // 1. a fixed offset "-07:00", parsed using parse_offset, or
-                            // 2. a timezone name e.g. "America/Los_Angeles", parsed using parse_offset_tz.
-                            if let Ok(offset) = arrow2::temporal_conversions::parse_offset(timezone)
-                            {
-                                arrow2::temporal_conversions::timestamp_to_datetime(
-                                    val,
-                                    unit.to_arrow()?,
-                                    &offset,
-                                )
-                                .to_rfc3339_opts(seconds_format, false)
-                            } else {
-                                let offset_tz =
-                                    arrow2::temporal_conversions::parse_offset_tz(timezone)?;
-                                arrow2::temporal_conversions::timestamp_to_datetime(
-                                    val,
-                                    unit.to_arrow()?,
-                                    &offset_tz,
-                                )
-                                .to_rfc3339_opts(seconds_format, false)
-                            }
-                        };
-                        Ok(res)
-                    }
-                    other => panic!("TimestampArray has unexpected field {}", other),
-                }
+                let Timestamp(unit, timezone) = &self.field.dtype else { panic!("Wrong dtype for TimestampArray: {}", self.field.dtype) };
+
+                timezone.as_ref().map_or_else(
+                    || timestamp_to_str_naive(val, unit),
+                    |timezone| {
+                        // In arrow, timezone string can be either:
+                        // 1. a fixed offset "-07:00", parsed using parse_offset, or
+                        // 2. a timezone name e.g. "America/Los_Angeles", parsed using parse_offset_tz.
+                        if let Ok(offset) = arrow2::temporal_conversions::parse_offset(timezone) {
+                            timestamp_to_str_offset(val, unit, &offset)
+                        } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(timezone) {
+                            timestamp_to_str_tz(val, unit, &tz)
+                        } else {
+                            panic!("Unable to parse timezone string {}", timezone)
+                        }
+                    },
+                )
             }
-            None => Ok("None".to_string()),
-        }
+        );
+        Ok(res)
     }
+
     pub fn html_value(&self, idx: usize) -> String {
         let str_value = self.str_value(idx).unwrap();
         html_escape::encode_text(&str_value)
