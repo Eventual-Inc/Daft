@@ -1,5 +1,6 @@
 use crate::datatypes::{DataType, Field, ImageMode, TimeUnit};
 use pyo3::{
+    class::basic::CompareOp,
     exceptions::PyValueError,
     prelude::*,
     types::{PyBytes, PyDict, PyString, PyTuple},
@@ -43,6 +44,22 @@ impl PyTimeUnit {
     }
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{:?}", self.timeunit))
+    }
+    pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        //https://pyo3.rs/v0.19.0/class/object.html
+        match op {
+            CompareOp::Eq => Ok(self.timeunit == other.timeunit),
+            CompareOp::Ne => Ok(self.timeunit != other.timeunit),
+            _ => Err(pyo3::exceptions::PyNotImplementedError::new_err(())),
+        }
+    }
+    pub fn __hash__(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hash;
+        use std::hash::Hasher;
+        let mut hasher = DefaultHasher::new();
+        self.timeunit.hash(&mut hasher);
+        hasher.finish()
     }
 }
 
