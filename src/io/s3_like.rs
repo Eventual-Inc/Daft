@@ -73,14 +73,10 @@ fn parse_profile() -> SsoCredentialsProvider {
         .build()
 }
 
-fn build_client(endpoint: &str) -> aws_sdk_s3::Client {
+async fn build_client(endpoint: &str) -> aws_sdk_s3::Client {
     let region = Region::new("us-west-2");
 
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let conf = rt.block_on(async { aws_config::load_from_env().await });
+    let conf = aws_config::load_from_env().await;
 
     let s3_conf = match endpoint.is_empty() {
         true => aws_sdk_s3::config::Builder::from(&conf)
@@ -96,9 +92,9 @@ fn build_client(endpoint: &str) -> aws_sdk_s3::Client {
 }
 
 impl S3LikeSource {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         S3LikeSource {
-            client: build_client(""),
+            client: build_client("").await,
         }
     }
 }
