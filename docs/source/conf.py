@@ -39,7 +39,6 @@ extensions = [
 ]
 
 templates_path = ["_templates"]
-exclude_patterns = ["release_notes/_template.rst"]
 
 
 # -- Options for Notebook rendering
