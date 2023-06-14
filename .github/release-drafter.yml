@@ -50,10 +50,10 @@ autolabeler:
   - /.*\[BREAKING\].*/
 - label: enhancement
   title:
-  - /.*\[FEATURE\].*/
+  - /.*\[FEAT\].*/
 - label: performance
   title:
-  - /.*\[PERFORMANCE\].*/
+  - /.*\[PERF\].*/
 - label: bug
   title:
   - /.*\[BUG\].*/
