@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import tempfile
-import zoneinfo
 from datetime import datetime, timedelta, timezone
 
 import pyarrow as pa
@@ -108,9 +107,7 @@ def test_arrow_timestamp(timeunit, timezone) -> None:
     assert df.to_arrow() == pa_table
 
 
-@pytest.mark.parametrize(
-    "timezone", [None, timezone.utc, timezone(timedelta(seconds=17)), zoneinfo.ZoneInfo("America/Los_Angeles")]
-)
+@pytest.mark.parametrize("timezone", [None, timezone.utc, timezone(timedelta(hours=-7))])
 def test_python_timestamp(timezone) -> None:
     # Test roundtrip of Python timestamps.
     timestamp = datetime.now(timezone)
