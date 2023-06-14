@@ -107,6 +107,7 @@ def test_arrow_timestamp(timeunit, timezone) -> None:
     assert df.to_arrow() == pa_table
 
 
+@pytest.mark.skipif(not PYARROW_GE_7_0_0, reason="PyArrow conversion of timezoned datetime is broken in 6.0.1")
 @pytest.mark.parametrize("timezone", [None, timezone.utc, timezone(timedelta(hours=-7))])
 def test_python_timestamp(timezone) -> None:
     # Test roundtrip of Python timestamps.
