@@ -7,7 +7,7 @@ use crate::{
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
         FixedSizeListArray, ImageFormat, ListArray, NullArray, StructArray, Utf8Array,
     },
-    error::DaftResult,
+    error::{DaftError, DaftResult},
 };
 
 use super::{as_arrow::AsArrow, image::AsImageObj};
@@ -169,6 +169,12 @@ impl NullArray {
         html_escape::encode_text(&str_value)
             .into_owned()
             .replace('\n', "<br />")
+    }
+}
+
+impl From<std::fmt::Error> for DaftError {
+    fn from(error: std::fmt::Error) -> Self {
+        DaftError::ComputeError(error.to_string())
     }
 }
 

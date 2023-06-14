@@ -18,22 +18,18 @@ use crate::io::s3_like::s3::primitives::ByteStreamError;
 
 impl From<ByteStreamError> for DaftError {
     fn from(error: ByteStreamError) -> Self {
-        DaftError::IoError(Box::new(error))
+        DaftError::External(error.into())
     }
 }
 
-impl<E: Sync + Send + std::error::Error + 'static, R: std::fmt::Debug> From<SdkError<E, R>>
-    for DaftError
+impl<E: std::error::Error + 'static + Send + Sync, R: std::fmt::Debug + Send + Sync + 'static>
+    From<SdkError<E, R>> for DaftError
+where
+    Self: Send + Sync,
 {
     fn from(error: SdkError<E, R>) -> Self {
-        log::warn!("{error:?}");
-        DaftError::IoError(error.into_source().unwrap())
-    }
-}
-
-impl From<anyhow::Error> for DaftError {
-    fn from(error: anyhow::Error) -> Self {
-        DaftError::IoError(error.into())
+        // log::warn!("{error:?}");
+        DaftError::External(error.into())
     }
 }
 
@@ -80,6 +76,9 @@ impl ObjectSource for S3LikeSource {
 
         let body = object.body;
         let stream = body.map_err(|e| e.into());
-        Ok(GetResult::Stream(stream.boxed(), Some(object.content_length as usize)))
+        Ok(GetResult::Stream(
+            stream.boxed(),
+            Some(object.content_length as usize),
+        ))
     }
 }

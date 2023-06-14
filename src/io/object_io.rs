@@ -38,7 +38,7 @@ impl GetResult {
         use GetResult::*;
         match self {
             File => todo!("Impl local fs"),
-            Stream(stream,size) => collect_bytes(stream, size).await,
+            Stream(stream, size) => collect_bytes(stream, size).await,
         }
     }
 }
