@@ -14,7 +14,7 @@ impl LocalSource {
 #[async_trait]
 impl ObjectSource for LocalSource {
     async fn get(&self, uri: &str) -> DaftResult<GetResult> {
-        const EXPECTED_START: &'static str = "file://";
+        const EXPECTED_START: &str = "file://";
         let is_valid = uri.starts_with(EXPECTED_START);
         if !is_valid {
             return Err(DaftError::ValueError(
