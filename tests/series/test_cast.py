@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -339,3 +340,23 @@ def test_series_cast_timestamp_string(timeunit, sec_str, timezone, expected_dt, 
 
     t = series.cast(DataType.string())
     assert t.to_pylist()[0] == f"{expected_dt}{sec_str}{tz_suffix}"
+
+
+@pytest.mark.parametrize(
+    ["timestamp_str", "expected", "tz"],
+    [
+        ("1970-01-01T01:23:45", datetime(1970, 1, 1, 1, 23, 45), None),
+        ("1970-01-01T01:23:45.999999", datetime(1970, 1, 1, 1, 23, 45, 999999), None),
+        ("1970-01-01T01:23:45.999999+00:00", datetime(1970, 1, 1, 1, 23, 45, 999999, tzinfo=timezone.utc), "+00:00"),
+        (
+            "1970-01-01T01:23:45.999999-08:00",
+            datetime(1970, 1, 1, 1, 23, 45, 999999, tzinfo=timezone(timedelta(hours=-8))),
+            "-08:00",
+        ),
+    ],
+)
+def test_series_cast_string_timestamp(timestamp_str, expected, tz) -> None:
+    series = Series.from_pylist([timestamp_str])
+    # Arrow cast only supports nanosecond timeunit for now.
+    casted = series.cast(DataType.timestamp(TimeUnit.ns(), tz))
+    assert casted.to_pylist() == [expected]
