@@ -14,7 +14,9 @@ impl LocalSource {
 #[async_trait]
 impl ObjectSource for LocalSource {
     async fn get(&self, uri: &str) -> DaftResult<GetResult> {
-        let file = tokio::fs::File::open(uri).await;
+        let path = url::Url::parse(uri)?;
+        let file_path = path.to_file_path().unwrap();
+        let file = tokio::fs::File::open(file_path).await;
         match file {
             Ok(file) => Ok(GetResult::File(file)),
             Err(err) => {
