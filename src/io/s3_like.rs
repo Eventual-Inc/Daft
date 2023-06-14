@@ -61,8 +61,8 @@ impl S3LikeSource {
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
-    async fn get(&self, uri: String) -> DaftResult<GetResult> {
-        let parsed = url::Url::parse(uri.as_str())?;
+    async fn get(&self, uri: &str) -> DaftResult<GetResult> {
+        let parsed = url::Url::parse(uri)?;
         let bucket = parsed.host_str().unwrap();
         let key = parsed.path();
 
