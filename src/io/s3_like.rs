@@ -80,6 +80,6 @@ impl ObjectSource for S3LikeSource {
 
         let body = object.body;
         let stream = body.map_err(|e| e.into());
-        Ok(GetResult::Stream(stream.boxed()))
+        Ok(GetResult::Stream(stream.boxed(), Some(object.content_length as usize)))
     }
 }

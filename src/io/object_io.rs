@@ -6,7 +6,7 @@ use futures::StreamExt;
 
 pub enum GetResult {
     File,
-    Stream(BoxStream<'static, DaftResult<Bytes>>),
+    Stream(BoxStream<'static, DaftResult<Bytes>>, Option<usize>),
 }
 
 pub async fn collect_bytes<S>(mut stream: S, size_hint: Option<usize>) -> DaftResult<Bytes>
@@ -38,7 +38,7 @@ impl GetResult {
         use GetResult::*;
         match self {
             File => todo!("Impl local fs"),
-            Stream(s) => collect_bytes(s, None).await,
+            Stream(stream,size) => collect_bytes(stream, size).await,
         }
     }
 }

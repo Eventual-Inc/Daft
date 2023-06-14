@@ -24,8 +24,9 @@ impl ObjectSource for HttpSource {
     async fn get(&self, uri: String) -> DaftResult<GetResult> {
         let response = reqwest::get(uri).await?;
         let response = response.error_for_status()?;
+        let size_bytes = response.content_length().map(|s| s as usize);
         let stream = response.bytes_stream();
         let stream = stream.map_err(|e| e.into());
-        Ok(GetResult::Stream(stream.boxed()))
+        Ok(GetResult::Stream(stream.boxed(), size_bytes))
     }
 }
