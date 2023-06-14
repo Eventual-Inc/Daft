@@ -85,7 +85,7 @@ async fn single_url_download(
         None
     };
 
-    let final_value = match value {
+    match value {
         Some(Ok(bytes)) => Ok(Some(bytes)),
         Some(Err(err)) => match raise_error_on_failure {
             true => Err(err),
@@ -98,8 +98,7 @@ async fn single_url_download(
             }
         },
         None => Ok(None),
-    };
-    final_value
+    }
 }
 
 pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
