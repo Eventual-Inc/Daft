@@ -3,13 +3,20 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
+use tokio::io::AsyncReadExt;
 
 pub enum GetResult {
-    File,
+    File(tokio::fs::File),
     Stream(BoxStream<'static, DaftResult<Bytes>>, Option<usize>),
 }
 
-pub async fn collect_bytes<S>(mut stream: S, size_hint: Option<usize>) -> DaftResult<Bytes>
+async fn collect_file(mut f: tokio::fs::File) -> DaftResult<Bytes> {
+    let mut buf = vec![];
+    f.read_to_end(&mut buf).await?;
+    Ok(Bytes::from(buf))
+}
+
+async fn collect_bytes<S>(mut stream: S, size_hint: Option<usize>) -> DaftResult<Bytes>
 where
     S: Stream<Item = DaftResult<Bytes>> + Send + Unpin,
 {
@@ -37,7 +44,7 @@ impl GetResult {
     pub async fn bytes(self) -> DaftResult<Bytes> {
         use GetResult::*;
         match self {
-            File => todo!("Impl local fs"),
+            File(f) => collect_file(f).await,
             Stream(stream, size) => collect_bytes(stream, size).await,
         }
     }
@@ -45,5 +52,5 @@ impl GetResult {
 
 #[async_trait]
 pub trait ObjectSource: Sync + Send {
-    async fn get(&self, uri: String) -> DaftResult<GetResult>;
+    async fn get(&self, uri: &str) -> DaftResult<GetResult>;
 }

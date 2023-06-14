@@ -1,8 +1,10 @@
 mod http;
+mod local;
 mod object_io;
 mod s3_like;
 
 use std::{
+    borrow::Cow,
     collections::HashMap,
     sync::{Arc, RwLock},
 };
@@ -10,6 +12,7 @@ use std::{
 use futures::{StreamExt, TryStreamExt};
 
 use tokio::{runtime::Runtime, task::JoinError};
+use url::ParseError;
 
 use crate::{
     array::ops::as_arrow::AsArrow,
@@ -20,6 +23,7 @@ use crate::{
 
 use self::{
     http::HttpSource,
+    local::LocalSource,
     object_io::{GetResult, ObjectSource},
 };
 
@@ -36,7 +40,7 @@ impl From<JoinError> for DaftError {
 }
 
 lazy_static! {
-    static ref OBJ_SRC_MAP: RwLock<HashMap<String, Arc<dyn ObjectSource>>> =
+    static ref OBJ_SRC_MAP: RwLock<HashMap<SourceType, Arc<dyn ObjectSource>>> =
         RwLock::new(HashMap::new());
     static ref RT: Runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -44,33 +48,60 @@ lazy_static! {
         .unwrap();
 }
 
-async fn get_source(scheme: &str) -> DaftResult<Arc<dyn ObjectSource>> {
+async fn get_source(source_type: SourceType) -> DaftResult<Arc<dyn ObjectSource>> {
     {
-        if let Some(source) = OBJ_SRC_MAP.read().unwrap().get(scheme) {
+        if let Some(source) = OBJ_SRC_MAP.read().unwrap().get(&source_type) {
             return Ok(source.clone());
         }
     }
 
-    let new_source: Arc<dyn ObjectSource> = match scheme {
-        "https" | "http" => Ok(Arc::new(HttpSource::new().await) as Arc<dyn ObjectSource>),
-        "s3" => Ok(Arc::new(S3LikeSource::new().await) as Arc<dyn ObjectSource>),
-        _ => Err(DaftError::ValueError(format!(
-            "{scheme} not supported for IO!"
-        ))),
-    }?;
+    let new_source: Arc<dyn ObjectSource> = match source_type {
+        SourceType::File => Arc::new(LocalSource::new().await) as Arc<dyn ObjectSource>,
+        SourceType::Http => Arc::new(HttpSource::new().await) as Arc<dyn ObjectSource>,
+        SourceType::S3 => Arc::new(S3LikeSource::new().await) as Arc<dyn ObjectSource>,
+    };
 
     let mut w_handle = OBJ_SRC_MAP.write().unwrap();
-    if w_handle.get(scheme).is_none() {
-        w_handle.insert(scheme.to_string(), new_source.clone());
+    if w_handle.get(&source_type).is_none() {
+        w_handle.insert(source_type, new_source.clone());
     }
     Ok(new_source)
 }
 
-async fn single_url_get(input: String) -> DaftResult<GetResult> {
-    let parsed = url::Url::parse(input.as_str())?;
+#[derive(Debug, Hash, PartialEq, std::cmp::Eq)]
+enum SourceType {
+    File,
+    Http,
+    S3,
+}
 
-    let source = get_source(parsed.scheme()).await?;
-    source.get(input).await
+fn parse_url<'a>(input: &'a str) -> DaftResult<(SourceType, Cow<'a, str>)> {
+    let mut fixed_input = Cow::Borrowed(input);
+
+    let url = match url::Url::parse(input) {
+        Ok(url) => Ok(url),
+        Err(ParseError::RelativeUrlWithoutBase) => {
+            fixed_input = Cow::Owned(format!("file://{input}"));
+            url::Url::parse(fixed_input.as_ref())
+        }
+        Err(err) => Err(err),
+    }?;
+
+    let scheme = url.scheme().to_lowercase();
+    match scheme.as_ref() {
+        "file" => Ok((SourceType::File, fixed_input)),
+        "http" | "https" => Ok((SourceType::Http, fixed_input)),
+        "s3" => Ok((SourceType::S3, fixed_input)),
+        _ => Err(DaftError::ValueError(format!(
+            "{scheme} not supported for IO!"
+        ))),
+    }
+}
+
+async fn single_url_get(input: String) -> DaftResult<GetResult> {
+    let (scheme, path) = parse_url(&input)?;
+    let source = get_source(scheme).await?;
+    source.get(path.as_ref()).await
 }
 
 async fn single_url_download(
@@ -95,7 +126,7 @@ async fn single_url_download(
             true => Err(err),
             false => {
                 log::warn!(
-                    "Error occurred during url_download at index: {index} {}",
+                    "Error occurred during url_download at index: {index} {} (falling back to Null)",
                     err
                 );
                 Ok(None)
