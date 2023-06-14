@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use futures::{StreamExt, TryStreamExt};
-use s3::{config::Region, error::SdkError};
+use s3::error::SdkError;
 
 use crate::error::{DaftError, DaftResult};
 

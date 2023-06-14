@@ -75,7 +75,7 @@ enum SourceType {
     S3,
 }
 
-fn parse_url<'a>(input: &'a str) -> DaftResult<(SourceType, Cow<'a, str>)> {
+fn parse_url(input: &str) -> DaftResult<(SourceType, Cow<'_, str>)> {
     let mut fixed_input = Cow::Borrowed(input);
 
     let url = match url::Url::parse(input) {
