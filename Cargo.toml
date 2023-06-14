@@ -1,5 +1,7 @@
 [dependencies]
 base64 = "0.21.2"
+chrono = "0.4.26"
+chrono-tz = "0.8.2"
 dyn-clone = "1.0.11"
 fnv = "1.0.7"
 html-escape = "0.2.13"
@@ -12,7 +14,7 @@ serde_json = "1.0.96"
 
 [dependencies.arrow2]
 branch = "clark/expand-casting-support"
-features = ["compute_take", "compute_cast", "compute_aggregate", "compute_if_then_else", "compute_sort", "compute_filter", "compute_temporal", "compute_comparison", "compute_arithmetics", "compute_concatenate", "io_ipc"]
+features = ["chrono-tz", "compute_take", "compute_cast", "compute_aggregate", "compute_if_then_else", "compute_sort", "compute_filter", "compute_temporal", "compute_comparison", "compute_arithmetics", "compute_concatenate", "io_ipc"]
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
 version = "0.17.1"

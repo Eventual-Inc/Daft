@@ -1,7 +1,7 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray},
+        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray},
         BooleanArray, DaftArrowBackedType,
     },
     error::DaftResult,
@@ -74,6 +74,13 @@ impl crate::datatypes::PythonArray {
 }
 
 impl DateArray {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let new_array = self.physical.filter(mask)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+}
+
+impl TimestampArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let new_array = self.physical.filter(mask)?;
         Ok(Self::new(self.field.clone(), new_array))

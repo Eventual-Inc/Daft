@@ -526,7 +526,7 @@ impl Table {
 impl Display for Table {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        let table = self.to_prettytable(Some(20));
+        let table = self.to_prettytable(Some(32));
         write!(f, "{table}")
     }
 }

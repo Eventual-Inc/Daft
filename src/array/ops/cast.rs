@@ -3,17 +3,17 @@ use arrow2::compute::{
     cast::{can_cast_types, cast, CastOptions},
 };
 
-use crate::series::IntoSeries;
 use crate::{
     array::DataArray,
     datatypes::logical::{
-        DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray,
+        DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray, TimestampArray,
     },
     datatypes::{DaftArrowBackedType, DataType, Field, Utf8Array},
     error::{DaftError, DaftResult},
     series::Series,
     with_match_arrow_daft_types, with_match_daft_logical_types,
 };
+use crate::{datatypes::TimeUnit, series::IntoSeries};
 
 #[cfg(feature = "python")]
 use crate::array::{ops::image::ImageArrayVecs, pseudo_arrow::PseudoArrowArray};
@@ -55,7 +55,7 @@ where
     }
     let physical_type = dtype.to_physical();
     let self_arrow_type = to_cast.data_type().to_arrow()?;
-    let target_arrow_type = physical_type.to_arrow()?;
+    let target_arrow_type = dtype.to_arrow()?;
     if !can_cast_types(&self_arrow_type, &target_arrow_type) {
         return Err(DaftError::TypeError(format!(
             "can not cast {:?} to type: {:?}: Arrow types not castable",
@@ -64,14 +64,37 @@ where
         )));
     }
 
-    let result_array = cast(
-        to_cast.data(),
-        &target_arrow_type,
-        CastOptions {
-            wrapped: true,
-            partial: false,
-        },
-    )?;
+    let result_array = {
+        let target_arrow_physical = physical_type.to_arrow()?;
+        if target_arrow_physical == target_arrow_type {
+            cast(
+                to_cast.data(),
+                &target_arrow_type,
+                CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )?
+        } else {
+            let arrow_logical = cast(
+                to_cast.data(),
+                &target_arrow_type,
+                CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )?;
+            cast(
+                arrow_logical.as_ref(),
+                &target_arrow_physical,
+                CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )?
+        }
+    };
+
     let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
 
     if dtype.is_logical() {
@@ -149,6 +172,88 @@ impl DateArray {
             }
             DataType::Float32 => self.cast(&DataType::Int32)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int32)?.cast(&DataType::Float64),
+            _ => arrow_cast(&self.physical, dtype),
+        }
+    }
+}
+
+pub(super) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
+    let chrono_ts = {
+        arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow().unwrap())
+    };
+    let format_str = match unit {
+        TimeUnit::Seconds => "%Y-%m-%dT%H:%M:%S",
+        TimeUnit::Milliseconds => "%Y-%m-%dT%H:%M:%S%.3f",
+        TimeUnit::Microseconds => "%Y-%m-%dT%H:%M:%S%.6f",
+        TimeUnit::Nanoseconds => "%Y-%m-%dT%H:%M:%S%.9f",
+    };
+    chrono_ts.format(format_str).to_string()
+}
+
+pub(super) fn timestamp_to_str_offset(
+    val: i64,
+    unit: &TimeUnit,
+    offset: &chrono::FixedOffset,
+) -> String {
+    let seconds_format = match unit {
+        TimeUnit::Seconds => chrono::SecondsFormat::Secs,
+        TimeUnit::Milliseconds => chrono::SecondsFormat::Millis,
+        TimeUnit::Microseconds => chrono::SecondsFormat::Micros,
+        TimeUnit::Nanoseconds => chrono::SecondsFormat::Nanos,
+    };
+    arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow().unwrap(), offset)
+        .to_rfc3339_opts(seconds_format, false)
+}
+
+pub(super) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
+    let seconds_format = match unit {
+        TimeUnit::Seconds => chrono::SecondsFormat::Secs,
+        TimeUnit::Milliseconds => chrono::SecondsFormat::Millis,
+        TimeUnit::Microseconds => chrono::SecondsFormat::Micros,
+        TimeUnit::Nanoseconds => chrono::SecondsFormat::Nanos,
+    };
+    arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow().unwrap(), tz)
+        .to_rfc3339_opts(seconds_format, false)
+}
+
+impl TimestampArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Utf8 => {
+                let DataType::Timestamp(unit, timezone) = &self.field.dtype else { panic!("Wrong dtype for TimestampArray: {}", self.field.dtype) };
+
+                let str_array: arrow2::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
+                    || {
+                        self.as_arrow()
+                            .iter()
+                            .map(|val| val.map(|val| timestamp_to_str_naive(*val, unit)))
+                            .collect()
+                    },
+                    |timezone| {
+                        if let Ok(offset) = arrow2::temporal_conversions::parse_offset(timezone) {
+                            self.as_arrow()
+                                .iter()
+                                .map(|val| {
+                                    val.map(|val| timestamp_to_str_offset(*val, unit, &offset))
+                                })
+                                .collect()
+                        } else if let Ok(tz) =
+                            arrow2::temporal_conversions::parse_offset_tz(timezone)
+                        {
+                            self.as_arrow()
+                                .iter()
+                                .map(|val| val.map(|val| timestamp_to_str_tz(*val, unit, &tz)))
+                                .collect()
+                        } else {
+                            panic!("Unable to parse timezone string {}", timezone)
+                        }
+                    },
+                );
+
+                Ok(Utf8Array::from((self.name(), Box::new(str_array))).into_series())
+            }
+            DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
+            DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
             _ => arrow_cast(&self.physical, dtype),
         }
     }
@@ -631,7 +736,6 @@ impl PythonArray {
             dt @ DataType::Float32 | dt @ DataType::Float64 => {
                 pycast_then_arrowcast!(self, dt, "float")
             }
-            DataType::Date => unimplemented!(),
             DataType::List(field) => {
                 if !field.dtype.is_numeric() {
                     return Err(DaftError::ValueError(format!(

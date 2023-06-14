@@ -5,7 +5,7 @@ import builtins
 import pyarrow as pa
 
 from daft.context import get_context
-from daft.daft import ImageMode, PyDataType
+from daft.daft import ImageMode, PyDataType, PyTimeUnit
 
 _RAY_DATA_EXTENSIONS_AVAILABLE = True
 _TENSOR_EXTENSION_TYPES = []
@@ -30,6 +30,66 @@ else:
             _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
     except ImportError:
         _RAY_DATA_EXTENSIONS_AVAILABLE = False
+
+
+class TimeUnit:
+    _timeunit: PyTimeUnit
+
+    def __init__(self) -> None:
+        raise NotImplementedError("Please use TimeUnit.from_str(), .s(), .ms(), .us(), or .ns() instead.")
+
+    @staticmethod
+    def _from_pytimeunit(o3: PyTimeUnit) -> TimeUnit:
+        timeunit = TimeUnit.__new__(TimeUnit)
+        timeunit._timeunit = o3
+        return timeunit
+
+    @classmethod
+    def s(cls) -> TimeUnit:
+        """Represents seconds."""
+        return cls._from_pytimeunit(PyTimeUnit.seconds())
+
+    @classmethod
+    def ms(cls) -> TimeUnit:
+        """Represents milliseconds."""
+        return cls._from_pytimeunit(PyTimeUnit.milliseconds())
+
+    @classmethod
+    def us(cls) -> TimeUnit:
+        """Represents microseconds."""
+        return cls._from_pytimeunit(PyTimeUnit.microseconds())
+
+    @classmethod
+    def ns(cls) -> TimeUnit:
+        """Represents nanoseconds."""
+        return cls._from_pytimeunit(PyTimeUnit.nanoseconds())
+
+    @classmethod
+    def from_str(cls, unit: str) -> TimeUnit:
+        unit = unit.lower()
+        if unit == "s":
+            return cls.s()
+        elif unit == "ms":
+            return cls.ms()
+        elif unit == "us":
+            return cls.us()
+        elif unit == "ns":
+            return cls.ns()
+        else:
+            raise ValueError("Unsupported unit: {unit}")
+
+    def __str__(self) -> str:
+        # These are the strings PyArrow uses.
+        if self._timeunit == PyTimeUnit.seconds():
+            return "s"
+        elif self._timeunit == PyTimeUnit.milliseconds():
+            return "ms"
+        elif self._timeunit == PyTimeUnit.microseconds():
+            return "us"
+        elif self._timeunit == PyTimeUnit.nanoseconds():
+            return "ns"
+        else:
+            assert False
 
 
 class DataType:
@@ -123,6 +183,11 @@ class DataType:
     def date(cls) -> DataType:
         """Create a Date DataType: A date with a year, month and day"""
         return cls._from_pydatatype(PyDataType.date())
+
+    @classmethod
+    def timestamp(cls, timeunit: TimeUnit, timezone: str | None = None) -> DataType:
+        """Timestamp DataType."""
+        return cls._from_pydatatype(PyDataType.timestamp(timeunit._timeunit, timezone))
 
     @classmethod
     def list(cls, name: str, dtype: DataType) -> DataType:
@@ -246,6 +311,9 @@ class DataType:
             return cls.null()
         elif pa.types.is_date32(arrow_type):
             return cls.date()
+        elif pa.types.is_timestamp(arrow_type):
+            timeunit = TimeUnit.from_str(arrow_type.unit)
+            return cls.timestamp(timeunit=timeunit, timezone=arrow_type.tz)
         elif pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
             assert isinstance(arrow_type, (pa.ListType, pa.LargeListType))
             field = arrow_type.value_field

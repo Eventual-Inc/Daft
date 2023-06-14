@@ -250,7 +250,7 @@ impl DataType {
     #[inline]
     pub fn is_temporal(&self) -> bool {
         match self {
-            DataType::Date => true,
+            DataType::Date | DataType::Timestamp(..) => true,
             DataType::Extension(_, inner, _) => inner.is_temporal(),
             _ => false,
         }
@@ -284,6 +284,7 @@ impl DataType {
         matches!(
             self,
             DataType::Date
+                | DataType::Timestamp(..)
                 | DataType::Embedding(..)
                 | DataType::Image(..)
                 | DataType::FixedShapeImage(..)

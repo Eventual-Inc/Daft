@@ -78,7 +78,7 @@ from daft.convert import (
 )
 from daft.daft import ImageFormat
 from daft.dataframe import DataFrame
-from daft.datatype import DataType, ImageMode
+from daft.datatype import DataType, ImageMode, TimeUnit
 from daft.expressions import col, lit
 from daft.io import from_glob_path, read_csv, read_json, read_parquet
 from daft.series import Series
@@ -103,6 +103,7 @@ __all__ = [
     "ImageFormat",
     "lit",
     "Series",
+    "TimeUnit",
     "register_viz_hook",
     "udf",
 ]

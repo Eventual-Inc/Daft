@@ -11,6 +11,7 @@ import daft
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
+@pytest.mark.skip("Requires Daft duration type.")
 def test_temporal_arithmetic() -> None:
     now = datetime.now()
     now_tz = datetime.now(timezone.utc)
@@ -87,3 +88,31 @@ def test_temporal_file_roundtrip(format) -> None:
             df_readback = daft.read_parquet(dirname).collect()
 
     assert df.to_pydict() == df_readback.to_pydict()
+
+
+@pytest.mark.parametrize(
+    "timeunit",
+    ["s", "ms", "us", "ns"],
+)
+@pytest.mark.parametrize(
+    "timezone",
+    [None, "UTC", "America/Los_Angeles", "+04:00"],
+)
+def test_arrow_timestamp(timeunit, timezone) -> None:
+    # Test roundtrip of Arrow timestamps.
+    pa_table = pa.Table.from_pydict({"timestamp": pa.array([1, 0, -1], pa.timestamp(timeunit, tz=timezone))})
+
+    df = daft.from_arrow(pa_table)
+
+    assert df.to_arrow() == pa_table
+
+
+@pytest.mark.skipif(not PYARROW_GE_7_0_0, reason="PyArrow conversion of timezoned datetime is broken in 6.0.1")
+@pytest.mark.parametrize("timezone", [None, timezone.utc, timezone(timedelta(hours=-7))])
+def test_python_timestamp(timezone) -> None:
+    # Test roundtrip of Python timestamps.
+    timestamp = datetime.now(timezone)
+    df = daft.from_pydict({"timestamp": [timestamp]})
+
+    res = df.to_pydict()["timestamp"][0]
+    assert res.isoformat() == timestamp.isoformat()

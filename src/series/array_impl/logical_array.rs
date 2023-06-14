@@ -1,4 +1,6 @@
-use crate::datatypes::logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray};
+use crate::datatypes::logical::{
+    DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray,
+};
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
@@ -147,3 +149,4 @@ impl_series_like_for_logical_array!(DateArray);
 impl_series_like_for_logical_array!(EmbeddingArray);
 impl_series_like_for_logical_array!(ImageArray);
 impl_series_like_for_logical_array!(FixedShapeImageArray);
+impl_series_like_for_logical_array!(TimestampArray);

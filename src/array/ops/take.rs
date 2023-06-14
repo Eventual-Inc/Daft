@@ -3,7 +3,7 @@ use base64::Engine;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray},
+        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray},
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
         FixedSizeListArray, ImageFormat, ListArray, NullArray, StructArray, Utf8Array,
     },
@@ -522,6 +522,73 @@ impl DateArray {
             Some(v) => Ok(format!("{v}")),
         }
     }
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}
+
+impl TimestampArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<i64> {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        let arrow_array = self.as_arrow();
+        let is_valid = arrow_array
+            .validity()
+            .map_or(true, |validity| validity.get_bit(idx));
+        if is_valid {
+            Some(unsafe { arrow_array.value_unchecked(idx) })
+        } else {
+            None
+        }
+    }
+
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let new_array = self.physical.take(idx)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let res = self.get(idx).map_or_else(
+            || "None".to_string(),
+            |val| -> String {
+                use crate::datatypes::DataType::Timestamp;
+                use crate::array::ops::cast::{
+                    timestamp_to_str_naive,
+                    timestamp_to_str_offset,
+                    timestamp_to_str_tz,
+                };
+
+                let Timestamp(unit, timezone) = &self.field.dtype else { panic!("Wrong dtype for TimestampArray: {}", self.field.dtype) };
+
+                timezone.as_ref().map_or_else(
+                    || timestamp_to_str_naive(val, unit),
+                    |timezone| {
+                        // In arrow, timezone string can be either:
+                        // 1. a fixed offset "-07:00", parsed using parse_offset, or
+                        // 2. a timezone name e.g. "America/Los_Angeles", parsed using parse_offset_tz.
+                        if let Ok(offset) = arrow2::temporal_conversions::parse_offset(timezone) {
+                            timestamp_to_str_offset(val, unit, &offset)
+                        } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(timezone) {
+                            timestamp_to_str_tz(val, unit, &tz)
+                        } else {
+                            panic!("Unable to parse timezone string {}", timezone)
+                        }
+                    },
+                )
+            }
+        );
+        Ok(res)
+    }
+
     pub fn html_value(&self, idx: usize) -> String {
         let str_value = self.str_value(idx).unwrap();
         html_escape::encode_text(&str_value)

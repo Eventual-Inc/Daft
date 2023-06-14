@@ -1,5 +1,7 @@
 use crate::array::DataArray;
-use crate::datatypes::logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray};
+use crate::datatypes::logical::{
+    DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray,
+};
 use crate::datatypes::{
     BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, ExtensionArray, Field,
     FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
@@ -322,6 +324,13 @@ impl ExtensionArray {
 }
 
 impl DateArray {
+    pub fn if_else(&self, other: &Self, predicate: &BooleanArray) -> DaftResult<Self> {
+        let new_array = self.physical.if_else(&other.physical, predicate)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+}
+
+impl TimestampArray {
     pub fn if_else(&self, other: &Self, predicate: &BooleanArray) -> DaftResult<Self> {
         let new_array = self.physical.if_else(&other.physical, predicate)?;
         Ok(Self::new(self.field.clone(), new_array))
