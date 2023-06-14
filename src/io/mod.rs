@@ -8,8 +8,8 @@ use std::{
 };
 
 use futures::{StreamExt, TryStreamExt};
-use std::sync::Mutex;
-use tokio::{task::JoinError, time::error::Elapsed};
+
+use tokio::task::JoinError;
 
 use crate::{
     array::ops::as_arrow::AsArrow,
@@ -66,7 +66,7 @@ async fn single_url_get(input: String) -> DaftResult<GetResult> {
     let parsed = url::Url::parse(input.as_str())?;
 
     let source = get_source(parsed.scheme()).await?;
-    source.get(input).await.into()
+    source.get(input).await
 }
 
 async fn single_url_download(
@@ -78,7 +78,7 @@ async fn single_url_download(
         let response = single_url_get(input).await;
         let res = match response {
             Ok(res) => res.bytes().await,
-            Err(err) => Err(err.into()),
+            Err(err) => Err(err),
         };
         Some(res)
     } else {
@@ -132,12 +132,12 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
     .buffer_unordered(max_connections)
     .then(async move |r| match r {
         Ok((i, Ok(v))) => Ok((i, v)),
-        Ok((i, Err(error))) => Err(error),
+        Ok((_i, Err(error))) => Err(error),
         Err(error) => Err(error.into()),
     });
 
     let collect_future = fetches.try_collect::<Vec<_>>();
-    let mut results = rt.block_on(async move { collect_future.await })?;
+    let mut results = rt.block_on(collect_future)?;
 
     results.sort_by_key(|k| k.0);
     let mut offsets: Vec<i64> = Vec::with_capacity(results.len() + 1);
@@ -147,7 +147,7 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
 
     let cap_needed: usize = results
         .iter()
-        .filter_map(|f| f.1.as_ref().and_then(|f| Some(f.len())))
+        .filter_map(|f| f.1.as_ref().map(|f| f.len()))
         .sum();
     let mut data = Vec::with_capacity(cap_needed);
     for (_, b) in results.into_iter() {

@@ -1,10 +1,5 @@
-use std::{collections::HashMap, fs, time::Duration};
-
 use async_trait::async_trait;
-use aws_config::{
-    endpoint::Endpoint, imds::Client, profile::Profile, provider_config::ProviderConfig,
-    timeout::TimeoutConfig,
-};
+
 use futures::{StreamExt, TryStreamExt};
 use s3::{config::Region, error::SdkError};
 
@@ -41,8 +36,6 @@ impl From<anyhow::Error> for DaftError {
         DaftError::IoError(error.into())
     }
 }
-
-use aws_config::sso::SsoCredentialsProvider;
 
 async fn build_client(endpoint: &str) -> aws_sdk_s3::Client {
     let region = Region::new("us-west-2");
