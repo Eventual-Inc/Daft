@@ -25,6 +25,7 @@ mod list_agg;
 mod mean;
 mod null;
 mod pairwise;
+mod repr;
 mod search_sorted;
 mod sort;
 mod sum;
