@@ -285,6 +285,7 @@ impl DataType {
             self,
             DataType::Date
                 | DataType::Timestamp(..)
+                | DataType::Duration(..)
                 | DataType::Embedding(..)
                 | DataType::Image(..)
                 | DataType::FixedShapeImage(..)

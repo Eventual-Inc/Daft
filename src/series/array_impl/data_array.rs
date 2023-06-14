@@ -130,14 +130,14 @@ fn logical_to_arrow<'a>(
             Cow::Owned(casted)
         }
 
-        DataType::Timestamp(unit, tz) => {
+        DataType::Duration(unit) => {
             let downcasted = arr
                 .as_ref()
                 .as_any()
                 .downcast_ref::<arrow2::array::PrimitiveArray<i64>>()
                 .unwrap();
             let casted: Box<dyn arrow2::array::Array> = Box::new(downcasted.clone().to(
-                arrow2::datatypes::DataType::Timestamp(unit.to_arrow().unwrap(), tz.clone()),
+                arrow2::datatypes::DataType::Duration(unit.to_arrow().unwrap()),
             ));
             Cow::Owned(casted)
         }
