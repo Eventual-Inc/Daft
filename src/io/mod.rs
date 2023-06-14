@@ -147,12 +147,7 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
             "max_connections for url_download must be non-zero".into(),
         ));
     }
-    let now = std::time::Instant::now();
-
     let rt = &RT;
-    let elap = now.elapsed().as_nanos();
-    log::warn!("time to create rt: {elap}");
-
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
         tokio::spawn(async move {
