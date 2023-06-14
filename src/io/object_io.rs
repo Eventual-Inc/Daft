@@ -44,6 +44,6 @@ impl GetResult {
 }
 
 #[async_trait]
-pub trait ObjectSource {
-    async fn get(&self, uri: String) -> anyhow::Result<GetResult>;
+pub trait ObjectSource: Sync + Send {
+    async fn get(&self, uri: String) -> DaftResult<GetResult>;
 }

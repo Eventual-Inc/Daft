@@ -27,12 +27,14 @@ impl From<ByteStreamError> for DaftError {
     }
 }
 
-// impl<E: Sync + Send + std::error::Error + 'static, R : std::fmt::Debug > From<SdkError<E,R>> for DaftError {
-//     fn from(error: SdkError<E,R>) -> Self {
-//         log::warn!("{error:?}");
-//         DaftError::IoError(error.into_source().unwrap())
-//     }
-// }
+impl<E: Sync + Send + std::error::Error + 'static, R: std::fmt::Debug> From<SdkError<E, R>>
+    for DaftError
+{
+    fn from(error: SdkError<E, R>) -> Self {
+        log::warn!("{error:?}");
+        DaftError::IoError(error.into_source().unwrap())
+    }
+}
 
 impl From<anyhow::Error> for DaftError {
     fn from(error: anyhow::Error) -> Self {
@@ -41,37 +43,6 @@ impl From<anyhow::Error> for DaftError {
 }
 
 use aws_config::sso::SsoCredentialsProvider;
-
-fn parse_profile() -> SsoCredentialsProvider {
-    let map = ini::ini!("/Users/sammy/.aws/config");
-    let default_profile = map.get("default").unwrap();
-    let sso_role_name = default_profile
-        .get("sso_role_name")
-        .unwrap()
-        .clone()
-        .unwrap_or_default();
-    let sso_region = default_profile
-        .get("sso_region")
-        .unwrap()
-        .clone()
-        .unwrap_or_default();
-    let sso_start_url = default_profile
-        .get("sso_start_url")
-        .unwrap()
-        .clone()
-        .unwrap_or_default();
-    let sso_account_id = default_profile
-        .get("sso_account_id")
-        .unwrap()
-        .clone()
-        .unwrap_or_default();
-    SsoCredentialsProvider::builder()
-        .role_name(sso_role_name)
-        .region(Region::new(sso_region))
-        .start_url(sso_start_url)
-        .account_id(sso_account_id)
-        .build()
-}
 
 async fn build_client(endpoint: &str) -> aws_sdk_s3::Client {
     let region = Region::new("us-west-2");
@@ -101,7 +72,7 @@ impl S3LikeSource {
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
-    async fn get(&self, uri: String) -> anyhow::Result<GetResult> {
+    async fn get(&self, uri: String) -> DaftResult<GetResult> {
         let parsed = url::Url::parse(uri.as_str())?;
         let bucket = parsed.host_str().unwrap();
         let key = parsed.path();

@@ -2,10 +2,14 @@ mod http;
 mod object_io;
 mod s3_like;
 
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
 use futures::{StreamExt, TryStreamExt};
-use tokio::task::JoinError;
+use std::sync::Mutex;
+use tokio::{task::JoinError, time::error::Elapsed};
 
 use crate::{
     array::ops::as_arrow::AsArrow,
@@ -14,7 +18,10 @@ use crate::{
     io::s3_like::S3LikeSource,
 };
 
-use self::{http::HttpSource, object_io::GetResult};
+use self::{
+    http::HttpSource,
+    object_io::{GetResult, ObjectSource},
+};
 
 impl From<url::ParseError> for DaftError {
     fn from(error: url::ParseError) -> Self {
@@ -28,30 +35,47 @@ impl From<JoinError> for DaftError {
     }
 }
 
-#[derive(Clone)]
-struct MegaClient {
-    pub s3_client: S3LikeSource,
+lazy_static! {
+    static ref OBJ_SRC_MAP: RwLock<HashMap<String, Arc<dyn ObjectSource>>> =
+        RwLock::new(HashMap::new());
 }
 
-async fn single_url_get(input: String, client: Arc<S3LikeSource>) -> anyhow::Result<GetResult> {
-    use crate::io::object_io::ObjectSource;
-    let parsed = url::Url::parse(input.as_str())?;
-    match parsed.scheme() {
-        "https" | "http" => HttpSource {}.get(input).await,
-        "s3" => client.get(input).await,
-        // return a DaftIoError instead
-        v => panic!("protocol {v} not supported for url: {input}"),
+async fn get_source(scheme: &str) -> DaftResult<Arc<dyn ObjectSource>> {
+    {
+        if let Some(source) = OBJ_SRC_MAP.read().unwrap().get(scheme) {
+            return Ok(source.clone());
+        }
     }
+
+    let new_source: Arc<dyn ObjectSource> = match scheme {
+        "https" | "http" => Ok(Arc::new(HttpSource::new().await) as Arc<dyn ObjectSource>),
+        "s3" => Ok(Arc::new(S3LikeSource::new().await) as Arc<dyn ObjectSource>),
+        _ => Err(DaftError::ValueError(format!(
+            "{scheme} not supported for IO!"
+        ))),
+    }?;
+
+    let mut w_handle = OBJ_SRC_MAP.write().unwrap();
+    if w_handle.get(scheme).is_none() {
+        w_handle.insert(scheme.to_string(), new_source.clone());
+    }
+    Ok(new_source)
+}
+
+async fn single_url_get(input: String) -> DaftResult<GetResult> {
+    let parsed = url::Url::parse(input.as_str())?;
+
+    let source = get_source(parsed.scheme()).await?;
+    source.get(input).await.into()
 }
 
 async fn single_url_download(
     index: usize,
     input: Option<String>,
-    client: Arc<S3LikeSource>,
     raise_error_on_failure: bool,
 ) -> DaftResult<Option<bytes::Bytes>> {
     let value = if let Some(input) = input {
-        let response = single_url_get(input, client).await;
+        let response = single_url_get(input).await;
         let res = match response {
             Ok(res) => res.bytes().await,
             Err(err) => Err(err.into()),
@@ -78,13 +102,6 @@ async fn single_url_download(
     final_value
 }
 
-// lazy_static! {
-//     /// This is an example for using doc comment attributes
-//     static ref CLIENT: MegaClient = MegaClient {
-//         s3_client: S3LikeSource::new()
-//     };
-// }
-
 pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
     name: &str,
     urls: I,
@@ -96,17 +113,20 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
             "max_connections for url_download must be non-zero".into(),
         ));
     }
-    let rt = tokio::runtime::Builder::new_current_thread()
+    let now = std::time::Instant::now();
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    let client = Arc::new(rt.block_on(async move { S3LikeSource::new().await }));
+    let elap = now.elapsed().as_nanos();
+    log::warn!("time to create rt: {elap}");
+
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
-        let client_arc = client.clone();
         tokio::spawn(async move {
             (
                 i,
-                single_url_download(i, owned_url, client_arc, raise_error_on_failure).await,
+                single_url_download(i, owned_url, raise_error_on_failure).await,
             )
         })
     }))

@@ -13,9 +13,15 @@ impl From<reqwest::Error> for DaftError {
     }
 }
 
+impl HttpSource {
+    pub async fn new() -> Self {
+        HttpSource {}
+    }
+}
+
 #[async_trait]
 impl ObjectSource for HttpSource {
-    async fn get(&self, uri: String) -> anyhow::Result<GetResult> {
+    async fn get(&self, uri: String) -> DaftResult<GetResult> {
         let response = reqwest::get(uri).await?;
         let response = response.error_for_status()?;
         let stream = response.bytes_stream();
