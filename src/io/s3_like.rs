@@ -28,23 +28,17 @@ where
     Self: Send + Sync,
 {
     fn from(error: SdkError<E, R>) -> Self {
-        // log::warn!("{error:?}");
         DaftError::External(error.into())
     }
 }
 
 async fn build_client(endpoint: &str) -> aws_sdk_s3::Client {
-    let region = Region::new("us-west-2");
-
     let conf = aws_config::load_from_env().await;
 
     let s3_conf = match endpoint.is_empty() {
-        true => aws_sdk_s3::config::Builder::from(&conf)
-            .region(region)
-            .build(),
+        true => aws_sdk_s3::config::Builder::from(&conf).build(),
         false => aws_sdk_s3::config::Builder::from(&conf)
             .endpoint_url(endpoint)
-            .region(region)
             .build(),
     };
 
