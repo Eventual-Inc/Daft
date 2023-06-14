@@ -47,7 +47,6 @@ from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionMetadata,
     PartitionSet,
-    vPartitionSchemaInferenceOptions,
 )
 from daft.runners.profiler import profiler
 from daft.runners.pyrunner import LocalPartitionSet
@@ -144,14 +143,13 @@ def sample_schema_from_filepath_vpartition(
     filepath_column: str,
     source_info: SourceInfo,
     fs: fsspec.AbstractFileSystem | None,
-    schema_inference_options: vPartitionSchemaInferenceOptions,
 ) -> Schema:
     """Ray remote function to run schema sampling on top of a Table containing filepaths"""
     assert len(p) > 0
 
     # Currently just samples the Schema from the first file
     first_filepath = p.to_pydict()[filepath_column][0]
-    return runner_io.sample_schema(first_filepath, source_info, fs, schema_inference_options)
+    return runner_io.sample_schema(first_filepath, source_info, fs)
 
 
 @dataclass
@@ -243,7 +241,6 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
         listing_details_partitions: PartitionSet[ray.ObjectRef],
         source_info: SourceInfo,
         fs: fsspec.AbstractFileSystem | None,
-        schema_inference_options: vPartitionSchemaInferenceOptions,
     ) -> Schema:
         nonempty_partitions: list[ray.ObjectRef] = [
             p
@@ -259,7 +256,6 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
                 RayRunnerIO.FS_LISTING_PATH_COLUMN_NAME,
                 source_info,
                 fs,
-                schema_inference_options,
             )
         )
 

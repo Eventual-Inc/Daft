@@ -50,8 +50,13 @@ def get_df(gen_tpch):
         df = daft.read_csv(
             fp,
             has_headers=False,
-            column_names=data_generation.SCHEMA[tbl_name],
             delimiter="|",
+        )
+        df = df.select(
+            *[
+                daft.col(autoname).alias(colname)
+                for autoname, colname in zip(df.column_names, data_generation.SCHEMA[tbl_name])
+            ]
         )
         return df
 
