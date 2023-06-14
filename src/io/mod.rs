@@ -38,7 +38,7 @@ impl From<JoinError> for DaftError {
 lazy_static! {
     static ref OBJ_SRC_MAP: RwLock<HashMap<String, Arc<dyn ObjectSource>>> =
         RwLock::new(HashMap::new());
-    static ref RT: Runtime = tokio::runtime::Builder::new_current_thread()
+    static ref RT: Runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
