@@ -234,7 +234,7 @@ dependencies = [
 
 [[package]]
 name = "daft"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "arrow2",
  "base64",
