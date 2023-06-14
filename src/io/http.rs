@@ -9,7 +9,7 @@ pub struct HttpSource {}
 
 impl From<reqwest::Error> for DaftError {
     fn from(error: reqwest::Error) -> Self {
-        DaftError::IoError(error.into())
+        DaftError::External(error.into())
     }
 }
 

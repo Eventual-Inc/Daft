@@ -3,6 +3,8 @@ use std::{
     io,
 };
 
+pub type GenericError = Box<dyn std::error::Error + Send + Sync>;
+
 #[derive(Debug)]
 pub enum DaftError {
     NotFound(String),
@@ -13,7 +15,8 @@ pub enum DaftError {
     ValueError(String),
     #[cfg(feature = "python")]
     PyO3Error(pyo3::PyErr),
-    IoError(Box<dyn std::error::Error + Send + Sync>),
+    IoError(io::Error),
+    External(GenericError),
 }
 
 impl From<arrow2::error::Error> for DaftError {
@@ -37,13 +40,7 @@ impl From<serde_json::Error> for DaftError {
 
 impl From<io::Error> for DaftError {
     fn from(error: io::Error) -> Self {
-        DaftError::IoError(Box::new(error))
-    }
-}
-
-impl From<std::fmt::Error> for DaftError {
-    fn from(error: std::fmt::Error) -> Self {
-        DaftError::IoError(Box::new(error))
+        DaftError::IoError(error)
     }
 }
 
@@ -62,6 +59,7 @@ impl Display for DaftError {
             #[cfg(feature = "python")]
             Self::PyO3Error(e) => write!(f, "DaftError::PyO3Error {e}"),
             Self::IoError(e) => write!(f, "DaftError::IoError {e}"),
+            Self::External(e) => write!(f, "DaftError::External {:?}", e),
         }
     }
 }

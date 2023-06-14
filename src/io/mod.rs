@@ -25,7 +25,7 @@ use self::{
 
 impl From<url::ParseError> for DaftError {
     fn from(error: url::ParseError) -> Self {
-        DaftError::IoError(error.into())
+        DaftError::External(error.into())
     }
 }
 
