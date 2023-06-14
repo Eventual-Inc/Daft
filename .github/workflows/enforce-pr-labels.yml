@@ -15,7 +15,11 @@ jobs:
         labels: performance, enhancement, bug, chore, documentation, dependencies
         add_comment: true
         message: |
-          This PR is being prevented from merging because you need at least one of the required labels: [enhancement | performance | bug | chore | documentation | dependencies].
+          This PR is being prevented from merging because you need at least one of the required labels:
+
+          ```
+          enhancement | performance | bug | chore | documentation | dependencies
+          ```
 
           The canonical and easiest way of adding them is to add the following prefixes to your PR title:
 
