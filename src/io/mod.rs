@@ -9,7 +9,7 @@ use std::{
 
 use futures::{StreamExt, TryStreamExt};
 
-use tokio::task::JoinError;
+use tokio::{runtime::Runtime, task::JoinError};
 
 use crate::{
     array::ops::as_arrow::AsArrow,
@@ -38,6 +38,10 @@ impl From<JoinError> for DaftError {
 lazy_static! {
     static ref OBJ_SRC_MAP: RwLock<HashMap<String, Arc<dyn ObjectSource>>> =
         RwLock::new(HashMap::new());
+    static ref RT: Runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
 }
 
 async fn get_source(scheme: &str) -> DaftResult<Arc<dyn ObjectSource>> {
@@ -114,9 +118,7 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
     }
     let now = std::time::Instant::now();
 
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
+    let rt = &RT;
     let elap = now.elapsed().as_nanos();
     log::warn!("time to create rt: {elap}");
 
