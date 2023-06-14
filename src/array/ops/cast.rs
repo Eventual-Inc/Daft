@@ -55,7 +55,7 @@ where
     }
     let physical_type = dtype.to_physical();
     let self_arrow_type = to_cast.data_type().to_arrow()?;
-    let target_arrow_type = physical_type.to_arrow()?;
+    let target_arrow_type = dtype.to_arrow()?;
     if !can_cast_types(&self_arrow_type, &target_arrow_type) {
         return Err(DaftError::TypeError(format!(
             "can not cast {:?} to type: {:?}: Arrow types not castable",
@@ -64,14 +64,37 @@ where
         )));
     }
 
-    let result_array = cast(
-        to_cast.data(),
-        &target_arrow_type,
-        CastOptions {
-            wrapped: true,
-            partial: false,
-        },
-    )?;
+    let result_array = {
+        let target_arrow_physical = physical_type.to_arrow()?;
+        if target_arrow_physical == target_arrow_type {
+            cast(
+                to_cast.data(),
+                &target_arrow_type,
+                CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )?
+        } else {
+            let arrow_logical = cast(
+                to_cast.data(),
+                &target_arrow_type,
+                CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )?;
+            cast(
+                arrow_logical.as_ref(),
+                &target_arrow_physical,
+                CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )?
+        }
+    };
+
     let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
 
     if dtype.is_logical() {
