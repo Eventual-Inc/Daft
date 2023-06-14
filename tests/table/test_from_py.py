@@ -10,7 +10,7 @@ import pyarrow.compute as pac
 import pytest
 from ray.data.extensions import ArrowTensorArray, ArrowTensorType
 
-from daft import DataType
+from daft import DataType, TimeUnit
 from daft.context import get_context
 from daft.series import Series
 from daft.table import Table
@@ -34,7 +34,7 @@ PYTHON_TYPE_ARRAYS = {
 }
 
 
-INFERRED_TYPES = {
+PYTHON_INFERRED_TYPES = {
     "int": DataType.int64(),
     "float": DataType.float64(),
     "bool": DataType.bool(),
@@ -48,9 +48,13 @@ INFERRED_TYPES = {
     # The following types are not natively supported and will be cast to Python object types.
     # TODO(Clark): Change the tensor inferred type to be the canonical fixed-shape tensor extension type.
     "tensor": DataType.python(),
-    "timestamp": DataType.python(),
+    "timestamp": DataType.timestamp(TimeUnit.us()),
 }
 
+PANDAS_INFERRED_TYPES = {
+    **PYTHON_INFERRED_TYPES,
+    "timestamp": DataType.timestamp(TimeUnit.ns()),
+}
 
 ROUNDTRIP_TYPES = {
     "int": pa.int64(),
@@ -144,7 +148,7 @@ def test_from_pydict_roundtrip() -> None:
     assert len(table) == 2
     assert set(table.column_names()) == set(PYTHON_TYPE_ARRAYS.keys())
     for field in table.schema():
-        assert field.dtype == INFERRED_TYPES[field.name]
+        assert field.dtype == PYTHON_INFERRED_TYPES[field.name]
     schema = pa.schema(ROUNDTRIP_TYPES)
     arrs = {}
     for col_name, col in PYTHON_TYPE_ARRAYS.items():
@@ -185,7 +189,7 @@ def test_from_pandas_roundtrip() -> None:
     assert len(table) == 2
     assert set(table.column_names()) == set(PYTHON_TYPE_ARRAYS.keys())
     for field in table.schema():
-        assert field.dtype == INFERRED_TYPES[field.name]
+        assert field.dtype == PANDAS_INFERRED_TYPES[field.name]
     # pyarrow --> pandas doesn't preserve the datetime type for the "date" column, so we need to
     # convert it before the comparison.
     df["date"] = pd.to_datetime(df["date"]).astype("datetime64[s]")
