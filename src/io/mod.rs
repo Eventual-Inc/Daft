@@ -114,7 +114,7 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
     }
     let now = std::time::Instant::now();
 
-    let rt = tokio::runtime::Builder::new_multi_thread()
+    let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
     let elap = now.elapsed().as_nanos();
