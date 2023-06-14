@@ -8,6 +8,9 @@ jobs:
     permissions:
       pull-requests: write
     steps:
+    - name: Sleep for 1 minute
+      run: sleep 60s
+      shell: bash
     - uses: mheap/github-action-required-labels@v5
       with:
         mode: minimum
