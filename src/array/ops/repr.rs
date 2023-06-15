@@ -10,6 +10,30 @@ use crate::{
     error::DaftResult,
 };
 
+// Default implementation of str_value: format the value with the given format string.
+macro_rules! impl_array_str_value {
+    ($ArrayT:ty, $fmt:expr) => {
+        impl $ArrayT {
+            pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+                let val = self.get(idx);
+                match val {
+                    None => Ok("None".to_string()),
+                    Some(v) => Ok(format!($fmt, v)),
+                }
+            }
+        }
+    };
+}
+
+impl_array_str_value!(BooleanArray, "{}");
+impl_array_str_value!(ListArray, "{:?}");
+impl_array_str_value!(FixedSizeListArray, "{:?}");
+impl_array_str_value!(StructArray, "{:?}");
+impl_array_str_value!(ExtensionArray, "{:?}");
+impl_array_str_value!(EmbeddingArray, "{:?}");
+impl_array_str_value!(ImageArray, "{:?}");
+impl_array_str_value!(FixedShapeImageArray, "{:?}");
+
 impl<T> DataArray<T>
 where
     T: DaftNumericType,
@@ -21,13 +45,6 @@ where
             Some(v) => Ok(format!("{v}")),
         }
     }
-
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
-    }
 }
 
 impl Utf8Array {
@@ -38,31 +55,7 @@ impl Utf8Array {
             Some(v) => Ok(v.to_string()),
         }
     }
-
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
-    }
 }
-
-impl BooleanArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let val = self.get(idx);
-        match val {
-            None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v}")),
-        }
-    }
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
-    }
-}
-
 impl NullArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if idx >= self.len() {
@@ -70,14 +63,7 @@ impl NullArray {
         }
         Ok("None".to_string())
     }
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
-    }
 }
-
 impl BinaryArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         let val = self.get(idx);
@@ -87,76 +73,6 @@ impl BinaryArray {
             // See discussion: https://stackoverflow.com/questions/54358833/how-does-bytes-repr-representation-work
             Some(v) => Ok(format!("b\"{:?}\"", v)),
         }
-    }
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
-    }
-}
-
-impl ListArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let val = self.get(idx);
-        match val {
-            None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v:?}")),
-        }
-    }
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
-    }
-}
-
-impl FixedSizeListArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let val = self.get(idx);
-        match val {
-            None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v:?}")),
-        }
-    }
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
-    }
-}
-
-impl StructArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let val = self.get(idx);
-        match val {
-            None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v:?}")),
-        }
-    }
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
-    }
-}
-
-impl ExtensionArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let val = self.get(idx);
-        match val {
-            None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v:?}")),
-        }
-    }
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
     }
 }
 
@@ -174,12 +90,6 @@ impl crate::datatypes::PythonArray {
 
         Ok(extracted)
     }
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
-    }
 }
 
 impl DateArray {
@@ -189,12 +99,6 @@ impl DateArray {
             None => Ok("None".to_string()),
             Some(v) => Ok(format!("{v}")),
         }
-    }
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
     }
 }
 
@@ -231,23 +135,43 @@ impl TimestampArray {
         );
         Ok(res)
     }
-
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
-    }
 }
 
-impl EmbeddingArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let val = self.get(idx);
-        match val {
-            None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v:?}")),
+// Default implementation of html_value: html escape the str_value.
+macro_rules! impl_array_html_value {
+    ($ArrayT:ty) => {
+        impl $ArrayT {
+            pub fn html_value(&self, idx: usize) -> String {
+                let str_value = self.str_value(idx).unwrap();
+                html_escape::encode_text(&str_value)
+                    .into_owned()
+                    .replace('\n', "<br />")
+            }
         }
-    }
+    };
+}
+
+impl_array_html_value!(Utf8Array);
+impl_array_html_value!(BooleanArray);
+impl_array_html_value!(NullArray);
+impl_array_html_value!(BinaryArray);
+impl_array_html_value!(ListArray);
+impl_array_html_value!(FixedSizeListArray);
+impl_array_html_value!(StructArray);
+impl_array_html_value!(ExtensionArray);
+
+#[cfg(feature = "python")]
+impl_array_html_value!(crate::datatypes::PythonArray);
+
+impl_array_html_value!(DateArray);
+impl_array_html_value!(TimestampArray);
+impl_array_html_value!(EmbeddingArray);
+impl_array_html_value!(FixedShapeImageArray);
+
+impl<T> DataArray<T>
+where
+    T: DaftNumericType,
+{
     pub fn html_value(&self, idx: usize) -> String {
         let str_value = self.str_value(idx).unwrap();
         html_escape::encode_text(&str_value)
@@ -257,13 +181,6 @@ impl EmbeddingArray {
 }
 
 impl ImageArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let val = self.get(idx);
-        match val {
-            None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v:?}")),
-        }
-    }
     pub fn html_value(&self, idx: usize) -> String {
         let maybe_image = self.as_image_obj(idx);
         let str_val = self.str_value(idx).unwrap();
@@ -281,21 +198,5 @@ impl ImageArray {
                 )
             }
         }
-    }
-}
-
-impl FixedShapeImageArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let val = self.get(idx);
-        match val {
-            None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v:?}")),
-        }
-    }
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
     }
 }
