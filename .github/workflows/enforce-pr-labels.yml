@@ -2,6 +2,16 @@ name: Enforce Pull Request Labels
 on:
   pull_request:
     types: [opened, labeled, unlabeled, synchronize]
+  # Runs after the Release Drafter workflow runs on a non-main branch because that may have auto-labelled the PR
+  #
+  # NOTE: This is required because the Release Drafter workflow uses the `github-actions` bot to label the PR,
+  # and actions taken by the `github-actions` bot are not allowed to trigger new workflows.
+  workflow_run:
+    workflows: [Release Drafter]
+    types:
+    - completed
+    branches-ignore:
+    - main
 jobs:
   label:
     runs-on: ubuntu-latest
