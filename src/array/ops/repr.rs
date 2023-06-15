@@ -33,6 +33,7 @@ impl_array_str_value!(ListArray, "{:?}");
 impl_array_str_value!(FixedSizeListArray, "{:?}");
 impl_array_str_value!(StructArray, "{:?}");
 impl_array_str_value!(ExtensionArray, "{:?}");
+impl_array_str_value!(DurationArray, "{}");
 impl_array_str_value!(EmbeddingArray, "{:?}");
 impl_array_str_value!(ImageArray, "{:?}");
 impl_array_str_value!(FixedShapeImageArray, "{:?}");
@@ -137,12 +138,6 @@ impl TimestampArray {
             }
         );
         Ok(res)
-    }
-}
-
-impl DurationArray {
-    pub fn str_value(&self, _idx: usize) -> DaftResult<String> {
-        todo!()
     }
 }
 
