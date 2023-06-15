@@ -11,8 +11,11 @@ use std::{
 
 use futures::{StreamExt, TryStreamExt};
 
+use snafu::Snafu;
 use tokio::{runtime::Runtime, task::JoinError};
 use url::ParseError;
+
+use snafu::prelude::*;
 
 use crate::{
     array::ops::as_arrow::AsArrow,
@@ -27,17 +30,50 @@ use self::{
     object_io::{GetResult, ObjectSource},
 };
 
-impl From<url::ParseError> for DaftError {
-    fn from(error: url::ParseError) -> Self {
-        DaftError::External(error.into())
+#[derive(Debug, Snafu)]
+pub(crate) enum Error {
+    #[snafu(display("Generic {} error: {:?}", store, source))]
+    Generic {
+        store: &'static str,
+        source: DynError,
+    },
+
+    #[snafu(display("Object at location {} not found: {:?}", path, source))]
+    NotFound { path: String, source: DynError },
+
+    #[snafu(display("Invalid Argument: {:?}", msg))]
+    InvalidArgument { msg: String },
+
+    #[snafu(display("Unable to open file {}: {}", path, source))]
+    UnableToOpenFile {
+        path: String,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Unable to read data from file {}: {}", path, source))]
+    UnableToReadBytes {
+        path: String,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Unable to convert URL \"{}\" to path", path))]
+    InvalidUrl {
+        path: String,
+        source: url::ParseError,
+    },
+    #[snafu(display("Source not yet implemented: {}", store))]
+    NotImplementedSource { store: String },
+    #[snafu(display("Error joining spawned task: {}", source), context(false))]
+    JoinError { source: tokio::task::JoinError },
+}
+
+impl From<Error> for DaftError {
+    fn from(err: Error) -> DaftError {
+        DaftError::External(err.into())
     }
 }
 
-impl From<JoinError> for DaftError {
-    fn from(error: JoinError) -> Self {
-        DaftError::IoError(error.into())
-    }
-}
+type Result<T, E = Error> = std::result::Result<T, E>;
 
 lazy_static! {
     static ref OBJ_SRC_MAP: RwLock<HashMap<SourceType, Arc<dyn ObjectSource>>> =
@@ -48,7 +84,7 @@ lazy_static! {
         .unwrap();
 }
 
-async fn get_source(source_type: SourceType) -> DaftResult<Arc<dyn ObjectSource>> {
+async fn get_source(source_type: SourceType) -> Result<Arc<dyn ObjectSource>> {
     {
         if let Some(source) = OBJ_SRC_MAP.read().unwrap().get(&source_type) {
             return Ok(source.clone());
@@ -75,7 +111,7 @@ enum SourceType {
     S3,
 }
 
-fn parse_url(input: &str) -> DaftResult<(SourceType, Cow<'_, str>)> {
+fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let mut fixed_input = Cow::Borrowed(input);
 
     let url = match url::Url::parse(input) {
@@ -85,20 +121,21 @@ fn parse_url(input: &str) -> DaftResult<(SourceType, Cow<'_, str>)> {
             url::Url::parse(fixed_input.as_ref())
         }
         Err(err) => Err(err),
-    }?;
+    }
+    .context(InvalidUrlSnafu { path: input })?;
 
     let scheme = url.scheme().to_lowercase();
     match scheme.as_ref() {
         "file" => Ok((SourceType::File, fixed_input)),
         "http" | "https" => Ok((SourceType::Http, fixed_input)),
         "s3" => Ok((SourceType::S3, fixed_input)),
-        _ => Err(DaftError::ValueError(format!(
-            "{scheme} not supported for IO!"
-        ))),
+        _ => Err(Error::NotImplementedSource {
+            store: scheme.into(),
+        }),
     }
 }
 
-async fn single_url_get(input: String) -> DaftResult<GetResult> {
+async fn single_url_get(input: String) -> Result<GetResult> {
     let (scheme, path) = parse_url(&input)?;
     let source = get_source(scheme).await?;
     source.get(path.as_ref()).await
@@ -108,7 +145,7 @@ async fn single_url_download(
     index: usize,
     input: Option<String>,
     raise_error_on_failure: bool,
-) -> DaftResult<Option<bytes::Bytes>> {
+) -> Result<Option<bytes::Bytes>> {
     let value = if let Some(input) = input {
         let response = single_url_get(input).await;
         let res = match response {
@@ -142,11 +179,12 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
     max_connections: usize,
     raise_error_on_failure: bool,
 ) -> DaftResult<BinaryArray> {
-    if max_connections == 0 {
-        return Err(DaftError::ValueError(
-            "max_connections for url_download must be non-zero".into(),
-        ));
-    }
+    ensure!(
+        max_connections > 0,
+        InvalidArgumentSnafu {
+            msg: "max_connections for url_download must be non-zero".to_owned()
+        }
+    );
     let rt = &RT;
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
@@ -161,7 +199,7 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
     .then(async move |r| match r {
         Ok((i, Ok(v))) => Ok((i, v)),
         Ok((_i, Err(error))) => Err(error),
-        Err(error) => Err(error.into()),
+        Err(error) => Err(Error::JoinError { source: error }),
     });
 
     let collect_future = fetches.try_collect::<Vec<_>>();
@@ -191,8 +229,12 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
             }
         }
     }
-    BinaryArray::try_from((name, data, offsets))?.with_validity(valid.as_slice())
+    Ok(BinaryArray::try_from((name, data, offsets))?
+        .with_validity(valid.as_slice())
+        .unwrap())
 }
+
+type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 impl Utf8Array {
     pub fn url_download(

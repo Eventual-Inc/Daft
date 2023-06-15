@@ -1,26 +1,44 @@
-use crate::error::DaftResult;
+use std::path::PathBuf;
+use std::vec;
+
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
+use snafu::ResultExt;
 use tokio::io::AsyncReadExt;
 
-pub enum GetResult {
-    File(tokio::fs::File),
-    Stream(BoxStream<'static, DaftResult<Bytes>>, Option<usize>),
+use super::UnableToReadBytesSnafu;
+
+pub(crate) enum GetResult {
+    File(PathBuf),
+    Stream(BoxStream<'static, super::Result<Bytes>>, Option<usize>),
 }
 
-async fn collect_file(mut f: tokio::fs::File) -> DaftResult<Bytes> {
+async fn collect_file(path: &str) -> super::Result<Bytes> {
+    let mut file = match tokio::fs::File::open(path).await {
+        Ok(f) => Ok(f),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Err(super::Error::NotFound {
+            path: path.into(),
+            source: err.into(),
+        }),
+        Err(err) => Err(super::Error::Generic {
+            store: "local",
+            source: err.into(),
+        }),
+    }?;
     let mut buf = vec![];
-    f.read_to_end(&mut buf).await?;
+    let _ = file
+        .read_to_end(&mut buf)
+        .await
+        .context(UnableToReadBytesSnafu::<String> { path: path.into() })?;
     Ok(Bytes::from(buf))
 }
 
-async fn collect_bytes<S>(mut stream: S, size_hint: Option<usize>) -> DaftResult<Bytes>
+async fn collect_bytes<S>(mut stream: S, size_hint: Option<usize>) -> super::Result<Bytes>
 where
-    S: Stream<Item = DaftResult<Bytes>> + Send + Unpin,
+    S: Stream<Item = super::Result<Bytes>> + Send + Unpin,
 {
-    // Taken from https://github.com/apache/arrow-rs/blob/ab56693985826bb8caea30558b8c25db286a5e37/object_store/src/util.rs#LL49C1-L71C2
     let first = stream.next().await.transpose()?.unwrap_or_default();
     // Avoid copying if single response
     match stream.next().await.transpose()? {
@@ -41,16 +59,16 @@ where
 }
 
 impl GetResult {
-    pub async fn bytes(self) -> DaftResult<Bytes> {
+    pub async fn bytes(self) -> super::Result<Bytes> {
         use GetResult::*;
         match self {
-            File(f) => collect_file(f).await,
+            File(path) => collect_file(path.to_str().unwrap()).await,
             Stream(stream, size) => collect_bytes(stream, size).await,
         }
     }
 }
 
 #[async_trait]
-pub trait ObjectSource: Sync + Send {
-    async fn get(&self, uri: &str) -> DaftResult<GetResult>;
+pub(crate) trait ObjectSource: Sync + Send {
+    async fn get(&self, uri: &str) -> super::Result<GetResult>;
 }

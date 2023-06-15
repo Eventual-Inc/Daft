@@ -7,9 +7,12 @@ use super::object_io::{GetResult, ObjectSource};
 
 pub struct HttpSource {}
 
-impl From<reqwest::Error> for DaftError {
+impl From<reqwest::Error> for super::Error {
     fn from(error: reqwest::Error) -> Self {
-        DaftError::External(error.into())
+        super::Error::Generic {
+            store: "http",
+            source: error.into(),
+        }
     }
 }
 
@@ -21,7 +24,7 @@ impl HttpSource {
 
 #[async_trait]
 impl ObjectSource for HttpSource {
-    async fn get(&self, uri: &str) -> DaftResult<GetResult> {
+    async fn get(&self, uri: &str) -> super::Result<GetResult> {
         let response = reqwest::get(uri).await?;
         let response = response.error_for_status()?;
         let size_bytes = response.content_length().map(|s| s as usize);
