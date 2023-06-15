@@ -116,3 +116,25 @@ def test_python_timestamp(timezone) -> None:
 
     res = df.to_pydict()["timestamp"][0]
     assert res.isoformat() == timestamp.isoformat()
+
+
+@pytest.mark.parametrize(
+    "timeunit",
+    ["s", "ms", "us", "ns"],
+)
+def test_arrow_duration(timeunit) -> None:
+    # Test roundtrip of Arrow timestamps.
+    pa_table = pa.Table.from_pydict({"duration": pa.array([1, 0, -1], pa.duration(timeunit))})
+
+    df = daft.from_arrow(pa_table)
+
+    assert df.to_arrow() == pa_table
+
+
+def test_python_duration() -> None:
+    # Test roundtrip of Python durations.
+    duration = timedelta(weeks=1, days=1, hours=1, minutes=1, seconds=1, milliseconds=1, microseconds=1)
+    df = daft.from_pydict({"duration": [duration]})
+
+    res = df.to_pydict()["duration"][0]
+    assert res == duration
