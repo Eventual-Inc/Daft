@@ -7,7 +7,8 @@ on:
   # NOTE: This is required because the Release Drafter workflow uses the `github-actions` bot to label the PR,
   # and actions taken by the `github-actions` bot are not allowed to trigger new workflows.
   workflow_run:
-    workflows: [Release Drafter]
+    workflows:
+    - Release Drafter
     types:
     - completed
     branches-ignore:
