@@ -315,6 +315,35 @@ def test_series_cast_int_timestamp(timeunit, timezone) -> None:
 
 
 @pytest.mark.parametrize(
+    ["input_t", "input", "output_t", "output"],
+    [
+        (
+            DataType.timestamp(TimeUnit.s()),
+            datetime(1970, 1, 1, 0, 0, 1),
+            DataType.timestamp(TimeUnit.us()),
+            datetime(1970, 1, 1, 0, 0, 1, 0),
+        ),
+        (
+            DataType.timestamp(TimeUnit.us()),
+            datetime(1970, 1, 1, 0, 0, 1, 1),
+            DataType.timestamp(TimeUnit.us()),
+            datetime(1970, 1, 1, 0, 0, 1, 1),
+        ),
+        (
+            DataType.timestamp(TimeUnit.us()),
+            datetime(1970, 1, 1, 0, 0, 1, 1),
+            DataType.timestamp(TimeUnit.s()),
+            datetime(1970, 1, 1, 0, 0, 1),
+        ),
+    ],
+)
+def test_series_cast_timestamp(input_t, input, output_t, output) -> None:
+    series = Series.from_pylist([input]).cast(input_t)
+    res = series.cast(output_t).to_pylist()[0]
+    assert res == output
+
+
+@pytest.mark.parametrize(
     ["timeunit", "sec_str"],
     [
         (TimeUnit.s(), ":01"),
