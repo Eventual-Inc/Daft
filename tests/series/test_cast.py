@@ -405,6 +405,12 @@ def test_series_cast_string_timestamp(timestamp_str, expected, tz) -> None:
     ],
 )
 def test_series_cast_numeric_logical(dtype, result_n1, result_0, result_p1) -> None:
+    # Numeric -> logical.
     series = Series.from_pylist([-1, 0, 1])
     casted = series.cast(dtype)
     assert casted.to_pylist() == [result_n1, result_0, result_p1]
+
+    # Logical -> nuemric.
+    series = Series.from_pylist([result_n1, result_0, result_p1])
+    casted = series.cast(DataType.int64())
+    assert casted.to_pylist() == [-1, 0, 1]
