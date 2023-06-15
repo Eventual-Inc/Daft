@@ -1,7 +1,10 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray},
+        logical::{
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
+            TimestampArray,
+        },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
         FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
     },
@@ -64,6 +67,7 @@ impl_dataarray_take!(NullArray);
 impl_dataarray_take!(StructArray);
 impl_dataarray_take!(ExtensionArray);
 impl_logicalarray_take!(DateArray);
+impl_logicalarray_take!(DurationArray);
 impl_logicalarray_take!(TimestampArray);
 impl_logicalarray_take!(EmbeddingArray);
 impl_logicalarray_take!(ImageArray);

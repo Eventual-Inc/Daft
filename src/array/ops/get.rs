@@ -1,7 +1,10 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray},
+        logical::{
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
+            TimestampArray,
+        },
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeListArray, ListArray,
         NullArray, StructArray, Utf8Array,
     },
@@ -59,6 +62,7 @@ impl_array_get!(BinaryArray, &[u8]);
 impl_array_get!(ListArray, Box<dyn arrow2::array::Array>);
 impl_array_get!(FixedSizeListArray, Box<dyn arrow2::array::Array>);
 impl_array_get!(DateArray, i32);
+impl_array_get!(DurationArray, i64);
 impl_array_get!(TimestampArray, i64);
 impl_array_get!(EmbeddingArray, Box<dyn arrow2::array::Array>);
 impl_array_get!(FixedShapeImageArray, Box<dyn arrow2::array::Array>);

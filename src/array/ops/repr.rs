@@ -3,7 +3,10 @@ use base64::Engine;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray},
+        logical::{
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
+            TimestampArray,
+        },
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeListArray,
         ImageFormat, ListArray, NullArray, StructArray, Utf8Array,
     },
@@ -137,6 +140,12 @@ impl TimestampArray {
     }
 }
 
+impl DurationArray {
+    pub fn str_value(&self, _idx: usize) -> DaftResult<String> {
+        todo!()
+    }
+}
+
 // Default implementation of html_value: html escape the str_value.
 macro_rules! impl_array_html_value {
     ($ArrayT:ty) => {
@@ -164,6 +173,7 @@ impl_array_html_value!(ExtensionArray);
 impl_array_html_value!(crate::datatypes::PythonArray);
 
 impl_array_html_value!(DateArray);
+impl_array_html_value!(DurationArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
 impl_array_html_value!(FixedShapeImageArray);
