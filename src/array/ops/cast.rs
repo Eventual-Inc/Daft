@@ -6,7 +6,8 @@ use arrow2::compute::{
 use crate::{
     array::DataArray,
     datatypes::logical::{
-        DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray, TimestampArray,
+        DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray,
+        TimestampArray,
     },
     datatypes::{DaftArrowBackedType, DataType, Field, Utf8Array},
     error::{DaftError, DaftResult},
@@ -252,6 +253,17 @@ impl TimestampArray {
 
                 Ok(Utf8Array::from((self.name(), Box::new(str_array))).into_series())
             }
+            DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
+            DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
+            _ => arrow_cast(&self.physical, dtype),
+        }
+    }
+}
+
+impl DurationArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Utf8 => todo!(),
             DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
             _ => arrow_cast(&self.physical, dtype),
