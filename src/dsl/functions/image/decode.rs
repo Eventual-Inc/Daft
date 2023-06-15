@@ -25,10 +25,7 @@ impl FunctionEvaluator for DecodeEvaluator {
                         field
                     )));
                 }
-                Ok(Field::new(
-                    field.name,
-                    DataType::Image(Box::new(DataType::UInt8), None),
-                ))
+                Ok(Field::new(field.name, DataType::Image(None)))
             }
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",

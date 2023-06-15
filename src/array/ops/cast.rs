@@ -775,17 +775,12 @@ impl PythonArray {
                 );
                 Ok(embedding_array.into_series())
             }
-            DataType::Image(inner_dtype, mode) => {
-                if !inner_dtype.is_numeric() {
-                    panic!(
-                        "Image logical type should only have numeric physical dtype, but got {}",
-                        inner_dtype
-                    );
-                }
-                with_match_numeric_daft_types!(**inner_dtype, |$T| {
+            DataType::Image(mode) => {
+                let inner_dtype = mode.map_or(DataType::UInt8, |m| m.get_dtype());
+                with_match_numeric_daft_types!(inner_dtype, |$T| {
                     type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_image_array::<Tgt>(py, self, dtype, inner_dtype, *mode)?;
+                        let result = extract_python_like_to_image_array::<Tgt>(py, self, dtype, &inner_dtype, *mode)?;
                         Ok(result.into_series())
                     })
                 })
@@ -855,7 +850,7 @@ impl FixedShapeImageArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match (dtype, self.logical_type()) {
             #[cfg(feature = "python")]
-            (DataType::Python, DataType::FixedShapeImage(_, mode, height, width)) => {
+            (DataType::Python, DataType::FixedShapeImage(mode, height, width)) => {
                 pyo3::Python::with_gil(|py| {
                     let shape = (
                         self.len(),

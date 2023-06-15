@@ -311,7 +311,7 @@ where
 impl ImageArray {
     pub fn image_mode(&self) -> &Option<ImageMode> {
         match self.logical_type() {
-            DataType::Image(_, mode) => mode,
+            DataType::Image(mode) => mode,
             _ => panic!("Expected dtype to be Image"),
         }
     }
@@ -370,8 +370,8 @@ impl ImageArray {
         }
         let offsets = arrow2::offset::OffsetsBuffer::try_from(vecs.offsets)?;
         let arrow_dtype: arrow2::datatypes::DataType = T::PRIMITIVE.into();
-        if let DataType::Image(inner_dtype, _) = &data_type {
-            if inner_dtype.to_arrow()? != arrow_dtype {
+        if let DataType::Image(Some(mode)) = &data_type {
+            if mode.get_dtype().to_arrow()? != arrow_dtype {
                 panic!("Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}");
             }
         }
@@ -483,7 +483,7 @@ impl ImageArray {
         };
         Self::from_vecs(
             name,
-            DataType::Image(Box::new(DataType::UInt8), *image_mode),
+            DataType::Image(*image_mode),
             ImageArrayVecs {
                 data,
                 channels,
@@ -626,8 +626,7 @@ impl FixedShapeImageArray {
             Field::new(name, (&arrow_dtype).into()).into(),
             arrow_array.boxed(),
         )?;
-        let logical_dtype =
-            DataType::FixedShapeImage(Box::new(DataType::UInt8), *image_mode, height, width);
+        let logical_dtype = DataType::FixedShapeImage(*image_mode, height, width);
         Ok(Self::new(Field::new(name, logical_dtype), physical_array))
     }
 
@@ -638,7 +637,7 @@ impl FixedShapeImageArray {
     pub fn resize(&self, w: u32, h: u32) -> DaftResult<Self> {
         let result = resize_images(self, w, h);
         match self.logical_type() {
-            DataType::FixedShapeImage(_, mode, _, _) => Self::from_daft_image_buffers(self.name(), result.as_slice(), mode, h, w),
+            DataType::FixedShapeImage(mode, _, _) => Self::from_daft_image_buffers(self.name(), result.as_slice(), mode, h, w),
             dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {}", dt),
         }
     }
@@ -668,7 +667,7 @@ impl AsImageObj for FixedShapeImageArray {
         }
 
         match self.logical_type() {
-            DataType::FixedShapeImage(_, mode, height, width) => {
+            DataType::FixedShapeImage(mode, height, width) => {
                 let arrow_array = self.as_arrow().values().as_any().downcast_ref::<arrow2::array::UInt8Array>().unwrap();
                 let num_channels = mode.num_channels();
                 let size = height * width * num_channels as u32;

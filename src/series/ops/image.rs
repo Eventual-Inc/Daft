@@ -34,7 +34,7 @@ impl Series {
 
     pub fn image_resize(&self, w: u32, h: u32) -> DaftResult<Series> {
         match self.data_type() {
-            DataType::Image(_, mode) => {
+            DataType::Image(mode) => {
                 let array = self.downcast_logical::<ImageType>()?;
                 match mode {
                     // If the image mode is specified at the type-level (and is therefore guaranteed to be consistent
