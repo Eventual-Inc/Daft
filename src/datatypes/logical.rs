@@ -96,3 +96,8 @@ pub type EmbeddingArray = LogicalArray<EmbeddingType>;
 pub type ImageArray = LogicalArray<ImageType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type TimestampArray = LogicalArray<TimestampType>;
+
+pub trait DaftImageryType {}
+
+impl DaftImageryType for ImageType {}
+impl DaftImageryType for FixedShapeImageType {}

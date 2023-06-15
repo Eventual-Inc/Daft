@@ -5,8 +5,9 @@ use std::vec;
 use image::{ColorType, DynamicImage, ImageBuffer};
 
 use crate::datatypes::{
-    logical::{FixedShapeImageArray, ImageArray},
-    BinaryArray, DataType, Field, FixedSizeListArray, ImageFormat, ImageMode, StructArray,
+    logical::{DaftImageryType, FixedShapeImageArray, ImageArray, LogicalArray},
+    BinaryArray, DaftLogicalType, DataType, Field, FixedSizeListArray, ImageFormat, ImageMode,
+    StructArray,
 };
 use crate::error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
@@ -265,25 +266,23 @@ pub struct ImageArrayVecs<T> {
     pub validity: Option<arrow2::bitmap::Bitmap>,
 }
 
-pub trait Length {
-    fn len(&self) -> usize;
-}
-
-pub trait Name {
-    fn name(&self) -> &str;
-}
-
 pub trait AsImageObj {
     fn as_image_obj(&self, idx: usize) -> Option<DaftImageBuffer<'_>>;
 }
 
-pub struct ImageBufferIter<'a, T> {
+pub struct ImageBufferIter<'a, T>
+where
+    T: DaftLogicalType + DaftImageryType,
+{
     cursor: usize,
-    image_array: &'a T,
+    image_array: &'a LogicalArray<T>,
 }
 
-impl<'a, T> ImageBufferIter<'a, T> {
-    pub fn new(image_array: &'a T) -> Self {
+impl<'a, T> ImageBufferIter<'a, T>
+where
+    T: DaftLogicalType + DaftImageryType,
+{
+    pub fn new(image_array: &'a LogicalArray<T>) -> Self {
         Self {
             cursor: 0usize,
             image_array,
@@ -293,7 +292,8 @@ impl<'a, T> ImageBufferIter<'a, T> {
 
 impl<'a, T> Iterator for ImageBufferIter<'a, T>
 where
-    T: AsImageObj + Length,
+    T: DaftLogicalType + DaftImageryType,
+    LogicalArray<T>: AsImageObj,
 {
     type Item = Option<DaftImageBuffer<'a>>;
 
@@ -495,22 +495,6 @@ impl ImageArray {
             },
         )
     }
-
-    fn iter(&self) -> ImageBufferIter<'_, Self> {
-        ImageBufferIter::new(self)
-    }
-}
-
-impl Length for ImageArray {
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
-
-impl Name for ImageArray {
-    fn name(&self) -> &str {
-        self.name()
-    }
 }
 
 impl AsImageObj for ImageArray {
@@ -563,15 +547,6 @@ impl AsImageObj for ImageArray {
         assert_eq!(result.height(), h);
         assert_eq!(result.width(), w);
         Some(result)
-    }
-}
-
-impl<'a> IntoIterator for &'a ImageArray {
-    type Item = Option<DaftImageBuffer<'a>>;
-    type IntoIter = ImageBufferIter<'a, ImageArray>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
     }
 }
 
@@ -641,22 +616,6 @@ impl FixedShapeImageArray {
             dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {}", dt),
         }
     }
-
-    fn iter(&self) -> ImageBufferIter<'_, Self> {
-        ImageBufferIter::new(self)
-    }
-}
-
-impl Length for FixedShapeImageArray {
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
-
-impl Name for FixedShapeImageArray {
-    fn name(&self) -> &str {
-        self.name()
-    }
 }
 
 impl AsImageObj for FixedShapeImageArray {
@@ -699,12 +658,16 @@ impl AsImageObj for FixedShapeImageArray {
     }
 }
 
-impl<'a> IntoIterator for &'a FixedShapeImageArray {
+impl<'a, T> IntoIterator for &'a LogicalArray<T>
+where
+    T: DaftLogicalType + DaftImageryType,
+    LogicalArray<T>: AsImageObj,
+{
     type Item = Option<DaftImageBuffer<'a>>;
-    type IntoIter = ImageBufferIter<'a, FixedShapeImageArray>;
+    type IntoIter = ImageBufferIter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.iter()
+        ImageBufferIter::new(self)
     }
 }
 
@@ -744,10 +707,15 @@ impl BinaryArray {
     }
 }
 
-fn encode_images<'a, T>(images: &'a T, image_format: ImageFormat) -> DaftResult<BinaryArray>
+fn encode_images<'a, T>(
+    images: &'a LogicalArray<T>,
+    image_format: ImageFormat,
+) -> DaftResult<BinaryArray>
 where
-    T: AsImageObj + Length + Name,
-    &'a T: IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
+    T: DaftLogicalType + DaftImageryType,
+    LogicalArray<T>: AsImageObj,
+    &'a LogicalArray<T>:
+        IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
 {
     let arrow_array = match image_format {
         ImageFormat::TIFF => {
@@ -835,10 +803,12 @@ where
     )
 }
 
-fn resize_images<'a, T>(images: &'a T, w: u32, h: u32) -> Vec<Option<DaftImageBuffer>>
+fn resize_images<'a, T>(images: &'a LogicalArray<T>, w: u32, h: u32) -> Vec<Option<DaftImageBuffer>>
 where
-    T: AsImageObj + Length + Name,
-    &'a T: IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
+    T: DaftLogicalType + DaftImageryType,
+    LogicalArray<T>: AsImageObj,
+    &'a LogicalArray<T>:
+        IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
 {
     images
         .into_iter()
