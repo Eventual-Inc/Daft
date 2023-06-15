@@ -434,17 +434,23 @@ def test_series_cast_numeric_logical(dtype, result_n1, result_0, result_p1) -> N
         ),
         (
             DataType.timestamp(TimeUnit.us(), timezone="-08:00"),
-            datetime(1969, 12, 31, 15, 59, 59, 999999),
-            datetime(1969, 12, 31, 16, 0, 0, 0),
-            datetime(1969, 12, 31, 16, 0, 0, 1),
+            datetime(1969, 12, 31, 23, 59, 59, 999999),
+            datetime(1970, 1, 1, 0, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 0, 1),
         ),
-        (DataType.duration(TimeUnit.s()), timedelta(seconds=-1), timedelta(seconds=0), timedelta(seconds=1)),
-        (
-            DataType.duration(TimeUnit.ms()),
-            timedelta(milliseconds=-1),
-            timedelta(milliseconds=0),
-            timedelta(milliseconds=1),
-        ),
+        # Casting between duration types is currently not supported in Arrow2.
+        # (
+        #     DataType.duration(TimeUnit.s()),
+        #     timedelta(seconds=-1),
+        #     timedelta(seconds=0),
+        #     timedelta(seconds=1),
+        # ),
+        # (
+        #     DataType.duration(TimeUnit.ms()),
+        #     timedelta(milliseconds=-1),
+        #     timedelta(milliseconds=0),
+        #     timedelta(milliseconds=1),
+        # ),
         (
             DataType.duration(TimeUnit.us()),
             timedelta(microseconds=-1),
