@@ -20,9 +20,9 @@ impl FunctionEvaluator for ResizeEvaluator {
                 let field = input.to_field(schema)?;
 
                 match &field.dtype {
-                    DataType::Image(_, _) => Ok(field.clone()),
+                    DataType::Image(..) | DataType::FixedShapeImage(..) => Ok(field.clone()),
                     _ => Err(DaftError::TypeError(format!(
-                        "ImageResize can only resize ImageArrays, got {}",
+                        "ImageResize can only resize ImageArrays and FixedShapeImageArrays, got {}",
                         field
                     ))),
                 }

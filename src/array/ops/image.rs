@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 use std::vec;
 
 use image::{ColorType, DynamicImage, ImageBuffer};
@@ -52,6 +52,50 @@ macro_rules! with_method_on_image_buffer {
     }};
 }
 
+type IOResult<T = (), E = std::io::Error> = std::result::Result<T, E>;
+
+/// A wrapper of a writer that tracks the number of bytes successfully written.
+pub struct CountingWriter<W> {
+    inner: W,
+    count: u64,
+}
+
+impl<W> CountingWriter<W> {
+    /// The number of bytes successfull written so far.
+    pub fn count(&self) -> u64 {
+        self.count
+    }
+
+    /// Extracts the inner writer, discarding this wrapper.
+    pub fn into_inner(self) -> W {
+        self.inner
+    }
+}
+
+impl<W> From<W> for CountingWriter<W> {
+    fn from(inner: W) -> Self {
+        Self { inner, count: 0 }
+    }
+}
+
+impl<W: Write + std::fmt::Debug> Write for CountingWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> IOResult<usize> {
+        let written = self.inner.write(buf)?;
+        self.count += written as u64;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> IOResult {
+        self.inner.flush()
+    }
+}
+
+impl<W: Write + Seek> Seek for CountingWriter<W> {
+    fn seek(&mut self, pos: SeekFrom) -> IOResult<u64> {
+        self.inner.seek(pos)
+    }
+}
+
 impl<'a> DaftImageBuffer<'a> {
     pub fn height(&self) -> u32 {
         with_method_on_image_buffer!(self, height)
@@ -99,10 +143,12 @@ impl<'a> DaftImageBuffer<'a> {
             .map_err(|e| DaftError::ValueError(format!("Decoding image from bytes failed: {}", e)))
     }
 
-    pub fn encode(&self, image_format: ImageFormat, out: &mut Vec<u8>) -> DaftResult<()> {
-        let mut writer = std::io::BufWriter::new(std::io::Cursor::new(out));
+    pub fn encode<W>(&self, image_format: ImageFormat, writer: &mut W) -> DaftResult<()>
+    where
+        W: Write + Seek,
+    {
         image::write_buffer_with_format(
-            &mut writer,
+            writer,
             self.as_u8_slice(),
             self.width(),
             self.height(),
@@ -110,12 +156,6 @@ impl<'a> DaftImageBuffer<'a> {
             image::ImageFormat::from(image_format),
         )
         .map_err(|e| {
-            DaftError::ValueError(format!(
-                "Encoding image into file format {} failed: {}",
-                image_format, e
-            ))
-        })?;
-        writer.flush().map_err(|e| {
             DaftError::ValueError(format!(
                 "Encoding image into file format {} failed: {}",
                 image_format, e
@@ -223,6 +263,49 @@ pub struct ImageArrayVecs<T> {
     pub modes: Vec<u8>,
     pub offsets: Vec<i64>,
     pub validity: Option<arrow2::bitmap::Bitmap>,
+}
+
+pub trait Length {
+    fn len(&self) -> usize;
+}
+
+pub trait Name {
+    fn name(&self) -> &str;
+}
+
+pub trait AsImageObj {
+    fn as_image_obj(&self, idx: usize) -> Option<DaftImageBuffer<'_>>;
+}
+
+pub struct ImageBufferIter<'a, T> {
+    cursor: usize,
+    image_array: &'a T,
+}
+
+impl<'a, T> ImageBufferIter<'a, T> {
+    pub fn new(image_array: &'a T) -> Self {
+        Self {
+            cursor: 0usize,
+            image_array,
+        }
+    }
+}
+
+impl<'a, T> Iterator for ImageBufferIter<'a, T>
+where
+    T: AsImageObj + Length,
+{
+    type Item = Option<DaftImageBuffer<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cursor >= self.image_array.len() {
+            None
+        } else {
+            let image_obj = self.image_array.as_image_obj(self.cursor);
+            self.cursor += 1;
+            Some(image_obj)
+        }
+    }
 }
 
 impl ImageArray {
@@ -339,82 +422,23 @@ impl ImageArray {
         ))
     }
 
-    pub fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
-        assert!(idx < self.len());
-        if !self.physical.is_valid(idx) {
-            return None;
-        }
-
-        let da = self.data_array();
-        let ca = self.channel_array();
-        let ha = self.height_array();
-        let wa = self.width_array();
-        let ma = self.mode_array();
-
-        let offsets = da.offsets();
-
-        let start = *offsets.get(idx).unwrap() as usize;
-        let end = *offsets.get(idx + 1).unwrap() as usize;
-
-        let values = da
-            .values()
-            .as_ref()
-            .as_any()
-            .downcast_ref::<arrow2::array::UInt8Array>()
-            .unwrap();
-        let slice_data = Cow::Borrowed(&values.values().as_slice()[start..end] as &'a [u8]);
-
-        let c = ca.value(idx);
-        let h = ha.value(idx);
-        let w = wa.value(idx);
-        let m: ImageMode = ImageMode::from_u8(ma.value(idx)).unwrap();
-        assert_eq!(m.num_channels(), c);
-        let result = match m {
-            ImageMode::L => {
-                DaftImageBuffer::<'a>::L(ImageBuffer::from_raw(w, h, slice_data).unwrap())
-            }
-            ImageMode::LA => {
-                DaftImageBuffer::<'a>::LA(ImageBuffer::from_raw(w, h, slice_data).unwrap())
-            }
-            ImageMode::RGB => {
-                DaftImageBuffer::<'a>::RGB(ImageBuffer::from_raw(w, h, slice_data).unwrap())
-            }
-            ImageMode::RGBA => {
-                DaftImageBuffer::<'a>::RGBA(ImageBuffer::from_raw(w, h, slice_data).unwrap())
-            }
-            _ => unimplemented!("{m} is currently not implemented!"),
-        };
-
-        assert_eq!(result.height(), h);
-        assert_eq!(result.width(), w);
-        Some(result)
-    }
-
     pub fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray> {
-        let result = (0..self.len())
-            .map(|i| self.as_image_obj(i))
-            .map(|img| {
-                img.map(|img| {
-                    let mut buf = Vec::new();
-                    img.encode(image_format, &mut buf)?;
-                    Ok(buf)
-                })
-                .transpose()
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-        let arrow_array = arrow2::array::BinaryArray::<i64>::from_iter(result.into_iter());
-        BinaryArray::new(
-            Field::new(self.name(), arrow_array.data_type().into()).into(),
-            arrow_array.boxed(),
-        )
+        encode_images(self, image_format)
     }
 
     pub fn resize(&self, w: u32, h: u32) -> DaftResult<Self> {
-        let result = (0..self.len())
-            .map(|i| self.as_image_obj(i))
-            .map(|img| img.map(|img| img.resize(w, h)))
-            .collect::<Vec<_>>();
+        let result = resize_images(self, w, h);
         Self::from_daft_image_buffers(self.name(), result.as_slice(), self.image_mode())
+    }
+
+    pub fn resize_to_fixed_shape_image_array(
+        &self,
+        w: u32,
+        h: u32,
+        mode: &ImageMode,
+    ) -> DaftResult<FixedShapeImageArray> {
+        let result = resize_images(self, w, h);
+        FixedShapeImageArray::from_daft_image_buffers(self.name(), result.as_slice(), mode, h, w)
     }
 
     pub fn from_daft_image_buffers(
@@ -471,10 +495,173 @@ impl ImageArray {
             },
         )
     }
+
+    fn iter(&self) -> ImageBufferIter<'_, Self> {
+        ImageBufferIter::new(self)
+    }
+}
+
+impl Length for ImageArray {
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+impl Name for ImageArray {
+    fn name(&self) -> &str {
+        self.name()
+    }
+}
+
+impl AsImageObj for ImageArray {
+    fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
+        assert!(idx < self.len());
+        if !self.physical.is_valid(idx) {
+            return None;
+        }
+
+        let da = self.data_array();
+        let ca = self.channel_array();
+        let ha = self.height_array();
+        let wa = self.width_array();
+        let ma = self.mode_array();
+
+        let offsets = da.offsets();
+
+        let start = *offsets.get(idx).unwrap() as usize;
+        let end = *offsets.get(idx + 1).unwrap() as usize;
+
+        let values = da
+            .values()
+            .as_ref()
+            .as_any()
+            .downcast_ref::<arrow2::array::UInt8Array>()
+            .unwrap();
+        let slice_data = Cow::Borrowed(&values.values().as_slice()[start..end] as &'a [u8]);
+
+        let c = ca.value(idx);
+        let h = ha.value(idx);
+        let w = wa.value(idx);
+        let m: ImageMode = ImageMode::from_u8(ma.value(idx)).unwrap();
+        assert_eq!(m.num_channels(), c);
+        let result = match m {
+            ImageMode::L => {
+                DaftImageBuffer::<'a>::L(ImageBuffer::from_raw(w, h, slice_data).unwrap())
+            }
+            ImageMode::LA => {
+                DaftImageBuffer::<'a>::LA(ImageBuffer::from_raw(w, h, slice_data).unwrap())
+            }
+            ImageMode::RGB => {
+                DaftImageBuffer::<'a>::RGB(ImageBuffer::from_raw(w, h, slice_data).unwrap())
+            }
+            ImageMode::RGBA => {
+                DaftImageBuffer::<'a>::RGBA(ImageBuffer::from_raw(w, h, slice_data).unwrap())
+            }
+            _ => unimplemented!("{m} is currently not implemented!"),
+        };
+
+        assert_eq!(result.height(), h);
+        assert_eq!(result.width(), w);
+        Some(result)
+    }
+}
+
+impl<'a> IntoIterator for &'a ImageArray {
+    type Item = Option<DaftImageBuffer<'a>>;
+    type IntoIter = ImageBufferIter<'a, ImageArray>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
 }
 
 impl FixedShapeImageArray {
-    pub fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
+    pub fn from_daft_image_buffers(
+        name: &str,
+        inputs: &[Option<DaftImageBuffer<'_>>],
+        image_mode: &ImageMode,
+        height: u32,
+        width: u32,
+    ) -> DaftResult<Self> {
+        use DaftImageBuffer::*;
+        let is_all_u8 = inputs
+            .iter()
+            .filter_map(|b| b.as_ref())
+            .all(|b| matches!(b, L(..) | LA(..) | RGB(..) | RGBA(..)));
+        assert!(is_all_u8);
+
+        let num_channels = image_mode.num_channels();
+        let mut data_ref = Vec::with_capacity(inputs.len());
+        let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(inputs.len());
+        let list_size = (height * width * num_channels as u32) as usize;
+        let null_list = vec![0u8; list_size];
+        for ib in inputs.iter() {
+            validity.push(ib.is_some());
+            let buffer = match ib {
+                Some(ib) => ib.as_u8_slice(),
+                None => null_list.as_slice(),
+            };
+            data_ref.push(buffer)
+        }
+        let data = data_ref.concat();
+        let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+            0 => None,
+            _ => Some(validity.into()),
+        };
+
+        let arrow_dtype = arrow2::datatypes::DataType::FixedSizeList(
+            Box::new(arrow2::datatypes::Field::new(
+                "data",
+                arrow2::datatypes::DataType::UInt8,
+                true,
+            )),
+            list_size,
+        );
+        let arrow_array = Box::new(arrow2::array::FixedSizeListArray::new(
+            arrow_dtype.clone(),
+            Box::new(arrow2::array::PrimitiveArray::from_vec(data)),
+            validity,
+        ));
+        let physical_array = FixedSizeListArray::new(
+            Field::new(name, (&arrow_dtype).into()).into(),
+            arrow_array.boxed(),
+        )?;
+        let logical_dtype =
+            DataType::FixedShapeImage(Box::new(DataType::UInt8), *image_mode, height, width);
+        Ok(Self::new(Field::new(name, logical_dtype), physical_array))
+    }
+
+    pub fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray> {
+        encode_images(self, image_format)
+    }
+
+    pub fn resize(&self, w: u32, h: u32) -> DaftResult<Self> {
+        let result = resize_images(self, w, h);
+        match self.logical_type() {
+            DataType::FixedShapeImage(_, mode, _, _) => Self::from_daft_image_buffers(self.name(), result.as_slice(), mode, h, w),
+            dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {}", dt),
+        }
+    }
+
+    fn iter(&self) -> ImageBufferIter<'_, Self> {
+        ImageBufferIter::new(self)
+    }
+}
+
+impl Length for FixedShapeImageArray {
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+impl Name for FixedShapeImageArray {
+    fn name(&self) -> &str {
+        self.name()
+    }
+}
+
+impl AsImageObj for FixedShapeImageArray {
+    fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
         assert!(idx < self.len());
         if !self.physical.is_valid(idx) {
             return None;
@@ -511,88 +698,14 @@ impl FixedShapeImageArray {
             dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {}", dt),
         }
     }
+}
 
-    pub fn from_daft_image_buffers(
-        name: &str,
-        inputs: &[Option<DaftImageBuffer<'_>>],
-        image_mode: &ImageMode,
-        height: u32,
-        width: u32,
-    ) -> DaftResult<Self> {
-        use DaftImageBuffer::*;
-        let is_all_u8 = inputs
-            .iter()
-            .filter_map(|b| b.as_ref())
-            .all(|b| matches!(b, L(..) | LA(..) | RGB(..) | RGBA(..)));
-        assert!(is_all_u8);
+impl<'a> IntoIterator for &'a FixedShapeImageArray {
+    type Item = Option<DaftImageBuffer<'a>>;
+    type IntoIter = ImageBufferIter<'a, FixedShapeImageArray>;
 
-        let num_channels = image_mode.num_channels();
-        let mut data_ref = Vec::with_capacity(inputs.len());
-        let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(inputs.len());
-        for ib in inputs.iter() {
-            validity.push(ib.is_some());
-            let buffer = match ib {
-                Some(ib) => ib.as_u8_slice(),
-                None => &[] as &[u8],
-            };
-            data_ref.push(buffer)
-        }
-        let data = data_ref.concat();
-        let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
-            0 => None,
-            _ => Some(validity.into()),
-        };
-
-        let arrow_dtype = arrow2::datatypes::DataType::FixedSizeList(
-            Box::new(arrow2::datatypes::Field::new(
-                "data",
-                arrow2::datatypes::DataType::UInt8,
-                true,
-            )),
-            (height * width * num_channels as u32) as usize,
-        );
-        let arrow_array = Box::new(arrow2::array::FixedSizeListArray::new(
-            arrow_dtype.clone(),
-            Box::new(arrow2::array::PrimitiveArray::from_vec(data)),
-            validity,
-        ));
-        let physical_array = FixedSizeListArray::new(
-            Field::new(name, (&arrow_dtype).into()).into(),
-            arrow_array.boxed(),
-        )?;
-        let logical_dtype =
-            DataType::FixedShapeImage(Box::new(DataType::UInt8), *image_mode, height, width);
-        Ok(Self::new(Field::new(name, logical_dtype), physical_array))
-    }
-
-    pub fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray> {
-        let result = (0..self.len())
-            .map(|i| self.as_image_obj(i))
-            .map(|img| {
-                img.map(|img| {
-                    let mut buf = Vec::new();
-                    img.encode(image_format, &mut buf)?;
-                    Ok(buf)
-                })
-                .transpose()
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-        let arrow_array = arrow2::array::BinaryArray::<i64>::from_iter(result.into_iter());
-        BinaryArray::new(
-            Field::new(self.name(), arrow_array.data_type().into()).into(),
-            arrow_array.boxed(),
-        )
-    }
-
-    pub fn resize(&self, w: u32, h: u32) -> DaftResult<Self> {
-        let result = (0..self.len())
-            .map(|i| self.as_image_obj(i))
-            .map(|img| img.map(|img| img.resize(w, h)))
-            .collect::<Vec<_>>();
-        match self.logical_type() {
-            DataType::FixedShapeImage(_, mode, _, _) => Self::from_daft_image_buffers(self.name(), result.as_slice(), mode, h, w),
-            dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {}", dt),
-        }
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 
@@ -630,4 +743,106 @@ impl BinaryArray {
             _ => unimplemented!("Decoding images of dtype {cached_dtype:?} is not supported, only uint8 images are supported."),
         }
     }
+}
+
+fn encode_images<'a, T>(images: &'a T, image_format: ImageFormat) -> DaftResult<BinaryArray>
+where
+    T: AsImageObj + Length + Name,
+    &'a T: IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
+{
+    let arrow_array = match image_format {
+        ImageFormat::TIFF => {
+            // NOTE: A single writer/buffer can't be used for TIFF files because the encoder will overwrite the
+            // IFD offset for the first image instead of writing it for all subsequent images, producing corrupted
+            // TIFF files. We work around this by writing out a new buffer for each image.
+            // TODO(Clark): Fix this in the tiff crate.
+            let values = images
+                .into_iter()
+                .map(|img| {
+                    img.map(|img| {
+                        let buf = Vec::new();
+                        let mut writer: CountingWriter<std::io::BufWriter<_>> =
+                            std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
+                        img.encode(image_format, &mut writer)?;
+                        // NOTE: BufWriter::into_inner() will flush the buffer.
+                        Ok(writer
+                            .into_inner()
+                            .into_inner()
+                            .map_err(|e| {
+                                DaftError::ValueError(format!(
+                                    "Encoding image into file format {} failed: {}",
+                                    image_format, e
+                                ))
+                            })?
+                            .into_inner())
+                    })
+                    .transpose()
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
+            arrow2::array::BinaryArray::<i64>::from_iter(values.into_iter())
+        }
+        _ => {
+            let mut offsets = Vec::with_capacity(images.len() + 1);
+            offsets.push(0i64);
+            let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(images.len());
+            let buf = Vec::new();
+            let mut writer: CountingWriter<std::io::BufWriter<_>> =
+                std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
+            images
+                .into_iter()
+                .map(|img| {
+                    match img {
+                        Some(img) => {
+                            img.encode(image_format, &mut writer)?;
+                            offsets.push(writer.count() as i64);
+                            validity.push(true);
+                        }
+                        None => {
+                            offsets.push(*offsets.last().unwrap());
+                            validity.push(false);
+                        }
+                    }
+                    Ok(())
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
+            // NOTE: BufWriter::into_inner() will flush the buffer.
+            let values = writer
+                .into_inner()
+                .into_inner()
+                .map_err(|e| {
+                    DaftError::ValueError(format!(
+                        "Encoding image into file format {} failed: {}",
+                        image_format, e
+                    ))
+                })?
+                .into_inner();
+            let encoded_data: arrow2::buffer::Buffer<u8> = values.into();
+            let offsets_buffer = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
+            let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+                0 => None,
+                _ => Some(validity.into()),
+            };
+            arrow2::array::BinaryArray::<i64>::new(
+                arrow2::datatypes::DataType::LargeBinary,
+                offsets_buffer,
+                encoded_data,
+                validity,
+            )
+        }
+    };
+    BinaryArray::new(
+        Field::new(images.name(), arrow_array.data_type().into()).into(),
+        arrow_array.boxed(),
+    )
+}
+
+fn resize_images<'a, T>(images: &'a T, w: u32, h: u32) -> Vec<Option<DaftImageBuffer>>
+where
+    T: AsImageObj + Length + Name,
+    &'a T: IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
+{
+    images
+        .into_iter()
+        .map(|img| img.map(|img| img.resize(w, h)))
+        .collect::<Vec<_>>()
 }
