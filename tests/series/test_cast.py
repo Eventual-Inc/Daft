@@ -367,19 +367,68 @@ def test_series_cast_string_timestamp(timestamp_str, expected, tz) -> None:
     [
         (
             DataType.timestamp(TimeUnit.s()),
-            datetime(1969, 12, 31, 11, 59, 59),
+            datetime(1969, 12, 31, 23, 59, 59),
             datetime(1970, 1, 1, 0, 0, 0),
             datetime(1970, 1, 1, 0, 0, 1),
         ),
         (
             DataType.timestamp(TimeUnit.ms()),
-            datetime(1969, 12, 31, 11, 59, 59, 999000),
+            datetime(1969, 12, 31, 23, 59, 59, 999000),
             datetime(1970, 1, 1, 0, 0, 0, 0),
             datetime(1970, 1, 1, 0, 0, 0, 1000),
         ),
         (
             DataType.timestamp(TimeUnit.us()),
-            datetime(1969, 12, 31, 11, 59, 59, 999999),
+            datetime(1969, 12, 31, 23, 59, 59, 999999),
+            datetime(1970, 1, 1, 0, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 0, 1),
+        ),
+        (
+            DataType.timestamp(TimeUnit.us(), timezone="-08:00"),
+            datetime(1969, 12, 31, 15, 59, 59, 999999, tzinfo=timezone(timedelta(hours=-8))),
+            datetime(1969, 12, 31, 16, 0, 0, 0, tzinfo=timezone(timedelta(hours=-8))),
+            datetime(1969, 12, 31, 16, 0, 0, 1, tzinfo=timezone(timedelta(hours=-8))),
+        ),
+        (DataType.duration(TimeUnit.s()), timedelta(seconds=-1), timedelta(seconds=0), timedelta(seconds=1)),
+        (
+            DataType.duration(TimeUnit.ms()),
+            timedelta(milliseconds=-1),
+            timedelta(milliseconds=0),
+            timedelta(milliseconds=1),
+        ),
+        (
+            DataType.duration(TimeUnit.us()),
+            timedelta(microseconds=-1),
+            timedelta(microseconds=0),
+            timedelta(microseconds=1),
+        ),
+    ],
+)
+def test_series_cast_numeric_logical(dtype, result_n1, result_0, result_p1) -> None:
+    # Numeric -> logical.
+    series = Series.from_pylist([-1, 0, 1])
+    casted = series.cast(dtype)
+    assert casted.to_pylist() == [result_n1, result_0, result_p1]
+
+
+@pytest.mark.parametrize(
+    ["dtype", "result_n1", "result_0", "result_p1"],
+    [
+        (
+            DataType.timestamp(TimeUnit.s()),
+            datetime(1969, 12, 31, 23, 59, 59),
+            datetime(1970, 1, 1, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 1),
+        ),
+        (
+            DataType.timestamp(TimeUnit.ms()),
+            datetime(1969, 12, 31, 23, 59, 59, 999000),
+            datetime(1970, 1, 1, 0, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 0, 1000),
+        ),
+        (
+            DataType.timestamp(TimeUnit.us()),
+            datetime(1969, 12, 31, 23, 59, 59, 999999),
             datetime(1970, 1, 1, 0, 0, 0, 0),
             datetime(1970, 1, 1, 0, 0, 0, 1),
         ),
@@ -404,13 +453,8 @@ def test_series_cast_string_timestamp(timestamp_str, expected, tz) -> None:
         ),
     ],
 )
-def test_series_cast_numeric_logical(dtype, result_n1, result_0, result_p1) -> None:
-    # Numeric -> logical.
-    series = Series.from_pylist([-1, 0, 1])
-    casted = series.cast(dtype)
-    assert casted.to_pylist() == [result_n1, result_0, result_p1]
-
-    # Logical -> nuemric.
-    series = Series.from_pylist([result_n1, result_0, result_p1])
+def test_series_cast_logical_numeric(dtype, result_n1, result_0, result_p1) -> None:
+    # Logical -> numeric.
+    series = Series.from_pylist([result_n1, result_0, result_p1]).cast(dtype)
     casted = series.cast(DataType.int64())
     assert casted.to_pylist() == [-1, 0, 1]

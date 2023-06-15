@@ -192,7 +192,7 @@ class DataType:
     @classmethod
     def duration(cls, timeunit: TimeUnit) -> DataType:
         """Duration DataType."""
-        return cls._from_pydatatype(PyDataType.timestamp(timeunit._timeunit))
+        return cls._from_pydatatype(PyDataType.duration(timeunit._timeunit))
 
     @classmethod
     def list(cls, name: str, dtype: DataType) -> DataType:
