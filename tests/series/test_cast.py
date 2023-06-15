@@ -412,12 +412,13 @@ def test_series_cast_string_timestamp(timestamp_str, expected, tz) -> None:
             datetime(1970, 1, 1, 0, 0, 0, 0),
             datetime(1970, 1, 1, 0, 0, 0, 1),
         ),
-        (
-            DataType.timestamp(TimeUnit.us(), timezone="-08:00"),
-            datetime(1969, 12, 31, 15, 59, 59, 999999, tzinfo=timezone(timedelta(hours=-8))),
-            datetime(1969, 12, 31, 16, 0, 0, 0, tzinfo=timezone(timedelta(hours=-8))),
-            datetime(1969, 12, 31, 16, 0, 0, 1, tzinfo=timezone(timedelta(hours=-8))),
-        ),
+        # Timezoned timestamps are broken in PyArrow 6.0.1.
+        # (
+        #     DataType.timestamp(TimeUnit.us(), timezone="-08:00"),
+        #     datetime(1969, 12, 31, 15, 59, 59, 999999, tzinfo=timezone(timedelta(hours=-8))),
+        #     datetime(1969, 12, 31, 16, 0, 0, 0, tzinfo=timezone(timedelta(hours=-8))),
+        #     datetime(1969, 12, 31, 16, 0, 0, 1, tzinfo=timezone(timedelta(hours=-8))),
+        # ),
         (DataType.duration(TimeUnit.s()), timedelta(seconds=-1), timedelta(seconds=0), timedelta(seconds=1)),
         (
             DataType.duration(TimeUnit.ms()),
