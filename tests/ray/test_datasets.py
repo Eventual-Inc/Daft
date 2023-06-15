@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pac
 import pytest
 import ray
 
@@ -157,7 +158,8 @@ def test_from_ray_dataset_all_arrow(n_partitions: int):
 
     df = daft.from_ray_dataset(ds)
     # Sort data since partition ordering in Datasets is not deterministic.
-    out_table = df.to_arrow().sort_by("intcol")
+    out_table = df.to_arrow()
+    out_table = out_table.take(pac.sort_indices(out_table, sort_keys=[("intcol", "ascending")]))
     expected_table = add_float(table).cast(
         pa.schema(
             [
