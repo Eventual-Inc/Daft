@@ -18,11 +18,7 @@ pub struct S3LikeSource {
 
 #[derive(Debug, Snafu)]
 enum Error {
-    #[snafu(display(
-        "Unable to open {}: {}",
-        path,
-        s3::error::DisplayErrorContext(source)
-    ))]
+    #[snafu(display("Unable to open {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToOpenFile {
         path: String,
         source: SdkError<GetObjectError, Response>,
@@ -50,17 +46,12 @@ impl From<Error> for super::Error {
                     path,
                     source: no_such_key.into(),
                 },
-                err => {
-                    super::Error::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    }
-                }
+                err => super::Error::UnableToOpenFile {
+                    path,
+                    source: err.into(),
+                },
             },
-            InvalidUrl { path, source } => super::Error::InvalidUrl {
-                path,
-                source,
-            },
+            InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
             UnableToReadBytes { path, source } => super::Error::UnableToReadBytes {
                 path,
                 source: source.into(),

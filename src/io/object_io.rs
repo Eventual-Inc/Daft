@@ -5,34 +5,12 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
-use snafu::ResultExt;
-use tokio::io::AsyncReadExt;
 
-use super::UnableToReadBytesSnafu;
+use crate::io::local::collect_file;
 
 pub(crate) enum GetResult {
     File(PathBuf),
     Stream(BoxStream<'static, super::Result<Bytes>>, Option<usize>),
-}
-
-async fn collect_file(path: &str) -> super::Result<Bytes> {
-    let mut file = match tokio::fs::File::open(path).await {
-        Ok(f) => Ok(f),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Err(super::Error::NotFound {
-            path: path.into(),
-            source: err.into(),
-        }),
-        Err(err) => Err(super::Error::Generic {
-            store: "local",
-            source: err.into(),
-        }),
-    }?;
-    let mut buf = vec![];
-    let _ = file
-        .read_to_end(&mut buf)
-        .await
-        .context(UnableToReadBytesSnafu::<String> { path: path.into() })?;
-    Ok(Bytes::from(buf))
 }
 
 async fn collect_bytes<S>(mut stream: S, size_hint: Option<usize>) -> super::Result<Bytes>
