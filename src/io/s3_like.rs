@@ -4,7 +4,7 @@ use futures::{StreamExt, TryStreamExt};
 use s3::client::customize::Response;
 use s3::error::SdkError;
 use s3::operation::get_object::GetObjectError;
-use snafu::{IntoError, OptionExt, ResultExt, Snafu};
+use snafu::{IntoError, ResultExt, Snafu};
 use url::ParseError;
 
 use super::object_io::{GetResult, ObjectSource};
@@ -12,7 +12,7 @@ use super::object_io::{GetResult, ObjectSource};
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
 #[derive(Clone)]
-pub struct S3LikeSource {
+pub(crate) struct S3LikeSource {
     client: s3::Client,
 }
 

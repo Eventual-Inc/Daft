@@ -3,7 +3,7 @@ use futures::{StreamExt, TryStreamExt};
 
 use super::object_io::{GetResult, ObjectSource};
 
-pub struct HttpSource {}
+pub(crate) struct HttpSource {}
 
 impl From<reqwest::Error> for super::Error {
     fn from(error: reqwest::Error) -> Self {

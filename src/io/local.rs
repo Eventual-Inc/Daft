@@ -8,7 +8,7 @@ use snafu::{ResultExt, Snafu};
 use tokio::io::AsyncReadExt;
 use url::ParseError;
 
-pub struct LocalSource {}
+pub(crate) struct LocalSource {}
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -38,11 +38,11 @@ impl From<Error> for super::Error {
                 use std::io::ErrorKind::*;
                 match source.kind() {
                     NotFound => super::Error::NotFound {
-                        path: path,
+                        path,
                         source: source.into(),
                     },
                     _ => super::Error::UnableToOpenFile {
-                        path: path,
+                        path,
                         source: source.into(),
                     },
                 }
