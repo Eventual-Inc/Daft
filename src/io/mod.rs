@@ -45,10 +45,7 @@ pub(crate) enum Error {
     InvalidArgument { msg: String },
 
     #[snafu(display("Unable to open file {}: {}", path, source))]
-    UnableToOpenFile {
-        path: String,
-        source: std::io::Error,
-    },
+    UnableToOpenFile { path: String, source: DynError },
 
     #[snafu(display("Unable to read data from file {}: {}", path, source))]
     UnableToReadBytes {

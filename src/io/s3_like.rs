@@ -4,7 +4,8 @@ use futures::{StreamExt, TryStreamExt};
 use s3::client::customize::Response;
 use s3::error::SdkError;
 use s3::operation::get_object::GetObjectError;
-use snafu::{IntoError, ResultExt, Snafu};
+use snafu::{IntoError, OptionExt, ResultExt, Snafu};
+use url::ParseError;
 
 use super::object_io::{GetResult, ObjectSource};
 
@@ -17,20 +18,6 @@ pub struct S3LikeSource {
 
 #[derive(Debug, Snafu)]
 enum Error {
-    // #[snafu(display("Generic {} error: {:?}", store, source))]
-    // Generic {
-    //     store: &'static str,
-    //     source: DynError,
-    // },
-
-    // #[snafu(display("Object at location {} not found: {:?}", path, source))]
-    // NotFound {
-    //     path: String,
-    //     source: DynError,
-    // },
-
-    // #[snafu(display("Invalid Argument: {:?}", msg))]
-    // InvalidArgument{msg: String},
     #[snafu(display(
         "Unable to open file {}: {}",
         path,
@@ -47,37 +34,40 @@ enum Error {
         source: ByteStreamError,
     },
 
-    #[snafu(display("Unable to convert URL \"{}\" to path", url))]
+    #[snafu(display("Unable to convert URL \"{}\" to path", path))]
     InvalidUrl {
-        url: String,
+        path: String,
         source: url::ParseError,
     },
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        super::Error::Generic {
-            store: "s3",
-            source: error.into(),
+        use Error::*;
+        match error {
+            UnableToOpenFile { path, source } => match source.into_service_error() {
+                GetObjectError::NoSuchKey(no_such_key) => super::Error::NotFound {
+                    path: path,
+                    source: no_such_key.into(),
+                },
+                err @ _ => {
+                    return super::Error::UnableToOpenFile {
+                        path: path,
+                        source: err.into(),
+                    }
+                }
+            },
+            InvalidUrl { path, source } => super::Error::InvalidUrl {
+                path: path,
+                source: source.into(),
+            },
+            UnableToReadBytes { path, source } => super::Error::UnableToReadBytes {
+                path: path,
+                source: source.into(),
+            },
         }
     }
 }
-
-// impl From<ByteStreamError> for DaftError {
-//     fn from(error: ByteStreamError) -> Self {
-//         DaftError::External(error.into())
-//     }
-// }
-
-// impl<E: std::error::Error + 'static + Send + Sync, R: std::fmt::Debug + Send + Sync + 'static>
-//     From<SdkError<E, R>> for Error
-// where
-//     Self: Send + Sync,
-// {
-//     fn from(error: SdkError<E, R>) -> Self {
-//         Error::Generic{store: "s3", source: error.into()}
-//     }
-// }
 
 async fn build_client(endpoint: &str) -> aws_sdk_s3::Client {
     let conf = aws_config::load_from_env().await;
@@ -103,8 +93,14 @@ impl S3LikeSource {
 #[async_trait]
 impl ObjectSource for S3LikeSource {
     async fn get(&self, uri: &str) -> super::Result<GetResult> {
-        let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { url: uri })?;
-        let bucket = parsed.host_str().unwrap();
+        let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
+        let bucket = match parsed.host_str() {
+            Some(s) => Ok(s),
+            None => Err(Error::InvalidUrl {
+                path: uri.into(),
+                source: ParseError::EmptyHost,
+            }),
+        }?;
         let key = parsed.path();
 
         let object = self
