@@ -561,7 +561,7 @@ def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]
     return partitions
 
 
-class RayRunner(Runner):
+class RayRunner(Runner[ray.ObjectRef]):
     def __init__(
         self,
         address: str | None,
@@ -601,6 +601,9 @@ class RayRunner(Runner):
             self.scheduler = Scheduler(
                 max_task_backlog=max_task_backlog,
             )
+
+    def run_iter(self, plan: logical_plan.LogicalPlan) -> Iterator[ray.ObjectRef]:
+        raise NotImplementedError()
 
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         result_pset = RayPartitionSet({})

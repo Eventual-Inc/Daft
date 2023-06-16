@@ -140,7 +140,7 @@ class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
     ...
 
 
-class PyRunner(Runner):
+class PyRunner(Runner[Table]):
     def __init__(self, use_thread_pool: bool | None) -> None:
         super().__init__()
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
@@ -195,6 +195,9 @@ class PyRunner(Runner):
 
             pset_entry = self.put_partition_set_into_cache(result_pset)
             return pset_entry
+
+    def run_iter(self, logplan: logical_plan.LogicalPlan) -> Iterator[Table]:
+        raise NotImplementedError()
 
     def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> Iterator[Table]:
         inflight_tasks: dict[str, PartitionTask] = dict()
