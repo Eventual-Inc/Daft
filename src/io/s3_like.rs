@@ -6,8 +6,6 @@ use s3::error::SdkError;
 use s3::operation::get_object::GetObjectError;
 use snafu::{IntoError, ResultExt, Snafu};
 
-use crate::error::{DaftError, DaftResult};
-
 use super::object_io::{GetResult, ObjectSource};
 
 use aws_sdk_s3 as s3;
@@ -16,8 +14,6 @@ use aws_sdk_s3::primitives::ByteStreamError;
 pub struct S3LikeSource {
     client: s3::Client,
 }
-
-type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 #[derive(Debug, Snafu)]
 enum Error {

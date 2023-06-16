@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 
-use crate::error::{DaftError, DaftResult};
-
 use super::object_io::{GetResult, ObjectSource};
 
 pub struct HttpSource {}

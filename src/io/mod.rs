@@ -12,7 +12,7 @@ use std::{
 use futures::{StreamExt, TryStreamExt};
 
 use snafu::Snafu;
-use tokio::{runtime::Runtime, task::JoinError};
+use tokio::runtime::Runtime;
 use url::ParseError;
 
 use snafu::prelude::*;
@@ -129,9 +129,7 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "file" => Ok((SourceType::File, fixed_input)),
         "http" | "https" => Ok((SourceType::Http, fixed_input)),
         "s3" => Ok((SourceType::S3, fixed_input)),
-        _ => Err(Error::NotImplementedSource {
-            store: scheme.into(),
-        }),
+        _ => Err(Error::NotImplementedSource { store: scheme }),
     }
 }
 

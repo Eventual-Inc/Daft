@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use crate::error::{DaftError, DaftResult};
-
 use super::object_io::{GetResult, ObjectSource};
 use async_trait::async_trait;
 use snafu::{ResultExt, Snafu};
@@ -62,11 +60,10 @@ impl LocalSource {
 #[async_trait]
 impl ObjectSource for LocalSource {
     async fn get(&self, uri: &str) -> super::Result<GetResult> {
-        const EXPECTED_START: &str = "file://";
         let path = url::Url::parse(uri).context(InvalidUrlSnafu { url: uri })?;
         let file_path = match path.to_file_path() {
             Ok(f) => Ok(f),
-            Err(err) => Err(Error::InvalidFilePath {
+            Err(_err) => Err(Error::InvalidFilePath {
                 path: path.to_string(),
             }),
         }?;
