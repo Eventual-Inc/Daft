@@ -201,9 +201,10 @@ class PyRunner(Runner):
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
 
-        next_step = next(plan)
         with futures.ThreadPoolExecutor() as thread_pool:
             try:
+                next_step = next(plan)
+
                 # Dispatch->Await loop.
                 while True:
 
@@ -224,34 +225,40 @@ class PyRunner(Runner):
                             # Insufficient resources; await some tasks.
                             break
 
-                        # Run the task in the main thread, instead of the thread pool, in certain conditions:
-                        # - Threading is disabled in runner config.
-                        # - Task is a no-op.
-                        # - Task requires GPU.
-                        # TODO(charles): Queue these up until the physical plan is blocked to avoid starving cluster.
-                        if (
-                            not self._use_thread_pool
-                            or len(next_step.instructions) == 0
-                            or (
-                                next_step.resource_request.num_gpus is not None
-                                and next_step.resource_request.num_gpus > 0
-                            )
-                        ):
-                            logger.debug("Running task synchronously in main thread: {next_step}", next_step=next_step)
-                            partitions = self.build_partitions(next_step.instructions, *next_step.inputs)
-                            next_step.set_result([PyMaterializedResult(partition) for partition in partitions])
-
                         else:
-                            # Submit the task for execution.
-                            logger.debug("Submitting task for execution: {next_step}", next_step=next_step)
-                            future = thread_pool.submit(
-                                self.build_partitions, next_step.instructions, *next_step.inputs
-                            )
-                            # Register the inflight task and resources used.
-                            future_to_task[future] = next_step.id()
-                            inflight_tasks[next_step.id()] = next_step
-                            inflight_tasks_resources[next_step.id()] = next_step.resource_request
-                        next_step = next(plan)
+                            # next_task is a task to run.
+
+                            # Run the task in the main thread, instead of the thread pool, in certain conditions:
+                            # - Threading is disabled in runner config.
+                            # - Task is a no-op.
+                            # - Task requires GPU.
+                            # TODO(charles): Queue these up until the physical plan is blocked to avoid starving cluster.
+                            if (
+                                not self._use_thread_pool
+                                or len(next_step.instructions) == 0
+                                or (
+                                    next_step.resource_request.num_gpus is not None
+                                    and next_step.resource_request.num_gpus > 0
+                                )
+                            ):
+                                logger.debug(
+                                    "Running task synchronously in main thread: {next_step}", next_step=next_step
+                                )
+                                partitions = self.build_partitions(next_step.instructions, *next_step.inputs)
+                                next_step.set_result([PyMaterializedResult(partition) for partition in partitions])
+
+                            else:
+                                # Submit the task for execution.
+                                logger.debug("Submitting task for execution: {next_step}", next_step=next_step)
+                                future = thread_pool.submit(
+                                    self.build_partitions, next_step.instructions, *next_step.inputs
+                                )
+                                # Register the inflight task and resources used.
+                                future_to_task[future] = next_step.id()
+                                inflight_tasks[next_step.id()] = next_step
+                                inflight_tasks_resources[next_step.id()] = next_step.resource_request
+
+                            next_step = next(plan)
 
                     # Await at least one task and process the results.
                     assert (
