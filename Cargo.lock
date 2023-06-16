@@ -613,12 +613,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
-name = "configparser"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe1d7dcda7d1da79e444bdfba1465f2f849a58b07774e1df473ee77030cb47a7"
-
-[[package]]
 name = "core-foundation"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -711,7 +705,6 @@ dependencies = [
  "html-escape",
  "image",
  "indexmap",
- "ini",
  "lazy_static",
  "log",
  "ndarray",
@@ -1228,15 +1221,6 @@ name = "indoc"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfa799dd5ed20a7e349f3b4639aa80d74549c81716d9ec4f994c9b5815598306"
-
-[[package]]
-name = "ini"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a9271a5dfd4228fa56a78d7508a35c321639cc71f783bb7a5723552add87bce"
-dependencies = [
- "configparser",
-]
 
 [[package]]
 name = "instant"
