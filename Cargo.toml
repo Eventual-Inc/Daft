@@ -1,12 +1,11 @@
 [dependencies]
-base64 = "0.21.2"
-chrono = "0.4.26"
-chrono-tz = "0.8.2"
-anyhow = "1.0.71"
 async-trait = "0.1.68"
 aws-config = "0.55.3"
 aws-sdk-s3 = "0.28.0"
+base64 = "0.21.2"
 bytes = "1.4.0"
+chrono = "0.4.26"
+chrono-tz = "0.8.2"
 dyn-clone = "1.0.11"
 fnv = "1.0.7"
 futures = "0.3.28"
@@ -20,7 +19,6 @@ rand = "^0.8"
 serde_json = "1.0.96"
 snafu = "0.7.4"
 tokio = {version = "1.28.2", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
-tracing-subscriber = "0.3.17"
 url = "2.4.0"
 
 [dependencies.arrow2]
