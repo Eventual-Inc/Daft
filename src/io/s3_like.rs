@@ -19,7 +19,7 @@ pub struct S3LikeSource {
 #[derive(Debug, Snafu)]
 enum Error {
     #[snafu(display(
-        "Unable to open file {}: {}",
+        "Unable to open {}: {}",
         path,
         s3::error::DisplayErrorContext(source)
     ))]
@@ -28,13 +28,13 @@ enum Error {
         source: SdkError<GetObjectError, Response>,
     },
 
-    #[snafu(display("Unable to read data from file {}: {}", path, source))]
+    #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes {
         path: String,
         source: ByteStreamError,
     },
 
-    #[snafu(display("Unable to convert URL \"{}\" to path", path))]
+    #[snafu(display("Unable to parse URL: \"{}\"", path))]
     InvalidUrl {
         path: String,
         source: url::ParseError,
@@ -47,22 +47,22 @@ impl From<Error> for super::Error {
         match error {
             UnableToOpenFile { path, source } => match source.into_service_error() {
                 GetObjectError::NoSuchKey(no_such_key) => super::Error::NotFound {
-                    path: path,
+                    path,
                     source: no_such_key.into(),
                 },
-                err @ _ => {
-                    return super::Error::UnableToOpenFile {
-                        path: path,
+                err => {
+                    super::Error::UnableToOpenFile {
+                        path,
                         source: err.into(),
                     }
                 }
             },
             InvalidUrl { path, source } => super::Error::InvalidUrl {
-                path: path,
-                source: source.into(),
+                path,
+                source,
             },
             UnableToReadBytes { path, source } => super::Error::UnableToReadBytes {
-                path: path,
+                path,
                 source: source.into(),
             },
         }
