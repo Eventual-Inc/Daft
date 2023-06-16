@@ -178,6 +178,16 @@ class PyRunner(Runner[Table]):
         return PyRunnerIO()
 
     def run(self, logplan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
+        partitions = list(self.run_iter(logplan))
+
+        result_pset = LocalPartitionSet({})
+        for i, partition in enumerate(partitions):
+            result_pset.set_partition(i, partition)
+
+        pset_entry = self.put_partition_set_into_cache(result_pset)
+        return pset_entry
+
+    def run_iter(self, logplan: logical_plan.LogicalPlan) -> Iterator[Table]:
         logplan = self.optimize(logplan)
         psets = {
             key: entry.value.values()
@@ -187,17 +197,8 @@ class PyRunner(Runner[Table]):
         plan = physical_plan_factory.get_materializing_physical_plan(logplan, psets)
 
         with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-            partitions = list(self._physical_plan_to_partitions(plan))
-
-            result_pset = LocalPartitionSet({})
-            for i, partition in enumerate(partitions):
-                result_pset.set_partition(i, partition)
-
-            pset_entry = self.put_partition_set_into_cache(result_pset)
-            return pset_entry
-
-    def run_iter(self, logplan: logical_plan.LogicalPlan) -> Iterator[Table]:
-        raise NotImplementedError()
+            partitions_gen = self._physical_plan_to_partitions(plan)
+            yield from partitions_gen
 
     def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> Iterator[Table]:
         inflight_tasks: dict[str, PartitionTask] = dict()
