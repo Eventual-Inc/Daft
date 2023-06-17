@@ -15,13 +15,13 @@ env:
 jobs:
   unit-tests-with-coverage:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.7']
-        daft-runner: [py]
-        pyarrow-version: [12.0]
+        python-version: ['3.7', '3.10']
+        daft-runner: [py, ray]
+        pyarrow-version: [6.0.1, 12.0]
         exclude:
         - daft-runner: ray
           pyarrow-version: 6.0.1
@@ -73,20 +73,13 @@ jobs:
         export CARGO_INCREMENTAL=1
         cargo llvm-cov clean --workspace
         maturin develop
-        ulimit -c 0
-        # mkdir -p report-output && pytest --cov=daft --ignore tests/integration --durations=50
-        # coverage combine -a --data-file='.coverage' || true
-        # coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.xml
-        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.lcov
+        mkdir -p report-output && pytest --cov=daft --ignore tests/integration --durations=50
+        coverage combine -a --data-file='.coverage' || true
+        coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.xml
+        cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
-    - name: Setup upterm session
-      uses: lhotari/action-upterm@v1
-      if: ${{ always() }}
-      with:
-        ## limits ssh access and adds the ssh public key for the user which triggered the workflow
-        limit-access-to-actor: true
     - name: Upload coverage report
       uses: actions/upload-artifact@v3
       with:
