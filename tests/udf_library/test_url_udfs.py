@@ -84,7 +84,7 @@ def test_download_with_missing_urls_reraise_errors(files):
     df = daft.from_pydict(data)
     df = df.with_column("bytes", col("filenames").url.download(on_error="raise"))
     # TODO: Change to a FileNotFound Error
-    with pytest.raises(ValueError):
+    with pytest.raises(FileNotFoundError):
         df.collect()
 
 

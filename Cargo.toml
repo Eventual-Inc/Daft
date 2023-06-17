@@ -1,4 +1,5 @@
 [dependencies]
+ahash = "0.8.3"
 async-trait = "0.1.68"
 aws-config = "0.55.3"
 aws-sdk-s3 = "0.28.0"
@@ -60,7 +61,7 @@ version = "0.18.3"
 
 [dependencies.reqwest]
 default-features = false
-features = ["stream", "rustls-tls"]
+features = ["stream"]
 version = "0.11.18"
 
 [dependencies.serde]
