@@ -61,7 +61,7 @@ version = "0.18.3"
 
 [dependencies.reqwest]
 default-features = false
-features = ["stream"]
+features = ["stream", "rustls-tls"]
 version = "0.11.18"
 
 [dependencies.serde]
