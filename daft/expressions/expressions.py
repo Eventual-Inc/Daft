@@ -434,8 +434,8 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         Returns:
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occured during download
         """
-
-        if fs is None:
+        USE_LEGACY_DOWNLOADER = True
+        if fs is None and not USE_LEGACY_DOWNLOADER:
             raise_on_error = False
             if on_error == "raise":
                 raise_on_error = True
