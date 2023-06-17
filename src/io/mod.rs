@@ -12,7 +12,6 @@ use std::{
 use futures::{StreamExt, TryStreamExt};
 
 use snafu::Snafu;
-use tokio::runtime::Runtime;
 use url::ParseError;
 
 use snafu::prelude::*;
@@ -75,10 +74,6 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 lazy_static! {
     static ref OBJ_SRC_MAP: RwLock<HashMap<SourceType, Arc<dyn ObjectSource>>> =
         RwLock::new(HashMap::new());
-    static ref RT: Runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap();
 }
 
 async fn get_source(source_type: SourceType) -> Result<Arc<dyn ObjectSource>> {
@@ -180,7 +175,10 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
             msg: "max_connections for url_download must be non-zero".to_owned()
         }
     );
-    let rt = &RT;
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
         tokio::spawn(async move {
