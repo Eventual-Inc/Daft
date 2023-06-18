@@ -5,8 +5,12 @@ use arrow2::compute::{
 
 use crate::{
     array::DataArray,
-    datatypes::logical::{
-        DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray, TimestampArray,
+    datatypes::{
+        logical::{
+            DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray,
+            TimestampArray,
+        },
+        DaftLogicalType,
     },
     datatypes::{DaftArrowBackedType, DataType, Field, Utf8Array},
     error::{DaftError, DaftResult},
@@ -173,21 +177,7 @@ impl DateArray {
             DataType::Float32 => self.cast(&DataType::Int32)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int32)?.cast(&DataType::Float64),
             #[cfg(feature = "python")]
-            DataType::Python => Python::with_gil(|py| {
-                let arrow_dtype = self.logical_type().to_arrow()?;
-                let arrow_array = self.as_arrow().clone().to(arrow_dtype).with_validity(None);
-                let pyarrow = py.import("pyarrow")?;
-                let py_array: Vec<PyObject> = ffi::to_py_array(arrow_array.boxed(), py, pyarrow)?
-                    .call_method0(py, pyo3::intern!(py, "to_pylist"))?
-                    .extract(py)?;
-                let values_array =
-                    PseudoArrowArray::new(py_array.into(), self.as_arrow().validity().cloned());
-                Ok(PythonArray::new(
-                    Field::new(self.name(), dtype.clone()).into(),
-                    values_array.to_boxed(),
-                )?
-                .into_series())
-            }),
+            DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => arrow_cast(&self.physical, dtype),
         }
     }
@@ -271,21 +261,7 @@ impl TimestampArray {
             DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
             #[cfg(feature = "python")]
-            DataType::Python => Python::with_gil(|py| {
-                let arrow_dtype = self.logical_type().to_arrow()?;
-                let arrow_array = self.as_arrow().clone().to(arrow_dtype).with_validity(None);
-                let pyarrow = py.import("pyarrow")?;
-                let py_array: Vec<PyObject> = ffi::to_py_array(arrow_array.boxed(), py, pyarrow)?
-                    .call_method0(py, pyo3::intern!(py, "to_pylist"))?
-                    .extract(py)?;
-                let values_array =
-                    PseudoArrowArray::new(py_array.into(), self.as_arrow().validity().cloned());
-                Ok(PythonArray::new(
-                    Field::new(self.name(), dtype.clone()).into(),
-                    values_array.to_boxed(),
-                )?
-                .into_series())
-            }),
+            DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => arrow_cast(&self.physical, dtype),
         }
     }
@@ -956,4 +932,28 @@ impl FixedShapeImageArray {
             (_, _) => self.physical.cast(dtype),
         }
     }
+}
+
+#[cfg(feature = "python")]
+fn cast_logical_to_python_array<T>(array: &LogicalArray<T>, dtype: &DataType) -> DaftResult<Series>
+where
+    T: DaftLogicalType,
+    LogicalArray<T>: AsArrow,
+    <LogicalArray<T> as AsArrow>::Output: arrow2::array::Array,
+{
+    Python::with_gil(|py| {
+        let arrow_dtype = array.logical_type().to_arrow()?;
+        let arrow_array = array.as_arrow().to_type(arrow_dtype).with_validity(None);
+        let pyarrow = py.import("pyarrow")?;
+        let py_array: Vec<PyObject> = ffi::to_py_array(arrow_array.to_boxed(), py, pyarrow)?
+            .call_method0(py, pyo3::intern!(py, "to_pylist"))?
+            .extract(py)?;
+        let values_array =
+            PseudoArrowArray::new(py_array.into(), array.as_arrow().validity().cloned());
+        Ok(PythonArray::new(
+            Field::new(array.name(), dtype.clone()).into(),
+            values_array.to_boxed(),
+        )?
+        .into_series())
+    })
 }
