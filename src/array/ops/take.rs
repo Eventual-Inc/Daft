@@ -10,7 +10,7 @@ use crate::{
     error::DaftResult,
 };
 
-use super::as_arrow::AsArrow;
+use super::{as_arrow::AsArrow, image::AsImageObj};
 
 impl<T> DataArray<T>
 where
@@ -674,6 +674,7 @@ impl ImageArray {
             Some(v) => Ok(format!("{v:?}")),
         }
     }
+
     pub fn html_value(&self, idx: usize) -> String {
         let maybe_image = self.as_image_obj(idx);
         let str_val = self.str_value(idx).unwrap();
@@ -683,10 +684,12 @@ impl ImageArray {
             Some(image) => {
                 let thumb = image.fit_to(128, 128);
                 let mut bytes: Vec<u8> = vec![];
-                thumb.encode(ImageFormat::JPEG, &mut bytes).unwrap();
+                let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
+                thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
+                drop(writer);
                 format!(
                     "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
-                    base64::engine::general_purpose::STANDARD.encode(&bytes),
+                    base64::engine::general_purpose::STANDARD.encode(&mut bytes),
                     str_val,
                 )
             }
@@ -727,10 +730,25 @@ impl FixedShapeImageArray {
             Some(v) => Ok(format!("{v:?}")),
         }
     }
+
     pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
+        let maybe_image = self.as_image_obj(idx);
+        let str_val = self.str_value(idx).unwrap();
+
+        match maybe_image {
+            None => "None".to_string(),
+            Some(image) => {
+                let thumb = image.fit_to(128, 128);
+                let mut bytes: Vec<u8> = vec![];
+                let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
+                thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
+                drop(writer);
+                format!(
+                    "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+                    base64::engine::general_purpose::STANDARD.encode(&mut bytes),
+                    str_val,
+                )
+            }
+        }
     }
 }

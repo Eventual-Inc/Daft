@@ -15,7 +15,7 @@ impl FunctionEvaluator for AbsEvaluator {
         "abs"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
         if inputs.len() != 1 {
             return Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
