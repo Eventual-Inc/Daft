@@ -660,7 +660,7 @@ impl AsImageObj for FixedShapeImageArray {
 
 impl<'a, T> IntoIterator for &'a LogicalArray<T>
 where
-    T: DaftLogicalType + DaftImageryType,
+    T: DaftImageryType,
     LogicalArray<T>: AsImageObj,
 {
     type Item = Option<DaftImageBuffer<'a>>;
@@ -712,7 +712,7 @@ fn encode_images<'a, T>(
     image_format: ImageFormat,
 ) -> DaftResult<BinaryArray>
 where
-    T: DaftLogicalType + DaftImageryType,
+    T: DaftImageryType,
     LogicalArray<T>: AsImageObj,
     &'a LogicalArray<T>:
         IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
@@ -805,7 +805,7 @@ where
 
 fn resize_images<'a, T>(images: &'a LogicalArray<T>, w: u32, h: u32) -> Vec<Option<DaftImageBuffer>>
 where
-    T: DaftLogicalType + DaftImageryType,
+    T: DaftImageryType,
     LogicalArray<T>: AsImageObj,
     &'a LogicalArray<T>:
         IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,

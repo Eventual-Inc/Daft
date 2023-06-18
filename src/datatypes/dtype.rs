@@ -420,10 +420,14 @@ impl Display for DataType {
                 write!(f, "Embedding[{}; {}]", inner.dtype, size)
             }
             DataType::Image(mode) => {
-                write!(f, "Image[{:?}]", mode)
+                write!(
+                    f,
+                    "Image[{}]",
+                    mode.map_or("MIXED".to_string(), |m| m.to_string())
+                )
             }
             DataType::FixedShapeImage(mode, height, width) => {
-                write!(f, "Image[{:?}; {:?} x {:?}]", mode, height, width)
+                write!(f, "Image[{}; {} x {}]", mode, height, width)
             }
             _ => write!(f, "{self:?}"),
         }

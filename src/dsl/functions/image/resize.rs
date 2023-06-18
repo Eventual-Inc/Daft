@@ -14,13 +14,29 @@ impl FunctionEvaluator for ResizeEvaluator {
         "resize"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &Expr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;
 
                 match &field.dtype {
-                    DataType::Image(..) | DataType::FixedShapeImage(..) => Ok(field.clone()),
+                    DataType::Image(mode) => match mode {
+                        Some(mode) => {
+                            let (w, h) = match expr {
+                                Expr::Function {
+                                    func: FunctionExpr::Image(ImageExpr::Resize { w, h }),
+                                    inputs: _,
+                                } => (w, h),
+                                _ => panic!("Expected ImageResize Expr, got {expr}"),
+                            };
+                            Ok(Field::new(
+                                field.name,
+                                DataType::FixedShapeImage(*mode, *h, *w),
+                            ))
+                        }
+                        None => Ok(field.clone()),
+                    },
+                    DataType::FixedShapeImage(..) => Ok(field.clone()),
                     _ => Err(DaftError::TypeError(format!(
                         "ImageResize can only resize ImageArrays and FixedShapeImageArrays, got {}",
                         field

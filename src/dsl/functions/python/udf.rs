@@ -17,7 +17,7 @@ impl FunctionEvaluator for PythonUDF {
         "py_udf"
     }
 
-    fn to_field(&self, inputs: &[Expr], _schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], _schema: &Schema, _: &Expr) -> DaftResult<Field> {
         if inputs.len() != self.num_expressions {
             return Err(DaftError::SchemaMismatch(format!(
                 "Number of inputs required by UDF {} does not match number of inputs provided: {}",
