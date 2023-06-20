@@ -18,7 +18,7 @@ impl FunctionEvaluator for DownloadEvaluator {
         "download"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _expr: &Expr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;
