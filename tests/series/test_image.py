@@ -89,11 +89,11 @@ def test_image_round_trip(give_mode):
     from_arrow = Series.from_arrow(t.to_arrow())
 
     assert from_arrow.datatype() == t.datatype()
-    assert from_arrow.to_pylist() == t.to_pylist()
+    np.testing.assert_equal(from_arrow.to_pylist(), t.to_pylist())
 
     t_copy = copy.deepcopy(t)
     assert t_copy.datatype() == t.datatype()
-    assert t_copy.to_pylist() == t.to_pylist()
+    np.testing.assert_equal(t_copy.to_pylist(), t.to_pylist())
 
 
 def test_fixed_shape_image_round_trip():
@@ -594,11 +594,11 @@ def test_fixed_shape_image_roundtrip():
     from_arrow = Series.from_arrow(t.to_arrow())
 
     assert from_arrow.datatype() == t.datatype()
-    assert from_arrow.to_pylist() == t.to_pylist()
+    np.testing.assert_equal(from_arrow.to_pylist(), t.to_pylist())
 
     t_copy = copy.deepcopy(t)
     assert t_copy.datatype() == t.datatype()
-    assert t_copy.to_pylist() == t.to_pylist()
+    np.testing.assert_equal(t_copy.to_pylist(), t.to_pylist())
 
 
 def test_bad_cast_image():

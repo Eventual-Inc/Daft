@@ -262,6 +262,10 @@ impl PyDataType {
         Ok(DataType::Python.into())
     }
 
+    pub fn is_logical(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_logical())
+    }
+
     pub fn is_equal(&self, other: &PyAny) -> PyResult<bool> {
         if other.is_instance_of::<PyDataType>()? {
             let other = other.extract::<PyDataType>()?;

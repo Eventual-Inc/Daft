@@ -41,24 +41,24 @@ def test_image_resize_mixed_modes():
 
     as_py = df.to_pydict()["resized"]
 
-    first_resized = np.array(as_py[0]["data"]).reshape(5, 5, 3)
+    first_resized = as_py[0]
     assert np.all(first_resized[..., 0] == 1)
     assert np.all(first_resized[..., 1] == 2)
     assert np.all(first_resized[..., 2] == 3)
 
-    second_resized = np.array(as_py[1]["data"]).reshape(5, 5, 4)
+    second_resized = as_py[1]
     assert np.all(second_resized[..., 0] == 1)
     assert np.all(second_resized[..., 1] == 2)
     assert np.all(second_resized[..., 2] == 3)
     assert np.all(second_resized[..., 3] == 4)
 
     for i in range(2, 4):
-        resized_i = np.array(as_py[i]["data"]).reshape(5, 5, -1)
+        resized_i = as_py[i]
         resized_i_gt = np.asarray(Image.fromarray(data[i]).resize((5, 5), resample=Image.BILINEAR)).reshape(5, 5, -1)
         assert np.all(resized_i == resized_i_gt), f"{i} does not match"
 
     # LA sampling doesn't work for some reason in PIL
-    resized_i = np.array(as_py[4]["data"]).reshape(5, 5, -1)
+    resized_i = as_py[4]
     assert np.all(resized_i == 10)
 
     assert as_py[-1] == None

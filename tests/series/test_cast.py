@@ -186,9 +186,7 @@ def test_series_cast_python_to_embedding(dtype) -> None:
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
-    assert list(map(int, itertools.chain.from_iterable(data[:-1]))) == list(
-        map(int, itertools.chain.from_iterable(pydata[:-1]))
-    )
+    np.testing.assert_equal([np.asarray(arr, dtype=dtype.to_pandas_dtype()) for arr in data[:-1]], pydata[:-1])
 
 
 def test_series_cast_pil_to_image() -> None:
@@ -210,9 +208,7 @@ def test_series_cast_pil_to_image() -> None:
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
-    assert [np.asarray(im).ravel().tolist() for im in data[:2]] == [row["data"] for row in pydata[:-1]]
-    # TODO(Clark): Fix the Daft --> pyarrow egress so it reconstitutes the NumPy ndarrays.
-    # np.testing.assert_equal([data[0].ravel(), data[1].ravel()], pydata[:-1])
+    np.testing.assert_equal([np.asarray(data[0]), np.asarray(data[1])], pydata[:-1])
 
 
 def test_series_cast_numpy_to_image() -> None:
@@ -234,9 +230,7 @@ def test_series_cast_numpy_to_image() -> None:
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
-    assert [data[0].ravel().tolist(), data[1].ravel().tolist()] == [row["data"] for row in pydata[:-1]]
-    # TODO(Clark): Fix the Daft --> pyarrow egress so it reconstitutes the NumPy ndarrays.
-    # np.testing.assert_equal([data[0].ravel(), data[1].ravel()], pydata[:-1])
+    np.testing.assert_equal(data[:-1], pydata[:-1])
 
 
 def test_series_cast_numpy_to_image_infer_mode() -> None:
@@ -252,18 +246,19 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
 
     assert t.arr.lengths().to_pylist() == [4, 27, None]
 
-    pydata = t.to_pylist()
+    pydata = t.to_arrow().to_pylist()
     assert pydata[0] == {"data": data[0].ravel().tolist(), "mode": ImageMode.L, "channel": 1, "height": 2, "width": 2}
     assert pydata[1] == {"data": data[1].ravel().tolist(), "mode": ImageMode.RGB, "channel": 3, "height": 3, "width": 3}
     assert pydata[2] is None
-    # TODO(Clark): Fix the Daft --> pyarrow egress so it reconstitutes the NumPy ndarrays.
-    # np.testing.assert_equal([data[0].ravel(), data[1].ravel()], pydata[:-1])
+    pydata = t.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal([np.expand_dims(data[0], -1), data[1]], pydata[:-1])
 
 
 def test_series_cast_python_to_fixed_shape_image() -> None:
     height = 2
     width = 2
-    shape = (3, height, width)
+    shape = (height, width, 3)
     data = [np.arange(12).reshape(shape), np.arange(12, 24).reshape(shape), None]
     s = Series.from_pylist(data, pyobj="force")
 
@@ -278,9 +273,7 @@ def test_series_cast_python_to_fixed_shape_image() -> None:
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
-    np.testing.assert_equal([data[0].ravel(), data[1].ravel()], pydata[:-1])
-    # TODO(Clark): Fix the Daft --> pyarrow egress so it reconstitutes the NumPy ndarrays.
-    # np.testing.assert_equal([data[0].ravel(), data[1].ravel()], pydata[:-1])
+    np.testing.assert_equal(data[:-1], pydata[:-1])
 
 
 @pytest.mark.parametrize(
