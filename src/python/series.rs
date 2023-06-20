@@ -335,20 +335,30 @@ fn infer_daft_dtype_for_sequence(
         if obj.is_instance(py_pil_image_type)? {
             let mode_str = obj.getattr("mode")?.extract::<String>()?;
             let mode = ImageMode::from_str(&mode_str)?;
-            dtype = match dtype {
+            match dtype {
                 Some(DataType::Image(Some(existing_mode))) => {
-                    if existing_mode == mode {
-                        dtype
-                    } else {
-                        Some(DataType::Image(None))
+                    if existing_mode != mode {
+                        // Mixed-mode case, set mode to None.
+                        dtype = Some(DataType::Image(None));
                     }
                 }
-                Some(DataType::Image(None)) => dtype,
-                None => Some(DataType::Image(Some(mode))),
-                _ => dtype,
+                None => {
+                    // Set to (currently) uniform mode image dtype.
+                    dtype = Some(DataType::Image(Some(mode)));
+                }
+                // No-op, since dtype is already for mixed-mode images.
+                Some(DataType::Image(None)) => {}
+                _ => {
+                    // Images mixed with non-images; short-circuit since union dtypes are not (yet) supported.
+                    dtype = None;
+                    break;
+                }
             }
         } else if !obj.is_none() {
+            // Non-image types; short-circuit since only image types are supported and union dtypes are not (yet)
+            // supported.
             dtype = None;
+            break;
         }
     }
     Ok(dtype)
