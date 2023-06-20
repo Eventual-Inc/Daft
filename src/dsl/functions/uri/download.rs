@@ -39,20 +39,21 @@ impl FunctionEvaluator for DownloadEvaluator {
     }
 
     fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
-        let (max_connections, raise_error_on_failure) = match expr {
+        let (max_connections, raise_error_on_failure, multi_thread) = match expr {
             Expr::Function {
                 func:
                     FunctionExpr::Uri(UriExpr::Download {
                         max_connections,
                         raise_error_on_failure,
+                        multi_thread,
                     }),
                 inputs: _,
-            } => (max_connections, raise_error_on_failure),
+            } => (max_connections, raise_error_on_failure, multi_thread),
             _ => panic!("Expected Url Download Expr, got {expr}"),
         };
 
         match inputs {
-            [input] => input.url_download(*max_connections, *raise_error_on_failure),
+            [input] => input.url_download(*max_connections, *raise_error_on_failure, *multi_thread),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

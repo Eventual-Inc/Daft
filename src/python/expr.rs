@@ -346,6 +346,7 @@ impl PyExpr {
         &self,
         max_connections: i64,
         raise_error_on_failure: bool,
+        multi_thread: bool,
     ) -> PyResult<Self> {
         if max_connections <= 0 {
             return Err(PyValueError::new_err(format!(
@@ -353,7 +354,13 @@ impl PyExpr {
             )));
         }
         use dsl::functions::uri::download;
-        Ok(download(&self.expr, max_connections as usize, raise_error_on_failure).into())
+        Ok(download(
+            &self.expr,
+            max_connections as usize,
+            raise_error_on_failure,
+            multi_thread,
+        )
+        .into())
     }
 }
 

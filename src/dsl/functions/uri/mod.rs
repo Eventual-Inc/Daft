@@ -12,6 +12,7 @@ pub enum UriExpr {
     Download {
         max_connections: usize,
         raise_error_on_failure: bool,
+        multi_thread: bool,
     },
 }
 
@@ -25,11 +26,17 @@ impl UriExpr {
     }
 }
 
-pub fn download(input: &Expr, max_connections: usize, raise_error_on_failure: bool) -> Expr {
+pub fn download(
+    input: &Expr,
+    max_connections: usize,
+    raise_error_on_failure: bool,
+    multi_thread: bool,
+) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Uri(UriExpr::Download {
             max_connections,
             raise_error_on_failure,
+            multi_thread,
         }),
         inputs: vec![input.clone()],
     }

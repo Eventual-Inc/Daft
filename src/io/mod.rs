@@ -172,6 +172,7 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
     urls: I,
     max_connections: usize,
     raise_error_on_failure: bool,
+    multi_thread: bool,
 ) -> DaftResult<BinaryArray> {
     ensure!(
         max_connections > 0,
@@ -179,10 +180,20 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
             msg: "max_connections for url_download must be non-zero".to_owned()
         }
     );
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
+    let rt = match multi_thread {
+        false => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build(),
+        true => tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build(),
+    }?;
+
+    let max_connections = match multi_thread {
+        false => max_connections,
+        true => max_connections * usize::from(std::thread::available_parallelism()?),
+    };
+    // let thread_max_connections =
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
         tokio::spawn(async move {
@@ -238,8 +249,15 @@ impl Utf8Array {
         &self,
         max_connections: usize,
         raise_error_on_failure: bool,
+        multi_thread: bool,
     ) -> DaftResult<BinaryArray> {
         let urls = self.as_arrow().iter();
-        url_download(self.name(), urls, max_connections, raise_error_on_failure)
+        url_download(
+            self.name(),
+            urls,
+            max_connections,
+            raise_error_on_failure,
+            multi_thread,
+        )
     }
 }

@@ -8,6 +8,7 @@ from typing import Callable, Iterable, Iterator, TypeVar, overload
 import fsspec
 import pyarrow as pa
 
+from daft import context
 from daft.daft import ImageFormat
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
@@ -447,8 +448,10 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
             if not (isinstance(max_connections, int) and max_connections > 0):
                 raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
-
-            return Expression._from_pyexpr(self._expr.url_download(max_connections, raise_on_error))
+            using_ray_runner = context.get_context().is_ray_runner
+            return Expression._from_pyexpr(
+                self._expr.url_download(max_connections, raise_on_error, not using_ray_runner)
+            )
         else:
             from daft.udf_library import url_udfs
 
