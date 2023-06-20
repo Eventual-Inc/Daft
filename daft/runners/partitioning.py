@@ -74,13 +74,15 @@ class PartitionSet(Generic[PartitionT]):
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pydict()
 
-    def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
+    def to_pandas(self, schema: Schema | None = None, cast_tensors_to_ray_tensor_dtype: bool = False) -> pd.DataFrame:
         merged_partition = self._get_merged_vpartition()
-        return merged_partition.to_pandas(schema=schema)
+        return merged_partition.to_pandas(
+            schema=schema, cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype
+        )
 
-    def to_arrow(self) -> pa.Table:
+    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> pa.Table:
         merged_partition = self._get_merged_vpartition()
-        return merged_partition.to_arrow()
+        return merged_partition.to_arrow(cast_tensors_to_ray_tensor_dtype)
 
     def items(self) -> list[tuple[PartID, PartitionT]]:
         """

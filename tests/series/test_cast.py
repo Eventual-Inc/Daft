@@ -190,7 +190,7 @@ def test_series_cast_python_to_embedding(dtype) -> None:
 
 def test_series_cast_numpy_to_image() -> None:
     data = [
-        np.arange(12, dtype=np.uint8).reshape((3, 2, 2)),
+        np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
@@ -236,7 +236,7 @@ def test_series_cast_python_to_fixed_shape_image() -> None:
     height = 2
     width = 2
     shape = (height, width, 3)
-    data = [np.arange(12).reshape(shape), np.arange(12, 24).reshape(shape), None]
+    data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
     s = Series.from_pylist(data, pyobj="force")
 
     target_dtype = DataType.image("RGB", height, width)

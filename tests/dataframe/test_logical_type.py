@@ -49,7 +49,7 @@ def test_image_type_df(from_pil_imgs) -> None:
 def test_fixed_shape_image_type_df() -> None:
     height = 2
     width = 2
-    shape = (3, height, width)
+    shape = (height, width, 3)
     data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
     df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="force")})
 
@@ -60,3 +60,37 @@ def test_fixed_shape_image_type_df() -> None:
     df = df.collect()
     arrow_table = df.to_arrow()
     assert isinstance(arrow_table["image"].type, DaftExtension)
+
+
+def test_tensor_type_df() -> None:
+    data = [
+        np.arange(12).reshape((3, 2, 2)),
+        np.arange(12, 39).reshape((3, 3, 3)),
+        None,
+    ]
+    df = daft.from_pydict({"index": np.arange(len(data)), "tensor": Series.from_pylist(data, pyobj="allow")})
+
+    df = df.select(col("index"), col("tensor"))
+    df = df.repartition(4, "index")
+    df = df.sort("index")
+    df = df.collect()
+    arrow_table = df.to_arrow()
+    assert isinstance(arrow_table["tensor"].type, DaftExtension)
+
+
+def test_fixed_shape_tensor_type_df() -> None:
+    shape = (3, 2, 2)
+    data = [
+        np.arange(12).reshape(shape),
+        np.arange(12, 24).reshape(shape),
+        None,
+    ]
+    df = daft.from_pydict({"index": np.arange(len(data)), "tensor": Series.from_pylist(data, pyobj="force")})
+
+    target = DataType.tensor(DataType.int64(), shape)
+    df = df.select(col("index"), col("tensor").cast(target))
+    df = df.repartition(4, "index")
+    df = df.sort("index")
+    df = df.collect()
+    arrow_table = df.to_arrow()
+    assert isinstance(arrow_table["tensor"].type, DaftExtension)

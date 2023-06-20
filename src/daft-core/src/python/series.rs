@@ -34,10 +34,9 @@ impl PySeries {
     pub fn from_pylist(name: &str, pylist: &PyAny, pyobj: &str) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
         let py = pylist.py();
-
         let dtype = match pyobj {
             "force" => DataType::Python,
-            "allow" => infer_daft_dtype_for_sequence(&vec_pyobj, py)?.unwrap_or(DataType::Python),
+            "allow" => infer_daft_dtype_for_sequence(&vec_pyobj, py, name)?.unwrap_or(DataType::Python),
             "disallow" => panic!("Cannot create a Series from a pylist and being strict about only using Arrow types by setting pyobj=disallow"),
             _ => panic!("Unsupported pyobj behavior when creating Series from pylist: {}", pyobj)
         };
@@ -325,37 +324,75 @@ impl From<PySeries> for series::Series {
 fn infer_daft_dtype_for_sequence(
     vec_pyobj: &[PyObject],
     py: pyo3::Python,
+    name: &str,
 ) -> PyResult<Option<DataType>> {
     let py_pil_image_type = py
         .import(pyo3::intern!(py, "PIL.Image"))
         .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
+    let np_ndarray_type = py
+        .import(pyo3::intern!(py, "numpy"))
+        .and_then(|m| m.getattr(pyo3::intern!(py, "ndarray")));
+    let np_generic_type = py
+        .import(pyo3::intern!(py, "numpy"))
+        .and_then(|m| m.getattr(pyo3::intern!(py, "generic")));
+    let from_numpy_dtype = {
+        py.import(pyo3::intern!(py, "daft.datatype"))?
+            .getattr(pyo3::intern!(py, "DataType"))?
+            .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
+    };
     let mut dtype: Option<DataType> = None;
     for obj in vec_pyobj.iter() {
         let obj = obj.as_ref(py);
-        if let Ok(pil_image_type) = py_pil_image_type {
-            if obj.is_instance(pil_image_type)? {
-                let mode_str = obj
-                    .getattr(pyo3::intern!(py, "mode"))?
-                    .extract::<String>()?;
-                let mode = ImageMode::from_pil_mode_str(&mode_str)?;
-                match dtype {
-                    Some(DataType::Image(Some(existing_mode))) => {
-                        if existing_mode != mode {
-                            // Mixed-mode case, set mode to None.
-                            dtype = Some(DataType::Image(None));
-                        }
+        if let Ok(pil_image_type) = py_pil_image_type && obj.is_instance(pil_image_type)? {
+            let mode_str = obj
+                .getattr(pyo3::intern!(py, "mode"))?
+                .extract::<String>()?;
+            let mode = ImageMode::from_pil_mode_str(&mode_str)?;
+            match &dtype {
+                Some(DataType::Image(Some(existing_mode))) => {
+                    if *existing_mode != mode {
+                        // Mixed-mode case, set mode to None.
+                        dtype = Some(DataType::Image(None));
                     }
-                    None => {
-                        // Set to (currently) uniform mode image dtype.
-                        dtype = Some(DataType::Image(Some(mode)));
-                    }
-                    // No-op, since dtype is already for mixed-mode images.
-                    Some(DataType::Image(None)) => {}
-                    _ => {
-                        // Images mixed with non-images; short-circuit since union dtypes are not (yet) supported.
-                        dtype = None;
-                        break;
-                    }
+                }
+                None => {
+                    // Set to (currently) uniform mode image dtype.
+                    dtype = Some(DataType::Image(Some(mode)));
+                }
+                // No-op, since dtype is already for mixed-mode images.
+                Some(DataType::Image(None)) => {}
+                _ => {
+                    // Images mixed with non-images; short-circuit since union dtypes are not (yet) supported.
+                    dtype = None;
+                    break;
+                }
+            }
+        } else if let Ok(np_ndarray_type) = np_ndarray_type && let Ok(np_generic_type) = np_generic_type && obj.is_instance(pyo3::types::PyTuple::new(py, vec![np_ndarray_type, np_generic_type]))? {
+            let np_dtype = obj.getattr(pyo3::intern!(py, "dtype"))?;
+            let inferred_inner_dtype = from_numpy_dtype.call1((np_dtype,)).map(|dt| dt.getattr(pyo3::intern!(py, "_dtype")).unwrap().extract::<PyDataType>().unwrap().dtype);
+            let shape: Vec<u64> = obj.getattr(pyo3::intern!(py, "shape"))?.extract()?;
+            let inferred_dtype = match inferred_inner_dtype {
+                Ok(inferred_inner_dtype) if shape.len() == 1 => Some(DataType::List(Box::new(Field::new(name, inferred_inner_dtype)))),
+                Ok(inferred_inner_dtype) if shape.len() > 1 => Some(DataType::Tensor(Box::new(inferred_inner_dtype))),
+                _ => None,
+            };
+            match (&dtype, &inferred_dtype) {
+                // Tensors with mixed inner dtypes is not supported, short-circuit.
+                (Some(existing_dtype), Some(inferred_dtype)) if existing_dtype != inferred_dtype => {
+                    // TODO(Clark): Do some basic type promotion here, e.g. (u32, u64) --> u64.
+                    dtype = None;
+                    break;
+                }
+                // Existing and inferred dtypes must be the same here, so this is a no-op.
+                (Some(_), Some(_)) => {}
+                // No existing dtype and inferred is non-None, so set cached dtype to inferred.
+                (None, Some(inferred_dtype)) => {
+                    dtype = Some(inferred_dtype.clone());
+                }
+                // Inferred inner dtype isn't representable with Arrow, so we'll need to use a plain Python representation.
+                (_, None) => {
+                    dtype = None;
+                    break;
                 }
             }
         } else if !obj.is_none() {

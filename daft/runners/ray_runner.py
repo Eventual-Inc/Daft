@@ -111,7 +111,7 @@ def _glob_path_into_details_vpartitions(
 @ray.remote
 def _make_ray_block_from_vpartition(partition: Table) -> RayDatasetBlock:
     try:
-        return partition.to_arrow()
+        return partition.to_arrow(cast_tensors_to_ray_tensor_dtype=True)
     except pa.ArrowInvalid:
         return partition.to_pylist()
 
@@ -471,9 +471,7 @@ class Scheduler:
                 next_step = next(phys_plan)
 
                 while True:  # Loop: Dispatch -> await.
-
                     while True:  # Loop: Dispatch (get tasks -> batch dispatch).
-
                         tasks_to_dispatch: list[PartitionTask] = []
 
                         dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
@@ -481,7 +479,6 @@ class Scheduler:
 
                         # Loop: Get a batch of tasks.
                         while len(tasks_to_dispatch) < dispatches_allowed:
-
                             if next_step is None:
                                 # Blocked on already dispatched tasks; await some tasks.
                                 break

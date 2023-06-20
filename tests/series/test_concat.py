@@ -107,7 +107,7 @@ def test_series_concat_tensor_array_ray(chunks) -> None:
 
     concated = Series.concat(series)
 
-    assert concated.datatype() == DataType.python()
+    assert concated.datatype() == DataType.tensor(DataType.int64(), element_shape)
     expected = [chunk[i] for chunk in chunks for i in range(len(chunk))]
     np.testing.assert_equal(concated.to_pylist(), expected)
 

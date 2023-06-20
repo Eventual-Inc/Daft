@@ -15,7 +15,7 @@ from daft.series import Series
 
 _RAY_DATA_EXTENSIONS_AVAILABLE = True
 try:
-    from ray.data.extensions import ArrowTensorArray
+    pass
 except ImportError:
     _RAY_DATA_EXTENSIONS_AVAILABLE = False
 
@@ -88,13 +88,17 @@ class Table:
         schema = Schema._from_field_name_and_types(
             [(f.name, DataType.from_arrow_type(f.type)) for f in arrow_table.schema]
         )
-        python_fields = [field.name for field in schema if field.dtype == DataType.python()]
-        if python_fields:
+        non_native_fields = [
+            field.name
+            for field in schema
+            if field.dtype == DataType.python()
+            or field.dtype._is_tensor_type()
+            or field.dtype._is_fixed_shape_tensor_type()
+        ]
+        if non_native_fields:
             # If there are any contained Arrow types that are not natively supported, go through Table.from_pydict()
             # path.
-            logger.debug(
-                f"Unsupported Arrow types detected, falling back to Python object type for columns: {python_fields}"
-            )
+            logger.debug(f"Unsupported Arrow types detected for columns: {non_native_fields}")
             return Table.from_pydict(dict(zip(arrow_table.column_names, arrow_table.columns)))
         else:
             # Otherwise, go through record batch happy path.
@@ -127,9 +131,7 @@ class Table:
                 series = Series.from_numpy(v, name=k)
             elif isinstance(v, Series):
                 series = v
-            elif isinstance(v, pa.Array):
-                series = Series.from_arrow(v, name=k)
-            elif isinstance(v, pa.ChunkedArray):
+            elif isinstance(v, (pa.Array, pa.ChunkedArray)):
                 series = Series.from_arrow(v, name=k)
             elif _PANDAS_AVAILABLE and isinstance(v, pd.Series):
                 series = Series.from_pandas(v, name=k)
@@ -158,22 +160,22 @@ class Table:
     # Exporting methods
     ###
 
-    def to_arrow(self) -> pa.Table:
-        python_fields = {field.name for field in self.schema() if field.dtype == DataType.python()}
-        if python_fields:
+    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> pa.Table:
+        python_fields = set()
+        tensor_fields = set()
+        for field in self.schema():
+            if field.dtype._is_python_type():
+                python_fields.add(field.name)
+            elif field.dtype._is_tensor_type() or field.dtype._is_fixed_shape_tensor_type():
+                tensor_fields.add(field.name)
+        if python_fields or tensor_fields:
             table = {}
             for colname in self.column_names():
                 column_series = self.get_column(colname)
                 if colname in python_fields:
-                    # TODO(Clark): Get the column as a top-level ndarray to ensure it remains contiguous.
                     column = column_series.to_pylist()
-                    # TODO(Clark): Infer the tensor extension type even when the column is empty.
-                    # This will probably require encoding more information in the Daft type that we use to
-                    # represent tensors.
-                    if _RAY_DATA_EXTENSIONS_AVAILABLE and len(column) > 0 and isinstance(column[0], np.ndarray):
-                        column = ArrowTensorArray.from_numpy(column)
                 else:
-                    column = column_series.to_arrow()
+                    column = column_series.to_arrow(cast_tensors_to_ray_tensor_dtype)
                 table[colname] = column
 
             return pa.Table.from_pydict(table)
@@ -190,25 +192,31 @@ class Table:
         column_names = self.column_names()
         return [{colname: table[colname][i] for colname in column_names} for i in range(len(self))]
 
-    def to_pandas(self, schema: Schema | None = None) -> pd.DataFrame:
+    def to_pandas(self, schema: Schema | None = None, cast_tensors_to_ray_tensor_dtype: bool = False) -> pd.DataFrame:
         if not _PANDAS_AVAILABLE:
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
-        python_fields = {field.name for field in self.schema() if field.dtype == DataType.python()}
-        if python_fields:
+        python_fields = set()
+        tensor_fields = set()
+        for field in self.schema():
+            if field.dtype._is_python_type():
+                python_fields.add(field.name)
+            elif field.dtype._is_tensor_type() or field.dtype._is_fixed_shape_tensor_type():
+                tensor_fields.add(field.name)
+        if python_fields or tensor_fields:
             # Use Python list representation for Python typed columns.
             table = {}
             for colname in self.column_names():
                 column_series = self.get_column(colname)
-                if colname in python_fields:
+                if colname in python_fields or (colname in tensor_fields and not cast_tensors_to_ray_tensor_dtype):
                     column = column_series.to_pylist()
                 else:
                     # Arrow-native field, so provide column as Arrow array.
-                    column = column_series.to_arrow()
+                    column = column_series.to_arrow(cast_tensors_to_ray_tensor_dtype).to_pandas()
                 table[colname] = column
 
             return pd.DataFrame.from_dict(table)
         else:
-            return self.to_arrow().to_pandas()
+            return self.to_arrow(cast_tensors_to_ray_tensor_dtype).to_pandas()
 
     ###
     # Compute methods (Table -> Table)

@@ -13,7 +13,7 @@ import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
 from fsspec.implementations.local import LocalFileSystem
-from ray.data.extensions import ArrowTensorArray
+from ray.data.extensions import ArrowTensorArray, TensorArray
 
 import daft
 from daft.api_annotations import APITypeError
@@ -168,17 +168,21 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
 
 def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    ata = ArrowTensorArray.from_numpy(np.ones((len(valid_data), 2, 2)))
-    pydict["obj"] = ata
+    shape = (2, 2)
+    arr = np.ones((len(valid_data),) + shape)
+    ata = ArrowTensorArray.from_numpy(arr)
+    pydict["tensor"] = ata
     t = pa.Table.from_pydict(pydict)
     df = daft.from_arrow(t)
     assert set(df.column_names) == set(t.column_names)
-    # Type not natively supported, so should have Python object dtype.
-    assert df.schema()["obj"].dtype == DataType.python()
-    casted_field = t.schema.field("variety").with_type(pa.large_string())
-    expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
+    # Tensor type should be inferred.
+    expected_tensor_dtype = DataType.tensor(DataType.float64(), shape)
+    assert df.schema()["tensor"].dtype == expected_tensor_dtype
+    casted_variety = t.schema.field("variety").with_type(pa.large_string())
+    schema = t.schema.set(t.schema.get_field_index("variety"), casted_variety)
+    expected = t.cast(schema)
     # Check roundtrip.
-    assert df.to_arrow() == expected
+    assert df.to_arrow(True) == expected
 
 
 @pytest.mark.skipif(
@@ -290,14 +294,14 @@ def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -
 
 def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    pydict["obj"] = pd.Series([np.ones((2, 2)) for _ in range(len(valid_data))])
+    shape = (2, 2)
+    pydict["tensor"] = TensorArray(np.ones((len(valid_data),) + shape))
     pd_df = pd.DataFrame(pydict)
     df = daft.from_pandas(pd_df)
-    # Type not natively supported, so should have Python object dtype.
-    assert df.schema()["obj"].dtype == DataType.python()
+    assert df.schema()["tensor"].dtype == DataType.tensor(DataType.float64(), shape)
     assert set(df.column_names) == set(pd_df.columns)
     # Check roundtrip.
-    pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
+    pd.testing.assert_frame_equal(df.to_pandas(cast_tensors_to_ray_tensor_dtype=True), pd_df)
 
 
 @pytest.mark.parametrize(
@@ -331,7 +335,8 @@ def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> N
             DataType.list("item", DataType.int64()),
             id="pa_nested_chunked",
         ),
-        pytest.param(np.ones((3, 3)), DataType.python(), id="np_nested"),
+        pytest.param(np.ones((3, 3)), DataType.list("item", DataType.float64()), id="np_nested_1d"),
+        pytest.param(np.ones((3, 3, 3)), DataType.tensor(DataType.float64()), id="np_nested_nd"),
     ],
 )
 def test_load_pydict_types(data, expected_dtype):

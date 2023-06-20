@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 
+import numpy as np
 import pyarrow as pa
 
 from daft.context import get_context
@@ -289,6 +290,30 @@ class DataType:
         return cls._from_pydatatype(PyDataType.image(mode, height, width))
 
     @classmethod
+    def tensor(
+        cls,
+        dtype: DataType,
+        shape: tuple[int, ...] | None = None,
+    ) -> DataType:
+        """Create a tensor DataType: tensor arrays contain n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
+        ``shape``.
+
+        If a ``shape`` is given, each ndarray in the column will have this shape.
+
+        If ``shape`` is not given, the ndarrays in the column can have different shapes. This is much more flexible,
+        but will result in a less compact representation and may be make some operations less efficient.
+
+        Args:
+            dtype: The type of the data contained within the tensor elements.
+            shape: The shape of each tensor in the column. This is ``None`` by default, which allows the shapes of
+                each tensor element to vary.
+        """
+        if shape is not None:
+            if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
+                raise ValueError("Tensor shape must be a non-empty tuple of ints, but got: ", shape)
+        return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
+
+    @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
         """Maps a PyArrow DataType to a Daft DataType"""
         if pa.types.is_int8(arrow_type):
@@ -342,8 +367,9 @@ class DataType:
             fields = [arrow_type[i] for i in range(arrow_type.num_fields)]
             return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
         elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
-            # TODO(Clark): Add a native cross-lang extension type representation for Ray's tensor extension types.
-            return cls.python()
+            scalar_dtype = cls.from_arrow_type(arrow_type.scalar_type)
+            shape = arrow_type.shape if isinstance(arrow_type, ArrowTensorType) else None
+            return cls.tensor(scalar_dtype, shape)
         elif isinstance(arrow_type, pa.PyExtensionType):
             # TODO(Clark): Add a native cross-lang extension type representation for PyExtensionTypes.
             raise ValueError(
@@ -366,21 +392,29 @@ class DataType:
                 metadata = arrow_type.__arrow_ext_serialize__().decode()
             except AttributeError:
                 metadata = None
-            return cls.extension(
-                name,
-                cls.from_arrow_type(arrow_type.storage_type),
-                metadata,
-            )
+
+            if name == "daft.super_extension":
+                assert metadata is not None
+                return cls._from_pydatatype(PyDataType.from_json(metadata))
+            else:
+                return cls.extension(
+                    name,
+                    cls.from_arrow_type(arrow_type.storage_type),
+                    metadata,
+                )
         else:
             # Fall back to a Python object type.
             # TODO(Clark): Add native support for remaining Arrow types.
             return cls.python()
 
     @classmethod
-    def from_numpy_dtype(cls, np_type) -> DataType:
+    def from_numpy_dtype(cls, np_type: np.dtype) -> DataType:
         """Maps a Numpy datatype to a Daft DataType"""
         arrow_type = pa.from_numpy_dtype(np_type)
         return cls.from_arrow_type(arrow_type)
+
+    def to_arrow_dtype(self, cast_tensor_to_ray_type: builtins.bool = False) -> pa.DataType:
+        return self._dtype.to_arrow(cast_tensor_to_ray_type)
 
     @classmethod
     def python(cls) -> DataType:
@@ -393,6 +427,15 @@ class DataType:
         # 2. Hypothesis test data generation - we can get rid of it if we allow for creation of Series from a Python list and DataType
 
         return self == DataType.python()
+
+    def _is_tensor_type(self) -> builtins.bool:
+        return self._dtype.is_tensor()
+
+    def _is_fixed_shape_tensor_type(self) -> builtins.bool:
+        return self._dtype.is_fixed_shape_tensor()
+
+    def _is_image_type(self) -> builtins.bool:
+        return self._dtype.is_image()
 
     def _is_logical_type(self) -> builtins.bool:
         return self._dtype.is_logical()

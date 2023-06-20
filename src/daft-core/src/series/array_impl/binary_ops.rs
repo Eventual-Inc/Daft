@@ -10,7 +10,8 @@ use crate::{
 };
 
 use crate::datatypes::logical::{
-    DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray,
+    DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, FixedShapeTensorArray,
+    ImageArray, TensorArray, TimestampArray,
 };
 use crate::datatypes::{
     BinaryArray, BooleanArray, ExtensionArray, FixedSizeListArray, Float32Array, Float64Array,
@@ -262,3 +263,5 @@ impl SeriesBinaryOps for ArrayWrapper<TimestampArray> {
 impl SeriesBinaryOps for ArrayWrapper<EmbeddingArray> {}
 impl SeriesBinaryOps for ArrayWrapper<ImageArray> {}
 impl SeriesBinaryOps for ArrayWrapper<FixedShapeImageArray> {}
+impl SeriesBinaryOps for ArrayWrapper<TensorArray> {}
+impl SeriesBinaryOps for ArrayWrapper<FixedShapeTensorArray> {}

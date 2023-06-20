@@ -256,13 +256,11 @@ impl<'a> From<DynamicImage> for DaftImageBuffer<'a> {
     }
 }
 
-pub struct ImageArrayVecs<T> {
-    pub data: Vec<T>,
+pub struct ImageArraySidecarData {
     pub channels: Vec<u16>,
     pub heights: Vec<u32>,
     pub widths: Vec<u32>,
     pub modes: Vec<u8>,
-    pub offsets: Vec<i64>,
     pub validity: Option<arrow2::bitmap::Bitmap>,
 }
 
@@ -354,13 +352,17 @@ impl ImageArray {
     pub fn from_vecs<T: arrow2::types::NativeType>(
         name: &str,
         data_type: DataType,
-        vecs: ImageArrayVecs<T>,
+        data: Vec<T>,
+        offsets: Vec<i64>,
+        sidecar_data: ImageArraySidecarData,
     ) -> DaftResult<Self> {
-        if vecs.data.is_empty() {
+        if data.is_empty() {
             // Create an all-null array if the data array is empty.
             let physical_type = data_type.to_physical();
-            let null_struct_array =
-                arrow2::array::new_null_array(physical_type.to_arrow()?, vecs.channels.len());
+            let null_struct_array = arrow2::array::new_null_array(
+                physical_type.to_arrow()?,
+                sidecar_data.channels.len(),
+            );
             let daft_struct_array =
                 StructArray::new(Field::new(name, physical_type).into(), null_struct_array)?;
             return Ok(ImageArray::new(
@@ -368,7 +370,7 @@ impl ImageArray {
                 daft_struct_array,
             ));
         }
-        let offsets = arrow2::offset::OffsetsBuffer::try_from(vecs.offsets)?;
+        let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
         let arrow_dtype: arrow2::datatypes::DataType = T::PRIMITIVE.into();
         if let DataType::Image(Some(mode)) = &data_type {
             if mode.get_dtype().to_arrow()? != arrow_dtype {
@@ -382,34 +384,43 @@ impl ImageArray {
         let data_array = Box::new(arrow2::array::ListArray::<i64>::new(
             list_datatype,
             offsets,
-            Box::new(arrow2::array::PrimitiveArray::from_vec(vecs.data)),
-            vecs.validity.clone(),
+            Box::new(arrow2::array::PrimitiveArray::from_vec(data)),
+            sidecar_data.validity.clone(),
         ));
 
+        Self::from_list_array(name, data_type, data_array, sidecar_data)
+    }
+
+    pub fn from_list_array(
+        name: &str,
+        data_type: DataType,
+        data_array: Box<arrow2::array::ListArray<i64>>,
+        sidecar_data: ImageArraySidecarData,
+    ) -> DaftResult<Self> {
         let values: Vec<Box<dyn arrow2::array::Array>> = vec![
             data_array,
             Box::new(
-                arrow2::array::UInt16Array::from_vec(vecs.channels)
-                    .with_validity(vecs.validity.clone()),
+                arrow2::array::UInt16Array::from_vec(sidecar_data.channels)
+                    .with_validity(sidecar_data.validity.clone()),
             ),
             Box::new(
-                arrow2::array::UInt32Array::from_vec(vecs.heights)
-                    .with_validity(vecs.validity.clone()),
+                arrow2::array::UInt32Array::from_vec(sidecar_data.heights)
+                    .with_validity(sidecar_data.validity.clone()),
             ),
             Box::new(
-                arrow2::array::UInt32Array::from_vec(vecs.widths)
-                    .with_validity(vecs.validity.clone()),
+                arrow2::array::UInt32Array::from_vec(sidecar_data.widths)
+                    .with_validity(sidecar_data.validity.clone()),
             ),
             Box::new(
-                arrow2::array::UInt8Array::from_vec(vecs.modes)
-                    .with_validity(vecs.validity.clone()),
+                arrow2::array::UInt8Array::from_vec(sidecar_data.modes)
+                    .with_validity(sidecar_data.validity.clone()),
             ),
         ];
         let physical_type = data_type.to_physical();
         let struct_array = Box::new(arrow2::array::StructArray::new(
             physical_type.to_arrow()?,
             values,
-            vecs.validity,
+            sidecar_data.validity,
         ));
 
         let daft_struct_array = crate::datatypes::StructArray::new(
@@ -484,13 +495,13 @@ impl ImageArray {
         Self::from_vecs(
             name,
             DataType::Image(*image_mode),
-            ImageArrayVecs {
-                data,
+            data,
+            offsets,
+            ImageArraySidecarData {
                 channels,
                 heights,
                 widths,
                 modes,
-                offsets,
                 validity,
             },
         )
