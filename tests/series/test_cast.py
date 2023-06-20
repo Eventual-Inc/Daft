@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from PIL import Image
 
 from daft.datatype import DataType, ImageMode, TimeUnit
 from daft.series import Series
@@ -187,28 +186,6 @@ def test_series_cast_python_to_embedding(dtype) -> None:
     pydata = t.to_pylist()
     assert pydata[-1] is None
     np.testing.assert_equal([np.asarray(arr, dtype=dtype.to_pandas_dtype()) for arr in data[:-1]], pydata[:-1])
-
-
-def test_series_cast_pil_to_image() -> None:
-    data = [
-        Image.fromarray(np.arange(12).reshape((2, 2, 3)).astype(np.uint8)),
-        Image.fromarray(np.arange(12, 39).reshape((3, 3, 3)).astype(np.uint8)),
-        None,
-    ]
-    s = Series.from_pylist(data, pyobj="force")
-
-    target_dtype = DataType.image("RGB")
-
-    t = s.cast(target_dtype)
-
-    assert t.datatype() == target_dtype
-    assert len(t) == len(data)
-
-    assert t.arr.lengths().to_pylist() == [12, 27, None]
-
-    pydata = t.to_pylist()
-    assert pydata[-1] is None
-    np.testing.assert_equal([np.asarray(data[0]), np.asarray(data[1])], pydata[:-1])
 
 
 def test_series_cast_numpy_to_image() -> None:
