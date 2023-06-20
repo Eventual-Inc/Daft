@@ -437,7 +437,7 @@ fn extract_python_to_vec<
                 || supports_array_interface_protocol
                 || supports_array_protocol
             {
-                // Path if object is supports buffer/array protocols.
+                // Path if object supports buffer/array protocols.
                 let np_as_array_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?;
                 let pyarray = np_as_array_fn.call1((object,))?;
                 let num_values = append_values_from_numpy(

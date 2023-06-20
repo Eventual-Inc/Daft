@@ -1,10 +1,13 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::{
+    ops::{Add, Div, Mul, Rem, Sub},
+    str::FromStr,
+};
 
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
 
 use crate::{
     array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
-    datatypes::{DataType, Field, ImageFormat, PythonType, UInt64Type},
+    datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType, UInt64Type},
     ffi,
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
@@ -33,12 +36,18 @@ impl PySeries {
     #[staticmethod]
     pub fn from_pylist(name: &str, pylist: &PyAny) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
+        let py = pylist.py();
+        let dtype = infer_daft_dtype_for_sequence(&vec_pyobj, py)?;
         let arrow_array: Box<dyn arrow2::array::Array> =
             Box::new(PseudoArrowArray::<PyObject>::from_pyobj_vec(vec_pyobj));
         let field = Field::new(name, DataType::Python);
 
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
-        Ok(data_array.into_series().into())
+        let series = match dtype {
+            Some(dtype) => data_array.cast(&dtype)?,
+            None => data_array.into_series(),
+        };
+        Ok(series.into())
     }
 
     // This is for PythonArrays only,
@@ -311,4 +320,36 @@ impl From<PySeries> for series::Series {
     fn from(item: PySeries) -> Self {
         item.series
     }
+}
+
+fn infer_daft_dtype_for_sequence(
+    vec_pyobj: &[PyObject],
+    py: pyo3::Python,
+) -> PyResult<Option<DataType>> {
+    let py_pil_image_type = py
+        .import("PIL.Image")
+        .and_then(|m| m.getattr(pyo3::intern!(py, "Image")))?;
+    let mut dtype: Option<DataType> = None;
+    for obj in vec_pyobj.iter() {
+        let obj = obj.as_ref(py);
+        if obj.is_instance(py_pil_image_type)? {
+            let mode_str = obj.getattr("mode")?.extract::<String>()?;
+            let mode = ImageMode::from_str(&mode_str)?;
+            dtype = match dtype {
+                Some(DataType::Image(Some(existing_mode))) => {
+                    if existing_mode == mode {
+                        dtype
+                    } else {
+                        Some(DataType::Image(None))
+                    }
+                }
+                Some(DataType::Image(None)) => dtype,
+                None => Some(DataType::Image(Some(mode))),
+                _ => dtype,
+            }
+        } else if !obj.is_none() {
+            dtype = None;
+        }
+    }
+    Ok(dtype)
 }

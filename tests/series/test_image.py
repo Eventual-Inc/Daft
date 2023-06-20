@@ -38,6 +38,13 @@ MODE_TO_NUM_CHANNELS = {
     "RGBA32F": 4,
 }
 
+NUM_CHANNELS_TO_MODE = {
+    1: "L",
+    2: "LA",
+    3: "RGB",
+    4: "RGBA",
+}
+
 MODE_TO_OPENCV_COLOR_CONVERSION = {
     "RGB": cv2.COLOR_RGB2BGR,
     "RGBA": cv2.COLOR_RGBA2BGRA,
@@ -134,6 +141,77 @@ def test_fixed_shape_image_round_trip():
     t_copy = copy.deepcopy(t)
     assert t_copy.datatype() == t.datatype()
     np.testing.assert_equal(t_copy.to_pylist(), t.to_pylist())
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "L",
+        "LA",
+        "RGB",
+        "RGBA",
+    ],
+)
+@pytest.mark.parametrize("fixed_shape", [True, False])
+def test_image_pil_inference(fixed_shape, mode):
+    np_dtype = MODE_TO_NP_DTYPE[mode]
+    num_channels = MODE_TO_NUM_CHANNELS[mode]
+    if fixed_shape:
+        height = 4
+        width = 4
+        shape = (height, width)
+        if num_channels > 1:
+            shape += (num_channels,)
+        arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+        arrs = [arr, arr, None]
+    else:
+        shape1 = (2, 2)
+        shape2 = (3, 3)
+        if num_channels > 1:
+            shape1 += (num_channels,)
+            shape2 += (num_channels,)
+        arr1 = np.arange(np.prod(shape1)).reshape(shape1).astype(np_dtype)
+        arr2 = np.arange(np.prod(shape1), np.prod(shape1) + np.prod(shape2)).reshape(shape2).astype(np_dtype)
+        arrs = [arr1, arr2, None]
+    if mode in ("LA", "RGBA"):
+        for arr in arrs:
+            if arr is not None:
+                arr[..., -1] = 255
+    imgs = [Image.fromarray(arr, mode=mode) if arr is not None else None for arr in arrs]
+    s = Series.from_pylist(imgs, pyobj="force")
+    assert s.datatype() == DataType.image(mode)
+    out = s.to_pylist()
+    if num_channels == 1:
+        arrs = [np.expand_dims(arr, -1) for arr in arrs]
+    np.testing.assert_equal(out, arrs)
+
+
+def test_image_pil_inference_mixed():
+    rgba = np.ones((2, 2, 4), dtype=np.uint8)
+    rgba[..., 1] = 2
+    rgba[..., 2] = 3
+    rgba[..., 3] = 4
+
+    arrs = [
+        rgba[..., :3],  # RGB
+        rgba,  # RGBA
+        np.arange(12, dtype=np.uint8).reshape((1, 4, 3)),  # RGB
+        np.arange(12, dtype=np.uint8).reshape((3, 4)) * 10,  # L
+        np.ones(24, dtype=np.uint8).reshape((3, 4, 2)) * 10,  # LA
+        None,
+    ]
+    print([arr.shape if arr is not None else None for arr in arrs])
+    imgs = [
+        Image.fromarray(arr, mode=NUM_CHANNELS_TO_MODE[arr.shape[-1] if arr.ndim == 3 else 1])
+        if arr is not None
+        else None
+        for arr in arrs
+    ]
+    s = Series.from_pylist(imgs, pyobj="force")
+    assert s.datatype() == DataType.image()
+    out = s.to_pylist()
+    arrs[3] = np.expand_dims(arrs[3], axis=-1)
+    np.testing.assert_equal(out, arrs)
 
 
 @pytest.mark.parametrize(
