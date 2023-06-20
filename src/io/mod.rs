@@ -65,7 +65,11 @@ pub(crate) enum Error {
 
 impl From<Error> for DaftError {
     fn from(err: Error) -> DaftError {
-        DaftError::External(err.into())
+        use Error::*;
+        match err {
+            NotFound { path, source } => DaftError::FileNotFound { path, source },
+            _ => DaftError::External(err.into()),
+        }
     }
 }
 

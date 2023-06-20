@@ -7,7 +7,7 @@ pub type GenericError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 pub enum DaftError {
-    NotFound(String),
+    FieldNotFound(String),
     SchemaMismatch(String),
     TypeError(String),
     ComputeError(String),
@@ -16,6 +16,10 @@ pub enum DaftError {
     #[cfg(feature = "python")]
     PyO3Error(pyo3::PyErr),
     IoError(io::Error),
+    FileNotFound {
+        path: String,
+        source: GenericError,
+    },
     External(GenericError),
 }
 
@@ -50,7 +54,7 @@ impl Display for DaftError {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            Self::NotFound(s) => write!(f, "DaftError::NotFound {s}"),
+            Self::FieldNotFound(s) => write!(f, "DaftError::FieldNotFound {s}"),
             Self::SchemaMismatch(s) => write!(f, "DaftError::SchemaMismatch {s}"),
             Self::TypeError(s) => write!(f, "DaftError::TypeError {s}"),
             Self::ComputeError(s) => write!(f, "DaftError::ComputeError {s}"),
@@ -60,6 +64,9 @@ impl Display for DaftError {
             Self::PyO3Error(e) => write!(f, "DaftError::PyO3Error {e}"),
             Self::IoError(e) => write!(f, "DaftError::IoError {e}"),
             Self::External(e) => write!(f, "DaftError::External {:?}", e),
+            Self::FileNotFound { path, source } => {
+                write!(f, "DaftError::FileNotFound {path}: {source}")
+            }
         }
     }
 }

@@ -69,14 +69,16 @@ impl LocalSource {
 #[async_trait]
 impl ObjectSource for LocalSource {
     async fn get(&self, uri: &str) -> super::Result<GetResult> {
-        let path = url::Url::parse(uri).context(InvalidUrlSnafu { url: uri })?;
-        let file_path = match path.to_file_path() {
-            Ok(f) => Ok(f),
-            Err(_err) => Err(Error::InvalidFilePath {
-                path: path.to_string(),
-            }),
-        }?;
-        Ok(GetResult::File(file_path))
+        const TO_STRIP: &str = "file://";
+        if let Some(p) = uri.strip_prefix(TO_STRIP) {
+            let path = std::path::Path::new(p);
+            Ok(GetResult::File(path.to_path_buf()))
+        } else {
+            return Err(Error::InvalidFilePath {
+                path: uri.to_string(),
+            }
+            .into());
+        }
     }
 }
 
