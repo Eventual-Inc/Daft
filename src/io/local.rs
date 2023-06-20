@@ -53,7 +53,7 @@ impl From<Error> for super::Error {
                 source,
             },
             _ => super::Error::Generic {
-                store: "local",
+                store: super::SourceType::File,
                 source: error.into(),
             },
         }

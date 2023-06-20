@@ -50,7 +50,7 @@ impl From<Error> for super::Error {
                 },
             },
             _ => super::Error::Generic {
-                store: "http",
+                store: super::SourceType::Http,
                 source: error.into(),
             },
         }

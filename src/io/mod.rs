@@ -32,10 +32,7 @@ use self::{
 #[derive(Debug, Snafu)]
 pub(crate) enum Error {
     #[snafu(display("Generic {} error: {:?}", store, source))]
-    Generic {
-        store: &'static str,
-        source: DynError,
-    },
+    Generic { store: SourceType, source: DynError },
 
     #[snafu(display("Object at location {} not found: {:?}", path, source))]
     NotFound { path: String, source: DynError },
@@ -101,10 +98,20 @@ async fn get_source(source_type: SourceType) -> Result<Arc<dyn ObjectSource>> {
 }
 
 #[derive(Debug, Hash, PartialEq, std::cmp::Eq)]
-enum SourceType {
+pub(crate) enum SourceType {
     File,
     Http,
     S3,
+}
+
+impl std::fmt::Display for SourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            SourceType::File => write!(f, "file"),
+            SourceType::Http => write!(f, "http"),
+            SourceType::S3 => write!(f, "s3"),
+        }
+    }
 }
 
 fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
