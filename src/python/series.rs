@@ -328,30 +328,32 @@ fn infer_daft_dtype_for_sequence(
 ) -> PyResult<Option<DataType>> {
     let py_pil_image_type = py
         .import("PIL.Image")
-        .and_then(|m| m.getattr(pyo3::intern!(py, "Image")))?;
+        .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
     let mut dtype: Option<DataType> = None;
     for obj in vec_pyobj.iter() {
         let obj = obj.as_ref(py);
-        if obj.is_instance(py_pil_image_type)? {
-            let mode_str = obj.getattr("mode")?.extract::<String>()?;
-            let mode = ImageMode::from_str(&mode_str)?;
-            match dtype {
-                Some(DataType::Image(Some(existing_mode))) => {
-                    if existing_mode != mode {
-                        // Mixed-mode case, set mode to None.
-                        dtype = Some(DataType::Image(None));
+        if let Ok(pil_image_type) = py_pil_image_type {
+            if obj.is_instance(pil_image_type)? {
+                let mode_str = obj.getattr("mode")?.extract::<String>()?;
+                let mode = ImageMode::from_str(&mode_str)?;
+                match dtype {
+                    Some(DataType::Image(Some(existing_mode))) => {
+                        if existing_mode != mode {
+                            // Mixed-mode case, set mode to None.
+                            dtype = Some(DataType::Image(None));
+                        }
                     }
-                }
-                None => {
-                    // Set to (currently) uniform mode image dtype.
-                    dtype = Some(DataType::Image(Some(mode)));
-                }
-                // No-op, since dtype is already for mixed-mode images.
-                Some(DataType::Image(None)) => {}
-                _ => {
-                    // Images mixed with non-images; short-circuit since union dtypes are not (yet) supported.
-                    dtype = None;
-                    break;
+                    None => {
+                        // Set to (currently) uniform mode image dtype.
+                        dtype = Some(DataType::Image(Some(mode)));
+                    }
+                    // No-op, since dtype is already for mixed-mode images.
+                    Some(DataType::Image(None)) => {}
+                    _ => {
+                        // Images mixed with non-images; short-circuit since union dtypes are not (yet) supported.
+                        dtype = None;
+                        break;
+                    }
                 }
             }
         } else if !obj.is_none() {
