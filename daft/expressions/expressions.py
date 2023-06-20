@@ -421,6 +421,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         max_connections: int = 32,
         on_error: Literal["raise"] | Literal["null"] = "null",
         fs: fsspec.AbstractFileSystem | None = None,
+        use_native_downloader: bool = False,
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column
 
@@ -430,12 +431,13 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 the error but fallback to a Null value. Defaults to "raise".
             fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for downloading data.
                 By default, Daft will automatically construct a FileSystem instance internally.
+            use_native_downloader (bool): Use the native downloader rather than python based one.
+                Defaults to False.
 
         Returns:
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occured during download
         """
-        USE_LEGACY_DOWNLOADER = True
-        if fs is None and not USE_LEGACY_DOWNLOADER:
+        if fs is None and use_native_downloader:
             raise_on_error = False
             if on_error == "raise":
                 raise_on_error = True

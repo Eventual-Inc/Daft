@@ -1,5 +1,4 @@
 [dependencies]
-ahash = "0.8.3"
 async-trait = "0.1.68"
 aws-config = "0.55.3"
 aws-sdk-s3 = "0.28.0"

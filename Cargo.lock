@@ -690,7 +690,6 @@ dependencies = [
 name = "daft"
 version = "0.1.6"
 dependencies = [
- "ahash",
  "arrow2",
  "async-trait",
  "aws-config",
