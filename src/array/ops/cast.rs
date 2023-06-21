@@ -236,6 +236,8 @@ impl DateArray {
             }
             DataType::Float32 => self.cast(&DataType::Int32)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int32)?.cast(&DataType::Float64),
+            #[cfg(feature = "python")]
+            DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => arrow_cast(&self.physical, dtype),
         }
     }
@@ -285,7 +287,7 @@ impl TimestampArray {
         match dtype {
             DataType::Timestamp(..) => arrow_logical_cast(self, dtype),
             DataType::Utf8 => {
-                let DataType::Timestamp(unit, timezone) = &self.field.dtype else { panic!("Wrong dtype for TimestampArray: {}", self.field.dtype) };
+                let DataType::Timestamp(unit, timezone) = self.logical_type() else { panic!("Wrong dtype for TimestampArray: {}", self.logical_type()) };
 
                 let str_array: arrow2::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
                     || {
@@ -319,6 +321,8 @@ impl TimestampArray {
             }
             DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
+            #[cfg(feature = "python")]
+            DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => arrow_cast(&self.physical, dtype),
         }
     }
@@ -505,7 +509,7 @@ fn extract_python_to_vec<
                 || supports_array_interface_protocol
                 || supports_array_protocol
             {
-                // Path if object is supports buffer/array protocols.
+                // Path if object supports buffer/array protocols.
                 let np_as_array_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?;
                 let pyarray = np_as_array_fn.call1((object,))?;
                 let num_values = append_values_from_numpy(
@@ -851,17 +855,12 @@ impl PythonArray {
                 );
                 Ok(embedding_array.into_series())
             }
-            DataType::Image(inner_dtype, mode) => {
-                if !inner_dtype.is_numeric() {
-                    panic!(
-                        "Image logical type should only have numeric physical dtype, but got {}",
-                        inner_dtype
-                    );
-                }
-                with_match_numeric_daft_types!(**inner_dtype, |$T| {
+            DataType::Image(mode) => {
+                let inner_dtype = mode.map_or(DataType::UInt8, |m| m.get_dtype());
+                with_match_numeric_daft_types!(inner_dtype, |$T| {
                     type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_image_array::<Tgt>(py, self, dtype, inner_dtype, *mode)?;
+                        let result = extract_python_like_to_image_array::<Tgt>(py, self, dtype, &inner_dtype, *mode)?;
                         Ok(result.into_series())
                     })
                 })
@@ -883,7 +882,35 @@ impl PythonArray {
 
 impl EmbeddingArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        self.physical.cast(dtype)
+        match dtype {
+            #[cfg(feature = "python")]
+            DataType::Python => Python::with_gil(|py| {
+                let DataType::Embedding(_, size) = self.logical_type() else { panic!("EmbeddingArray should have an Embedding dtype.") };
+                let shape = (self.len(), *size);
+                let pyarrow = py.import("pyarrow")?;
+                // Only go through FFI layer once instead of for every embedding.
+                // We create an ndarray view on the entire embeddings array
+                // buffer sans the validity mask, and then create a subndarray view
+                // for each embedding ndarray in the PythonArray.
+                let py_array =
+                    ffi::to_py_array(self.as_arrow().values().with_validity(None), py, pyarrow)?
+                        .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
+                        .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?;
+                let ndarrays = py_array
+                    .as_ref(py)
+                    .iter()?
+                    .map(|a| a.unwrap().to_object(py))
+                    .collect::<Vec<PyObject>>();
+                let values_array =
+                    PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
+                Ok(PythonArray::new(
+                    Field::new(self.name(), dtype.clone()).into(),
+                    values_array.to_boxed(),
+                )?
+                .into_series())
+            }),
+            _ => self.physical.cast(dtype),
+        }
     }
 }
 
@@ -931,7 +958,7 @@ impl FixedShapeImageArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match (dtype, self.logical_type()) {
             #[cfg(feature = "python")]
-            (DataType::Python, DataType::FixedShapeImage(_, mode, height, width)) => {
+            (DataType::Python, DataType::FixedShapeImage(mode, height, width)) => {
                 pyo3::Python::with_gil(|py| {
                     let shape = (
                         self.len(),
@@ -972,4 +999,28 @@ impl FixedShapeImageArray {
             (_, _) => self.physical.cast(dtype),
         }
     }
+}
+
+#[cfg(feature = "python")]
+fn cast_logical_to_python_array<T>(array: &LogicalArray<T>, dtype: &DataType) -> DaftResult<Series>
+where
+    T: DaftLogicalType,
+    LogicalArray<T>: AsArrow,
+    <LogicalArray<T> as AsArrow>::Output: arrow2::array::Array,
+{
+    Python::with_gil(|py| {
+        let arrow_dtype = array.logical_type().to_arrow()?;
+        let arrow_array = array.as_arrow().to_type(arrow_dtype).with_validity(None);
+        let pyarrow = py.import("pyarrow")?;
+        let py_array: Vec<PyObject> = ffi::to_py_array(arrow_array.to_boxed(), py, pyarrow)?
+            .call_method0(py, pyo3::intern!(py, "to_pylist"))?
+            .extract(py)?;
+        let values_array =
+            PseudoArrowArray::new(py_array.into(), array.as_arrow().validity().cloned());
+        Ok(PythonArray::new(
+            Field::new(array.name(), dtype.clone()).into(),
+            values_array.to_boxed(),
+        )?
+        .into_series())
+    })
 }

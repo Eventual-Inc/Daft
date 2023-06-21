@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from typing import Generator, Iterator, List, TypeVar, Union
+from typing import Generator, Iterator, TypeVar, Union
 
 from loguru import logger
 
@@ -39,12 +39,8 @@ T = TypeVar("T")
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
 InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionTaskBuilder[PartitionT]]]
 
-# A PhysicalPlan that is complete and will only yield PartitionTasks.
-MaterializedPhysicalPlan = Generator[
-    Union[None, PartitionTask[PartitionT]],
-    None,
-    List[PartitionT],
-]
+# A PhysicalPlan that is complete and will only yield PartitionTasks or final PartitionTs.
+MaterializedPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionT]]
 
 
 def partition_read(
@@ -645,24 +641,34 @@ def materialize(
 ) -> MaterializedPhysicalPlan:
     """Materialize the child plan.
 
-    Returns (via generator return): the completed plan's result partitions.
+    Repeatedly yields either a PartitionTask (to produce an intermediate partition)
+    or a PartitionT (which is part of the final result).
     """
 
-    materializations = list()
+    materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
-    for step in child_plan:
-        if isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_single_output()
-            materializations.append(step)
-        assert isinstance(step, (PartitionTask, type(None)))
+    while True:
+        # Check if any inputs finished executing.
+        while len(materializations) > 0 and materializations[0].done():
+            done_task = materializations.popleft()
+            yield done_task.partition()
 
-        yield step
+        # Materialize a single dependency.
+        try:
+            step = next(child_plan)
+            if isinstance(step, PartitionTaskBuilder):
+                step = step.finalize_partition_task_single_output()
+                materializations.append(step)
+            assert isinstance(step, (PartitionTask, type(None)))
 
-    while any(not _.done() for _ in materializations):
-        logger.debug("materialize blocked on completion of all sources: {sources}", sources=materializations)
-        yield None
+            yield step
 
-    return [_.partition() for _ in materializations]
+        except StopIteration:
+            if len(materializations) > 0:
+                logger.debug("materialize blocked on completion of all sources: {sources}", sources=materializations)
+                yield None
+            else:
+                return
 
 
 def enumerate_open_executions(

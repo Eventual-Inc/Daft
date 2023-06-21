@@ -34,7 +34,7 @@ Refer to the :doc:`Daft API Documentation <api_docs/index>`.
 Keep up to date
 ---------------
 
-Keep up to date with the latest features and fixes in Daft with our :doc:`Release Notes <release_notes/index>`.
+Keep up to date with the latest features and fixes in Daft with our :doc:`Release Notes <https://github.com/Eventual-Inc/Daft/releases>`.
 
 Compare Daft to alternatives
 ----------------------------
@@ -50,7 +50,7 @@ Evaluating Daft for a new project or system? Read more about why you should choo
    10-min
    learn/index
    api_docs/index
-   release_notes/index
+   Release Notes <https://github.com/Eventual-Inc/Daft/releases>
    Telemetry <telemetry>
    dataframe_comparison
    technical_architecture

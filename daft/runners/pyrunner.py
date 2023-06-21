@@ -3,7 +3,7 @@ from __future__ import annotations
 import multiprocessing
 from concurrent import futures
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Iterator
 
 import fsspec
 import psutil
@@ -187,7 +187,7 @@ class PyRunner(Runner):
         plan = physical_plan_factory.get_materializing_physical_plan(logplan, psets)
 
         with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-            partitions = self._physical_plan_to_partitions(plan)
+            partitions = list(self._physical_plan_to_partitions(plan))
 
             result_pset = LocalPartitionSet({})
             for i, partition in enumerate(partitions):
@@ -196,56 +196,71 @@ class PyRunner(Runner):
             pset_entry = self.put_partition_set_into_cache(result_pset)
             return pset_entry
 
-    def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> list[Table]:
+    def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> Iterator[Table]:
         inflight_tasks: dict[str, PartitionTask] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
 
-        result = []
-        next_step = None
         with futures.ThreadPoolExecutor() as thread_pool:
             try:
-                while True:
-                    # Get the next task to dispatch.
-                    if next_step is None:
-                        next_step = next(plan)
+                next_step = next(plan)
 
-                    # Try dispatching tasks (up to resource limits) until there are no more tasks to dispatch.
-                    while next_step is not None and self._can_admit_task(
-                        next_step.resource_request, inflight_tasks_resources.values()
-                    ):
-                        # Run the task in the main thread, instead of the thread pool, in certain conditions:
-                        # - Threading is disabled in runner config.
-                        # - Task is a no-op.
-                        # - Task requires GPU.
-                        # TODO(charles): Queue these up until the physical plan is blocked to avoid starving cluster.
-                        if (
-                            not self._use_thread_pool
-                            or len(next_step.instructions) == 0
-                            or (
-                                next_step.resource_request.num_gpus is not None
-                                and next_step.resource_request.num_gpus > 0
-                            )
-                        ):
-                            logger.debug("Running task synchronously in main thread: {next_step}", next_step=next_step)
-                            partitions = self.build_partitions(next_step.instructions, *next_step.inputs)
-                            next_step.set_result([PyMaterializedResult(partition) for partition in partitions])
+                # Dispatch->Await loop.
+                while True:
+
+                    # Dispatch loop.
+                    while True:
+
+                        if next_step is None:
+                            # Blocked on already dispatched tasks; await some tasks.
+                            break
+
+                        elif isinstance(next_step, Table):
+                            # A final result.
+                            yield next_step
+                            next_step = next(plan)
+                            continue
+
+                        elif not self._can_admit_task(next_step.resource_request, inflight_tasks_resources.values()):
+                            # Insufficient resources; await some tasks.
+                            break
 
                         else:
-                            # Submit the task for execution.
-                            logger.debug("Submitting task for execution: {next_step}", next_step=next_step)
-                            future = thread_pool.submit(
-                                self.build_partitions, next_step.instructions, *next_step.inputs
-                            )
-                            # Register the inflight task and resources used.
-                            future_to_task[future] = next_step.id()
-                            inflight_tasks[next_step.id()] = next_step
-                            inflight_tasks_resources[next_step.id()] = next_step.resource_request
+                            # next_task is a task to run.
 
-                        # Get the next task to dispatch.
-                        next_step = next(plan)
+                            # Run the task in the main thread, instead of the thread pool, in certain conditions:
+                            # - Threading is disabled in runner config.
+                            # - Task is a no-op.
+                            # - Task requires GPU.
+                            # TODO(charles): Queue these up until the physical plan is blocked to avoid starving cluster.
+                            if (
+                                not self._use_thread_pool
+                                or len(next_step.instructions) == 0
+                                or (
+                                    next_step.resource_request.num_gpus is not None
+                                    and next_step.resource_request.num_gpus > 0
+                                )
+                            ):
+                                logger.debug(
+                                    "Running task synchronously in main thread: {next_step}", next_step=next_step
+                                )
+                                partitions = self.build_partitions(next_step.instructions, *next_step.inputs)
+                                next_step.set_result([PyMaterializedResult(partition) for partition in partitions])
 
-                    # Await at least task and process the results.
+                            else:
+                                # Submit the task for execution.
+                                logger.debug("Submitting task for execution: {next_step}", next_step=next_step)
+                                future = thread_pool.submit(
+                                    self.build_partitions, next_step.instructions, *next_step.inputs
+                                )
+                                # Register the inflight task and resources used.
+                                future_to_task[future] = next_step.id()
+                                inflight_tasks[next_step.id()] = next_step
+                                inflight_tasks_resources[next_step.id()] = next_step.resource_request
+
+                            next_step = next(plan)
+
+                    # Await at least one task and process the results.
                     assert (
                         len(future_to_task) > 0
                     ), f"Scheduler deadlocked! This should never happen. Please file an issue."
@@ -261,10 +276,11 @@ class PyRunner(Runner):
                         )
                         done_task.set_result([PyMaterializedResult(partition) for partition in partitions])
 
-            except StopIteration as e:
-                result = e.value
+                    if next_step is None:
+                        next_step = next(plan)
 
-        return result
+            except StopIteration:
+                return
 
     def _check_resource_requests(self, resource_request: ResourceRequest) -> None:
         """Validates that the requested ResourceRequest is possible to run locally"""

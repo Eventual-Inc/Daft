@@ -387,6 +387,9 @@ class DataType:
 
         return self == DataType.python()
 
+    def _is_logical_type(self) -> builtins.bool:
+        return self._dtype.is_logical()
+
     def __repr__(self) -> str:
         return self._dtype.__repr__()
 

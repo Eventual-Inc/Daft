@@ -30,9 +30,10 @@ def files(tmpdir) -> list[str]:
     return filepaths
 
 
-def test_download(files):
+@pytest.mark.parametrize("use_native_downloader", [False, True])
+def test_download(files, use_native_downloader):
     df = daft.from_pydict({"filenames": [str(f) for f in files]})
-    df = df.with_column("bytes", col("filenames").url.download())
+    df = df.with_column("bytes", col("filenames").url.download(use_native_downloader=use_native_downloader))
     pd_df = pd.DataFrame.from_dict({"filenames": [str(f) for f in files]})
     pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() for fn in files])
     assert_df_equals(df.to_pandas(), pd_df, sort_key="filenames")
@@ -55,46 +56,54 @@ def test_download_custom_ds(files):
     assert_df_equals(out_df, pd_df, sort_key="filenames")
 
 
-def test_download_with_none(files):
+@pytest.mark.parametrize("use_native_downloader", [False, True])
+def test_download_with_none(files, use_native_downloader):
     data = {"id": list(range(len(files) * 2)), "filenames": [str(f) for f in files] + [None for _ in range(len(files))]}
     df = daft.from_pydict(data)
-    df = df.with_column("bytes", col("filenames").url.download())
+    df = df.with_column("bytes", col("filenames").url.download(use_native_downloader=use_native_downloader))
     pd_df = pd.DataFrame.from_dict(data)
     pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() if fn is not None else None for fn in files])
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
 
 
-def test_download_with_broken_urls(files):
+@pytest.mark.parametrize("use_native_downloader", [False, True])
+def test_download_with_missing_urls(files, use_native_downloader):
     data = {
         "id": list(range(len(files) * 2)),
         "filenames": [str(f) for f in files] + [str(uuid.uuid4()) for _ in range(len(files))],
     }
     df = daft.from_pydict(data)
-    df = df.with_column("bytes", col("filenames").url.download(on_error="null"))
+    df = df.with_column(
+        "bytes", col("filenames").url.download(on_error="null", use_native_downloader=use_native_downloader)
+    )
     pd_df = pd.DataFrame.from_dict(data)
     pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() if pathlib.Path(fn).exists() else None for fn in files])
     assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
 
 
-def test_download_with_broken_urls_reraise_errors(files):
+@pytest.mark.parametrize("use_native_downloader", [False, True])
+def test_download_with_missing_urls_reraise_errors(files, use_native_downloader):
     data = {
         "id": list(range(len(files) * 2)),
         "filenames": [str(f) for f in files] + [str(uuid.uuid4()) for _ in range(len(files))],
     }
     df = daft.from_pydict(data)
-    df = df.with_column("bytes", col("filenames").url.download(on_error="raise"))
-
+    df = df.with_column(
+        "bytes", col("filenames").url.download(on_error="raise", use_native_downloader=use_native_downloader)
+    )
+    # TODO: Change to a FileNotFound Error
     with pytest.raises(FileNotFoundError):
         df.collect()
 
 
-def test_download_with_duplicate_urls(files):
+@pytest.mark.parametrize("use_native_downloader", [False, True])
+def test_download_with_duplicate_urls(files, use_native_downloader):
     data = {
         "id": list(range(len(files) * 2)),
         "filenames": [str(f) for f in files] * 2,
     }
     df = daft.from_pydict(data)
-    df = df.with_column("bytes", col("filenames").url.download())
+    df = df.with_column("bytes", col("filenames").url.download(use_native_downloader=use_native_downloader))
     pd_df = pd.DataFrame.from_dict(data)
     pd_df["bytes"] = pd.Series(
         [pathlib.Path(fn).read_bytes() if pathlib.Path(fn).exists() else None for fn in files * 2]

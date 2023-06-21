@@ -4,6 +4,7 @@ ignore:
 - tutorials
 - tools
 - daft/pickle
+- src
 
 comment:
   layout: reach, diff, flags, files

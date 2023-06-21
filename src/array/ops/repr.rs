@@ -10,8 +10,10 @@ use crate::{
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeListArray,
         ImageFormat, ListArray, NullArray, StructArray, Utf8Array,
     },
-    error::DaftResult,
+    error::{DaftError, DaftResult},
 };
+
+use super::image::AsImageObj;
 
 // Default implementation of str_value: format the value with the given format string.
 macro_rules! impl_array_str_value {
@@ -37,6 +39,57 @@ impl_array_str_value!(DurationArray, "{}");
 impl_array_str_value!(EmbeddingArray, "{:?}");
 impl_array_str_value!(ImageArray, "{:?}");
 impl_array_str_value!(FixedShapeImageArray, "{:?}");
+
+impl From<std::fmt::Error> for DaftError {
+    fn from(error: std::fmt::Error) -> Self {
+        DaftError::ComputeError(error.to_string())
+    }
+}
+
+fn pretty_print_bytes(bytes: &[u8], max_len: usize) -> DaftResult<String> {
+    /// influenced by pythons bytes repr
+    /// https://github.com/python/cpython/blob/main/Objects/bytesobject.c#L1336
+    const PREFIX: &str = "b\"";
+    const POSTFIX: &str = "\"";
+    const POSTFIX_TRUNC: &str = "\"...";
+    let ending_bytes = if bytes.len() <= max_len {
+        POSTFIX.len()
+    } else {
+        POSTFIX_TRUNC.len()
+    };
+    let mut builder = String::with_capacity(max_len);
+    builder.push_str(PREFIX);
+    const QUOTE: u8 = b'\"';
+    const SLASH: u8 = b'\\';
+    const TAB: u8 = b'\t';
+    const NEWLINE: u8 = b'\n';
+    const CARRIAGE: u8 = b'\r';
+    const SPACE: u8 = b' ';
+
+    use std::fmt::Write;
+    let chars_to_add = max_len - ending_bytes;
+
+    for c in bytes {
+        if builder.len() >= chars_to_add {
+            break;
+        }
+        match *c {
+            QUOTE | SLASH => write!(builder, "\\{}", *c as char),
+            TAB => write!(builder, "\\t"),
+            NEWLINE => write!(builder, "\\n"),
+            CARRIAGE => write!(builder, "\\r"),
+            v if !(SPACE..0x7f).contains(&v) => write!(builder, "\\x{:02x}", v),
+            v => write!(builder, "{}", v as char),
+        }?;
+    }
+    if bytes.len() <= max_len {
+        builder.push_str(POSTFIX);
+    } else {
+        builder.push_str(POSTFIX_TRUNC);
+    };
+
+    Ok(builder)
+}
 
 impl<T> DataArray<T>
 where
@@ -73,13 +126,13 @@ impl BinaryArray {
         let val = self.get(idx);
         match val {
             None => Ok("None".to_string()),
-            // TODO: [RUST-INT] proper display of bytes as string here, preferably similar to how Python displays it
-            // See discussion: https://stackoverflow.com/questions/54358833/how-does-bytes-repr-representation-work
-            Some(v) => Ok(format!("b\"{:?}\"", v)),
+            Some(v) => {
+                const LEN_TO_TRUNC: usize = 40;
+                pretty_print_bytes(v, LEN_TO_TRUNC)
+            }
         }
     }
 }
-
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
@@ -171,7 +224,6 @@ impl_array_html_value!(DateArray);
 impl_array_html_value!(DurationArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
-impl_array_html_value!(FixedShapeImageArray);
 
 impl<T> DataArray<T>
 where
@@ -195,10 +247,35 @@ impl ImageArray {
             Some(image) => {
                 let thumb = image.fit_to(128, 128);
                 let mut bytes: Vec<u8> = vec![];
-                thumb.encode(ImageFormat::JPEG, &mut bytes).unwrap();
+                let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
+                thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
+                drop(writer);
                 format!(
                     "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
-                    base64::engine::general_purpose::STANDARD.encode(&bytes),
+                    base64::engine::general_purpose::STANDARD.encode(&mut bytes),
+                    str_val,
+                )
+            }
+        }
+    }
+}
+
+impl FixedShapeImageArray {
+    pub fn html_value(&self, idx: usize) -> String {
+        let maybe_image = self.as_image_obj(idx);
+        let str_val = self.str_value(idx).unwrap();
+
+        match maybe_image {
+            None => "None".to_string(),
+            Some(image) => {
+                let thumb = image.fit_to(128, 128);
+                let mut bytes: Vec<u8> = vec![];
+                let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
+                thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
+                drop(writer);
+                format!(
+                    "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+                    base64::engine::general_purpose::STANDARD.encode(&mut bytes),
                     str_val,
                 )
             }

@@ -3,14 +3,15 @@ pub mod image;
 pub mod list;
 pub mod numeric;
 pub mod temporal;
+pub mod uri;
 pub mod utf8;
 
-use self::float::FloatExpr;
 use self::image::ImageExpr;
 use self::list::ListExpr;
 use self::numeric::NumericExpr;
 use self::temporal::TemporalExpr;
 use self::utf8::Utf8Expr;
+use self::{float::FloatExpr, uri::UriExpr};
 use crate::{datatypes::Field, error::DaftResult, schema::Schema, series::Series};
 use serde::{Deserialize, Serialize};
 
@@ -31,11 +32,12 @@ pub enum FunctionExpr {
     Image(ImageExpr),
     #[cfg(feature = "python")]
     Python(PythonUDF),
+    Uri(UriExpr),
 }
 
 pub trait FunctionEvaluator {
     fn fn_name(&self) -> &'static str;
-    fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field>;
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &Expr) -> DaftResult<Field>;
     fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series>;
 }
 
@@ -50,6 +52,7 @@ impl FunctionExpr {
             Temporal(expr) => expr.get_evaluator(),
             List(expr) => expr.get_evaluator(),
             Image(expr) => expr.get_evaluator(),
+            Uri(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
             Python(expr) => expr,
         }
@@ -61,8 +64,8 @@ impl FunctionEvaluator for FunctionExpr {
         self.get_evaluator().fn_name()
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
-        self.get_evaluator().to_field(inputs, schema)
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &Expr) -> DaftResult<Field> {
+        self.get_evaluator().to_field(inputs, schema, expr)
     }
 
     fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {

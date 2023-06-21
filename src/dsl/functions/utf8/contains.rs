@@ -15,7 +15,7 @@ impl FunctionEvaluator for ContainsEvaluator {
         "contains"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
         match inputs {
             [data, pattern] => match (data.to_field(schema), pattern.to_field(schema)) {
                 (Ok(data_field), Ok(pattern_field)) => {

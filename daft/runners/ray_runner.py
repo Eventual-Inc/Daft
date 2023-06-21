@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, Iterator
 
 import fsspec
 import pyarrow as pa
@@ -397,6 +397,13 @@ class Scheduler:
         plan: logical_plan.LogicalPlan,
         psets: dict[str, ray.ObjectRef],
     ) -> list[ray.ObjectRef]:
+        return list(self._run_plan(plan, psets))
+
+    def _run_plan(
+        self,
+        plan: logical_plan.LogicalPlan,
+        psets: dict[str, ray.ObjectRef],
+    ) -> Iterator[ray.ObjectRef]:
         from loguru import logger
 
         phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
@@ -410,28 +417,40 @@ class Scheduler:
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
 
-        result_partitions = None
         start = datetime.now()
         profile_filename = (
             f"profile_RayRunner.run()_"
             f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
         )
         with profiler(profile_filename):
-            while True:  # Loop: Dispatch -> await.
+            try:
+                next_step = next(phys_plan)
 
-                while True:  # Loop: Dispatch (in batches).
-                    dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
-                    if dispatches_allowed <= 0:
-                        break
+                while True:  # Loop: Dispatch -> await.
 
-                    # Get the next batch of tasks to dispatch.
-                    tasks_to_dispatch = []
-                    try:
-                        for _ in range(min(cores, dispatches_allowed)):
-                            next_step = next(phys_plan)
+                    while True:  # Loop: Dispatch (get tasks -> batch dispatch).
 
-                            # If this task is a no-op, just run it locally immediately.
-                            while next_step is not None and len(next_step.instructions) == 0:
+                        tasks_to_dispatch: list[PartitionTask] = []
+
+                        dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
+                        dispatches_allowed = min(cores, dispatches_allowed)
+
+                        # Loop: Get a batch of tasks.
+                        while len(tasks_to_dispatch) < dispatches_allowed:
+
+                            if next_step is None:
+                                # Blocked on already dispatched tasks; await some tasks.
+                                break
+
+                            elif isinstance(next_step, ray.ObjectRef):
+                                # A final result.
+                                yield next_step
+                                next_step = next(phys_plan)
+
+                            # next_step is a task.
+
+                            # If it is a no-op task, just run it locally immediately.
+                            elif len(next_step.instructions) == 0:
                                 logger.debug(
                                     "Running task synchronously in main thread: {next_step}", next_step=next_step
                                 )
@@ -441,66 +460,71 @@ class Scheduler:
                                 )
                                 next_step = next(phys_plan)
 
-                            if next_step is None:
-                                break
+                            else:
+                                # Add the task to the batch.
+                                tasks_to_dispatch.append(next_step)
+                                next_step = next(phys_plan)
 
-                            tasks_to_dispatch.append(next_step)
+                        # Dispatch the batch of tasks.
+                        logger.debug(
+                            f"{(datetime.now() - start).total_seconds()}s: RayRunner dispatching {len(tasks_to_dispatch)} tasks:"
+                        )
+                        for task in tasks_to_dispatch:
+                            results = _build_partitions(task)
+                            logger.debug(f"{task} -> {results}")
+                            inflight_tasks[task.id()] = task
+                            for result in results:
+                                inflight_ref_to_task[result] = task.id()
 
-                    except StopIteration as e:
-                        result_partitions = e.value
+                        if dispatches_allowed == 0 or next_step is None:
+                            break
 
-                    # Dispatch the batch of tasks.
+                    # Await a batch of tasks.
+                    # (Awaits the next task, and then the next batch of tasks within 10ms.)
+
+                    dispatch = datetime.now()
+                    completed_task_ids = []
+                    for wait_for in ("next_one", "next_batch"):
+                        if wait_for == "next_one":
+                            num_returns = 1
+                            timeout = None
+                        elif wait_for == "next_batch":
+                            num_returns = len(inflight_ref_to_task)
+                            timeout = 0.01  # 10ms
+
+                        if num_returns == 0:
+                            break
+
+                        readies, _ = ray.wait(
+                            list(inflight_ref_to_task.keys()),
+                            num_returns=num_returns,
+                            timeout=timeout,
+                            fetch_local=False,
+                        )
+
+                        for ready in readies:
+                            if ready in inflight_ref_to_task:
+                                task_id = inflight_ref_to_task[ready]
+                                completed_task_ids.append(task_id)
+                                # Mark the entire task associated with the result as done.
+                                task = inflight_tasks[task_id]
+                                if isinstance(task, SingleOutputPartitionTask):
+                                    del inflight_ref_to_task[ready]
+                                elif isinstance(task, MultiOutputPartitionTask):
+                                    for partition in task.partitions():
+                                        del inflight_ref_to_task[partition]
+
+                                del inflight_tasks[task_id]
+
                     logger.debug(
-                        f"{(datetime.now() - start).total_seconds()}s: RayRunner dispatching {len(tasks_to_dispatch)} tasks:"
-                    )
-                    for task in tasks_to_dispatch:
-                        results = _build_partitions(task)
-                        logger.debug(f"{task} -> {results}")
-                        inflight_tasks[task.id()] = task
-                        for result in results:
-                            inflight_ref_to_task[result] = task.id()
-
-                    # Exit if the plan is complete and the result references are available.
-                    if result_partitions is not None:
-                        return result_partitions
-
-                # Await a batch of tasks.
-                # (Awaits the next task, and then the next batch of tasks within 10ms.)
-
-                dispatch = datetime.now()
-                completed_task_ids = []
-                for wait_for in ("next_one", "next_batch"):
-                    if wait_for == "next_one":
-                        num_returns = 1
-                        timeout = None
-                    elif wait_for == "next_batch":
-                        num_returns = len(inflight_ref_to_task)
-                        timeout = 0.01  # 10ms
-
-                    if num_returns == 0:
-                        break
-
-                    readies, _ = ray.wait(
-                        list(inflight_ref_to_task.keys()), num_returns=num_returns, timeout=timeout, fetch_local=False
+                        f"+{(datetime.now() - dispatch).total_seconds()}s to await results from {completed_task_ids}"
                     )
 
-                    for ready in readies:
-                        if ready in inflight_ref_to_task:
-                            task_id = inflight_ref_to_task[ready]
-                            completed_task_ids.append(task_id)
-                            # Mark the entire task associated with the result as done.
-                            task = inflight_tasks[task_id]
-                            if isinstance(task, SingleOutputPartitionTask):
-                                del inflight_ref_to_task[ready]
-                            elif isinstance(task, MultiOutputPartitionTask):
-                                for partition in task.partitions():
-                                    del inflight_ref_to_task[partition]
+                    if next_step is None:
+                        next_step = next(phys_plan)
 
-                            del inflight_tasks[task_id]
-
-                logger.debug(
-                    f"+{(datetime.now() - dispatch).total_seconds()}s to await results from {completed_task_ids}"
-                )
+            except StopIteration:
+                return
 
 
 @ray.remote(num_cpus=1)
