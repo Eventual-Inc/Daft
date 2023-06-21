@@ -123,6 +123,37 @@ impl<T: DaftPhysicalType, F: Into<Arc<Field>>> TryFrom<(F, Box<dyn arrow2::array
     }
 }
 
+impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
+    type Error = DaftError;
+
+    fn try_from(item: (&str, Vec<u8>, Vec<i64>)) -> DaftResult<Self> {
+        let (name, data, offsets) = item;
+
+        if offsets.is_empty() {
+            return Err(DaftError::ValueError(
+                "Expected non zero len offsets".to_string(),
+            ));
+        }
+        let last_offset = *offsets.last().unwrap();
+        if last_offset != data.len() as i64 {
+            return Err(DaftError::ValueError(format!("Expected Last offset in offsets to be the same as the length of the data array: {last_offset} vs {}", data.len())));
+        }
+
+        assert_eq!(last_offset, data.len() as i64);
+        let arrow_offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
+        let bin_array = arrow2::array::BinaryArray::<i64>::try_new(
+            arrow2::datatypes::DataType::LargeBinary,
+            arrow_offsets,
+            data.into(),
+            None,
+        )?;
+        DataArray::new(
+            Field::new(name, DataType::Binary).into(),
+            Box::new(bin_array),
+        )
+    }
+}
+
 #[cfg(feature = "python")]
 impl
     TryFrom<(

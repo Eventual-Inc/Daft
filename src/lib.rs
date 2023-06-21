@@ -1,4 +1,5 @@
 #![feature(hash_raw_entry)]
+#![feature(async_closure)]
 #[macro_use]
 extern crate lazy_static;
 
@@ -6,6 +7,7 @@ mod array;
 mod datatypes;
 mod dsl;
 mod error;
+mod io;
 mod kernels;
 mod schema;
 mod series;

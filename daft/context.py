@@ -94,6 +94,10 @@ class DaftContext:
 
         return _RUNNER
 
+    @property
+    def is_ray_runner(self) -> bool:
+        return isinstance(self.runner_config, _RayRunnerConfig)
+
 
 _DaftContext = DaftContext()
 
