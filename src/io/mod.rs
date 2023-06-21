@@ -54,6 +54,8 @@ pub(crate) enum Error {
         path: String,
         source: url::ParseError,
     },
+    #[snafu(display("Not a File: \"{}\"", path))]
+    NotAFile { path: String },
     #[snafu(display("Source not yet implemented: {}", store))]
     NotImplementedSource { store: String },
     #[snafu(display("Error joining spawned task: {}", source), context(false))]

@@ -35,6 +35,8 @@ enum Error {
         path: String,
         source: url::ParseError,
     },
+    #[snafu(display("Not a File: \"{}\"", path))]
+    NotAFile { path: String },
 }
 
 impl From<Error> for super::Error {
@@ -56,6 +58,7 @@ impl From<Error> for super::Error {
                 path,
                 source: source.into(),
             },
+            NotAFile { path } => super::Error::NotAFile { path },
         }
     }
 }
@@ -93,15 +96,17 @@ impl ObjectSource for S3LikeSource {
             }),
         }?;
         let key = parsed.path();
-
-        let object = self
-            .client
-            .get_object()
-            .bucket(bucket)
-            .key(&key[1..])
-            .send()
-            .await
-            .with_context(|_| UnableToOpenFileSnafu { path: uri })?;
+        let object = if let Some(key) = key.strip_prefix("/") {
+            self.client
+                .get_object()
+                .bucket(bucket)
+                .key(key)
+                .send()
+                .await
+                .with_context(|_| UnableToOpenFileSnafu { path: uri })?
+        } else {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        };
         let body = object.body;
         let owned_string = uri.to_owned();
         let stream = body
