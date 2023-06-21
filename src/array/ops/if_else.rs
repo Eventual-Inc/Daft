@@ -1,6 +1,6 @@
 use crate::array::DataArray;
 use crate::datatypes::logical::{
-    DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray,
+    DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray,
 };
 use crate::datatypes::{
     BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, ExtensionArray, Field,
@@ -323,37 +323,20 @@ impl ExtensionArray {
     }
 }
 
-impl DateArray {
-    pub fn if_else(&self, other: &Self, predicate: &BooleanArray) -> DaftResult<Self> {
-        let new_array = self.physical.if_else(&other.physical, predicate)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
+macro_rules! impl_logicalarray_if_else {
+    ($ArrayT:ty) => {
+        impl $ArrayT {
+            pub fn if_else(&self, other: &Self, predicate: &BooleanArray) -> DaftResult<Self> {
+                let new_array = self.physical.if_else(&other.physical, predicate)?;
+                Ok(Self::new(self.field.clone(), new_array))
+            }
+        }
+    };
 }
 
-impl TimestampArray {
-    pub fn if_else(&self, other: &Self, predicate: &BooleanArray) -> DaftResult<Self> {
-        let new_array = self.physical.if_else(&other.physical, predicate)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
-}
-
-impl EmbeddingArray {
-    pub fn if_else(&self, other: &Self, predicate: &BooleanArray) -> DaftResult<Self> {
-        let new_array = self.physical.if_else(&other.physical, predicate)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
-}
-
-impl ImageArray {
-    pub fn if_else(&self, other: &Self, predicate: &BooleanArray) -> DaftResult<Self> {
-        let new_array = self.physical.if_else(&other.physical, predicate)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
-}
-
-impl FixedShapeImageArray {
-    pub fn if_else(&self, other: &Self, predicate: &BooleanArray) -> DaftResult<Self> {
-        let new_array = self.physical.if_else(&other.physical, predicate)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
-}
+impl_logicalarray_if_else!(DateArray);
+impl_logicalarray_if_else!(DurationArray);
+impl_logicalarray_if_else!(TimestampArray);
+impl_logicalarray_if_else!(EmbeddingArray);
+impl_logicalarray_if_else!(ImageArray);
+impl_logicalarray_if_else!(FixedShapeImageArray);

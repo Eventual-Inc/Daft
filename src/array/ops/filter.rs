@@ -1,9 +1,6 @@
 use crate::{
     array::DataArray,
-    datatypes::{
-        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray},
-        BooleanArray, DaftArrowBackedType,
-    },
+    datatypes::{BooleanArray, DaftArrowBackedType},
     error::DaftResult,
 };
 
@@ -70,40 +67,5 @@ impl crate::datatypes::PythonArray {
             Box::new(PseudoArrowArray::new(new_values.into(), new_validity));
 
         DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
-    }
-}
-
-impl DateArray {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let new_array = self.physical.filter(mask)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
-}
-
-impl TimestampArray {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let new_array = self.physical.filter(mask)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
-}
-
-impl EmbeddingArray {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let new_array = self.physical.filter(mask)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
-}
-
-impl ImageArray {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let new_array = self.physical.filter(mask)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
-}
-
-impl FixedShapeImageArray {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let new_array = self.physical.filter(mask)?;
-        Ok(Self::new(self.field.clone(), new_array))
     }
 }

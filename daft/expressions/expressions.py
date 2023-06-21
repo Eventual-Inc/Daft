@@ -38,7 +38,8 @@ def lit(value: object) -> Expression:
     """
     if isinstance(value, datetime):
         pa_timestamp = pa.scalar(value)
-        return lit(pa_timestamp.cast(pa.int64()).as_py()).cast(
+        i64_value = pa_timestamp.cast(pa.int64()).as_py()
+        return lit(i64_value).cast(
             DataType.timestamp(
                 TimeUnit.from_str(pa_timestamp.type.unit),
                 pa_timestamp.type.tz,

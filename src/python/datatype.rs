@@ -168,6 +168,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn duration(timeunit: PyTimeUnit) -> PyResult<Self> {
+        Ok(DataType::Duration(timeunit.timeunit).into())
+    }
+
+    #[staticmethod]
     pub fn list(name: &str, data_type: Self) -> PyResult<Self> {
         Ok(DataType::List(Box::new(Field::new(name, data_type.dtype))).into())
     }

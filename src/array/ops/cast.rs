@@ -1,14 +1,10 @@
-use arrow2::compute::{
-    self,
-    cast::{can_cast_types, cast, CastOptions},
-};
-
+use super::as_arrow::AsArrow;
 use crate::{
     array::DataArray,
     datatypes::{
         logical::{
-            DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray,
-            TimestampArray,
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
+            LogicalArray, TimestampArray,
         },
         DaftLogicalType,
     },
@@ -18,38 +14,102 @@ use crate::{
     with_match_arrow_daft_types, with_match_daft_logical_types,
 };
 use crate::{datatypes::TimeUnit, series::IntoSeries};
-
-#[cfg(feature = "python")]
-use crate::array::{ops::image::ImageArrayVecs, pseudo_arrow::PseudoArrowArray};
-#[cfg(feature = "python")]
-use crate::datatypes::{FixedSizeListArray, ImageMode, ListArray, PythonArray};
-#[cfg(feature = "python")]
-use crate::ffi;
-#[cfg(feature = "python")]
-use crate::with_match_numeric_daft_types;
-#[cfg(feature = "python")]
-use arrow2::array::Array;
-#[cfg(feature = "python")]
-use log;
-#[cfg(feature = "python")]
-use ndarray::IntoDimension;
-#[cfg(feature = "python")]
-use num_traits::{NumCast, ToPrimitive};
-#[cfg(feature = "python")]
-use numpy::{PyArray3, PyReadonlyArrayDyn};
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
-#[cfg(feature = "python")]
-use std::iter;
-#[cfg(feature = "python")]
-use std::ops::Deref;
-
-use super::as_arrow::AsArrow;
+use arrow2::compute::{
+    self,
+    cast::{can_cast_types, cast, CastOptions},
+};
 use std::sync::Arc;
+
+#[cfg(feature = "python")]
+use {
+    crate::array::{ops::image::ImageArrayVecs, pseudo_arrow::PseudoArrowArray},
+    crate::datatypes::{FixedSizeListArray, ImageMode, ListArray, PythonArray},
+    crate::ffi,
+    crate::with_match_numeric_daft_types,
+    arrow2::array::Array,
+    log,
+    ndarray::IntoDimension,
+    num_traits::{NumCast, ToPrimitive},
+    numpy::{PyArray3, PyReadonlyArrayDyn},
+    pyo3::prelude::*,
+    std::iter,
+    std::ops::Deref,
+};
+
+fn arrow_logical_cast<T>(to_cast: &LogicalArray<T>, dtype: &DataType) -> DaftResult<Series>
+where
+    T: DaftLogicalType,
+{
+    // Cast from LogicalArray to the target DataType
+    // using Arrow's casting mechanisms.
+
+    // Note that Arrow Logical->Logical direct casts (what this method exposes)
+    // have different behaviour than Arrow Logical->Physical->Logical casts.
+
+    let source_dtype = to_cast.logical_type();
+    let source_arrow_type = source_dtype.to_arrow()?;
+    let target_arrow_type = dtype.to_arrow()?;
+
+    // Get the result of the Arrow Logical->Target cast.
+    let result_arrow_array = {
+        // First, get corresponding Arrow LogicalArray of source DataArray
+        let source_arrow_array = cast(
+            to_cast.physical.data(),
+            &source_arrow_type,
+            CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )?;
+
+        // Then, cast source Arrow LogicalArray to target Arrow LogicalArray.
+        cast(
+            source_arrow_array.as_ref(),
+            &target_arrow_type,
+            CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )?
+    };
+
+    // If the target type is also Logical, get the Arrow Physical.
+    let target_physical_type = dtype.to_physical().to_arrow()?;
+    let result_arrow_physical_array = {
+        if target_physical_type == target_arrow_type {
+            result_arrow_array
+        } else {
+            cast(
+                result_arrow_array.as_ref(),
+                &target_physical_type,
+                CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )?
+        }
+    };
+
+    let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
+
+    if dtype.is_logical() {
+        with_match_daft_logical_types!(dtype, |$T| {
+            let physical = DataArray::try_from((Field::new(to_cast.name(), dtype.to_physical()), result_arrow_physical_array))?;
+            return Ok(LogicalArray::<$T>::new(new_field.clone(), physical).into_series());
+        })
+    }
+    with_match_arrow_daft_types!(dtype, |$T| {
+        Ok(DataArray::<$T>::try_from((new_field.clone(), result_arrow_physical_array))?.into_series())
+    })
+}
+
 fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
 where
     T: DaftArrowBackedType,
 {
+    // Cast from DataArray to the target DataType
+    // by using Arrow's casting mechanisms.
+
     if !dtype.is_arrow() || !to_cast.data_type().is_arrow() {
         return Err(DaftError::TypeError(format!(
             "Can not cast {:?} to type: {:?}: not convertible to Arrow",
@@ -225,6 +285,7 @@ pub(super) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz)
 impl TimestampArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
+            DataType::Timestamp(..) => arrow_logical_cast(self, dtype),
             DataType::Utf8 => {
                 let DataType::Timestamp(unit, timezone) = self.logical_type() else { panic!("Wrong dtype for TimestampArray: {}", self.logical_type()) };
 
@@ -258,6 +319,19 @@ impl TimestampArray {
 
                 Ok(Utf8Array::from((self.name(), Box::new(str_array))).into_series())
             }
+            DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
+            DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
+            #[cfg(feature = "python")]
+            DataType::Python => cast_logical_to_python_array(self, dtype),
+            _ => arrow_cast(&self.physical, dtype),
+        }
+    }
+}
+
+impl DurationArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Duration(..) => arrow_logical_cast(self, dtype),
             DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
             #[cfg(feature = "python")]
