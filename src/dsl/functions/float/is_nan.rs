@@ -15,7 +15,7 @@ impl FunctionEvaluator for IsNanEvaluator {
         "is_nan"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
         match inputs {
             [data] => match data.to_field(schema) {
                 Ok(data_field) => match &data_field.dtype {

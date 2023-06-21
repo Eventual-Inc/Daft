@@ -101,6 +101,26 @@ impl ImageMode {
     }
 }
 
+impl From<ImageMode> for image::ColorType {
+    fn from(image_mode: ImageMode) -> image::ColorType {
+        use image::ColorType;
+        use ImageMode::*;
+
+        match image_mode {
+            L => ColorType::L8,
+            LA => ColorType::La8,
+            RGB => ColorType::Rgb8,
+            RGBA => ColorType::Rgba8,
+            L16 => ColorType::L16,
+            LA16 => ColorType::La16,
+            RGB16 => ColorType::Rgb16,
+            RGBA16 => ColorType::Rgba16,
+            RGB32F => ColorType::Rgb32F,
+            RGBA32F => ColorType::Rgba32F,
+        }
+    }
+}
+
 impl TryFrom<image::ColorType> for ImageMode {
     type Error = DaftError;
 
