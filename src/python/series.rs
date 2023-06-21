@@ -1,7 +1,4 @@
-use std::{
-    ops::{Add, Div, Mul, Rem, Sub},
-    str::FromStr,
-};
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
 
@@ -327,15 +324,17 @@ fn infer_daft_dtype_for_sequence(
     py: pyo3::Python,
 ) -> PyResult<Option<DataType>> {
     let py_pil_image_type = py
-        .import("PIL.Image")
+        .import(pyo3::intern!(py, "PIL.Image"))
         .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
     let mut dtype: Option<DataType> = None;
     for obj in vec_pyobj.iter() {
         let obj = obj.as_ref(py);
         if let Ok(pil_image_type) = py_pil_image_type {
             if obj.is_instance(pil_image_type)? {
-                let mode_str = obj.getattr("mode")?.extract::<String>()?;
-                let mode = ImageMode::from_str(&mode_str)?;
+                let mode_str = obj
+                    .getattr(pyo3::intern!(py, "mode"))?
+                    .extract::<String>()?;
+                let mode = ImageMode::from_pil_mode_str(&mode_str)?;
                 match dtype {
                     Some(DataType::Image(Some(existing_mode))) => {
                         if existing_mode != mode {
