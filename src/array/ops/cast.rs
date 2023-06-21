@@ -334,6 +334,8 @@ impl DurationArray {
             DataType::Duration(..) => arrow_logical_cast(self, dtype),
             DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
+            #[cfg(feature = "python")]
+            DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => arrow_cast(&self.physical, dtype),
         }
     }
