@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    datatypes::{DaftLogicalType, DateType, Field},
+    datatypes::{BooleanArray, DaftLogicalType, DateType, Field},
     error::DaftResult,
 };
 
@@ -90,6 +90,11 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
         let physicals: Vec<_> = arrays.iter().map(|a| &a.physical).collect();
         let concatd = DataArray::<L::PhysicalType>::concat(physicals.as_slice())?;
         Ok(Self::new(arrays.first().unwrap().field.clone(), concatd))
+    }
+
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let new_array = self.physical.filter(mask)?;
+        Ok(Self::new(self.field.clone(), new_array))
     }
 }
 

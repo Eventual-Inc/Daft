@@ -1,12 +1,6 @@
 use crate::{
     array::DataArray,
-    datatypes::{
-        logical::{
-            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
-            TimestampArray,
-        },
-        BooleanArray, DaftArrowBackedType,
-    },
+    datatypes::{BooleanArray, DaftArrowBackedType},
     error::DaftResult,
 };
 
@@ -75,21 +69,3 @@ impl crate::datatypes::PythonArray {
         DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
     }
 }
-
-macro_rules! impl_logical_array_filter {
-    ($logicalarray:ident) => {
-        impl $logicalarray {
-            pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-                let new_array = self.physical.filter(mask)?;
-                Ok(Self::new(self.field.clone(), new_array))
-            }
-        }
-    };
-}
-
-impl_logical_array_filter!(DateArray);
-impl_logical_array_filter!(DurationArray);
-impl_logical_array_filter!(TimestampArray);
-impl_logical_array_filter!(EmbeddingArray);
-impl_logical_array_filter!(ImageArray);
-impl_logical_array_filter!(FixedShapeImageArray);
