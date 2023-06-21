@@ -200,7 +200,6 @@ def test_image_pil_inference_mixed():
         np.ones(24, dtype=np.uint8).reshape((3, 4, 2)) * 10,  # LA
         None,
     ]
-    print([arr.shape if arr is not None else None for arr in arrs])
     imgs = [
         Image.fromarray(arr, mode=NUM_CHANNELS_TO_MODE[arr.shape[-1] if arr.ndim == 3 else 1])
         if arr is not None
