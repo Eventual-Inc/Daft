@@ -12,6 +12,7 @@ from typing import (
     Any,
     Dict,
     Iterable,
+    Iterator,
     List,
     Optional,
     Set,
@@ -38,6 +39,7 @@ from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
     from ray.data.dataset import Dataset as RayDataset
+    from ray import ObjectRef as RayObjectRef
     import pandas as pd
     import pyarrow as pa
     import dask
@@ -175,6 +177,53 @@ class DataFrame:
         )
 
         return DataFrameDisplay(preview, self.schema(), num_rows=n)
+
+    @DataframePublicAPI
+    def __iter__(self) -> Iterator[Dict[str, Any]]:
+        """Return an iterator of rows for this dataframe.
+
+        Each row will be a pydict of the form { "key" : value }.
+        """
+
+        if self._result is not None:
+            # If the dataframe has already finished executing,
+            # use the precomputed results.
+            pydict = self.to_pydict()
+            for i in range(len(self)):
+                row = {key: value[i] for (key, value) in pydict.items()}
+                yield row
+
+        else:
+            # Execute the dataframe in a streaming fashion.
+            context = get_context()
+            partitions_iter = context.runner().run_iter_tables(self._plan)
+
+            # Iterate through partitions.
+            for partition in partitions_iter:
+                pydict = partition.to_pydict()
+
+                # Yield invidiual rows from the partition.
+                for i in range(len(partition)):
+                    row = {key: value[i] for (key, value) in pydict.items()}
+                    yield row
+
+    @DataframePublicAPI
+    def iter_partitions(self) -> Iterator[Union[Table, "RayObjectRef"]]:
+        """Begin executing this dataframe and return an iterator over the partitions.
+
+        Each partition will be returned as a daft.Table object (if using Python runner backend)
+        or a ray ObjectRef (if using Ray runner backend).
+        """
+        if self._result is not None:
+            # If the dataframe has already finished executing,
+            # use the precomputed results.
+            yield from self._result.values()
+
+        else:
+            # Execute the dataframe in a streaming fashion.
+            context = get_context()
+            partitions_iter = context.runner().run_iter(self._plan)
+            yield from partitions_iter
 
     @DataframePublicAPI
     def __repr__(self) -> str:

@@ -605,6 +605,10 @@ class RayRunner(Runner[ray.ObjectRef]):
     def run_iter(self, plan: logical_plan.LogicalPlan) -> Iterator[ray.ObjectRef]:
         raise NotImplementedError()
 
+    def run_iter_tables(self, plan: logical_plan.LogicalPlan) -> Iterator[Table]:
+        for ref in self.run_iter(plan):
+            yield ray.get(ref)
+
     def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
         result_pset = RayPartitionSet({})
 

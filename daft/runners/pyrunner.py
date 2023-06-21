@@ -200,6 +200,9 @@ class PyRunner(Runner[Table]):
             partitions_gen = self._physical_plan_to_partitions(plan)
             yield from partitions_gen
 
+    def run_iter_tables(self, plan: logical_plan.LogicalPlan) -> Iterator[Table]:
+        return self.run_iter(plan)
+
     def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> Iterator[Table]:
         inflight_tasks: dict[str, PartitionTask] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()

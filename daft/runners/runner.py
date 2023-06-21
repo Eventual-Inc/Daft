@@ -10,6 +10,7 @@ from daft.runners.partitioning import (
     PartitionSetCache,
 )
 from daft.runners.runner_io import RunnerIO
+from daft.table import Table
 
 PartitionT = TypeVar("PartitionT")
 
@@ -35,6 +36,11 @@ class Runner(Generic[PartitionT]):
     @abstractmethod
     def run_iter(self, plan: LogicalPlan) -> Iterator[PartitionT]:
         """Similar to run(), but yield the individual partitions as they are completed."""
+        ...
+
+    @abstractmethod
+    def run_iter_tables(self, plan: LogicalPlan) -> Iterator[Table]:
+        """Similar to run_iter(), but always dereference and yield Table objects."""
         ...
 
     def optimize(self, plan: LogicalPlan) -> LogicalPlan:
