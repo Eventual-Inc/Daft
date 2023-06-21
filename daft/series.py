@@ -97,7 +97,7 @@ class Series:
             raise ValueError(f"pyobj: expected either 'allow', 'disallow', or 'force', but got {pyobj})")
 
         if pyobj == "force":
-            pys = PySeries.from_pylist(name, data)
+            pys = PySeries.from_pylist(name, data, pyobj=pyobj)
             return Series._from_pyseries(pys)
 
         try:

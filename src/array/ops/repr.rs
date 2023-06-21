@@ -216,14 +216,42 @@ impl_array_html_value!(ListArray);
 impl_array_html_value!(FixedSizeListArray);
 impl_array_html_value!(StructArray);
 impl_array_html_value!(ExtensionArray);
-
-#[cfg(feature = "python")]
-impl_array_html_value!(crate::datatypes::PythonArray);
-
 impl_array_html_value!(DateArray);
 impl_array_html_value!(DurationArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
+
+#[cfg(feature = "python")]
+impl crate::datatypes::PythonArray {
+    pub fn html_value(&self, idx: usize) -> String {
+        use pyo3::prelude::*;
+
+        let val = self.get(idx);
+
+        let custom_viz_hook_result: Option<String> = Python::with_gil(|py| {
+            // Find visualization hooks for this object's class
+            let pyany = val.into_ref(py);
+            let get_viz_hook = py
+                .import("daft.viz.html_viz_hooks")?
+                .getattr("get_viz_hook")?;
+            let hook = get_viz_hook.call1((pyany,))?;
+
+            if hook.is_none() {
+                Ok(None)
+            } else {
+                hook.call1((pyany,))?.extract()
+            }
+        })
+        .unwrap();
+
+        match custom_viz_hook_result {
+            None => html_escape::encode_text(&self.str_value(idx).unwrap())
+                .into_owned()
+                .replace('\n', "<br />"),
+            Some(result) => result,
+        }
+    }
+}
 
 impl<T> DataArray<T>
 where

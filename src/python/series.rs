@@ -31,19 +31,22 @@ impl PySeries {
 
     // This ingests a Python list[object] directly into a Rust PythonArray.
     #[staticmethod]
-    pub fn from_pylist(name: &str, pylist: &PyAny) -> PyResult<Self> {
+    pub fn from_pylist(name: &str, pylist: &PyAny, pyobj: &str) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
         let py = pylist.py();
-        let dtype = infer_daft_dtype_for_sequence(&vec_pyobj, py)?;
+
+        let dtype = match pyobj {
+            "force" => DataType::Python,
+            "allow" => infer_daft_dtype_for_sequence(&vec_pyobj, py)?.unwrap_or(DataType::Python),
+            "disallow" => panic!("Cannot create a Series from a pylist and being strict about only using Arrow types by setting pyobj=disallow"),
+            _ => panic!("Unsupported pyobj behavior when creating Series from pylist: {}", pyobj)
+        };
         let arrow_array: Box<dyn arrow2::array::Array> =
             Box::new(PseudoArrowArray::<PyObject>::from_pyobj_vec(vec_pyobj));
         let field = Field::new(name, DataType::Python);
 
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
-        let series = match dtype {
-            Some(dtype) => data_array.cast(&dtype)?,
-            None => data_array.into_series(),
-        };
+        let series = data_array.cast(&dtype)?;
         Ok(series.into())
     }
 
