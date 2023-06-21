@@ -15,7 +15,7 @@ impl FunctionEvaluator for YearEvaluator {
         "year"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
                 Ok(field) if field.dtype.is_temporal() => {

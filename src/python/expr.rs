@@ -341,6 +341,27 @@ impl PyExpr {
         use dsl::functions::list::join;
         Ok(join(&self.expr, &delimiter.expr).into())
     }
+
+    pub fn url_download(
+        &self,
+        max_connections: i64,
+        raise_error_on_failure: bool,
+        multi_thread: bool,
+    ) -> PyResult<Self> {
+        if max_connections <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "max_connections must be positive and non_zero: {max_connections}"
+            )));
+        }
+        use dsl::functions::uri::download;
+        Ok(download(
+            &self.expr,
+            max_connections as usize,
+            raise_error_on_failure,
+            multi_thread,
+        )
+        .into())
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
