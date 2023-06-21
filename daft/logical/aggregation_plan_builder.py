@@ -136,9 +136,8 @@ class AggregationPlanBuilder:
         2. Shuffle
         3. Aggregate using global_op on the intermediate column to produce result column
         """
-        intermediate_colname = f"{result_colname}:_local_{local_op}"
-        self._preshuffle_aggs[intermediate_colname] = (expr, local_op)
-        self._postshuffle_aggs[result_colname] = (col(intermediate_colname), global_op)
+        self._preshuffle_aggs[result_colname] = (expr, local_op)
+        self._postshuffle_aggs[result_colname] = (col(result_colname), global_op)
         self._final_projection[result_colname] = col(result_colname)
 
     def add_sum(self, result_colname: ColName, expr: Expression) -> AggregationPlanBuilder:
