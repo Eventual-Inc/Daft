@@ -420,7 +420,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
     def download(
         self,
         max_connections: int = 32,
-        on_error: Literal["raise"] | Literal["null"] = "null",
+        on_error: Literal["raise"] | Literal["null"] = "raise",
         fs: fsspec.AbstractFileSystem | None = None,
         use_native_downloader: bool = False,
     ) -> Expression:
