@@ -96,7 +96,7 @@ impl ObjectSource for S3LikeSource {
             }),
         }?;
         let key = parsed.path();
-        let object = if let Some(key) = key.strip_prefix("/") {
+        let object = if let Some(key) = key.strip_prefix('/') {
             self.client
                 .get_object()
                 .bucket(bucket)
