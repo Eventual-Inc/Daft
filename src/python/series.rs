@@ -4,7 +4,7 @@ use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyLi
 
 use crate::{
     array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
-    datatypes::{DataType, Field, ImageFormat, PythonType, UInt64Type},
+    datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType, UInt64Type},
     ffi,
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
@@ -33,12 +33,18 @@ impl PySeries {
     #[staticmethod]
     pub fn from_pylist(name: &str, pylist: &PyAny) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
+        let py = pylist.py();
+        let dtype = infer_daft_dtype_for_sequence(&vec_pyobj, py)?;
         let arrow_array: Box<dyn arrow2::array::Array> =
             Box::new(PseudoArrowArray::<PyObject>::from_pyobj_vec(vec_pyobj));
         let field = Field::new(name, DataType::Python);
 
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
-        Ok(data_array.into_series().into())
+        let series = match dtype {
+            Some(dtype) => data_array.cast(&dtype)?,
+            None => data_array.into_series(),
+        };
+        Ok(series.into())
     }
 
     // This is for PythonArrays only,
@@ -311,4 +317,50 @@ impl From<PySeries> for series::Series {
     fn from(item: PySeries) -> Self {
         item.series
     }
+}
+
+fn infer_daft_dtype_for_sequence(
+    vec_pyobj: &[PyObject],
+    py: pyo3::Python,
+) -> PyResult<Option<DataType>> {
+    let py_pil_image_type = py
+        .import(pyo3::intern!(py, "PIL.Image"))
+        .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
+    let mut dtype: Option<DataType> = None;
+    for obj in vec_pyobj.iter() {
+        let obj = obj.as_ref(py);
+        if let Ok(pil_image_type) = py_pil_image_type {
+            if obj.is_instance(pil_image_type)? {
+                let mode_str = obj
+                    .getattr(pyo3::intern!(py, "mode"))?
+                    .extract::<String>()?;
+                let mode = ImageMode::from_pil_mode_str(&mode_str)?;
+                match dtype {
+                    Some(DataType::Image(Some(existing_mode))) => {
+                        if existing_mode != mode {
+                            // Mixed-mode case, set mode to None.
+                            dtype = Some(DataType::Image(None));
+                        }
+                    }
+                    None => {
+                        // Set to (currently) uniform mode image dtype.
+                        dtype = Some(DataType::Image(Some(mode)));
+                    }
+                    // No-op, since dtype is already for mixed-mode images.
+                    Some(DataType::Image(None)) => {}
+                    _ => {
+                        // Images mixed with non-images; short-circuit since union dtypes are not (yet) supported.
+                        dtype = None;
+                        break;
+                    }
+                }
+            }
+        } else if !obj.is_none() {
+            // Non-image types; short-circuit since only image types are supported and union dtypes are not (yet)
+            // supported.
+            dtype = None;
+            break;
+        }
+    }
+    Ok(dtype)
 }

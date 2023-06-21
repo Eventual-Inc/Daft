@@ -231,6 +231,7 @@ macro_rules! with_match_daft_logical_types {(
 
     match $key_type {
         Date => __with_ty__! { DateType },
+        Duration(..) => __with_ty__! { DurationType },
         Timestamp(..) => __with_ty__! { TimestampType },
         Embedding(..) => __with_ty__! { EmbeddingType },
         Image(..) => __with_ty__! { ImageType },

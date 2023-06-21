@@ -15,14 +15,16 @@ impl FunctionEvaluator for EncodeEvaluator {
         "encode"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;
                 match field.dtype {
-                    DataType::Image(..) => Ok(Field::new(field.name, DataType::Binary)),
+                    DataType::Image(..) | DataType::FixedShapeImage(..) => {
+                        Ok(Field::new(field.name, DataType::Binary))
+                    }
                     _ => Err(DaftError::TypeError(format!(
-                        "ImageEncode can only encode ImageArrays, got {}",
+                        "ImageEncode can only encode ImageArrays and FixedShapeImageArrays, got {}",
                         field
                     ))),
                 }

@@ -168,6 +168,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn duration(timeunit: PyTimeUnit) -> PyResult<Self> {
+        Ok(DataType::Duration(timeunit.timeunit).into())
+    }
+
+    #[staticmethod]
     pub fn list(name: &str, data_type: Self) -> PyResult<Self> {
         Ok(DataType::List(Box::new(Field::new(name, data_type.dtype))).into())
     }
@@ -245,22 +250,14 @@ impl PyDataType {
         height: Option<u32>,
         width: Option<u32>,
     ) -> PyResult<Self> {
-        // TODO(Clark): Make dtype optional instead of falling back to UInt8 here.
-        let dtype = mode.map_or(Box::new(DataType::UInt8), |m| Box::new(DataType::from(&m)));
-        if !dtype.is_numeric() {
-            panic!(
-                "The data type for an image must be numeric, but got: {}",
-                dtype
-            );
-        }
         match (height, width) {
             (Some(height), Some(width)) => {
                 let image_mode = mode.ok_or(PyValueError::new_err(
                     "Image mode must be provided if specifying an image size.",
                 ))?;
-                Ok(DataType::FixedShapeImage(dtype, image_mode, height, width).into())
+                Ok(DataType::FixedShapeImage(image_mode, height, width).into())
             }
-            (None, None) => Ok(DataType::Image(dtype, mode).into()),
+            (None, None) => Ok(DataType::Image(mode).into()),
             (_, _) => Err(PyValueError::new_err(format!("Height and width for image type must both be specified or both not specified, but got: height={:?}, width={:?}", height, width))),
         }
     }
@@ -268,6 +265,10 @@ impl PyDataType {
     #[staticmethod]
     pub fn python() -> PyResult<Self> {
         Ok(DataType::Python.into())
+    }
+
+    pub fn is_logical(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_logical())
     }
 
     pub fn is_equal(&self, other: &PyAny) -> PyResult<bool> {

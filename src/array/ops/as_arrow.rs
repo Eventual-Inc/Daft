@@ -4,7 +4,10 @@ use arrow2::array;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray},
+        logical::{
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
+            TimestampArray,
+        },
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, StructArray,
         Utf8Array,
     },
@@ -34,111 +37,41 @@ where
     }
 }
 
-impl AsArrow for Utf8Array {
-    type Output = array::Utf8Array<i64>;
-
-    // For DataArray<Utf8Type>, retrieve the underlying Arrow2 Utf8Array.
-    fn as_arrow(&self) -> &Self::Output {
-        self.data().as_any().downcast_ref().unwrap()
-    }
+macro_rules! impl_asarrow_dataarray {
+    ($da:ident, $output:ty) => {
+        impl AsArrow for $da {
+            type Output = $output;
+            fn as_arrow(&self) -> &Self::Output {
+                self.data().as_any().downcast_ref().unwrap()
+            }
+        }
+    };
 }
 
-impl AsArrow for BooleanArray {
-    type Output = array::BooleanArray;
-
-    // For DataArray<BooleanType>, retrieve the underlying Arrow2 BooleanArray.
-    fn as_arrow(&self) -> &Self::Output {
-        self.data().as_any().downcast_ref().unwrap()
-    }
+macro_rules! impl_asarrow_logicalarray {
+    ($da:ident, $output:ty) => {
+        impl AsArrow for $da {
+            type Output = $output;
+            fn as_arrow(&self) -> &Self::Output {
+                self.physical.data().as_any().downcast_ref().unwrap()
+            }
+        }
+    };
 }
 
-impl AsArrow for BinaryArray {
-    type Output = array::BinaryArray<i64>;
-
-    // For DataArray<BinaryType>, retrieve the underlying Arrow2 BinaryArray.
-    fn as_arrow(&self) -> &Self::Output {
-        self.data().as_any().downcast_ref().unwrap()
-    }
-}
-
-impl AsArrow for DateArray {
-    type Output = array::PrimitiveArray<i32>;
-
-    // For LogicalArray<DateType>, retrieve the underlying Arrow2 i32 array.
-    fn as_arrow(&self) -> &Self::Output {
-        self.physical.data().as_any().downcast_ref().unwrap()
-    }
-}
-
-impl AsArrow for TimestampArray {
-    type Output = array::PrimitiveArray<i64>;
-
-    // For LogicalArray<TimestampType>, retrieve the underlying Arrow2 i64 array.
-    fn as_arrow(&self) -> &Self::Output {
-        self.physical.data().as_any().downcast_ref().unwrap()
-    }
-}
-
-impl AsArrow for ListArray {
-    type Output = array::ListArray<i64>;
-
-    // For DataArray<ListType>, retrieve the underlying Arrow2 ListArray.
-    fn as_arrow(&self) -> &Self::Output {
-        self.data().as_any().downcast_ref().unwrap()
-    }
-}
-
-impl AsArrow for FixedSizeListArray {
-    type Output = array::FixedSizeListArray;
-
-    // For DataArray<DateType>, retrieve the underlying Arrow2 i32 array.
-    fn as_arrow(&self) -> &Self::Output {
-        self.data().as_any().downcast_ref().unwrap()
-    }
-}
-
-impl AsArrow for StructArray {
-    type Output = array::StructArray;
-
-    // For DataArray<StructType>, retrieve the underlying Arrow2 StructArray.
-    fn as_arrow(&self) -> &Self::Output {
-        self.data().as_any().downcast_ref().unwrap()
-    }
-}
+impl_asarrow_dataarray!(Utf8Array, array::Utf8Array<i64>);
+impl_asarrow_dataarray!(BooleanArray, array::BooleanArray);
+impl_asarrow_dataarray!(BinaryArray, array::BinaryArray<i64>);
+impl_asarrow_dataarray!(ListArray, array::ListArray<i64>);
+impl_asarrow_dataarray!(FixedSizeListArray, array::FixedSizeListArray);
+impl_asarrow_dataarray!(StructArray, array::StructArray);
 
 #[cfg(feature = "python")]
-impl AsArrow for PythonArray {
-    type Output = PseudoArrowArray<pyo3::PyObject>;
+impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<pyo3::PyObject>);
 
-    // For DataArray<PythonType>, retrieve the underlying PseudoArrowArray<PyObject>.
-    fn as_arrow(&self) -> &Self::Output {
-        self.data().as_any().downcast_ref().unwrap()
-    }
-}
-
-impl AsArrow for EmbeddingArray {
-    type Output = array::FixedSizeListArray;
-
-    // For LogicalArray<EmbeddingType>, retrieve the underlying Arrow2 FixedSizeListArray.
-    fn as_arrow(&self) -> &Self::Output {
-        self.physical.data().as_any().downcast_ref().unwrap()
-    }
-}
-
-impl AsArrow for ImageArray {
-    type Output = array::StructArray;
-
-    // For LogicalArray<ImageType>, retrieve the underlying Arrow2 StructArray.
-    fn as_arrow(&self) -> &Self::Output {
-        self.physical.data().as_any().downcast_ref().unwrap()
-    }
-}
-
-impl AsArrow for FixedShapeImageArray {
-    type Output = array::FixedSizeListArray;
-
-    // For LogicalArray<FixedShapeImageType>, retrieve the underlying Arrow2 FixedSizeListArray.
-    fn as_arrow(&self) -> &Self::Output {
-        self.physical.data().as_any().downcast_ref().unwrap()
-    }
-}
+impl_asarrow_logicalarray!(DateArray, array::PrimitiveArray<i32>);
+impl_asarrow_logicalarray!(DurationArray, array::PrimitiveArray<i64>);
+impl_asarrow_logicalarray!(TimestampArray, array::PrimitiveArray<i64>);
+impl_asarrow_logicalarray!(EmbeddingArray, array::FixedSizeListArray);
+impl_asarrow_logicalarray!(ImageArray, array::StructArray);
+impl_asarrow_logicalarray!(FixedShapeImageArray, array::FixedSizeListArray);

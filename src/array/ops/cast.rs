@@ -1,12 +1,12 @@
-use arrow2::compute::{
-    self,
-    cast::{can_cast_types, cast, CastOptions},
-};
-
+use super::as_arrow::AsArrow;
 use crate::{
     array::DataArray,
-    datatypes::logical::{
-        DateArray, EmbeddingArray, FixedShapeImageArray, ImageArray, LogicalArray, TimestampArray,
+    datatypes::{
+        logical::{
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
+            LogicalArray, TimestampArray,
+        },
+        DaftLogicalType,
     },
     datatypes::{DaftArrowBackedType, DataType, Field, Utf8Array},
     error::{DaftError, DaftResult},
@@ -14,38 +14,102 @@ use crate::{
     with_match_arrow_daft_types, with_match_daft_logical_types,
 };
 use crate::{datatypes::TimeUnit, series::IntoSeries};
-
-#[cfg(feature = "python")]
-use crate::array::{ops::image::ImageArrayVecs, pseudo_arrow::PseudoArrowArray};
-#[cfg(feature = "python")]
-use crate::datatypes::{FixedSizeListArray, ImageMode, ListArray, PythonArray};
-#[cfg(feature = "python")]
-use crate::ffi;
-#[cfg(feature = "python")]
-use crate::with_match_numeric_daft_types;
-#[cfg(feature = "python")]
-use arrow2::array::Array;
-#[cfg(feature = "python")]
-use log;
-#[cfg(feature = "python")]
-use ndarray::IntoDimension;
-#[cfg(feature = "python")]
-use num_traits::{NumCast, ToPrimitive};
-#[cfg(feature = "python")]
-use numpy::{PyArray3, PyReadonlyArrayDyn};
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
-#[cfg(feature = "python")]
-use std::iter;
-#[cfg(feature = "python")]
-use std::ops::Deref;
-
-use super::as_arrow::AsArrow;
+use arrow2::compute::{
+    self,
+    cast::{can_cast_types, cast, CastOptions},
+};
 use std::sync::Arc;
+
+#[cfg(feature = "python")]
+use {
+    crate::array::{ops::image::ImageArrayVecs, pseudo_arrow::PseudoArrowArray},
+    crate::datatypes::{FixedSizeListArray, ImageMode, ListArray, PythonArray},
+    crate::ffi,
+    crate::with_match_numeric_daft_types,
+    arrow2::array::Array,
+    log,
+    ndarray::IntoDimension,
+    num_traits::{NumCast, ToPrimitive},
+    numpy::{PyArray3, PyReadonlyArrayDyn},
+    pyo3::prelude::*,
+    std::iter,
+    std::ops::Deref,
+};
+
+fn arrow_logical_cast<T>(to_cast: &LogicalArray<T>, dtype: &DataType) -> DaftResult<Series>
+where
+    T: DaftLogicalType,
+{
+    // Cast from LogicalArray to the target DataType
+    // using Arrow's casting mechanisms.
+
+    // Note that Arrow Logical->Logical direct casts (what this method exposes)
+    // have different behaviour than Arrow Logical->Physical->Logical casts.
+
+    let source_dtype = to_cast.logical_type();
+    let source_arrow_type = source_dtype.to_arrow()?;
+    let target_arrow_type = dtype.to_arrow()?;
+
+    // Get the result of the Arrow Logical->Target cast.
+    let result_arrow_array = {
+        // First, get corresponding Arrow LogicalArray of source DataArray
+        let source_arrow_array = cast(
+            to_cast.physical.data(),
+            &source_arrow_type,
+            CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )?;
+
+        // Then, cast source Arrow LogicalArray to target Arrow LogicalArray.
+        cast(
+            source_arrow_array.as_ref(),
+            &target_arrow_type,
+            CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )?
+    };
+
+    // If the target type is also Logical, get the Arrow Physical.
+    let target_physical_type = dtype.to_physical().to_arrow()?;
+    let result_arrow_physical_array = {
+        if target_physical_type == target_arrow_type {
+            result_arrow_array
+        } else {
+            cast(
+                result_arrow_array.as_ref(),
+                &target_physical_type,
+                CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )?
+        }
+    };
+
+    let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
+
+    if dtype.is_logical() {
+        with_match_daft_logical_types!(dtype, |$T| {
+            let physical = DataArray::try_from((Field::new(to_cast.name(), dtype.to_physical()), result_arrow_physical_array))?;
+            return Ok(LogicalArray::<$T>::new(new_field.clone(), physical).into_series());
+        })
+    }
+    with_match_arrow_daft_types!(dtype, |$T| {
+        Ok(DataArray::<$T>::try_from((new_field.clone(), result_arrow_physical_array))?.into_series())
+    })
+}
+
 fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
 where
     T: DaftArrowBackedType,
 {
+    // Cast from DataArray to the target DataType
+    // by using Arrow's casting mechanisms.
+
     if !dtype.is_arrow() || !to_cast.data_type().is_arrow() {
         return Err(DaftError::TypeError(format!(
             "Can not cast {:?} to type: {:?}: not convertible to Arrow",
@@ -172,6 +236,8 @@ impl DateArray {
             }
             DataType::Float32 => self.cast(&DataType::Int32)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int32)?.cast(&DataType::Float64),
+            #[cfg(feature = "python")]
+            DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => arrow_cast(&self.physical, dtype),
         }
     }
@@ -219,8 +285,9 @@ pub(super) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz)
 impl TimestampArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
+            DataType::Timestamp(..) => arrow_logical_cast(self, dtype),
             DataType::Utf8 => {
-                let DataType::Timestamp(unit, timezone) = &self.field.dtype else { panic!("Wrong dtype for TimestampArray: {}", self.field.dtype) };
+                let DataType::Timestamp(unit, timezone) = self.logical_type() else { panic!("Wrong dtype for TimestampArray: {}", self.logical_type()) };
 
                 let str_array: arrow2::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
                     || {
@@ -254,6 +321,21 @@ impl TimestampArray {
             }
             DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
+            #[cfg(feature = "python")]
+            DataType::Python => cast_logical_to_python_array(self, dtype),
+            _ => arrow_cast(&self.physical, dtype),
+        }
+    }
+}
+
+impl DurationArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Duration(..) => arrow_logical_cast(self, dtype),
+            DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
+            DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
+            #[cfg(feature = "python")]
+            DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => arrow_cast(&self.physical, dtype),
         }
     }
@@ -429,7 +511,7 @@ fn extract_python_to_vec<
                 || supports_array_interface_protocol
                 || supports_array_protocol
             {
-                // Path if object is supports buffer/array protocols.
+                // Path if object supports buffer/array protocols.
                 let np_as_array_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?;
                 let pyarray = np_as_array_fn.call1((object,))?;
                 let num_values = append_values_from_numpy(
@@ -775,17 +857,12 @@ impl PythonArray {
                 );
                 Ok(embedding_array.into_series())
             }
-            DataType::Image(inner_dtype, mode) => {
-                if !inner_dtype.is_numeric() {
-                    panic!(
-                        "Image logical type should only have numeric physical dtype, but got {}",
-                        inner_dtype
-                    );
-                }
-                with_match_numeric_daft_types!(**inner_dtype, |$T| {
+            DataType::Image(mode) => {
+                let inner_dtype = mode.map_or(DataType::UInt8, |m| m.get_dtype());
+                with_match_numeric_daft_types!(inner_dtype, |$T| {
                     type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_image_array::<Tgt>(py, self, dtype, inner_dtype, *mode)?;
+                        let result = extract_python_like_to_image_array::<Tgt>(py, self, dtype, &inner_dtype, *mode)?;
                         Ok(result.into_series())
                     })
                 })
@@ -807,7 +884,35 @@ impl PythonArray {
 
 impl EmbeddingArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        self.physical.cast(dtype)
+        match dtype {
+            #[cfg(feature = "python")]
+            DataType::Python => Python::with_gil(|py| {
+                let DataType::Embedding(_, size) = self.logical_type() else { panic!("EmbeddingArray should have an Embedding dtype.") };
+                let shape = (self.len(), *size);
+                let pyarrow = py.import("pyarrow")?;
+                // Only go through FFI layer once instead of for every embedding.
+                // We create an ndarray view on the entire embeddings array
+                // buffer sans the validity mask, and then create a subndarray view
+                // for each embedding ndarray in the PythonArray.
+                let py_array =
+                    ffi::to_py_array(self.as_arrow().values().with_validity(None), py, pyarrow)?
+                        .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
+                        .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?;
+                let ndarrays = py_array
+                    .as_ref(py)
+                    .iter()?
+                    .map(|a| a.unwrap().to_object(py))
+                    .collect::<Vec<PyObject>>();
+                let values_array =
+                    PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
+                Ok(PythonArray::new(
+                    Field::new(self.name(), dtype.clone()).into(),
+                    values_array.to_boxed(),
+                )?
+                .into_series())
+            }),
+            _ => self.physical.cast(dtype),
+        }
     }
 }
 
@@ -855,7 +960,7 @@ impl FixedShapeImageArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match (dtype, self.logical_type()) {
             #[cfg(feature = "python")]
-            (DataType::Python, DataType::FixedShapeImage(_, mode, height, width)) => {
+            (DataType::Python, DataType::FixedShapeImage(mode, height, width)) => {
                 pyo3::Python::with_gil(|py| {
                     let shape = (
                         self.len(),
@@ -896,4 +1001,28 @@ impl FixedShapeImageArray {
             (_, _) => self.physical.cast(dtype),
         }
     }
+}
+
+#[cfg(feature = "python")]
+fn cast_logical_to_python_array<T>(array: &LogicalArray<T>, dtype: &DataType) -> DaftResult<Series>
+where
+    T: DaftLogicalType,
+    LogicalArray<T>: AsArrow,
+    <LogicalArray<T> as AsArrow>::Output: arrow2::array::Array,
+{
+    Python::with_gil(|py| {
+        let arrow_dtype = array.logical_type().to_arrow()?;
+        let arrow_array = array.as_arrow().to_type(arrow_dtype).with_validity(None);
+        let pyarrow = py.import("pyarrow")?;
+        let py_array: Vec<PyObject> = ffi::to_py_array(arrow_array.to_boxed(), py, pyarrow)?
+            .call_method0(py, pyo3::intern!(py, "to_pylist"))?
+            .extract(py)?;
+        let values_array =
+            PseudoArrowArray::new(py_array.into(), array.as_arrow().validity().cloned());
+        Ok(PythonArray::new(
+            Field::new(array.name(), dtype.clone()).into(),
+            values_array.to_boxed(),
+        )?
+        .into_series())
+    })
 }

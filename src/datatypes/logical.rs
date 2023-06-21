@@ -1,11 +1,13 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    datatypes::{DaftLogicalType, DateType, Field},
+    datatypes::{BooleanArray, DaftLogicalType, DateType, Field},
     error::DaftResult,
 };
 
-use super::{DataArray, DataType, EmbeddingType, FixedShapeImageType, ImageType, TimestampType};
+use super::{
+    DataArray, DataType, DurationType, EmbeddingType, FixedShapeImageType, ImageType, TimestampType,
+};
 pub struct LogicalArray<L: DaftLogicalType> {
     pub field: Arc<Field>,
     pub physical: DataArray<L::PhysicalType>,
@@ -89,10 +91,21 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
         let concatd = DataArray::<L::PhysicalType>::concat(physicals.as_slice())?;
         Ok(Self::new(arrays.first().unwrap().field.clone(), concatd))
     }
+
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let new_array = self.physical.filter(mask)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
 }
 
 pub type DateArray = LogicalArray<DateType>;
+pub type DurationArray = LogicalArray<DurationType>;
 pub type EmbeddingArray = LogicalArray<EmbeddingType>;
 pub type ImageArray = LogicalArray<ImageType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type TimestampArray = LogicalArray<TimestampType>;
+
+pub trait DaftImageryType: DaftLogicalType {}
+
+impl DaftImageryType for ImageType {}
+impl DaftImageryType for FixedShapeImageType {}

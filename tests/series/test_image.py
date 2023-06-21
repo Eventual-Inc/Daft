@@ -38,6 +38,13 @@ MODE_TO_NUM_CHANNELS = {
     "RGBA32F": 4,
 }
 
+NUM_CHANNELS_TO_MODE = {
+    1: "L",
+    2: "LA",
+    3: "RGB",
+    4: "RGBA",
+}
+
 MODE_TO_OPENCV_COLOR_CONVERSION = {
     "RGB": cv2.COLOR_RGB2BGR,
     "RGBA": cv2.COLOR_RGBA2BGRA,
@@ -89,11 +96,121 @@ def test_image_round_trip(give_mode):
     from_arrow = Series.from_arrow(t.to_arrow())
 
     assert from_arrow.datatype() == t.datatype()
-    assert from_arrow.to_pylist() == t.to_pylist()
+    np.testing.assert_equal(from_arrow.to_pylist(), t.to_pylist())
 
     t_copy = copy.deepcopy(t)
     assert t_copy.datatype() == t.datatype()
-    assert t_copy.to_pylist() == t.to_pylist()
+    np.testing.assert_equal(t_copy.to_pylist(), t.to_pylist())
+
+
+def test_fixed_shape_image_round_trip():
+    height = 2
+    width = 2
+    shape = (height, width, 3)
+    data = [
+        np.arange(12, dtype=np.uint8).reshape(shape),
+        np.arange(12, 24, dtype=np.uint8).reshape(shape),
+        None,
+    ]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image("RGB", height, width)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+
+    # Test pylist roundtrip.
+    back_dtype = DataType.python()
+    back = t.cast(back_dtype)
+
+    assert back.datatype() == back_dtype
+
+    out = back.to_pylist()
+    np.testing.assert_equal(out, data)
+
+    # Test Arrow roundtrip.
+    arrow_arr = t.to_arrow()
+
+    assert isinstance(arrow_arr.type, DaftExtension)
+    from_arrow = Series.from_arrow(t.to_arrow())
+
+    assert from_arrow.datatype() == t.datatype()
+    np.testing.assert_equal(from_arrow.to_pylist(), t.to_pylist())
+
+    t_copy = copy.deepcopy(t)
+    assert t_copy.datatype() == t.datatype()
+    np.testing.assert_equal(t_copy.to_pylist(), t.to_pylist())
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "L",
+        "LA",
+        "RGB",
+        "RGBA",
+    ],
+)
+@pytest.mark.parametrize("fixed_shape", [True, False])
+def test_image_pil_inference(fixed_shape, mode):
+    np_dtype = MODE_TO_NP_DTYPE[mode]
+    num_channels = MODE_TO_NUM_CHANNELS[mode]
+    if fixed_shape:
+        height = 4
+        width = 4
+        shape = (height, width)
+        if num_channels > 1:
+            shape += (num_channels,)
+        arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+        arrs = [arr, arr, None]
+    else:
+        shape1 = (2, 2)
+        shape2 = (3, 3)
+        if num_channels > 1:
+            shape1 += (num_channels,)
+            shape2 += (num_channels,)
+        arr1 = np.arange(np.prod(shape1)).reshape(shape1).astype(np_dtype)
+        arr2 = np.arange(np.prod(shape1), np.prod(shape1) + np.prod(shape2)).reshape(shape2).astype(np_dtype)
+        arrs = [arr1, arr2, None]
+    if mode in ("LA", "RGBA"):
+        for arr in arrs:
+            if arr is not None:
+                arr[..., -1] = 255
+    imgs = [Image.fromarray(arr, mode=mode) if arr is not None else None for arr in arrs]
+    s = Series.from_pylist(imgs, pyobj="force")
+    assert s.datatype() == DataType.image(mode)
+    out = s.to_pylist()
+    if num_channels == 1:
+        arrs = [np.expand_dims(arr, -1) for arr in arrs]
+    np.testing.assert_equal(out, arrs)
+
+
+def test_image_pil_inference_mixed():
+    rgba = np.ones((2, 2, 4), dtype=np.uint8)
+    rgba[..., 1] = 2
+    rgba[..., 2] = 3
+    rgba[..., 3] = 4
+
+    arrs = [
+        rgba[..., :3],  # RGB
+        rgba,  # RGBA
+        np.arange(12, dtype=np.uint8).reshape((1, 4, 3)),  # RGB
+        np.arange(12, dtype=np.uint8).reshape((3, 4)) * 10,  # L
+        np.ones(24, dtype=np.uint8).reshape((3, 4, 2)) * 10,  # LA
+        None,
+    ]
+    imgs = [
+        Image.fromarray(arr, mode=NUM_CHANNELS_TO_MODE[arr.shape[-1] if arr.ndim == 3 else 1])
+        if arr is not None
+        else None
+        for arr in arrs
+    ]
+    s = Series.from_pylist(imgs, pyobj="force")
+    assert s.datatype() == DataType.image()
+    out = s.to_pylist()
+    arrs[3] = np.expand_dims(arrs[3], axis=-1)
+    np.testing.assert_equal(out, arrs)
 
 
 @pytest.mark.parametrize(
@@ -117,23 +234,40 @@ def test_image_round_trip(give_mode):
         # "L16", "LA16", "RGB16", "RGBA16", "RGB32F", "RGBA32F"
     ],
 )
-def test_image_encode_pil(mode, file_format):
+@pytest.mark.parametrize("fixed_shape", [True, False])
+def test_image_encode_pil(fixed_shape, mode, file_format):
     np_dtype = MODE_TO_NP_DTYPE[mode]
     num_channels = MODE_TO_NUM_CHANNELS[mode]
-    shape = (4, 4)
-    if num_channels > 1:
-        shape += (num_channels,)
-    arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+    if fixed_shape:
+        height = 4
+        width = 4
+        dtype = DataType.image(mode, height, width)
+        shape = (height, width)
+        if num_channels > 1:
+            shape += (num_channels,)
+        arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+        arrs = [arr, arr, None]
+    else:
+        dtype = DataType.image()
+        shape1 = (2, 2)
+        shape2 = (3, 3)
+        if num_channels > 1:
+            shape1 += (num_channels,)
+            shape2 += (num_channels,)
+        arr1 = np.arange(np.prod(shape1)).reshape(shape1).astype(np_dtype)
+        arr2 = np.arange(np.prod(shape1), np.prod(shape1) + np.prod(shape2)).reshape(shape2).astype(np_dtype)
+        arrs = [arr1, arr2, None]
     if mode in ("LA", "RGBA"):
-        arr[..., -1] = 255
-    arrs = [arr, arr, arr]
+        for arr in arrs:
+            if arr is not None:
+                arr[..., -1] = 255
 
     s = Series.from_pylist(arrs)
-    t = s.cast(DataType.image(mode))
-    assert t.datatype() == DataType.image(mode)
+    t = s.cast(dtype)
+    assert t.datatype() == dtype
 
     u = t.image.encode(file_format.upper())
-    pil_imgs = [Image.open(io.BytesIO(bytes_)) for bytes_ in u.to_pylist()]
+    pil_imgs = [Image.open(io.BytesIO(bytes_)) if bytes_ is not None else None for bytes_ in u.to_pylist()]
 
     def pil_img_to_ndarray(img):
         if file_format == "gif":
@@ -145,10 +279,13 @@ def test_image_encode_pil(mode, file_format):
         else:
             return np.asarray(img)
 
-    pil_decoded_imgs = [pil_img_to_ndarray(img) for img in pil_imgs]
+    pil_decoded_imgs = [pil_img_to_ndarray(img) if img is not None else None for img in pil_imgs]
     if file_format == "jpeg":
         # Do lossy check; JPEG format is encoded at 0.75 quality.
-        np.testing.assert_allclose(pil_decoded_imgs, arrs, rtol=1, atol=4)
+        assert len(pil_decoded_imgs) == len(arrs)
+        assert pil_decoded_imgs[-1] == arrs[-1]
+        for pil_decoded_img, arr in zip(pil_decoded_imgs[:-1], arrs[:-1]):
+            np.testing.assert_allclose(pil_decoded_img, arr, rtol=1, atol=4)
     else:
         np.testing.assert_equal(pil_decoded_imgs, arrs)
 
@@ -210,26 +347,52 @@ def test_image_decode_pil(mode, file_format):
         # "L16", "LA16", "RGB16", "RGBA16", "RGB32F", "RGBA32F"
     ],
 )
-def test_image_encode_decode_pil_roundtrip(mode, file_format):
+@pytest.mark.parametrize("fixed_shape", [True, False])
+def test_image_encode_decode_pil_roundtrip(fixed_shape, mode, file_format):
     np_dtype = MODE_TO_NP_DTYPE[mode]
     num_channels = MODE_TO_NUM_CHANNELS[mode]
-    shape = (4, 4)
-    if num_channels > 1:
-        shape += (num_channels,)
-    arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
-    img = Image.fromarray(arr, mode=mode)
-    img_bytes = io.BytesIO()
-    img.save(img_bytes, file_format)
-    img_bytes = img_bytes.getvalue()
-    arrow_arr = pa.array([img_bytes, img_bytes, img_bytes], type=pa.binary())
+    if fixed_shape:
+        height = 4
+        width = 4
+        shape = (height, width)
+        if num_channels > 1:
+            shape += (num_channels,)
+        arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+        arrs = [arr, arr, None]
+    else:
+        shape1 = (2, 2)
+        shape2 = (3, 3)
+        if num_channels > 1:
+            shape1 += (num_channels,)
+            shape2 += (num_channels,)
+        arr1 = np.arange(np.prod(shape1)).reshape(shape1).astype(np_dtype)
+        arr2 = np.arange(np.prod(shape1), np.prod(shape1) + np.prod(shape2)).reshape(shape2).astype(np_dtype)
+        arrs = [arr1, arr2, None]
+    if mode in ("LA", "RGBA"):
+        for arr in arrs:
+            if arr is not None:
+                arr[..., -1] = 255
+    imgs_bytes = []
+    for arr in arrs:
+        if arr is not None:
+            img = Image.fromarray(arr, mode=mode)
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, file_format)
+            img_bytes = img_bytes.getvalue()
+        else:
+            img_bytes = None
+        imgs_bytes.append(img_bytes)
+    arrow_arr = pa.array(imgs_bytes, type=pa.binary())
     s = Series.from_arrow(arrow_arr)
     t = s.image.decode()
     # TODO(Clark): Infer type-leve mode if all images are the same mode.
     assert t.datatype() == DataType.image()
 
     u = t.image.encode(file_format.upper())
-    pil_decoded_imgs = [np.asarray(Image.open(io.BytesIO(bytes_))) for bytes_ in u.to_pylist()]
-    np.testing.assert_equal(pil_decoded_imgs, [arr, arr, arr])
+    pil_decoded_imgs = [
+        np.asarray(Image.open(io.BytesIO(bytes_))) if bytes_ is not None else None for bytes_ in u.to_pylist()
+    ]
+    np.testing.assert_equal(pil_decoded_imgs, arrs)
 
 
 @pytest.mark.parametrize(
@@ -397,32 +560,49 @@ def test_image_encode_decode_opencv_roundtrip(mode, file_format):
     np.testing.assert_equal(opencv_decoded_imgs, [arr, arr, arr])
 
 
-def test_image_resize():
-    first = np.ones((2, 2, 3), dtype=np.uint8)
-    first[..., 1] = 2
-    first[..., 2] = 3
+@pytest.mark.parametrize("mode", ["L", "LA", "RGB", "RGBA"])
+@pytest.mark.parametrize("fixed_shape", [True, False])
+def test_image_resize_same_mode(fixed_shape, mode):
+    np_dtype = MODE_TO_NP_DTYPE[mode]
+    num_channels = MODE_TO_NUM_CHANNELS[mode]
+    if fixed_shape:
+        height = 3
+        width = 4
+        dtype = DataType.image(mode, height, width)
+        shape = (height, width, num_channels)
+        arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+        arrs = [arr, arr, None]
+    else:
+        dtype = DataType.image(mode)
+        shape1 = (2, 3, num_channels)
+        shape2 = (3, 4, num_channels)
+        arr1 = np.arange(np.prod(shape1)).reshape(shape1).astype(np_dtype)
+        arr2 = np.arange(np.prod(shape1), np.prod(shape1) + np.prod(shape2)).reshape(shape2).astype(np_dtype)
+        arrs = [arr1, arr2, None]
 
-    second = np.arange(12, dtype=np.uint8).reshape((1, 4, 3))
-    data = [first, second, None]
-    s = Series.from_pylist(data, pyobj="force")
+    if mode in ("LA", "RGBA"):
+        for arr in arrs:
+            if arr is not None:
+                arr[..., -1] = 255
 
-    target_dtype = DataType.image("RGB")
-
-    t = s.cast(target_dtype)
-
-    assert t.datatype() == target_dtype
+    s = Series.from_pylist(arrs, pyobj="force")
+    t = s.cast(dtype)
+    assert t.datatype() == dtype
 
     resized = t.image.resize(5, 5)
-
-    assert resized.datatype() == target_dtype
-
+    resized_dtype = DataType.image(mode, 5, 5)
+    assert resized.datatype() == resized_dtype
     out = resized.cast(DataType.python()).to_pylist()
 
     def resize(arr):
         # Use opencv as a resizing baseline.
         return cv2.resize(arr, dsize=(5, 5), interpolation=cv2.INTER_LINEAR_EXACT)
 
-    np.testing.assert_equal(out, [resize(first), resize(second), None])
+    expected = [resize(arr) if arr is not None else None for arr in arrs]
+    if num_channels == 1:
+        expected = [np.expand_dims(arr, -1) for arr in expected]
+
+    np.testing.assert_equal(out, expected)
 
 
 def test_image_resize_mixed_modes():
@@ -491,11 +671,11 @@ def test_fixed_shape_image_roundtrip():
     from_arrow = Series.from_arrow(t.to_arrow())
 
     assert from_arrow.datatype() == t.datatype()
-    assert from_arrow.to_pylist() == t.to_pylist()
+    np.testing.assert_equal(from_arrow.to_pylist(), t.to_pylist())
 
     t_copy = copy.deepcopy(t)
     assert t_copy.datatype() == t.datatype()
-    assert t_copy.to_pylist() == t.to_pylist()
+    np.testing.assert_equal(t_copy.to_pylist(), t.to_pylist())
 
 
 def test_bad_cast_image():

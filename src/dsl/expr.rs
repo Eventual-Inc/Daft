@@ -248,7 +248,7 @@ impl Expr {
             }
             IsNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
-            Function { func, inputs } => func.to_field(inputs.as_slice(), schema),
+            Function { func, inputs } => func.to_field(inputs.as_slice(), schema, self),
             BinaryOp { op, left, right } => {
                 let left_field = left.to_field(schema)?;
                 let right_field = right.to_field(schema)?;

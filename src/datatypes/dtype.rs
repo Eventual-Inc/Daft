@@ -78,9 +78,9 @@ pub enum DataType {
     /// A logical type for embeddings.
     Embedding(Box<Field>, usize),
     /// A logical type for images with variable shapes.
-    Image(Box<DataType>, Option<ImageMode>),
+    Image(Option<ImageMode>),
     /// A logical type for images with the same size (height x width).
-    FixedShapeImage(Box<DataType>, ImageMode, u32, u32),
+    FixedShapeImage(ImageMode, u32, u32),
     Python,
     Unknown,
 }
@@ -182,18 +182,21 @@ impl DataType {
                 Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
                 *size,
             ),
-            Image(dtype, _) => Struct(vec![
+            Image(mode) => Struct(vec![
                 Field::new(
                     "data",
-                    List(Box::new(Field::new("data", dtype.to_physical()))),
+                    List(Box::new(Field::new(
+                        "data",
+                        mode.map_or(DataType::UInt8, |m| m.get_dtype()),
+                    ))),
                 ),
                 Field::new("channel", UInt16),
                 Field::new("height", UInt32),
                 Field::new("width", UInt32),
                 Field::new("mode", UInt8),
             ]),
-            FixedShapeImage(dtype, mode, height, width) => FixedSizeList(
-                Box::new(Field::new("data", dtype.to_physical())),
+            FixedShapeImage(mode, height, width) => FixedSizeList(
+                Box::new(Field::new("data", mode.get_dtype())),
                 usize::try_from(mode.num_channels() as u32 * height * width).unwrap(),
             ),
             _ => self.clone(),
@@ -285,6 +288,7 @@ impl DataType {
             self,
             DataType::Date
                 | DataType::Timestamp(..)
+                | DataType::Duration(..)
                 | DataType::Embedding(..)
                 | DataType::Image(..)
                 | DataType::FixedShapeImage(..)
@@ -416,15 +420,15 @@ impl Display for DataType {
             DataType::Embedding(inner, size) => {
                 write!(f, "Embedding[{}; {}]", inner.dtype, size)
             }
-            DataType::Image(dtype, mode) => {
-                write!(f, "Image[{}; {:?}]", dtype, mode)
-            }
-            DataType::FixedShapeImage(dtype, mode, height, width) => {
+            DataType::Image(mode) => {
                 write!(
                     f,
-                    "Image[{}; {:?}; {:?} x {:?}]",
-                    dtype, mode, height, width
+                    "Image[{}]",
+                    mode.map_or("MIXED".to_string(), |m| m.to_string())
                 )
+            }
+            DataType::FixedShapeImage(mode, height, width) => {
+                write!(f, "Image[{}; {} x {}]", mode, height, width)
             }
             _ => write!(f, "{self:?}"),
         }

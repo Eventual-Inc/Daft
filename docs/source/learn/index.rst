@@ -20,6 +20,8 @@ For a much more in-depth exploration of Daft and everything it offers:
 2. Check out our :doc:`tutorials` for Daft for various use-cases
 3. Refer to our API documentation: :doc:`../api_docs/index`
 
+Also check out our `Release Notes <https://github.com/Eventual-Inc/Daft/releases>`_, where you can learn about what's new in every week's Daft release!
+
 
 .. toctree::
     :maxdepth: 1
