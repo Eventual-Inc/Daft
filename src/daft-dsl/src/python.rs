@@ -20,7 +20,7 @@ pub fn col(name: &str) -> PyResult<PyExpr> {
 
 #[pyfunction]
 pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
-    if let Ok(true) = item.is_instance_of::<PyBool>() {
+    if item.is_instance_of::<PyBool>() {
         let val = item.extract::<bool>()?;
         Ok(crate::lit(val).into())
     } else if let Ok(int) = item.downcast::<PyInt>() {

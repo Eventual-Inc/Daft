@@ -272,7 +272,7 @@ impl PyDataType {
     }
 
     pub fn is_equal(&self, other: &PyAny) -> PyResult<bool> {
-        if other.is_instance_of::<PyDataType>()? {
+        if other.is_instance_of::<PyDataType>() {
             let other = other.extract::<PyDataType>()?;
             Ok(self.dtype == other.dtype)
         } else {

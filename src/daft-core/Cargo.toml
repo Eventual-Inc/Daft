@@ -31,7 +31,7 @@ version = "1.9.2"
 
 [dependencies.numpy]
 optional = true
-version = "0.18"
+version = "0.19"
 
 [dependencies.xxhash-rust]
 features = ["xxh3", "const_xxh3"]
