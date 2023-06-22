@@ -18,7 +18,7 @@ def test_iter_rows(materialized):
     if materialized:
         df = df.collect()
 
-    rows = [_ for _ in df]
+    rows = list(iter(df))
     assert rows == [{"a": x, "b": x + 100} for x in range(10)]
 
 
@@ -32,7 +32,12 @@ def test_iter_partitions(materialized):
     if materialized:
         df = df.collect()
 
-    parts = [_.to_pydict() for _ in df.iter_partitions()]
+    parts = list(df.iter_partitions())
+    if daft.context.get_context().runner_config.name == "ray":
+        import ray
+
+        parts = ray.get(parts)
+    parts = [_.to_pydict() for _ in parts]
 
     assert parts == [
         {"a": [0, 1], "b": [100, 101]},
@@ -49,8 +54,9 @@ def test_iter_exception():
 
     @daft.udf(return_dtype=daft.DataType.int64())
     def echo_or_trigger(s):
-        if max(s.to_pylist()) > 100:
-            raise MockException
+        trigger = max(s.to_pylist())
+        if trigger >= 199:
+            raise MockException(trigger)
         else:
             return s
 
@@ -70,16 +76,26 @@ def test_iter_partitions_exception():
 
     @daft.udf(return_dtype=daft.DataType.int64())
     def echo_or_trigger(s):
-        if max(s.to_pylist()) > 100:
-            raise MockException
+        trigger = max(s.to_pylist())
+        if trigger >= 199:
+            raise MockException(trigger)
         else:
             return s
 
     df = daft.from_pydict({"a": list(range(200))}).into_partitions(100).with_column("b", echo_or_trigger(daft.col("a")))
 
     it = df.iter_partitions()
-    assert next(it).to_pydict() == {"a": [0, 1], "b": [0, 1]}
+    part = next(it)
+    if daft.context.get_context().runner_config.name == "ray":
+        import ray
+
+        part = ray.get(part)
+    part = part.to_pydict()
+
+    assert part == {"a": [0, 1], "b": [0, 1]}
 
     # Ensure the exception does trigger if execution continues.
     with pytest.raises(MockException):
-        list(it)
+        res = list(it)
+        if daft.context.get_context().runner_config.name == "ray":
+            ray.get(res)
