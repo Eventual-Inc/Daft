@@ -54,6 +54,10 @@ where
         self.data().len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn with_validity(&self, validity: &[bool]) -> DaftResult<Self> {
         if validity.len() != self.data.len() {
             return Err(DaftError::ValueError(format!(

@@ -66,6 +66,10 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
         self.physical.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn size_bytes(&self) -> DaftResult<usize> {
         self.physical.size_bytes()
     }

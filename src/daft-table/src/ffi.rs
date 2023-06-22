@@ -1,5 +1,3 @@
-use arrow2::array::Array;
-
 use pyo3::exceptions::PyValueError;
 
 use pyo3::prelude::*;
@@ -13,7 +11,6 @@ use daft_core::{
     series::Series,
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
-pub type ArrayRef = Box<dyn Array>;
 
 pub fn record_batches_to_table(
     py: Python,

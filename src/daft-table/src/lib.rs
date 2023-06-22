@@ -110,6 +110,10 @@ impl Table {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> =
             self.columns.iter().map(|s| s.slice(start, end)).collect();
@@ -143,7 +147,7 @@ impl Table {
     }
 
     pub fn quantiles(&self, num: usize) -> DaftResult<Self> {
-        if self.len() == 0 {
+        if self.is_empty() {
             return Ok(self.clone());
         }
 
