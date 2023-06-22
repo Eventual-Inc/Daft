@@ -3,7 +3,7 @@ arrow2 = {workspace = true}
 base64 = "0.21.2"
 chrono = "0.4.26"
 chrono-tz = "0.8.2"
-common_error = {path = "../common/error"}
+common_error = {path = "../common/error", default-features = false }
 dyn-clone = "1.0.11"
 fnv = "1.0.7"
 html-escape = "0.2.13"
@@ -39,14 +39,13 @@ optional = true
 version = "0.18"
 
 
-
 [dependencies.xxhash-rust]
 features = ["xxh3", "const_xxh3"]
 version = "0.8.5"
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "dep:numpy"]
+python = ["dep:pyo3", "dep:numpy", "common_error/python"]
 
 [package]
 edition = {workspace = true}

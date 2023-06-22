@@ -1,11 +1,11 @@
 [dependencies]
-daft_core = {path = "src/daft-core"}
+daft_core = {path = "src/daft-core", default-features = false}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "dep:pyo3-log"]
+python = ["dep:pyo3", "dep:pyo3-log", "daft_core/python"]
 
 [lib]
 crate-type = ["cdylib"]

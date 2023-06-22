@@ -9,9 +9,12 @@ mod kernels;
 #[cfg(feature = "python")]
 pub mod python;
 mod schema;
-mod series;
+pub mod series;
 mod table;
 mod utils;
+
+pub use series::{Series, IntoSeries};
+pub use datatypes::{DataType};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const BUILD_TYPE_DEV: &str = "dev";

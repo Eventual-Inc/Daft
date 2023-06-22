@@ -21,7 +21,7 @@ use snafu::prelude::*;
 
 use daft_core::{
     array::ops::as_arrow::AsArrow,
-    datatypes::{BinaryArray, Utf8Array},
+    datatypes::{BinaryArray, Utf8Array}, Series, DataType, IntoSeries,
 };
 
 use s3_like::S3LikeSource;
@@ -180,13 +180,14 @@ async fn single_url_download(
     }
 }
 
-pub fn _url_download<S: ToString, I: Iterator<Item = Option<S>>>(
-    name: &str,
-    urls: I,
+pub fn _url_download(
+    array: &Utf8Array,
     max_connections: usize,
     raise_error_on_failure: bool,
     multi_thread: bool,
 ) -> DaftResult<BinaryArray> {
+    let urls = array.as_arrow().iter();
+    let name  = array.name();
     ensure!(
         max_connections > 0,
         InvalidArgumentSnafu {
@@ -257,18 +258,20 @@ pub fn _url_download<S: ToString, I: Iterator<Item = Option<S>>>(
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
+
+
 pub fn url_download(
-    array: &Utf8Array,
+    series: &Series,
     max_connections: usize,
     raise_error_on_failure: bool,
     multi_thread: bool,
-) -> DaftResult<BinaryArray> {
-    let urls = array.as_arrow().iter();
-    _url_download(
-        array.name(),
-        urls,
-        max_connections,
-        raise_error_on_failure,
-        multi_thread,
-    )
+) -> DaftResult<Series> {
+    match series.data_type() {
+        DataType::Utf8 => Ok(
+            _url_download(series.utf8()?, max_connections, raise_error_on_failure, multi_thread)?
+            .into_series()),
+        dt => Err(DaftError::TypeError(format!(
+            "url download not implemented for type {dt}"
+        ))),
+    }
 }
