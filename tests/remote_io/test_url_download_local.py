@@ -31,3 +31,25 @@ def test_url_download_local(local_image_data_fixture, image_data):
     df = daft.from_pydict(data)
     df = df.with_column("data", df["urls"].url.download())
     assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(local_image_data_fixture))]}
+
+
+def test_url_download_local_missing(local_image_data_fixture):
+    data = {"urls": local_image_data_fixture + ["/missing/path/x.jpeg"]}
+    df = daft.from_pydict(data)
+    df = df.with_column("data", df["urls"].url.download(on_error="raise"))
+
+    with pytest.raises(FileNotFoundError):
+        df.collect()
+
+
+def test_url_download_local_no_read_permissions(local_image_data_fixture, tmpdir):
+    bad_permission_filepath = pathlib.Path(tmpdir) / "bad_file.jpeg"
+    bad_permission_filepath.write_bytes(b"foo")
+    bad_permission_filepath.chmod(0)
+
+    data = {"urls": local_image_data_fixture + [str(bad_permission_filepath)]}
+    df = daft.from_pydict(data)
+    df = df.with_column("data", df["urls"].url.download(on_error="raise"))
+
+    with pytest.raises(PermissionError):
+        df.collect()

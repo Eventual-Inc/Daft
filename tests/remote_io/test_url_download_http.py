@@ -55,3 +55,14 @@ def test_url_download_http(http_image_data_fixture, image_data):
     df = daft.from_pydict(data)
     df = df.with_column("data", df["urls"].url.download())
     assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(http_image_data_fixture))]}
+
+
+def test_url_download_http_missing(mock_http_server):
+    server_url, _ = mock_http_server
+    data = {"urls": [f"{server_url}/missing.jpeg"]}
+    df = daft.from_pydict(data)
+    df = df.with_column("data", df["urls"].url.download(on_error="raise"))
+
+    # NOTE: if using fsspec FileNotFoundError will be correctly thrown by fsspec.implementations.http.HTTPFileSystem
+    with pytest.raises(FileNotFoundError):
+        df.collect()
