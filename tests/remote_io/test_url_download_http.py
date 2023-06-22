@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pathlib
 import socketserver
 import time
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler
@@ -111,47 +110,43 @@ def mock_error_http_server(request) -> YieldFixture[tuple[str, int]]:
 
 
 @pytest.fixture(scope="session")
-def mock_http_server(tmp_path_factory) -> YieldFixture[tuple[str, pathlib.Path]]:
+def mock_http_image_urls(tmp_path_factory, image_data) -> YieldFixture[str]:
     """Provides a mock HTTP server that serves files in a given directory
 
-    This fixture yields a tuple of:
-        str: URL to the HTTP server
-        pathlib.Path: tmpdir to place files into, which will then be served by the HTTP server
+    This fixture yields:
+        list[str]: URLs of files available on the HTTP server
     """
+    # Start server
     tmpdir = tmp_path_factory.mktemp("data")
     port = _get_free_port()
-    url = f"http://localhost:{port}"
-
+    server_url = f"http://localhost:{port}"
     p = Process(target=_serve_file_server, args=(port, str(tmpdir)))
     p.start()
+
+    # Add a single image file to the tmpdir
+    # NOTE: We use only 1 image because the HTTPServer that we use is bad at handling concurrent requests
+    image_filepath = tmpdir / f"img.jpeg"
+    image_filepath.write_bytes(image_data)
+    urls = [f"{server_url}/{image_filepath.relative_to(tmpdir)}"]
+
     try:
-        _wait_for_server(f"{url}/ready")
-        yield (url, tmpdir)
+        _wait_for_server(f"{server_url}/ready")
+        yield urls
     finally:
         p.terminate()
         p.join()
 
-
-@pytest.fixture(scope="function")
-def http_image_data_fixture(mock_http_server, image_data) -> YieldFixture[list[str]]:
-    """Populates the mock HTTP server with some fake data and returns filepaths"""
-    # NOTE: We use 1 image because the HTTPServer that we use is pretty bad at handling concurrent requests
-    server_url, tmpdir = mock_http_server
-    path = tmpdir / f"img.jpeg"
-    path.write_bytes(image_data)
-    yield [f"{server_url}/{path.relative_to(tmpdir)}"]
-
-    # Cleanup tmpdir
-    for child in tmpdir.glob("*"):
-        child.unlink()
+        # Cleanup tmpdir
+        for child in tmpdir.glob("*"):
+            child.unlink()
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_url_download_http(http_image_data_fixture, image_data, use_native_downloader):
-    data = {"urls": http_image_data_fixture}
+def test_url_download_http(mock_http_image_urls, image_data, use_native_downloader):
+    data = {"urls": mock_http_image_urls}
     df = daft.from_pydict(data)
     df = df.with_column("data", df["urls"].url.download(use_native_downloader=use_native_downloader))
-    assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(http_image_data_fixture))]}
+    assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(mock_http_image_urls))]}
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
