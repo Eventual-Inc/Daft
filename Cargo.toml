@@ -34,6 +34,9 @@ codegen-units = 1
 inherits = "release"
 lto = 'fat'
 
+[profile.rust-analyzer]
+inherits = "dev"
+
 [workspace]
 members = [
   "src/common/error",
