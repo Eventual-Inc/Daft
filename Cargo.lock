@@ -705,22 +705,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-io"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-config",
+ "aws-sdk-s3",
+ "bytes",
+ "common_error",
+ "daft_core",
+ "futures",
+ "lazy_static",
+ "log",
+ "reqwest",
+ "snafu",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "daft_core"
 version = "0.1.0"
 dependencies = [
  "arrow2",
- "async-trait",
- "aws-config",
- "aws-sdk-s3",
  "base64",
  "bincode",
- "bytes",
  "chrono",
  "chrono-tz",
  "common_error",
  "dyn-clone",
  "fnv",
- "futures",
  "html-escape",
  "image",
  "indexmap",
@@ -734,12 +748,8 @@ dependencies = [
  "pyo3",
  "pyo3-log",
  "rand",
- "reqwest",
  "serde",
  "serde_json",
- "snafu",
- "tokio",
- "url",
  "xxhash-rust",
 ]
 
@@ -2523,9 +2533,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-attributes"
-version = "0.1.25"
+version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8803eee176538f94ae9a14b55b2804eb7e1441f8210b1c31290b3bccdccff73b"
+checksum = "5f4f31f56159e98206da9efd823404b79b6ef3143b4a7ab76e67b1751b25a4ab"
 dependencies = [
  "proc-macro2",
  "quote",

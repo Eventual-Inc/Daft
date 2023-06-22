@@ -1,0 +1,24 @@
+[dependencies]
+common_error = {path = "../common/error"}
+daft_core = {path = "../daft-core"}
+snafu = "0.7.4"
+async-trait = "0.1.68"
+tokio = {version = "1.28.2", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
+bytes = "1.4.0"
+futures = "0.3.28"
+url = "2.4.0"
+aws-config = "0.55.3"
+aws-sdk-s3 = "0.28.0"
+lazy_static = {workspace = true}
+log = {workspace = true}
+
+
+[dependencies.reqwest]
+default-features = false
+features = ["stream", "rustls-tls"]
+version = "0.11.18"
+
+[package]
+edition = {workspace = true}
+name = "daft-io"
+version = {workspace = true}

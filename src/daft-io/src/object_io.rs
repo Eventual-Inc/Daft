@@ -5,7 +5,7 @@ use bytes::Bytes;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
 
-use crate::io::local::collect_file;
+use crate::local::collect_file;
 
 pub(crate) enum GetResult {
     File(PathBuf),

@@ -11,10 +11,10 @@ impl Series {
         multi_thread: bool,
     ) -> DaftResult<Series> {
         match self.data_type() {
-            DataType::Utf8 => Ok(self
-                .utf8()?
-                .url_download(max_connections, raise_error_on_failure, multi_thread)?
-                .into_series()),
+            // DataType::Utf8 => Ok(self
+            //     .utf8()?
+            //     .url_download(max_connections, raise_error_on_failure, multi_thread)?
+            //     .into_series()),
             dt => Err(DaftError::TypeError(format!(
                 "url download not implemented for type {dt}"
             ))),

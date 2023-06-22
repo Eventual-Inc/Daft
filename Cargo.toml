@@ -35,7 +35,8 @@ lto = 'fat'
 [workspace]
 members = [
   "src/common/error",
-  "src/daft-core"
+  "src/daft-core",
+  "src/daft-io"
 ]
 
 [workspace.dependencies]
@@ -58,6 +59,14 @@ version = "0.8.2"
 [workspace.dependencies.serde]
 features = ["derive", "rc"]
 version = "1.0.164"
+
+[workspace.dependencies.lazy_static]
+version = "1.4.0"
+
+[workspace.dependencies.log]
+features = ["std"]
+version = "0.4.19"
+
 
 [workspace.package]
 edition = "2021"

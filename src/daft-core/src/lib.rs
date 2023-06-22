@@ -1,14 +1,10 @@
 #![feature(hash_raw_entry)]
-#![feature(async_closure)]
-#[macro_use]
-extern crate lazy_static;
 
-mod array;
-mod datatypes;
+pub mod array;
+pub mod datatypes;
 mod dsl;
 #[cfg(feature = "python")]
 mod ffi;
-mod io;
 mod kernels;
 #[cfg(feature = "python")]
 pub mod python;

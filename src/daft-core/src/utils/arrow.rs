@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
+use lazy_static::lazy_static;
 
 use arrow2::compute::cast;
 

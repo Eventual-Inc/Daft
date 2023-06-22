@@ -3,7 +3,7 @@ mod apply;
 mod arange;
 mod arithmetic;
 pub mod arrow2;
-pub(crate) mod as_arrow;
+pub mod as_arrow;
 pub(crate) mod broadcast;
 mod cast;
 mod compare_agg;

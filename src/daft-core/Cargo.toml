@@ -1,16 +1,11 @@
 [dependencies]
 arrow2 = {workspace = true}
-async-trait = "0.1.68"
-aws-config = "0.55.3"
-aws-sdk-s3 = "0.28.0"
 base64 = "0.21.2"
-bytes = "1.4.0"
 chrono = "0.4.26"
 chrono-tz = "0.8.2"
 common_error = {path = "../common/error"}
 dyn-clone = "1.0.11"
 fnv = "1.0.7"
-futures = "0.3.28"
 html-escape = "0.2.13"
 ndarray = "0.15.6"
 num-derive = "0.3.3"
@@ -20,9 +15,8 @@ pyo3-log = {workspace = true}
 rand = "^0.8"
 serde = {workspace = true}
 serde_json = {workspace = true}
-snafu = "0.7.4"
-tokio = {version = "1.28.2", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
-url = "2.4.0"
+lazy_static = {workspace = true}
+log = {workspace = true}
 
 [dependencies.bincode]
 version = "1.3.3"
@@ -36,12 +30,6 @@ version = "0.24.6"
 features = ["serde"]
 version = "1.9.2"
 
-[dependencies.lazy_static]
-version = "1.4.0"
-
-[dependencies.log]
-features = ["std"]
-version = "0.4.19"
 
 [dependencies.num-traits]
 version = "0.2"
@@ -50,10 +38,7 @@ version = "0.2"
 optional = true
 version = "0.18"
 
-[dependencies.reqwest]
-default-features = false
-features = ["stream", "rustls-tls"]
-version = "0.11.18"
+
 
 [dependencies.xxhash-rust]
 features = ["xxh3", "const_xxh3"]

@@ -1,7 +1,10 @@
+#![feature(async_closure)]
+
 mod http;
 mod local;
 mod object_io;
 mod s3_like;
+use lazy_static::lazy_static;
 
 use std::{
     borrow::Cow,
@@ -16,11 +19,12 @@ use url::ParseError;
 
 use snafu::prelude::*;
 
-use crate::{
+use daft_core::{
     array::ops::as_arrow::AsArrow,
     datatypes::{BinaryArray, Utf8Array},
-    io::s3_like::S3LikeSource,
 };
+
+use s3_like::S3LikeSource;
 use common_error::{DaftError, DaftResult};
 
 use self::{
@@ -176,7 +180,7 @@ async fn single_url_download(
     }
 }
 
-pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
+pub fn _url_download<S: ToString, I: Iterator<Item = Option<S>>>(
     name: &str,
     urls: I,
     max_connections: usize,
@@ -253,20 +257,18 @@ pub fn url_download<S: ToString, I: Iterator<Item = Option<S>>>(
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
-impl Utf8Array {
-    pub fn url_download(
-        &self,
-        max_connections: usize,
-        raise_error_on_failure: bool,
-        multi_thread: bool,
-    ) -> DaftResult<BinaryArray> {
-        let urls = self.as_arrow().iter();
-        url_download(
-            self.name(),
-            urls,
-            max_connections,
-            raise_error_on_failure,
-            multi_thread,
-        )
-    }
+pub fn url_download(
+    array: &Utf8Array,
+    max_connections: usize,
+    raise_error_on_failure: bool,
+    multi_thread: bool,
+) -> DaftResult<BinaryArray> {
+    let urls = array.as_arrow().iter();
+    _url_download(
+        array.name(),
+        urls,
+        max_connections,
+        raise_error_on_failure,
+        multi_thread,
+    )
 }
