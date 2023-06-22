@@ -1,9 +1,17 @@
 #![feature(async_closure)]
 
+mod config;
 mod http;
 mod local;
 mod object_io;
 mod s3_like;
+
+#[cfg(feature = "python")]
+mod python;
+
+#[cfg(feature = "python")]
+pub use python::register_modules;
+
 use lazy_static::lazy_static;
 
 use std::{
