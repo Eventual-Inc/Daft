@@ -2,9 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use daft_core::{schema::Schema, utils::supertype::try_get_supertype};
 
-
-use daft_dsl::Expr;
 use common_error::{DaftError, DaftResult};
+use daft_dsl::Expr;
 
 use crate::Table;
 

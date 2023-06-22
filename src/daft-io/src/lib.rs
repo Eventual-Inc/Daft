@@ -21,11 +21,12 @@ use snafu::prelude::*;
 
 use daft_core::{
     array::ops::as_arrow::AsArrow,
-    datatypes::{BinaryArray, Utf8Array}, Series, DataType, IntoSeries,
+    datatypes::{BinaryArray, Utf8Array},
+    DataType, IntoSeries, Series,
 };
 
-use s3_like::S3LikeSource;
 use common_error::{DaftError, DaftResult};
+use s3_like::S3LikeSource;
 
 use self::{
     http::HttpSource,
@@ -187,7 +188,7 @@ pub fn _url_download(
     multi_thread: bool,
 ) -> DaftResult<BinaryArray> {
     let urls = array.as_arrow().iter();
-    let name  = array.name();
+    let name = array.name();
     ensure!(
         max_connections > 0,
         InvalidArgumentSnafu {
@@ -265,9 +266,13 @@ pub fn url_download(
     multi_thread: bool,
 ) -> DaftResult<Series> {
     match series.data_type() {
-        DataType::Utf8 => Ok(
-            _url_download(series.utf8()?, max_connections, raise_error_on_failure, multi_thread)?
-            .into_series()),
+        DataType::Utf8 => Ok(_url_download(
+            series.utf8()?,
+            max_connections,
+            raise_error_on_failure,
+            multi_thread,
+        )?
+        .into_series()),
         dt => Err(DaftError::TypeError(format!(
             "url download not implemented for type {dt}"
         ))),

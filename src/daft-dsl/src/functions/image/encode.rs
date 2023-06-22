@@ -4,8 +4,8 @@ use daft_core::{
     series::Series,
 };
 
+use crate::{functions::FunctionExpr, Expr};
 use common_error::{DaftError, DaftResult};
-use crate::{Expr, functions::FunctionExpr};
 
 use super::{super::FunctionEvaluator, ImageExpr};
 

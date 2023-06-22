@@ -1,9 +1,9 @@
+use crate::Expr;
 use daft_core::{
     datatypes::{DataType, Field},
     schema::Schema,
     series::{IntoSeries, Series},
 };
-use crate::Expr;
 
 use common_error::{DaftError, DaftResult};
 

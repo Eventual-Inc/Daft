@@ -7,10 +7,9 @@ use encode::EncodeEvaluator;
 use resize::ResizeEvaluator;
 use serde::{Deserialize, Serialize};
 
-use daft_core::{datatypes::ImageFormat};
+use daft_core::datatypes::ImageFormat;
 
 use crate::Expr;
-
 
 use super::FunctionEvaluator;
 

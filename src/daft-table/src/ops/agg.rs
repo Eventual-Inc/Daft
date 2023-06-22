@@ -1,6 +1,4 @@
-use daft_core::{
-    array::ops::IntoGroups, datatypes::UInt64Array, series::IntoSeries,
-};
+use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, series::IntoSeries};
 use daft_dsl::Expr;
 
 use common_error::{DaftError, DaftResult};

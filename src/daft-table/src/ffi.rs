@@ -8,16 +8,14 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3::{PyAny, PyObject, PyResult, Python};
 
+use crate::Table;
+use common_error::DaftResult;
 use daft_core::{
     schema::SchemaRef,
     series::Series,
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
-use crate::Table;
-use common_error::DaftResult;
 pub type ArrayRef = Box<dyn Array>;
-
-
 
 pub fn record_batches_to_table(
     py: Python,

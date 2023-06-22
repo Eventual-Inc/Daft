@@ -1,8 +1,8 @@
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::DataArray, datatypes::UInt64Array, kernels::search_sorted::search_sorted_multi_array,
     series::Series,
 };
-use common_error::{DaftError, DaftResult};
 
 use crate::Table;
 

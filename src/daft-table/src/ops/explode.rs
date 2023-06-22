@@ -1,10 +1,10 @@
+use common_error::{DaftError, DaftResult};
 use daft_core::series::IntoSeries;
 use daft_core::{
     array::ops::as_arrow::AsArrow,
     datatypes::{DataType, UInt64Array},
     series::Series,
 };
-use common_error::{DaftError, DaftResult};
 use daft_dsl::Expr;
 
 use crate::Table;

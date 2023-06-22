@@ -1,8 +1,8 @@
-use daft_core::datatypes::DataType;
 use crate::functions::image::ImageExpr;
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
 use crate::Expr;
 use common_error::DaftError;
+use daft_core::datatypes::DataType;
+use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
 use common_error::DaftResult;
 

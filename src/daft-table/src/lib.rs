@@ -7,16 +7,16 @@ use num_traits::ToPrimitive;
 
 use daft_core::array::ops::GroupIndices;
 
+use common_error::{DaftError, DaftResult};
 use daft_core::datatypes::logical::LogicalArray;
 use daft_core::datatypes::{BooleanType, DataType, Field, UInt64Array};
-use daft_dsl::functions::FunctionEvaluator;
-use daft_dsl::{col, null_lit, AggExpr, Expr};
 use daft_core::schema::{Schema, SchemaRef};
 use daft_core::series::{IntoSeries, Series};
 use daft_core::{with_match_daft_logical_types, with_match_physical_daft_types};
-use common_error::{DaftError, DaftResult};
-mod ops;
+use daft_dsl::functions::FunctionEvaluator;
+use daft_dsl::{col, null_lit, AggExpr, Expr};
 mod ffi;
+mod ops;
 pub mod python;
 
 pub use python::register_modules;
@@ -530,7 +530,6 @@ impl Table {
     }
 }
 
-
 impl Display for Table {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
@@ -542,12 +541,12 @@ impl Display for Table {
 #[cfg(test)]
 mod test {
 
-    use daft_core::datatypes::{DataType, Float64Array, Int64Array};
-    use daft_dsl::col;
-    use daft_core::schema::Schema;
-    use daft_core::series::IntoSeries;
     use crate::Table;
     use common_error::DaftResult;
+    use daft_core::datatypes::{DataType, Float64Array, Int64Array};
+    use daft_core::schema::Schema;
+    use daft_core::series::IntoSeries;
+    use daft_dsl::col;
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
         let a = Int64Array::from(("a", vec![1, 2, 3])).into_series();

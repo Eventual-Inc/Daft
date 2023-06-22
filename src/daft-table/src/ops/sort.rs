@@ -1,7 +1,7 @@
-use daft_dsl::Expr;
 use crate::Table;
-use daft_core::Series;
 use common_error::{DaftError, DaftResult};
+use daft_core::Series;
+use daft_dsl::Expr;
 
 impl Table {
     pub fn sort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Table> {

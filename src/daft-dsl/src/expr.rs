@@ -1,12 +1,8 @@
 use daft_core::{
-    datatypes::DataType,
-    datatypes::Field,
-    schema::Schema,
-    utils::supertype::try_get_supertype,
+    datatypes::DataType, datatypes::Field, schema::Schema, utils::supertype::try_get_supertype,
 };
 
 use crate::{functions::FunctionEvaluator, lit};
-
 
 use common_error::{DaftError, DaftResult};
 

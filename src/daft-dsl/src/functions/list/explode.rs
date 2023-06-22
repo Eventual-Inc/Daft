@@ -1,6 +1,6 @@
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
 use crate::Expr;
 use common_error::{DaftError, DaftResult};
+use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
 use super::super::FunctionEvaluator;
 

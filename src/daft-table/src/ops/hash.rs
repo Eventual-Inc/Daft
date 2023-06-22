@@ -3,10 +3,10 @@ use std::{
     hash::{BuildHasherDefault, Hash, Hasher},
 };
 
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::arrow2::comparison::build_multi_array_is_equal, datatypes::UInt64Array,
 };
-use common_error::{DaftError, DaftResult};
 
 use daft_core::array::ops::as_arrow::AsArrow;
 

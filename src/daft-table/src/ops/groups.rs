@@ -1,3 +1,4 @@
+use common_error::DaftResult;
 use daft_core::{
     array::ops::{
         arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow, GroupIndicesPair,
@@ -6,7 +7,6 @@ use daft_core::{
     datatypes::{UInt64Array, UInt64Type},
     series::Series,
 };
-use common_error::DaftResult;
 
 use crate::Table;
 

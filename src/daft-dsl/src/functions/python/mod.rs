@@ -1,8 +1,8 @@
 mod partial_udf;
 mod udf;
 
-use daft_core::datatypes::DataType;
 use common_error::DaftResult;
+use daft_core::datatypes::DataType;
 use serde::{Deserialize, Serialize};
 
 use crate::Expr;

@@ -4,8 +4,8 @@ use arrow2::array::{Array, DictionaryKey};
 use daft_dsl::Expr;
 use rand::SeedableRng;
 
-use daft_core::{datatypes::UInt64Array, series::IntoSeries};
 use common_error::{DaftError, DaftResult};
+use daft_core::{datatypes::UInt64Array, series::IntoSeries};
 
 use daft_core::array::ops::as_arrow::AsArrow;
 

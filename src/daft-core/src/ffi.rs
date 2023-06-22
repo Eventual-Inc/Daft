@@ -39,7 +39,6 @@ pub fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
     }
 }
 
-
 pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(&Field::new(
         "",
@@ -59,8 +58,6 @@ pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<
 
     Ok(array.to_object(py))
 }
-
-
 
 fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {
     /* Zero-copy slices of arrow2 struct/fixed-size list arrays are currently not correctly

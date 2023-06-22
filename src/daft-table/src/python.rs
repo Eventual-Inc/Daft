@@ -2,12 +2,12 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use daft_core::datatypes::Field;
 use crate::ffi;
-use daft_core::schema::Schema;
-use daft_core::series::Series;
 use crate::Table;
 use common_error::DaftError;
+use daft_core::datatypes::Field;
+use daft_core::schema::Schema;
+use daft_core::series::Series;
 
 use daft_dsl::python::PyExpr;
 
@@ -57,7 +57,8 @@ impl PyTable {
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
     ) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::Expr> = sort_keys.into_iter().map(|e| e.into()).collect();
+        let converted_exprs: Vec<daft_dsl::Expr> =
+            sort_keys.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
                 .table
@@ -72,7 +73,8 @@ impl PyTable {
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
     ) -> PyResult<PySeries> {
-        let converted_exprs: Vec<daft_dsl::Expr> = sort_keys.into_iter().map(|e| e.into()).collect();
+        let converted_exprs: Vec<daft_dsl::Expr> =
+            sort_keys.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
                 .table
@@ -83,7 +85,8 @@ impl PyTable {
 
     pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
         let converted_to_agg: Vec<daft_dsl::Expr> = to_agg.into_iter().map(|e| e.into()).collect();
-        let converted_group_by: Vec<daft_dsl::Expr> = group_by.into_iter().map(|e| e.into()).collect();
+        let converted_group_by: Vec<daft_dsl::Expr> =
+            group_by.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
                 .table
@@ -110,7 +113,8 @@ impl PyTable {
     }
 
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_explode: Vec<daft_dsl::Expr> = to_explode.into_iter().map(|e| e.expr).collect();
+        let converted_to_explode: Vec<daft_dsl::Expr> =
+            to_explode.into_iter().map(|e| e.expr).collect();
 
         py.allow_threads(|| Ok(self.table.explode(converted_to_explode.as_slice())?.into()))
     }

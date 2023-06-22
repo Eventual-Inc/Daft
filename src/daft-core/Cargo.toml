@@ -1,12 +1,15 @@
 [dependencies]
 arrow2 = {workspace = true}
 base64 = "0.21.2"
+bincode = {workspace = true}
 chrono = "0.4.26"
 chrono-tz = "0.8.2"
-common-error = {path = "../common/error", default-features = false }
+common-error = {path = "../common/error", default-features = false}
 dyn-clone = "1.0.11"
 fnv = "1.0.7"
 html-escape = {workspace = true}
+lazy_static = {workspace = true}
+log = {workspace = true}
 ndarray = "0.15.6"
 num-derive = {workspace = true}
 num-traits = {workspace = true}
@@ -16,11 +19,6 @@ pyo3-log = {workspace = true}
 rand = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
-lazy_static = {workspace = true}
-log = {workspace = true}
-bincode = {workspace = true}
-
-
 
 [dependencies.image]
 default-features = false
@@ -31,12 +29,9 @@ version = "0.24.6"
 features = ["serde"]
 version = "1.9.2"
 
-
-
 [dependencies.numpy]
 optional = true
 version = "0.18"
-
 
 [dependencies.xxhash-rust]
 features = ["xxh3", "const_xxh3"]

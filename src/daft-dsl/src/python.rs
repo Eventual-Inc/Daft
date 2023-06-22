@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 
-use daft_core::{python::{field::PyField, datatype::PyDataType, schema::PySchema}, datatypes::ImageFormat};
-use crate::{Expr, functions, optimization};
+use crate::{functions, optimization, Expr};
+use daft_core::{
+    datatypes::ImageFormat,
+    python::{datatype::PyDataType, field::PyField, schema::PySchema},
+};
 
 use pyo3::{
     exceptions::PyValueError,

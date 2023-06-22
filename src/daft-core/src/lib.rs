@@ -1,4 +1,3 @@
-
 pub mod array;
 pub mod datatypes;
 #[cfg(feature = "python")]
@@ -10,8 +9,8 @@ pub mod schema;
 pub mod series;
 pub mod utils;
 
-pub use series::{Series, IntoSeries};
-pub use datatypes::{DataType};
+pub use datatypes::DataType;
+pub use series::{IntoSeries, Series};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const BUILD_TYPE_DEV: &str = "dev";

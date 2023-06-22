@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter, Result};
 
-use daft_core::datatypes::DataType;
 use crate::expr::Expr;
+use daft_core::datatypes::DataType;
 use daft_core::series::Series;
 use serde::{Deserialize, Serialize};
 

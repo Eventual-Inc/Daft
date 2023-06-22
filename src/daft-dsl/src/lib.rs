@@ -1,11 +1,11 @@
 mod arithmetic;
 mod expr;
+pub mod functions;
 mod lit;
+pub mod optimization;
 #[cfg(feature = "python")]
 mod pyobject;
 pub mod python;
-pub mod functions;
-pub mod optimization;
 pub use expr::binary_op;
 pub use expr::col;
 pub use expr::{AggExpr, Expr, Operator};

@@ -12,8 +12,8 @@ use self::numeric::NumericExpr;
 use self::temporal::TemporalExpr;
 use self::utf8::Utf8Expr;
 use self::{float::FloatExpr, uri::UriExpr};
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
 use common_error::DaftResult;
+use daft_core::{datatypes::Field, schema::Schema, series::Series};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]

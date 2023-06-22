@@ -2,11 +2,10 @@ use daft_core::datatypes::{DataType, Field};
 
 use crate::functions::FunctionExpr;
 use crate::{functions::FunctionEvaluator, Expr};
-use daft_core::schema::Schema;
-use daft_core::series::Series;
 use common_error::DaftError;
 use common_error::DaftResult;
-
+use daft_core::schema::Schema;
+use daft_core::series::Series;
 
 use super::UriExpr;
 
