@@ -4,12 +4,12 @@ common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io"}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true}
+pyo3-log = {workspace = true, optional = true}
 serde = {workspace = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "common-error/python", "daft-core/python"]
+python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python"]
 
 [package]
 edition = {workspace = true}

@@ -2,19 +2,11 @@ use std::io::Cursor;
 
 use arrow2::{array::Array, datatypes::Field, ffi};
 
-use pyo3::exceptions::PyValueError;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+
 use pyo3::{PyAny, PyObject, PyResult, Python};
 
-use crate::{
-    schema::SchemaRef,
-    series::Series,
-    utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
-};
-
-use common_error::DaftResult;
 pub type ArrayRef = Box<dyn Array>;
 
 pub fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {

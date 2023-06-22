@@ -1,4 +1,5 @@
 use daft_core::datatypes::{DataType, Field};
+use daft_io::url_download;
 
 use crate::functions::FunctionExpr;
 use crate::{functions::FunctionEvaluator, Expr};
@@ -51,7 +52,12 @@ impl FunctionEvaluator for DownloadEvaluator {
         };
 
         match inputs {
-            [input] => input.url_download(*max_connections, *raise_error_on_failure, *multi_thread),
+            [input] => url_download(
+                input,
+                *max_connections,
+                *raise_error_on_failure,
+                *multi_thread,
+            ),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

@@ -15,10 +15,12 @@ use daft_core::series::{IntoSeries, Series};
 use daft_core::{with_match_daft_logical_types, with_match_physical_daft_types};
 use daft_dsl::functions::FunctionEvaluator;
 use daft_dsl::{col, null_lit, AggExpr, Expr};
+#[cfg(feature = "python")]
 mod ffi;
 mod ops;
+#[cfg(feature = "python")]
 pub mod python;
-
+#[cfg(feature = "python")]
 pub use python::register_modules;
 
 #[derive(Clone)]
