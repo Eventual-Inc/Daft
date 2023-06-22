@@ -1,0 +1,13 @@
+[dependencies]
+arrow2 = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+serde_json = {workspace = true}
+
+[features]
+default = ["python"]
+python = ["dep:pyo3"]
+
+[package]
+edition = {workspace = true}
+name = "common-error"
+version = {workspace = true}

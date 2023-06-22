@@ -74,9 +74,10 @@ repos:
   hooks:
   - id: fmt
   - id: cargo-check
+    args: [--profile, rust-analyzer]
   - id: cargo-check
     name: cargo check --no-default-features
-    args: [--no-default-features]
+    args: [--no-default-features, --profile, rust-analyzer]
   - id: clippy
 
 - repo: https://github.com/abravalheri/validate-pyproject
