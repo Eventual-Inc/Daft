@@ -13,7 +13,6 @@ from loguru import logger
 from daft.datasources import SourceInfo
 from daft.execution import physical_plan, physical_plan_factory
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
-from daft.execution.logical_op_runners import LogicalPartitionOpRunner
 from daft.filesystem import get_filesystem_from_path, glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
@@ -134,10 +133,6 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
         first_filepath = nonempty_partitions[0].to_pydict()[PyRunnerIO.FS_LISTING_PATH_COLUMN_NAME][0]
 
         return runner_io.sample_schema(first_filepath, source_info, fs)
-
-
-class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
-    ...
 
 
 class PyRunner(Runner[Table]):
