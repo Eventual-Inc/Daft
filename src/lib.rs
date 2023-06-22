@@ -14,23 +14,23 @@ pub mod pylib {
     use pyo3::prelude::*;
     use crate::{VERSION, DAFT_BUILD_TYPE};
 
-    #[pyfunction]
-    fn version() -> &'static str {
-        VERSION
-    }
+    // #[pyfunction]
+    // fn version() -> &'static str {
+    //     VERSION
+    // }
 
-    #[pyfunction]
-    fn build_type() -> &'static str {
-        DAFT_BUILD_TYPE
-    }
+    // #[pyfunction]
+    // fn build_type() -> &'static str {
+    //     DAFT_BUILD_TYPE
+    // }
 
     #[pymodule]
     fn daft(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         pyo3_log::init();
 
         core::python::register_modules(_py, m)?;
-        m.add_wrapped(wrap_pyfunction!(version))?;
-        m.add_wrapped(wrap_pyfunction!(build_type))?;
+        // m.add_wrapped(wrap_pyfunction!(version))?;
+        // m.add_wrapped(wrap_pyfunction!(build_type))?;
         Ok(())
     }
 }
