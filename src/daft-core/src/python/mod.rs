@@ -1,6 +1,5 @@
 use pyo3::prelude::*;
 mod datatype;
-mod error;
 mod expr;
 mod field;
 mod schema;

@@ -1,23 +1,5 @@
-[package]
-edition = "2021"
-name = "daft"
-version = "0.1.6"
-publish = false
-
-
-[workspace.package]
-version = "0.1.0"
-edition = "2021"
-
-
-[workspace]
-members = [
-    "src/common/error",
-    "src/core"
-]
-
 [dependencies]
-core = { path = "src/core" }
+daft_core = {path = "src/daft-core"}
 
 [dependencies.pyo3]
 features = ["extension-module", "abi3-py37"]
@@ -28,12 +10,9 @@ version = "0.18.3"
 optional = true
 version = "0.8.2"
 
-
 [features]
 default = ["python"]
 python = ["dep:pyo3", "dep:pyo3-log"]
-
-
 
 [lib]
 crate-type = ["cdylib"]
@@ -42,6 +21,11 @@ name = "daft"
 [net]
 git-fetch-with-cli = true
 
+[package]
+edition = "2021"
+name = "daft"
+publish = false
+version = "0.1.6"
 
 [profile.dev]
 overflow-checks = false
@@ -57,3 +41,13 @@ strip = "none"  # dont strip
 codegen-units = 1
 inherits = "release"
 lto = 'fat'
+
+[workspace]
+members = [
+  "src/common/error",
+  "src/daft-core"
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"

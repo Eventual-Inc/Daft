@@ -622,45 +622,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "core"
-version = "0.1.0"
-dependencies = [
- "arrow2",
- "async-trait",
- "aws-config",
- "aws-sdk-s3",
- "base64",
- "bincode",
- "bytes",
- "chrono",
- "chrono-tz",
- "common_error",
- "dyn-clone",
- "fnv",
- "futures",
- "html-escape",
- "image",
- "indexmap",
- "lazy_static",
- "log",
- "ndarray",
- "num-derive",
- "num-traits",
- "numpy",
- "prettytable-rs",
- "pyo3",
- "pyo3-log",
- "rand",
- "reqwest",
- "serde",
- "serde_json",
- "snafu",
- "tokio",
- "url",
- "xxhash-rust",
-]
-
-[[package]]
 name = "core-foundation"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -738,9 +699,48 @@ dependencies = [
 name = "daft"
 version = "0.1.6"
 dependencies = [
- "core",
+ "daft_core",
  "pyo3",
  "pyo3-log",
+]
+
+[[package]]
+name = "daft_core"
+version = "0.1.0"
+dependencies = [
+ "arrow2",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-s3",
+ "base64",
+ "bincode",
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "common_error",
+ "dyn-clone",
+ "fnv",
+ "futures",
+ "html-escape",
+ "image",
+ "indexmap",
+ "lazy_static",
+ "log",
+ "ndarray",
+ "num-derive",
+ "num-traits",
+ "numpy",
+ "prettytable-rs",
+ "pyo3",
+ "pyo3-log",
+ "rand",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "snafu",
+ "tokio",
+ "url",
+ "xxhash-rust",
 ]
 
 [[package]]

@@ -1,10 +1,4 @@
-[package]
-name = "core"
-version = { workspace = true }
-edition = { workspace = true }
-
 [dependencies]
-common_error = { path = "../common/error" }
 async-trait = "0.1.68"
 aws-config = "0.55.3"
 aws-sdk-s3 = "0.28.0"
@@ -12,6 +6,7 @@ base64 = "0.21.2"
 bytes = "1.4.0"
 chrono = "0.4.26"
 chrono-tz = "0.8.2"
+common_error = {path = "../common/error"}
 dyn-clone = "1.0.11"
 fnv = "1.0.7"
 futures = "0.3.28"
@@ -80,3 +75,8 @@ version = "0.8.5"
 [features]
 default = ["python"]
 python = ["dep:pyo3", "dep:numpy"]
+
+[package]
+edition = {workspace = true}
+name = "daft_core"
+version = {workspace = true}
