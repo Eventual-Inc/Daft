@@ -23,6 +23,7 @@ pub enum DaftError {
     External(GenericError),
 }
 
+
 impl From<arrow2::error::Error> for DaftError {
     fn from(error: arrow2::error::Error) -> Self {
         DaftError::ArrowError(error.to_string())
@@ -45,6 +46,25 @@ impl From<serde_json::Error> for DaftError {
 impl From<io::Error> for DaftError {
     fn from(error: io::Error) -> Self {
         DaftError::IoError(error)
+    }
+}
+#[cfg(feature = "python")]
+impl std::convert::From<DaftError> for pyo3::PyErr {
+    fn from(err: DaftError) -> pyo3::PyErr {
+        use pyo3::exceptions::{PyFileNotFoundError, PyValueError};
+        match err {
+            DaftError::PyO3Error(pyerr) => pyerr,
+            DaftError::FileNotFound { path, source } => {
+                PyFileNotFoundError::new_err(format!("File: {path} not found\n{source}"))
+            }
+            _ => PyValueError::new_err(err.to_string()),
+        }
+    }
+}
+
+impl From<std::fmt::Error> for DaftError {
+    fn from(error: std::fmt::Error) -> Self {
+        DaftError::ComputeError(error.to_string())
     }
 }
 
@@ -70,3 +90,4 @@ impl Display for DaftError {
         }
     }
 }
+

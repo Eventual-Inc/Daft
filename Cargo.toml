@@ -19,6 +19,21 @@ members = [
 [dependencies]
 core = { path = "src/core" }
 
+[dependencies.pyo3]
+features = ["extension-module", "abi3-py37"]
+optional = true
+version = "0.18.3"
+
+[dependencies.pyo3-log]
+optional = true
+version = "0.8.2"
+
+
+[features]
+default = ["python"]
+python = ["dep:pyo3", "dep:pyo3-log"]
+
+
 
 [lib]
 crate-type = ["cdylib"]

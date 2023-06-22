@@ -40,11 +40,7 @@ impl_array_str_value!(EmbeddingArray, "{:?}");
 impl_array_str_value!(ImageArray, "{:?}");
 impl_array_str_value!(FixedShapeImageArray, "{:?}");
 
-impl From<std::fmt::Error> for DaftError {
-    fn from(error: std::fmt::Error) -> Self {
-        DaftError::ComputeError(error.to_string())
-    }
-}
+
 
 fn pretty_print_bytes(bytes: &[u8], max_len: usize) -> DaftResult<String> {
     /// influenced by pythons bytes repr

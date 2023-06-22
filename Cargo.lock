@@ -617,6 +617,7 @@ name = "common_error"
 version = "0.1.0"
 dependencies = [
  "arrow2",
+ "pyo3",
  "serde_json",
 ]
 
@@ -738,6 +739,8 @@ name = "daft"
 version = "0.1.6"
 dependencies = [
  "core",
+ "pyo3",
+ "pyo3-log",
 ]
 
 [[package]]
