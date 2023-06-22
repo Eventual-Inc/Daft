@@ -1,6 +1,6 @@
 use crate::datatypes::DataType;
+use crate::series::Series;
 use common_error::DaftError;
-use crate::{series::Series};
 use common_error::DaftResult;
 impl Series {
     pub fn abs(&self) -> DaftResult<Series> {

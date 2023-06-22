@@ -8,9 +8,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    datatypes::{DataType, Field},
-};
+use crate::datatypes::{DataType, Field};
 use common_error::DaftResult;
 
 pub use array_impl::IntoSeries;

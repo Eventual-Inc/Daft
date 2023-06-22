@@ -6,17 +6,16 @@ extern crate lazy_static;
 mod array;
 mod datatypes;
 mod dsl;
+#[cfg(feature = "python")]
+mod ffi;
 mod io;
 mod kernels;
+#[cfg(feature = "python")]
+pub mod python;
 mod schema;
 mod series;
 mod table;
 mod utils;
-#[cfg(feature = "python")]
-mod ffi;
-#[cfg(feature = "python")]
-pub mod python;
-
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const BUILD_TYPE_DEV: &str = "dev";

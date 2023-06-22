@@ -40,8 +40,6 @@ impl_array_str_value!(EmbeddingArray, "{:?}");
 impl_array_str_value!(ImageArray, "{:?}");
 impl_array_str_value!(FixedShapeImageArray, "{:?}");
 
-
-
 fn pretty_print_bytes(bytes: &[u8], max_len: usize) -> DaftResult<String> {
     /// influenced by pythons bytes repr
     /// https://github.com/python/cpython/blob/main/Objects/bytesobject.c#L1336

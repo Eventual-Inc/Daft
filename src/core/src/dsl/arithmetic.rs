@@ -36,9 +36,7 @@ impl_expr_op!(Rem, rem, Modulus);
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        dsl::{col, Expr},
-    };
+    use crate::dsl::{col, Expr};
     use common_error::{DaftError, DaftResult};
 
     #[test]

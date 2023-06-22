@@ -1,6 +1,4 @@
-use crate::{
-    datatypes::UInt64Array, series::Series, with_match_comparable_daft_types,
-};
+use crate::{datatypes::UInt64Array, series::Series, with_match_comparable_daft_types};
 use common_error::DaftResult;
 
 impl Series {

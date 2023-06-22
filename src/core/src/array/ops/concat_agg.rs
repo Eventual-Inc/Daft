@@ -2,7 +2,7 @@ use std::vec;
 
 use arrow2::{array::Array, offset::OffsetsBuffer};
 
-use crate::{datatypes::ListArray};
+use crate::datatypes::ListArray;
 use common_error::DaftResult;
 
 use super::{as_arrow::AsArrow, DaftConcatAggable};

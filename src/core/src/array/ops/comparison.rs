@@ -8,8 +8,7 @@ use crate::{
     utils::arrow::arrow_bitmap_and_helper,
 };
 
-use common_error::{DaftResult, DaftError};
-
+use common_error::{DaftError, DaftResult};
 
 use std::ops::Not;
 

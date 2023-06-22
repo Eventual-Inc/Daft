@@ -1,11 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{
-    dsl::Expr,
-    schema::Schema,
-    table::Table,
-    utils::supertype::try_get_supertype,
-};
+use crate::{dsl::Expr, schema::Schema, table::Table, utils::supertype::try_get_supertype};
 use common_error::{DaftError, DaftResult};
 
 mod hash_join;

@@ -1,9 +1,5 @@
 use crate::series::IntoSeries;
-use crate::{
-    array::ops::GroupIndices,
-    series::Series,
-    with_match_physical_daft_types,
-};
+use crate::{array::ops::GroupIndices, series::Series, with_match_physical_daft_types};
 use common_error::{DaftError, DaftResult};
 
 use crate::datatypes::*;

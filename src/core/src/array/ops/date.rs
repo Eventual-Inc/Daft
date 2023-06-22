@@ -1,6 +1,4 @@
-use crate::{
-    datatypes::{logical::DateArray, Int32Array, UInt32Array},
-};
+use crate::datatypes::{logical::DateArray, Int32Array, UInt32Array};
 use arrow2::compute::arithmetics::ArraySub;
 use common_error::DaftResult;
 

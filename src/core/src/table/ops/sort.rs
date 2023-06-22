@@ -1,8 +1,4 @@
-use crate::{
-    dsl::Expr,
-    series::Series,
-    table::Table,
-};
+use crate::{dsl::Expr, series::Series, table::Table};
 use common_error::{DaftError, DaftResult};
 
 impl Table {

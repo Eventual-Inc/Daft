@@ -6,8 +6,8 @@ use crate::datatypes::{
     BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, ExtensionArray, Field,
     FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
 };
-use common_error::{DaftError, DaftResult};
 use crate::utils::arrow::arrow_bitmap_and_helper;
+use common_error::{DaftError, DaftResult};
 use std::convert::identity;
 use std::sync::Arc;
 

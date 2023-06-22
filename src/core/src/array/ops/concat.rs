@@ -1,9 +1,6 @@
 use arrow2::array::Array;
 
-use crate::{
-    array::DataArray,
-    datatypes::DaftPhysicalType,
-};
+use crate::{array::DataArray, datatypes::DaftPhysicalType};
 use common_error::{DaftError, DaftResult};
 
 #[cfg(feature = "python")]

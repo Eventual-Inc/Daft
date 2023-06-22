@@ -1,8 +1,7 @@
-use common_error::DaftError;
 use crate::{series::Series, with_match_comparable_daft_types};
+use common_error::DaftError;
 
 use common_error::DaftResult;
-
 
 use crate::series::array_impl::IntoSeries;
 

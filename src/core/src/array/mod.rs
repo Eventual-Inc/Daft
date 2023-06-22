@@ -5,12 +5,9 @@ pub mod pseudo_arrow;
 
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::{
-    datatypes::{DaftPhysicalType, DataType, Field},
-};
+use crate::datatypes::{DaftPhysicalType, DataType, Field};
 
 use common_error::{DaftError, DaftResult};
-
 
 #[derive(Debug)]
 pub struct DataArray<T: DaftPhysicalType> {

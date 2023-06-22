@@ -1,8 +1,6 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::{
-    datatypes::{BooleanArray, DaftLogicalType, DateType, Field},
-};
+use crate::datatypes::{BooleanArray, DaftLogicalType, DateType, Field};
 use common_error::DaftResult;
 
 use super::{

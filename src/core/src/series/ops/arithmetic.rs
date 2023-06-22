@@ -4,10 +4,10 @@ use super::match_types_on_series;
 use super::py_binary_op_utilfn;
 
 use crate::datatypes::{DataType, Float64Type};
-use common_error::{DaftError, DaftResult};
 use crate::series::{IntoSeries, Series};
 use crate::with_match_numeric_and_utf_daft_types;
 use crate::with_match_numeric_daft_types;
+use common_error::{DaftError, DaftResult};
 
 macro_rules! py_binary_op {
     ($lhs:expr, $rhs:expr, $pyoperator:expr) => {
@@ -115,10 +115,8 @@ impl_series_math_op!(Rem, rem, "mod");
 
 #[cfg(test)]
 mod tests {
+    use crate::datatypes::{DataType, Float64Array, Int64Array, Utf8Array};
     use crate::series::IntoSeries;
-    use crate::{
-        datatypes::{DataType, Float64Array, Int64Array, Utf8Array},
-    };
     use common_error::DaftResult;
 
     #[test]

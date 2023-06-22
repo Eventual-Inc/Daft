@@ -8,7 +8,6 @@ use crate::{
 
 use common_error::{DaftError, DaftResult};
 
-
 use super::as_arrow::AsArrow;
 
 #[cfg(feature = "python")]

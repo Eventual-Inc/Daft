@@ -3,7 +3,7 @@ use crate::{
     datatypes::{DataType, DateType},
     series::Series,
 };
-use common_error::{DaftResult, DaftError};
+use common_error::{DaftError, DaftResult};
 
 impl Series {
     pub fn dt_day(&self) -> DaftResult<Self> {

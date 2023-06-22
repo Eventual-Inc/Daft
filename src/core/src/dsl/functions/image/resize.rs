@@ -1,10 +1,9 @@
 use crate::datatypes::DataType;
 use crate::dsl::functions::image::ImageExpr;
-use common_error::DaftError;
 use crate::{datatypes::Field, dsl::Expr, schema::Schema, series::Series};
+use common_error::DaftError;
 
 use common_error::DaftResult;
-
 
 use super::super::FunctionEvaluator;
 

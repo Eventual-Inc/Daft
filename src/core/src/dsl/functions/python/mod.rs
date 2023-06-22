@@ -1,9 +1,9 @@
 mod partial_udf;
 mod udf;
 
-use crate::{datatypes::DataType};
-use serde::{Deserialize, Serialize};
+use crate::datatypes::DataType;
 use common_error::DaftResult;
+use serde::{Deserialize, Serialize};
 
 use crate::dsl::Expr;
 

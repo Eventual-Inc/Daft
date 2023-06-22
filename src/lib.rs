@@ -12,7 +12,6 @@ const DAFT_BUILD_TYPE: &str = {
 pub mod pylib {
 
     use pyo3::prelude::*;
-    use crate::{VERSION, DAFT_BUILD_TYPE};
 
     // #[pyfunction]
     // fn version() -> &'static str {
@@ -34,4 +33,3 @@ pub mod pylib {
         Ok(())
     }
 }
-

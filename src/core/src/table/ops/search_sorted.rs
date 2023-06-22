@@ -1,9 +1,6 @@
 use crate::{
-    array::DataArray,
-    datatypes::UInt64Array,
-    kernels::search_sorted::search_sorted_multi_array,
-    series::Series,
-    table::Table,
+    array::DataArray, datatypes::UInt64Array, kernels::search_sorted::search_sorted_multi_array,
+    series::Series, table::Table,
 };
 use common_error::{DaftError, DaftResult};
 

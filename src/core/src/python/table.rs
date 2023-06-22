@@ -4,11 +4,11 @@ use pyo3::types::PyDict;
 
 use crate::datatypes::Field;
 use crate::dsl;
-use common_error::DaftError;
 use crate::ffi;
 use crate::schema::Schema;
 use crate::series::Series;
 use crate::table;
+use common_error::DaftError;
 
 use crate::python::expr::PyExpr;
 use crate::table::Table;

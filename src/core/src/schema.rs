@@ -7,9 +7,7 @@ use std::{
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    datatypes::Field,
-};
+use crate::datatypes::Field;
 
 use common_error::{DaftError, DaftResult};
 

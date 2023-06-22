@@ -4,8 +4,7 @@ use std::{
 };
 
 use crate::{
-    array::ops::arrow2::comparison::build_multi_array_is_equal,
-    datatypes::UInt64Array,
+    array::ops::arrow2::comparison::build_multi_array_is_equal, datatypes::UInt64Array,
     table::Table,
 };
 use common_error::{DaftError, DaftResult};

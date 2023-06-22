@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arrow2::datatypes::Field as ArrowField;
 
-use crate::{datatypes::dtype::DataType};
+use crate::datatypes::dtype::DataType;
 use common_error::DaftResult;
 
 use serde::{Deserialize, Serialize};

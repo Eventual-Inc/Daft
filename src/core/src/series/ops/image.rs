@@ -1,8 +1,6 @@
 use crate::datatypes::{DataType, FixedShapeImageType, ImageFormat, ImageType};
 
-use crate::{
-    series::{IntoSeries, Series},
-};
+use crate::series::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
 
 impl Series {

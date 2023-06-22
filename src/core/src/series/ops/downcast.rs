@@ -2,7 +2,7 @@ use crate::datatypes::*;
 
 use crate::datatypes::logical::LogicalArray;
 use crate::series::array_impl::ArrayWrapper;
-use crate::{series::Series};
+use crate::series::Series;
 use common_error::DaftResult;
 
 impl Series {

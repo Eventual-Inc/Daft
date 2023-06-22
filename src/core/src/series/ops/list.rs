@@ -1,10 +1,9 @@
 use crate::array::ops::as_arrow::AsArrow;
 use crate::datatypes::{DataType, UInt64Array, Utf8Array};
+use crate::series::Series;
 use common_error::DaftError;
-use crate::{series::Series};
 
 use common_error::DaftResult;
-
 
 impl Series {
     pub fn explode(&self) -> DaftResult<Series> {

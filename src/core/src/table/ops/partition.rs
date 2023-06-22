@@ -3,12 +3,7 @@ use std::ops::Rem;
 use arrow2::array::{Array, DictionaryKey};
 use rand::SeedableRng;
 
-use crate::{
-    datatypes::UInt64Array,
-    dsl::Expr,
-    series::IntoSeries,
-    table::Table,
-};
+use crate::{datatypes::UInt64Array, dsl::Expr, series::IntoSeries, table::Table};
 use common_error::{DaftError, DaftResult};
 
 use crate::array::ops::as_arrow::AsArrow;

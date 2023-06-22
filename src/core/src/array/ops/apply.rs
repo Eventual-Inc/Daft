@@ -4,7 +4,6 @@ use crate::{array::DataArray, datatypes::DaftNumericType};
 
 use common_error::DaftResult;
 
-
 impl<T> DataArray<T>
 where
     T: DaftNumericType,

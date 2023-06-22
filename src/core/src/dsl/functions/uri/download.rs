@@ -1,12 +1,10 @@
 use crate::datatypes::{DataType, Field};
 
 use crate::dsl::functions::FunctionExpr;
-use common_error::DaftError;
+use crate::dsl::{functions::FunctionEvaluator, Expr};
 use crate::schema::Schema;
 use crate::series::Series;
-use crate::{
-    dsl::{functions::FunctionEvaluator, Expr},
-};
+use common_error::DaftError;
 use common_error::DaftResult;
 
 use super::UriExpr;

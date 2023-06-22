@@ -13,8 +13,8 @@ use self::temporal::TemporalExpr;
 use self::utf8::Utf8Expr;
 use self::{float::FloatExpr, uri::UriExpr};
 use crate::{datatypes::Field, schema::Schema, series::Series};
-use serde::{Deserialize, Serialize};
 use common_error::DaftResult;
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 pub mod python;

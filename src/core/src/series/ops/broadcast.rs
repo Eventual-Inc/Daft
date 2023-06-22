@@ -1,4 +1,4 @@
-use crate::{series::Series};
+use crate::series::Series;
 
 use common_error::DaftResult;
 impl Series {
@@ -9,10 +9,8 @@ impl Series {
 
 #[cfg(test)]
 mod tests {
+    use crate::datatypes::{DataType, Int64Array, Utf8Array};
     use crate::series::array_impl::IntoSeries;
-    use crate::{
-        datatypes::{DataType, Int64Array, Utf8Array},
-    };
     use common_error::DaftResult;
 
     #[test]

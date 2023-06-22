@@ -14,7 +14,6 @@ use crate::{
 };
 use common_error::{DaftError, DaftResult};
 
-
 use crate::{datatypes::TimeUnit, series::IntoSeries};
 use arrow2::compute::{
     self,

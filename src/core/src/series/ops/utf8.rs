@@ -1,6 +1,4 @@
-use crate::{
-    series::Series,
-};
+use crate::series::Series;
 use common_error::{DaftError, DaftResult};
 
 use crate::datatypes::*;

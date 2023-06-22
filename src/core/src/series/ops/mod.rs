@@ -1,5 +1,5 @@
-use common_error::DaftResult;
 use crate::utils::supertype::try_get_supertype;
+use common_error::DaftResult;
 
 use super::Series;
 

@@ -1,9 +1,5 @@
 use crate::{
-    array::ops::IntoGroups,
-    datatypes::UInt64Array,
-    dsl::Expr,
-    series::IntoSeries,
-    table::Table,
+    array::ops::IntoGroups, datatypes::UInt64Array, dsl::Expr, series::IntoSeries, table::Table,
 };
 use common_error::{DaftError, DaftResult};
 

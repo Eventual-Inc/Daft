@@ -1,7 +1,6 @@
-use crate::{series::Series};
+use crate::series::Series;
 
 use common_error::DaftResult;
-
 
 impl Series {
     pub fn head(&self, num: usize) -> DaftResult<Series> {

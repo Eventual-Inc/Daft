@@ -6,12 +6,9 @@ use std::fmt::{Display, Formatter, Result};
 use std::str::FromStr;
 use std::string::ToString;
 
-use crate::{
-    datatypes::DataType,
-};
+use crate::datatypes::DataType;
 
 use common_error::{DaftError, DaftResult};
-
 
 /// Supported image modes for Daft's image type.
 ///

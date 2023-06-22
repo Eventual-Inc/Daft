@@ -1,9 +1,9 @@
 use std::ops::Not;
 
 use crate::datatypes::BooleanType;
-use common_error::DaftResult;
 use crate::series::array_impl::IntoSeries;
 use crate::series::Series;
+use common_error::DaftResult;
 
 impl Not for &Series {
     type Output = DaftResult<Series>;

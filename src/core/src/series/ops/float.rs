@@ -2,7 +2,6 @@ use crate::{series::Series, with_match_float_and_null_daft_types};
 
 use common_error::DaftResult;
 
-
 use crate::series::array_impl::IntoSeries;
 
 impl Series {

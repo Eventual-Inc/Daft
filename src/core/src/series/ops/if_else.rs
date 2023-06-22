@@ -1,5 +1,5 @@
 use super::match_types_on_series;
-use crate::{series::Series};
+use crate::series::Series;
 
 use common_error::DaftResult;
 

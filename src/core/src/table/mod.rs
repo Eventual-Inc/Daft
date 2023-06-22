@@ -9,10 +9,10 @@ use crate::datatypes::logical::LogicalArray;
 use crate::datatypes::{BooleanType, DataType, Field, UInt64Array};
 use crate::dsl::functions::FunctionEvaluator;
 use crate::dsl::{col, null_lit, AggExpr, Expr};
-use common_error::{DaftError, DaftResult};
 use crate::schema::{Schema, SchemaRef};
 use crate::series::{IntoSeries, Series};
 use crate::{with_match_daft_logical_types, with_match_physical_daft_types};
+use common_error::{DaftError, DaftResult};
 mod ops;
 #[derive(Clone)]
 pub struct Table {
@@ -536,10 +536,10 @@ mod test {
 
     use crate::datatypes::{DataType, Float64Array, Int64Array};
     use crate::dsl::col;
-    use common_error::DaftResult;
     use crate::schema::Schema;
     use crate::series::IntoSeries;
     use crate::table::Table;
+    use common_error::DaftResult;
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
         let a = Int64Array::from(("a", vec![1, 2, 3])).into_series();

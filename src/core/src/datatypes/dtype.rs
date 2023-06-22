@@ -2,9 +2,7 @@ use std::fmt::{Display, Formatter, Result};
 
 use arrow2::datatypes::DataType as ArrowType;
 
-use crate::{
-    datatypes::{field::Field, image_mode::ImageMode, time_unit::TimeUnit},
-};
+use crate::datatypes::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
 use common_error::{DaftError, DaftResult};
 

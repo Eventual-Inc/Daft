@@ -23,7 +23,6 @@ pub enum DaftError {
     External(GenericError),
 }
 
-
 impl From<arrow2::error::Error> for DaftError {
     fn from(error: arrow2::error::Error) -> Self {
         DaftError::ArrowError(error.to_string())
@@ -90,4 +89,3 @@ impl Display for DaftError {
         }
     }
 }
-

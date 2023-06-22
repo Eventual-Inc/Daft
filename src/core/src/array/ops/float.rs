@@ -2,8 +2,8 @@ use crate::{
     array::DataArray,
     datatypes::{BooleanArray, BooleanType, DaftFloatType, DaftNumericType, NullType},
 };
-use num_traits::Float;
 use common_error::DaftResult;
+use num_traits::Float;
 
 use super::DaftIsNan;
 

@@ -1,7 +1,4 @@
-use crate::{
-    datatypes::DataType,
-    series::Series,
-};
+use crate::{datatypes::DataType, series::Series};
 use common_error::{DaftError, DaftResult};
 
 use crate::series::array_impl::IntoSeries;
