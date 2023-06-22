@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 
+import numpy as np
 import pandas as pd
+from PIL import Image
 
 import daft
 
@@ -176,3 +178,56 @@ def test_repr_with_html_string():
     for i in range(3):
         assert f"<div>body{i}</div>" in non_html_table
         assert f"<tr><td>&lt;div&gt;body{i}&lt;/div&gt;</td></tr>" in html_table
+
+
+class MyObj:
+    def __repr__(self) -> str:
+        return "myobj-custom-repr"
+
+
+def test_repr_html_custom_hooks():
+    img = Image.fromarray(np.ones((3, 3)).astype(np.uint8))
+    arr = np.ones((3, 3))
+
+    df = daft.from_pydict(
+        {
+            "objects": daft.Series.from_pylist([MyObj() for _ in range(3)], pyobj="force"),
+            "np": daft.Series.from_pylist([arr for _ in range(3)], pyobj="force"),
+            "pil": daft.Series.from_pylist([img for _ in range(3)], pyobj="force"),
+        }
+    )
+    df.collect()
+
+    assert (
+        df.__repr__()
+        == """+-------------------+-------------+----------------------------------+
+| objects           | np          | pil                              |
+| Python            | Python      | Python                           |
++-------------------+-------------+----------------------------------+
+| myobj-custom-repr | [[1. 1. 1.] | <PIL.Image.Image image mode=L... |
+|                   |  [1. 1. 1.] |                                  |
+|                   |  [1. ...    |                                  |
++-------------------+-------------+----------------------------------+
+| myobj-custom-repr | [[1. 1. 1.] | <PIL.Image.Image image mode=L... |
+|                   |  [1. 1. 1.] |                                  |
+|                   |  [1. ...    |                                  |
++-------------------+-------------+----------------------------------+
+| myobj-custom-repr | [[1. 1. 1.] | <PIL.Image.Image image mode=L... |
+|                   |  [1. 1. 1.] |                                  |
+|                   |  [1. ...    |                                  |
++-------------------+-------------+----------------------------------+
+
+(Showing first 3 of 3 rows)"""
+    )
+
+    html_repr = df._repr_html_()
+
+    # Assert that MyObj is correctly displayed in html repr (falls back to __repr__)
+    assert "myobj-custom-repr" in html_repr
+
+    # Assert that PIL viz hook correctly triggers in html repr
+    assert 'alt="<PIL.Image.Image image mode=L size=3x3' in html_repr
+    assert '<img style="max-height:128px;width:auto" src="data:image/png;base64,' in html_repr
+
+    # Assert that numpy array viz hook correctly triggers in html repr
+    assert "<td>&ltnp.ndarray<br>shape=(3, 3)<br>dtype=float64&gt</td><td>" in html_repr

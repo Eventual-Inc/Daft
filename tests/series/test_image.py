@@ -178,7 +178,7 @@ def test_image_pil_inference(fixed_shape, mode):
             if arr is not None:
                 arr[..., -1] = 255
     imgs = [Image.fromarray(arr, mode=mode) if arr is not None else None for arr in arrs]
-    s = Series.from_pylist(imgs, pyobj="force")
+    s = Series.from_pylist(imgs, pyobj="allow")
     assert s.datatype() == DataType.image(mode)
     out = s.to_pylist()
     if num_channels == 1:
@@ -206,7 +206,12 @@ def test_image_pil_inference_mixed():
         else None
         for arr in arrs
     ]
+
+    # Forcing should still create Python Series
     s = Series.from_pylist(imgs, pyobj="force")
+    assert s.datatype() == DataType.python()
+
+    s = Series.from_pylist(imgs, pyobj="allow")
     assert s.datatype() == DataType.image()
     out = s.to_pylist()
     arrs[3] = np.expand_dims(arrs[3], axis=-1)

@@ -14,13 +14,13 @@ HookClass = TypeVar("HookClass")
 _VIZ_HOOKS_REGISTRY = {}
 
 
-def register_viz_hook(klass: type[HookClass], hook: Callable[[HookClass], str]):
+def register_viz_hook(klass: type[HookClass], hook: Callable[[object], str]):
     """Registers a visualization hook that returns the appropriate HTML for
     visualizing a specific class in HTML"""
     _VIZ_HOOKS_REGISTRY[klass] = hook
 
 
-def get_viz_hook(val: HookClass) -> Callable[[HookClass], str] | None:
+def get_viz_hook(val: object) -> Callable[[object], str] | None:
     for klass in _VIZ_HOOKS_REGISTRY:
         if isinstance(val, klass):
             return _VIZ_HOOKS_REGISTRY[klass]
@@ -45,7 +45,7 @@ except ImportError:
 
 if HAS_PILLOW:
 
-    def _viz_pil_image(val: PIL.Image.Image):
+    def _viz_pil_image(val: PIL.Image.Image) -> str:
         img = val.copy()
         img.thumbnail((128, 128))
         bio = io.BytesIO()
@@ -57,7 +57,7 @@ if HAS_PILLOW:
 
 if HAS_NUMPY:
 
-    def _viz_numpy(val: np.ndarray):
+    def _viz_numpy(val: np.ndarray) -> str:
         return f"&ltnp.ndarray<br>shape={val.shape}<br>dtype={val.dtype}&gt"
 
     register_viz_hook(np.ndarray, _viz_numpy)
