@@ -9,5 +9,5 @@ python = ["dep:pyo3"]
 
 [package]
 edition = {workspace = true}
-name = "common_error"
+name = "common-error"
 version = {workspace = true}

@@ -3,23 +3,24 @@ arrow2 = {workspace = true}
 base64 = "0.21.2"
 chrono = "0.4.26"
 chrono-tz = "0.8.2"
-common_error = {path = "../common/error", default-features = false }
+common-error = {path = "../common/error", default-features = false }
 dyn-clone = "1.0.11"
 fnv = "1.0.7"
-html-escape = "0.2.13"
+html-escape = {workspace = true}
 ndarray = "0.15.6"
-num-derive = "0.3.3"
-prettytable-rs = "^0.10"
+num-derive = {workspace = true}
+num-traits = {workspace = true}
+prettytable-rs = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true}
-rand = "^0.8"
+rand = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 lazy_static = {workspace = true}
 log = {workspace = true}
+bincode = {workspace = true}
 
-[dependencies.bincode]
-version = "1.3.3"
+
 
 [dependencies.image]
 default-features = false
@@ -31,8 +32,6 @@ features = ["serde"]
 version = "1.9.2"
 
 
-[dependencies.num-traits]
-version = "0.2"
 
 [dependencies.numpy]
 optional = true
@@ -45,9 +44,9 @@ version = "0.8.5"
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "dep:numpy", "common_error/python"]
+python = ["dep:pyo3", "dep:numpy", "common-error/python"]
 
 [package]
 edition = {workspace = true}
-name = "daft_core"
+name = "daft-core"
 version = {workspace = true}

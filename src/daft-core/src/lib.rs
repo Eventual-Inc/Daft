@@ -1,17 +1,14 @@
-#![feature(hash_raw_entry)]
 
 pub mod array;
 pub mod datatypes;
-mod dsl;
 #[cfg(feature = "python")]
-mod ffi;
-mod kernels;
+pub mod ffi;
+pub mod kernels;
 #[cfg(feature = "python")]
 pub mod python;
-mod schema;
+pub mod schema;
 pub mod series;
-mod table;
-mod utils;
+pub mod utils;
 
 pub use series::{Series, IntoSeries};
 pub use datatypes::{DataType};

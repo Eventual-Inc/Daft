@@ -613,7 +613,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
-name = "common_error"
+name = "common-error"
 version = "0.1.0"
 dependencies = [
  "arrow2",
@@ -699,32 +699,15 @@ dependencies = [
 name = "daft"
 version = "0.1.6"
 dependencies = [
- "daft_core",
+ "daft-core",
+ "daft-dsl",
+ "daft-table",
  "pyo3",
  "pyo3-log",
 ]
 
 [[package]]
-name = "daft-io"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "aws-config",
- "aws-sdk-s3",
- "bytes",
- "common_error",
- "daft_core",
- "futures",
- "lazy_static",
- "log",
- "reqwest",
- "snafu",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "daft_core"
+name = "daft-core"
 version = "0.1.0"
 dependencies = [
  "arrow2",
@@ -732,7 +715,7 @@ dependencies = [
  "bincode",
  "chrono",
  "chrono-tz",
- "common_error",
+ "common-error",
  "dyn-clone",
  "fnv",
  "html-escape",
@@ -751,6 +734,54 @@ dependencies = [
  "serde",
  "serde_json",
  "xxhash-rust",
+]
+
+[[package]]
+name = "daft-dsl"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "common-error",
+ "daft-core",
+ "daft-io",
+ "pyo3",
+ "pyo3-log",
+ "serde",
+]
+
+[[package]]
+name = "daft-io"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-config",
+ "aws-sdk-s3",
+ "bytes",
+ "common-error",
+ "daft-core",
+ "futures",
+ "lazy_static",
+ "log",
+ "reqwest",
+ "snafu",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "daft-table"
+version = "0.1.0"
+dependencies = [
+ "arrow2",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "html-escape",
+ "num-traits",
+ "prettytable-rs",
+ "pyo3",
+ "pyo3-log",
+ "rand",
 ]
 
 [[package]]

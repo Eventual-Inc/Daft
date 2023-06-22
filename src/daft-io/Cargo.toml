@@ -1,6 +1,6 @@
 [dependencies]
-common_error = {path = "../common/error", default-features = false}
-daft_core = {path = "../daft-core", default-features = false}
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
 snafu = "0.7.4"
 async-trait = "0.1.68"
 tokio = {version = "1.28.2", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}

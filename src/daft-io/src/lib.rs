@@ -258,8 +258,6 @@ pub fn _url_download(
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
-
-
 pub fn url_download(
     series: &Series,
     max_connections: usize,

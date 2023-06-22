@@ -18,6 +18,9 @@ pub mod pylib {
         pyo3_log::init();
 
         daft_core::python::register_modules(_py, m)?;
+        daft_dsl::register_modules(_py, m)?;
+        daft_table::register_modules(_py, m)?;
+
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
         Ok(())
