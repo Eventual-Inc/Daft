@@ -169,7 +169,7 @@ Operations on nested types (such as List and FixedSizeList), accessible through 
 Example: ``e1.str.concat(e2)``
 
 .. autosummary::
-    :toctree: expression_methods
+    :toctree: doc_gen/expression_methods
 
     daft.expressions.expressions.ExpressionListNamespace.join
 
