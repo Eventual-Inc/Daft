@@ -2,6 +2,7 @@
 ipdb
 maturin
 pre-commit
+docker
 
 # Tracing
 orjson==3.9.1  # orjson recommended for viztracer
