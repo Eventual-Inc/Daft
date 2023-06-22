@@ -11,7 +11,7 @@ use crate::{
         ImageFormat, ListArray, NullArray, StructArray, Utf8Array,
     },
 };
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 
 use super::image::AsImageObj;
 
