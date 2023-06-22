@@ -1,9 +1,7 @@
-use std::io::Cursor;
-
-use arrow2::{array::Array, datatypes::Field, ffi};
+use arrow2::array::Array;
 
 use pyo3::exceptions::PyValueError;
-use pyo3::ffi::Py_uintptr_t;
+
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3::{PyAny, PyObject, PyResult, Python};
