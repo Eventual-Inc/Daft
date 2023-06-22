@@ -106,7 +106,7 @@ class Series:
         except pa.lib.ArrowInvalid:
             if pyobj == "disallow":
                 raise
-            pys = PySeries.from_pylist(name, data)
+            pys = PySeries.from_pylist(name, data, pyobj=pyobj)
             return Series._from_pyseries(pys)
 
     @classmethod

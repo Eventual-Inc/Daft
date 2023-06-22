@@ -32,7 +32,7 @@ def test_image_type_df(from_pil_imgs) -> None:
     ]
     if from_pil_imgs:
         data = [Image.fromarray(arr, mode="RGB") if arr is not None else None for arr in data]
-    df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="force")})
+    df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="allow")})
 
     image_expr = col("image")
     if not from_pil_imgs:
