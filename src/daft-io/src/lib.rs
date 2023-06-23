@@ -105,7 +105,7 @@ async fn get_source(source_type: SourceType, config: &IOConfig) -> Result<Arc<dy
     let new_source: Arc<dyn ObjectSource> = match source_type {
         SourceType::File => Arc::new(LocalSource::new().await) as Arc<dyn ObjectSource>,
         SourceType::Http => Arc::new(HttpSource::new().await) as Arc<dyn ObjectSource>,
-        SourceType::S3 => Arc::new(S3LikeSource::new().await) as Arc<dyn ObjectSource>,
+        SourceType::S3 => Arc::new(S3LikeSource::new(&config.s3).await) as Arc<dyn ObjectSource>,
     };
 
     let mut w_handle = OBJ_SRC_MAP.write().unwrap();

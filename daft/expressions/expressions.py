@@ -3,7 +3,7 @@ from __future__ import annotations
 import builtins
 import sys
 from datetime import date, datetime
-from typing import Callable, Iterable, Iterator, TypeVar, overload
+from typing import TYPE_CHECKING, Callable, Iterable, Iterator, TypeVar, overload
 
 import fsspec
 import pyarrow as pa
@@ -22,6 +22,9 @@ if sys.version_info < (3, 8):
     from typing_extensions import Literal
 else:
     from typing import Literal
+
+if TYPE_CHECKING:
+    from daft.io import IOConfig
 
 
 def lit(value: object) -> Expression:
@@ -423,6 +426,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         max_connections: int = 32,
         on_error: Literal["raise"] | Literal["null"] = "raise",
         fs: fsspec.AbstractFileSystem | None = None,
+        io_config: IOConfig | None = None,
         use_native_downloader: bool = False,
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column
@@ -451,7 +455,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
             using_ray_runner = context.get_context().is_ray_runner
             return Expression._from_pyexpr(
-                self._expr.url_download(max_connections, raise_on_error, not using_ray_runner)
+                self._expr.url_download(max_connections, raise_on_error, not using_ray_runner, io_config)
             )
         else:
             from daft.udf_library import url_udfs
