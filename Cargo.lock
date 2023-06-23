@@ -766,6 +766,7 @@ dependencies = [
  "pyo3",
  "pyo3-log",
  "reqwest",
+ "serde",
  "snafu",
  "tokio",
  "url",

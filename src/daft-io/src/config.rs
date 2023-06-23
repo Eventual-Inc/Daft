@@ -1,6 +1,9 @@
 use std::fmt::Display;
 use std::fmt::Formatter;
-#[derive(Clone, Default)]
+
+use serde::Deserialize;
+use serde::Serialize;
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct S3Config {
     pub region_name: Option<String>,
     pub endpoint_url: Option<String>,
@@ -8,7 +11,7 @@ pub struct S3Config {
     pub access_key: Option<String>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct IOConfig {
     pub s3: S3Config,
 }

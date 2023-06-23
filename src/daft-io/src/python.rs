@@ -3,13 +3,13 @@ use pyo3::prelude::*;
 
 #[derive(Clone, Default)]
 #[pyclass]
-struct PyS3Config {
+pub struct PyS3Config {
     pub config: S3Config,
 }
 
 #[derive(Clone, Default)]
 #[pyclass]
-struct PyIOConfig {
+pub struct PyIOConfig {
     pub config: IOConfig,
 }
 

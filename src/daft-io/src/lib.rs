@@ -1,14 +1,15 @@
 #![feature(async_closure)]
 
-mod config;
+pub mod config;
 mod http;
 mod local;
 mod object_io;
 mod s3_like;
 
 #[cfg(feature = "python")]
-mod python;
+pub mod python;
 
+use config::IOConfig;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
@@ -17,6 +18,7 @@ use lazy_static::lazy_static;
 use std::{
     borrow::Cow,
     collections::HashMap,
+    hash::Hash,
     sync::{Arc, RwLock},
 };
 
@@ -88,13 +90,14 @@ impl From<Error> for DaftError {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 lazy_static! {
-    static ref OBJ_SRC_MAP: RwLock<HashMap<SourceType, Arc<dyn ObjectSource>>> =
+    static ref OBJ_SRC_MAP: RwLock<HashMap<(SourceType, IOConfig), Arc<dyn ObjectSource>>> =
         RwLock::new(HashMap::new());
 }
 
-async fn get_source(source_type: SourceType) -> Result<Arc<dyn ObjectSource>> {
+async fn get_source(source_type: SourceType, config: &IOConfig) -> Result<Arc<dyn ObjectSource>> {
+    let key = (source_type.clone(), config.clone());
     {
-        if let Some(source) = OBJ_SRC_MAP.read().unwrap().get(&source_type) {
+        if let Some(source) = OBJ_SRC_MAP.read().unwrap().get(&key) {
             return Ok(source.clone());
         }
     }
@@ -106,13 +109,13 @@ async fn get_source(source_type: SourceType) -> Result<Arc<dyn ObjectSource>> {
     };
 
     let mut w_handle = OBJ_SRC_MAP.write().unwrap();
-    if w_handle.get(&source_type).is_none() {
-        w_handle.insert(source_type, new_source.clone());
+    if w_handle.get(&key).is_none() {
+        w_handle.insert(key, new_source.clone());
     }
     Ok(new_source)
 }
 
-#[derive(Debug, Hash, PartialEq, std::cmp::Eq)]
+#[derive(Debug, Hash, PartialEq, std::cmp::Eq, Clone, Copy)]
 pub(crate) enum SourceType {
     File,
     Http,
@@ -151,9 +154,9 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     }
 }
 
-async fn single_url_get(input: String) -> Result<GetResult> {
+async fn single_url_get(input: String, config: &IOConfig) -> Result<GetResult> {
     let (scheme, path) = parse_url(&input)?;
-    let source = get_source(scheme).await?;
+    let source = get_source(scheme, config).await?;
     source.get(path.as_ref()).await
 }
 
@@ -161,9 +164,10 @@ async fn single_url_download(
     index: usize,
     input: Option<String>,
     raise_error_on_failure: bool,
+    config: Arc<IOConfig>,
 ) -> Result<Option<bytes::Bytes>> {
     let value = if let Some(input) = input {
-        let response = single_url_get(input).await;
+        let response = single_url_get(input, config.as_ref()).await;
         let res = match response {
             Ok(res) => res.bytes().await,
             Err(err) => Err(err),
@@ -194,6 +198,7 @@ pub fn _url_download(
     max_connections: usize,
     raise_error_on_failure: bool,
     multi_thread: bool,
+    config: Arc<IOConfig>,
 ) -> DaftResult<BinaryArray> {
     let urls = array.as_arrow().iter();
     let name = array.name();
@@ -219,10 +224,11 @@ pub fn _url_download(
     // let thread_max_connections =
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
+        let owned_config = config.clone();
         tokio::spawn(async move {
             (
                 i,
-                single_url_download(i, owned_url, raise_error_on_failure).await,
+                single_url_download(i, owned_url, raise_error_on_failure, owned_config).await,
             )
         })
     }))
@@ -272,6 +278,7 @@ pub fn url_download(
     max_connections: usize,
     raise_error_on_failure: bool,
     multi_thread: bool,
+    config: Arc<IOConfig>,
 ) -> DaftResult<Series> {
     match series.data_type() {
         DataType::Utf8 => Ok(_url_download(
@@ -279,6 +286,7 @@ pub fn url_download(
             max_connections,
             raise_error_on_failure,
             multi_thread,
+            config,
         )?
         .into_series()),
         dt => Err(DaftError::TypeError(format!(
