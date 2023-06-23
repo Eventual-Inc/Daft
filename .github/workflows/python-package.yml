@@ -155,6 +155,8 @@ jobs:
   integration-test-tpch:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs:
+    - integration-test-build
     env:
       package-name: getdaft
     strategy:
