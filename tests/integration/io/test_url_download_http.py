@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import socketserver
 import time
-from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler
 from multiprocessing import Process
 from socket import socket
 
@@ -53,24 +53,6 @@ def _serve_error_server(code, port):
         httpd.serve_forever()
 
 
-def _serve_file_server(port, directory):
-    """Target function for serving a HTTP service that serves files from a directory"""
-
-    class ServeFileHandler(SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs, directory=directory)
-
-        def do_GET(self):
-            if self.path == "/ready":
-                self.send_response(200)
-                self.end_headers()
-                return
-            super().do_GET()
-
-    with socketserver.TCPServer(("", port), ServeFileHandler) as httpd:
-        httpd.serve_forever()
-
-
 @pytest.fixture(
     scope="function",
     params=[
@@ -107,38 +89,6 @@ def mock_error_http_server(request) -> YieldFixture[tuple[str, int]]:
     finally:
         p.terminate()
         p.join()
-
-
-@pytest.fixture(scope="session")
-def mock_http_image_urls(tmp_path_factory, image_data) -> YieldFixture[str]:
-    """Provides a mock HTTP server that serves files in a given directory
-
-    This fixture yields:
-        list[str]: URLs of files available on the HTTP server
-    """
-    # Start server
-    tmpdir = tmp_path_factory.mktemp("data")
-    port = _get_free_port()
-    server_url = f"http://localhost:{port}"
-    p = Process(target=_serve_file_server, args=(port, str(tmpdir)))
-    p.start()
-
-    # Add a single image file to the tmpdir
-    # NOTE: We use only 1 image because the HTTPServer that we use is bad at handling concurrent requests
-    image_filepath = tmpdir / f"img.jpeg"
-    image_filepath.write_bytes(image_data)
-    urls = [f"{server_url}/{image_filepath.relative_to(tmpdir)}"]
-
-    try:
-        _wait_for_server(f"{server_url}/ready")
-        yield urls
-    finally:
-        p.terminate()
-        p.join()
-
-        # Cleanup tmpdir
-        for child in tmpdir.glob("*"):
-            child.unlink()
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
