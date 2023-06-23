@@ -69,7 +69,7 @@ Combining
     :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.join
-    daft.DataFrane.concat
+    daft.DataFrame.concat
 
 .. _df-aggregations:
 
@@ -143,6 +143,8 @@ Integrations
     :toctree: doc_gen/dataframe_methods
 
     daft.DataFrame.to_pandas
+    daft.DataFrame.to_torch_map_dataset
+    daft.DataFrame.to_torch_iter_dataset
     daft.DataFrame.to_ray_dataset
     daft.DataFrame.to_dask_dataframe
 

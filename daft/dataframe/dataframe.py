@@ -1120,11 +1120,13 @@ class DataFrame:
 
     @DataframePublicAPI
     def to_torch_map_dataset(self) -> "TorchDataset":
-        """Convert the current DataFrame into a map-style Torch Dataset_ for use with PyTorch.
+        """Convert the current DataFrame into a map-style
+        `Torch Dataset <https://pytorch.org/docs/stable/data.html#map-style-datasets>`__
+        for use with PyTorch.
 
         This method will materialize the entire DataFrame and block on completion.
 
-        Items will be returned in pydict format: a dict of {"column name": value} for each row in the data.
+        Items will be returned in pydict format: a dict of `{"column name": value}` for each row in the data.
 
         .. NOTE::
             If you do not need random access, you may get better performance out of an IterableDataset,
@@ -1133,8 +1135,6 @@ class DataFrame:
         .. NOTE::
             This method returns results locally.
             For distributed training, you may want to use ``DataFrame.to_ray_dataset()``.
-
-        .. _Dataset: https://pytorch.org/docs/stable/data.html#map-style-datasets
         """
         from daft.dataframe.to_torch import DaftTorchDataset
 
@@ -1142,23 +1142,24 @@ class DataFrame:
 
     @DataframePublicAPI
     def to_torch_iter_dataset(self) -> "TorchIterableDataset":
-        """Convert the current DataFrame into a Torch IterableDataset_ for use with PyTorch.
+        """Convert the current DataFrame into a
+        `Torch IterableDataset <https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset>`__
+        for use with PyTorch.
 
         Begins execution of the DataFrame if it is not yet executed.
 
-        Items will be returned in pydict format: a dict of {"column name": value} for each row in the data.
+        Items will be returned in pydict format: a dict of `{"column name": value}` for each row in the data.
 
         .. NOTE::
             The produced dataset is meant to be used with the single-process DataLoader,
             and does not support data sharding hooks for multi-process data loading.
+
             Do keep in mind that Daft is already using multithreading or multiprocessing under the hood
             to compute the data stream that feeds this dataset.
 
         .. NOTE::
             This method returns results locally.
             For distributed training, you may want to use ``DataFrame.to_ray_dataset()``.
-
-        .. _IterableDataset: https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset
         """
         from daft.dataframe.to_torch import DaftTorchIterableDataset
 
