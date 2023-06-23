@@ -109,6 +109,8 @@ jobs:
   integration-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      package-name: getdaft
     strategy:
       fail-fast: false
       matrix:
@@ -116,9 +118,19 @@ jobs:
         daft-runner: [py, ray]
     steps:
     - uses: actions/checkout@v3
-    - uses: moonrepo/setup-rust@v0
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
+      with:
+        submodules: true
+        fetch-depth: 0
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        architecture: x64
+    - run: pip install -U twine toml
+    - run: python tools/patch_package_version.py
+    - name: Install Rust toolchain
+      uses: moonrepo/setup-rust@v0
+
+    # Cache Rust builds
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo
@@ -131,21 +143,23 @@ jobs:
           ${{ runner.os }}-build-${{ env.cache-name }}-
           ${{ runner.os }}-build-
           ${{ runner.os }}-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+
+    - name: Build wheels - x86
+      uses: messense/maturin-action@v1
       with:
-        python-version: ${{ matrix.python-version }}
+        target: x86_64
+        manylinux: auto
+        args: --profile release-lto --out dist --sdist
+      env:
+        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
 
-    - name: Setup Virtual Env
+    - name: Install Daft and dev dependencies
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-
-    - name: Install dependencies
-      run: |
-        pip install --upgrade pip
         pip install -r requirements-dev.txt
+        pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        rm -rf daft
 
+    # Cache TPC-H data downloading
     - uses: actions/cache@v3
       env:
         cache-name: cache-tpch-data
@@ -153,10 +167,8 @@ jobs:
         path: data/tpch-dbgen
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
 
-    - name: Build library in release mode and run TPCH integration tests
+    - name: Run TPCH integration tests
       run: |
-        source activate
-        maturin develop --release
         pytest tests/integration/ --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
