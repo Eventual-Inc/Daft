@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from daft.daft import PyS3Config
+from daft.daft import PyIoConfig
 
 
-class S3Config:
-    _config: PyS3Config
+class IoConfig:
+    _config: PyIoConfig
 
     def __init__(self) -> None:
-        self._config = PyS3Config()
+        self._config = PyIoConfig()
 
     def __repr__(self) -> str:
         return repr(self._config)
