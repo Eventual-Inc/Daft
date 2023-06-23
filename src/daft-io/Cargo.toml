@@ -1,6 +1,7 @@
 [dependencies]
 async-trait = "0.1.68"
-aws-config = "0.55.3"
+aws-config = {version = "0.55.3"}
+aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
 aws-sdk-s3 = "0.28.0"
 bytes = "1.4.0"
 common-error = {path = "../common/error", default-features = false}
@@ -8,6 +9,9 @@ daft-core = {path = "../daft-core", default-features = false}
 futures = "0.3.28"
 lazy_static = {workspace = true}
 log = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+pyo3-log = {workspace = true, optional = true}
+serde = {workspace = true}
 snafu = "0.7.4"
 tokio = {version = "1.28.2", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
 url = "2.4.0"
@@ -16,6 +20,10 @@ url = "2.4.0"
 default-features = false
 features = ["stream", "rustls-tls"]
 version = "0.11.18"
+
+[features]
+default = ["python"]
+python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python"]
 
 [package]
 edition = {workspace = true}

@@ -2,10 +2,13 @@ use async_trait::async_trait;
 
 use futures::{StreamExt, TryStreamExt};
 use s3::client::customize::Response;
+use s3::config::{Credentials, Region};
 use s3::error::SdkError;
 use s3::operation::get_object::GetObjectError;
 use snafu::{IntoError, ResultExt, Snafu};
 use url::ParseError;
+
+use crate::config::S3Config;
 
 use super::object_io::{GetResult, ObjectSource};
 
@@ -63,23 +66,41 @@ impl From<Error> for super::Error {
     }
 }
 
-async fn build_client(endpoint: &str) -> aws_sdk_s3::Client {
+async fn build_client(config: &S3Config) -> aws_sdk_s3::Client {
     let conf = aws_config::load_from_env().await;
-
-    let s3_conf = match endpoint.is_empty() {
-        true => aws_sdk_s3::config::Builder::from(&conf).build(),
-        false => aws_sdk_s3::config::Builder::from(&conf)
-            .endpoint_url(endpoint)
-            .build(),
+    let builder = aws_sdk_s3::config::Builder::from(&conf);
+    let builder = match &config.endpoint_url {
+        None => builder,
+        Some(endpoint) => builder.endpoint_url(endpoint),
     };
+    let builder = if let Some(region) = &config.region_name {
+        builder.region(Region::new(region.to_owned()))
+    } else {
+        builder
+    };
+
+    let builder = if config.access_key.is_some() && config.key_id.is_some() {
+        let creds = Credentials::from_keys(
+            config.access_key.clone().unwrap(),
+            config.key_id.clone().unwrap(),
+            None,
+        );
+        builder.credentials_provider(creds)
+    } else if config.access_key.is_some() || config.key_id.is_some() {
+        panic!("Must provide both access_key and key_id when building S3-Like Client");
+    } else {
+        builder
+    };
+
+    let s3_conf = builder.build();
 
     s3::Client::from_conf(s3_conf)
 }
 
 impl S3LikeSource {
-    pub async fn new() -> Self {
+    pub async fn new(config: &S3Config) -> Self {
         S3LikeSource {
-            client: build_client("").await,
+            client: build_client(config).await,
         }
     }
 }

@@ -1,5 +1,7 @@
 mod download;
 
+use std::sync::Arc;
+
 use download::DownloadEvaluator;
 use serde::{Deserialize, Serialize};
 
@@ -7,12 +9,15 @@ use crate::Expr;
 
 use super::FunctionEvaluator;
 
+use daft_io::config::IOConfig;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum UriExpr {
     Download {
         max_connections: usize,
         raise_error_on_failure: bool,
         multi_thread: bool,
+        config: Arc<IOConfig>,
     },
 }
 
@@ -31,12 +36,14 @@ pub fn download(
     max_connections: usize,
     raise_error_on_failure: bool,
     multi_thread: bool,
+    config: Option<IOConfig>,
 ) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Uri(UriExpr::Download {
             max_connections,
             raise_error_on_failure,
             multi_thread,
+            config: config.unwrap_or_default().into(),
         }),
         inputs: vec![input.clone()],
     }

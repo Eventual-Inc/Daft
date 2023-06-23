@@ -701,6 +701,7 @@ version = "0.1.6"
 dependencies = [
  "daft-core",
  "daft-dsl",
+ "daft-io",
  "daft-table",
  "pyo3",
  "pyo3-log",
@@ -755,6 +756,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "aws-config",
+ "aws-credential-types",
  "aws-sdk-s3",
  "bytes",
  "common-error",
@@ -762,7 +764,10 @@ dependencies = [
  "futures",
  "lazy_static",
  "log",
+ "pyo3",
+ "pyo3-log",
  "reqwest",
+ "serde",
  "snafu",
  "tokio",
  "url",

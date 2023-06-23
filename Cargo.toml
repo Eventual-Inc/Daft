@@ -1,13 +1,14 @@
 [dependencies]
 daft-core = {path = "src/daft-core", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
+daft-io = {path = "src/daft-io", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "dep:pyo3-log", "daft-core/python", "daft-table/python", "daft-dsl/python"]
+python = ["dep:pyo3", "dep:pyo3-log", "daft-core/python", "daft-table/python", "daft-dsl/python", "daft-io/python"]
 
 [lib]
 crate-type = ["cdylib"]
