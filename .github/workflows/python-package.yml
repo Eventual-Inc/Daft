@@ -144,9 +144,8 @@ jobs:
       with:
         target: x86_64
         manylinux: auto
-        args: --profile release-lto --out dist --sdist
-      env:
-        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+        # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
+        args: --release --out dist --sdist
     - name: Upload wheels
       uses: actions/upload-artifact@v3
       with:
