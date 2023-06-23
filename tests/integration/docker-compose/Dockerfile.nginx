@@ -1,0 +1,4 @@
+FROM nginx:alpine
+
+WORKDIR /app
+COPY ./nginx-serve-static-files.conf /etc/nginx/nginx.conf

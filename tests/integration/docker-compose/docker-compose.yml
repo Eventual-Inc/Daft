@@ -1,0 +1,28 @@
+services:
+
+  # MinIO is an S3-compatible API object store
+  # Test fixtures should populate data in MinIO directly using S3 APIs such as boto3 or s3fs
+  minio:
+    image: quay.io/minio/minio
+    volumes:
+    - /data
+    ports:
+    - 9000:9000
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command:
+    - server
+    - /data
+
+  # Use nginx to serve static files
+  # Test fixtures should dump data in the `/tmp/daft-integration-testing/nginx` folder
+  nginx:
+    image: nginx-serve-static-files
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    volumes:
+    - /tmp/daft-integration-testing/nginx:/app/static:rw
+    ports:
+    - 8080:8080
