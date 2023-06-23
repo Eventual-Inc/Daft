@@ -106,7 +106,54 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-  integration-tests:
+  integration-test-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      package-name: getdaft
+    strategy:
+      matrix:
+        python-version: ['3.7']
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: true
+        fetch-depth: 0
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        architecture: x64
+    - run: pip install -U twine toml
+    - run: python tools/patch_package_version.py
+    - name: Install Rust toolchain
+      uses: moonrepo/setup-rust@v0
+    - uses: actions/cache@v3
+      env:
+        cache-name: cache-cargo
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+    - name: Build wheels - x86
+      uses: messense/maturin-action@v1
+      with:
+        target: x86_64
+        manylinux: auto
+        args: --profile release-lto --out dist --sdist
+      env:
+        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+    - name: Upload wheels
+      uses: actions/upload-artifact@v3
+      with:
+        name: wheels
+        path: dist
+
+  integration-test-tpch:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -125,54 +172,27 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
         architecture: x64
-    - run: pip install -U twine toml
-    - run: python tools/patch_package_version.py
-    - name: Install Rust toolchain
-      uses: moonrepo/setup-rust@v0
-
-    # Cache Rust builds
-    - uses: actions/cache@v3
-      env:
-        cache-name: cache-cargo
+    - name: Download built wheels
+      uses: actions/download-artifact@v3
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
-
-    - name: Build wheels - x86
-      uses: messense/maturin-action@v1
-      with:
-        target: x86_64
-        manylinux: auto
-        args: --profile release-lto --out dist --sdist
-      env:
-        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
-
+        name: wheels
+        path: dist
     - name: Install Daft and dev dependencies
       run: |
         pip install -r requirements-dev.txt
         pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
-
-    # Cache TPC-H data downloading
     - uses: actions/cache@v3
       env:
         cache-name: cache-tpch-data
       with:
         path: data/tpch-dbgen
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
-
     - name: Run TPCH integration tests
       run: |
-        pytest tests/integration/ --durations=50
+        pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
