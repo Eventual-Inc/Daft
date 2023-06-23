@@ -79,6 +79,7 @@ repos:
     name: cargo check --no-default-features
     args: [--no-default-features, --profile, rust-analyzer]
   - id: clippy
+    args: [--profile, rust-analyzer]
 
 - repo: https://github.com/abravalheri/validate-pyproject
   rev: v0.10.1

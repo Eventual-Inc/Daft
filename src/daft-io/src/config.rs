@@ -31,7 +31,7 @@ impl Display for IOConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(
             f,
-            "IOConfig
+            "IOConfig:
 {}",
             self.s3
         )
