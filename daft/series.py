@@ -19,12 +19,6 @@ try:
     import pandas as pd
 except ImportError:
     _PANDAS_AVAILABLE = False
-import sys
-
-if sys.version_info < (3, 8):
-    pass
-else:
-    pass
 
 
 class Series:
