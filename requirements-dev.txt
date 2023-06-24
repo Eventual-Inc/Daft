@@ -34,8 +34,6 @@ ray[data, default]==2.4.0
 # AWS
 s3fs==2023.1.0; python_version < '3.8'
 s3fs==2023.6.0; python_version >= '3.8'
-boto3  # unpinned due to conflicts with the `aiobotocore` transitive dep
-urllib3<2  # Pinned because of error during boto3 import: `ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_'`
 
 # Documentation
 myst-nb>=0.16.0
