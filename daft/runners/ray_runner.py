@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import threading
+import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
+from queue import Queue
 from typing import TYPE_CHECKING, Any, Iterable, Iterator
 
 import fsspec
@@ -392,18 +396,51 @@ class Scheduler:
 
         self.reserved_cores = 0
 
+        self.threads_by_df: dict[str, threading.Thread] = dict()
+        self.results_by_df: dict[str, Queue] = defaultdict(Queue)
+
+    def next(self, result_uuid: str) -> ray.ObjectRef | StopIteration:
+
+        # Case: thread is terminated and no longer exists.
+        # Should only be hit for repeated calls to next() after StopIteration.
+        if result_uuid not in self.threads_by_df:
+            return StopIteration()
+
+        # Common case: get the next result from the thread.
+        result = self.results_by_df[result_uuid].get()
+
+        # If there are no more results, delete the thread.
+        if isinstance(result, StopIteration):
+            self.threads_by_df[result_uuid].join()
+            del self.threads_by_df[result_uuid]
+
+        return result
+
     def run_plan(
         self,
         plan: logical_plan.LogicalPlan,
         psets: dict[str, ray.ObjectRef],
-    ) -> list[ray.ObjectRef]:
-        return list(self._run_plan(plan, psets))
+        result_uuid: str,
+    ) -> None:
+
+        t = threading.Thread(
+            target=self._run_plan,
+            name=result_uuid,
+            kwargs={
+                "plan": plan,
+                "psets": psets,
+                "result_uuid": result_uuid,
+            },
+        )
+        t.start()
+        self.threads_by_df[result_uuid] = t
 
     def _run_plan(
         self,
         plan: logical_plan.LogicalPlan,
         psets: dict[str, ray.ObjectRef],
-    ) -> Iterator[ray.ObjectRef]:
+        result_uuid: str,
+    ) -> None:
         from loguru import logger
 
         phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
@@ -444,7 +481,7 @@ class Scheduler:
 
                             elif isinstance(next_step, ray.ObjectRef):
                                 # A final result.
-                                yield next_step
+                                self.results_by_df[result_uuid].put(next_step)
                                 next_step = next(phys_plan)
 
                             # next_step is a task.
@@ -523,8 +560,8 @@ class Scheduler:
                     if next_step is None:
                         next_step = next(phys_plan)
 
-            except StopIteration:
-                return
+            except StopIteration as e:
+                self.results_by_df[result_uuid].put(e)
 
 
 @ray.remote(num_cpus=1)
@@ -561,7 +598,7 @@ def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]
     return partitions
 
 
-class RayRunner(Runner):
+class RayRunner(Runner[ray.ObjectRef]):
     def __init__(
         self,
         address: str | None,
@@ -602,9 +639,7 @@ class RayRunner(Runner):
                 max_task_backlog=max_task_backlog,
             )
 
-    def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
-        result_pset = RayPartitionSet({})
-
+    def run_iter(self, plan: logical_plan.LogicalPlan) -> Iterator[ray.ObjectRef]:
         plan = self.optimize(plan)
 
         psets = {
@@ -612,20 +647,43 @@ class RayRunner(Runner):
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()
             if entry.value is not None
         }
+        result_uuid = str(uuid.uuid4())
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
-            partitions = ray.get(
+            ray.get(
                 self.scheduler_actor.run_plan.remote(
                     plan=plan,
                     psets=psets,
+                    result_uuid=result_uuid,
                 )
             )
+
         else:
-            partitions = self.scheduler.run_plan(
+            self.scheduler.run_plan(
                 plan=plan,
                 psets=psets,
+                result_uuid=result_uuid,
             )
 
-        for i, partition in enumerate(partitions):
+        while True:
+            if isinstance(self.ray_context, ray.client_builder.ClientContext):
+                result = ray.get(self.scheduler_actor.next(result_uuid))
+            else:
+                result = self.scheduler.next(result_uuid)
+
+            if isinstance(result, StopIteration):
+                return
+            yield result
+
+    def run_iter_tables(self, plan: logical_plan.LogicalPlan) -> Iterator[Table]:
+        for ref in self.run_iter(plan):
+            yield ray.get(ref)
+
+    def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
+        result_pset = RayPartitionSet({})
+
+        partitions_iter = self.run_iter(plan)
+
+        for i, partition in enumerate(partitions_iter):
             result_pset.set_partition(i, partition)
 
         pset_entry = self._part_set_cache.put_partition_set(result_pset)

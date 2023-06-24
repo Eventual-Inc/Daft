@@ -190,6 +190,11 @@ class DataType:
         return cls._from_pydatatype(PyDataType.timestamp(timeunit._timeunit, timezone))
 
     @classmethod
+    def duration(cls, timeunit: TimeUnit) -> DataType:
+        """Duration DataType."""
+        return cls._from_pydatatype(PyDataType.duration(timeunit._timeunit))
+
+    @classmethod
     def list(cls, name: str, dtype: DataType) -> DataType:
         """Create a List DataType: Variable-length list, where each element in the list has type ``dtype``
 
@@ -314,6 +319,9 @@ class DataType:
         elif pa.types.is_timestamp(arrow_type):
             timeunit = TimeUnit.from_str(arrow_type.unit)
             return cls.timestamp(timeunit=timeunit, timezone=arrow_type.tz)
+        elif pa.types.is_duration(arrow_type):
+            timeunit = TimeUnit.from_str(arrow_type.unit)
+            return cls.duration(timeunit=timeunit)
         elif pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
             assert isinstance(arrow_type, (pa.ListType, pa.LargeListType))
             field = arrow_type.value_field

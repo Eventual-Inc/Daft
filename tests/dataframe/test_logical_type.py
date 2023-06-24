@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
+from PIL import Image
 
 import daft
 from daft import DataType, Series, col
@@ -21,16 +23,22 @@ def test_embedding_type_df() -> None:
     assert isinstance(arrow_table["embeddings"].type, DaftExtension)
 
 
-def test_image_type_df() -> None:
+@pytest.mark.parametrize("from_pil_imgs", [True, False])
+def test_image_type_df(from_pil_imgs) -> None:
     data = [
-        np.arange(12, dtype=np.uint8).reshape((3, 2, 2)),
+        np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
-    df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="force")})
+    if from_pil_imgs:
+        data = [Image.fromarray(arr, mode="RGB") if arr is not None else None for arr in data]
+    df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="allow")})
 
-    target = DataType.image("RGB")
-    df = df.select(col("index"), col("image").cast(target))
+    image_expr = col("image")
+    if not from_pil_imgs:
+        target = DataType.image("RGB")
+        image_expr = image_expr.cast(target)
+    df = df.select(col("index"), image_expr)
     df = df.repartition(4, "index")
     df = df.sort("index")
     df = df.collect()

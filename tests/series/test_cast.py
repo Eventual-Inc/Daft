@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from PIL import Image
 
 from daft.datatype import DataType, ImageMode, TimeUnit
 from daft.series import Series
@@ -189,28 +188,6 @@ def test_series_cast_python_to_embedding(dtype) -> None:
     np.testing.assert_equal([np.asarray(arr, dtype=dtype.to_pandas_dtype()) for arr in data[:-1]], pydata[:-1])
 
 
-def test_series_cast_pil_to_image() -> None:
-    data = [
-        Image.fromarray(np.arange(12).reshape((2, 2, 3)).astype(np.uint8)),
-        Image.fromarray(np.arange(12, 39).reshape((3, 3, 3)).astype(np.uint8)),
-        None,
-    ]
-    s = Series.from_pylist(data, pyobj="force")
-
-    target_dtype = DataType.image("RGB")
-
-    t = s.cast(target_dtype)
-
-    assert t.datatype() == target_dtype
-    assert len(t) == len(data)
-
-    assert t.arr.lengths().to_pylist() == [12, 27, None]
-
-    pydata = t.to_pylist()
-    assert pydata[-1] is None
-    np.testing.assert_equal([np.asarray(data[0]), np.asarray(data[1])], pydata[:-1])
-
-
 def test_series_cast_numpy_to_image() -> None:
     data = [
         np.arange(12, dtype=np.uint8).reshape((3, 2, 2)),
@@ -308,6 +285,35 @@ def test_series_cast_int_timestamp(timeunit, timezone) -> None:
 
 
 @pytest.mark.parametrize(
+    ["input_t", "input", "output_t", "output"],
+    [
+        (
+            DataType.timestamp(TimeUnit.s()),
+            datetime(1970, 1, 1, 0, 0, 1),
+            DataType.timestamp(TimeUnit.us()),
+            datetime(1970, 1, 1, 0, 0, 1, 0),
+        ),
+        (
+            DataType.timestamp(TimeUnit.us()),
+            datetime(1970, 1, 1, 0, 0, 1, 1),
+            DataType.timestamp(TimeUnit.us()),
+            datetime(1970, 1, 1, 0, 0, 1, 1),
+        ),
+        (
+            DataType.timestamp(TimeUnit.us()),
+            datetime(1970, 1, 1, 0, 0, 1, 1),
+            DataType.timestamp(TimeUnit.s()),
+            datetime(1970, 1, 1, 0, 0, 1),
+        ),
+    ],
+)
+def test_series_cast_timestamp(input_t, input, output_t, output) -> None:
+    series = Series.from_pylist([input]).cast(input_t)
+    res = series.cast(output_t).to_pylist()[0]
+    assert res == output
+
+
+@pytest.mark.parametrize(
     ["timeunit", "sec_str"],
     [
         (TimeUnit.s(), ":01"),
@@ -353,3 +359,108 @@ def test_series_cast_string_timestamp(timestamp_str, expected, tz) -> None:
     # Arrow cast only supports nanosecond timeunit for now.
     casted = series.cast(DataType.timestamp(TimeUnit.ns(), tz))
     assert casted.to_pylist() == [expected]
+
+
+@pytest.mark.parametrize(
+    ["dtype", "result_n1", "result_0", "result_p1"],
+    [
+        (
+            DataType.timestamp(TimeUnit.s()),
+            datetime(1969, 12, 31, 23, 59, 59),
+            datetime(1970, 1, 1, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 1),
+        ),
+        (
+            DataType.timestamp(TimeUnit.ms()),
+            datetime(1969, 12, 31, 23, 59, 59, 999000),
+            datetime(1970, 1, 1, 0, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 0, 1000),
+        ),
+        (
+            DataType.timestamp(TimeUnit.us()),
+            datetime(1969, 12, 31, 23, 59, 59, 999999),
+            datetime(1970, 1, 1, 0, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 0, 1),
+        ),
+        # Timezoned timestamps are broken in PyArrow 6.0.1.
+        # (
+        #     DataType.timestamp(TimeUnit.us(), timezone="-08:00"),
+        #     datetime(1969, 12, 31, 15, 59, 59, 999999, tzinfo=timezone(timedelta(hours=-8))),
+        #     datetime(1969, 12, 31, 16, 0, 0, 0, tzinfo=timezone(timedelta(hours=-8))),
+        #     datetime(1969, 12, 31, 16, 0, 0, 1, tzinfo=timezone(timedelta(hours=-8))),
+        # ),
+        (DataType.duration(TimeUnit.s()), timedelta(seconds=-1), timedelta(seconds=0), timedelta(seconds=1)),
+        (
+            DataType.duration(TimeUnit.ms()),
+            timedelta(milliseconds=-1),
+            timedelta(milliseconds=0),
+            timedelta(milliseconds=1),
+        ),
+        (
+            DataType.duration(TimeUnit.us()),
+            timedelta(microseconds=-1),
+            timedelta(microseconds=0),
+            timedelta(microseconds=1),
+        ),
+    ],
+)
+def test_series_cast_numeric_logical(dtype, result_n1, result_0, result_p1) -> None:
+    # Numeric -> logical.
+    series = Series.from_pylist([-1, 0, 1])
+    casted = series.cast(dtype)
+    assert casted.to_pylist() == [result_n1, result_0, result_p1]
+
+
+@pytest.mark.parametrize(
+    ["dtype", "result_n1", "result_0", "result_p1"],
+    [
+        (
+            DataType.timestamp(TimeUnit.s()),
+            datetime(1969, 12, 31, 23, 59, 59),
+            datetime(1970, 1, 1, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 1),
+        ),
+        (
+            DataType.timestamp(TimeUnit.ms()),
+            datetime(1969, 12, 31, 23, 59, 59, 999000),
+            datetime(1970, 1, 1, 0, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 0, 1000),
+        ),
+        (
+            DataType.timestamp(TimeUnit.us()),
+            datetime(1969, 12, 31, 23, 59, 59, 999999),
+            datetime(1970, 1, 1, 0, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 0, 1),
+        ),
+        (
+            DataType.timestamp(TimeUnit.us(), timezone="-08:00"),
+            datetime(1969, 12, 31, 23, 59, 59, 999999),
+            datetime(1970, 1, 1, 0, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 0, 1),
+        ),
+        # Casting between duration types is currently not supported in Arrow2.
+        # (
+        #     DataType.duration(TimeUnit.s()),
+        #     timedelta(seconds=-1),
+        #     timedelta(seconds=0),
+        #     timedelta(seconds=1),
+        # ),
+        # (
+        #     DataType.duration(TimeUnit.ms()),
+        #     timedelta(milliseconds=-1),
+        #     timedelta(milliseconds=0),
+        #     timedelta(milliseconds=1),
+        # ),
+        (
+            DataType.duration(TimeUnit.us()),
+            timedelta(microseconds=-1),
+            timedelta(microseconds=0),
+            timedelta(microseconds=1),
+        ),
+    ],
+)
+def test_series_cast_logical_numeric(dtype, result_n1, result_0, result_p1) -> None:
+    # Logical -> numeric.
+    series = Series.from_pylist([result_n1, result_0, result_p1]).cast(dtype)
+    casted = series.cast(DataType.int64())
+    assert casted.to_pylist() == [-1, 0, 1]

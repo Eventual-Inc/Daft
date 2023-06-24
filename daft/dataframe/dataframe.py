@@ -12,6 +12,7 @@ from typing import (
     Any,
     Dict,
     Iterable,
+    Iterator,
     List,
     Optional,
     Set,
@@ -38,6 +39,9 @@ from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
     from ray.data.dataset import Dataset as RayDataset
+    from ray import ObjectRef as RayObjectRef
+    import torch.utils.data.Dataset as TorchDataset
+    import torch.utils.data.IterableDataset as TorchIterableDataset
     import pandas as pd
     import pyarrow as pa
     import dask
@@ -175,6 +179,53 @@ class DataFrame:
         )
 
         return DataFrameDisplay(preview, self.schema(), num_rows=n)
+
+    @DataframePublicAPI
+    def __iter__(self) -> Iterator[Dict[str, Any]]:
+        """Return an iterator of rows for this dataframe.
+
+        Each row will be a pydict of the form { "key" : value }.
+        """
+
+        if self._result is not None:
+            # If the dataframe has already finished executing,
+            # use the precomputed results.
+            pydict = self.to_pydict()
+            for i in range(len(self)):
+                row = {key: value[i] for (key, value) in pydict.items()}
+                yield row
+
+        else:
+            # Execute the dataframe in a streaming fashion.
+            context = get_context()
+            partitions_iter = context.runner().run_iter_tables(self._plan)
+
+            # Iterate through partitions.
+            for partition in partitions_iter:
+                pydict = partition.to_pydict()
+
+                # Yield invidiual rows from the partition.
+                for i in range(len(partition)):
+                    row = {key: value[i] for (key, value) in pydict.items()}
+                    yield row
+
+    @DataframePublicAPI
+    def iter_partitions(self) -> Iterator[Union[Table, "RayObjectRef"]]:
+        """Begin executing this dataframe and return an iterator over the partitions.
+
+        Each partition will be returned as a daft.Table object (if using Python runner backend)
+        or a ray ObjectRef (if using Ray runner backend).
+        """
+        if self._result is not None:
+            # If the dataframe has already finished executing,
+            # use the precomputed results.
+            yield from self._result.values()
+
+        else:
+            # Execute the dataframe in a streaming fashion.
+            context = get_context()
+            partitions_iter = context.runner().run_iter(self._plan)
+            yield from partitions_iter
 
     @DataframePublicAPI
     def __repr__(self) -> str:
@@ -1066,6 +1117,53 @@ class DataFrame:
         result = self._result
         assert result is not None
         return result.to_pydict()
+
+    @DataframePublicAPI
+    def to_torch_map_dataset(self) -> "TorchDataset":
+        """Convert the current DataFrame into a map-style
+        `Torch Dataset <https://pytorch.org/docs/stable/data.html#map-style-datasets>`__
+        for use with PyTorch.
+
+        This method will materialize the entire DataFrame and block on completion.
+
+        Items will be returned in pydict format: a dict of `{"column name": value}` for each row in the data.
+
+        .. NOTE::
+            If you do not need random access, you may get better performance out of an IterableDataset,
+            which streams data items in as soon as they are ready and does not block on full materialization.
+
+        .. NOTE::
+            This method returns results locally.
+            For distributed training, you may want to use ``DataFrame.to_ray_dataset()``.
+        """
+        from daft.dataframe.to_torch import DaftTorchDataset
+
+        return DaftTorchDataset(self.to_pydict(), len(self))
+
+    @DataframePublicAPI
+    def to_torch_iter_dataset(self) -> "TorchIterableDataset":
+        """Convert the current DataFrame into a
+        `Torch IterableDataset <https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset>`__
+        for use with PyTorch.
+
+        Begins execution of the DataFrame if it is not yet executed.
+
+        Items will be returned in pydict format: a dict of `{"column name": value}` for each row in the data.
+
+        .. NOTE::
+            The produced dataset is meant to be used with the single-process DataLoader,
+            and does not support data sharding hooks for multi-process data loading.
+
+            Do keep in mind that Daft is already using multithreading or multiprocessing under the hood
+            to compute the data stream that feeds this dataset.
+
+        .. NOTE::
+            This method returns results locally.
+            For distributed training, you may want to use ``DataFrame.to_ray_dataset()``.
+        """
+        from daft.dataframe.to_torch import DaftTorchIterableDataset
+
+        return DaftTorchIterableDataset(self)
 
     @DataframePublicAPI
     def to_ray_dataset(self) -> "RayDataset":

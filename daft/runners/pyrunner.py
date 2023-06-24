@@ -13,7 +13,6 @@ from loguru import logger
 from daft.datasources import SourceInfo
 from daft.execution import physical_plan, physical_plan_factory
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
-from daft.execution.logical_op_runners import LogicalPartitionOpRunner
 from daft.filesystem import get_filesystem_from_path, glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
@@ -136,11 +135,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
         return runner_io.sample_schema(first_filepath, source_info, fs)
 
 
-class LocalLogicalPartitionOpRunner(LogicalPartitionOpRunner):
-    ...
-
-
-class PyRunner(Runner):
+class PyRunner(Runner[Table]):
     def __init__(self, use_thread_pool: bool | None) -> None:
         super().__init__()
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
@@ -178,6 +173,16 @@ class PyRunner(Runner):
         return PyRunnerIO()
 
     def run(self, logplan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
+        partitions = list(self.run_iter(logplan))
+
+        result_pset = LocalPartitionSet({})
+        for i, partition in enumerate(partitions):
+            result_pset.set_partition(i, partition)
+
+        pset_entry = self.put_partition_set_into_cache(result_pset)
+        return pset_entry
+
+    def run_iter(self, logplan: logical_plan.LogicalPlan) -> Iterator[Table]:
         logplan = self.optimize(logplan)
         psets = {
             key: entry.value.values()
@@ -187,14 +192,11 @@ class PyRunner(Runner):
         plan = physical_plan_factory.get_materializing_physical_plan(logplan, psets)
 
         with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-            partitions = list(self._physical_plan_to_partitions(plan))
+            partitions_gen = self._physical_plan_to_partitions(plan)
+            yield from partitions_gen
 
-            result_pset = LocalPartitionSet({})
-            for i, partition in enumerate(partitions):
-                result_pset.set_partition(i, partition)
-
-            pset_entry = self.put_partition_set_into_cache(result_pset)
-            return pset_entry
+    def run_iter_tables(self, plan: logical_plan.LogicalPlan) -> Iterator[Table]:
+        return self.run_iter(plan)
 
     def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> Iterator[Table]:
         inflight_tasks: dict[str, PartitionTask] = dict()

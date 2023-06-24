@@ -106,19 +106,27 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-  integration-tests:
+  integration-test-build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      package-name: getdaft
     strategy:
-      fail-fast: false
       matrix:
         python-version: ['3.7']
-        daft-runner: [py, ray]
     steps:
     - uses: actions/checkout@v3
-    - uses: moonrepo/setup-rust@v0
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
+      with:
+        submodules: true
+        fetch-depth: 0
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        architecture: x64
+    - run: pip install -U twine toml
+    - run: python tools/patch_package_version.py
+    - name: Install Rust toolchain
+      uses: moonrepo/setup-rust@v0
     - uses: actions/cache@v3
       env:
         cache-name: cache-cargo
@@ -131,36 +139,61 @@ jobs:
           ${{ runner.os }}-build-${{ env.cache-name }}-
           ${{ runner.os }}-build-
           ${{ runner.os }}-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+    - name: Build wheels - x86
+      uses: messense/maturin-action@v1
+      with:
+        target: x86_64
+        manylinux: auto
+        # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
+        args: --release --out dist --sdist
+    - name: Upload wheels
+      uses: actions/upload-artifact@v3
+      with:
+        name: wheels
+        path: dist
+
+  integration-test-tpch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+    - integration-test-build
+    env:
+      package-name: getdaft
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.7']
+        daft-runner: [py, ray]
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: true
+        fetch-depth: 0
+    - uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-
-    - name: Setup Virtual Env
+        architecture: x64
+    - name: Download built wheels
+      uses: actions/download-artifact@v3
+      with:
+        name: wheels
+        path: dist
+    - name: Install Daft and dev dependencies
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-
-    - name: Install dependencies
-      run: |
-        pip install --upgrade pip
         pip install -r requirements-dev.txt
-
+        pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        rm -rf daft
     - uses: actions/cache@v3
       env:
         cache-name: cache-tpch-data
       with:
         path: data/tpch-dbgen
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
-
-    - name: Build library in release mode and run TPCH integration tests
+    - name: Run TPCH integration tests
       run: |
-        source activate
-        maturin develop --release
-        pytest tests/integration/ --durations=50
+        pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
