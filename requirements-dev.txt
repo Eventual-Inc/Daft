@@ -27,7 +27,6 @@ pandas==2.0.2; python_version >= '3.8'
 xxhash>=3.0.0
 Pillow==9.5.0
 opencv-python==4.7.0.72
-boto3  # unpinned due to conflicts with the `aiobotocore` transitive dep
 
 # Ray
 ray[data, default]==2.4.0
@@ -35,6 +34,7 @@ ray[data, default]==2.4.0
 # AWS
 s3fs==2023.1.0; python_version < '3.8'
 s3fs==2023.6.0; python_version >= '3.8'
+boto3  # unpinned due to conflicts with the `aiobotocore` transitive dep
 
 # Documentation
 myst-nb>=0.16.0
