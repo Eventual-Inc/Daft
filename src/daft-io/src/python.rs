@@ -23,8 +23,16 @@ impl PyIOConfig {
             },
         }
     }
+
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.config))
+    }
+
+    #[getter]
+    pub fn s3(&self) -> PyResult<PyS3Config> {
+        Ok(PyS3Config {
+            config: self.config.s3.clone(),
+        })
     }
 }
 
@@ -49,6 +57,26 @@ impl PyS3Config {
 
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.config))
+    }
+
+    #[getter]
+    pub fn region_name(&self) -> PyResult<Option<String>> {
+        Ok(self.config.region_name.clone())
+    }
+
+    #[getter]
+    pub fn endpoint_url(&self) -> PyResult<Option<String>> {
+        Ok(self.config.endpoint_url.clone())
+    }
+
+    #[getter]
+    pub fn key_id(&self) -> PyResult<Option<String>> {
+        Ok(self.config.key_id.clone())
+    }
+
+    #[getter]
+    pub fn access_key(&self) -> PyResult<Option<String>> {
+        Ok(self.config.access_key.clone())
     }
 }
 

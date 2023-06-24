@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import io
 import pathlib
 from typing import Generator, TypeVar
@@ -10,24 +9,21 @@ import numpy as np
 import pytest
 from PIL import Image
 
+import daft
+
 T = TypeVar("T")
 
 YieldFixture = Generator[T, None, None]
 
 
-@dataclasses.dataclass(frozen=True)
-class S3Config:
-    endpoint: str
-    key_id: str
-    access_key: str
-
-
 @pytest.fixture(scope="session")
-def minio_s3_config() -> S3Config:
-    return S3Config(
-        endpoint="http://127.0.0.1:9000",
-        key_id="minioadmin",
-        access_key="minioadmin",
+def minio_io_config() -> daft.io.IOConfig:
+    return daft.io.IOConfig(
+        s3=daft.io.S3Config(
+            endpoint_url="http://127.0.0.1:9000",
+            key_id="minioadmin",
+            access_key="minioadmin",
+        )
     )
 
 
@@ -84,13 +80,13 @@ def mock_http_image_urls(nginx_config, image_data) -> YieldFixture[str]:
 
 
 @pytest.fixture(scope="function")
-def minio_image_data_fixture(minio_s3_config, image_data) -> YieldFixture[list[str]]:
+def minio_image_data_fixture(minio_io_config, image_data) -> YieldFixture[list[str]]:
     """Populates the minio session with some fake data and yields (S3Config, paths)"""
     s3 = boto3.resource(
         "s3",
-        endpoint_url=minio_s3_config.endpoint,
-        aws_access_key_id=minio_s3_config.key_id,
-        aws_secret_access_key=minio_s3_config.access_key,
+        endpoint_url=minio_io_config.s3.endpoint_url,
+        aws_access_key_id=minio_io_config.s3.key_id,
+        aws_secret_access_key=minio_io_config.s3.access_key,
     )
 
     # Add some images into `s3://image-bucket`
