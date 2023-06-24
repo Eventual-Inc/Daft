@@ -27,7 +27,6 @@ pandas==2.0.2; python_version >= '3.8'
 xxhash>=3.0.0
 Pillow==9.5.0
 opencv-python==4.7.0.72
-requests==2.31.0
 boto3  # unpinned due to conflicts with the `aiobotocore` transitive dep
 
 # Ray
