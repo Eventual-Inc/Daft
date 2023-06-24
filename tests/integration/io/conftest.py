@@ -25,7 +25,7 @@ class S3Config:
 @pytest.fixture(scope="session")
 def minio_s3_config() -> S3Config:
     return S3Config(
-        endpoint="http://localhost:9000",
+        endpoint="http://127.0.0.1:9000",
         key_id="minioadmin",
         access_key="minioadmin",
     )
@@ -35,7 +35,7 @@ def minio_s3_config() -> S3Config:
 def nginx_config() -> tuple[str, pathlib.Path]:
     """Returns the (nginx_server_url, static_files_tmpdir) as a tuple"""
     return (
-        "http://localhost:8080",
+        "http://127.0.0.1:8080",
         pathlib.Path("/tmp/daft-integration-testing/nginx"),
     )
 
