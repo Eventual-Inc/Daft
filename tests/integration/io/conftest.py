@@ -28,6 +28,16 @@ def minio_io_config() -> daft.io.IOConfig:
 
 
 @pytest.fixture(scope="session")
+def aws_public_s3_config() -> daft.io.IOConfig:
+    return daft.io.IOConfig(
+        s3=daft.io.S3Config(
+            # NOTE: no keys or endpoints specified for an AWS public s3 bucket
+            region_name="us-west-2",
+        )
+    )
+
+
+@pytest.fixture(scope="session")
 def nginx_config() -> tuple[str, pathlib.Path]:
     """Returns the (nginx_server_url, static_files_tmpdir) as a tuple"""
     return (
