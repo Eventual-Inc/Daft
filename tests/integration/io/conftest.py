@@ -4,9 +4,9 @@ import io
 import pathlib
 from typing import Generator, TypeVar
 
-import boto3
 import numpy as np
 import pytest
+import s3fs
 from PIL import Image
 
 import daft
@@ -92,26 +92,24 @@ def mock_http_image_urls(nginx_config, image_data) -> YieldFixture[str]:
 @pytest.fixture(scope="function")
 def minio_image_data_fixture(minio_io_config, image_data) -> YieldFixture[list[str]]:
     """Populates the minio session with some fake data and yields (S3Config, paths)"""
-    s3 = boto3.resource(
-        "s3",
+    fs = s3fs.S3FileSystem(
         endpoint_url=minio_io_config.s3.endpoint_url,
-        aws_access_key_id=minio_io_config.s3.key_id,
-        aws_secret_access_key=minio_io_config.s3.access_key,
+        key=minio_io_config.s3.key_id,
+        password=minio_io_config.s3.access_key,
     )
+    bucket = "image-bucket"
+    fs.mkdir(bucket)
 
     # Add some images into `s3://image-bucket`
-    BUCKET = "image-bucket"
-    bucket = s3.Bucket(BUCKET)
-    bucket.create()
     urls = []
     for i in range(10):
         key = f"{i}.jpeg"
-        bucket.put_object(Body=image_data, Key=key)
-        urls.append(f"s3://{BUCKET}/{key}")
+        url = f"s3://{bucket}/{key}"
+        fs.write_bytes(url, image_data)
+        urls.append(url)
 
     try:
         yield urls
     # Remember to cleanup!
     finally:
-        bucket.objects.all().delete()
-        bucket.delete()
+        fs.rm(bucket, recursive=True)
