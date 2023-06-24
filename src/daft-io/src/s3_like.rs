@@ -1,9 +1,10 @@
 use async_trait::async_trait;
 
+use aws_config::SdkConfig;
 use futures::{StreamExt, TryStreamExt};
 use s3::client::customize::Response;
 use s3::config::{Credentials, Region};
-use s3::error::SdkError;
+use s3::error::{ProvideErrorMetadata, SdkError};
 use s3::operation::get_object::GetObjectError;
 use snafu::{IntoError, ResultExt, Snafu};
 use url::ParseError;
@@ -14,9 +15,11 @@ use super::object_io::{GetResult, ObjectSource};
 
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
+
 #[derive(Clone)]
 pub(crate) struct S3LikeSource {
     client: s3::Client,
+    s3_config: S3Config,
 }
 
 #[derive(Debug, Snafu)]
@@ -66,7 +69,7 @@ impl From<Error> for super::Error {
     }
 }
 
-async fn build_client(config: &S3Config) -> aws_sdk_s3::Client {
+async fn build_client(config: &S3Config) -> S3LikeSource {
     let conf = aws_config::load_from_env().await;
     let builder = aws_sdk_s3::config::Builder::from(&conf);
     let builder = match &config.endpoint_url {
@@ -75,6 +78,8 @@ async fn build_client(config: &S3Config) -> aws_sdk_s3::Client {
     };
     let builder = if let Some(region) = &config.region_name {
         builder.region(Region::new(region.to_owned()))
+    } else if config.endpoint_url.is_none() && conf.region().is_none() {
+        builder.region(Region::from_static("us-east-1"))
     } else {
         builder
     };
@@ -94,14 +99,15 @@ async fn build_client(config: &S3Config) -> aws_sdk_s3::Client {
 
     let s3_conf = builder.build();
 
-    s3::Client::from_conf(s3_conf)
+    S3LikeSource {
+        client: s3::Client::from_conf(s3_conf),
+        s3_config: config.clone(),
+    }
 }
 
 impl S3LikeSource {
     pub async fn new(config: &S3Config) -> Self {
-        S3LikeSource {
-            client: build_client(config).await,
-        }
+        build_client(config).await
     }
 }
 
@@ -118,13 +124,48 @@ impl ObjectSource for S3LikeSource {
         }?;
         let key = parsed.path();
         let object = if let Some(key) = key.strip_prefix('/') {
-            self.client
+            let request = self
+                .client
                 .get_object()
                 .bucket(bucket)
                 .key(key)
                 .send()
-                .await
-                .with_context(|_| UnableToOpenFileSnafu { path: uri })?
+                .await;
+            match request {
+                Ok(v) => Ok(v),
+                Err(SdkError::ServiceError(err)) => match err.err() {
+                    GetObjectError::Unhandled(unhandled) => match unhandled.meta().code() {
+                        Some("PermanentRedirect") => {
+                            let head = reqwest::Client::builder()
+                                .build()
+                                .unwrap()
+                                .head(format! {"https://{bucket}.s3.amazonaws.com"})
+                                .send()
+                                .await
+                                .unwrap();
+
+                            // let head = reqwest::get().await.unwrap();
+                            let head = head.headers();
+                            let new_region = head.get("x-amz-bucket-region").unwrap();
+
+                            // let buck_response = self.client.head_bucket().bucket(bucket).send().await.unwrap();
+                            // buck_response.
+                            let mut new_config = self.s3_config.clone();
+                            new_config.region_name =
+                                Some(String::from_utf8(new_region.as_bytes().to_vec()).unwrap());
+                            let new_client = build_client(&new_config).await;
+                            return new_client.get(uri).await;
+                            // let builder = aws_sdk_s3::config::Builder:;
+                            // let builder = aws_sdk_s3::config::Builder::from(conf);
+                            // todo!("response {head:?} Set up redirect to new location!")
+                        }
+                        _ => Err(SdkError::ServiceError(err)),
+                    },
+                    &_ => Err(SdkError::ServiceError(err)),
+                },
+                Err(err) => Err(err),
+            }
+            .with_context(|_| UnableToOpenFileSnafu { path: uri })?
         } else {
             return Err(Error::NotAFile { path: uri.into() }.into());
         };
