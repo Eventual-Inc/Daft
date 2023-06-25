@@ -247,8 +247,7 @@ jobs:
     - name: Install Daft and dev dependencies
       run: |
         pip install --upgrade pip
-        pip install -r requirements-dev.txt
-        pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - name: Spin up IO services
       uses: isbang/compose-action@v1.4.1
