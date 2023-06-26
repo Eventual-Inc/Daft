@@ -404,7 +404,7 @@ impl Table {
         res.push_str("<thead><tr>");
 
         for (name, field) in &self.schema.fields {
-            res.push_str("<th>");
+            res.push_str("<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto\">");
             res.push_str(&html_escape::encode_text(name));
             res.push_str("<br />");
             res.push_str(&html_escape::encode_text(&format!("{}", field.dtype)));
@@ -428,14 +428,17 @@ impl Table {
             tail_rows = 0;
         }
 
+        let styled_td =
+            "<td><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">";
+
         for i in 0..head_rows {
             // Begin row.
             res.push_str("<tr>");
 
             for col in self.columns.iter() {
-                res.push_str("<td>");
+                res.push_str(styled_td);
                 res.push_str(&col.html_value(i));
-                res.push_str("</td>");
+                res.push_str("</div></td>");
             }
 
             // End row.
@@ -455,7 +458,7 @@ impl Table {
             res.push_str("<tr>");
 
             for col in self.columns.iter() {
-                res.push_str("<td>");
+                res.push_str(styled_td);
                 res.push_str(&col.html_value(i));
                 res.push_str("</td>");
             }

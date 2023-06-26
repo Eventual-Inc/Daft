@@ -94,7 +94,7 @@ impl Schema {
         res.push_str("<thead><tr>");
 
         for (name, field) in &self.fields {
-            res.push_str("<th>");
+            res.push_str("<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto\">");
             res.push_str(&html_escape::encode_text(name));
             res.push_str("<br />");
             res.push_str(&html_escape::encode_text(&format!("{}", field.dtype)));
