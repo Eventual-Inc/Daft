@@ -8,11 +8,10 @@ import daft
 def test_url_download_minio_custom_s3fs(minio_io_config, minio_image_data_fixture, image_data):
     urls = minio_image_data_fixture
     fs = s3fs.S3FileSystem(
-        endpoint_url=minio_io_config.s3.endpoint_url,
         key=minio_io_config.s3.key_id,
         password=minio_io_config.s3.access_key,
+        client_kwargs={"endpoint_url": minio_io_config.s3.endpoint_url},
     )
-
     data = {"urls": urls}
     df = daft.from_pydict(data)
     df = df.with_column("data", df["urls"].url.download(fs=fs))
@@ -22,7 +21,6 @@ def test_url_download_minio_custom_s3fs(minio_io_config, minio_image_data_fixtur
 
 def test_url_download_minio_native_downloader(minio_io_config, minio_image_data_fixture, image_data):
     urls = minio_image_data_fixture
-
     data = {"urls": urls}
     df = daft.from_pydict(data)
     df = df.with_column("data", df["urls"].url.download(io_config=minio_io_config, use_native_downloader=True))

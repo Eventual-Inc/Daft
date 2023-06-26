@@ -93,9 +93,9 @@ def mock_http_image_urls(nginx_config, image_data) -> YieldFixture[str]:
 def minio_image_data_fixture(minio_io_config, image_data) -> YieldFixture[list[str]]:
     """Populates the minio session with some fake data and yields (S3Config, paths)"""
     fs = s3fs.S3FileSystem(
-        endpoint_url=minio_io_config.s3.endpoint_url,
         key=minio_io_config.s3.key_id,
         password=minio_io_config.s3.access_key,
+        client_kwargs={"endpoint_url": minio_io_config.s3.endpoint_url},
     )
     bucket = "image-bucket"
     fs.mkdir(bucket)
