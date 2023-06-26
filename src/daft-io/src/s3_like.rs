@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 
+use aws_config::meta::region;
 use aws_config::SdkConfig;
 use futures::{StreamExt, TryStreamExt};
 use s3::client::customize::Response;
@@ -9,17 +10,19 @@ use s3::operation::get_object::GetObjectError;
 use snafu::{IntoError, ResultExt, Snafu};
 use url::ParseError;
 
-use crate::config::S3Config;
+use crate::config::{IOConfig, S3Config};
+use crate::single_url_get;
 
 use super::object_io::{GetResult, ObjectSource};
-
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
+use std::collections::HashMap;
 
 #[derive(Clone)]
 pub(crate) struct S3LikeSource {
-    client: s3::Client,
+    s3_client: s3::Client,
     s3_config: S3Config,
+    http_client: reqwest::Client,
 }
 
 #[derive(Debug, Snafu)]
@@ -69,8 +72,8 @@ impl From<Error> for super::Error {
     }
 }
 
-async fn build_client(config: &S3Config) -> S3LikeSource {
-    let conf = aws_config::load_from_env().await;
+async fn build_s3_client(config: &S3Config) -> s3::Client {
+    let conf: SdkConfig = aws_config::load_from_env().await;
     let builder = aws_sdk_s3::config::Builder::from(&conf);
     let builder = match &config.endpoint_url {
         None => builder,
@@ -98,10 +101,16 @@ async fn build_client(config: &S3Config) -> S3LikeSource {
     };
 
     let s3_conf = builder.build();
+    s3::Client::from_conf(s3_conf)
+}
+
+async fn build_client(config: &S3Config) -> S3LikeSource {
+    let s3_client = build_s3_client(config).await;
 
     S3LikeSource {
-        client: s3::Client::from_conf(s3_conf),
+        s3_client,
         s3_config: config.clone(),
+        http_client: reqwest::Client::builder().build().unwrap(),
     }
 }
 
@@ -123,66 +132,61 @@ impl ObjectSource for S3LikeSource {
             }),
         }?;
         let key = parsed.path();
-        let object = if let Some(key) = key.strip_prefix('/') {
+        if let Some(key) = key.strip_prefix('/') {
             let request = self
-                .client
+                .s3_client
                 .get_object()
                 .bucket(bucket)
                 .key(key)
                 .send()
                 .await;
             match request {
-                Ok(v) => Ok(v),
+                Ok(v) => {
+                    let body = v.body;
+                    let owned_string = uri.to_owned();
+                    let stream = body
+                        .map_err(move |e| {
+                            UnableToReadBytesSnafu {
+                                path: owned_string.clone(),
+                            }
+                            .into_error(e)
+                            .into()
+                        })
+                        .boxed();
+                    Ok(GetResult::Stream(stream, Some(v.content_length as usize)))
+                }
                 Err(SdkError::ServiceError(err)) => match err.err() {
                     GetObjectError::Unhandled(unhandled) => match unhandled.meta().code() {
-                        Some("PermanentRedirect") => {
-                            let head = reqwest::Client::builder()
-                                .build()
-                                .unwrap()
+                        Some("PermanentRedirect") if self.s3_config.endpoint_url.is_none() => {
+                            let head = self
+                                .http_client
                                 .head(format! {"https://{bucket}.s3.amazonaws.com"})
                                 .send()
                                 .await
                                 .unwrap();
-
-                            // let head = reqwest::get().await.unwrap();
                             let head = head.headers();
                             let new_region = head.get("x-amz-bucket-region").unwrap();
 
-                            // let buck_response = self.client.head_bucket().bucket(bucket).send().await.unwrap();
-                            // buck_response.
                             let mut new_config = self.s3_config.clone();
                             new_config.region_name =
                                 Some(String::from_utf8(new_region.as_bytes().to_vec()).unwrap());
-                            let new_client = build_client(&new_config).await;
-                            return new_client.get(uri).await;
-                            // let builder = aws_sdk_s3::config::Builder:;
-                            // let builder = aws_sdk_s3::config::Builder::from(conf);
-                            // todo!("response {head:?} Set up redirect to new location!")
+
+                            let io_config = IOConfig { s3: new_config };
+
+                            return single_url_get(uri.to_string(), &io_config).await;
                         }
-                        _ => Err(SdkError::ServiceError(err)),
+                        _ => Err(UnableToOpenFileSnafu { path: uri }
+                            .into_error(SdkError::ServiceError(err))
+                            .into()),
                     },
-                    &_ => Err(SdkError::ServiceError(err)),
+                    &_ => Err(UnableToOpenFileSnafu { path: uri }
+                        .into_error(SdkError::ServiceError(err))
+                        .into()),
                 },
-                Err(err) => Err(err),
+                Err(err) => Err(UnableToOpenFileSnafu { path: uri }.into_error(err).into()),
             }
-            .with_context(|_| UnableToOpenFileSnafu { path: uri })?
         } else {
             return Err(Error::NotAFile { path: uri.into() }.into());
-        };
-        let body = object.body;
-        let owned_string = uri.to_owned();
-        let stream = body
-            .map_err(move |e| {
-                UnableToReadBytesSnafu {
-                    path: owned_string.clone(),
-                }
-                .into_error(e)
-                .into()
-            })
-            .boxed();
-        Ok(GetResult::Stream(
-            stream,
-            Some(object.content_length as usize),
-        ))
+        }
     }
 }
