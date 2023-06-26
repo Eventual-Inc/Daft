@@ -12,6 +12,7 @@ ROW_DIVIDER_REGEX = re.compile(r"\+-+\+")
 SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")
 UNMATERIALIZED_REGEX = re.compile(r".*\(No data to display: Dataframe not materialized\).*")
 MATERIALIZED_NO_ROWS_REGEX = re.compile(r".*\(No data to display: Materialized dataframe has no rows\).*")
+TD_STYLE = 'style="text-align:left; max-width:192px; max-height:64px; overflow:auto"'
 
 
 def parse_str_table(
@@ -90,7 +91,7 @@ def test_empty_df_repr():
         df._repr_html_()
         == """<div>
 <table class="dataframe">
-<thead><tr><th>A<br />Int64</th><th>B<br />Utf8</th></tr></thead>
+<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">A<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">B<br />Utf8</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
@@ -112,7 +113,7 @@ def test_empty_df_repr():
         df._repr_html_()
         == """<div>
 <table class="dataframe">
-<thead><tr><th>A<br />Int64</th><th>B<br />Utf8</th></tr></thead>
+<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">A<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">B<br />Utf8</th></tr></thead>
 <tbody>
 </tbody>
 </table>
@@ -131,7 +132,7 @@ def test_alias_repr():
         df._repr_html_()
         == """<div>
 <table class="dataframe">
-<thead><tr><th>A2<br />Int64</th><th>B<br />Utf8</th></tr></thead>
+<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">A2<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">B<br />Utf8</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
@@ -155,13 +156,13 @@ def test_alias_repr():
     assert parse_str_table(df.__repr__()) == expected_data
     assert (
         df._repr_html_()
-        == """<div>
+        == f"""<div>
 <table class="dataframe">
-<thead><tr><th>A2<br />Int64</th><th>B<br />Utf8</th></tr></thead>
+<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">A2<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">B<br />Utf8</th></tr></thead>
 <tbody>
-<tr><td>1</td><td>a</td></tr>
-<tr><td>2</td><td>b</td></tr>
-<tr><td>3</td><td>c</td></tr>
+<tr><td><div {TD_STYLE}>1</div></td><td><div {TD_STYLE}>a</div></td></tr>
+<tr><td><div {TD_STYLE}>2</div></td><td><div {TD_STYLE}>b</div></td></tr>
+<tr><td><div {TD_STYLE}>3</div></td><td><div {TD_STYLE}>c</div></td></tr>
 </tbody>
 </table>
 <small>(Showing first 3 of 3 rows)</small>
@@ -177,7 +178,7 @@ def test_repr_with_html_string():
     html_table = df._repr_html_()
     for i in range(3):
         assert f"<div>body{i}</div>" in non_html_table
-        assert f"<tr><td>&lt;div&gt;body{i}&lt;/div&gt;</td></tr>" in html_table
+        assert f"<tr><td><div {TD_STYLE}>&lt;div&gt;body{i}&lt;/div&gt;</div></td></tr>" in html_table
 
 
 class MyObj:
@@ -230,4 +231,4 @@ def test_repr_html_custom_hooks():
     assert '<img style="max-height:128px;width:auto" src="data:image/png;base64,' in html_repr
 
     # Assert that numpy array viz hook correctly triggers in html repr
-    assert "<td>&ltnp.ndarray<br>shape=(3, 3)<br>dtype=float64&gt</td><td>" in html_repr
+    assert f"<td><div {TD_STYLE}>&ltnp.ndarray<br>shape=(3, 3)<br>dtype=float64&gt</div></td><td>" in html_repr
