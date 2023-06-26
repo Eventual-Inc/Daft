@@ -249,6 +249,10 @@ jobs:
         pip install --upgrade pip
         pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
+    - name: Prepare tmpdirs for IO services
+      run: |
+        mkdir -p /tmp/daft-integration-testing/nginx
+        chmod +rw /tmp/daft-integration-testing/nginx
     - name: Spin up IO services
       uses: isbang/compose-action@v1.4.1
       with:
