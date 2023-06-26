@@ -666,7 +666,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         while True:
             if isinstance(self.ray_context, ray.client_builder.ClientContext):
-                result = ray.get(self.scheduler_actor.next(result_uuid))
+                result = ray.get(self.scheduler_actor.next.remote(result_uuid))
             else:
                 result = self.scheduler.next(result_uuid)
 
