@@ -1,6 +1,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import fsspec
 
@@ -13,7 +13,7 @@ from daft.io.common import _get_tabular_files_scan
 
 @PublicAPI
 def read_csv(
-    path: str,
+    path: Union[str, List[str]],
     schema_hints: Optional[Dict[str, DataType]] = None,
     fs: Optional[fsspec.AbstractFileSystem] = None,
     has_headers: bool = True,
@@ -47,6 +47,8 @@ def read_csv(
             "`df.select(*[col(old).alias(new) for old, new in zip(df.column_names, MY_COL_NAMES)])`. Please submit an issue if this is a "
             "blocker for your workflow!"
         )
+    if isinstance(path, list) and len(path) == 0:
+        raise ValueError(f"Cannot read DataFrame from from empty list of CSV filepaths")
 
     plan = _get_tabular_files_scan(
         path,

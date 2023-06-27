@@ -82,24 +82,28 @@ class LocalPartitionSet(PartitionSet[Table]):
 class PyRunnerIO(runner_io.RunnerIO[Table]):
     def glob_paths_details(
         self,
-        source_path: str,
+        source_paths: list[str],
         source_info: SourceInfo | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> LocalPartitionSet:
-        if fs is None:
-            fs = get_filesystem_from_path(source_path)
+        all_files_infos = []
+        for source_path in source_paths:
+            if fs is None:
+                fs = get_filesystem_from_path(source_path)
 
-        files_info = glob_path_with_stats(source_path, source_info, fs)
+            files_info = glob_path_with_stats(source_path, source_info, fs)
 
-        if len(files_info) == 0:
-            raise FileNotFoundError(f"No files found at {source_path}")
+            if len(files_info) == 0:
+                raise FileNotFoundError(f"No files found at {source_path}")
+
+            all_files_infos.extend(files_info)
 
         partition = Table.from_pydict(
             {
-                "path": pa.array([file_info.path for file_info in files_info], type=pa.string()),
-                "size": pa.array([file_info.size for file_info in files_info], type=pa.int64()),
-                "type": pa.array([file_info.type for file_info in files_info], type=pa.string()),
-                "rows": pa.array([file_info.rows for file_info in files_info], type=pa.int64()),
+                "path": pa.array([file_info.path for file_info in all_files_infos], type=pa.string()),
+                "size": pa.array([file_info.size for file_info in all_files_infos], type=pa.int64()),
+                "type": pa.array([file_info.type for file_info in all_files_infos], type=pa.string()),
+                "rows": pa.array([file_info.rows for file_info in all_files_infos], type=pa.int64()),
             },
         )
 

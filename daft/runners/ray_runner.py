@@ -76,25 +76,28 @@ RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
 
 @ray.remote
 def _glob_path_into_details_vpartitions(
-    path: str,
+    paths: list[str],
     schema: Schema,
     source_info: SourceInfo | None,
     fs: fsspec.AbstractFileSystem | None,
 ) -> list[tuple[PartID, Table]]:
-    if fs is None:
-        fs = get_filesystem_from_path(path)
+    all_listing_infos = []
+    for path in paths:
+        if fs is None:
+            fs = get_filesystem_from_path(path)
 
-    listing_infos = glob_path_with_stats(path, source_info, fs)
-    if len(listing_infos) == 0:
-        raise FileNotFoundError(f"No files found at {path}")
+        listing_infos = glob_path_with_stats(path, source_info, fs)
+        if len(listing_infos) == 0:
+            raise FileNotFoundError(f"No files found at {path}")
+        all_listing_infos.extend(listing_infos)
 
     # Hardcoded to 1 partition
     partition = Table.from_pydict(
         {
-            "path": pa.array([file_info.path for file_info in listing_infos], type=pa.string()),
-            "size": pa.array([file_info.size for file_info in listing_infos], type=pa.int64()),
-            "type": pa.array([file_info.type for file_info in listing_infos], type=pa.string()),
-            "rows": pa.array([file_info.rows for file_info in listing_infos], type=pa.int64()),
+            "path": pa.array([file_info.path for file_info in all_listing_infos], type=pa.string()),
+            "size": pa.array([file_info.size for file_info in all_listing_infos], type=pa.int64()),
+            "type": pa.array([file_info.type for file_info in all_listing_infos], type=pa.string()),
+            "rows": pa.array([file_info.rows for file_info in all_listing_infos], type=pa.int64()),
         },
     )
     assert partition.schema() == schema, f"Schema should be expected: {schema}, but received: {partition.schema()}"
@@ -231,12 +234,12 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
     def glob_paths_details(
         self,
-        source_path: str,
+        source_paths: list[str],
         source_info: SourceInfo | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> RayPartitionSet:
         partition_refs = ray.get(
-            _glob_path_into_details_vpartitions.remote(source_path, RayRunnerIO.FS_LISTING_SCHEMA, source_info, fs=fs)
+            _glob_path_into_details_vpartitions.remote(source_paths, RayRunnerIO.FS_LISTING_SCHEMA, source_info, fs=fs)
         )
         return RayPartitionSet({part_id: part for part_id, part in partition_refs})
 

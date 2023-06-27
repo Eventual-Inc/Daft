@@ -42,7 +42,7 @@ def from_glob_path(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) ->
             parsed from the provided filesystem.
     """
     runner_io = get_context().runner().runner_io()
-    partition_set = runner_io.glob_paths_details(path, fs=fs)
+    partition_set = runner_io.glob_paths_details([path], fs=fs)
     cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
     filepath_plan = logical_plan.InMemoryScan(
         cache_entry=cache_entry,

@@ -46,7 +46,7 @@ class RunnerIO(Generic[PartitionT]):
     @abstractmethod
     def glob_paths_details(
         self,
-        source_path: str,
+        source_path: list[str],
         source_info: SourceInfo | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> PartitionSet[PartitionT]:

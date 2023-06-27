@@ -1,6 +1,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Union
 
 import fsspec
 
@@ -13,7 +13,7 @@ from daft.io.common import _get_tabular_files_scan
 
 @PublicAPI
 def read_parquet(
-    path: str,
+    path: Union[str, List[str]],
     schema_hints: Optional[Dict[str, DataType]] = None,
     fs: Optional[fsspec.AbstractFileSystem] = None,
 ) -> DataFrame:
@@ -35,6 +35,9 @@ def read_parquet(
     returns:
         DataFrame: parsed DataFrame
     """
+    if isinstance(path, list) and len(path) == 0:
+        raise ValueError(f"Cannot read DataFrame from from empty list of Parquet filepaths")
+
     plan = _get_tabular_files_scan(
         path,
         schema_hints,

@@ -17,7 +17,7 @@ def _get_schema_from_hints(hints: dict[str, DataType]) -> Schema:
 
 
 def _get_tabular_files_scan(
-    path: str,
+    path: str | list[str],
     schema_hints: dict[str, DataType] | None,
     source_info: SourceInfo,
     fs: fsspec.AbstractFileSystem | None,
@@ -25,7 +25,9 @@ def _get_tabular_files_scan(
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
     # Glob the path using the Runner
     runner_io = get_context().runner().runner_io()
-    listing_details_partition_set = runner_io.glob_paths_details(path, source_info, fs)
+
+    paths = path if isinstance(path, list) else [str(path)]
+    listing_details_partition_set = runner_io.glob_paths_details(paths, source_info, fs)
 
     # Infer schema if no hints provided
     inferred_or_provided_schema = (
