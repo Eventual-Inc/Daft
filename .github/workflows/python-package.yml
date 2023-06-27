@@ -134,10 +134,10 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-integration-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
+          ${{ runner.os }}-integration-build-${{ env.cache-name }}-
+          ${{ runner.os }}-integration-build-
           ${{ runner.os }}-
     # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
@@ -231,8 +231,8 @@ jobs:
           ~/.cargo/git
         key: ${{ runner.os }}-rust-package-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
+          ${{ runner.os }}-rust-package-${{ env.cache-name }}-
+          ${{ runner.os }}-rust-package-
           ${{ runner.os }}-
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
